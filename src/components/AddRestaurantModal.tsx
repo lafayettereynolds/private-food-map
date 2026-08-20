@@ -243,7 +243,7 @@ export function AddRestaurantModal({
             </label>
             <label className="field field-with-leading-icon">
               <span>{status === 'visited' ? '本次消费总价（元）' : '预计人均价格（元）'}</span>
-              <div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder={status === 'visited' ? '例如 193' : '例如 180'} step="1" type="number" value={price} /></div>
+              <div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder={status === 'visited' ? '例如 193.50' : '例如 180.00'} step="0.01" type="number" value={price} /></div>
               {status === 'visited' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">按 {partySize} 人计算，约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}
             </label>
           </div>

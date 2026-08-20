@@ -70,7 +70,7 @@ export function RestaurantEditorModal({
           <label className="field"><span>所属列表</span><select onChange={(event) => setStatus(event.target.value as RestaurantStatus)} value={status}><option value="visited">我去过</option><option value="wantToGo">我想去</option></select></label>
         </div>
         <label className="field field-with-leading-icon"><span>地址</span><div><MapPin size={16} /><input onChange={(event) => setAddress(event.target.value)} value={address} /></div></label>
-        <label className="field field-with-leading-icon"><span>参考人均价格（元）</span><div><WalletCards size={16} /><input min="0" onChange={(event) => setPrice(event.target.value)} step="1" type="number" value={price} /></div>{status === 'visited' ? <small className="price-calculation">去过的餐厅会优先显示到访记录自动计算的人均。</small> : null}</label>
+        <label className="field field-with-leading-icon"><span>参考人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} step="0.01" type="number" value={price} /></div>{status === 'visited' ? <small className="price-calculation">去过的餐厅会优先显示到访记录自动计算的人均。</small> : null}</label>
         <label className="field field-with-leading-icon"><span>标签</span><div><Tag size={16} /><input onChange={(event) => setTags(event.target.value)} placeholder="日料、约会、会再去" value={tags} /></div></label>
         <MarkerStyleField
           markerEmoji={markerEmoji}
