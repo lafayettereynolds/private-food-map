@@ -9,6 +9,7 @@ interface RestaurantPreviewCardProps {
   onEdit: () => void
   onDelete: () => void
   onAddVisit: () => void
+  onSaveRecommendation: () => void
 }
 
 export function RestaurantPreviewCard({
@@ -17,6 +18,7 @@ export function RestaurantPreviewCard({
   onEdit,
   onDelete,
   onAddVisit,
+  onSaveRecommendation,
 }: RestaurantPreviewCardProps) {
   const navigationUrl = createNavigationUrl(restaurant)
   return (
@@ -29,7 +31,7 @@ export function RestaurantPreviewCard({
           <h2>{restaurant.name}</h2>
           {restaurant.scoreOutOfTen !== null ? (
             <p className="map-card__rating" style={{ color: scoreColor(restaurant.scoreOutOfTen) }}><Star fill="currentColor" size={13} /> {restaurant.scoreOutOfTen.toFixed(1)} / 10</p>
-          ) : <p className="map-card__rating">想去清单</p>}
+          ) : <p className="map-card__rating">{restaurant.isRecommendation ? '为你推荐 · 尚未去过' : '想去清单'}</p>}
         </div>
       </div>
       <p className="map-card__address"><MapPin size={14} /> {restaurant.address}</p>
@@ -71,6 +73,7 @@ export function RestaurantPreviewCard({
                         {dish.imageData ? <img alt="" src={dish.imageData} /> : null}
                         <b>{dish.name || '未命名菜品'}</b>
                         {dish.taste ? <em>{dish.taste}</em> : null}
+                        {dish.rating !== null ? <small className="dish-rating-summary"><Star fill="currentColor" size={8} />{dish.rating}</small> : null}
                         {dish.price !== null ? <small>¥{dish.price}</small> : null}
                       </span>
                     ))}
@@ -83,9 +86,15 @@ export function RestaurantPreviewCard({
       ) : null}
       <div className="map-card__actions">
         <a className="navigation-button compact-button" href={navigationUrl} rel="noreferrer" target="_blank"><Navigation size={15} /> 到这里去</a>
-        <button className="primary-button compact-button" onClick={onAddVisit} type="button"><Plus size={15} /> 记录到访</button>
-        <button className="secondary-button" onClick={onEdit} type="button"><Edit3 size={15} /> 编辑</button>
-        <button className="danger-ghost-button" onClick={onDelete} type="button"><Trash2 size={15} /> 删除</button>
+        {restaurant.isRecommendation ? (
+          <button className="primary-button compact-button" onClick={onSaveRecommendation} type="button"><Plus size={15} /> 加入想去</button>
+        ) : (
+          <>
+            <button className="primary-button compact-button" onClick={onAddVisit} type="button"><Plus size={15} /> 记录到访</button>
+            <button className="secondary-button" onClick={onEdit} type="button"><Edit3 size={15} /> 编辑</button>
+            <button className="danger-ghost-button" onClick={onDelete} type="button"><Trash2 size={15} /> 删除</button>
+          </>
+        )}
       </div>
     </article>
   )
@@ -97,7 +106,7 @@ function createNavigationUrl(restaurant: RestaurantSummary) {
     to: `${restaurant.longitude},${restaurant.latitude},${restaurant.name}`,
     mode: 'car',
     policy: '0',
-    src: 'shitu-private-food-map',
+    src: 'taste-map',
     callnative: '1',
   })
   return `https://uri.amap.com/navigation?${parameters.toString()}`

@@ -2,7 +2,7 @@ import { db } from './appDb'
 import type { Restaurant, Visit } from '../types/domain'
 
 interface FoodMapBackup {
-  app: '食途'
+  app: 'Taste Map'
   version: 1
   exportedAt: string
   restaurants: Restaurant[]
@@ -20,7 +20,7 @@ export async function createFoodMapBackup() {
     db.visits.toArray(),
   ])
   const backup: FoodMapBackup = {
-    app: '食途',
+    app: 'Taste Map',
     version: 1,
     exportedAt: new Date().toISOString(),
     restaurants,
@@ -38,7 +38,7 @@ export async function importFoodMapBackup(rawText: string) {
   }
 
   if (!isBackupShape(parsed)) {
-    throw new Error('没有识别到食途的餐厅和到访数据。')
+    throw new Error('没有识别到 Taste Map 的餐厅和到访数据。')
   }
 
   const importedRestaurants = parsed.restaurants.filter(isRestaurantShape)
@@ -89,6 +89,7 @@ export async function importFoodMapBackup(rawText: string) {
           ? imported.dishes.map((dish) => ({
               ...dish,
               taste: typeof dish.taste === 'string' ? dish.taste : '',
+              rating: isStarRating(dish.rating) ? dish.rating : null,
             }))
           : [],
         photos: Array.isArray(imported.photos) ? imported.photos : [],
@@ -101,6 +102,10 @@ export async function importFoodMapBackup(rawText: string) {
   })
 
   return { restaurantCount, visitCount }
+}
+
+function isStarRating(value: unknown): value is 1 | 2 | 3 | 4 | 5 {
+  return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 5
 }
 
 function isBackupShape(value: unknown): value is { restaurants: unknown[]; visits: unknown[] } {

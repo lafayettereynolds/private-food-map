@@ -35,11 +35,12 @@ function legacyPreferenceLevelFromRating(rating: number | null): PreferenceLevel
 
 function normalizeDishes(dishes: VisitDish[]) {
   return dishes
-    .filter((dish) => dish.name.trim() || (dish.taste ?? '').trim() || dish.price !== null || dish.imageData)
+    .filter((dish) => dish.name.trim() || (dish.taste ?? '').trim() || dish.rating !== null || dish.price !== null || dish.imageData)
     .map((dish) => ({
       ...dish,
       name: dish.name.trim(),
       taste: (dish.taste ?? '').trim(),
+      rating: dish.rating ?? null,
     }))
 }
 

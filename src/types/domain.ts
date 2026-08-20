@@ -59,6 +59,7 @@ export interface VisitDish {
   id: string
   name: string
   taste: string
+  rating: StarRating | null
   price: number | null
   imageData: string | null
 }
@@ -74,6 +75,7 @@ export interface RestaurantSummary extends Restaurant {
   averageQueueMinutes: number | null
   recommendationScore?: number
   recommendationReason?: string
+  isRecommendation?: boolean
 }
 
 export const QUEUE_DURATION_OPTIONS: { value: QueueDuration; label: string }[] = [
@@ -168,11 +170,11 @@ export const SCORE_BAND_META: Record<
   ScoreBand,
   { label: string; color: string; shortLabel: string }
 > = {
-  5: { label: '9.0–10.0 分', shortLabel: '9–10', color: '#3f8f67' },
-  4: { label: '7.0–8.9 分', shortLabel: '7–8.9', color: '#4f83c8' },
-  3: { label: '5.0–6.9 分', shortLabel: '5–6.9', color: '#f0b94b' },
-  2: { label: '3.0–4.9 分', shortLabel: '3–4.9', color: '#e58c48' },
-  1: { label: '1.0–2.9 分', shortLabel: '1–2.9', color: '#c96568' },
+  5: { label: '9.0–10.0 分', shortLabel: '挚爱', color: '#27845a' },
+  4: { label: '7.0–8.9 分', shortLabel: '喜欢', color: '#3c75bd' },
+  3: { label: '5.0–6.9 分', shortLabel: '不错', color: '#7b62b5' },
+  2: { label: '3.0–4.9 分', shortLabel: '一般', color: '#c87818' },
+  1: { label: '1.0–2.9 分', shortLabel: '不爱', color: '#c34f56' },
 }
 
 export function scoreBandFromScore(score: number | null | undefined): ScoreBand | null {

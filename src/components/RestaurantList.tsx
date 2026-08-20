@@ -8,6 +8,7 @@ interface RestaurantListProps {
   isLoading: boolean
   query: string
   activeList: 'visited' | 'wantToGo' | 'recommended'
+  emptyMessage?: string
   onSelect: (restaurant: RestaurantSummary) => void
   onAdd: () => void
 }
@@ -18,6 +19,7 @@ export function RestaurantList({
   isLoading,
   query,
   activeList,
+  emptyMessage,
   onSelect,
   onAdd,
 }: RestaurantListProps) {
@@ -30,7 +32,7 @@ export function RestaurantList({
       <div className="empty-list">
         <div className="empty-icon"><MapPin size={22} /></div>
         <h2>{query ? '没有匹配的餐厅' : activeList === 'visited' ? '还没有去过的餐厅' : activeList === 'wantToGo' ? '还没有想去的餐厅' : '还没有足够信息推荐'}</h2>
-        <p>{query ? '试试搜索其他名称、标签或饭搭子。' : activeList === 'visited' ? '记录第一家吃过的餐厅，慢慢建立自己的味觉地图。' : activeList === 'wantToGo' ? '把惦记的餐厅先放进来，下次出门不用再翻收藏夹。' : '多记录几家餐厅的评分和标签，推荐会越来越贴合你的口味。'}</p>
+        <p>{emptyMessage || (query ? '试试搜索其他名称、标签或饭搭子。' : activeList === 'visited' ? '记录第一家吃过的餐厅，慢慢建立自己的味觉地图。' : activeList === 'wantToGo' ? '把惦记的餐厅先放进来，下次出门不用再翻收藏夹。' : '多记录餐厅评分、口味标签或菜品星级，推荐会越来越贴合你的口味。')}</p>
         {!query ? <button className="text-button" onClick={onAdd} type="button"><Plus size={16} /> 添加一家餐厅</button> : null}
       </div>
     )

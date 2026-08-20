@@ -32,7 +32,7 @@ export function SettingsModal({
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `食途-数据备份-${new Date().toISOString().slice(0, 10)}.json`
+      link.download = `Taste-Map-数据备份-${new Date().toISOString().slice(0, 10)}.json`
       link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 0)
       setMessage(`已打包 ${restaurantCount} 家餐厅和 ${visitCount} 条到访记录`)
@@ -78,7 +78,7 @@ export function SettingsModal({
           </button>
         </section>
         <section>
-          <div><strong>导入食途备份</strong><p>与当前数据合并，不会清空已有餐厅和到访记录。</p></div>
+          <div><strong>导入 Taste Map 备份</strong><p>与当前数据合并，不会清空已有餐厅和到访记录。</p></div>
           <button className="secondary-button" disabled={importing} onClick={() => fileInputRef.current?.click()} type="button">
             {importing ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} 导入
           </button>

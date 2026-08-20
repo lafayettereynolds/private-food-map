@@ -402,7 +402,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
   .private-image-marker:hover .private-image-marker__tooltip,
   .private-image-marker:focus-visible .private-image-marker__tooltip { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
 }
-.private-cluster-marker { width: var(--map-cluster-size); height: var(--map-cluster-size); padding: 0; border: 3px solid rgba(255,255,255,.98); border-radius: 50%; display: grid; place-items: center; color: #fff; background: #202421; box-shadow: 0 0 0 2px rgba(240,185,75,.72), 0 6px 15px rgba(28,34,29,.22); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.private-cluster-marker { width: var(--map-cluster-size); height: var(--map-cluster-size); padding: 0; border: 3px solid transparent; border-radius: 50%; display: grid; place-items: center; color: #454842; background: linear-gradient(#fff,#fff) padding-box, conic-gradient(from -20deg, #27845a 0 20%, #3c75bd 20% 40%, #7b62b5 40% 60%, #c87818 60% 80%, #c34f56 80% 100%) border-box; box-shadow: 0 0 0 2px rgba(255,255,255,.94), 0 6px 15px rgba(45,52,46,.18); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .private-cluster-marker:hover { transform: scale(1.05); }
 .legend { border-color: #ededed; color: #777; background: rgba(255,255,255,.95); box-shadow: 0 6px 18px rgba(0,0,0,.07); }
 
@@ -509,14 +509,20 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .dish-editor__toggle > svg.is-open { transform: rotate(180deg); }
 .dish-editor__content { padding: 0 10px 10px; }
 .dish-editor__content > p { margin: 0 0 8px; color: #aaa; font-size: 8px; }
-.dish-row { margin-top: 7px; display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(90px, .62fr) 72px 29px; align-items: end; gap: 7px; }
+.dish-row { margin-top: 7px; display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(82px, .58fr) 86px 66px 29px; align-items: end; gap: 7px; }
 .dish-row .field { gap: 4px; }
 .dish-row .field > span { font-size: 8px; }
 .dish-row .field input { height: 34px; padding: 0 8px; font-size: 9px; }
+.dish-rating-field { min-width: 0; margin: 0; padding: 0; border: 0; }
+.dish-rating-field legend { margin-bottom: 4px; color: #666; font-size: 8px; font-weight: 700; }
+.dish-rating-field > div { height: 34px; padding: 0 5px; border: 1px solid #e6e6e6; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #fff; }
+.dish-rating-field button { width: 15px; height: 26px; padding: 0; border: 0; display: grid; place-items: center; color: #d8d8d8; background: transparent; }
+.dish-rating-field button.is-active { color: #f4b740; }
 .dish-image-input { width: 42px; height: 42px; border: 1px dashed #d8d8d8; border-radius: 9px; display: grid; place-items: center; overflow: hidden; color: #aaa; background: #fff; cursor: pointer; }
 .dish-image-input img { width: 100%; height: 100%; object-fit: cover; }
 .dish-row .plain-icon-button { margin-bottom: 2px; color: #b86b62; background: #f8eeee; }
 .add-dish-button { margin-top: 9px; min-height: 31px; padding: 0 10px; border: 1px dashed #d9d9d9; border-radius: 8px; display: inline-flex; align-items: center; gap: 5px; color: #666; background: #fff; font-size: 9px; }
+.visit-dishes .dish-rating-summary { display: inline-flex; align-items: center; gap: 1px; color: #e5a629; font-weight: 750; }
 .emoji-picker { margin-top: 9px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .emoji-picker button { aspect-ratio: 1; border: 1px solid #ececec; border-radius: 9px; color: inherit; background: #fafafa; font-size: 19px; }
 .emoji-picker button.is-active { border-color: #222; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.08); }
@@ -535,7 +541,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
   .visit-history-scroll { max-height: 125px; }
   .star-rating { align-items: flex-start; flex-direction: column; }
   .star-rating button { width: 36px; height: 36px; }
-  .dish-row { grid-template-columns: 42px minmax(0, 1fr) minmax(72px, .7fr) 62px 29px; gap: 5px; }
+  .dish-row { grid-template-columns: 42px minmax(0, 1fr) minmax(72px, .7fr) 82px 58px 29px; gap: 5px; }
   .emoji-picker { grid-template-columns: repeat(6, 1fr); }
   .sticky-modal-actions { bottom: calc(-21px - env(safe-area-inset-bottom)); margin: 0 -18px calc(-21px - env(safe-area-inset-bottom)); padding: 13px 18px calc(21px + env(safe-area-inset-bottom)); }
 }

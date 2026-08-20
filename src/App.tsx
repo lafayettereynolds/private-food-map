@@ -35,6 +35,7 @@ import {
   type RestaurantBasicsUpdate,
 } from './db/restaurants'
 import { seedSixtyVisitedRestaurants } from './db/seedRestaurants'
+import { fetchTasteRecommendations } from './services/recommendations'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
@@ -69,6 +70,9 @@ export default function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [toast, setToast] = useState('')
+  const [recommendations, setRecommendations] = useState<RestaurantSummary[]>([])
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false)
+  const [recommendationError, setRecommendationError] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const allRestaurants = useMemo(() => restaurants ?? [], [restaurants])
@@ -138,7 +142,7 @@ export default function App() {
   )
 
   const selectedRestaurant = summaries.find((item) => item.id === selectedId)
-  const recommendations = useMemo(() => buildRecommendations(summaries), [summaries])
+    ?? recommendations.find((item) => item.id === selectedId)
   const listCounts = useMemo(
     () => ({
       visited: summaries.filter((restaurant) => restaurant.status === 'visited').length,
@@ -181,7 +185,7 @@ export default function App() {
         ...relatedVisits.flatMap((visit) => [
           visit.note,
           ...visit.companions,
-          ...visit.dishes.map((dish) => dish.name),
+          ...visit.dishes.flatMap((dish) => [dish.name, dish.taste]),
         ]),
       ].some((value) => value.toLocaleLowerCase('zh-CN').includes(normalizedQuery))
     })
@@ -253,6 +257,28 @@ export default function App() {
     return () => window.clearTimeout(timeout)
   }, [toast])
 
+  useEffect(() => {
+    if (activeList !== 'recommended') return
+    let active = true
+    setRecommendationsLoading(true)
+    setRecommendationError('')
+    fetchTasteRecommendations(summaries)
+      .then((items) => {
+        if (active) setRecommendations(items)
+      })
+      .catch((error) => {
+        if (!active) return
+        setRecommendations([])
+        setRecommendationError(error instanceof Error ? error.message : '推荐加载失败，请稍后再试。')
+      })
+      .finally(() => {
+        if (active) setRecommendationsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [activeList, summaries])
+
   const handleSelect = useCallback((restaurant: RestaurantSummary) => {
     setSelectedId(restaurant.id)
   }, [])
@@ -306,6 +332,33 @@ export default function App() {
     setToast('到访记录已保存')
   }
 
+  async function handleSaveRecommendation() {
+    if (!selectedRestaurant?.isRecommendation) return
+    const saved = await addRestaurantFromPoi({
+      poi: {
+        amapPoiId: selectedRestaurant.amapPoiId,
+        name: selectedRestaurant.name,
+        address: selectedRestaurant.address,
+        city: selectedRestaurant.city,
+        district: '',
+        latitude: selectedRestaurant.latitude,
+        longitude: selectedRestaurant.longitude,
+        merchantImageUrl: selectedRestaurant.merchantImageUrl,
+      },
+      address: selectedRestaurant.address,
+      status: 'wantToGo',
+      tags: selectedRestaurant.tags,
+      pricePerPerson: null,
+      markerType: selectedRestaurant.merchantImageUrl ? 'image' : 'emoji',
+      markerImageData: null,
+      markerEmoji: '🍽️',
+      initialVisit: null,
+    })
+    setActiveList('wantToGo')
+    setSelectedId(saved.id)
+    setToast(`${saved.name} 已加入想去清单`)
+  }
+
   function handleRecordExisting(restaurant: RestaurantSummary) {
     setSelectedId(restaurant.id)
     setShowAddModal(false)
@@ -326,7 +379,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark"><Utensils size={18} /></span>
-          <div><strong>食途</strong><span>我的私人美食地图</span></div>
+          <div><strong>Taste Map</strong><span>我的私人美食地图</span></div>
         </div>
         <div className="topbar-actions">
           <button className="settings-button" aria-label="数据与设置" onClick={() => setShowSettings(true)} type="button"><Settings size={18} /></button>
@@ -377,7 +430,8 @@ export default function App() {
           <div className="list-result-line"><span>{activeList === 'visited' ? '去过' : activeList === 'wantToGo' ? '想去' : '根据你的口味推荐'}</span><strong>{visibleRestaurants.length} 家</strong></div>
           <RestaurantList
             activeList={activeList}
-            isLoading={restaurants === undefined || visits === undefined}
+            emptyMessage={activeList === 'recommended' ? recommendationError : undefined}
+            isLoading={restaurants === undefined || visits === undefined || (activeList === 'recommended' && recommendationsLoading)}
             onAdd={() => setShowAddModal(true)}
             onSelect={handleSelect}
             query={query}
@@ -392,7 +446,7 @@ export default function App() {
           <div className="legend" aria-label="评分颜色图例">
             {SCORE_BAND_ORDER.map((band) => <span key={band}><i style={{ background: SCORE_BAND_META[band].color }} />{SCORE_BAND_META[band].shortLabel}</span>)}
           </div>
-          {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={() => setShowAddVisit(true)} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} restaurant={selectedRestaurant} /> : null}
+          {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={() => setShowAddVisit(true)} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
       </section>
 
@@ -424,74 +478,4 @@ function matchesQueueDuration(queueDuration: Visit['queueDuration'], filter: Que
   if (filter === 'all') return true
   if (filter === 'unrecorded') return queueDuration === null
   return queueDuration === filter
-}
-
-function buildRecommendations(restaurants: RestaurantSummary[]) {
-  const visited = restaurants.filter(
-    (restaurant) => restaurant.status === 'visited' && restaurant.averageRating !== null,
-  )
-  const wanted = restaurants.filter((restaurant) => restaurant.status === 'wantToGo')
-  const positiveVisits = visited.filter((restaurant) => (restaurant.averageRating ?? 0) >= 4)
-
-  if (wanted.length) {
-    const averageLikedPrice = average(
-      positiveVisits
-        .map((restaurant) => restaurant.averagePricePerPerson)
-        .filter((price): price is number => price !== null),
-    )
-
-    return wanted
-      .map((candidate) => {
-        let score = 0
-        const tagScores = new Map<string, number>()
-        let sameCityScore = 0
-
-        positiveVisits.forEach((liked) => {
-          const weight = Math.max(0.5, (liked.averageRating ?? 4) - 3)
-          if (liked.city === candidate.city) sameCityScore += weight
-          liked.tags.forEach((tag) => {
-            if (candidate.tags.includes(tag)) {
-              tagScores.set(tag, (tagScores.get(tag) ?? 0) + weight * 2)
-            }
-          })
-        })
-
-        const topTag = [...tagScores.entries()].sort((a, b) => b[1] - a[1])[0]
-        if (topTag) score += topTag[1]
-        if (sameCityScore) score += Math.min(2, sameCityScore * 0.5)
-        const candidatePrice = candidate.pricePerPerson
-        const closeInPrice =
-          averageLikedPrice !== null &&
-          candidatePrice !== null &&
-          Math.abs(candidatePrice - averageLikedPrice) / Math.max(averageLikedPrice, 1) <= 0.35
-        if (closeInPrice) score += 1
-
-        const reason = topTag
-          ? `你常给“${topTag[0]}”高分`
-          : sameCityScore
-            ? `和你喜欢的餐厅同在${candidate.city}`
-            : closeInPrice
-              ? '接近你喜欢的价格区间'
-              : '来自你的想去清单'
-
-        return { ...candidate, recommendationScore: score, recommendationReason: reason }
-      })
-      .sort((a, b) => (b.recommendationScore ?? 0) - (a.recommendationScore ?? 0) || b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 10)
-  }
-
-  return visited
-    .slice()
-    .sort((a, b) => (b.averageRating ?? 0) - (a.averageRating ?? 0) || b.visitCount - a.visitCount)
-    .slice(0, 8)
-    .map((restaurant) => ({
-      ...restaurant,
-      recommendationScore: restaurant.averageRating ?? 0,
-      recommendationReason: `你给了 ${restaurant.scoreOutOfTen?.toFixed(1) ?? '—'} 分，值得再去`,
-    }))
-}
-
-function average(values: number[]) {
-  if (!values.length) return null
-  return values.reduce((sum, value) => sum + value, 0) / values.length
 }

@@ -62,6 +62,7 @@ class FoodMapDatabase extends Dexie {
                 id: `${visit.id}-dish-${index}`,
                 name: dish,
                 taste: '',
+                rating: null,
                 price: null,
                 imageData: null,
               }
@@ -71,6 +72,7 @@ class FoodMapDatabase extends Dexie {
               id: typeof storedDish.id === 'string' ? storedDish.id : `${visit.id}-dish-${index}`,
               name: typeof storedDish.name === 'string' ? storedDish.name : '',
               taste: typeof storedDish.taste === 'string' ? storedDish.taste : '',
+              rating: null,
               price: typeof storedDish.price === 'number' ? storedDish.price : null,
               imageData: typeof storedDish.imageData === 'string' ? storedDish.imageData : null,
             }
@@ -131,6 +133,22 @@ class FoodMapDatabase extends Dexie {
             ? visit.dishes.map((dish: Record<string, unknown>) => ({
                 ...dish,
                 taste: typeof dish.taste === 'string' ? dish.taste : '',
+              }))
+            : []
+        })
+      })
+
+    this.version(8)
+      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .upgrade(async (transaction) => {
+        await transaction.table('visits').toCollection().modify((visit) => {
+          visit.dishes = Array.isArray(visit.dishes)
+            ? visit.dishes.map((dish: Record<string, unknown>) => ({
+                ...dish,
+                rating:
+                  Number.isInteger(dish.rating) && Number(dish.rating) >= 1 && Number(dish.rating) <= 5
+                    ? dish.rating
+                    : null,
               }))
             : []
         })
