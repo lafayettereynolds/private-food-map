@@ -61,7 +61,7 @@ export function MapView({
           zoom: 5,
           center: [120.1551, 30.2741],
           viewMode: '2D',
-          mapStyle: 'amap://styles/whitesmoke',
+          mapStyle: 'amap://styles/normal',
           showLabel: true,
           features: ['bg', 'road', 'building'],
         })
