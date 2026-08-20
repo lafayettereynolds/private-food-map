@@ -17,9 +17,8 @@ import { MapView } from './components/MapView'
 import { RestaurantEditorModal } from './components/RestaurantEditorModal'
 import {
   RestaurantFilters,
-  type PreferenceFilter,
   type QueueFilter,
-  type RatingFilter,
+  type ScoreBandFilter,
   type VisitCountFilter,
 } from './components/RestaurantFilters'
 import { RestaurantList } from './components/RestaurantList'
@@ -37,8 +36,10 @@ import {
 } from './db/restaurants'
 import { seedSixtyVisitedRestaurants } from './db/seedRestaurants'
 import {
-  PREFERENCE_META,
   queueDurationApproximateMinutes,
+  scoreBandFromScore,
+  SCORE_BAND_META,
+  SCORE_BAND_ORDER,
   type RestaurantStatus,
   type RestaurantSummary,
   type Visit,
@@ -55,8 +56,7 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [activeList, setActiveList] = useState<ActiveList>('visited')
   const [visitCountFilter, setVisitCountFilter] = useState<VisitCountFilter>('all')
-  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all')
-  const [preferenceFilter, setPreferenceFilter] = useState<PreferenceFilter>('all')
+  const [scoreBandFilter, setScoreBandFilter] = useState<ScoreBandFilter>('all')
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [companionFilter, setCompanionFilter] = useState('all')
   const [tagFilter, setTagFilter] = useState('all')
@@ -154,8 +154,11 @@ export default function App() {
     const filtered = source.filter((restaurant) => {
       if (activeList !== 'recommended' && restaurant.status !== activeList) return false
       if (activeList === 'visited' && !matchesVisitCount(restaurant.visitCount, visitCountFilter)) return false
-      if (activeList !== 'recommended' && !matchesRating(restaurant.scoreOutOfTen, ratingFilter)) return false
-      if (activeList !== 'recommended' && preferenceFilter !== 'all' && restaurant.preferenceLevel !== preferenceFilter) return false
+      if (
+        activeList !== 'recommended' &&
+        scoreBandFilter !== 'all' &&
+        scoreBandFromScore(restaurant.scoreOutOfTen) !== scoreBandFilter
+      ) return false
       if (activeList !== 'recommended' && cityFilter !== 'all' && restaurant.city !== cityFilter) return false
       if (activeList !== 'recommended' && tagFilter !== 'all' && !restaurant.tags.includes(tagFilter)) return false
       const relatedVisits = visitsByRestaurant.get(restaurant.id) ?? []
@@ -187,10 +190,9 @@ export default function App() {
     activeList,
     cityFilter,
     companionFilter,
-    preferenceFilter,
     query,
     queueFilter,
-    ratingFilter,
+    scoreBandFilter,
     recommendations,
     summaries,
     tagFilter,
@@ -204,8 +206,7 @@ export default function App() {
   )
   const activeFilterCount = activeList === 'recommended'
     ? 0
-    : (ratingFilter !== 'all' ? 1 : 0) +
-      (preferenceFilter !== 'all' ? 1 : 0) +
+    : (scoreBandFilter !== 'all' ? 1 : 0) +
       (cityFilter !== 'all' ? 1 : 0) +
       (tagFilter !== 'all' ? 1 : 0) +
       (activeList === 'visited' && visitCountFilter !== 'all' ? 1 : 0) +
@@ -265,8 +266,7 @@ export default function App() {
       setCompanionFilter('all')
     }
     if (list === 'recommended') {
-      setRatingFilter('all')
-      setPreferenceFilter('all')
+      setScoreBandFilter('all')
       setTagFilter('all')
       setCityFilter('all')
       setShowFilters(false)
@@ -314,8 +314,7 @@ export default function App() {
 
   function resetFilters() {
     setVisitCountFilter('all')
-    setRatingFilter('all')
-    setPreferenceFilter('all')
+    setScoreBandFilter('all')
     setQueueFilter('all')
     setCompanionFilter('all')
     setTagFilter('all')
@@ -361,15 +360,13 @@ export default function App() {
               companionOptions={companionOptions}
               onCityChange={setCityFilter}
               onCompanionChange={setCompanionFilter}
-              onPreferenceChange={setPreferenceFilter}
               onQueueDurationChange={setQueueFilter}
-              onRatingChange={setRatingFilter}
+              onScoreBandChange={setScoreBandFilter}
               onReset={resetFilters}
               onTagChange={setTagFilter}
               onVisitCountChange={setVisitCountFilter}
-              preference={preferenceFilter}
               queueDuration={queueFilter}
-              rating={ratingFilter}
+              scoreBand={scoreBandFilter}
               showVisitCount={activeList === 'visited'}
               tag={tagFilter}
               tagOptions={tagOptions}
@@ -392,8 +389,8 @@ export default function App() {
 
         <section className="map-panel" aria-label="私人美食地图">
           <MapView onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
-          <div className="legend" aria-label="个人喜好颜色图例">
-            {(Object.entries(PREFERENCE_META) as [string, (typeof PREFERENCE_META)[keyof typeof PREFERENCE_META]][]).map(([level, item]) => <span key={level}><i style={{ background: item.color }} />{item.shortLabel}</span>)}
+          <div className="legend" aria-label="评分颜色图例">
+            {SCORE_BAND_ORDER.map((band) => <span key={band}><i style={{ background: SCORE_BAND_META[band].color }} />{SCORE_BAND_META[band].shortLabel}</span>)}
           </div>
           {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={() => setShowAddVisit(true)} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} restaurant={selectedRestaurant} /> : null}
         </section>
@@ -415,25 +412,12 @@ function matchesVisitCount(count: number, filter: VisitCountFilter) {
 }
 
 function compareRestaurantQuality(a: RestaurantSummary, b: RestaurantSummary) {
-  const preferencePriority = {
-    favorite: 4,
-    like: 3,
-    normal: 2,
-    avoid: 1,
-  }
   return (
-    preferencePriority[b.preferenceLevel] - preferencePriority[a.preferenceLevel] ||
     (b.scoreOutOfTen ?? -1) - (a.scoreOutOfTen ?? -1) ||
     b.visitCount - a.visitCount ||
     b.latestVisitDate?.localeCompare(a.latestVisitDate ?? '') ||
     b.createdAt.localeCompare(a.createdAt)
   )
-}
-
-function matchesRating(score: number | null, filter: RatingFilter) {
-  if (filter === 'all') return true
-  if (filter === 'unrated') return score === null
-  return score !== null && score >= Number(filter)
 }
 
 function matchesQueueDuration(queueDuration: Visit['queueDuration'], filter: QueueFilter) {

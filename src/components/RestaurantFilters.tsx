@@ -1,19 +1,18 @@
 import {
-  PREFERENCE_META,
   QUEUE_DURATION_OPTIONS,
-  type PreferenceLevel,
+  SCORE_BAND_META,
+  SCORE_BAND_ORDER,
   type QueueDuration,
+  type ScoreBand,
 } from '../types/domain'
 
 export type VisitCountFilter = 'all' | '1' | '2' | '3' | '5' | '10'
-export type RatingFilter = 'all' | '9' | '8' | '7' | 'unrated'
-export type PreferenceFilter = 'all' | PreferenceLevel
+export type ScoreBandFilter = 'all' | ScoreBand
 export type QueueFilter = 'all' | QueueDuration | 'unrecorded'
 
 interface RestaurantFiltersProps {
   visitCount: VisitCountFilter
-  rating: RatingFilter
-  preference: PreferenceFilter
+  scoreBand: ScoreBandFilter
   queueDuration: QueueFilter
   companion: string
   tag: string
@@ -23,8 +22,7 @@ interface RestaurantFiltersProps {
   cityOptions: string[]
   showVisitCount: boolean
   onVisitCountChange: (value: VisitCountFilter) => void
-  onRatingChange: (value: RatingFilter) => void
-  onPreferenceChange: (value: PreferenceFilter) => void
+  onScoreBandChange: (value: ScoreBandFilter) => void
   onQueueDurationChange: (value: QueueFilter) => void
   onCompanionChange: (value: string) => void
   onTagChange: (value: string) => void
@@ -34,8 +32,7 @@ interface RestaurantFiltersProps {
 
 export function RestaurantFilters({
   visitCount,
-  rating,
-  preference,
+  scoreBand,
   queueDuration,
   companion,
   tag,
@@ -45,8 +42,7 @@ export function RestaurantFilters({
   cityOptions,
   showVisitCount,
   onVisitCountChange,
-  onRatingChange,
-  onPreferenceChange,
+  onScoreBandChange,
   onQueueDurationChange,
   onCompanionChange,
   onTagChange,
@@ -74,28 +70,17 @@ export function RestaurantFilters({
         </div>
       ) : null}
       <div className="filter-group">
-        <span>我的喜好</span>
+        <span>评分区间</span>
         <div>
-          <button className={preference === 'all' ? 'is-active' : ''} onClick={() => onPreferenceChange('all')} type="button">全部</button>
-          {(Object.entries(PREFERENCE_META) as [PreferenceLevel, (typeof PREFERENCE_META)[PreferenceLevel]][]).map(([value, item]) => (
-            <button className={preference === value ? 'is-active' : ''} key={value} onClick={() => onPreferenceChange(value)} type="button">
+          <button className={scoreBand === 'all' ? 'is-active' : ''} onClick={() => onScoreBandChange('all')} type="button">全部</button>
+          {SCORE_BAND_ORDER.map((value) => {
+            const item = SCORE_BAND_META[value]
+            return (
+            <button className={scoreBand === value ? 'is-active' : ''} key={value} onClick={() => onScoreBandChange(value)} type="button">
               <i className="filter-color-dot" style={{ background: item.color }} />{item.label}
             </button>
-          ))}
-        </div>
-      </div>
-      <div className="filter-group">
-        <span>我的评分</span>
-        <div>
-          {([
-            ['all', '全部'],
-            ['9', '≥ 9'],
-            ['8', '≥ 8'],
-            ['7', '≥ 7'],
-            ['unrated', '未评分'],
-          ] as [RatingFilter, string][]).map(([value, label]) => (
-            <button className={rating === value ? 'is-active' : ''} key={value} onClick={() => onRatingChange(value)} type="button">{label}</button>
-          ))}
+            )
+          })}
         </div>
       </div>
       {showVisitCount ? (

@@ -2,9 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { LoaderCircle, MapPin, Tag, WalletCards } from 'lucide-react'
 import { MarkerStyleField } from './MarkerStyleField'
 import { ModalShell } from './ModalShell'
-import { PreferencePicker } from './PreferencePicker'
 import type { RestaurantBasicsUpdate } from '../db/restaurants'
-import type { MarkerType, PreferenceLevel, Restaurant, RestaurantStatus } from '../types/domain'
+import type { MarkerType, Restaurant, RestaurantStatus } from '../types/domain'
 
 interface RestaurantEditorModalProps {
   restaurant: Restaurant
@@ -25,7 +24,6 @@ export function RestaurantEditorModal({
   const [address, setAddress] = useState(restaurant.address)
   const [city, setCity] = useState(restaurant.city)
   const [status, setStatus] = useState<RestaurantStatus>(restaurant.status)
-  const [preferenceLevel, setPreferenceLevel] = useState<PreferenceLevel>(restaurant.preferenceLevel)
   const [price, setPrice] = useState(restaurant.pricePerPerson?.toString() ?? '')
   const [tags, setTags] = useState(restaurant.tags.join('、'))
   const [markerType, setMarkerType] = useState<MarkerType>(restaurant.markerType)
@@ -50,7 +48,6 @@ export function RestaurantEditorModal({
         address,
         city,
         status,
-        preferenceLevel,
         pricePerPerson: numericPrice,
         tags: splitTags(tags),
         markerType,
@@ -75,7 +72,6 @@ export function RestaurantEditorModal({
         <label className="field field-with-leading-icon"><span>地址</span><div><MapPin size={16} /><input onChange={(event) => setAddress(event.target.value)} value={address} /></div></label>
         <label className="field field-with-leading-icon"><span>参考人均价格（元）</span><div><WalletCards size={16} /><input min="0" onChange={(event) => setPrice(event.target.value)} step="1" type="number" value={price} /></div>{status === 'visited' ? <small className="price-calculation">去过的餐厅会优先显示到访记录自动计算的人均。</small> : null}</label>
         <label className="field field-with-leading-icon"><span>标签</span><div><Tag size={16} /><input onChange={(event) => setTags(event.target.value)} placeholder="日料、约会、会再去" value={tags} /></div></label>
-        <PreferencePicker onChange={setPreferenceLevel} value={preferenceLevel} />
         <MarkerStyleField
           markerEmoji={markerEmoji}
           markerImageData={markerImageData}

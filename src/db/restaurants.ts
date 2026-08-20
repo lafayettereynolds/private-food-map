@@ -25,6 +25,14 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function legacyPreferenceLevelFromRating(rating: number | null): PreferenceLevel {
+  if (rating === null) return 'normal'
+  if (rating >= 4.5) return 'favorite'
+  if (rating >= 3.5) return 'like'
+  if (rating >= 2.5) return 'normal'
+  return 'avoid'
+}
+
 function normalizeDishes(dishes: VisitDish[]) {
   return dishes
     .filter((dish) => dish.name.trim() || (dish.taste ?? '').trim() || dish.price !== null || dish.imageData)
@@ -51,7 +59,6 @@ export interface AddRestaurantInput {
   poi: PoiSearchResult
   address: string
   status: RestaurantStatus
-  preferenceLevel: PreferenceLevel
   tags: string[]
   pricePerPerson: number | null
   markerType: MarkerType
@@ -74,7 +81,7 @@ export async function addRestaurantFromPoi(
     latitude: input.poi.latitude,
     longitude: input.poi.longitude,
     status: input.status,
-    preferenceLevel: input.preferenceLevel,
+    preferenceLevel: legacyPreferenceLevelFromRating(input.initialVisit?.rating ?? null),
     overallRating: null,
     foodRating: null,
     environmentRating: null,
@@ -132,7 +139,6 @@ export interface RestaurantBasicsUpdate {
   address: string
   city: string
   status: RestaurantStatus
-  preferenceLevel: PreferenceLevel
   tags: string[]
   pricePerPerson: number | null
   markerType: MarkerType
@@ -194,8 +200,15 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
     const restaurant = await db.restaurants.get(restaurantId)
     if (!restaurant) throw new Error('没有找到这家餐厅。')
     await db.visits.add(visit)
+    const ratings = (await db.visits.where('restaurantId').equals(restaurantId).toArray())
+      .map((item) => item.rating)
+      .filter((rating): rating is StarRating => rating !== null)
+    const averageRating = ratings.length
+      ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+      : null
     await db.restaurants.update(restaurantId, {
       status: 'visited',
+      preferenceLevel: legacyPreferenceLevelFromRating(averageRating),
       pricePerPerson: pricePerPerson ?? restaurant.pricePerPerson,
       updatedAt: now,
     })

@@ -1,5 +1,6 @@
 export type RestaurantStatus = 'visited' | 'wantToGo'
 export type PreferenceLevel = 'favorite' | 'like' | 'normal' | 'avoid'
+export type ScoreBand = 1 | 2 | 3 | 4 | 5
 export type MarkerType = 'image' | 'emoji'
 export type StarRating = 1 | 2 | 3 | 4 | 5
 export type QueueDuration =
@@ -161,14 +162,31 @@ export function starToTenScore(rating: number | null | undefined) {
   return rating ? Math.round(rating * 20) / 10 : null
 }
 
-export const PREFERENCE_META: Record<
-  PreferenceLevel,
+export const SCORE_BAND_ORDER: ScoreBand[] = [5, 4, 3, 2, 1]
+
+export const SCORE_BAND_META: Record<
+  ScoreBand,
   { label: string; color: string; shortLabel: string }
 > = {
-  favorite: { label: '最喜欢', shortLabel: '最爱', color: '#3f8f67' },
-  like: { label: '喜欢', shortLabel: '喜欢', color: '#4f83c8' },
-  normal: { label: '一般', shortLabel: '一般', color: '#f0b94b' },
-  avoid: { label: '不会再去', shortLabel: '不再去', color: '#c96568' },
+  5: { label: '9.0–10.0 分', shortLabel: '9–10', color: '#3f8f67' },
+  4: { label: '7.0–8.9 分', shortLabel: '7–8.9', color: '#4f83c8' },
+  3: { label: '5.0–6.9 分', shortLabel: '5–6.9', color: '#f0b94b' },
+  2: { label: '3.0–4.9 分', shortLabel: '3–4.9', color: '#e58c48' },
+  1: { label: '1.0–2.9 分', shortLabel: '1–2.9', color: '#c96568' },
+}
+
+export function scoreBandFromScore(score: number | null | undefined): ScoreBand | null {
+  if (score === null || score === undefined || !Number.isFinite(score)) return null
+  if (score >= 9) return 5
+  if (score >= 7) return 4
+  if (score >= 5) return 3
+  if (score >= 3) return 2
+  return 1
+}
+
+export function scoreColor(score: number | null | undefined) {
+  const band = scoreBandFromScore(score)
+  return band ? SCORE_BAND_META[band].color : UNRATED_COLOR
 }
 
 export const STATUS_META: Record<RestaurantStatus, { label: string }> = {

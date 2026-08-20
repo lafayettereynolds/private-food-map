@@ -1,6 +1,6 @@
 import { CalendarClock, Clock3, Edit3, MapPin, Navigation, Plus, Star, Trash2, Users, WalletCards, X } from 'lucide-react'
 import { RestaurantAvatar } from './RestaurantAvatar'
-import { formatAverageQueueDuration, PREFERENCE_META, queueDurationLabel, starToTenScore, STATUS_META, type RestaurantSummary } from '../types/domain'
+import { formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 
 interface RestaurantPreviewCardProps {
@@ -19,7 +19,6 @@ export function RestaurantPreviewCard({
   onAddVisit,
 }: RestaurantPreviewCardProps) {
   const navigationUrl = createNavigationUrl(restaurant)
-  const preference = PREFERENCE_META[restaurant.preferenceLevel]
   return (
     <article className="map-card">
       <button className="map-card__close" aria-label="关闭餐厅卡片" onClick={onClose} type="button"><X size={16} /></button>
@@ -28,9 +27,9 @@ export function RestaurantPreviewCard({
         <div>
           <span>{restaurant.city} · {STATUS_META[restaurant.status].label}</span>
           <h2>{restaurant.name}</h2>
-          {restaurant.scoreOutOfTen ? (
-            <p className="map-card__rating" style={{ color: preference.color }}><Star fill="currentColor" size={13} /> {preference.label} · {restaurant.scoreOutOfTen.toFixed(1)} / 10</p>
-          ) : <p className="map-card__rating" style={{ color: preference.color }}>{preference.label} · 尚未评分</p>}
+          {restaurant.scoreOutOfTen !== null ? (
+            <p className="map-card__rating" style={{ color: scoreColor(restaurant.scoreOutOfTen) }}><Star fill="currentColor" size={13} /> {restaurant.scoreOutOfTen.toFixed(1)} / 10</p>
+          ) : <p className="map-card__rating">想去清单</p>}
         </div>
       </div>
       <p className="map-card__address"><MapPin size={14} /> {restaurant.address}</p>

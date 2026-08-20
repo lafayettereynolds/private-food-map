@@ -11,7 +11,7 @@ import {
   type AMapMarkerClusterRenderContext,
   type AMapNamespace,
 } from '../services/amap'
-import { PREFERENCE_META, type RestaurantSummary } from '../types/domain'
+import { scoreColor, type RestaurantSummary } from '../types/domain'
 
 interface MapViewProps {
   restaurants: RestaurantSummary[]
@@ -220,19 +220,21 @@ export function MapView({
 }
 
 function createRestaurantImageMarkerContent(restaurant: RestaurantSummary) {
-  const preference = PREFERENCE_META[restaurant.preferenceLevel]
   const imageSource = restaurant.markerImageData || restaurant.merchantImageUrl
   const useImage = restaurant.markerType === 'image' && imageSource
+  const scoreText = restaurant.scoreOutOfTen !== null
+    ? `${restaurant.scoreOutOfTen.toFixed(1)} 分`
+    : '想去'
   const marker = document.createElement('button')
   marker.type = 'button'
   marker.className = [
     'private-image-marker',
     restaurant.status === 'wantToGo' ? 'is-wanted' : '',
   ].filter(Boolean).join(' ')
-  marker.style.setProperty('--marker-color', preference.color)
+  marker.style.setProperty('--marker-color', scoreColor(restaurant.scoreOutOfTen))
   marker.setAttribute(
     'aria-label',
-    `${restaurant.name}，${preference.label}，去过 ${restaurant.visitCount} 次`,
+    `${restaurant.name}，${scoreText}，去过 ${restaurant.visitCount} 次`,
   )
 
   const visual = document.createElement('span')
@@ -251,7 +253,7 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary) {
   const tooltipName = document.createElement('strong')
   tooltipName.textContent = restaurant.name
   const tooltipMeta = document.createElement('span')
-  tooltipMeta.textContent = `${preference.label} · 去过 ${restaurant.visitCount} 次`
+  tooltipMeta.textContent = `${scoreText} · 去过 ${restaurant.visitCount} 次`
   tooltip.append(tooltipName, tooltipMeta)
 
   marker.append(visual, tooltip)
@@ -327,14 +329,8 @@ function coordinateKey(longitude: number, latitude: number) {
 }
 
 function markerLayerPriority(restaurant: RestaurantSummary) {
-  const preferencePriority = {
-    favorite: 4,
-    like: 3,
-    normal: 2,
-    avoid: 1,
-  }[restaurant.preferenceLevel]
   const ratingPriority = Math.round((restaurant.scoreOutOfTen ?? 0) * 10)
-  return preferencePriority * 1000 + ratingPriority * 2 + Math.min(restaurant.visitCount, 99)
+  return ratingPriority * 10 + Math.min(restaurant.visitCount, 99)
 }
 
 function readEventPosition(rawEvent: unknown): [number, number] | null {

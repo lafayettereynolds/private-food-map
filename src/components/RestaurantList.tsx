@@ -1,6 +1,6 @@
 import { ChevronRight, MapPin, Plus, Star } from 'lucide-react'
 import { RestaurantAvatar } from './RestaurantAvatar'
-import { PREFERENCE_META, type RestaurantSummary } from '../types/domain'
+import { scoreColor, type RestaurantSummary } from '../types/domain'
 
 interface RestaurantListProps {
   restaurants: RestaurantSummary[]
@@ -44,7 +44,7 @@ export function RestaurantList({
           <span className="restaurant-row__body">
             <strong>{restaurant.name}</strong>
             <span>
-              {restaurant.scoreOutOfTen ? <b style={{ color: PREFERENCE_META[restaurant.preferenceLevel].color }}><Star fill="currentColor" size={10} /> {restaurant.scoreOutOfTen.toFixed(1)} 分</b> : <b>未评分</b>}
+              {restaurant.scoreOutOfTen !== null ? <b style={{ color: scoreColor(restaurant.scoreOutOfTen) }}><Star fill="currentColor" size={10} /> {restaurant.scoreOutOfTen.toFixed(1)} 分</b> : null}
               {displayPrice(restaurant) !== null ? ` · ¥${displayPrice(restaurant)}/人` : ''}
               {restaurant.status === 'visited' ? ` · ${restaurant.visitCount} 次` : ''}
             </span>

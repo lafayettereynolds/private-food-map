@@ -19,7 +19,6 @@ import { ModalShell } from './ModalShell'
 import { DishEditor } from './DishEditor'
 import { MarkerStyleField } from './MarkerStyleField'
 import { QueueDurationPicker } from './QueueDurationPicker'
-import { PreferencePicker } from './PreferencePicker'
 import { StarRating } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
 import type { AddRestaurantInput } from '../db/restaurants'
@@ -34,7 +33,6 @@ import { calculatePricePerPerson } from '../types/domain'
 import type {
   MarkerType,
   PoiSearchResult,
-  PreferenceLevel,
   QueueDuration,
   RestaurantStatus,
   RestaurantSummary,
@@ -82,7 +80,6 @@ export function AddRestaurantModal({
   const [feeling, setFeeling] = useState('')
   const [photos, setPhotos] = useState<string[]>([])
   const [rating, setRating] = useState<StarRatingValue>(5)
-  const [preferenceLevel, setPreferenceLevel] = useState<PreferenceLevel>('normal')
   const [visitDate, setVisitDate] = useState(initialTime.date)
   const [visitTime, setVisitTime] = useState(initialTime.time)
   const [tags, setTags] = useState('')
@@ -156,7 +153,6 @@ export function AddRestaurantModal({
         poi: selectedPoi,
         address,
         status,
-        preferenceLevel,
         tags: splitValues(tags),
         pricePerPerson:
           status === 'visited'
@@ -274,7 +270,6 @@ export function AddRestaurantModal({
 
           <div className="form-section">
             <h3>整理与显示</h3>
-            <PreferencePicker onChange={setPreferenceLevel} value={preferenceLevel} />
             <label className="field field-with-leading-icon"><span>标签</span><div><Tag size={16} /><input onChange={(event) => setTags(event.target.value)} placeholder="例如：日料、约会、会再去" value={tags} /></div></label>
             <MarkerStyleField
               markerEmoji={markerEmoji}

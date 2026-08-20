@@ -1,5 +1,5 @@
 import { ImageIcon } from 'lucide-react'
-import { PREFERENCE_META, type RestaurantSummary } from '../types/domain'
+import { scoreColor, type RestaurantSummary } from '../types/domain'
 
 interface RestaurantAvatarProps {
   restaurant: RestaurantSummary
@@ -13,7 +13,7 @@ export function RestaurantAvatar({ restaurant, size = 'small' }: RestaurantAvata
   return (
     <span
       className={`restaurant-avatar restaurant-avatar--${size}`}
-      style={{ borderColor: PREFERENCE_META[restaurant.preferenceLevel].color }}
+      style={{ borderColor: scoreColor(restaurant.scoreOutOfTen) }}
     >
       {useImage ? (
         <img alt="" src={imageSource} />
