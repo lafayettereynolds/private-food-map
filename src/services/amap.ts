@@ -138,10 +138,14 @@ const environmentAmapKey = APP_ENVIRONMENT === 'production'
   ? import.meta.env.VITE_AMAP_PROD_KEY
   : import.meta.env.VITE_AMAP_DEV_KEY
 const environmentSecurityCode = APP_ENVIRONMENT === 'production'
-  ? import.meta.env.VITE_AMAP_PROD_SECURITY_CODE
-  : import.meta.env.VITE_AMAP_DEV_SECURITY_CODE
+  ? import.meta.env.VITE_AMAP_PROD_SECURITY_CODE || import.meta.env.VITE_AMAP_PROD_SECURITY_KEY
+  : import.meta.env.VITE_AMAP_DEV_SECURITY_CODE || import.meta.env.VITE_AMAP_DEV_SECURITY_KEY
 const amapKey = (environmentAmapKey || import.meta.env.VITE_AMAP_KEY)?.trim()
-const securityCode = (environmentSecurityCode || import.meta.env.VITE_AMAP_SECURITY_CODE)?.trim()
+const securityCode = (
+  environmentSecurityCode
+  || import.meta.env.VITE_AMAP_SECURITY_CODE
+  || import.meta.env.VITE_AMAP_SECURITY_KEY
+)?.trim()
 
 export const isAmapConfigured = Boolean(amapKey && securityCode)
 

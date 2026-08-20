@@ -37,17 +37,19 @@ npm install
 ```env
 VITE_CLOUD_SYNC_ENABLED=false
 VITE_AMAP_KEY=
-VITE_AMAP_SECURITY_CODE=
+VITE_AMAP_SECURITY_KEY=
 ```
 
 如果以后需要分别使用不同的高德应用，可以改用：
 
 ```env
 VITE_AMAP_DEV_KEY=
-VITE_AMAP_DEV_SECURITY_CODE=
+VITE_AMAP_DEV_SECURITY_KEY=
 VITE_AMAP_PROD_KEY=
-VITE_AMAP_PROD_SECURITY_CODE=
+VITE_AMAP_PROD_SECURITY_KEY=
 ```
+
+旧配置名 `VITE_AMAP_SECURITY_CODE`（以及对应的 DEV / PROD 形式）仍然兼容，无需修改已有本地配置。
 
 `.env`、`.env.local` 及其他本地环境文件已被 Git 忽略，不能提交到仓库。修改环境变量后需要重新启动对应服务。
 
