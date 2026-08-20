@@ -1,0 +1,31 @@
+node_modules/
+dist/
+coverage/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs and generated build metadata
+*.log
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Local databases, user backups, and personal media/data
+*.db
+*.sqlite
+*.sqlite3
+*backup*.json
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ChatGPT project mirror metadata (not application source)
+sources/
+AGENTS.md
