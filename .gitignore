@@ -19,6 +19,7 @@ vite.config.d.ts
 *.sqlite
 *.sqlite3
 *backup*.json
+*备份*.json
 
 # Editor and operating-system files
 .vscode/
