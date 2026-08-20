@@ -1,4 +1,5 @@
 import AMapLoader from '@amap/amap-jsapi-loader'
+import { APP_ENVIRONMENT } from '../config/appEnvironment'
 import type { PoiSearchResult } from '../types/domain'
 
 export interface AMapLngLat {
@@ -133,10 +134,14 @@ declare global {
   }
 }
 
-const amapKey = (import.meta.env.VITE_AMAP_KEY as string | undefined)?.trim()
-const securityCode = (
-  import.meta.env.VITE_AMAP_SECURITY_CODE as string | undefined
-)?.trim()
+const environmentAmapKey = APP_ENVIRONMENT === 'production'
+  ? import.meta.env.VITE_AMAP_PROD_KEY
+  : import.meta.env.VITE_AMAP_DEV_KEY
+const environmentSecurityCode = APP_ENVIRONMENT === 'production'
+  ? import.meta.env.VITE_AMAP_PROD_SECURITY_CODE
+  : import.meta.env.VITE_AMAP_DEV_SECURITY_CODE
+const amapKey = (environmentAmapKey || import.meta.env.VITE_AMAP_KEY)?.trim()
+const securityCode = (environmentSecurityCode || import.meta.env.VITE_AMAP_SECURITY_CODE)?.trim()
 
 export const isAmapConfigured = Boolean(amapKey && securityCode)
 

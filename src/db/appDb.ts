@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import { DATABASE_NAME } from '../config/appEnvironment'
 import { calculatePricePerPerson } from '../types/domain'
 import type { Restaurant, Visit } from '../types/domain'
 
@@ -11,7 +12,7 @@ class FoodMapDatabase extends Dexie {
   visits!: EntityTable<Visit, 'id'>
 
   constructor() {
-    super('private-food-map')
+    super(DATABASE_NAME)
 
     this.version(1).stores({
       restaurants:

@@ -31,26 +31,53 @@ npm install
 
 ## 配置环境变量
 
-将 `.env.example` 复制为 `.env`：
+将 `.env.example` 复制为 `.env.local`。开发版和正式版可以先共用一套高德配置：
 
 ```env
 VITE_AMAP_KEY=
 VITE_AMAP_SECURITY_CODE=
 ```
 
-在本地 `.env` 中填入高德 Web 端 Key 和安全密钥。`.env`、`.env.local` 及其他本地环境文件已被 Git 忽略，不能提交到仓库。修改环境变量后需要重新启动开发服务。
+如果以后需要分别使用不同的高德应用，可以改用：
+
+```env
+VITE_AMAP_DEV_KEY=
+VITE_AMAP_DEV_SECURITY_CODE=
+VITE_AMAP_PROD_KEY=
+VITE_AMAP_PROD_SECURITY_CODE=
+```
+
+`.env`、`.env.local` 及其他本地环境文件已被 Git 忽略，不能提交到仓库。修改环境变量后需要重新启动对应服务。
 
 没有配置 Key 时，应用仍可读取本地数据，但地图、定位和高德餐厅搜索不可用。
 
-## 本地运行
+## 两个隔离环境
+
+项目只维护一套代码，但使用两个不同端口和两个不同 IndexedDB 数据库：
+
+| 用途 | 地址 | IndexedDB | 界面提示 |
+| --- | --- | --- | --- |
+| Codex 开发与测试 | `http://localhost:5173` | `food-map-dev` | 始终显示“🧪 测试环境” |
+| 日常正式使用 | `http://localhost:4173` | `food-map-prod` | 不显示测试徽标 |
+
+数据库名称集中定义在 `src/config/appEnvironment.ts`。`food-map-prod` 是稳定的正式数据库名，后续 Schema 调整只能通过 Dexie version migration 升级，不能通过清库或改名处理。
+
+旧版使用的 `private-food-map` 数据库不会被自动删除，也不会自动复制进任何新环境。如需迁移旧数据，应先从旧版导出 JSON，再由用户明确选择要导入的环境。
+
+## Windows 一键启动
+
+- 双击 `启动美食地图-测试版.bat`：启动测试版并打开 `http://localhost:5173`。
+- 双击 `启动美食地图-正式版.bat`：构建最新正式代码、启动正式版并打开 `http://localhost:4173`。
+
+启动器会检查依赖和端口。对应 Taste Map 服务已经运行时只打开网页，不会重复启动；端口被其他程序占用时会给出提示。
+
+如果需要手动运行，开发版可使用：
 
 ```bash
-pnpm dev
+pnpm dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-打开终端显示的地址，默认通常是 `http://localhost:5173/`。
-
-Windows 用户也可以运行 `scripts/start-food-map.ps1`。脚本会优先使用系统中的 Node.js 与 pnpm，并兼容 Codex 自带的本地运行环境。
+手动构建正式版前应设置 `VITE_APP_ENV=production`，再在 4173 端口运行预览。日常使用不需要手动执行这些命令。
 
 ## 构建与预览
 
@@ -63,7 +90,7 @@ pnpm preview
 
 ## 数据存在哪里
 
-餐厅和到访数据保存在浏览器 IndexedDB 的 `private-food-map` 数据库中，照片也作为私人记录的一部分保存在本地数据库。常用城市等少量界面偏好保存在浏览器 localStorage。
+餐厅、到访和照片保存在当前环境对应的 IndexedDB 数据库中：测试版为 `food-map-dev`，正式版为 `food-map-prod`。常用城市等少量界面偏好保存在各自端口隔离的 localStorage。
 
 这些数据不会因为代码推送到 GitHub 而自动上传。不同浏览器、浏览器用户资料、设备和站点地址的数据彼此独立；清除站点数据会删除本地记录。
 
@@ -73,7 +100,7 @@ pnpm preview
 2. 选择“导出完整备份”。
 3. 将下载的 JSON 文件保存在安全位置。
 
-备份包含餐厅、到访历史、评分、照片、菜品、标签和笔记。备份文件属于私人数据，不应加入 Git 仓库。
+备份包含环境标识、数据库名称、餐厅、到访历史、评分、照片、菜品、标签和笔记。正式版文件名为 `food-map-backup-YYYY-MM-DD.json`，测试版为 `food-map-dev-backup-YYYY-MM-DD.json`。备份文件属于私人数据，不应加入 Git 仓库。
 
 ## 恢复数据
 

@@ -1,9 +1,12 @@
 import { db } from './appDb'
+import { APP_ENVIRONMENT, DATABASE_NAME } from '../config/appEnvironment'
 import type { Restaurant, Visit } from '../types/domain'
 
 interface FoodMapBackup {
   app: 'Taste Map'
   version: 1
+  environment: typeof APP_ENVIRONMENT
+  databaseName: string
   exportedAt: string
   restaurants: Restaurant[]
   visits: Visit[]
@@ -22,6 +25,8 @@ export async function createFoodMapBackup() {
   const backup: FoodMapBackup = {
     app: 'Taste Map',
     version: 1,
+    environment: APP_ENVIRONMENT,
+    databaseName: DATABASE_NAME,
     exportedAt: new Date().toISOString(),
     restaurants,
     visits,

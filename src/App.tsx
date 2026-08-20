@@ -24,6 +24,7 @@ import {
 import { RestaurantList } from './components/RestaurantList'
 import { RestaurantPreviewCard } from './components/RestaurantPreviewCard'
 import { SettingsModal } from './components/SettingsModal'
+import { IS_DEVELOPMENT } from './config/appEnvironment'
 import { db } from './db/appDb'
 import {
   addRestaurantFromPoi,
@@ -220,8 +221,7 @@ export default function App() {
   useEffect(() => {
     const parameters = new URLSearchParams(window.location.search)
     const requestedFromUrl = parameters.get('addSampleRestaurants') === '60'
-    const seedCompleted = localStorage.getItem('shitu-sixty-restaurants-added') === 'yes'
-    if (!requestedFromUrl && seedCompleted) return
+    if (!IS_DEVELOPMENT || !requestedFromUrl) return
     if (requestedFromUrl) {
       parameters.delete('addSampleRestaurants')
       const cleanUrl = `${window.location.pathname}${parameters.size ? `?${parameters}` : ''}${window.location.hash}`
@@ -229,7 +229,6 @@ export default function App() {
     }
     seedSixtyVisitedRestaurants()
       .then((addedCount) => {
-        localStorage.setItem('shitu-sixty-restaurants-added', 'yes')
         setActiveList('visited')
         setSelectedId(null)
         if (addedCount) setToast(`已新增 ${addedCount} 家餐厅`)
@@ -380,6 +379,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark"><Utensils size={18} /></span>
           <div><strong>Taste Map</strong><span>我的私人美食地图</span></div>
+          {IS_DEVELOPMENT ? <span className="environment-badge" title="当前使用 food-map-dev 测试数据库">🧪 测试环境</span> : null}
         </div>
         <div className="topbar-actions">
           <button className="settings-button" aria-label="数据与设置" onClick={() => setShowSettings(true)} type="button"><Settings size={18} /></button>

@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import { CheckCircle2, Database, Download, LoaderCircle, Upload } from 'lucide-react'
 import { createFoodMapBackup, importFoodMapBackup } from '../db/backup'
 import { ModalShell } from './ModalShell'
+import { BACKUP_FILE_PREFIX, DATABASE_NAME, ENVIRONMENT_LABEL } from '../config/appEnvironment'
 
 interface SettingsModalProps {
   restaurantCount: number
@@ -32,7 +33,7 @@ export function SettingsModal({
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `Taste-Map-数据备份-${new Date().toISOString().slice(0, 10)}.json`
+      link.download = `${BACKUP_FILE_PREFIX}-${new Date().toISOString().slice(0, 10)}.json`
       link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 0)
       setMessage(`已打包 ${restaurantCount} 家餐厅和 ${visitCount} 条到访记录`)
@@ -69,7 +70,7 @@ export function SettingsModal({
       size="small"
       title="数据与设置"
     >
-      <div className="settings-summary"><Database size={20} /><div><strong>{restaurantCount} 家餐厅</strong><span>{visitCount} 条到访记录 · 当前浏览器</span></div></div>
+      <div className="settings-summary"><Database size={20} /><div><strong>{restaurantCount} 家餐厅</strong><span>{visitCount} 条到访记录 · {ENVIRONMENT_LABEL} · {DATABASE_NAME}</span></div></div>
       <div className="data-setting-list">
         <section>
           <div><strong>导出完整备份</strong><p>包含餐厅、评分、到访历史、照片、菜品、标签和笔记。</p></div>
@@ -87,7 +88,7 @@ export function SettingsModal({
       </div>
       {message ? <p className="settings-success"><CheckCircle2 size={15} /> {message}</p> : null}
       {error ? <p className="form-error">{error}</p> : null}
-      <p className="settings-privacy-note">数据不会上传到服务器。建议在重要修改后导出一份备份。</p>
+      <p className="settings-privacy-note">数据不会上传到服务器，正式环境与测试环境互不共享。建议在重要修改后导出一份备份。</p>
     </ModalShell>
   )
 }
