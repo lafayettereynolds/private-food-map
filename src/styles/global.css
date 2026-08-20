@@ -43,6 +43,15 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .brand div span { color: var(--muted); font-size: 11px; letter-spacing: .08em; }
 .environment-badge { padding: 5px 8px; border: 1px solid #d7c7f2; border-radius: 99px; color: #6f51a5; background: #f5f0fd; font-size: 10px; font-weight: 750; letter-spacing: .02em; white-space: nowrap; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
+.cloud-sync-indicator {
+  min-height: 32px; padding: 6px 9px; border: 1px solid #dfe6e1; border-radius: 99px;
+  display: inline-flex; align-items: center; gap: 5px; color: #557063; background: #f7faf8;
+  font-size: 10px; font-weight: 700;
+}
+.cloud-sync-indicator.is-syncing { color: #4d6e91; background: #f2f7fb; }
+.cloud-sync-indicator.is-error { color: #a64e4e; border-color: #efd0d0; background: #fff5f5; }
+.cloud-sync-indicator.is-migrationRequired { color: #8a651e; border-color: #ead8ad; background: #fff9ea; }
+.cloud-sync-indicator:hover { transform: translateY(-1px); }
 .settings-button {
   width: 38px; height: 38px; border: 0; border-radius: 10px; display: grid; place-items: center;
   color: #777c74; background: transparent;
@@ -219,6 +228,18 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .settings-summary div { display: grid; gap: 2px; }
 .settings-summary strong { font-size: 13px; }
 .settings-summary span { color: #7a827d; font-size: 9px; }
+.cloud-migration-notice {
+  margin-top: 13px; padding: 13px; border: 1px solid #ead8ad; border-radius: 12px;
+  display: flex; align-items: flex-start; gap: 10px; color: #70551c; background: #fff9ea;
+}
+.cloud-migration-notice > svg { flex: 0 0 auto; margin-top: 1px; }
+.cloud-migration-notice > div { min-width: 0; }
+.cloud-migration-notice strong { display: block; font-size: 11px; }
+.cloud-migration-notice p { margin: 5px 0 0; font-size: 10px; }
+.cloud-migration-notice span { display: block; margin-top: 7px; color: #947a43; font-size: 9px; line-height: 1.55; }
+.cloud-migration-actions { margin-top: 11px; display: flex; align-items: center; gap: 8px; }
+.cloud-migration-actions .primary-button { min-height: 34px; padding: 7px 11px; }
+.local-only-chip { padding: 6px 8px; border-radius: 99px; display: inline-flex; align-items: center; gap: 5px; color: #878d89; background: #f1f2f1; font-size: 9px; white-space: nowrap; }
 .data-setting-list { margin-top: 15px; border: 1px solid #eceeeb; border-radius: 12px; overflow: hidden; }
 .data-setting-list section { padding: 14px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #eceeeb; }
 .data-setting-list section:last-child { border-bottom: 0; }
@@ -255,6 +276,8 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
   .primary-button { min-width: 38px; }
   .topbar .primary-button { width: 38px; height: 38px; min-height: 38px; padding: 0; border-radius: 11px; }
   .topbar .primary-button span { display: none; }
+  .cloud-sync-indicator span { display: none; }
+  .cloud-sync-indicator { width: 34px; height: 34px; min-height: 34px; padding: 0; justify-content: center; }
   .workspace { position: relative; height: calc(100vh - 62px); min-height: 560px; display: block; border: 0; border-radius: 0; box-shadow: none; }
   .map-panel { position: absolute; inset: 0; }
   .sidebar { position: absolute; z-index: 20; left: 12px; right: 12px; bottom: 12px; height: auto; max-height: 45vh; padding: 18px 18px 13px; border: 1px solid rgba(255,255,255,.85); border-radius: 19px; background: rgba(251,251,248,.97); box-shadow: 0 12px 38px rgba(39,47,37,.17); backdrop-filter: blur(15px); }

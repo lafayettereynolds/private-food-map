@@ -12,6 +12,8 @@ import type {
   VisitDish,
 } from '../types/domain'
 import { calculatePricePerPerson } from '../types/domain'
+import { syncQueueId } from '../types/sync'
+import { requestCloudSync } from '../services/syncEvents'
 
 export class DuplicateRestaurantError extends Error {
   constructor() {
@@ -72,7 +74,9 @@ export async function addRestaurantFromPoi(
   input: AddRestaurantInput,
 ): Promise<Restaurant> {
   const now = new Date().toISOString()
-  const restaurantId = createId()
+  const existingRestaurant = await db.restaurants.where('amapPoiId').equals(input.poi.amapPoiId).first()
+  if (existingRestaurant && !existingRestaurant.deletedAt) throw new DuplicateRestaurantError()
+  const restaurantId = existingRestaurant?.id ?? createId()
   const restaurant: Restaurant = {
     id: restaurantId,
     amapPoiId: input.poi.amapPoiId,
@@ -95,8 +99,9 @@ export async function addRestaurantFromPoi(
     markerImageData: input.markerImageData,
     merchantImageUrl: input.poi.merchantImageUrl,
     markerEmoji: input.markerEmoji || '🍽️',
-    createdAt: now,
+    createdAt: existingRestaurant?.createdAt ?? now,
     updatedAt: now,
+    deletedAt: null,
   }
 
   const visit: Visit | null = input.initialVisit
@@ -118,14 +123,30 @@ export async function addRestaurantFromPoi(
         photos: input.initialVisit.photos,
         createdAt: now,
         updatedAt: now,
+        deletedAt: null,
       }
     : null
 
   try {
-    await db.transaction('rw', db.restaurants, db.visits, async () => {
-      await db.restaurants.add(restaurant)
+    await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+      await db.restaurants.put(restaurant)
       if (visit) await db.visits.add(visit)
+      await db.syncQueue.put({
+        id: syncQueueId('restaurant', restaurant.id),
+        entityType: 'restaurant',
+        entityId: restaurant.id,
+        updatedAt: now,
+      })
+      if (visit) {
+        await db.syncQueue.put({
+          id: syncQueueId('visit', visit.id),
+          entityType: 'visit',
+          entityId: visit.id,
+          updatedAt: now,
+        })
+      }
     })
+    requestCloudSync()
     return restaurant
   } catch (error) {
     if (error instanceof Dexie.ConstraintError) {
@@ -151,17 +172,31 @@ export async function updateRestaurantBasics(
   id: string,
   changes: RestaurantBasicsUpdate,
 ) {
-  const updated = await db.restaurants.update(id, {
-    ...changes,
-    name: changes.name.trim(),
-    address: changes.address.trim(),
-    city: changes.city.trim(),
-    tags: changes.tags.map((tag) => tag.trim()).filter(Boolean),
-    markerEmoji: changes.markerEmoji.trim() || '🍽️',
-    updatedAt: new Date().toISOString(),
+  const now = new Date().toISOString()
+  let updated = 0
+  await db.transaction('rw', db.restaurants, db.syncQueue, async () => {
+    updated = await db.restaurants.update(id, {
+      ...changes,
+      name: changes.name.trim(),
+      address: changes.address.trim(),
+      city: changes.city.trim(),
+      tags: changes.tags.map((tag) => tag.trim()).filter(Boolean),
+      markerEmoji: changes.markerEmoji.trim() || '🍽️',
+      updatedAt: now,
+      deletedAt: null,
+    })
+    if (updated) {
+      await db.syncQueue.put({
+        id: syncQueueId('restaurant', id),
+        entityType: 'restaurant',
+        entityId: id,
+        updatedAt: now,
+      })
+    }
   })
 
   if (!updated) throw new Error('没有找到要更新的餐厅。')
+  requestCloudSync()
 }
 
 export interface AddVisitInput {
@@ -195,9 +230,10 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
     photos: input.photos,
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
   }
 
-  await db.transaction('rw', db.restaurants, db.visits, async () => {
+  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
     const restaurant = await db.restaurants.get(restaurantId)
     if (!restaurant) throw new Error('没有找到这家餐厅。')
     await db.visits.add(visit)
@@ -212,15 +248,52 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
       preferenceLevel: legacyPreferenceLevelFromRating(averageRating),
       pricePerPerson: pricePerPerson ?? restaurant.pricePerPerson,
       updatedAt: now,
+      deletedAt: null,
     })
+    await db.syncQueue.bulkPut([
+      {
+        id: syncQueueId('restaurant', restaurantId),
+        entityType: 'restaurant',
+        entityId: restaurantId,
+        updatedAt: now,
+      },
+      {
+        id: syncQueueId('visit', visit.id),
+        entityType: 'visit',
+        entityId: visit.id,
+        updatedAt: now,
+      },
+    ])
   })
 
+  requestCloudSync()
   return visit
 }
 
 export async function deleteRestaurant(id: string) {
-  await db.transaction('rw', db.restaurants, db.visits, async () => {
-    await db.visits.where('restaurantId').equals(id).delete()
-    await db.restaurants.delete(id)
+  const now = new Date().toISOString()
+  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+    const restaurant = await db.restaurants.get(id)
+    if (!restaurant) return
+    const visits = await db.visits.where('restaurantId').equals(id).toArray()
+    await db.restaurants.update(id, { deletedAt: now, updatedAt: now })
+    if (visits.length) {
+      await db.visits.bulkPut(visits.map((visit) => ({ ...visit, deletedAt: now, updatedAt: now })))
+    }
+    await db.syncQueue.bulkPut([
+      {
+        id: syncQueueId('restaurant', id),
+        entityType: 'restaurant',
+        entityId: id,
+        updatedAt: now,
+      },
+      ...visits.map((visit) => ({
+        id: syncQueueId('visit' as const, visit.id),
+        entityType: 'visit' as const,
+        entityId: visit.id,
+        updatedAt: now,
+      })),
+    ])
   })
+  requestCloudSync()
 }

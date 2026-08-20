@@ -36,6 +36,7 @@ export interface Restaurant {
   markerEmoji: string
   createdAt: string
   updatedAt: string
+  deletedAt: string | null
 }
 
 export interface Visit {
@@ -53,6 +54,7 @@ export interface Visit {
   photos: string[]
   createdAt: string
   updatedAt: string
+  deletedAt: string | null
 }
 
 export interface VisitDish {

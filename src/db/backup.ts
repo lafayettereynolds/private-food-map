@@ -1,6 +1,9 @@
 import { db } from './appDb'
 import { APP_ENVIRONMENT, DATABASE_NAME } from '../config/appEnvironment'
 import type { Restaurant, Visit } from '../types/domain'
+import { syncQueueId } from '../types/sync'
+import { requestCloudSync } from '../services/syncEvents'
+import { BACKUP_FILE_PREFIX } from '../config/appEnvironment'
 
 interface FoodMapBackup {
   app: 'Taste Map'
@@ -34,6 +37,17 @@ export async function createFoodMapBackup() {
   return JSON.stringify(backup, null, 2)
 }
 
+export async function downloadFoodMapBackup() {
+  const json = await createFoodMapBackup()
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${BACKUP_FILE_PREFIX}-${new Date().toISOString().slice(0, 10)}.json`
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 export async function importFoodMapBackup(rawText: string) {
   let parsed: unknown
   try {
@@ -54,7 +68,7 @@ export async function importFoodMapBackup(rawText: string) {
 
   let restaurantCount = 0
   let visitCount = 0
-  await db.transaction('rw', db.restaurants, db.visits, async () => {
+  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
     const existingRestaurants = await db.restaurants.toArray()
     const existingByPoiId = new Map(existingRestaurants.map((restaurant) => [restaurant.amapPoiId, restaurant]))
     const existingById = new Map(existingRestaurants.map((restaurant) => [restaurant.id, restaurant]))
@@ -75,8 +89,15 @@ export async function importFoodMapBackup(rawText: string) {
         longTermNote: imported.longTermNote ?? '',
         pricePerPerson: imported.pricePerPerson ?? null,
         updatedAt: imported.updatedAt || new Date().toISOString(),
+        deletedAt: imported.deletedAt ?? null,
       }
       await db.restaurants.put(normalized)
+      await db.syncQueue.put({
+        id: syncQueueId('restaurant', normalized.id),
+        entityType: 'restaurant',
+        entityId: normalized.id,
+        updatedAt: normalized.updatedAt,
+      })
       restaurantIdMap.set(imported.id, targetId)
       existingByPoiId.set(normalized.amapPoiId, normalized)
       existingById.set(targetId, normalized)
@@ -100,12 +121,20 @@ export async function importFoodMapBackup(rawText: string) {
         photos: Array.isArray(imported.photos) ? imported.photos : [],
         note: imported.note ?? '',
         updatedAt: imported.updatedAt || new Date().toISOString(),
+        deletedAt: imported.deletedAt ?? null,
       }
       await db.visits.put(normalized)
+      await db.syncQueue.put({
+        id: syncQueueId('visit', normalized.id),
+        entityType: 'visit',
+        entityId: normalized.id,
+        updatedAt: normalized.updatedAt,
+      })
       visitCount += 1
     }
   })
 
+  requestCloudSync()
   return { restaurantCount, visitCount }
 }
 

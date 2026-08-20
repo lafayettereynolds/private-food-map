@@ -98,6 +98,7 @@ export async function fetchTasteRecommendations(
       markerEmoji: '🍽️',
       createdAt: now,
       updatedAt: now,
+      deletedAt: null,
       visitCount: 0,
       averageRating: null,
       scoreOutOfTen: null,

@@ -83,6 +83,7 @@ async function seedRestaurants() {
         photos: [],
         createdAt: now,
         updatedAt: now,
+        deletedAt: null,
       })
     }
     visits.push(...restaurantVisits)
@@ -112,6 +113,7 @@ async function seedRestaurants() {
       markerEmoji: emojis[cuisineIndex],
       createdAt: now,
       updatedAt: now,
+      deletedAt: null,
     })
   })
 

@@ -24,7 +24,8 @@ import {
 import { RestaurantList } from './components/RestaurantList'
 import { RestaurantPreviewCard } from './components/RestaurantPreviewCard'
 import { SettingsModal } from './components/SettingsModal'
-import { IS_DEVELOPMENT } from './config/appEnvironment'
+import { CloudSyncIndicator } from './components/CloudSyncIndicator'
+import { CLOUD_SYNC_ENABLED, IS_DEVELOPMENT } from './config/appEnvironment'
 import { db } from './db/appDb'
 import {
   addRestaurantFromPoi,
@@ -37,6 +38,8 @@ import {
 } from './db/restaurants'
 import { seedSixtyVisitedRestaurants } from './db/seedRestaurants'
 import { fetchTasteRecommendations } from './services/recommendations'
+import { initializeCloudSync } from './services/cloudSync'
+import { useCloudSync } from './services/useCloudSync'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
@@ -51,10 +54,11 @@ type ActiveList = RestaurantStatus | 'recommended'
 
 export default function App() {
   const restaurants = useLiveQuery(
-    () => db.restaurants.orderBy('createdAt').reverse().toArray(),
+    () => db.restaurants.orderBy('createdAt').reverse().filter((restaurant) => !restaurant.deletedAt).toArray(),
     [],
   )
-  const visits = useLiveQuery(() => db.visits.toArray(), [])
+  const visits = useLiveQuery(() => db.visits.filter((visit) => !visit.deletedAt).toArray(), [])
+  const cloudSyncState = useCloudSync()
   const [query, setQuery] = useState('')
   const [activeList, setActiveList] = useState<ActiveList>('visited')
   const [visitCountFilter, setVisitCountFilter] = useState<VisitCountFilter>('all')
@@ -217,6 +221,19 @@ export default function App() {
       (activeList === 'visited' && visitCountFilter !== 'all' ? 1 : 0) +
       (activeList === 'visited' && queueFilter !== 'all' ? 1 : 0) +
       (activeList === 'visited' && companionFilter !== 'all' ? 1 : 0)
+
+  useEffect(() => {
+    let cleanup: (() => void) | undefined
+    let disposed = false
+    initializeCloudSync().then((dispose) => {
+      if (disposed) dispose()
+      else cleanup = dispose
+    })
+    return () => {
+      disposed = true
+      cleanup?.()
+    }
+  }, [])
 
   useEffect(() => {
     const parameters = new URLSearchParams(window.location.search)
@@ -382,6 +399,7 @@ export default function App() {
           {IS_DEVELOPMENT ? <span className="environment-badge" title="当前使用 food-map-dev 测试数据库">🧪 测试环境</span> : null}
         </div>
         <div className="topbar-actions">
+          <CloudSyncIndicator onOpenSettings={() => setShowSettings(true)} state={cloudSyncState} />
           <button className="settings-button" aria-label="数据与设置" onClick={() => setShowSettings(true)} type="button"><Settings size={18} /></button>
           <button className="primary-button" onClick={() => setShowAddModal(true)} type="button"><Plus size={17} /> <span>添加餐厅</span></button>
         </div>
@@ -438,7 +456,7 @@ export default function App() {
             restaurants={visibleRestaurants}
             selectedId={selectedRestaurant?.id}
           />
-          <footer className="local-data-note"><MapPin size={13} /> 数据仅保存在当前浏览器</footer>
+          <footer className="local-data-note"><MapPin size={13} /> {CLOUD_SYNC_ENABLED ? '本地优先保存 · 自动云端同步' : '数据保存在当前隔离的本地环境'}</footer>
         </aside>
 
         <section className="map-panel" aria-label="私人美食地图">

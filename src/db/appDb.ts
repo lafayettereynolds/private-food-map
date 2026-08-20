@@ -2,14 +2,20 @@ import Dexie, { type EntityTable } from 'dexie'
 import { DATABASE_NAME } from '../config/appEnvironment'
 import { calculatePricePerPerson } from '../types/domain'
 import type { Restaurant, Visit } from '../types/domain'
+import type { SyncMetadata, SyncQueueItem } from '../types/sync'
 
-const restaurantSchema =
+const legacyRestaurantSchema =
   'id, &amapPoiId, name, city, status, preferenceLevel, *tags, createdAt, updatedAt'
-const visitSchema = 'id, restaurantId, visitedAt, createdAt, updatedAt'
+const legacyVisitSchema = 'id, restaurantId, visitedAt, createdAt, updatedAt'
+const restaurantSchema =
+  'id, &amapPoiId, name, city, status, preferenceLevel, *tags, createdAt, updatedAt, deletedAt'
+const visitSchema = 'id, restaurantId, visitedAt, createdAt, updatedAt, deletedAt'
 
 class FoodMapDatabase extends Dexie {
   restaurants!: EntityTable<Restaurant, 'id'>
   visits!: EntityTable<Visit, 'id'>
+  syncQueue!: EntityTable<SyncQueueItem, 'id'>
+  syncMetadata!: EntityTable<SyncMetadata, 'key'>
 
   constructor() {
     super(DATABASE_NAME)
@@ -20,7 +26,7 @@ class FoodMapDatabase extends Dexie {
     })
 
     this.version(2)
-      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .stores({ restaurants: legacyRestaurantSchema, visits: legacyVisitSchema })
       .upgrade(async (transaction) => {
         await transaction.table('restaurants').toCollection().modify((restaurant) => {
           restaurant.markerType ??= 'emoji'
@@ -33,7 +39,7 @@ class FoodMapDatabase extends Dexie {
       })
 
     this.version(3)
-      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .stores({ restaurants: legacyRestaurantSchema, visits: legacyVisitSchema })
       .upgrade(async (transaction) => {
         await transaction.table('visits').toCollection().modify((visit) => {
           visit.companions ??= []
@@ -42,7 +48,7 @@ class FoodMapDatabase extends Dexie {
       })
 
     this.version(4)
-      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .stores({ restaurants: legacyRestaurantSchema, visits: legacyVisitSchema })
       .upgrade(async (transaction) => {
         await transaction.table('visits').toCollection().modify((visit) => {
           visit.queueDuration ??= null
@@ -50,7 +56,7 @@ class FoodMapDatabase extends Dexie {
       })
 
     this.version(5)
-      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .stores({ restaurants: legacyRestaurantSchema, visits: legacyVisitSchema })
       .upgrade(async (transaction) => {
         await transaction.table('visits').toCollection().modify((visit) => {
           visit.companions ??= []
@@ -91,7 +97,7 @@ class FoodMapDatabase extends Dexie {
       })
 
     this.version(6)
-      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .stores({ restaurants: legacyRestaurantSchema, visits: legacyVisitSchema })
       .upgrade(async (transaction) => {
         await transaction.table('visits').toCollection().modify((visit) => {
           visit.companions ??= []
@@ -127,7 +133,7 @@ class FoodMapDatabase extends Dexie {
       })
 
     this.version(7)
-      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .stores({ restaurants: legacyRestaurantSchema, visits: legacyVisitSchema })
       .upgrade(async (transaction) => {
         await transaction.table('visits').toCollection().modify((visit) => {
           visit.dishes = Array.isArray(visit.dishes)
@@ -140,7 +146,7 @@ class FoodMapDatabase extends Dexie {
       })
 
     this.version(8)
-      .stores({ restaurants: restaurantSchema, visits: visitSchema })
+      .stores({ restaurants: legacyRestaurantSchema, visits: legacyVisitSchema })
       .upgrade(async (transaction) => {
         await transaction.table('visits').toCollection().modify((visit) => {
           visit.dishes = Array.isArray(visit.dishes)
@@ -152,6 +158,22 @@ class FoodMapDatabase extends Dexie {
                     : null,
               }))
             : []
+        })
+      })
+
+    this.version(9)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        syncQueue: 'id, entityType, entityId, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('restaurants').toCollection().modify((restaurant) => {
+          restaurant.deletedAt ??= null
+        })
+        await transaction.table('visits').toCollection().modify((visit) => {
+          visit.deletedAt ??= null
         })
       })
   }
