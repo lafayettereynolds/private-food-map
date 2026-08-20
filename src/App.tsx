@@ -3,6 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import {
   CheckCircle2,
   MapPin,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Search,
   Settings,
@@ -43,8 +45,6 @@ import { useCloudSync } from './services/useCloudSync'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
-  SCORE_BAND_META,
-  SCORE_BAND_ORDER,
   type RestaurantStatus,
   type RestaurantSummary,
   type Visit,
@@ -74,6 +74,7 @@ export default function App() {
   const [showAddVisit, setShowAddVisit] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [toast, setToast] = useState('')
   const [recommendations, setRecommendations] = useState<RestaurantSummary[]>([])
   const [recommendationsLoading, setRecommendationsLoading] = useState(false)
@@ -405,12 +406,16 @@ export default function App() {
         </div>
       </header>
 
-      <section className="workspace">
-        <aside className="sidebar">
-          <div className="sidebar-heading">
-            <div><span className="eyebrow">MY FOOD MAP</span><h1>我的美食清单</h1><p>只看自己真正记录过的地方。</p></div>
-            <span className="count-pill">{summaries.length}</span>
-          </div>
+      <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}`}>
+        <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}`}>
+          {isSidebarOpen ? <>
+            <div className="sidebar-heading">
+              <div><span className="eyebrow">MY FOOD MAP</span><h1>我的美食清单</h1><p>只看自己真正记录过的地方。</p></div>
+              <div className="sidebar-heading-actions">
+                <span className="count-pill">{summaries.length}</span>
+                <button aria-label="收起美食清单" className="sidebar-toggle" onClick={() => setIsSidebarOpen(false)} title="收起美食清单" type="button"><PanelLeftClose size={17} /></button>
+              </div>
+            </div>
 
           <div className="collection-tabs" aria-label="餐厅列表">
             <button className={activeList === 'visited' ? 'is-active' : ''} onClick={() => chooseList('visited')} type="button"><span>我去过的</span><strong>{listCounts.visited}</strong></button>
@@ -456,14 +461,14 @@ export default function App() {
             restaurants={visibleRestaurants}
             selectedId={selectedRestaurant?.id}
           />
-          <footer className="local-data-note"><MapPin size={13} /> {CLOUD_SYNC_ENABLED ? '本地优先保存 · 自动云端同步' : '数据保存在当前隔离的本地环境'}</footer>
+            <footer className="local-data-note"><MapPin size={13} /> {CLOUD_SYNC_ENABLED ? '本地优先保存 · 自动云端同步' : '数据保存在当前隔离的本地环境'}</footer>
+          </> : (
+            <button aria-label="展开美食清单" className="sidebar-expand-button" onClick={() => setIsSidebarOpen(true)} title="展开美食清单" type="button"><PanelLeftOpen size={19} /><span>打开清单</span></button>
+          )}
         </aside>
 
         <section className="map-panel" aria-label="私人美食地图">
           <MapView onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
-          <div className="legend" aria-label="评分颜色图例">
-            {SCORE_BAND_ORDER.map((band) => <span key={band}><i style={{ background: SCORE_BAND_META[band].color }} />{SCORE_BAND_META[band].shortLabel}</span>)}
-          </div>
           {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={() => setShowAddVisit(true)} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
       </section>
