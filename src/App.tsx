@@ -34,6 +34,7 @@ import {
   addVisit,
   deleteRestaurant,
   updateRestaurantBasics,
+  updateVisit,
   type AddRestaurantInput,
   type AddVisitInput,
   type RestaurantBasicsUpdate,
@@ -72,6 +73,7 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditor, setShowEditor] = useState(false)
   const [showAddVisit, setShowAddVisit] = useState(false)
+  const [editingVisit, setEditingVisit] = useState<Visit | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -84,9 +86,16 @@ export default function App() {
   const allRestaurants = useMemo(() => restaurants ?? [], [restaurants])
   const allVisits = useMemo(() => visits ?? [], [visits])
   const companionOptions = useMemo(
-    () =>
-      [...new Set(allVisits.flatMap((visit) => visit.companions.map((name) => name.trim())).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    () => {
+      const usageCounts = new Map<string, number>()
+      allVisits.forEach((visit) => visit.companions.forEach((name) => {
+        const normalizedName = name.trim()
+        if (normalizedName) usageCounts.set(normalizedName, (usageCounts.get(normalizedName) ?? 0) + 1)
+      }))
+      return [...usageCounts]
+        .sort(([nameA, countA], [nameB, countB]) => countB - countA || nameA.localeCompare(nameB, 'zh-CN'))
+        .map(([name]) => name)
+    },
     [allVisits],
   )
   const tagOptions = useMemo(
@@ -346,7 +355,21 @@ export default function App() {
     await addVisit(selectedRestaurant.id, input)
     setActiveList('visited')
     setShowAddVisit(false)
+    setEditingVisit(null)
     setToast('到访记录已保存')
+  }
+
+  async function handleUpdateVisit(input: AddVisitInput) {
+    if (!editingVisit) return
+    await updateVisit(editingVisit.id, input)
+    setShowAddVisit(false)
+    setEditingVisit(null)
+    setToast('到访记录已更新')
+  }
+
+  function openNewVisit() {
+    setEditingVisit(null)
+    setShowAddVisit(true)
   }
 
   async function handleSaveRecommendation() {
@@ -379,6 +402,7 @@ export default function App() {
   function handleRecordExisting(restaurant: RestaurantSummary) {
     setSelectedId(restaurant.id)
     setShowAddModal(false)
+    setEditingVisit(null)
     setShowAddVisit(true)
   }
 
@@ -469,13 +493,13 @@ export default function App() {
 
         <section className="map-panel" aria-label="私人美食地图">
           <MapView onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
-          {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={() => setShowAddVisit(true)} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
+          {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
       </section>
 
-      {showAddModal ? <AddRestaurantModal existingRestaurantsByPoiId={existingRestaurantsByPoiId} onAdd={handleAdd} onClose={() => setShowAddModal(false)} onRecordExisting={handleRecordExisting} /> : null}
+      {showAddModal ? <AddRestaurantModal companionOptions={companionOptions} existingRestaurantsByPoiId={existingRestaurantsByPoiId} onAdd={handleAdd} onClose={() => setShowAddModal(false)} onRecordExisting={handleRecordExisting} /> : null}
       {showEditor && selectedRestaurant ? <RestaurantEditorModal onClose={() => setShowEditor(false)} onSave={handleSave} restaurant={selectedRestaurant} /> : null}
-      {showAddVisit && selectedRestaurant ? <AddVisitModal onClose={() => setShowAddVisit(false)} onSave={handleAddVisit} restaurant={selectedRestaurant} /> : null}
+      {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? 'new-visit'} onClose={() => { setShowAddVisit(false); setEditingVisit(null) }} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} restaurant={selectedRestaurant} /> : null}
       {showDeleteConfirm && selectedRestaurant ? <ConfirmDeleteModal onCancel={() => setShowDeleteConfirm(false)} onConfirm={handleDelete} restaurantName={selectedRestaurant.name} visitCount={selectedRestaurant.visitCount} /> : null}
       {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} visitCount={allVisits.length} /> : null}
       {toast ? <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div> : null}

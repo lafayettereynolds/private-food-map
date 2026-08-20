@@ -1,6 +1,10 @@
 export function currentDateAndTime() {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+  return dateAndTimeFromIso(new Date().toISOString())
+}
+
+export function dateAndTimeFromIso(value: string) {
+  const date = new Date(value)
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
   return {
     date: local.toISOString().slice(0, 10),
     time: local.toISOString().slice(11, 16),

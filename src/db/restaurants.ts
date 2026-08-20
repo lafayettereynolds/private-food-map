@@ -46,6 +46,10 @@ function normalizeDishes(dishes: VisitDish[]) {
     }))
 }
 
+function normalizeCompanions(companions: string[]) {
+  return [...new Set(companions.map((companion) => companion.trim()).filter(Boolean))]
+}
+
 export interface InitialVisitInput {
   visitedAt: string
   rating: StarRating
@@ -213,7 +217,8 @@ export interface AddVisitInput {
 
 export async function addVisit(restaurantId: string, input: AddVisitInput) {
   const now = new Date().toISOString()
-  const normalizedPartySize = Math.max(1, input.partySize, input.companions.length + 1)
+  const companions = normalizeCompanions(input.companions)
+  const normalizedPartySize = Math.max(1, input.partySize, companions.length + 1)
   const pricePerPerson = calculatePricePerPerson(input.totalPrice, normalizedPartySize)
   const visit: Visit = {
     id: createId(),
@@ -224,7 +229,7 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
     pricePerPerson,
     partySize: normalizedPartySize,
     queueDuration: input.queueDuration,
-    companions: input.companions,
+    companions,
     dishes: normalizeDishes(input.dishes),
     note: input.note.trim(),
     photos: input.photos,
@@ -268,6 +273,76 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
 
   requestCloudSync()
   return visit
+}
+
+export async function updateVisit(id: string, input: AddVisitInput) {
+  const now = new Date().toISOString()
+  const companions = normalizeCompanions(input.companions)
+  const normalizedPartySize = Math.max(1, input.partySize, companions.length + 1)
+  const pricePerPerson = calculatePricePerPerson(input.totalPrice, normalizedPartySize)
+  let updatedVisit: Visit | null = null
+
+  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+    const existingVisit = await db.visits.get(id)
+    if (!existingVisit || existingVisit.deletedAt) throw new Error('没有找到要更新的到访记录。')
+    const restaurant = await db.restaurants.get(existingVisit.restaurantId)
+    if (!restaurant || restaurant.deletedAt) throw new Error('没有找到这家餐厅。')
+
+    updatedVisit = {
+      ...existingVisit,
+      visitedAt: input.visitedAt,
+      rating: input.rating,
+      totalPrice: input.totalPrice,
+      pricePerPerson,
+      partySize: normalizedPartySize,
+      queueDuration: input.queueDuration,
+      companions,
+      dishes: normalizeDishes(input.dishes),
+      note: input.note.trim(),
+      photos: input.photos,
+      updatedAt: now,
+      deletedAt: null,
+    }
+    await db.visits.put(updatedVisit)
+
+    const activeVisits = (await db.visits.where('restaurantId').equals(existingVisit.restaurantId).toArray())
+      .filter((visit) => !visit.deletedAt)
+    const ratings = activeVisits
+      .map((visit) => visit.rating)
+      .filter((rating): rating is StarRating => rating !== null)
+    const averageRating = ratings.length
+      ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+      : null
+    const latestPricePerPerson = activeVisits
+      .filter((visit) => visit.pricePerPerson !== null)
+      .sort((a, b) => b.visitedAt.localeCompare(a.visitedAt))[0]?.pricePerPerson
+
+    await db.restaurants.update(restaurant.id, {
+      status: 'visited',
+      preferenceLevel: legacyPreferenceLevelFromRating(averageRating),
+      pricePerPerson: latestPricePerPerson ?? restaurant.pricePerPerson,
+      updatedAt: now,
+      deletedAt: null,
+    })
+    await db.syncQueue.bulkPut([
+      {
+        id: syncQueueId('restaurant', restaurant.id),
+        entityType: 'restaurant',
+        entityId: restaurant.id,
+        updatedAt: now,
+      },
+      {
+        id: syncQueueId('visit', id),
+        entityType: 'visit',
+        entityId: id,
+        updatedAt: now,
+      },
+    ])
+  })
+
+  requestCloudSync()
+  if (!updatedVisit) throw new Error('没有找到要更新的到访记录。')
+  return updatedVisit
 }
 
 export async function deleteRestaurant(id: string) {

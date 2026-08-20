@@ -460,7 +460,10 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .visit-history-row:last-child { border-bottom: 0; }
 .visit-history-row__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .visit-history-row__top > strong { flex: 0 0 auto; color: #30342f; font-size: 10px; font-weight: 780; }
+.visit-history-row__top-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .visit-history-row__top time { min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; color: #5f665f; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.visit-history-row__top-actions button { min-height: 24px; padding: 0 6px; border: 1px solid #e1e4df; border-radius: 6px; display: inline-flex; align-items: center; gap: 3px; color: #4f5650; background: #fff; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.visit-history-row__top-actions button:hover { color: #171717; border-color: #bdc3bc; background: #f4f6f3; }
 .visit-history-row__details { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
 .visit-history-row__details span { padding: 4px 6px; border-radius: 6px; display: inline-flex; align-items: center; gap: 3px; color: #474d47; background: #ecefeb; font-size: 10px; font-weight: 650; }
 .visit-history-row__details span.has-rating { color: #9c6800; background: #fff2c9; }
@@ -493,6 +496,11 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .field-with-leading-icon > div:focus-within { border-color: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.035); }
 .field-with-leading-icon input { height: auto; padding: 0; border: 0; box-shadow: none !important; }
 .field-with-leading-icon select { min-width: 0; height: auto; flex: 1; padding: 0; border: 0; outline: 0; color: #333; background: transparent; box-shadow: none; font: inherit; }
+.companion-picker__options { display: flex; flex-wrap: wrap; gap: 6px; }
+.companion-picker__options button { min-height: 29px; padding: 0 9px; border: 1px solid #e4e6e2; border-radius: 99px; color: #555b55; background: #f7f8f6; font-size: 9px; font-weight: 650; }
+.companion-picker__options button:hover { border-color: #bfc5be; background: #f0f2ee; }
+.companion-picker__options button.is-selected { color: #fff; border-color: #2f7654; background: #2f7654; }
+.companion-picker__hint { color: #969b95; font-size: 9px; line-height: 1.5; }
 .price-calculation { margin-top: -1px; color: #9a7b3f; font-size: 8px; font-weight: 500; }
 .visit-time-grid { grid-template-columns: 1.2fr 1fr; }
 .queue-duration-field { margin: 0; padding: 0; border: 0; }

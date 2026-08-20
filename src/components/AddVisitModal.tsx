@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { CalendarClock, LoaderCircle, UserRound, Users, WalletCards } from 'lucide-react'
+import { CalendarClock, LoaderCircle, Users, WalletCards } from 'lucide-react'
+import { CompanionPicker } from './CompanionPicker'
 import { DishEditor } from './DishEditor'
 import { ModalShell } from './ModalShell'
 import { QueueDurationPicker } from './QueueDurationPicker'
@@ -12,32 +13,32 @@ import {
   type QueueDuration,
   type RestaurantSummary,
   type StarRating as StarRatingValue,
+  type Visit,
   type VisitDish,
 } from '../types/domain'
-import { currentDateAndTime, localDateTimeToIso } from '../utils/date'
+import { currentDateAndTime, dateAndTimeFromIso, localDateTimeToIso } from '../utils/date'
+import { splitCompanions } from '../utils/companions'
 
 interface AddVisitModalProps {
+  companionOptions: string[]
+  initialVisit?: Visit
   restaurant: RestaurantSummary
   onClose: () => void
   onSave: (input: AddVisitInput) => Promise<void>
 }
 
-function splitCompanions(value: string) {
-  return [...new Set(value.split(/[,，、/]/).map((item) => item.trim()).filter(Boolean))]
-}
-
-export function AddVisitModal({ restaurant, onClose, onSave }: AddVisitModalProps) {
-  const initialTime = currentDateAndTime()
+export function AddVisitModal({ companionOptions, initialVisit, restaurant, onClose, onSave }: AddVisitModalProps) {
+  const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
-  const [rating, setRating] = useState<StarRatingValue>(nearestStar(restaurant.averageRating) ?? 5)
-  const [price, setPrice] = useState('')
-  const [companions, setCompanions] = useState('')
-  const [partySize, setPartySize] = useState('1')
-  const [queueDuration, setQueueDuration] = useState<QueueDuration>('none')
-  const [dishes, setDishes] = useState<VisitDish[]>([])
-  const [feeling, setFeeling] = useState('')
-  const [photos, setPhotos] = useState<string[]>([])
+  const [rating, setRating] = useState<StarRatingValue>(initialVisit?.rating ?? nearestStar(restaurant.averageRating) ?? 5)
+  const [price, setPrice] = useState(initialVisit?.totalPrice?.toString() ?? '')
+  const [companions, setCompanions] = useState(initialVisit?.companions.join('、') ?? '')
+  const [partySize, setPartySize] = useState(initialVisit?.partySize.toString() ?? '1')
+  const [queueDuration, setQueueDuration] = useState<QueueDuration>(initialVisit?.queueDuration ?? 'none')
+  const [dishes, setDishes] = useState<VisitDish[]>(() => initialVisit?.dishes.map((dish) => ({ ...dish })) ?? [])
+  const [feeling, setFeeling] = useState(initialVisit?.note ?? '')
+  const [photos, setPhotos] = useState<string[]>(() => [...(initialVisit?.photos ?? [])])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -75,7 +76,11 @@ export function AddVisitModal({ restaurant, onClose, onSave }: AddVisitModalProp
   }
 
   return (
-    <ModalShell title="记录一次到访" description={`为 ${restaurant.name} 增加一条真实到访记录。`} onClose={onClose}>
+    <ModalShell
+      title={initialVisit ? '编辑到访记录' : '记录一次到访'}
+      description={initialVisit ? `修改 ${restaurant.name} 的这次到访，保存后会更新原记录。` : `为 ${restaurant.name} 增加一条真实到访记录。`}
+      onClose={onClose}
+    >
       <form className="editor-form" onSubmit={handleSubmit}>
         <label className="field"><span>本次个人评价</span><StarRating onChange={setRating} value={rating} /></label>
         <div className="field-grid visit-time-grid">
@@ -85,14 +90,14 @@ export function AddVisitModal({ restaurant, onClose, onSave }: AddVisitModalProp
         <label className="field field-with-leading-icon"><span>本次消费总价（元）</span><div><WalletCards size={16} /><input min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 193" step="1" type="number" value={price} /></div>{calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">按 {partySize} 人计算，约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}</label>
         <div className="field-grid party-grid">
           <label className="field field-with-leading-icon"><span>用餐人数</span><div><Users size={16} /><input min="1" onChange={(event) => setPartySize(event.target.value)} required step="1" type="number" value={partySize} /></div></label>
-          <label className="field field-with-leading-icon"><span>饭搭子</span><div><UserRound size={16} /><input onChange={(event) => setCompanions(event.target.value)} placeholder="小王、妈妈" value={companions} /></div></label>
+          <CompanionPicker onChange={setCompanions} options={companionOptions} value={companions} />
         </div>
         <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
         <label className="field visit-feeling-field"><span>这次的感受 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
         <VisitPhotoPicker onChange={setPhotos} value={photos} />
         <DishEditor onChange={setDishes} value={dishes} />
         {error ? <p className="form-error">{error}</p> : null}
-        <footer className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">取消</button><button className="primary-button" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : null} 保存到访</button></footer>
+        <footer className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">取消</button><button className="primary-button" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : null} {initialVisit ? '保存修改' : '保存到访'}</button></footer>
       </form>
     </ModalShell>
   )

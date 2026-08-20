@@ -11,10 +11,10 @@ import {
   Store,
   Tag,
   TriangleAlert,
-  UserRound,
   Users,
   WalletCards,
 } from 'lucide-react'
+import { CompanionPicker } from './CompanionPicker'
 import { ModalShell } from './ModalShell'
 import { DishEditor } from './DishEditor'
 import { MarkerStyleField } from './MarkerStyleField'
@@ -42,6 +42,7 @@ import type {
 import { currentDateAndTime, localDateTimeToIso } from '../utils/date'
 
 interface AddRestaurantModalProps {
+  companionOptions: string[]
   existingRestaurantsByPoiId: Map<string, RestaurantSummary>
   onAdd: (input: AddRestaurantInput) => Promise<void>
   onRecordExisting: (restaurant: RestaurantSummary) => void
@@ -53,6 +54,7 @@ function splitValues(value: string) {
 }
 
 export function AddRestaurantModal({
+  companionOptions,
   existingRestaurantsByPoiId,
   onAdd,
   onRecordExisting,
@@ -259,7 +261,7 @@ export function AddRestaurantModal({
               </div>
               <div className="field-grid party-grid">
                 <label className="field field-with-leading-icon"><span>用餐人数</span><div><Users size={16} /><input inputMode="numeric" min="1" onChange={(event) => setPartySize(event.target.value)} required step="1" type="number" value={partySize} /></div></label>
-                <label className="field field-with-leading-icon"><span>饭搭子</span><div><UserRound size={16} /><input onChange={(event) => setCompanions(event.target.value)} placeholder="小王、妈妈" value={companions} /></div></label>
+                <CompanionPicker onChange={setCompanions} options={companionOptions} value={companions} />
               </div>
               <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
               <label className="field visit-feeling-field"><span>这次的感受 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>

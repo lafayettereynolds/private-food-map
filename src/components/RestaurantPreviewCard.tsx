@@ -1,6 +1,6 @@
 import { CalendarClock, Clock3, Edit3, MapPin, Navigation, Plus, Star, Trash2, Users, WalletCards, X } from 'lucide-react'
 import { RestaurantAvatar } from './RestaurantAvatar'
-import { formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary } from '../types/domain'
+import { formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 
 interface RestaurantPreviewCardProps {
@@ -9,6 +9,7 @@ interface RestaurantPreviewCardProps {
   onEdit: () => void
   onDelete: () => void
   onAddVisit: () => void
+  onEditVisit: (visit: Visit) => void
   onSaveRecommendation: () => void
 }
 
@@ -18,6 +19,7 @@ export function RestaurantPreviewCard({
   onEdit,
   onDelete,
   onAddVisit,
+  onEditVisit,
   onSaveRecommendation,
 }: RestaurantPreviewCardProps) {
   const navigationUrl = createNavigationUrl(restaurant)
@@ -51,7 +53,10 @@ export function RestaurantPreviewCard({
               <article className="visit-history-row" key={visit.id}>
                 <div className="visit-history-row__top">
                   <strong>第 {restaurant.visits.length - index} 次</strong>
-                  <time><CalendarClock size={12} /> {formatVisitDateTime(visit.visitedAt)}</time>
+                  <div className="visit-history-row__top-actions">
+                    <time><CalendarClock size={12} /> {formatVisitDateTime(visit.visitedAt)}</time>
+                    <button aria-label={`编辑第 ${restaurant.visits.length - index} 次到访`} onClick={() => onEditVisit(visit)} type="button"><Edit3 size={11} /> 编辑</button>
+                  </div>
                 </div>
                 <div className="visit-history-row__details">
                   <span className={visit.rating ? 'has-rating' : ''}><Star fill={visit.rating ? 'currentColor' : 'none'} size={12} /> {visit.rating ? `${starToTenScore(visit.rating)?.toFixed(1)} 分` : '未评分'}</span>
