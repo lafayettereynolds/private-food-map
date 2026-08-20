@@ -118,6 +118,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 
 .map-panel { position: relative; min-width: 0; height: 100%; overflow: hidden; background: #e9ece5; }
 .amap-container, .map-fallback { position: absolute; inset: 0; }
+.amap-container .amap-layer { filter: saturate(.72) contrast(.93) brightness(.99); }
 .map-fallback { overflow: hidden; background: #e9ece5; }
 .map-grid {
   position: absolute; inset: -15%; opacity: .7; transform: rotate(-7deg) scale(1.2);
