@@ -17,6 +17,7 @@ $pnpmCommand = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
 $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
 $pnpmExecutable = if ($pnpmCommand) { $pnpmCommand.Source } else { $bundledPnpmExecutable }
 $nodeDirectory = if ($nodeCommand) { Split-Path -Parent $nodeCommand.Source } else { $bundledNodeDirectory }
+$pnpmProjectArguments = @('dlx', 'pnpm@9.15.9')
 
 function Show-LauncherMessage([string]$message) {
   Add-Type -AssemblyName PresentationFramework
@@ -121,7 +122,7 @@ $env:VITE_APP_ENV = $Environment
 
 if (-not (Test-Path -LiteralPath (Join-Path $projectDirectory 'node_modules\vite\package.json'))) {
   $installProcess = Start-Process -FilePath $pnpmExecutable `
-    -ArgumentList @('install', '--frozen-lockfile') `
+    -ArgumentList ($pnpmProjectArguments + @('install', '--frozen-lockfile')) `
     -WorkingDirectory $projectDirectory `
     -WindowStyle Hidden `
     -Wait `
@@ -134,7 +135,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $projectDirectory 'node_modules\vite
 
 if ($isProduction) {
   $buildProcess = Start-Process -FilePath $pnpmExecutable `
-    -ArgumentList @('run', 'build') `
+    -ArgumentList ($pnpmProjectArguments + @('run', 'build')) `
     -WorkingDirectory $projectDirectory `
     -WindowStyle Hidden `
     -Wait `
@@ -143,10 +144,10 @@ if ($isProduction) {
     Show-LauncherMessage 'Taste Map production build failed.'
     exit 1
   }
-  $serverArguments = @('run', 'preview', '--', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
+  $serverArguments = $pnpmProjectArguments + @('run', 'preview', '--', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
 }
 else {
-  $serverArguments = @('run', 'dev', '--', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
+  $serverArguments = $pnpmProjectArguments + @('run', 'dev', '--', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
 }
 
 Start-Process -FilePath $pnpmExecutable `
