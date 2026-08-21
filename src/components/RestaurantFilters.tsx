@@ -28,6 +28,7 @@ interface RestaurantFiltersProps {
   onTagChange: (value: string) => void
   onCityChange: (value: string) => void
   onReset: () => void
+  onClose: () => void
 }
 
 export function RestaurantFilters({
@@ -48,10 +49,17 @@ export function RestaurantFilters({
   onTagChange,
   onCityChange,
   onReset,
+  onClose,
 }: RestaurantFiltersProps) {
   return (
     <section className="filters-panel">
-      <header><strong>筛选餐厅</strong><button onClick={onReset} type="button">重置</button></header>
+      <header>
+        <strong>筛选餐厅</strong>
+        <div className="filters-panel__actions">
+          <button onClick={onReset} type="button">重置</button>
+          <button className="filters-panel__done" onClick={onClose} type="button">完成</button>
+        </div>
+      </header>
       {showVisitCount ? (
         <div className="filter-group">
           <span>到访次数</span>

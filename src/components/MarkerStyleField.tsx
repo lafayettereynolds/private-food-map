@@ -2,12 +2,14 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import { ImageIcon, Smile, Upload, X } from 'lucide-react'
 import type { MarkerType } from '../types/domain'
 import { optimizeMarkerImage } from '../utils/images'
+import { SyncedImage } from './SyncedImage'
 
 const EMOJIS = ['🍽️', '🍜', '🍣', '🍲', '🥩', '🍔', '🍕', '☕', '🍰', '🥟', '🌮', '🍷']
 
 interface MarkerStyleFieldProps {
   markerType: MarkerType
   markerImageData: string | null
+  markerPhotoId?: string | null
   merchantImageUrl: string | null
   markerEmoji: string
   onTypeChange: (value: MarkerType) => void
@@ -18,6 +20,7 @@ interface MarkerStyleFieldProps {
 export function MarkerStyleField({
   markerType,
   markerImageData,
+  markerPhotoId,
   merchantImageUrl,
   markerEmoji,
   onTypeChange,
@@ -52,7 +55,7 @@ export function MarkerStyleField({
       {markerType === 'image' ? (
         <div className="marker-image-picker">
           <div className="marker-image-preview">
-            {imageSource ? <img alt="地图标记预览" src={imageSource} /> : <ImageIcon size={22} />}
+            {imageSource || markerPhotoId ? <SyncedImage alt="地图标记预览" photoId={markerPhotoId} source={imageSource} /> : <ImageIcon size={22} />}
           </div>
           <div>
             <strong>{markerImageData ? '使用你的图片' : merchantImageUrl ? '使用商家图片' : '还没有图片'}</strong>

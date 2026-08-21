@@ -1,7 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import { DATABASE_NAME } from '../config/appEnvironment'
 import { calculatePricePerPerson } from '../types/domain'
-import type { Restaurant, Visit } from '../types/domain'
+import type { Photo, PhotoCacheEntry, Restaurant, Visit } from '../types/domain'
 import type { SyncMetadata, SyncQueueItem } from '../types/sync'
 
 const legacyRestaurantSchema =
@@ -16,6 +16,8 @@ class FoodMapDatabase extends Dexie {
   visits!: EntityTable<Visit, 'id'>
   syncQueue!: EntityTable<SyncQueueItem, 'id'>
   syncMetadata!: EntityTable<SyncMetadata, 'key'>
+  photos!: EntityTable<Photo, 'id'>
+  photoCache!: EntityTable<PhotoCacheEntry, 'photoId'>
 
   constructor() {
     super(DATABASE_NAME)
@@ -72,6 +74,7 @@ class FoodMapDatabase extends Dexie {
                 rating: null,
                 price: null,
                 imageData: null,
+                photoId: null,
               }
             }
             const storedDish = dish as Record<string, unknown>
@@ -82,6 +85,7 @@ class FoodMapDatabase extends Dexie {
               rating: null,
               price: typeof storedDish.price === 'number' ? storedDish.price : null,
               imageData: typeof storedDish.imageData === 'string' ? storedDish.imageData : null,
+              photoId: typeof storedDish.photoId === 'string' ? storedDish.photoId : null,
             }
           })
         })
@@ -174,6 +178,30 @@ class FoodMapDatabase extends Dexie {
         })
         await transaction.table('visits').toCollection().modify((visit) => {
           visit.deletedAt ??= null
+        })
+      })
+
+    this.version(10)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        syncQueue: 'id, entityType, entityId, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('restaurants').toCollection().modify((restaurant) => {
+          restaurant.markerPhotoId ??= null
+        })
+        await transaction.table('visits').toCollection().modify((visit) => {
+          const photos = Array.isArray(visit.photos) ? visit.photos : []
+          visit.photoIds = Array.isArray(visit.photoIds)
+            ? photos.map((_: string, index: number) => visit.photoIds[index] ?? null)
+            : photos.map(() => null)
+          visit.dishes = Array.isArray(visit.dishes)
+            ? visit.dishes.map((dish: Record<string, unknown>) => ({ ...dish, photoId: dish.photoId ?? null }))
+            : []
         })
       })
   }

@@ -3,6 +3,7 @@ export type PreferenceLevel = 'favorite' | 'like' | 'normal' | 'avoid'
 export type ScoreBand = 1 | 2 | 3 | 4 | 5
 export type MarkerType = 'image' | 'emoji'
 export type StarRating = 1 | 2 | 3 | 4 | 5
+export type PhotoKind = 'restaurant-marker' | 'visit' | 'dish'
 export type QueueDuration =
   | 'none'
   | 'under15'
@@ -32,6 +33,7 @@ export interface Restaurant {
   pricePerPerson: number | null
   markerType: MarkerType
   markerImageData: string | null
+  markerPhotoId: string | null
   merchantImageUrl: string | null
   markerEmoji: string
   createdAt: string
@@ -52,6 +54,7 @@ export interface Visit {
   dishes: VisitDish[]
   note: string
   photos: string[]
+  photoIds: Array<string | null>
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -64,6 +67,35 @@ export interface VisitDish {
   rating: StarRating | null
   price: number | null
   imageData: string | null
+  photoId: string | null
+}
+
+export interface Photo {
+  id: string
+  restaurantId: string | null
+  visitId: string | null
+  kind: PhotoKind
+  storageProvider: 'google-drive'
+  driveAccountId: string
+  driveFileId: string
+  fileName: string | null
+  mimeType: string
+  fileSize: number
+  width: number | null
+  height: number | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+  localState: 'synced' | 'delete-pending'
+  lastError: string | null
+}
+
+export interface PhotoCacheEntry {
+  photoId: string
+  blob: Blob
+  fileSize: number
+  cachedAt: string
+  lastAccessedAt: string
 }
 
 export interface RestaurantSummary extends Restaurant {

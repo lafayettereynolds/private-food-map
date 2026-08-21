@@ -39,6 +39,7 @@ export function AddVisitModal({ companionOptions, initialVisit, restaurant, onCl
   const [dishes, setDishes] = useState<VisitDish[]>(() => initialVisit?.dishes.map((dish) => ({ ...dish })) ?? [])
   const [feeling, setFeeling] = useState(initialVisit?.note ?? '')
   const [photos, setPhotos] = useState<string[]>(() => [...(initialVisit?.photos ?? [])])
+  const [photoIds, setPhotoIds] = useState<Array<string | null>>(() => [...(initialVisit?.photoIds ?? [])])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -67,6 +68,7 @@ export function AddVisitModal({ companionOptions, initialVisit, restaurant, onCl
         dishes,
         note: feeling,
         photos,
+        photoIds,
       })
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存失败，请稍后重试。')
@@ -94,7 +96,7 @@ export function AddVisitModal({ companionOptions, initialVisit, restaurant, onCl
         </div>
         <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
         <label className="field visit-feeling-field"><span>这次的感受 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
-        <VisitPhotoPicker onChange={setPhotos} value={photos} />
+        <VisitPhotoPicker onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds) }} photoIds={photoIds} value={photos} />
         <DishEditor onChange={setDishes} value={dishes} />
         {error ? <p className="form-error">{error}</p> : null}
         <footer className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">取消</button><button className="primary-button" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : null} {initialVisit ? '保存修改' : '保存到访'}</button></footer>

@@ -43,6 +43,7 @@ import { seedSixtyVisitedRestaurants } from './db/seedRestaurants'
 import { fetchTasteRecommendations } from './services/recommendations'
 import { initializeCloudSync } from './services/cloudSync'
 import { useCloudSync } from './services/useCloudSync'
+import { initializePhotoSync } from './services/photoSync'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
@@ -140,6 +141,7 @@ export default function App() {
           ...restaurant,
           markerType: restaurant.markerType || 'emoji',
           markerImageData: restaurant.markerImageData ?? null,
+          markerPhotoId: restaurant.markerPhotoId ?? null,
           merchantImageUrl: restaurant.merchantImageUrl ?? null,
           markerEmoji: restaurant.markerEmoji || '🍽️',
           pricePerPerson: restaurant.pricePerPerson ?? null,
@@ -246,6 +248,19 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    let cleanup: (() => void) | undefined
+    let disposed = false
+    initializePhotoSync().then((dispose) => {
+      if (disposed) dispose()
+      else cleanup = dispose
+    })
+    return () => {
+      disposed = true
+      cleanup?.()
+    }
+  }, [])
+
+  useEffect(() => {
     const parameters = new URLSearchParams(window.location.search)
     const requestedFromUrl = parameters.get('addSampleRestaurants') === '60'
     if (!IS_DEVELOPMENT || !requestedFromUrl) return
@@ -307,6 +322,10 @@ export default function App() {
 
   const handleSelect = useCallback((restaurant: RestaurantSummary) => {
     setSelectedId(restaurant.id)
+    setShowFilters(false)
+    if (window.matchMedia('(max-width: 760px)').matches) {
+      setIsSidebarOpen(false)
+    }
   }, [])
 
   function chooseList(list: ActiveList) {
@@ -430,8 +449,8 @@ export default function App() {
         </div>
       </header>
 
-      <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}`}>
-        <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}`}>
+      <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}${selectedRestaurant ? ' has-selection' : ''}`}>
+        <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}${showFilters && isSidebarOpen ? ' has-open-filters' : ''}`}>
           {isSidebarOpen ? <>
             <div className="sidebar-heading">
               <div><span className="eyebrow">MY FOOD MAP</span><h1>我的美食清单</h1><p>只看自己真正记录过的地方。</p></div>
@@ -459,6 +478,7 @@ export default function App() {
               companion={companionFilter}
               companionOptions={companionOptions}
               onCityChange={setCityFilter}
+              onClose={() => setShowFilters(false)}
               onCompanionChange={setCompanionFilter}
               onQueueDurationChange={setQueueFilter}
               onScoreBandChange={setScoreBandFilter}

@@ -2,6 +2,7 @@ import { CalendarClock, Clock3, Edit3, MapPin, Navigation, Plus, Star, Trash2, U
 import { RestaurantAvatar } from './RestaurantAvatar'
 import { formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
+import { SyncedImage } from './SyncedImage'
 
 interface RestaurantPreviewCardProps {
   restaurant: RestaurantSummary
@@ -68,14 +69,14 @@ export function RestaurantPreviewCard({
                 {visit.note ? <blockquote className="visit-feeling">“{visit.note}”</blockquote> : null}
                 {visit.photos.length ? (
                   <div className="visit-photos">
-                    {visit.photos.map((photo, photoIndex) => <a href={photo} key={`${visit.id}-photo-${photoIndex}`} rel="noreferrer" target="_blank"><img alt={`第 ${restaurant.visits.length - index} 次到访照片 ${photoIndex + 1}`} src={photo} /></a>)}
+                    {visit.photos.map((photo, photoIndex) => <span key={`${visit.id}-photo-${photoIndex}`}><SyncedImage alt={`第 ${restaurant.visits.length - index} 次到访照片 ${photoIndex + 1}`} loading="lazy" photoId={visit.photoIds[photoIndex]} source={photo} /></span>)}
                   </div>
                 ) : null}
                 {visit.dishes.length ? (
                   <div className="visit-dishes">
                     {visit.dishes.map((dish) => (
                       <span key={dish.id}>
-                        {dish.imageData ? <img alt="" src={dish.imageData} /> : null}
+                        {dish.imageData || dish.photoId ? <SyncedImage alt="" loading="lazy" photoId={dish.photoId} source={dish.imageData} /> : null}
                         <b>{dish.name || '未命名菜品'}</b>
                         {dish.taste ? <em>{dish.taste}</em> : null}
                         {dish.rating !== null ? <small className="dish-rating-summary"><Star fill="currentColor" size={8} />{dish.rating}</small> : null}

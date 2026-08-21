@@ -1,13 +1,15 @@
 import { useState, type ChangeEvent } from 'react'
 import { ImagePlus, Trash2 } from 'lucide-react'
 import { optimizeVisitPhoto } from '../utils/images'
+import { SyncedImage } from './SyncedImage'
 
 interface VisitPhotoPickerProps {
   value: string[]
-  onChange: (value: string[]) => void
+  photoIds: Array<string | null>
+  onChange: (value: string[], photoIds: Array<string | null>) => void
 }
 
-export function VisitPhotoPicker({ value, onChange }: VisitPhotoPickerProps) {
+export function VisitPhotoPicker({ value, photoIds, onChange }: VisitPhotoPickerProps) {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
 
@@ -22,7 +24,7 @@ export function VisitPhotoPicker({ value, onChange }: VisitPhotoPickerProps) {
       for (const file of files) {
         images.push(await optimizeVisitPhoto(file))
       }
-      onChange([...value, ...images])
+      onChange([...value, ...images], [...photoIds, ...images.map(() => null)])
     } catch (imageError) {
       setError(imageError instanceof Error ? imageError.message : '照片处理失败。')
     } finally {
@@ -36,8 +38,8 @@ export function VisitPhotoPicker({ value, onChange }: VisitPhotoPickerProps) {
       <div className="visit-photo-picker__grid">
         {value.map((photo, index) => (
           <figure key={`${index}-${photo.slice(-20)}`}>
-            <img alt={`本次就餐照片 ${index + 1}`} src={photo} />
-            <button aria-label={`删除第 ${index + 1} 张照片`} onClick={() => onChange(value.filter((_, photoIndex) => photoIndex !== index))} type="button"><Trash2 size={13} /></button>
+            <SyncedImage alt={`本次就餐照片 ${index + 1}`} photoId={photoIds[index]} source={photo} />
+            <button aria-label={`删除第 ${index + 1} 张照片`} onClick={() => onChange(value.filter((_, photoIndex) => photoIndex !== index), photoIds.filter((_, photoIndex) => photoIndex !== index))} type="button"><Trash2 size={13} /></button>
           </figure>
         ))}
         <label className="visit-photo-picker__add">

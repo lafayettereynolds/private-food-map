@@ -4,7 +4,6 @@ import {
   isAmapConfigured,
   loadAmap,
   type AMapInstance,
-  type AMapLngLat,
   type AMapMarkerInstance,
   type AMapMarkerClusterInstance,
   type AMapMarkerClusterPoint,
@@ -12,6 +11,7 @@ import {
   type AMapNamespace,
 } from '../services/amap'
 import { scoreColor, type RestaurantSummary } from '../types/domain'
+import { resolvePhotoSource } from '../services/photoAssets'
 
 interface MapViewProps {
   restaurants: RestaurantSummary[]
@@ -117,7 +117,9 @@ export function MapView({
       const content = createRestaurantImageMarkerContent(restaurant)
       content.classList.toggle('is-selected', restaurant.id === selectedIdRef.current)
       content.addEventListener('click', (event) => {
+        event.preventDefault()
         event.stopPropagation()
+        event.stopImmediatePropagation()
         selectRef.current(restaurant)
       })
       restaurantElementsRef.current.set(restaurant.id, content)
@@ -135,6 +137,20 @@ export function MapView({
       content.className = 'private-cluster-marker'
       content.setAttribute('aria-label', `附近 ${context.count} 家餐厅`)
       content.textContent = String(context.count)
+      content.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        const currentZoom = map.getZoom()
+        if (currentZoom >= MAP_MAX_ZOOM) return
+        const position = context.marker.getPosition()
+        map.setZoomAndCenter(
+          Math.min(MAP_MAX_ZOOM, currentZoom + 2),
+          [position.getLng(), position.getLat()],
+          false,
+          280,
+        )
+      })
       context.marker.setContent(content)
       context.marker.setAnchor('center')
       context.marker.setOffset(new AMap.Pixel(0, 0))
@@ -148,20 +164,6 @@ export function MapView({
       zoomOnClick: false,
       renderMarker,
       renderClusterMarker,
-    })
-
-    cluster.on('click', (rawEvent) => {
-      const clickPosition = readEventPosition(rawEvent)
-      if (!clickPosition) return
-      const currentZoom = map.getZoom()
-      if (currentZoom < MAP_MAX_ZOOM) {
-        map.setZoomAndCenter(
-          Math.min(MAP_MAX_ZOOM, currentZoom + 2),
-          clickPosition,
-          false,
-          280,
-        )
-      }
     })
 
     clusterRef.current = cluster
@@ -221,7 +223,7 @@ export function MapView({
 
 function createRestaurantImageMarkerContent(restaurant: RestaurantSummary) {
   const imageSource = restaurant.markerImageData || restaurant.merchantImageUrl
-  const useImage = restaurant.markerType === 'image' && imageSource
+  const useImage = restaurant.markerType === 'image' && Boolean(imageSource || restaurant.markerPhotoId)
   const scoreText = restaurant.scoreOutOfTen !== null
     ? `${restaurant.scoreOutOfTen.toFixed(1)} 分`
     : '想去'
@@ -240,10 +242,17 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary) {
   const visual = document.createElement('span')
   visual.className = 'private-image-marker__visual'
   if (useImage) {
+    visual.textContent = restaurant.markerEmoji || '🍽️'
     const image = document.createElement('img')
-    image.src = imageSource
     image.alt = ''
-    visual.appendChild(image)
+    void resolvePhotoSource(imageSource, restaurant.markerPhotoId)
+      .then((resolvedSource) => {
+        if (!resolvedSource) return
+        image.src = resolvedSource
+        visual.textContent = ''
+        visual.appendChild(image)
+      })
+      .catch(() => undefined)
   } else {
     visual.textContent = restaurant.markerEmoji || '🍽️'
   }
@@ -331,15 +340,6 @@ function coordinateKey(longitude: number, latitude: number) {
 function markerLayerPriority(restaurant: RestaurantSummary) {
   const ratingPriority = Math.round((restaurant.scoreOutOfTen ?? 0) * 10)
   return ratingPriority * 10 + Math.min(restaurant.visitCount, 99)
-}
-
-function readEventPosition(rawEvent: unknown): [number, number] | null {
-  const event = rawEvent as {
-    lnglat?: AMapLngLat
-    target?: { getPosition?: () => AMapLngLat }
-  }
-  const position = event.lnglat ?? event.target?.getPosition?.()
-  return position ? [position.getLng(), position.getLat()] : null
 }
 
 function MapFallback({

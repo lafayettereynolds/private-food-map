@@ -5,9 +5,9 @@ import type {
   CloudSyncResult,
   CloudSyncState,
 } from '../types/cloudSync'
-import type { Restaurant, Visit } from '../types/domain'
+import type { Photo, Restaurant, Visit } from '../types/domain'
 import type { StoredSyncStatus, SyncQueueItem } from '../types/sync'
-import { activeCounts, mergeCloudData, toCloudRestaurant, toCloudVisit } from './cloudSyncData'
+import { activeCounts, mergeCloudData, toCloudPhoto, toCloudRestaurant, toCloudVisit } from './cloudSyncData'
 import { CLOUD_SYNC_REQUEST_EVENT } from './syncEvents'
 
 const API_PATH = '/api/sync'
@@ -71,8 +71,8 @@ export function dismissInitialMigration() {
 export function syncNow(options: { allowInitialUpload?: boolean } = {}) {
   if (!CLOUD_SYNC_ENABLED) {
     return Promise.resolve({
-      localCounts: { restaurants: 0, visits: 0 },
-      cloudCounts: { restaurants: 0, visits: 0 },
+      localCounts: { restaurants: 0, visits: 0, photos: 0 },
+      cloudCounts: { restaurants: 0, visits: 0, photos: 0 },
       migrationRequired: false,
     })
   }
@@ -89,14 +89,15 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
   await storeMetadata('syncing', attemptAt, null)
 
   try {
-    const [localRestaurants, localVisits, queuedAtStart, cloudBefore] = await Promise.all([
+    const [localRestaurants, localVisits, localPhotos, queuedAtStart, cloudBefore] = await Promise.all([
       db.restaurants.toArray(),
       db.visits.toArray(),
+      db.photos.toArray(),
       db.syncQueue.toArray(),
       fetchCloudSnapshot(),
     ])
-    const localCounts = activeCounts(localRestaurants, localVisits)
-    const cloudCountsBefore = activeCounts(cloudBefore.restaurants, cloudBefore.visits)
+    const localCounts = activeCounts(localRestaurants, localVisits, localPhotos)
+    const cloudCountsBefore = activeCounts(cloudBefore.restaurants, cloudBefore.visits, cloudBefore.photos)
     const cloudIsCompletelyEmpty = cloudBefore.restaurants.length === 0 && cloudBefore.visits.length === 0
     const localHasData = localCounts.restaurants > 0 || localCounts.visits > 0
 
@@ -111,17 +112,28 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
       return { localCounts, cloudCounts: cloudCountsBefore, migrationRequired: true }
     }
 
-    const cloudAfter = await pushLocalSnapshot(localRestaurants, localVisits)
-    const merged = mergeCloudData(localRestaurants, localVisits, cloudAfter)
+    const cloudAfter = await pushLocalSnapshot(localRestaurants, localVisits, localPhotos)
+    const merged = mergeCloudData(localRestaurants, localVisits, localPhotos, cloudAfter)
     await db.transaction(
       'rw',
       db.restaurants,
       db.visits,
+      db.photos,
       db.syncQueue,
       db.syncMetadata,
       async () => {
-        await db.restaurants.bulkPut(merged.restaurants)
-        await db.visits.bulkPut(merged.visits)
+        for (const restaurant of merged.restaurants) {
+          const current = await db.restaurants.get(restaurant.id)
+          if (!current || current.updatedAt <= restaurant.updatedAt) await db.restaurants.put(restaurant)
+        }
+        for (const visit of merged.visits) {
+          const current = await db.visits.get(visit.id)
+          if (!current || current.updatedAt <= visit.updatedAt) await db.visits.put(visit)
+        }
+        for (const photo of merged.photos) {
+          const current = await db.photos.get(photo.id)
+          if (!current || current.updatedAt <= photo.updatedAt) await db.photos.put(photo)
+        }
         await clearCompletedQueueItems(queuedAtStart)
         await db.syncMetadata.put({
           key: 'cloud',
@@ -133,15 +145,15 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
       },
     )
 
-    const cloudCounts = activeCounts(cloudAfter.restaurants, cloudAfter.visits)
+    const cloudCounts = activeCounts(cloudAfter.restaurants, cloudAfter.visits, cloudAfter.photos)
     updateState({
       status: 'synced',
       lastSuccessfulSyncAt: cloudAfter.serverTime,
       errorMessage: null,
-      localCounts: activeCounts(merged.restaurants, merged.visits),
+      localCounts: activeCounts(merged.restaurants, merged.visits, merged.photos),
       cloudCounts,
     })
-    return { localCounts: activeCounts(merged.restaurants, merged.visits), cloudCounts, migrationRequired: false }
+    return { localCounts: activeCounts(merged.restaurants, merged.visits, merged.photos), cloudCounts, migrationRequired: false }
   } catch (error) {
     const message = error instanceof Error ? error.message : '云端同步失败，请稍后重试。'
     updateState({ status: 'error', errorMessage: message })
@@ -158,6 +170,7 @@ async function fetchCloudSnapshot(): Promise<CloudSnapshot> {
 async function pushLocalSnapshot(
   restaurants: Restaurant[],
   visits: Visit[],
+  photos: Photo[],
 ) {
   const response = await fetch(API_PATH, {
     method: 'POST',
@@ -165,6 +178,7 @@ async function pushLocalSnapshot(
     body: JSON.stringify({
       restaurants: restaurants.map(toCloudRestaurant),
       visits: visits.map(toCloudVisit),
+      photos: photos.map(toCloudPhoto),
     }),
   })
   return readSyncResponse(response)
@@ -215,5 +229,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isCloudSnapshot(value: unknown): value is CloudSnapshot {
   if (!isRecord(value)) return false
-  return Array.isArray(value.restaurants) && Array.isArray(value.visits) && typeof value.serverTime === 'string'
+  return Array.isArray(value.restaurants) && Array.isArray(value.visits) && Array.isArray(value.photos) && typeof value.serverTime === 'string'
 }

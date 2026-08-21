@@ -2,6 +2,7 @@ import { useState, type ChangeEvent } from 'react'
 import { ChevronDown, ImagePlus, Plus, Star, Trash2, UtensilsCrossed } from 'lucide-react'
 import type { StarRating, VisitDish } from '../types/domain'
 import { optimizeMarkerImage } from '../utils/images'
+import { SyncedImage } from './SyncedImage'
 
 interface DishEditorProps {
   value: VisitDish[]
@@ -16,6 +17,7 @@ function createDish(): VisitDish {
     rating: null,
     price: null,
     imageData: null,
+    photoId: null,
   }
 }
 
@@ -33,7 +35,7 @@ export function DishEditor({ value, onChange }: DishEditorProps) {
     if (!file) return
     setError('')
     try {
-      updateDish(dishId, { imageData: await optimizeMarkerImage(file) })
+      updateDish(dishId, { imageData: await optimizeMarkerImage(file), photoId: null })
     } catch (imageError) {
       setError(imageError instanceof Error ? imageError.message : '图片处理失败。')
     }
@@ -57,7 +59,7 @@ export function DishEditor({ value, onChange }: DishEditorProps) {
           {value.map((dish, index) => (
             <article className="dish-row" key={dish.id}>
               <label className="dish-image-input">
-                {dish.imageData ? <img alt="" src={dish.imageData} /> : <ImagePlus size={18} />}
+                {dish.imageData || dish.photoId ? <SyncedImage alt="" photoId={dish.photoId} source={dish.imageData} /> : <ImagePlus size={18} />}
                 <input accept="image/*" hidden onChange={(event) => handleImage(dish.id, event)} type="file" />
               </label>
               <label className="field"><span>菜名 {index + 1}</span><input onChange={(event) => updateDish(dish.id, { name: event.target.value })} placeholder="例如：寿喜烧" value={dish.name} /></label>

@@ -28,6 +28,7 @@ export function RestaurantEditorModal({
   const [tags, setTags] = useState(restaurant.tags.join('、'))
   const [markerType, setMarkerType] = useState<MarkerType>(restaurant.markerType)
   const [markerImageData, setMarkerImageData] = useState(restaurant.markerImageData)
+  const [markerPhotoId, setMarkerPhotoId] = useState(restaurant.markerPhotoId)
   const [markerEmoji, setMarkerEmoji] = useState(restaurant.markerEmoji)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -52,6 +53,7 @@ export function RestaurantEditorModal({
         tags: splitTags(tags),
         markerType,
         markerImageData,
+        markerPhotoId,
         markerEmoji,
       })
     } catch (saveError) {
@@ -75,10 +77,11 @@ export function RestaurantEditorModal({
         <MarkerStyleField
           markerEmoji={markerEmoji}
           markerImageData={markerImageData}
+          markerPhotoId={markerPhotoId}
           markerType={markerType}
           merchantImageUrl={restaurant.merchantImageUrl}
           onEmojiChange={setMarkerEmoji}
-          onImageChange={setMarkerImageData}
+          onImageChange={(value) => { setMarkerImageData(value); setMarkerPhotoId(value === restaurant.markerImageData ? restaurant.markerPhotoId : null) }}
           onTypeChange={setMarkerType}
         />
         {error ? <p className="form-error">{error}</p> : null}

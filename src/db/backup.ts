@@ -1,18 +1,20 @@
 import { db } from './appDb'
 import { APP_ENVIRONMENT, DATABASE_NAME } from '../config/appEnvironment'
-import type { Restaurant, Visit } from '../types/domain'
+import type { Photo, Restaurant, Visit } from '../types/domain'
+import type { CloudPhoto } from '../types/cloudSync'
 import { syncQueueId } from '../types/sync'
 import { requestCloudSync } from '../services/syncEvents'
 import { BACKUP_FILE_PREFIX } from '../config/appEnvironment'
 
 interface FoodMapBackup {
   app: 'Taste Map'
-  version: 1
+  version: 2
   environment: typeof APP_ENVIRONMENT
   databaseName: string
   exportedAt: string
   restaurants: Restaurant[]
   visits: Visit[]
+  photos: CloudPhoto[]
 }
 
 function createId() {
@@ -21,18 +23,25 @@ function createId() {
 }
 
 export async function createFoodMapBackup() {
-  const [restaurants, visits] = await Promise.all([
+  const [restaurants, visits, localPhotos] = await Promise.all([
     db.restaurants.toArray(),
     db.visits.toArray(),
+    db.photos.toArray(),
   ])
+  const photos = localPhotos.map(({ localState, lastError, ...photo }) => {
+    void localState
+    void lastError
+    return photo
+  })
   const backup: FoodMapBackup = {
     app: 'Taste Map',
-    version: 1,
+    version: 2,
     environment: APP_ENVIRONMENT,
     databaseName: DATABASE_NAME,
     exportedAt: new Date().toISOString(),
     restaurants,
     visits,
+    photos,
   }
   return JSON.stringify(backup, null, 2)
 }
@@ -62,13 +71,14 @@ export async function importFoodMapBackup(rawText: string) {
 
   const importedRestaurants = parsed.restaurants.filter(isRestaurantShape)
   const importedVisits = parsed.visits.filter(isVisitShape)
+  const importedPhotos = (parsed.photos ?? []).filter(isPhotoShape)
   if (!importedRestaurants.length && !importedVisits.length) {
     throw new Error('备份中没有可导入的记录。')
   }
 
   let restaurantCount = 0
   let visitCount = 0
-  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+  await db.transaction('rw', db.restaurants, db.visits, db.photos, db.syncQueue, async () => {
     const existingRestaurants = await db.restaurants.toArray()
     const existingByPoiId = new Map(existingRestaurants.map((restaurant) => [restaurant.amapPoiId, restaurant]))
     const existingById = new Map(existingRestaurants.map((restaurant) => [restaurant.id, restaurant]))
@@ -84,6 +94,7 @@ export async function importFoodMapBackup(rawText: string) {
         tags: Array.isArray(imported.tags) ? imported.tags : [],
         markerType: imported.markerType || 'emoji',
         markerImageData: imported.markerImageData ?? null,
+        markerPhotoId: imported.markerPhotoId ?? null,
         merchantImageUrl: imported.merchantImageUrl ?? null,
         markerEmoji: imported.markerEmoji || '🍽️',
         longTermNote: imported.longTermNote ?? '',
@@ -116,9 +127,13 @@ export async function importFoodMapBackup(rawText: string) {
               ...dish,
               taste: typeof dish.taste === 'string' ? dish.taste : '',
               rating: isStarRating(dish.rating) ? dish.rating : null,
+              photoId: typeof dish.photoId === 'string' ? dish.photoId : null,
             }))
           : [],
         photos: Array.isArray(imported.photos) ? imported.photos : [],
+        photoIds: Array.isArray(imported.photoIds)
+          ? (imported.photos ?? []).map((_, index) => imported.photoIds[index] ?? null)
+          : (imported.photos ?? []).map(() => null),
         note: imported.note ?? '',
         updatedAt: imported.updatedAt || new Date().toISOString(),
         deletedAt: imported.deletedAt ?? null,
@@ -132,6 +147,16 @@ export async function importFoodMapBackup(rawText: string) {
       })
       visitCount += 1
     }
+
+    for (const imported of importedPhotos) {
+      const normalized: Photo = {
+        ...imported,
+        restaurantId: imported.restaurantId ? (restaurantIdMap.get(imported.restaurantId) ?? imported.restaurantId) : null,
+        localState: 'synced',
+        lastError: null,
+      }
+      await db.photos.put(normalized)
+    }
   })
 
   requestCloudSync()
@@ -142,10 +167,20 @@ function isStarRating(value: unknown): value is 1 | 2 | 3 | 4 | 5 {
   return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 5
 }
 
-function isBackupShape(value: unknown): value is { restaurants: unknown[]; visits: unknown[] } {
+function isBackupShape(value: unknown): value is { restaurants: unknown[]; visits: unknown[]; photos?: unknown[] } {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
   return Array.isArray(candidate.restaurants) && Array.isArray(candidate.visits)
+}
+
+function isPhotoShape(value: unknown): value is CloudPhoto {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<CloudPhoto>
+  return Boolean(
+    candidate.id && candidate.storageProvider === 'google-drive' && candidate.driveAccountId &&
+    candidate.driveFileId && candidate.mimeType && typeof candidate.fileSize === 'number' &&
+    candidate.createdAt && candidate.updatedAt,
+  )
 }
 
 function isRestaurantShape(value: unknown): value is Restaurant {

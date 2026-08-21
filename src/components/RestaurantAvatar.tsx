@@ -1,5 +1,6 @@
 import { ImageIcon } from 'lucide-react'
 import { scoreColor, type RestaurantSummary } from '../types/domain'
+import { SyncedImage } from './SyncedImage'
 
 interface RestaurantAvatarProps {
   restaurant: RestaurantSummary
@@ -8,7 +9,7 @@ interface RestaurantAvatarProps {
 
 export function RestaurantAvatar({ restaurant, size = 'small' }: RestaurantAvatarProps) {
   const imageSource = restaurant.markerImageData || restaurant.merchantImageUrl
-  const useImage = restaurant.markerType === 'image' && imageSource
+  const useImage = restaurant.markerType === 'image' && (imageSource || restaurant.markerPhotoId)
 
   return (
     <span
@@ -16,7 +17,7 @@ export function RestaurantAvatar({ restaurant, size = 'small' }: RestaurantAvata
       style={{ borderColor: scoreColor(restaurant.scoreOutOfTen) }}
     >
       {useImage ? (
-        <img alt="" src={imageSource} />
+        <SyncedImage alt="" photoId={restaurant.markerPhotoId} source={imageSource} />
       ) : restaurant.markerType === 'emoji' ? (
         <span>{restaurant.markerEmoji || '🍽️'}</span>
       ) : (

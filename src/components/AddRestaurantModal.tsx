@@ -265,7 +265,7 @@ export function AddRestaurantModal({
               </div>
               <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
               <label className="field visit-feeling-field"><span>这次的感受 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
-              <VisitPhotoPicker onChange={setPhotos} value={photos} />
+              <VisitPhotoPicker onChange={(nextPhotos) => setPhotos(nextPhotos)} photoIds={photos.map(() => null)} value={photos} />
               <DishEditor onChange={setDishes} value={dishes} />
             </div>
           ) : null}

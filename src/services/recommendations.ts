@@ -94,6 +94,7 @@ export async function fetchTasteRecommendations(
       pricePerPerson: null,
       markerType: poi.merchantImageUrl ? 'image' : 'emoji',
       markerImageData: null,
+      markerPhotoId: null,
       merchantImageUrl: poi.merchantImageUrl,
       markerEmoji: '🍽️',
       createdAt: now,

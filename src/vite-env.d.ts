@@ -12,6 +12,7 @@ interface ImportMetaEnv {
   readonly VITE_AMAP_PROD_KEY?: string
   readonly VITE_AMAP_PROD_SECURITY_CODE?: string
   readonly VITE_AMAP_PROD_SECURITY_KEY?: string
+  readonly VITE_GOOGLE_CLIENT_ID?: string
 }
 
 interface ImportMeta {

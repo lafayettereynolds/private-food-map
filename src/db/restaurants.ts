@@ -37,7 +37,7 @@ function legacyPreferenceLevelFromRating(rating: number | null): PreferenceLevel
 
 function normalizeDishes(dishes: VisitDish[]) {
   return dishes
-    .filter((dish) => dish.name.trim() || (dish.taste ?? '').trim() || dish.rating !== null || dish.price !== null || dish.imageData)
+    .filter((dish) => dish.name.trim() || (dish.taste ?? '').trim() || dish.rating !== null || dish.price !== null || dish.imageData || dish.photoId)
     .map((dish) => ({
       ...dish,
       name: dish.name.trim(),
@@ -101,6 +101,7 @@ export async function addRestaurantFromPoi(
     pricePerPerson: input.pricePerPerson,
     markerType: input.markerType,
     markerImageData: input.markerImageData,
+    markerPhotoId: null,
     merchantImageUrl: input.poi.merchantImageUrl,
     markerEmoji: input.markerEmoji || '🍽️',
     createdAt: existingRestaurant?.createdAt ?? now,
@@ -125,6 +126,7 @@ export async function addRestaurantFromPoi(
         dishes: normalizeDishes(input.initialVisit.dishes),
         note: input.initialVisit.note.trim(),
         photos: input.initialVisit.photos,
+        photoIds: input.initialVisit.photos.map(() => null),
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
@@ -169,6 +171,7 @@ export interface RestaurantBasicsUpdate {
   pricePerPerson: number | null
   markerType: MarkerType
   markerImageData: string | null
+  markerPhotoId: string | null
   markerEmoji: string
 }
 
@@ -178,7 +181,16 @@ export async function updateRestaurantBasics(
 ) {
   const now = new Date().toISOString()
   let updated = 0
-  await db.transaction('rw', db.restaurants, db.syncQueue, async () => {
+  await db.transaction('rw', db.restaurants, db.photos, db.syncQueue, async () => {
+    const existing = await db.restaurants.get(id)
+    if (!existing) return
+    if (existing.markerPhotoId && existing.markerPhotoId !== changes.markerPhotoId) {
+      await db.photos.update(existing.markerPhotoId, {
+        localState: 'delete-pending',
+        updatedAt: now,
+        lastError: null,
+      })
+    }
     updated = await db.restaurants.update(id, {
       ...changes,
       name: changes.name.trim(),
@@ -213,6 +225,7 @@ export interface AddVisitInput {
   dishes: VisitDish[]
   note: string
   photos: string[]
+  photoIds: Array<string | null>
 }
 
 export async function addVisit(restaurantId: string, input: AddVisitInput) {
@@ -233,12 +246,13 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
     dishes: normalizeDishes(input.dishes),
     note: input.note.trim(),
     photos: input.photos,
+    photoIds: input.photos.map((_, index) => input.photoIds[index] ?? null),
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
   }
 
-  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+  await db.transaction('rw', db.restaurants, db.visits, db.photos, db.syncQueue, async () => {
     const restaurant = await db.restaurants.get(restaurantId)
     if (!restaurant) throw new Error('没有找到这家餐厅。')
     await db.visits.add(visit)
@@ -300,8 +314,24 @@ export async function updateVisit(id: string, input: AddVisitInput) {
       dishes: normalizeDishes(input.dishes),
       note: input.note.trim(),
       photos: input.photos,
+      photoIds: input.photos.map((_, index) => input.photoIds[index] ?? null),
       updatedAt: now,
       deletedAt: null,
+    }
+    const retainedPhotoIds = new Set([
+      ...updatedVisit.photoIds,
+      ...updatedVisit.dishes.map((dish) => dish.photoId),
+    ].filter((photoId): photoId is string => Boolean(photoId)))
+    const removedPhotoIds = [
+      ...existingVisit.photoIds,
+      ...existingVisit.dishes.map((dish) => dish.photoId),
+    ].filter((photoId): photoId is string => Boolean(photoId) && !retainedPhotoIds.has(photoId as string))
+    if (removedPhotoIds.length) {
+      await db.photos.where('id').anyOf(removedPhotoIds).modify({
+        localState: 'delete-pending',
+        updatedAt: now,
+        lastError: null,
+      })
     }
     await db.visits.put(updatedVisit)
 
@@ -347,13 +377,22 @@ export async function updateVisit(id: string, input: AddVisitInput) {
 
 export async function deleteRestaurant(id: string) {
   const now = new Date().toISOString()
-  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+  await db.transaction('rw', db.restaurants, db.visits, db.photos, db.syncQueue, async () => {
     const restaurant = await db.restaurants.get(id)
     if (!restaurant) return
     const visits = await db.visits.where('restaurantId').equals(id).toArray()
+    const photos = await db.photos.where('restaurantId').equals(id).toArray()
     await db.restaurants.update(id, { deletedAt: now, updatedAt: now })
     if (visits.length) {
       await db.visits.bulkPut(visits.map((visit) => ({ ...visit, deletedAt: now, updatedAt: now })))
+    }
+    if (photos.length) {
+      await db.photos.bulkPut(photos.map((photo) => ({
+        ...photo,
+        localState: 'delete-pending' as const,
+        updatedAt: now,
+        lastError: null,
+      })))
     }
     await db.syncQueue.bulkPut([
       {

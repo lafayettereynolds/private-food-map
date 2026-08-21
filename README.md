@@ -1,6 +1,6 @@
 # Taste Map · 私人美食地图
 
-Taste Map 是一个本地优先的私人美食足迹 Web App，用来记录去过和想去的餐厅、每次到访、评分、消费、排队时长、饭搭子、菜品、照片与个人感受。高德地图提供地图、定位、餐厅搜索和路线导航；正式网站通过 Cloudflare Worker + D1 在电脑和 iPhone 之间同步文字记录，IndexedDB 继续负责离线缓存和快速启动。
+Taste Map 是一个本地优先的私人美食足迹 Web App，用来记录去过和想去的餐厅、每次到访、评分、消费、排队时长、饭搭子、菜品、照片与个人感受。高德地图提供地图、定位、餐厅搜索和路线导航；正式网站通过 Cloudflare Worker + D1 同步结构化记录，实际照片保存在每位用户自己授权的私有 Google Drive，IndexedDB 负责离线数据和图片缓存。
 
 ## 主要功能
 
@@ -11,6 +11,7 @@ Taste Map 是一个本地优先的私人美食足迹 Web App，用来记录去�
 - 地图使用餐厅图片或表情作为标记，外圈颜色根据 10 分制评分区间自动生成
 - 设置中支持完整 JSON 数据导出和合并导入
 - 正式网站支持 D1 跨设备同步、离线修改重试、软删除和首次本地数据安全迁移
+- Google Drive 采用 BYOS（自带存储）模式，使用最小 `drive.file` 权限同步餐厅、到访和菜品照片
 
 ## 环境要求
 
@@ -38,6 +39,7 @@ npm install
 VITE_CLOUD_SYNC_ENABLED=false
 VITE_AMAP_KEY=
 VITE_AMAP_SECURITY_KEY=
+VITE_GOOGLE_CLIENT_ID=
 ```
 
 如果以后需要分别使用不同的高德应用，可以改用：
@@ -54,6 +56,8 @@ VITE_AMAP_PROD_SECURITY_KEY=
 `.env`、`.env.local` 及其他本地环境文件已被 Git 忽略，不能提交到仓库。修改环境变量后需要重新启动对应服务。
 
 没有配置 Key 时，应用仍可读取本地数据，但地图、定位和高德餐厅搜索不可用。
+
+`VITE_GOOGLE_CLIENT_ID` 是 Google OAuth Web Client ID，本身不是密钥，可以进入浏览器构建；Access Token 只保存在当前标签页的 sessionStorage，不写入 GitHub、D1、URL 或备份。Google Client Secret 不应使用 `VITE_` 变量，也不需要放入当前纯浏览器 OAuth 流程。
 
 `VITE_CLOUD_SYNC_ENABLED` 在本地开发和本地预览中应保持 `false`，避免测试数据连接正式 D1。部署到 HTTPS 的正式 Cloudflare Worker 时，云端同步会自动启用。
 
@@ -103,17 +107,19 @@ Cloudflare 配置保存在 `wrangler.jsonc`：
 - D1 database：`food-map-db`
 - Worker binding：`DB`
 - Worker API：`GET /api/sync`、`POST /api/sync`
-- Schema migration：`migrations/0001_initial.sql`
+- Schema migrations：`migrations/0001_initial.sql`、`migrations/0002_add_google_drive_photos.sql`
 
 同步顺序始终是：先读 IndexedDB 并立即显示，再在后台连接 Worker；新增、编辑和删除也会先写本地，再异步同步 D1。网络失败时本地记录和同步队列都会保留，可通过顶部“同步失败”或设置中的“立即同步”重试。
 
 Restaurant 和 Visit 使用原有稳定 ID，通过 `updatedAt` 执行 Last Write Wins。删除写入 `deletedAt` 软删除标记，防止旧设备把已删除记录重新上传。
 
-照片不会写入 D1：
+照片采用三层存储：
 
-- Restaurant 的 `markerImageData` 只保存在当前设备
-- Visit 的 `photos` 只保存在当前设备
-- Dish 的 `imageData` 只保存在当前设备
+- Cloudflare D1：只保存 Photo metadata、`driveFileId` 及 Restaurant / Visit / Dish 引用
+- Google Drive：保存实际私有图片文件，不创建公开链接或共享权限
+- IndexedDB：保存待上传原图和最近使用的 Blob 缓存；缓存上限约 300 MB，可在设置中单独清除
+
+第一次连接会创建 `Taste Map/Photos`。测试环境使用 `Taste Map/Development Photos`，避免测试图片混入正式目录。新设备需要重新授权同一个 Google 账号；OAuth Token 不通过 D1 跨设备同步。
 
 本地 D1 开发与测试：
 
@@ -153,7 +159,7 @@ D1 只能通过 Worker binding 访问，前端不会获得 D1 credential 或 Clo
 
 ## 数据存在哪里
 
-餐厅、到访和照片保存在当前环境对应的 IndexedDB 数据库中：测试版为 `food-map-dev`，正式版为 `food-map-prod`。正式 Cloudflare 网站还会把不含照片的餐厅、到访、评分、标签和笔记同步到 D1。常用城市等少量界面偏好保存在各自来源隔离的 localStorage。
+餐厅、到访和待上传照片保存在当前环境对应的 IndexedDB 数据库中：测试版为 `food-map-dev`，正式版为 `food-map-prod`。正式 Cloudflare 网站把餐厅、到访、评分、标签、笔记及图片索引同步到 D1；实际图片进入用户自己的 Google Drive。本地图片 Blob 缓存可以清除，不会删除 Drive 原图。
 
 GitHub 只保存代码和 D1 Schema，不包含实际餐厅数据。不同站点地址仍有各自的 IndexedDB；只有同一个正式 Cloudflare 网站会通过 D1 共享文字记录。清除单个设备的站点数据会删除该设备缓存，但下次打开正式网站时可重新从 D1 下载。
 
@@ -163,7 +169,7 @@ GitHub 只保存代码和 D1 Schema，不包含实际餐厅数据。不同站点
 2. 选择“导出完整备份”。
 3. 将下载的 JSON 文件保存在安全位置。
 
-备份包含环境标识、数据库名称、餐厅、到访历史、评分、照片、菜品、标签和笔记。正式版文件名为 `food-map-backup-YYYY-MM-DD.json`，测试版为 `food-map-dev-backup-YYYY-MM-DD.json`。首次迁移到空 D1 前也会自动下载同样的备份。备份文件属于私人数据，不应加入 Git 仓库。
+备份包含环境标识、数据库名称、餐厅、到访历史、评分、菜品、标签、笔记和 Google Drive 图片索引。已同步的 Drive 图片二进制不会塞进 JSON；尚未上传的本地照片会继续留在浏览器中，失败时不会删除。正式版文件名为 `food-map-backup-YYYY-MM-DD.json`，测试版为 `food-map-dev-backup-YYYY-MM-DD.json`。首次迁移到空 D1 前也会自动下载同样的备份。备份文件属于私人数据，不应加入 Git 仓库。
 
 ## 恢复数据
 
@@ -198,5 +204,6 @@ wrangler.jsonc        Worker、静态资源和 D1 binding 配置
 - `node_modules/`、`dist/` 等依赖和构建产物
 - IndexedDB、本地数据库文件、导出的备份文件
 - 用户餐厅数据和用户照片
+- Google OAuth Access Token、Refresh Token 或 Client Secret
 
 提交前请检查 `git status`，确认只包含预期的源代码和文档。
