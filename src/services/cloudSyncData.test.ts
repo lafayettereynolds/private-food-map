@@ -146,7 +146,9 @@ function makeVisit(changes: Partial<Visit> = {}): Visit {
     pricePerPerson: 128,
     partySize: 2,
     queueDuration: 'under15',
+    diningOccasions: [],
     diningOccasion: null,
+    diningOccasionText: '',
     valueRating: null,
     environmentRating: null,
     serviceRating: null,
@@ -168,6 +170,9 @@ function makeVisit(changes: Partial<Visit> = {}): Visit {
     updatedAt: '2026-08-20T11:00:00.000Z',
     deletedAt: null,
     ...changes,
+    valueTags: changes.valueTags ?? [],
+    environmentTags: changes.environmentTags ?? [],
+    serviceTags: changes.serviceTags ?? [],
   }
 }
 

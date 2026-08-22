@@ -191,22 +191,26 @@ export interface ResolvedLocation {
   district: string
 }
 
-export async function detectCurrentLocation(): Promise<ResolvedLocation> {
+export async function detectCurrentCoordinates(): Promise<Coordinates> {
   if (!navigator.geolocation) throw new Error('当前浏览器不支持定位。')
 
-  const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+  const position = await withTimeout(new Promise<GeolocationPosition>((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject, {
       enableHighAccuracy: false,
-      timeout: 7000,
+      timeout: 4500,
       maximumAge: 5 * 60 * 1000,
     })
-  })
-  const AMap = await loadAmap()
+  }), 5_000, '定位超时，请检查浏览器的位置权限后重试。')
+  return { longitude: position.coords.longitude, latitude: position.coords.latitude }
+}
 
-  return new Promise((resolve, reject) => {
+export async function resolveCoordinatesLocation(coordinates: Coordinates): Promise<ResolvedLocation> {
+  const AMap = await withTimeout(loadAmap(), 8_000, '地图服务加载超时，请检查网络后重试。')
+
+  return withTimeout(new Promise((resolve, reject) => {
     const geocoder = new AMap.Geocoder({ radius: 1000 })
     geocoder.getAddress(
-      [position.coords.longitude, position.coords.latitude],
+      [coordinates.longitude, coordinates.latitude],
       (status, result) => {
         if (status !== 'complete' || typeof result === 'string') {
           reject(new Error(typeof result === 'string' ? result : result.info || '定位城市解析失败。'))
@@ -219,12 +223,41 @@ export async function detectCurrentLocation(): Promise<ResolvedLocation> {
           return
         }
         resolve({
-          longitude: position.coords.longitude,
-          latitude: position.coords.latitude,
+          longitude: coordinates.longitude,
+          latitude: coordinates.latitude,
           address: result.regeocode?.formattedAddress || '当前位置',
           city,
           district: textValue(component?.district),
         })
+      },
+    )
+  }), 6_000, '位置解析超时，请稍后重试。')
+}
+
+export async function detectCurrentLocation(): Promise<ResolvedLocation> {
+  return resolveCoordinatesLocation(await detectCurrentCoordinates())
+}
+
+function withTimeout<Value>(promise: Promise<Value>, timeoutMs: number, message: string) {
+  return new Promise<Value>((resolve, reject) => {
+    let settled = false
+    const timeout = window.setTimeout(() => {
+      if (settled) return
+      settled = true
+      reject(new Error(message))
+    }, timeoutMs)
+    promise.then(
+      (value) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeout)
+        resolve(value)
+      },
+      (error) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeout)
+        reject(error)
       },
     )
   })

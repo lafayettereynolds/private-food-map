@@ -35,7 +35,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
   const [rating, setRating] = useState<StarRatingValue>(initialVisit?.rating ?? nearestStar(restaurant.averageRating) ?? 5)
-  const [price, setPrice] = useState(initialVisit?.totalPrice?.toString() ?? '')
+  const [price, setPrice] = useState((initialVisit?.paymentMode === 'separate' ? initialVisit.myActualSpend : initialVisit?.totalPrice)?.toString() ?? '')
   const [companions, setCompanions] = useState(initialVisit?.companions.join('、') ?? '')
   const [partySize, setPartySize] = useState(initialVisit?.partySize.toString() ?? '1')
   const [queueDuration, setQueueDuration] = useState<QueueDuration>(initialVisit?.queueDuration ?? 'none')
@@ -48,10 +48,14 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
     diningMode: initialVisit.diningMode ?? 'dine_in',
     myActualSpend: initialVisit.myActualSpend?.toString() ?? '',
     paymentMode: initialVisit.paymentMode ?? null,
-    diningOccasion: initialVisit.diningOccasion ?? null,
+    diningOccasions: initialVisit.diningOccasions?.length ? initialVisit.diningOccasions : initialVisit.diningOccasion ? [initialVisit.diningOccasion] : [],
+    diningOccasionText: initialVisit.diningOccasionText ?? '',
     valueRating: initialVisit.valueRating ?? null,
     environmentRating: initialVisit.environmentRating ?? null,
     serviceRating: initialVisit.serviceRating ?? null,
+    valueTags: initialVisit.valueTags ?? [],
+    environmentTags: initialVisit.environmentTags ?? [],
+    serviceTags: initialVisit.serviceTags ?? [],
     noiseLevel: initialVisit.noiseLevel ?? null,
     diningDuration: initialVisit.diningDuration ?? null,
     portionLevel: initialVisit.portionLevel ?? null,
@@ -69,7 +73,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
     event.preventDefault()
     const numericPrice = price ? Number(price) : null
     if (numericPrice !== null && (!Number.isFinite(numericPrice) || numericPrice < 0)) {
-      setError('请输入正确的消费总价。')
+      setError(extraFields.paymentMode === 'separate' ? '请输入正确的个人消费金额。' : '请输入正确的消费总价。')
       return
     }
     const numericPartySize = Number(partySize)
@@ -77,11 +81,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
       setError('用餐人数至少为 1 人。')
       return
     }
-    const numericActualSpend = extraFields.myActualSpend ? Number(extraFields.myActualSpend) : null
-    if (numericActualSpend !== null && (!Number.isFinite(numericActualSpend) || numericActualSpend < 0)) {
-      setError('请输入正确的个人实际消费。')
-      return
-    }
+    const isSeparatePayment = extraFields.paymentMode === 'separate'
     setSaving(true)
     setError('')
     try {
@@ -90,15 +90,20 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         rating,
         visibility: extraFields.visibility,
         diningMode: extraFields.diningMode,
-        totalPrice: numericPrice,
-        myActualSpend: numericActualSpend,
+        totalPrice: isSeparatePayment ? null : numericPrice,
+        myActualSpend: isSeparatePayment ? numericPrice : null,
         paymentMode: extraFields.paymentMode,
         partySize: numericPartySize,
         queueDuration,
-        diningOccasion: extraFields.diningOccasion,
+        diningOccasions: extraFields.diningOccasions,
+        diningOccasion: extraFields.diningOccasions[0] ?? null,
+        diningOccasionText: extraFields.diningOccasionText,
         valueRating: extraFields.valueRating,
         environmentRating: extraFields.environmentRating,
         serviceRating: extraFields.serviceRating,
+        valueTags: extraFields.valueTags,
+        environmentTags: extraFields.environmentTags,
+        serviceTags: extraFields.serviceTags,
         noiseLevel: extraFields.noiseLevel,
         diningDuration: extraFields.diningDuration,
         portionLevel: extraFields.portionLevel,
@@ -128,21 +133,22 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
       onClose={onClose}
     >
       <form className="editor-form" onSubmit={handleSubmit}>
+        <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
         <label className="field"><span>本次个人评价</span><StarRating onChange={setRating} value={rating} /></label>
-        <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} value={extraFields} />
+        <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="primary" value={extraFields} />
         <div className="field-grid visit-time-grid">
           <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input onChange={(event) => setDate(event.target.value)} required type="date" value={date} /></div></label>
           <label className="field"><span>时间</span><input onChange={(event) => setTime(event.target.value)} required type="time" value={time} /></label>
         </div>
-        <label className="field field-with-leading-icon"><span>本次消费总价（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 193.50" step="0.01" type="number" value={price} /></div>{calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">按 {partySize} 人计算，约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}</label>
+        <label className="field field-with-leading-icon"><span>{extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）'}</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 193.50" step="0.01" type="number" value={price} /></div>{extraFields.paymentMode !== 'separate' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">{partySize} 人 · 约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}</label>
         <div className="field-grid party-grid">
           <label className="field field-with-leading-icon"><span>用餐人数</span><div><Users size={16} /><input min="1" onChange={(event) => setPartySize(event.target.value)} required step="1" type="number" value={partySize} /></div></label>
           <CompanionPicker onChange={setCompanions} options={companionOptions} value={companions} />
         </div>
         <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
-        <label className="field visit-feeling-field"><span>这次的感受 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
         <VisitPhotoPicker onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds) }} photoIds={photoIds} value={photos} />
         <DishEditor onChange={setDishes} value={dishes} />
+        <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
         {error ? <p className="form-error">{error}</p> : null}
         <footer className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">取消</button><button className="primary-button" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : null} {initialVisit ? '保存修改' : '保存到访'}</button></footer>
       </form>

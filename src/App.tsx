@@ -3,18 +3,17 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import {
   CheckCircle2,
   Globe2,
+  List,
   Map as MapIcon,
   MapPin,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
-  Settings,
   SlidersHorizontal,
   Sparkles,
   Utensils,
   UserRound,
-  UsersRound,
 } from 'lucide-react'
 import { AddRestaurantModal } from './components/AddRestaurantModal'
 import { AddVisitModal } from './components/AddVisitModal'
@@ -35,10 +34,11 @@ import {
 import { RestaurantList } from './components/RestaurantList'
 import { RestaurantPreviewCard } from './components/RestaurantPreviewCard'
 import { SettingsModal } from './components/SettingsModal'
-import { CloudSyncIndicator } from './components/CloudSyncIndicator'
 import { CommunityPage } from './components/CommunityPage'
 import { FriendsPage } from './components/FriendsPage'
 import { ProfilePage } from './components/ProfilePage'
+import { RestaurantRoulette } from './components/RestaurantRoulette'
+import { TasteFootprints } from './components/TasteFootprints'
 import { CLOUD_SYNC_ENABLED, IS_DEVELOPMENT } from './config/appEnvironment'
 import { db } from './db/appDb'
 import {
@@ -52,7 +52,7 @@ import {
   type RestaurantBasicsUpdate,
 } from './db/restaurants'
 import { seedSixtyVisitedRestaurants } from './db/seedRestaurants'
-import { CURRENT_USER_ID, ensureCurrentUser, setSharedMealInvitationStatus, updateCurrentUserProfile, upsertFriendship } from './db/social'
+import { CURRENT_USER_ID, ensureCurrentUser, setSharedMealInvitationStatus, updateCurrentUserMapPrivacy, updateCurrentUserProfile, upsertFriendship } from './db/social'
 import { fetchTasteRecommendations } from './services/recommendations'
 import { initializeCloudSync } from './services/cloudSync'
 import { useCloudSync } from './services/useCloudSync'
@@ -68,8 +68,8 @@ import {
   type Visit,
 } from './types/domain'
 
-type ActiveList = RestaurantStatus | 'recommended'
-type ActiveView = 'map' | 'community' | 'friends' | 'profile'
+type ActiveList = RestaurantStatus | 'recommended' | 'footprints'
+type ActiveView = 'map' | 'community' | 'profile'
 
 export default function App() {
   const restaurants = useLiveQuery(
@@ -106,7 +106,8 @@ export default function App() {
   const [acceptedMealParticipant, setAcceptedMealParticipant] = useState<SharedMealParticipant | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [showRoulette, setShowRoulette] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [recommendations, setRecommendations] = useState<RestaurantSummary[]>([])
   const [recommendationsLoading, setRecommendationsLoading] = useState(false)
@@ -206,11 +207,15 @@ export default function App() {
       visited: summaries.filter((restaurant) => restaurant.status === 'visited').length,
       wantToGo: summaries.filter((restaurant) => restaurant.status === 'wantToGo').length,
       recommended: recommendations.length,
+      footprints: summaries.reduce((count, restaurant) => count + restaurant.visits.length, 0),
     }),
     [recommendations.length, summaries],
   )
 
   const visibleRestaurants = useMemo(() => {
+    if (activeList === 'footprints') {
+      return summaries.filter((restaurant) => restaurant.status === 'visited').sort(compareRestaurantQuality)
+    }
     const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
     const source = activeList === 'recommended' ? recommendations : summaries
     const filtered = source.filter((restaurant) => {
@@ -240,7 +245,7 @@ export default function App() {
             matchesQueueDuration(visit.queueDuration, queueFilter) &&
             (companionFilter === 'all' || visit.companions.includes(companionFilter)) &&
             (diningModeFilter === 'all' || (visit.diningMode ?? 'dine_in') === diningModeFilter) &&
-            (diningOccasionFilter === 'all' || visit.diningOccasion === diningOccasionFilter) &&
+            (diningOccasionFilter === 'all' || visit.diningOccasions?.includes(diningOccasionFilter) || visit.diningOccasion === diningOccasionFilter) &&
             (recommendationSourceFilter === 'all' || visit.recommendationSourceType === recommendationSourceFilter) &&
             matchesPriceRange(visit.pricePerPerson, priceRangeFilter) &&
             matchesVisitPeriod(visit.visitedAt, visitPeriodFilter),
@@ -284,7 +289,7 @@ export default function App() {
     () => new Map(summaries.map((restaurant) => [restaurant.amapPoiId, restaurant])),
     [summaries],
   )
-  const activeFilterCount = activeList === 'recommended'
+  const activeFilterCount = activeList === 'recommended' || activeList === 'footprints'
     ? 0
     : (scoreBandFilter !== 'all' ? 1 : 0) +
       (cityFilter !== 'all' ? 1 : 0) +
@@ -331,7 +336,7 @@ export default function App() {
   useEffect(() => {
     const parameters = new URLSearchParams(window.location.search)
     const requestedFromUrl = parameters.get('addSampleRestaurants') === '60'
-    if (!IS_DEVELOPMENT || !requestedFromUrl) return
+    if (!IS_DEVELOPMENT) return
     if (requestedFromUrl) {
       parameters.delete('addSampleRestaurants')
       const cleanUrl = `${window.location.pathname}${parameters.size ? `?${parameters}` : ''}${window.location.hash}`
@@ -341,7 +346,7 @@ export default function App() {
       .then((addedCount) => {
         setActiveList('visited')
         setSelectedId(null)
-        if (addedCount) setToast(`已新增 ${addedCount} 家餐厅`)
+        if (requestedFromUrl && addedCount) setToast(`已新增 ${addedCount} 家餐厅`)
         else if (requestedFromUrl) setToast('这 60 家餐厅已经添加过了')
       })
       .catch((seedError) => {
@@ -392,9 +397,7 @@ export default function App() {
     setActiveView('map')
     setSelectedId(restaurant.id)
     setShowFilters(false)
-    if (window.matchMedia('(max-width: 760px)').matches) {
-      setIsSidebarOpen(false)
-    }
+    setIsSidebarOpen(false)
   }, [])
 
   function chooseList(list: ActiveList) {
@@ -410,12 +413,18 @@ export default function App() {
       setVisitPeriodFilter('all')
       setCompanionFilter('all')
     }
-    if (list === 'recommended') {
+    if (list === 'recommended' || list === 'footprints') {
       setScoreBandFilter('all')
       setTagFilter('all')
       setCityFilter('all')
       setShowFilters(false)
     }
+  }
+
+  function toggleMapList() {
+    setSelectedId(null)
+    if (isSidebarOpen && activeList === 'footprints') setActiveList('visited')
+    setIsSidebarOpen((open) => !open)
   }
 
   async function handleAdd(input: AddRestaurantInput) {
@@ -544,33 +553,25 @@ export default function App() {
           <div><strong>Taste Map</strong><span>我的私人美食地图</span></div>
           {IS_DEVELOPMENT ? <span className="environment-badge" title="当前使用 food-map-dev 测试数据库">🧪 测试环境</span> : null}
         </div>
-        <div className="topbar-actions">
-          <CloudSyncIndicator onOpenSettings={() => setShowSettings(true)} state={cloudSyncState} />
-          <button className="settings-button" aria-label="数据与设置" onClick={() => setShowSettings(true)} type="button"><Settings size={18} /></button>
-        </div>
       </header>
 
       {activeView === 'map' ? <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}${selectedRestaurant ? ' has-selection' : ''}`}>
         <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}${showFilters && isSidebarOpen ? ' has-open-filters' : ''}`}>
           {isSidebarOpen ? <>
             <div className="sidebar-heading">
-              <div><span className="eyebrow">MY FOOD MAP</span><h1>我的美食清单</h1><p>只看自己真正记录过的地方。</p></div>
+              <div><span className="eyebrow">MY TASTE MAP</span><h1>我的美食清单</h1></div>
               <div className="sidebar-heading-actions">
                 <span className="count-pill">{summaries.length}</span>
                 <button aria-label="收起美食清单" className="sidebar-toggle" onClick={() => setIsSidebarOpen(false)} title="收起美食清单" type="button"><PanelLeftClose size={17} /></button>
               </div>
             </div>
 
-          <div className="collection-tabs" aria-label="餐厅列表">
-            <button className={activeList === 'visited' ? 'is-active' : ''} onClick={() => chooseList('visited')} type="button"><span>我去过的</span><strong>{listCounts.visited}</strong></button>
-            <button className={activeList === 'wantToGo' ? 'is-active' : ''} onClick={() => chooseList('wantToGo')} type="button"><span>我想去的</span><strong>{listCounts.wantToGo}</strong></button>
-            <button className={activeList === 'recommended' ? 'is-active' : ''} onClick={() => chooseList('recommended')} type="button"><span><Sparkles size={11} /> 推荐</span><strong>{listCounts.recommended}</strong></button>
-          </div>
+          <CollectionTabs activeList={activeList} counts={listCounts} onChoose={chooseList} showFootprints />
 
-          <div className="search-filter-row">
+          {activeList !== 'footprints' ? <div className="search-filter-row">
             <label className="search-box"><Search size={17} /><input aria-label="搜索我的餐厅" onChange={(event) => setQuery(event.target.value)} placeholder="搜索餐厅、标签、饭搭子" ref={searchInputRef} value={query} /><kbd>⌘ K</kbd></label>
             {activeList !== 'recommended' ? <button className={`filter-toggle${showFilters ? ' is-active' : ''}`} aria-label="筛选餐厅" onClick={() => setShowFilters((current) => !current)} type="button"><SlidersHorizontal size={17} />{activeFilterCount ? <b>{activeFilterCount}</b> : null}</button> : null}
-          </div>
+          </div> : null}
 
           {showFilters ? (
             <RestaurantFilters
@@ -605,8 +606,11 @@ export default function App() {
             />
           ) : null}
 
-          <div className="list-result-line"><span>{activeList === 'visited' ? '去过' : activeList === 'wantToGo' ? '想去' : '根据你的口味推荐'}</span><strong>{visibleRestaurants.length} 家</strong></div>
-          <RestaurantList
+          {activeList === 'footprints' ? (
+            <div className="restaurant-list footprints-list"><TasteFootprints onSelectRestaurant={handleSelect} restaurants={summaries.filter((restaurant) => restaurant.status === 'visited')} /></div>
+          ) : <>
+            <div className="list-result-line"><span>{activeList === 'visited' ? '去过' : activeList === 'wantToGo' ? '想去' : '根据你的口味推荐'}</span><strong>{visibleRestaurants.length} 家</strong></div>
+            <RestaurantList
             activeList={activeList}
             emptyMessage={activeList === 'recommended' ? recommendationError : undefined}
             isLoading={restaurants === undefined || visits === undefined || (activeList === 'recommended' && recommendationsLoading)}
@@ -615,7 +619,8 @@ export default function App() {
             query={query}
             restaurants={visibleRestaurants}
             selectedId={selectedRestaurant?.id}
-          />
+            />
+          </>}
             <footer className="local-data-note"><MapPin size={13} /> {CLOUD_SYNC_ENABLED ? '本地优先保存 · 自动云端同步' : '数据保存在当前隔离的本地环境'}</footer>
           </> : (
             <button aria-label="展开美食清单" className="sidebar-expand-button" onClick={() => setIsSidebarOpen(true)} title="展开美食清单" type="button"><PanelLeftOpen size={19} /><span>打开清单</span></button>
@@ -626,20 +631,30 @@ export default function App() {
           <MapView currentUser={currentUser} onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
           {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
+        {!isSidebarOpen ? <CollectionTabs activeList={activeList} className="map-collection-tabs" counts={listCounts} onChoose={chooseList} /> : null}
+        <button className="map-view-mode-toggle" onClick={toggleMapList} type="button">{isSidebarOpen ? <MapIcon size={17} /> : <List size={17} />}{isSidebarOpen ? '查看地图' : '查看列表'}</button>
       </section> : activeView === 'profile' && (viewedProfile?.user ?? currentUser) ? (
-        <ProfilePage editable={!viewedProfile} onSave={updateCurrentUserProfile} onSelectRestaurant={handleSelect} restaurants={viewedProfile?.restaurants ?? summaries} user={(viewedProfile?.user ?? currentUser) as UserProfile} />
-      ) : activeView === 'friends' ? (
-        <FriendsPage
-          currentUserId={CURRENT_USER_ID}
-          friendships={allFriendships}
-          onAcceptMeal={acceptMealInvitation}
-          onDeclineMeal={(participant) => void setSharedMealInvitationStatus(participant.id, 'declined')}
-          onFriendshipChange={(friendship) => void upsertFriendship(friendship)}
-          onViewProfile={(user) => void viewUserProfile(user)}
-          participants={sharedMealParticipants ?? []}
-          restaurants={summaries}
-          sharedMeals={sharedMeals ?? []}
-          users={allUsers}
+        <ProfilePage
+          cloudSyncState={cloudSyncState}
+          connections={!viewedProfile ? <FriendsPage
+            currentUserId={CURRENT_USER_ID}
+            embedded
+            friendships={allFriendships}
+            onAcceptMeal={acceptMealInvitation}
+            onDeclineMeal={(participant) => void setSharedMealInvitationStatus(participant.id, 'declined')}
+            onFriendshipChange={(friendship) => void upsertFriendship(friendship)}
+            onViewProfile={(user) => void viewUserProfile(user)}
+            participants={sharedMealParticipants ?? []}
+            restaurants={summaries}
+            sharedMeals={sharedMeals ?? []}
+            users={allUsers}
+          /> : null}
+          editable={!viewedProfile}
+          onMapPrivacyChange={updateCurrentUserMapPrivacy}
+          onOpenRoulette={() => setShowRoulette(true)}
+          onOpenSettings={() => setShowSettings(true)}
+          onSave={updateCurrentUserProfile}
+          user={(viewedProfile?.user ?? currentUser) as UserProfile}
         />
       ) : (
         <CommunityPage onSelectRestaurant={handleSelect} onViewProfile={(user) => void viewUserProfile(user)} restaurants={summaries} users={allUsers} />
@@ -649,8 +664,7 @@ export default function App() {
         <button className={activeView === 'map' ? 'is-active' : ''} onClick={() => setActiveView('map')} type="button"><MapIcon size={18} /><span>地图</span></button>
         <button className={activeView === 'community' ? 'is-active' : ''} onClick={() => setActiveView('community')} type="button"><Globe2 size={18} /><span>社区</span></button>
         <button aria-label="添加餐厅" className="bottom-navigation__add" onClick={() => setShowAddModal(true)} type="button"><Plus size={21} /><span>添加餐厅</span></button>
-        <button className={activeView === 'friends' ? 'is-active' : ''} onClick={() => setActiveView('friends')} type="button"><UsersRound size={18} /><span>好友</span></button>
-        <button className={activeView === 'profile' && !viewedProfile ? 'is-active' : ''} onClick={() => { setViewedProfile(null); setActiveView('profile') }} type="button"><UserRound size={18} /><span>我的</span></button>
+        <button className={`bottom-navigation__profile${activeView === 'profile' && !viewedProfile ? ' is-active' : ''}`} onClick={() => { setViewedProfile(null); setActiveView('profile') }} type="button"><UserRound size={18} /><span>我的</span></button>
       </nav>
 
       {showAddModal ? <AddRestaurantModal companionOptions={companionOptions} existingRestaurantsByPoiId={existingRestaurantsByPoiId} friendOptions={friendOptions} onAdd={handleAdd} onClose={() => setShowAddModal(false)} onRecordExisting={handleRecordExisting} /> : null}
@@ -658,9 +672,31 @@ export default function App() {
       {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} friendOptions={friendOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? acceptedMealParticipant?.id ?? 'new-visit'} onClose={() => { setShowAddVisit(false); setEditingVisit(null); setAcceptedMealParticipant(null) }} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} restaurant={selectedRestaurant} /> : null}
       {showDeleteConfirm && selectedRestaurant ? <ConfirmDeleteModal onCancel={() => setShowDeleteConfirm(false)} onConfirm={handleDelete} restaurantName={selectedRestaurant.name} visitCount={selectedRestaurant.visitCount} /> : null}
       {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} visitCount={allVisits.length} /> : null}
+      {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={handleSelect} restaurants={summaries} /> : null}
       {toast ? <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div> : null}
     </main>
   )
+}
+
+function CollectionTabs({
+  activeList,
+  counts,
+  onChoose,
+  className = '',
+  showFootprints = false,
+}: {
+  activeList: ActiveList
+  counts: Record<ActiveList, number>
+  onChoose: (list: ActiveList) => void
+  className?: string
+  showFootprints?: boolean
+}) {
+  return <div className={`collection-tabs${showFootprints ? ' has-footprints' : ''}${className ? ` ${className}` : ''}`} aria-label="餐厅列表分类">
+    <button className={activeList === 'visited' ? 'is-active' : ''} onClick={() => onChoose('visited')} type="button"><span>我去过的</span><strong>{counts.visited}</strong></button>
+    <button className={activeList === 'wantToGo' ? 'is-active' : ''} onClick={() => onChoose('wantToGo')} type="button"><span>我想去的</span><strong>{counts.wantToGo}</strong></button>
+    <button className={activeList === 'recommended' ? 'is-active' : ''} onClick={() => onChoose('recommended')} type="button"><span><Sparkles size={11} /> 推荐</span><strong>{counts.recommended}</strong></button>
+    {showFootprints ? <button className={activeList === 'footprints' ? 'is-active' : ''} onClick={() => onChoose('footprints')} type="button"><span>味觉足迹</span><strong>{counts.footprints}</strong></button> : null}
+  </div>
 }
 
 function matchesVisitCount(count: number, filter: VisitCountFilter) {

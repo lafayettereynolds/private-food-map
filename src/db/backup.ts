@@ -143,10 +143,15 @@ export async function importFoodMapBackup(rawText: string) {
         diningMode: imported.diningMode ?? 'dine_in',
         myActualSpend: imported.myActualSpend ?? null,
         paymentMode: imported.paymentMode ?? null,
-        diningOccasion: imported.diningOccasion ?? null,
+        diningOccasions: Array.isArray(imported.diningOccasions) ? imported.diningOccasions : imported.diningOccasion ? [imported.diningOccasion] : [],
+        diningOccasion: imported.diningOccasion ?? (Array.isArray(imported.diningOccasions) ? imported.diningOccasions[0] ?? null : null),
+        diningOccasionText: imported.diningOccasionText ?? '',
         valueRating: imported.valueRating ?? null,
         environmentRating: imported.environmentRating ?? null,
         serviceRating: imported.serviceRating ?? null,
+        valueTags: Array.isArray(imported.valueTags) ? imported.valueTags : [],
+        environmentTags: Array.isArray(imported.environmentTags) ? imported.environmentTags : [],
+        serviceTags: Array.isArray(imported.serviceTags) ? imported.serviceTags : [],
         noiseLevel: imported.noiseLevel ?? null,
         diningDuration: imported.diningDuration ?? null,
         portionLevel: imported.portionLevel ?? null,
@@ -194,7 +199,13 @@ export async function importFoodMapBackup(rawText: string) {
       await db.photos.put(normalized)
     }
 
-    if (importedUsers.length) await db.users.bulkPut(importedUsers.map((user) => ({ ...user, avatarImageData: user.avatarImageData ?? null, avatarPhotoId: user.avatarPhotoId ?? null })))
+    if (importedUsers.length) await db.users.bulkPut(importedUsers.map((user) => ({
+      ...user,
+      avatarImageData: user.membershipTier === 'member' ? user.avatarImageData ?? null : null,
+      avatarPhotoId: user.membershipTier === 'member' ? user.avatarPhotoId ?? null : null,
+      avatarPresetId: user.avatarPresetId ?? 'polar-bear',
+      membershipTier: user.membershipTier ?? 'free',
+    })))
     if (importedFriendships.length) await db.friendships.bulkPut(importedFriendships)
     if (importedSharedMeals.length) await db.sharedMeals.bulkPut(importedSharedMeals)
     if (importedSharedMealParticipants.length) await db.sharedMealParticipants.bulkPut(importedSharedMealParticipants)

@@ -143,19 +143,23 @@ export function RestaurantFilters({
           </div>
         </div>
       ) : null}
+      {showVisitCount ? <FilterChoices label="适合场景" value={diningOccasion} options={DINING_OCCASION_OPTIONS} onChange={(value) => onDiningOccasionChange(value as DiningOccasionFilter)} /> : null}
+      {showVisitCount ? <FilterChoices label="推荐来源" value={recommendationSource} options={RECOMMENDATION_SOURCE_OPTIONS.map((item) => item.value === 'other' ? { ...item, label: '自定义' } : item)} onChange={(value) => onRecommendationSourceChange(value as RecommendationSourceFilter)} /> : null}
+      {showVisitCount ? <FilterChoices label="人均价格" value={priceRange} options={[{ value: 'under100', label: '¥100 以下' }, { value: '100to200', label: '¥100–200' }, { value: 'over200', label: '¥200 以上' }]} onChange={(value) => onPriceRangeChange(value as PriceRangeFilter)} /> : null}
+      {showVisitCount ? <FilterChoices label="到访时间" value={visitPeriod} allLabel="不限" options={[{ value: 'sixMonths', label: '最近半年' }, { value: 'year', label: '最近一年' }]} onChange={(value) => onVisitPeriodChange(value as VisitPeriodFilter)} /> : null}
       <div className="filter-select-grid">
         <FilterSelect label="城市" value={city} allLabel="全部城市" options={cityOptions} onChange={onCityChange} />
         <FilterSelect label="标签 / 菜系" value={tag} allLabel="全部标签" options={tagOptions} onChange={onTagChange} />
         {showVisitCount ? (
           <FilterSelect label="饭搭子" value={companion} allLabel="全部饭搭子" options={companionOptions} onChange={onCompanionChange} />
         ) : null}
-        {showVisitCount ? <FilterSelect label="用餐场景" value={diningOccasion} allLabel="全部场景" options={DINING_OCCASION_OPTIONS.map((item) => item.value)} optionLabels={Object.fromEntries(DINING_OCCASION_OPTIONS.map((item) => [item.value, item.label]))} onChange={(value) => onDiningOccasionChange(value as DiningOccasionFilter)} /> : null}
-        {showVisitCount ? <FilterSelect label="推荐来源" value={recommendationSource} allLabel="全部来源" options={RECOMMENDATION_SOURCE_OPTIONS.map((item) => item.value)} optionLabels={Object.fromEntries(RECOMMENDATION_SOURCE_OPTIONS.map((item) => [item.value, item.label]))} onChange={(value) => onRecommendationSourceChange(value as RecommendationSourceFilter)} /> : null}
-        {showVisitCount ? <FilterSelect label="人均价格" value={priceRange} allLabel="全部价格" options={['under100', '100to200', 'over200']} optionLabels={{ under100: '¥100 以下', '100to200': '¥100–200', over200: '¥200 以上' }} onChange={(value) => onPriceRangeChange(value as PriceRangeFilter)} /> : null}
-        {showVisitCount ? <FilterSelect label="到访时间" value={visitPeriod} allLabel="不限时间" options={['sixMonths', 'year']} optionLabels={{ sixMonths: '最近半年', year: '最近一年' }} onChange={(value) => onVisitPeriodChange(value as VisitPeriodFilter)} /> : null}
       </div>
     </section>
   )
+}
+
+function FilterChoices({ label, value, options, onChange, allLabel = '全部' }: { label: string; value: string; options: ReadonlyArray<{ value: string; label: string }>; onChange: (value: string) => void; allLabel?: string }) {
+  return <div className="filter-group"><span>{label}</span><div><button className={value === 'all' ? 'is-active' : ''} onClick={() => onChange('all')} type="button">{allLabel}</button>{options.map((option) => <button className={value === option.value ? 'is-active' : ''} key={option.value} onClick={() => onChange(option.value)} type="button">{option.label}</button>)}</div></div>
 }
 
 function FilterSelect({

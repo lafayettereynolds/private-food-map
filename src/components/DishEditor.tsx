@@ -48,14 +48,16 @@ export function DishEditor({ value, onChange }: DishEditorProps) {
 
   return (
     <section className="dish-editor">
-      <button className="dish-editor__toggle" onClick={() => setExpanded((current) => !current)} type="button">
-        <span><UtensilsCrossed size={15} /><strong>菜品</strong><small>可选</small>{value.length ? <b>{value.length}</b> : null}</span>
-        <ChevronDown className={expanded ? 'is-open' : ''} size={15} />
-      </button>
+      <header className="dish-editor__header">
+        <button className="dish-editor__toggle" disabled={!value.length} onClick={() => setExpanded((current) => !current)} type="button">
+          <span><UtensilsCrossed size={15} /><strong>菜品</strong>{value.length ? <b>{value.length}</b> : null}</span>
+          {value.length ? <ChevronDown className={expanded ? 'is-open' : ''} size={15} /> : null}
+        </button>
+        <button className="dish-editor__quick-add" onClick={addDish} type="button"><Plus size={13} /> 添加</button>
+      </header>
 
       {expanded ? (
         <div className="dish-editor__content">
-          <p>菜名、口味、星级、价格和图片都可选，不完整也能保存。</p>
           {value.map((dish, index) => (
             <article className="dish-row" key={dish.id}>
               <label className="dish-image-input">
@@ -69,7 +71,6 @@ export function DishEditor({ value, onChange }: DishEditorProps) {
               <button className="plain-icon-button" aria-label={`删除第 ${index + 1} 道菜`} onClick={() => onChange(value.filter((item) => item.id !== dish.id))} type="button"><Trash2 size={14} /></button>
             </article>
           ))}
-          <button className="add-dish-button" onClick={addDish} type="button"><Plus size={14} /> {value.length ? '再加一道菜' : '添加一道菜'}</button>
           {error ? <p className="form-error">{error}</p> : null}
         </div>
       ) : null}

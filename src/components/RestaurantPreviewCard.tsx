@@ -1,6 +1,6 @@
-import { CalendarClock, Clock3, Edit3, Eye, MapPin, Navigation, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
+import { CalendarClock, Clock3, Edit3, MapPin, Navigation, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
 import { RestaurantAvatar } from './RestaurantAvatar'
-import { diningModeLabel, formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, visibilityLabel, type RestaurantSummary, type Visit } from '../types/domain'
+import { diningModeLabel, formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
 
@@ -62,12 +62,12 @@ export function RestaurantPreviewCard({
                 <div className="visit-history-row__details">
                   <span className="visit-mode-chip">{(visit.diningMode ?? 'dine_in') === 'dine_in' ? <Store size={12} /> : <Truck size={12} />} {diningModeLabel(visit.diningMode)}</span>
                   <span className={visit.rating ? 'has-rating' : ''}><Star fill={visit.rating ? 'currentColor' : 'none'} size={12} /> {visit.rating ? `${starToTenScore(visit.rating)?.toFixed(1)} 分` : '未评分'}</span>
-                  <span><WalletCards size={12} /> {visit.totalPrice !== null ? `总价 ¥${visit.totalPrice}${visit.pricePerPerson !== null ? ` · ¥${visit.pricePerPerson}/人` : ''}` : '未记价格'}</span>
+                  <span><WalletCards size={12} /> {visit.paymentMode === 'separate' && visit.myActualSpend !== null ? `我的消费 ¥${visit.myActualSpend}` : visit.totalPrice !== null ? `总价 ¥${visit.totalPrice}${visit.pricePerPerson !== null ? ` · ¥${visit.pricePerPerson}/人` : ''}` : '未记价格'}</span>
                   <span><Users size={12} /> {visit.partySize || Math.max(1, visit.companions.length + 1)} 人</span>
                   <span><Clock3 size={12} /> {queueDurationLabel(visit.queueDuration)}</span>
-                  <span><Eye size={12} /> {visibilityLabel(visit.visibility)}</span>
                 </div>
-                {visit.myActualSpend !== null || visit.specialNotes ? <p className="visit-extra-summary">{visit.myActualSpend !== null ? `我实际支付 ¥${visit.myActualSpend}` : ''}{visit.myActualSpend !== null && visit.specialNotes ? ' · ' : ''}{visit.specialNotes}</p> : null}
+                {visit.specialNotes ? <p className="visit-extra-summary">{visit.specialNotes}</p> : null}
+                {[...(visit.valueTags ?? []), ...(visit.serviceTags ?? []), ...(visit.environmentTags ?? [])].length ? <div className="visit-experience-tags">{[...(visit.valueTags ?? []), ...(visit.serviceTags ?? []), ...(visit.environmentTags ?? [])].map((tag, tagIndex) => <span key={`${visit.id}-${tag}-${tagIndex}`}>{tag}</span>)}</div> : null}
                 {visit.companions.length ? <p>饭搭子：{visit.companions.join('、')}</p> : null}
                 {visit.note ? <blockquote className="visit-feeling">“{visit.note}”</blockquote> : null}
                 {visit.photos.length ? (

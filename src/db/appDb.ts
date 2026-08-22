@@ -243,6 +243,7 @@ class FoodMapDatabase extends Dexie {
           visit.myActualSpend ??= null
           visit.paymentMode ??= null
           visit.diningOccasion ??= null
+          visit.diningOccasionText ??= ''
           visit.valueRating ??= null
           visit.environmentRating ??= null
           visit.serviceRating ??= null
@@ -269,6 +270,8 @@ class FoodMapDatabase extends Dexie {
             city: '',
             avatarImageData: null,
             avatarPhotoId: null,
+            mapSharingEnabled: false,
+            mapVisibility: 'private',
             authProvider: 'local',
             authSubject: null,
             createdAt: now,
@@ -276,6 +279,76 @@ class FoodMapDatabase extends Dexie {
             deletedAt: null,
           })
         }
+      })
+
+    this.version(12)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt',
+        syncQueue: 'id, entityType, entityId, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('visits').toCollection().modify((visit) => {
+          visit.valueTags = Array.isArray(visit.valueTags) ? visit.valueTags : []
+          visit.environmentTags = Array.isArray(visit.environmentTags) ? visit.environmentTags : []
+          visit.serviceTags = Array.isArray(visit.serviceTags) ? visit.serviceTags : []
+        })
+        await transaction.table('users').toCollection().modify((user) => {
+          user.mapSharingEnabled ??= false
+          user.mapVisibility ??= 'private'
+        })
+      })
+
+    this.version(13)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt',
+        syncQueue: 'id, entityType, entityId, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('visits').toCollection().modify((visit) => {
+          visit.diningOccasionText ??= ''
+        })
+        await transaction.table('users').toCollection().modify((user) => {
+          user.avatarPresetId ??= 'polar-bear'
+          user.membershipTier ??= 'free'
+        })
+      })
+
+    this.version(14)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt',
+        syncQueue: 'id, entityType, entityId, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('visits').toCollection().modify((visit) => {
+          visit.diningOccasions = Array.isArray(visit.diningOccasions)
+            ? visit.diningOccasions
+            : visit.diningOccasion ? [visit.diningOccasion] : []
+          visit.diningOccasion = visit.diningOccasions[0] ?? null
+        })
       })
   }
 }

@@ -16,10 +16,14 @@ export interface VisitExtraFieldsValue {
   diningMode: DiningMode
   myActualSpend: string
   paymentMode: PaymentMode | null
-  diningOccasion: DiningOccasion | null
+  diningOccasions: DiningOccasion[]
+  diningOccasionText: string
   valueRating: StarRating | null
   environmentRating: StarRating | null
   serviceRating: StarRating | null
+  valueTags: string[]
+  environmentTags: string[]
+  serviceTags: string[]
   noiseLevel: NoiseLevel | null
   diningDuration: DiningDuration | null
   portionLevel: PortionLevel | null
@@ -37,10 +41,14 @@ export function createDefaultVisitExtraFields(): VisitExtraFieldsValue {
     diningMode: 'dine_in',
     myActualSpend: '',
     paymentMode: null,
-    diningOccasion: null,
+    diningOccasions: [],
+    diningOccasionText: '',
     valueRating: null,
     environmentRating: null,
     serviceRating: null,
+    valueTags: [],
+    environmentTags: [],
+    serviceTags: [],
     noiseLevel: null,
     diningDuration: null,
     portionLevel: null,

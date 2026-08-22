@@ -60,6 +60,10 @@ function normalizeCompanions(companions: string[]) {
   return [...new Set(companions.map((companion) => companion.trim()).filter(Boolean))]
 }
 
+function normalizeLabels(labels: string[]) {
+  return [...new Set(labels.map((label) => label.trim().slice(0, 12)).filter(Boolean))]
+}
+
 export interface InitialVisitInput {
   visitedAt: string
   rating: StarRating
@@ -70,10 +74,15 @@ export interface InitialVisitInput {
   paymentMode: PaymentMode | null
   partySize: number
   queueDuration: QueueDuration
+  diningOccasions: DiningOccasion[]
   diningOccasion: DiningOccasion | null
+  diningOccasionText: string
   valueRating: StarRating | null
   environmentRating: StarRating | null
   serviceRating: StarRating | null
+  valueTags: string[]
+  environmentTags: string[]
+  serviceTags: string[]
   noiseLevel: NoiseLevel | null
   diningDuration: DiningDuration | null
   portionLevel: PortionLevel | null
@@ -155,10 +164,15 @@ export async function addRestaurantFromPoi(
         ),
         partySize: Math.max(1, input.initialVisit.partySize, input.initialVisit.companions.length + 1),
         queueDuration: input.initialVisit.queueDuration,
+        diningOccasions: [...new Set(input.initialVisit.diningOccasions)],
         diningOccasion: input.initialVisit.diningOccasion,
+        diningOccasionText: input.initialVisit.diningOccasionText.trim(),
         valueRating: input.initialVisit.valueRating,
         environmentRating: input.initialVisit.environmentRating,
         serviceRating: input.initialVisit.serviceRating,
+        valueTags: normalizeLabels(input.initialVisit.valueTags),
+        environmentTags: normalizeLabels(input.initialVisit.environmentTags),
+        serviceTags: normalizeLabels(input.initialVisit.serviceTags),
         noiseLevel: input.initialVisit.noiseLevel,
         diningDuration: input.initialVisit.diningDuration,
         portionLevel: input.initialVisit.portionLevel,
@@ -278,10 +292,15 @@ export interface AddVisitInput {
   paymentMode: PaymentMode | null
   partySize: number
   queueDuration: QueueDuration
+  diningOccasions: DiningOccasion[]
   diningOccasion: DiningOccasion | null
+  diningOccasionText: string
   valueRating: StarRating | null
   environmentRating: StarRating | null
   serviceRating: StarRating | null
+  valueTags: string[]
+  environmentTags: string[]
+  serviceTags: string[]
   noiseLevel: NoiseLevel | null
   diningDuration: DiningDuration | null
   portionLevel: PortionLevel | null
@@ -317,10 +336,15 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
     pricePerPerson,
     partySize: normalizedPartySize,
     queueDuration: input.queueDuration,
+    diningOccasions: [...new Set(input.diningOccasions)],
     diningOccasion: input.diningOccasion,
+    diningOccasionText: input.diningOccasionText.trim(),
     valueRating: input.valueRating,
     environmentRating: input.environmentRating,
     serviceRating: input.serviceRating,
+    valueTags: normalizeLabels(input.valueTags),
+    environmentTags: normalizeLabels(input.environmentTags),
+    serviceTags: normalizeLabels(input.serviceTags),
     noiseLevel: input.noiseLevel,
     diningDuration: input.diningDuration,
     portionLevel: input.portionLevel,
@@ -405,10 +429,15 @@ export async function updateVisit(id: string, input: AddVisitInput) {
       pricePerPerson,
       partySize: normalizedPartySize,
       queueDuration: input.queueDuration,
+      diningOccasions: [...new Set(input.diningOccasions)],
       diningOccasion: input.diningOccasion,
+      diningOccasionText: input.diningOccasionText.trim(),
       valueRating: input.valueRating,
       environmentRating: input.environmentRating,
       serviceRating: input.serviceRating,
+      valueTags: normalizeLabels(input.valueTags),
+      environmentTags: normalizeLabels(input.environmentTags),
+      serviceTags: normalizeLabels(input.serviceTags),
       noiseLevel: input.noiseLevel,
       diningDuration: input.diningDuration,
       portionLevel: input.portionLevel,

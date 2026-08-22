@@ -1,4 +1,5 @@
-import { UserRound } from 'lucide-react'
+import { ChevronDown, ChevronUp, UserRound } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { splitCompanions } from '../utils/companions'
 
 interface CompanionPickerProps {
@@ -8,7 +9,11 @@ interface CompanionPickerProps {
 }
 
 export function CompanionPicker({ onChange, options, value }: CompanionPickerProps) {
+  const [showAll, setShowAll] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
   const selectedCompanions = splitCompanions(value)
+  const orderedOptions = [...options].sort((left, right) => Number(selectedCompanions.includes(right)) - Number(selectedCompanions.includes(left)))
+  const visibleOptions = showAll ? orderedOptions : orderedOptions.slice(0, 5)
 
   function toggleCompanion(name: string) {
     const nextCompanions = selectedCompanions.includes(name)
@@ -22,11 +27,11 @@ export function CompanionPicker({ onChange, options, value }: CompanionPickerPro
       <span>饭搭子</span>
       <div className="companion-picker__input">
         <UserRound size={16} />
-        <input aria-label="饭搭子" onChange={(event) => onChange(event.target.value)} placeholder="小王、妈妈" value={value} />
+        <input aria-label="饭搭子" onChange={(event) => onChange(event.target.value)} placeholder="小王、妈妈" ref={inputRef} value={value} />
       </div>
       {options.length ? (
         <section aria-label="常用饭搭子" className="companion-picker__options">
-          {options.map((name) => (
+          {visibleOptions.map((name) => (
             <button
               aria-pressed={selectedCompanions.includes(name)}
               className={selectedCompanions.includes(name) ? 'is-selected' : ''}
@@ -37,8 +42,9 @@ export function CompanionPicker({ onChange, options, value }: CompanionPickerPro
               {name}
             </button>
           ))}
+          <button className="companion-picker__more" onClick={() => { if (options.length > 5) setShowAll((current) => !current); else inputRef.current?.focus() }} type="button">{showAll ? <ChevronUp size={12} /> : options.length > 5 ? <ChevronDown size={12} /> : null}{showAll ? '收起' : options.length > 5 ? '更多' : '添加'}</button>
         </section>
-      ) : <small className="companion-picker__hint">使用过的人会自动出现在这里，之后可以直接点选。</small>}
+      ) : <button className="companion-picker__empty-add" onClick={() => inputRef.current?.focus()} type="button">添加饭搭子</button>}
     </div>
   )
 }

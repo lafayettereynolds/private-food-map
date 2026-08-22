@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CommunityVisit, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
+import { UserAvatar } from './UserAvatar'
 import { fetchCommunityFeed } from '../services/socialApi'
 
 interface FeedItem {
@@ -30,9 +31,8 @@ export function CommunityPage({
     return () => { active = false }
   }, [])
   const localFeed: FeedItem[] = restaurants.flatMap((restaurant) => restaurant.visits.flatMap((visit) => {
-    if ((visit.visibility ?? 'private') !== 'public') return []
     const user = userById.get(visit.userId ?? 'owner')
-    return user ? [{ user, restaurant, visit }] : []
+    return user?.mapSharingEnabled && user.mapVisibility !== 'private' ? [{ user, restaurant, visit }] : []
   }))
   const feed = useMemo(() => {
     const items = new Map<string, FeedItem>(localFeed.map((item) => [item.visit.id, item]))
@@ -43,6 +43,8 @@ export function CommunityPage({
         user: {
           id: item.user.id, nickname: item.user.nickname, email: null, bio: item.user.bio, city: item.user.city,
           avatarImageData: item.user.avatarImageData, avatarPhotoId: item.user.avatarPhotoId,
+          avatarPresetId: item.user.avatarPresetId ?? 'polar-bear', membershipTier: item.user.membershipTier ?? 'free',
+          mapSharingEnabled: false, mapVisibility: 'private',
           authProvider: 'cloudflare-access', authSubject: null, createdAt: '', updatedAt: '', deletedAt: null,
         },
         restaurant: localRestaurant ?? {
@@ -64,12 +66,12 @@ export function CommunityPage({
   }, [cloudFeed, localFeed, restaurants])
 
   return <section className="social-page community-page">
-    <header className="social-page__heading"><div><span className="eyebrow">COMMUNITY</span><h1>社区</h1><p>这里只展示真实 Visit 中明确设为“公开”的记录。</p></div><Globe2 size={28} /></header>
+    <header className="social-page__heading"><div><span className="eyebrow">COMMUNITY</span><h1>社区</h1><p>是否展示足迹，由每位用户在“我的地图隐私”中统一控制。</p></div><Globe2 size={28} /></header>
     {feed.length ? <div className="community-feed">{feed.map((item) => <article className="community-card" key={item.visit.id}>
-      <header><button className="user-avatar-small" onClick={() => onViewProfile(item.user)} type="button">{item.user.avatarImageData || item.user.avatarPhotoId ? <SyncedImage alt="" photoId={item.user.avatarPhotoId} source={item.user.avatarImageData} /> : item.user.nickname.slice(0, 1)}</button><button className="community-user-link" onClick={() => onViewProfile(item.user)} type="button"><strong>{item.user.nickname}</strong><time>{formatVisitDateTime(item.visit.visitedAt)}</time></button></header>
+      <header><button className="user-avatar-small" onClick={() => onViewProfile(item.user)} type="button"><UserAvatar alt="" avatarImageData={item.user.avatarImageData} avatarPhotoId={item.user.avatarPhotoId} avatarPresetId={item.user.avatarPresetId} membershipTier={item.user.membershipTier} /></button><button className="community-user-link" onClick={() => onViewProfile(item.user)} type="button"><strong>{item.user.nickname}</strong><time>{formatVisitDateTime(item.visit.visitedAt)}</time></button></header>
       <button className="community-restaurant" onClick={() => onSelectRestaurant(item.restaurant)} type="button"><div><strong>{item.restaurant.name}</strong><span><MapPin size={12} /> {item.restaurant.city} · {item.restaurant.address}</span></div>{item.visit.rating ? <b><Star fill="currentColor" size={13} /> {item.visit.rating} 星</b> : null}</button>
       {item.visit.note ? <p>{item.visit.note}</p> : null}
       {item.visit.photos.length ? <div className="community-photos">{item.visit.photos.slice(0, 6).map((photo, index) => <SyncedImage alt="公开到访照片" key={`${item.visit.id}-${index}`} loading="lazy" photoId={item.visit.photoIds[index]} source={photo} />)}</div> : null}
-    </article>)}</div> : <div className="social-empty"><Globe2 size={24} /><strong>还没有公开记录</strong><p>在新增或编辑 Visit 时把可见范围设为“公开”，记录会自动出现在这里。</p></div>}
+    </article>)}</div> : <div className="social-empty"><Globe2 size={24} /><strong>还没有可见记录</strong><p>在“我的”里开启地图分享后，足迹会按你选择的范围展示。</p></div>}
   </section>
 }

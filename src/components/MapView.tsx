@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { KeyRound, LoaderCircle, MapPin, RotateCcw, UsersRound } from 'lucide-react'
+import { KeyRound, LoaderCircle, MapPin, RotateCcw } from 'lucide-react'
 import {
   isAmapConfigured,
   loadAmap,
@@ -11,9 +11,10 @@ import {
   type AMapMarkerClusterRenderContext,
   type AMapNamespace,
 } from '../services/amap'
-import { scoreColor, type RestaurantSummary, type UserProfile } from '../types/domain'
+import { scoreColor, type Coordinates, type RestaurantSummary, type UserProfile } from '../types/domain'
 import { resolvePhotoSource } from '../services/photoAssets'
-import { fetchCommunityFeed } from '../services/socialApi'
+import { wantedMarkerScale } from '../utils/mapMarkers'
+import { avatarPresetPosition } from '../utils/avatarPresets'
 
 interface MapViewProps {
   restaurants: RestaurantSummary[]
@@ -42,7 +43,6 @@ export function MapView({
   const restaurantElementsRef = useRef(new Map<string, HTMLElement>())
   const restaurantMarkersRef = useRef(new Map<string, AMapMarkerInstance>())
   const locationMarkerRef = useRef<AMapMarkerInstance | null>(null)
-  const socialMarkersRef = useRef<AMapMarkerInstance[]>([])
   const selectedIdRef = useRef(selectedRestaurant?.id)
   const suppressMapClearUntilRef = useRef(0)
   const selectRef = useRef(onSelect)
@@ -50,8 +50,7 @@ export function MapView({
   const [loading, setLoading] = useState(isAmapConfigured)
   const [mapReady, setMapReady] = useState(false)
   const [error, setError] = useState('')
-  const [showSocialMap, setShowSocialMap] = useState(false)
-  const [socialMapLoading, setSocialMapLoading] = useState(false)
+  const [currentCoordinates, setCurrentCoordinates] = useState<Coordinates | null>(null)
 
   selectedIdRef.current = selectedRestaurant?.id
   selectRef.current = onSelect
@@ -104,8 +103,6 @@ export function MapView({
       restaurantMarkers.clear()
       locationMarkerRef.current?.setMap(null)
       locationMarkerRef.current = null
-      socialMarkersRef.current.forEach((marker) => marker.setMap(null))
-      socialMarkersRef.current = []
       mapRef.current?.destroy()
       mapRef.current = null
       amapRef.current = null
@@ -113,96 +110,66 @@ export function MapView({
   }, [])
 
   useEffect(() => {
+    if (!mapRef.current || !amapRef.current) return
+    let disposed = false
+    void detectCurrentLocation().then((location) => {
+      if (!disposed) setCurrentCoordinates({ longitude: location.longitude, latitude: location.latitude })
+    }).catch(() => {
+      if (!disposed) setCurrentCoordinates(null)
+    })
+    return () => {
+      disposed = true
+    }
+  }, [mapReady])
+
+  useEffect(() => {
     const map = mapRef.current
     const AMap = amapRef.current
-    if (!map || !AMap || !currentUser) return
-    let disposed = false
     locationMarkerRef.current?.setMap(null)
     locationMarkerRef.current = null
-    void detectCurrentLocation().then(async (location) => {
-      if (disposed) return
+    if (!map || !AMap || !currentUser || !currentCoordinates) return
+    let disposed = false
+    void (async () => {
       const content = document.createElement('div')
       content.className = 'current-user-marker'
-      const avatar = await resolvePhotoSource(currentUser.avatarImageData, currentUser.avatarPhotoId).catch(() => null)
+      const bubble = document.createElement('div')
+      bubble.className = 'current-user-marker__bubble'
+      const avatar = currentUser.membershipTier === 'member'
+        ? await resolvePhotoSource(currentUser.avatarImageData, currentUser.avatarPhotoId).catch(() => null)
+        : null
       if (disposed) return
       if (avatar) {
         const image = document.createElement('img')
         image.alt = ''
         image.src = avatar
-        content.appendChild(image)
+        bubble.appendChild(image)
       } else {
-        content.textContent = currentUser.nickname.slice(0, 1) || '我'
+        const position = avatarPresetPosition(currentUser.avatarPresetId)
+        const preset = document.createElement('span')
+        preset.className = 'avatar-preset-sprite'
+        preset.style.setProperty('--avatar-x', `${position.x}%`)
+        preset.style.setProperty('--avatar-y', `${position.y}%`)
+        bubble.appendChild(preset)
       }
-      const marker = new AMap.Marker({
+      content.appendChild(bubble)
+      const tail = document.createElement('span')
+      tail.className = 'current-user-marker__tail'
+      content.appendChild(tail)
+      locationMarkerRef.current = new AMap.Marker({
         map,
-        position: [location.longitude, location.latitude],
+        position: [currentCoordinates.longitude, currentCoordinates.latitude],
         content,
-        anchor: 'center',
+        anchor: 'bottom-center',
         zIndex: 3000,
         title: '我的当前位置',
       })
-      locationMarkerRef.current = marker
-    }).catch(() => undefined)
+    })()
     return () => {
       disposed = true
       locationMarkerRef.current?.setMap(null)
       locationMarkerRef.current = null
     }
-  }, [currentUser, mapReady])
-
-  useEffect(() => {
-    const map = mapRef.current
-    const AMap = amapRef.current
-    socialMarkersRef.current.forEach((marker) => marker.setMap(null))
-    socialMarkersRef.current = []
-    if (!showSocialMap || !map || !AMap) return
-    let disposed = false
-    setSocialMapLoading(true)
-    void fetchCommunityFeed().then(async (items) => {
-      if (disposed) return
-      const seen = new Set<string>()
-      const unique = items.filter((item) => {
-        const key = `${item.user.id}:${item.restaurant.id}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      }).slice(0, 60)
-      const markers = await Promise.all(unique.map(async (item) => {
-        const content = document.createElement('div')
-        content.className = 'social-map-marker'
-        content.title = `${item.user.nickname} · ${item.restaurant.name}`
-        const avatar = await resolvePhotoSource(item.user.avatarImageData, item.user.avatarPhotoId).catch(() => null)
-        if (avatar) {
-          const image = document.createElement('img')
-          image.alt = ''
-          image.src = avatar
-          content.appendChild(image)
-        } else {
-          content.textContent = item.user.nickname.slice(0, 1) || '友'
-        }
-        return new AMap.Marker({
-          map,
-          position: [item.restaurant.longitude, item.restaurant.latitude],
-          content,
-          anchor: 'center',
-          zIndex: 700,
-          title: `${item.user.nickname} · ${item.restaurant.name}`,
-        })
-      }))
-      if (disposed) {
-        markers.forEach((marker) => marker.setMap(null))
-        return
-      }
-      socialMarkersRef.current = markers
-    }).catch(() => undefined).finally(() => {
-      if (!disposed) setSocialMapLoading(false)
-    })
-    return () => {
-      disposed = true
-      socialMarkersRef.current.forEach((marker) => marker.setMap(null))
-      socialMarkersRef.current = []
-    }
-  }, [mapReady, showSocialMap])
+  }, [currentCoordinates, currentUser, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
@@ -224,7 +191,7 @@ export function MapView({
       const restaurant = coordinateMap.get(coordinateKey(position.getLng(), position.getLat()))?.[0]
       if (!restaurant) return
 
-      const content = createRestaurantImageMarkerContent(restaurant)
+      const content = createRestaurantImageMarkerContent(restaurant, currentCoordinates)
       content.classList.toggle('is-selected', restaurant.id === selectedIdRef.current)
       content.addEventListener('click', (event) => {
         event.preventDefault()
@@ -290,7 +257,7 @@ export function MapView({
       restaurantElements.clear()
       restaurantMarkers.clear()
     }
-  }, [mapReady, restaurants])
+  }, [currentCoordinates, mapReady, restaurants])
 
   useEffect(() => {
     restaurantElementsRef.current.forEach((element, restaurantId) => {
@@ -323,10 +290,6 @@ export function MapView({
   return (
     <>
       <div className="amap-container" ref={containerRef} />
-      <button aria-pressed={showSocialMap} className={`social-map-toggle${showSocialMap ? ' is-active' : ''}`} onClick={() => setShowSocialMap((value) => !value)} type="button">
-        {socialMapLoading ? <LoaderCircle className="spin" size={14} /> : <UsersRound size={14} />}
-        {showSocialMap ? '隐藏社区足迹' : '显示社区足迹'}
-      </button>
       {loading ? (
         <div className="map-loading"><LoaderCircle className="spin" size={23} /> 正在加载地图</div>
       ) : null}
@@ -340,7 +303,7 @@ export function MapView({
   )
 }
 
-function createRestaurantImageMarkerContent(restaurant: RestaurantSummary) {
+function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, currentCoordinates: Coordinates | null) {
   const imageSource = restaurant.markerImageData || restaurant.merchantImageUrl
   const useImage = restaurant.markerType === 'image' && Boolean(imageSource || restaurant.markerPhotoId)
   const scoreText = restaurant.scoreOutOfTen !== null
@@ -353,6 +316,13 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary) {
     restaurant.status === 'wantToGo' ? 'is-wanted' : '',
   ].filter(Boolean).join(' ')
   marker.style.setProperty('--marker-color', scoreColor(restaurant.scoreOutOfTen))
+  const distanceKilometers = currentCoordinates
+    ? distanceBetweenCoordinates(currentCoordinates, restaurant)
+    : null
+  if (restaurant.status === 'wantToGo' && distanceKilometers !== null) {
+    marker.style.setProperty('--marker-scale', wantedMarkerScale(distanceKilometers).toFixed(3))
+    marker.dataset.distance = `${distanceKilometers.toFixed(distanceKilometers < 10 ? 1 : 0)} 公里`
+  }
   marker.setAttribute(
     'aria-label',
     `${restaurant.name}，${scoreText}，去过 ${restaurant.visitCount} 次`,
@@ -381,11 +351,28 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary) {
   const tooltipName = document.createElement('strong')
   tooltipName.textContent = restaurant.name
   const tooltipMeta = document.createElement('span')
-  tooltipMeta.textContent = `${scoreText} · 去过 ${restaurant.visitCount} 次`
+  tooltipMeta.textContent = restaurant.status === 'wantToGo' && marker.dataset.distance
+    ? `${scoreText} · 距你约 ${marker.dataset.distance}`
+    : `${scoreText} · 去过 ${restaurant.visitCount} 次`
   tooltip.append(tooltipName, tooltipMeta)
 
   marker.append(visual, tooltip)
   return marker
+}
+
+function distanceBetweenCoordinates(from: Coordinates, to: Coordinates) {
+  const earthRadiusKilometers = 6371
+  const latitudeDelta = toRadians(to.latitude - from.latitude)
+  const longitudeDelta = toRadians(to.longitude - from.longitude)
+  const fromLatitude = toRadians(from.latitude)
+  const toLatitude = toRadians(to.latitude)
+  const haversine = Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(longitudeDelta / 2) ** 2
+  return earthRadiusKilometers * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+}
+
+function toRadians(degrees: number) {
+  return degrees * Math.PI / 180
 }
 
 function createClusterData(restaurants: RestaurantSummary[]) {

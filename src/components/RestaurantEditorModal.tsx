@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Check, LoaderCircle, LocateFixed, MapPin, RefreshCw, Tag, WalletCards } from 'lucide-react'
+import { Check, LoaderCircle, LocateFixed, MapPin, RefreshCw, WalletCards } from 'lucide-react'
 import { MarkerStyleField } from './MarkerStyleField'
 import { ModalShell } from './ModalShell'
 import type { RestaurantBasicsUpdate } from '../db/restaurants'
@@ -12,10 +12,6 @@ interface RestaurantEditorModalProps {
   onSave: (changes: RestaurantBasicsUpdate) => Promise<void>
 }
 
-function splitTags(value: string) {
-  return [...new Set(value.split(/[,，、/]/).map((item) => item.trim()).filter(Boolean))]
-}
-
 export function RestaurantEditorModal({
   restaurant,
   onClose,
@@ -26,7 +22,6 @@ export function RestaurantEditorModal({
   const [city, setCity] = useState(restaurant.city)
   const [status, setStatus] = useState<RestaurantStatus>(restaurant.status)
   const [price, setPrice] = useState(restaurant.pricePerPerson?.toString() ?? '')
-  const [tags, setTags] = useState(restaurant.tags.join('、'))
   const [markerType, setMarkerType] = useState<MarkerType>(restaurant.markerType)
   const [markerImageData, setMarkerImageData] = useState(restaurant.markerImageData)
   const [markerPhotoId, setMarkerPhotoId] = useState(restaurant.markerPhotoId)
@@ -55,7 +50,7 @@ export function RestaurantEditorModal({
         city,
         status,
         pricePerPerson: numericPrice,
-        tags: splitTags(tags),
+        tags: restaurant.tags,
         markerType,
         markerImageData,
         markerPhotoId,
@@ -108,7 +103,7 @@ export function RestaurantEditorModal({
   }
 
   return (
-    <ModalShell title="编辑餐厅" description="修改地址、标签和地图上的显示方式。" onClose={onClose}>
+    <ModalShell title="编辑餐厅" description="修改地址和地图上的显示方式。" onClose={onClose}>
       <form className="editor-form" onSubmit={handleSubmit}>
         <label className="field"><span>餐厅名称</span><input autoFocus onChange={(event) => setName(event.target.value)} required value={name} /></label>
         <div className="field-grid">
@@ -123,7 +118,6 @@ export function RestaurantEditorModal({
         </div>
         {locationMessage ? <p className="location-success"><Check size={14} /> {locationMessage}</p> : null}
         <label className="field field-with-leading-icon"><span>参考人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} step="0.01" type="number" value={price} /></div>{status === 'visited' ? <small className="price-calculation">去过的餐厅会优先显示到访记录自动计算的人均。</small> : null}</label>
-        <label className="field field-with-leading-icon"><span>标签</span><div><Tag size={16} /><input onChange={(event) => setTags(event.target.value)} placeholder="日料、约会、会再去" value={tags} /></div></label>
         <MarkerStyleField
           markerEmoji={markerEmoji}
           markerImageData={markerImageData}

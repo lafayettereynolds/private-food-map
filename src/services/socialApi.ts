@@ -3,7 +3,7 @@ import type { CloudVisit } from '../types/cloudSync'
 import type { CommunityVisit, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { drivePhotoReference } from './cloudSyncData'
 
-export type PublicUser = Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId'>
+export type PublicUser = Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
 
 interface CommunityResponse {
   items: Array<{
@@ -27,6 +27,10 @@ export async function fetchCommunityFeed(): Promise<CommunityVisit[]> {
       city: item.user.city,
       avatarImageData: item.user.avatarImageData ?? (item.user.avatarPhotoId ? drivePhotoReference(item.user.avatarPhotoId) : null),
       avatarPhotoId: item.user.avatarPhotoId,
+      avatarPresetId: item.user.avatarPresetId ?? 'polar-bear',
+      membershipTier: item.user.membershipTier ?? 'free',
+      mapSharingEnabled: false,
+      mapVisibility: 'private',
       authProvider: 'cloudflare-access',
       authSubject: null,
       createdAt: '',
@@ -52,6 +56,10 @@ export async function fetchUserProfile(userId: string) {
     ...result.user,
     email: null,
     avatarImageData: result.user.avatarImageData ?? (result.user.avatarPhotoId ? drivePhotoReference(result.user.avatarPhotoId) : null),
+    avatarPresetId: result.user.avatarPresetId ?? 'polar-bear',
+    membershipTier: result.user.membershipTier ?? 'free',
+    mapSharingEnabled: false,
+    mapVisibility: 'private',
     authProvider: 'cloudflare-access',
     authSubject: null,
     createdAt: '',
@@ -131,10 +139,15 @@ function cloudVisitToLocal(visit: CloudVisit): Visit {
     diningMode: visit.diningMode ?? 'dine_in',
     myActualSpend: visit.myActualSpend ?? null,
     paymentMode: visit.paymentMode ?? null,
-    diningOccasion: visit.diningOccasion ?? null,
+    diningOccasions: visit.diningOccasions?.length ? visit.diningOccasions : visit.diningOccasion ? [visit.diningOccasion] : [],
+    diningOccasion: visit.diningOccasion ?? visit.diningOccasions?.[0] ?? null,
+    diningOccasionText: visit.diningOccasionText ?? '',
     valueRating: visit.valueRating ?? null,
     environmentRating: visit.environmentRating ?? null,
     serviceRating: visit.serviceRating ?? null,
+    valueTags: visit.valueTags ?? [],
+    environmentTags: visit.environmentTags ?? [],
+    serviceTags: visit.serviceTags ?? [],
     noiseLevel: visit.noiseLevel ?? null,
     diningDuration: visit.diningDuration ?? null,
     portionLevel: visit.portionLevel ?? null,

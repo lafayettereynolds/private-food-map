@@ -16,6 +16,10 @@ export async function ensureCurrentUser() {
     city: '',
     avatarImageData: null,
     avatarPhotoId: null,
+    avatarPresetId: 'polar-bear',
+    membershipTier: 'free',
+    mapSharingEnabled: false,
+    mapVisibility: 'private',
     authProvider: 'local',
     authSubject: null,
     createdAt: now,
@@ -26,7 +30,7 @@ export async function ensureCurrentUser() {
   return user
 }
 
-export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId'>) {
+export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'>) {
   const current = await ensureCurrentUser()
   const updated: UserProfile = {
     ...current,
@@ -34,6 +38,22 @@ export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickn
     nickname: changes.nickname.trim() || 'Taste Map 用户',
     bio: changes.bio.trim(),
     city: changes.city.trim(),
+    avatarImageData: current.membershipTier === 'member' ? changes.avatarImageData : null,
+    avatarPhotoId: current.membershipTier === 'member' ? changes.avatarPhotoId : null,
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  }
+  await db.users.put(updated)
+  requestCloudSync()
+  return updated
+}
+
+export async function updateCurrentUserMapPrivacy(changes: Pick<UserProfile, 'mapSharingEnabled' | 'mapVisibility'>) {
+  const current = await ensureCurrentUser()
+  const updated: UserProfile = {
+    ...current,
+    ...changes,
+    mapVisibility: changes.mapSharingEnabled ? changes.mapVisibility : 'private',
     updatedAt: new Date().toISOString(),
     deletedAt: null,
   }

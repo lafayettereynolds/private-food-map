@@ -9,7 +9,6 @@ import {
   Plus,
   Search,
   Store,
-  Tag,
   TriangleAlert,
   Users,
   WalletCards,
@@ -25,8 +24,10 @@ import { VisitExtraFields } from './VisitExtraFields'
 import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddRestaurantInput } from '../db/restaurants'
 import {
+  detectCurrentCoordinates,
   detectCurrentLocation,
   isAmapConfigured,
+  resolveCoordinatesLocation,
   resolveAddressLocation,
   searchNearbyRestaurantPois,
   searchRestaurantPois,
@@ -68,12 +69,14 @@ export function AddRestaurantModal({
   const initialTime = currentDateAndTime()
   const [keyword, setKeyword] = useState('')
   const [city, setCity] = useState(() => localStorage.getItem('private-food-map-last-city') ?? '')
+  const initialCityRef = useRef(city)
   const [locatingCity, setLocatingCity] = useState(isAmapConfigured)
   const cityEditedRef = useRef(false)
   const searchRequestIdRef = useRef(0)
   const [currentLocation, setCurrentLocation] = useState<Coordinates | null>(null)
   const [nearbyResults, setNearbyResults] = useState<PoiSearchResult[]>([])
   const [nearbyLoading, setNearbyLoading] = useState(isAmapConfigured)
+  const [nearbyMessage, setNearbyMessage] = useState('')
   const [results, setResults] = useState<PoiSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -93,40 +96,62 @@ export function AddRestaurantModal({
   const [rating, setRating] = useState<StarRatingValue>(5)
   const [visitDate, setVisitDate] = useState(initialTime.date)
   const [visitTime, setVisitTime] = useState(initialTime.time)
-  const [tags, setTags] = useState('')
   const [markerType, setMarkerType] = useState<MarkerType>('emoji')
   const [markerImageData, setMarkerImageData] = useState<string | null>(null)
   const [markerEmoji, setMarkerEmoji] = useState('🍽️')
   const [extraFields, setExtraFields] = useState<VisitExtraFieldsValue>(() => createDefaultVisitExtraFields())
 
   useEffect(() => {
-    if (!isAmapConfigured) return
+    if (!isAmapConfigured) {
+      setLocatingCity(false)
+      setNearbyLoading(false)
+      return
+    }
     let active = true
-    detectCurrentLocation()
-      .then(async (detected) => {
-        localStorage.setItem('private-food-map-last-city', detected.city)
+    let foundResults = false
+    const fallbackCity = initialCityRef.current.trim() || localStorage.getItem('private-food-map-last-city') || '杭州'
+    const watchdog = window.setTimeout(() => {
+      if (!active) return
+      setLocatingCity(false)
+      setNearbyLoading(false)
+      if (!foundResults) setNearbyMessage('附近餐厅加载超时，可以直接搜索名称或稍后重试。')
+    }, 10_000)
+    setNearbyMessage('')
+    const showNearby = (nearby: PoiSearchResult[], message = '') => {
+      if (!active || !nearby.length) return
+      foundResults = true
+      setNearbyResults(nearby.slice(0, 8))
+      setNearbyMessage(message)
+      setNearbyLoading(false)
+    }
+    const cityFallbackTask = searchRestaurantPois('餐厅', fallbackCity, { timeoutMs: 6_000 })
+      .then((nearby) => showNearby(nearby, `暂按${fallbackCity}展示，允许定位后会优先显示身边餐厅。`))
+      .catch(() => undefined)
+    const gpsTask = detectCurrentCoordinates()
+      .then(async (coordinates) => {
         if (!active) return
-        setCurrentLocation({ longitude: detected.longitude, latitude: detected.latitude })
-        if (!cityEditedRef.current) setCity(detected.city)
-        try {
-          const nearby = await searchNearbyRestaurantPois(
-            { longitude: detected.longitude, latitude: detected.latitude },
-            detected.city,
-          )
-          if (active) setNearbyResults(nearby.slice(0, 8))
-        } catch {
-          // 附近餐厅失败时保留原有搜索入口，不阻断添加流程。
+        setCurrentLocation(coordinates)
+        const [nearby, detected] = await Promise.all([
+          searchNearbyRestaurantPois(coordinates, undefined, { timeoutMs: 6_000, radiusMeters: 3_000 }).catch(() => []),
+          resolveCoordinatesLocation(coordinates).catch(() => null),
+        ])
+        showNearby(nearby)
+        if (active && detected) {
+          localStorage.setItem('private-food-map-last-city', detected.city)
+          if (!cityEditedRef.current) setCity(detected.city)
         }
       })
       .catch(() => undefined)
-      .finally(() => {
-        if (active) {
-          setLocatingCity(false)
-          setNearbyLoading(false)
-        }
-      })
+    void Promise.allSettled([cityFallbackTask, gpsTask]).then(() => {
+      if (!active) return
+      window.clearTimeout(watchdog)
+      setLocatingCity(false)
+      setNearbyLoading(false)
+      if (!foundResults) setNearbyMessage('没有获取到附近餐厅，请直接搜索名称或检查定位权限。')
+    })
     return () => {
       active = false
+      window.clearTimeout(watchdog)
     }
   }, [])
 
@@ -185,11 +210,7 @@ export function AddRestaurantModal({
       setError('用餐人数至少为 1 人。')
       return
     }
-    const numericActualSpend = extraFields.myActualSpend ? Number(extraFields.myActualSpend) : null
-    if (numericActualSpend !== null && (!Number.isFinite(numericActualSpend) || numericActualSpend < 0)) {
-      setError('请输入正确的个人实际消费。')
-      return
-    }
+    const isSeparatePayment = extraFields.paymentMode === 'separate'
 
     setSaving(true)
     setError('')
@@ -198,10 +219,10 @@ export function AddRestaurantModal({
         poi: selectedPoi,
         address,
         status,
-        tags: splitValues(tags),
+        tags: [],
         pricePerPerson:
           status === 'visited'
-            ? calculatePricePerPerson(numericPrice, numericPartySize)
+            ? calculatePricePerPerson(isSeparatePayment ? null : numericPrice, numericPartySize)
             : numericPrice,
         markerType,
         markerImageData,
@@ -213,15 +234,20 @@ export function AddRestaurantModal({
                 rating,
                 visibility: extraFields.visibility,
                 diningMode: extraFields.diningMode,
-                totalPrice: numericPrice,
-                myActualSpend: numericActualSpend,
+                totalPrice: isSeparatePayment ? null : numericPrice,
+                myActualSpend: isSeparatePayment ? numericPrice : null,
                 paymentMode: extraFields.paymentMode,
                 partySize: numericPartySize,
                 queueDuration,
-                diningOccasion: extraFields.diningOccasion,
+                diningOccasions: extraFields.diningOccasions,
+                diningOccasion: extraFields.diningOccasions[0] ?? null,
+                diningOccasionText: extraFields.diningOccasionText,
                 valueRating: extraFields.valueRating,
                 environmentRating: extraFields.environmentRating,
                 serviceRating: extraFields.serviceRating,
+                valueTags: extraFields.valueTags,
+                environmentTags: extraFields.environmentTags,
+                serviceTags: extraFields.serviceTags,
                 noiseLevel: extraFields.noiseLevel,
                 diningDuration: extraFields.diningDuration,
                 portionLevel: extraFields.portionLevel,
@@ -271,6 +297,7 @@ export function AddRestaurantModal({
           locatingCity={locatingCity}
           loading={loading}
           nearbyLoading={nearbyLoading}
+          nearbyMessage={nearbyMessage}
           nearbyResults={nearbyResults}
           onChoose={choosePoi}
           onCityChange={(value) => {
@@ -313,20 +340,21 @@ export function AddRestaurantModal({
               <div><MapPin size={16} /><input onChange={(event) => setAddress(event.target.value)} required value={address} /></div>
             </label>
             <label className="field field-with-leading-icon">
-              <span>{status === 'visited' ? '本次消费总价（元）' : '预计人均价格（元）'}</span>
+              <span>{status === 'visited' ? extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）' : '预计人均价格（元）'}</span>
               <div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder={status === 'visited' ? '例如 193.50' : '例如 180.00'} step="0.01" type="number" value={price} /></div>
-              {status === 'visited' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">按 {partySize} 人计算，约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}
+              {status === 'visited' && extraFields.paymentMode !== 'separate' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">{partySize} 人 · 约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}
             </label>
           </div>
 
           {status === 'visited' ? (
             <div className="form-section">
               <h3>这次体验</h3>
+              <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
               <label className="field">
                 <span>个人评价</span>
                 <StarRating onChange={setRating} value={rating} />
               </label>
-              <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} value={extraFields} />
+              <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="primary" value={extraFields} />
               <div className="field-grid visit-time-grid">
                 <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input max="9999-12-31" onChange={(event) => setVisitDate(event.target.value)} required type="date" value={visitDate} /></div></label>
                 <label className="field"><span>时间</span><input onChange={(event) => setVisitTime(event.target.value)} required type="time" value={visitTime} /></label>
@@ -336,15 +364,14 @@ export function AddRestaurantModal({
                 <CompanionPicker onChange={setCompanions} options={companionOptions} value={companions} />
               </div>
               <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
-              <label className="field visit-feeling-field"><span>这次的感受 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
               <VisitPhotoPicker onChange={(nextPhotos) => setPhotos(nextPhotos)} photoIds={photos.map(() => null)} value={photos} />
               <DishEditor onChange={setDishes} value={dishes} />
+              <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
             </div>
           ) : null}
 
           <div className="form-section">
             <h3>整理与显示</h3>
-            <label className="field field-with-leading-icon"><span>标签</span><div><Tag size={16} /><input onChange={(event) => setTags(event.target.value)} placeholder="例如：日料、约会、会再去" value={tags} /></div></label>
             <MarkerStyleField
               markerEmoji={markerEmoji}
               markerImageData={markerImageData}
@@ -378,6 +405,7 @@ interface SearchStepProps {
   locatingCity: boolean
   loading: boolean
   nearbyLoading: boolean
+  nearbyMessage: string
   nearbyResults: PoiSearchResult[]
   results: PoiSearchResult[]
   onCityChange: (value: string) => void
@@ -397,6 +425,7 @@ function SearchStep({
   locatingCity,
   loading,
   nearbyLoading,
+  nearbyMessage,
   nearbyResults,
   results,
   onCityChange,
@@ -417,7 +446,7 @@ function SearchStep({
         <button className="primary-button search-submit" disabled={!isAmapConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
       </form>
       {error ? <p className="form-error">{error}</p> : null}
-      {!hasSearched && (nearbyLoading || nearbyResults.length) ? (
+      {!hasSearched ? (
         <section className="nearby-restaurant-section">
           <header><div><LocateFixed size={16} /><strong>附近餐厅</strong></div><span>按当前位置优先</span></header>
           {nearbyLoading ? <div className="nearby-loading"><LoaderCircle className="spin" size={17} /> 正在寻找附近餐厅</div> : null}
@@ -427,6 +456,7 @@ function SearchStep({
             onRecordExisting={onRecordExisting}
             results={nearbyResults}
           /> : null}
+          {!nearbyLoading && nearbyMessage ? <div className="nearby-status-message"><MapPin size={16} /><span>{nearbyMessage}</span></div> : null}
         </section>
       ) : null}
       <div className="poi-results" aria-live="polite">

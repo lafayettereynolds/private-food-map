@@ -13,7 +13,9 @@ import type {
   DiningDuration,
   DiningMode,
   DiningOccasion,
+  AvatarPresetId,
   MarkerType,
+  MembershipTier,
   NoiseLevel,
   PaymentMode,
   PhotoKind,
@@ -75,9 +77,14 @@ interface VisitRow {
   party_size: number
   queue_duration: QueueDuration | null
   dining_occasion: DiningOccasion | null
+  dining_occasion_text: string
+  dining_occasions_json: string
   value_rating: StarRating | null
   environment_rating: StarRating | null
   service_rating: StarRating | null
+  value_tags_json: string
+  environment_tags_json: string
+  service_tags_json: string
   noise_level: NoiseLevel | null
   dining_duration: DiningDuration | null
   portion_level: PortionLevel | null
@@ -125,6 +132,10 @@ interface UserRow {
   city: string
   avatar_image_data: string | null
   avatar_photo_id: string | null
+  avatar_preset_id: AvatarPresetId
+  membership_tier: MembershipTier
+  map_sharing_enabled: number
+  map_visibility: Visibility
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -208,12 +219,13 @@ const VISIT_UPSERT = `
   INSERT INTO visits (
     id, user_id, restaurant_id, visited_at, rating, visibility, dining_mode,
     total_price, my_actual_spend, payment_mode, price_per_person, party_size,
-    queue_duration, dining_occasion, value_rating, environment_rating, service_rating,
+    queue_duration, dining_occasion, dining_occasion_text, dining_occasions_json, value_rating, environment_rating, service_rating,
+    value_tags_json, environment_tags_json, service_tags_json,
     noise_level, dining_duration, portion_level, transport_convenience, special_notes,
     recommendation_source_type, recommendation_source_user_id, recommendation_source_text,
     shared_meal_id, companions_json, dishes_json, note, photo_ids_json,
     created_at, updated_at, deleted_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     user_id = excluded.user_id,
     restaurant_id = excluded.restaurant_id,
@@ -228,9 +240,14 @@ const VISIT_UPSERT = `
     party_size = excluded.party_size,
     queue_duration = excluded.queue_duration,
     dining_occasion = excluded.dining_occasion,
+    dining_occasion_text = excluded.dining_occasion_text,
+    dining_occasions_json = excluded.dining_occasions_json,
     value_rating = excluded.value_rating,
     environment_rating = excluded.environment_rating,
     service_rating = excluded.service_rating,
+    value_tags_json = excluded.value_tags_json,
+    environment_tags_json = excluded.environment_tags_json,
+    service_tags_json = excluded.service_tags_json,
     noise_level = excluded.noise_level,
     dining_duration = excluded.dining_duration,
     portion_level = excluded.portion_level,
@@ -278,8 +295,9 @@ const PHOTO_UPSERT = `
 const USER_UPSERT = `
   INSERT INTO users (
     id, auth_provider, auth_subject, email, nickname, bio, city, avatar_image_data,
-    avatar_photo_id, created_at, updated_at, deleted_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    avatar_photo_id, avatar_preset_id, membership_tier, map_sharing_enabled, map_visibility,
+    created_at, updated_at, deleted_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     auth_provider = excluded.auth_provider,
     auth_subject = excluded.auth_subject,
@@ -289,6 +307,9 @@ const USER_UPSERT = `
     city = excluded.city,
     avatar_image_data = excluded.avatar_image_data,
     avatar_photo_id = excluded.avatar_photo_id,
+    avatar_preset_id = excluded.avatar_preset_id,
+    map_sharing_enabled = excluded.map_sharing_enabled,
+    map_visibility = excluded.map_visibility,
     updated_at = excluded.updated_at,
     deleted_at = excluded.deleted_at
   WHERE excluded.updated_at > users.updated_at
@@ -368,7 +389,7 @@ export default {
         })).filter((item) => item.userId === viewer.id || sharedMeals.some((meal) => meal.id === item.sharedMealId)))
         return json(await readSnapshot(env.DB, viewer.id))
       }
-      if (url.pathname === '/api/community' && request.method === 'GET') return json(await readCommunity(env.DB))
+      if (url.pathname === '/api/community' && request.method === 'GET') return json(await readCommunity(env.DB, viewer.id))
       if (url.pathname.startsWith('/api/profiles/') && request.method === 'GET') {
         const profileId = decodeURIComponent(url.pathname.slice('/api/profiles/'.length))
         return json(await readProfile(env.DB, viewer.id, profileId))
@@ -455,10 +476,15 @@ async function upsertVisits(database: D1Database, visits: CloudVisit[]) {
     visit.pricePerPerson,
     visit.partySize,
     visit.queueDuration,
-    visit.diningOccasion ?? null,
+    visit.diningOccasion ?? visit.diningOccasions?.[0] ?? null,
+    visit.diningOccasionText ?? '',
+    JSON.stringify(visit.diningOccasions ?? (visit.diningOccasion ? [visit.diningOccasion] : [])),
     visit.valueRating ?? null,
     visit.environmentRating ?? null,
     visit.serviceRating ?? null,
+    JSON.stringify(visit.valueTags ?? []),
+    JSON.stringify(visit.environmentTags ?? []),
+    JSON.stringify(visit.serviceTags ?? []),
     visit.noiseLevel ?? null,
     visit.diningDuration ?? null,
     visit.portionLevel ?? null,
@@ -501,20 +527,28 @@ async function upsertPhotos(database: D1Database, photos: CloudPhoto[]) {
 }
 
 async function upsertUsers(database: D1Database, users: CloudUser[]) {
-  const statements = users.map((user) => database.prepare(USER_UPSERT).bind(
-    user.id,
-    user.authProvider,
-    user.authSubject,
-    user.email,
-    user.nickname,
-    user.bio,
-    user.city,
-    user.avatarImageData,
-    user.avatarPhotoId,
-    user.createdAt,
-    user.updatedAt,
-    user.deletedAt,
-  ))
+  const statements = await Promise.all(users.map(async (user) => {
+    const existing = await database.prepare('SELECT membership_tier FROM users WHERE id = ? LIMIT 1').bind(user.id).first<{ membership_tier: MembershipTier }>()
+    const membershipTier: MembershipTier = existing?.membership_tier === 'member' ? 'member' : 'free'
+    return database.prepare(USER_UPSERT).bind(
+      user.id,
+      user.authProvider,
+      user.authSubject,
+      user.email,
+      user.nickname,
+      user.bio,
+      user.city,
+      membershipTier === 'member' ? user.avatarImageData : null,
+      membershipTier === 'member' ? user.avatarPhotoId : null,
+      user.avatarPresetId ?? 'polar-bear',
+      membershipTier,
+      user.mapSharingEnabled ? 1 : 0,
+      user.mapVisibility ?? 'private',
+      user.createdAt,
+      user.updatedAt,
+      user.deletedAt,
+    )
+  }))
   await runInChunks(database, statements)
 }
 
@@ -629,15 +663,17 @@ async function shortHash(value: string) {
   return [...new Uint8Array(digest)].slice(0, 12).map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-async function readCommunity(database: D1Database) {
-  const [visitsResult, restaurantsResult, usersResult] = await database.batch([
-    database.prepare(`SELECT * FROM visits WHERE visibility = 'public' AND deleted_at IS NULL ORDER BY visited_at DESC LIMIT 100`),
+async function readCommunity(database: D1Database, viewerId: string) {
+  const [visitsResult, restaurantsResult, usersResult, friendshipsResult] = await database.batch([
+    database.prepare(`SELECT * FROM visits WHERE deleted_at IS NULL ORDER BY visited_at DESC LIMIT 160`),
     database.prepare(`SELECT * FROM restaurants WHERE deleted_at IS NULL AND id IN (
-      SELECT restaurant_id FROM visits WHERE visibility = 'public' AND deleted_at IS NULL
+      SELECT restaurant_id FROM visits WHERE deleted_at IS NULL
     )`),
     database.prepare(`SELECT * FROM users WHERE deleted_at IS NULL AND id IN (
-      SELECT user_id FROM visits WHERE visibility = 'public' AND deleted_at IS NULL
+      SELECT user_id FROM visits WHERE deleted_at IS NULL
     )`),
+    database.prepare(`SELECT * FROM friendships WHERE status = 'accepted' AND (requester_id = ? OR addressee_id = ?)`)
+      .bind(viewerId, viewerId),
   ])
   const restaurants = new Map((restaurantsResult.results as unknown as RestaurantRow[]).map((row) => [row.id, {
     id: row.id,
@@ -648,11 +684,18 @@ async function readCommunity(database: D1Database) {
     longitude: row.longitude,
   }]))
   const users = new Map((usersResult.results as unknown as UserRow[]).map((row) => [row.id, publicUser(row)]))
+  const userRows = new Map((usersResult.results as unknown as UserRow[]).map((row) => [row.id, row]))
+  const followedUserIds = new Set((friendshipsResult.results as unknown as FriendshipRow[]).flatMap((row) => [row.requester_id, row.addressee_id]))
   return {
     items: (visitsResult.results as unknown as VisitRow[]).flatMap((row) => {
       const restaurant = restaurants.get(row.restaurant_id)
       const user = users.get(row.user_id)
-      return restaurant && user ? [{ visit: rowToVisit(row), restaurant, user }] : []
+      const userRow = userRows.get(row.user_id)
+      const canSeeMap = row.user_id === viewerId || Boolean(userRow?.map_sharing_enabled) && (
+        userRow?.map_visibility === 'public' ||
+        userRow?.map_visibility === 'friends' && followedUserIds.has(row.user_id)
+      )
+      return restaurant && user && canSeeMap ? [{ visit: rowToVisit(row), restaurant, user }] : []
     }),
   }
 }
@@ -674,7 +717,11 @@ async function readProfile(database: D1Database, viewerId: string, profileId: st
     .bind(viewerId, profileId, profileId, viewerId).first())
   const visibilitySql = profileId === viewerId
     ? '1 = 1'
-    : friendship ? "visibility IN ('friends', 'public')" : "visibility = 'public'"
+    : !user.map_sharing_enabled || user.map_visibility === 'private'
+      ? '1 = 0'
+      : user.map_visibility === 'friends' && !friendship
+        ? '1 = 0'
+        : '1 = 1'
   const [visitsResult, restaurantsResult] = await database.batch([
     database.prepare(`SELECT * FROM visits WHERE user_id = ? AND deleted_at IS NULL AND ${visibilitySql} ORDER BY visited_at DESC`).bind(profileId),
     database.prepare(`SELECT * FROM restaurants WHERE id IN (
@@ -770,7 +817,7 @@ async function createSharedMeal(database: D1Database, viewerId: string, request:
 }
 
 function publicUser(row: UserRow) {
-  return { id: row.id, nickname: row.nickname, bio: row.bio, city: row.city, avatarImageData: row.avatar_image_data, avatarPhotoId: row.avatar_photo_id }
+  return { id: row.id, nickname: row.nickname, bio: row.bio, city: row.city, avatarImageData: row.avatar_image_data, avatarPhotoId: row.avatar_photo_id, avatarPresetId: row.avatar_preset_id ?? 'polar-bear', membershipTier: row.membership_tier ?? 'free' }
 }
 
 async function readObjectBody(request: Request) {
@@ -828,10 +875,18 @@ function rowToVisit(row: VisitRow): CloudVisit {
     pricePerPerson: row.price_per_person,
     partySize: row.party_size,
     queueDuration: row.queue_duration,
+    diningOccasions: (() => {
+      const occasions = parseStringArray(row.dining_occasions_json) as DiningOccasion[]
+      return occasions.length ? occasions : row.dining_occasion ? [row.dining_occasion] : []
+    })(),
     diningOccasion: row.dining_occasion,
+    diningOccasionText: row.dining_occasion_text ?? '',
     valueRating: row.value_rating,
     environmentRating: row.environment_rating,
     serviceRating: row.service_rating,
+    valueTags: parseStringArray(row.value_tags_json),
+    environmentTags: parseStringArray(row.environment_tags_json),
+    serviceTags: parseStringArray(row.service_tags_json),
     noiseLevel: row.noise_level,
     diningDuration: row.dining_duration,
     portionLevel: row.portion_level,
@@ -881,6 +936,10 @@ function rowToUser(row: UserRow): CloudUser {
     city: row.city,
     avatarImageData: row.avatar_image_data,
     avatarPhotoId: row.avatar_photo_id,
+    avatarPresetId: row.avatar_preset_id ?? 'polar-bear',
+    membershipTier: row.membership_tier ?? 'free',
+    mapSharingEnabled: Boolean(row.map_sharing_enabled),
+    mapVisibility: row.map_visibility ?? 'private',
     authProvider: row.auth_provider,
     authSubject: row.auth_subject,
     createdAt: row.created_at,

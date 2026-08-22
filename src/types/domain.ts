@@ -9,11 +9,13 @@ export type DiningMode = 'dine_in' | 'takeout'
 export type PaymentMode = 'aa' | 'my_treat' | 'treated' | 'separate' | 'other'
 export type DiningOccasion = 'solo' | 'date' | 'friends' | 'family' | 'business' | 'celebration' | 'other'
 export type NoiseLevel = 'quiet' | 'normal' | 'loud' | 'very_loud'
-export type DiningDuration = 'under30' | 'under60' | 'under90' | 'under120' | 'over120'
+export type DiningDuration = 'under15' | 'under30' | 'under45' | 'under60' | 'under90' | 'under120' | 'over120'
 export type PortionLevel = 'small' | 'normal' | 'generous'
 export type TransportConvenience = 'very_convenient' | 'convenient' | 'normal' | 'inconvenient'
 export type RecommendationSourceType = 'friend' | 'xiaohongshu' | 'douyin' | 'dianping' | 'blogger' | 'self' | 'other'
 export type FriendshipStatus = 'pending' | 'accepted' | 'rejected' | 'removed'
+export type AvatarPresetId = 'polar-bear' | 'penguin' | 'cat' | 'dog' | 'parrot' | 'dinosaur' | 'shiba' | 'panda' | 'otter' | 'hedgehog' | 'rabbit' | 'koala' | 'fox' | 'raccoon' | 'deer' | 'whale'
+export type MembershipTier = 'free' | 'member'
 export type QueueDuration =
   | 'none'
   | 'under15'
@@ -66,10 +68,15 @@ export interface Visit {
   pricePerPerson: number | null
   partySize: number
   queueDuration: QueueDuration | null
+  diningOccasions: DiningOccasion[]
   diningOccasion: DiningOccasion | null
+  diningOccasionText: string
   valueRating: StarRating | null
   environmentRating: StarRating | null
   serviceRating: StarRating | null
+  valueTags: string[]
+  environmentTags: string[]
+  serviceTags: string[]
   noiseLevel: NoiseLevel | null
   diningDuration: DiningDuration | null
   portionLevel: PortionLevel | null
@@ -128,6 +135,10 @@ export interface UserProfile {
   city: string
   avatarImageData: string | null
   avatarPhotoId: string | null
+  avatarPresetId: AvatarPresetId
+  membershipTier: MembershipTier
+  mapSharingEnabled: boolean
+  mapVisibility: Visibility
   authProvider: 'cloudflare-access' | 'local'
   authSubject: string | null
   createdAt: string
@@ -248,7 +259,7 @@ export interface Coordinates {
 export interface CommunityVisit {
   visit: Visit
   restaurant: Pick<Restaurant, 'id' | 'name' | 'address' | 'city' | 'latitude' | 'longitude'>
-  user: Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId'>
+  user: Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
 }
 
 export const DINING_MODE_OPTIONS: { value: DiningMode; label: string }[] = [
@@ -258,7 +269,7 @@ export const DINING_MODE_OPTIONS: { value: DiningMode; label: string }[] = [
 
 export const VISIBILITY_OPTIONS: { value: Visibility; label: string; description: string }[] = [
   { value: 'private', label: '仅自己', description: '只有你能看到' },
-  { value: 'friends', label: '好友可见', description: '已接受的好友可见' },
+  { value: 'friends', label: '互相关注', description: '互相关注的用户可见' },
   { value: 'public', label: '公开', description: '会出现在社区' },
 ]
 

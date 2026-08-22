@@ -131,6 +131,8 @@ function mergeVisit(local: Visit | undefined, cloud: CloudVisit): Visit {
   ))
   return {
     ...cloud,
+    diningOccasions: cloud.diningOccasions?.length ? cloud.diningOccasions : cloud.diningOccasion ? [cloud.diningOccasion] : [],
+    diningOccasionText: cloud.diningOccasionText ?? '',
     dishes: cloud.dishes.map((dish) => ({
       ...dish,
       imageData: localDishes.get(dish.id)?.imageData ?? (dish.photoId ? drivePhotoReference(dish.photoId) : null),
@@ -149,6 +151,8 @@ function mergeUser(local: UserProfile | undefined, cloud: CloudUser): UserProfil
   if (local && local.updatedAt >= cloud.updatedAt) return local
   return {
     ...cloud,
+    avatarPresetId: cloud.avatarPresetId ?? 'polar-bear',
+    membershipTier: cloud.membershipTier ?? 'free',
     avatarImageData: cloud.avatarImageData ?? (
       local?.avatarPhotoId === cloud.avatarPhotoId
         ? local.avatarImageData
