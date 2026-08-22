@@ -48,11 +48,9 @@ interface GeocodeResult {
   }>
 }
 
-interface AMapGeolocationResult {
+interface AMapConvertResult {
   info?: string
-  position?: AMapLngLat
-  accuracy?: number
-  location_type?: string
+  locations?: AMapLngLat[]
 }
 
 export interface AMapInstance {
@@ -142,9 +140,11 @@ export interface AMapNamespace {
       callback: (status: string, result: GeocodeResult | string) => void,
     ): void
   }
-  Geolocation: new (options?: Record<string, unknown>) => {
-    getCurrentPosition(callback: (status: string, result: AMapGeolocationResult | string) => void): void
-  }
+  convertFrom(
+    location: [number, number],
+    type: 'gps',
+    callback: (status: string, result: AMapConvertResult | string) => void,
+  ): void
 }
 
 declare global {
@@ -185,7 +185,6 @@ export function loadAmap(): Promise<AMapNamespace> {
         'AMap.ToolBar',
         'AMap.Scale',
         'AMap.Geocoder',
-        'AMap.Geolocation',
         'AMap.MarkerCluster',
       ],
     }) as Promise<AMapNamespace>
@@ -203,34 +202,42 @@ export interface ResolvedLocation {
 }
 
 export async function detectCurrentCoordinates(): Promise<Coordinates> {
-  const AMap = await withTimeout(loadAmap(), 8_000, '地图服务加载超时，请检查网络后重试。')
-  return withTimeout(new Promise<Coordinates>((resolve, reject) => {
-    const geolocation = new AMap.Geolocation({
-      enableHighAccuracy: true,
-      timeout: 10_000,
-      maximumAge: 0,
-      convert: true,
-      GeoLocationFirst: true,
-      noIpLocate: 3,
-      needAddress: false,
-      showButton: false,
-      showMarker: false,
-      showCircle: false,
-      panToLocation: false,
-      zoomToAccuracy: false,
+  const [AMap, gps] = await Promise.all([
+    withTimeout(loadAmap(), 7_000, '地图服务加载超时，请检查网络后重试。'),
+    readBrowserGps(),
+  ])
+  return withTimeout(new Promise<Coordinates>((resolve) => {
+    AMap.convertFrom([gps.longitude, gps.latitude], 'gps', (status, result) => {
+      const converted = status === 'complete' && typeof result !== 'string' ? result.locations?.[0] : null
+      resolve(converted
+        ? { longitude: converted.getLng(), latitude: converted.getLat() }
+        : { longitude: gps.longitude, latitude: gps.latitude })
     })
-    geolocation.getCurrentPosition((status, result) => {
-      if (status !== 'complete' || typeof result === 'string' || !result.position) {
-        reject(new Error(typeof result === 'string' ? result : result.info || '高精度定位失败，请检查位置权限。'))
-        return
-      }
-      if (result.location_type?.toLocaleLowerCase().includes('ip') || (result.accuracy ?? 0) > 1_000) {
-        reject(new Error('当前只能获得粗略网络位置，无法据此推荐附近餐厅。请开启设备精确定位。'))
-        return
-      }
-      resolve({ longitude: result.position.getLng(), latitude: result.position.getLat() })
-    })
-  }), 11_000, '高精度定位超时，请开启设备精确定位后重试。')
+  }), 2_500, '坐标转换超时。').catch(() => ({ longitude: gps.longitude, latitude: gps.latitude }))
+}
+
+function readBrowserGps(): Promise<Coordinates> {
+  if (!navigator.geolocation) return Promise.reject(new Error('当前浏览器不支持定位，请使用地址搜索。'))
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (position.coords.accuracy > 1_000) {
+          reject(new Error('当前只能获得粗略位置，请在系统设置中开启精确定位。'))
+          return
+        }
+        resolve({ longitude: position.coords.longitude, latitude: position.coords.latitude })
+      },
+      (error) => {
+        const message = error.code === error.PERMISSION_DENIED
+          ? '定位权限未开启，请允许 Taste Map 使用精确位置后重试。'
+          : error.code === error.TIMEOUT
+            ? '定位超时，请确认 GPS 已开启后重试。'
+            : '无法获取当前位置，请检查设备定位服务。'
+        reject(new Error(message))
+      },
+      { enableHighAccuracy: true, timeout: 8_000, maximumAge: 0 },
+    )
+  })
 }
 
 export async function resolveCoordinatesLocation(coordinates: Coordinates): Promise<ResolvedLocation> {
@@ -332,10 +339,10 @@ function textValue(value: string | string[] | undefined) {
 export async function searchRestaurantPois(
   keyword: string,
   city?: string,
-  options: { center?: Coordinates; timeoutMs?: number; radiusMeters?: number } = {},
+  options: { center?: Coordinates; timeoutMs?: number; radiusMeters?: number; categoryOnly?: boolean } = {},
 ): Promise<PoiSearchResult[]> {
   const normalizedKeyword = normalizeRestaurantKeyword(keyword)
-  if (!normalizedKeyword) return []
+  if (!normalizedKeyword && !options.categoryOnly) return []
   const AMap = await loadAmap()
 
   return new Promise((resolve, reject) => {
@@ -392,7 +399,7 @@ export async function searchRestaurantPois(
 
     if (options.center) {
       search.searchNearBy(
-        normalizedKeyword,
+        options.categoryOnly ? '' : normalizedKeyword,
         [options.center.longitude, options.center.latitude],
         options.radiusMeters ?? 8_000,
         handleResult,
@@ -408,5 +415,5 @@ export function searchNearbyRestaurantPois(
   city?: string,
   options: { timeoutMs?: number; radiusMeters?: number } = {},
 ) {
-  return searchRestaurantPois('餐厅', city, { center, radiusMeters: options.radiusMeters ?? 2_000, timeoutMs: options.timeoutMs })
+  return searchRestaurantPois('', city, { center, categoryOnly: true, radiusMeters: options.radiusMeters ?? 2_000, timeoutMs: options.timeoutMs })
 }

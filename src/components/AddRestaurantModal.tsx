@@ -120,14 +120,14 @@ export function AddRestaurantModal({
       setLocatingCity(false)
       setNearbyLoading(false)
       if (!completed) setNearbyMessage('高精度定位超时，没有展示城市兜底结果。请开启精确定位后重试。')
-    }, 14_000)
+    }, 12_000)
     void (async () => {
       try {
         const coordinates = await detectCurrentCoordinates()
         if (!active) return
         setCurrentLocation(coordinates)
         const [nearby, detected] = await Promise.all([
-          searchNearbyRestaurantPois(coordinates, undefined, { timeoutMs: 7_000, radiusMeters: 1_500 }).catch(() => []),
+          searchNearbyRestaurantPois(coordinates, undefined, { timeoutMs: 5_000, radiusMeters: 3_000 }),
           resolveCoordinatesLocation(coordinates).catch(() => null),
         ])
         if (active && detected) {
@@ -137,7 +137,7 @@ export function AddRestaurantModal({
         }
         if (!active) return
         setNearbyResults(nearby.slice(0, 8))
-        setNearbyMessage(nearby.length ? '以下餐厅按 GPS 坐标 1.5 公里内检索。' : '已获得精确位置，但 1.5 公里内没有找到餐厅。')
+        setNearbyMessage(nearby.length ? '以下餐厅按 GPS 坐标 3 公里内检索。' : '已获得精确位置，但 3 公里内没有找到餐厅。')
       } catch (locationError) {
         if (active) setNearbyMessage(locationError instanceof Error ? locationError.message : '高精度定位失败，请重新尝试。')
       } finally {
@@ -454,7 +454,7 @@ function SearchStep({
       {error ? <p className="form-error">{error}</p> : null}
       {!hasSearched ? (
         <section className="nearby-restaurant-section">
-          <header><div><LocateFixed size={16} /><strong>附近餐厅</strong></div><span>{locationLabel ? 'GPS 1.5 公里内' : '仅使用精确 GPS'}</span></header>
+          <header><div><LocateFixed size={16} /><strong>附近餐厅</strong></div><span>{locationLabel ? 'GPS 3 公里内' : '仅使用精确 GPS'}</span></header>
           {nearbyLoading ? <div className="nearby-loading"><LoaderCircle className="spin" size={17} /> 正在寻找附近餐厅</div> : null}
           {!nearbyLoading ? <PoiResultList
             existingRestaurantsByPoiId={existingRestaurantsByPoiId}
