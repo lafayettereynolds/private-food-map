@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { KeyRound, LoaderCircle, MapPin, RotateCcw } from 'lucide-react'
+import { KeyRound, LoaderCircle, MapPin, RotateCcw, UsersRound } from 'lucide-react'
 import {
   isAmapConfigured,
   loadAmap,
+  detectCurrentLocation,
   type AMapInstance,
   type AMapMarkerInstance,
   type AMapMarkerClusterInstance,
@@ -10,14 +11,16 @@ import {
   type AMapMarkerClusterRenderContext,
   type AMapNamespace,
 } from '../services/amap'
-import { scoreColor, type RestaurantSummary } from '../types/domain'
+import { scoreColor, type RestaurantSummary, type UserProfile } from '../types/domain'
 import { resolvePhotoSource } from '../services/photoAssets'
+import { fetchCommunityFeed } from '../services/socialApi'
 
 interface MapViewProps {
   restaurants: RestaurantSummary[]
   selectedRestaurant?: RestaurantSummary
   onSelect: (restaurant: RestaurantSummary) => void
   onClearSelection: () => void
+  currentUser?: UserProfile
 }
 
 // City-level views should feel full, like Beli: restaurants render individually.
@@ -30,6 +33,7 @@ export function MapView({
   selectedRestaurant,
   onSelect,
   onClearSelection,
+  currentUser,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<AMapInstance | null>(null)
@@ -37,12 +41,17 @@ export function MapView({
   const clusterRef = useRef<AMapMarkerClusterInstance | null>(null)
   const restaurantElementsRef = useRef(new Map<string, HTMLElement>())
   const restaurantMarkersRef = useRef(new Map<string, AMapMarkerInstance>())
+  const locationMarkerRef = useRef<AMapMarkerInstance | null>(null)
+  const socialMarkersRef = useRef<AMapMarkerInstance[]>([])
   const selectedIdRef = useRef(selectedRestaurant?.id)
+  const suppressMapClearUntilRef = useRef(0)
   const selectRef = useRef(onSelect)
   const clearSelectionRef = useRef(onClearSelection)
   const [loading, setLoading] = useState(isAmapConfigured)
   const [mapReady, setMapReady] = useState(false)
   const [error, setError] = useState('')
+  const [showSocialMap, setShowSocialMap] = useState(false)
+  const [socialMapLoading, setSocialMapLoading] = useState(false)
 
   selectedIdRef.current = selectedRestaurant?.id
   selectRef.current = onSelect
@@ -50,6 +59,8 @@ export function MapView({
 
   useEffect(() => {
     if (!isAmapConfigured || !containerRef.current) return
+    const restaurantElements = restaurantElementsRef.current
+    const restaurantMarkers = restaurantMarkersRef.current
     let disposed = false
     let detachMapClick: (() => void) | undefined
 
@@ -69,6 +80,7 @@ export function MapView({
         map.addControl(new AMap.Scale())
 
         const handleMapClick = () => {
+          if (Date.now() < suppressMapClearUntilRef.current) return
           clearSelectionRef.current()
         }
         map.on('click', handleMapClick)
@@ -88,8 +100,12 @@ export function MapView({
       detachMapClick?.()
       clusterRef.current?.setMap(null)
       clusterRef.current = null
-      restaurantElementsRef.current.clear()
-      restaurantMarkersRef.current.clear()
+      restaurantElements.clear()
+      restaurantMarkers.clear()
+      locationMarkerRef.current?.setMap(null)
+      locationMarkerRef.current = null
+      socialMarkersRef.current.forEach((marker) => marker.setMap(null))
+      socialMarkersRef.current = []
       mapRef.current?.destroy()
       mapRef.current = null
       amapRef.current = null
@@ -99,12 +115,106 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current
     const AMap = amapRef.current
+    if (!map || !AMap || !currentUser) return
+    let disposed = false
+    locationMarkerRef.current?.setMap(null)
+    locationMarkerRef.current = null
+    void detectCurrentLocation().then(async (location) => {
+      if (disposed) return
+      const content = document.createElement('div')
+      content.className = 'current-user-marker'
+      const avatar = await resolvePhotoSource(currentUser.avatarImageData, currentUser.avatarPhotoId).catch(() => null)
+      if (disposed) return
+      if (avatar) {
+        const image = document.createElement('img')
+        image.alt = ''
+        image.src = avatar
+        content.appendChild(image)
+      } else {
+        content.textContent = currentUser.nickname.slice(0, 1) || '我'
+      }
+      const marker = new AMap.Marker({
+        map,
+        position: [location.longitude, location.latitude],
+        content,
+        anchor: 'center',
+        zIndex: 3000,
+        title: '我的当前位置',
+      })
+      locationMarkerRef.current = marker
+    }).catch(() => undefined)
+    return () => {
+      disposed = true
+      locationMarkerRef.current?.setMap(null)
+      locationMarkerRef.current = null
+    }
+  }, [currentUser, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const AMap = amapRef.current
+    socialMarkersRef.current.forEach((marker) => marker.setMap(null))
+    socialMarkersRef.current = []
+    if (!showSocialMap || !map || !AMap) return
+    let disposed = false
+    setSocialMapLoading(true)
+    void fetchCommunityFeed().then(async (items) => {
+      if (disposed) return
+      const seen = new Set<string>()
+      const unique = items.filter((item) => {
+        const key = `${item.user.id}:${item.restaurant.id}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      }).slice(0, 60)
+      const markers = await Promise.all(unique.map(async (item) => {
+        const content = document.createElement('div')
+        content.className = 'social-map-marker'
+        content.title = `${item.user.nickname} · ${item.restaurant.name}`
+        const avatar = await resolvePhotoSource(item.user.avatarImageData, item.user.avatarPhotoId).catch(() => null)
+        if (avatar) {
+          const image = document.createElement('img')
+          image.alt = ''
+          image.src = avatar
+          content.appendChild(image)
+        } else {
+          content.textContent = item.user.nickname.slice(0, 1) || '友'
+        }
+        return new AMap.Marker({
+          map,
+          position: [item.restaurant.longitude, item.restaurant.latitude],
+          content,
+          anchor: 'center',
+          zIndex: 700,
+          title: `${item.user.nickname} · ${item.restaurant.name}`,
+        })
+      }))
+      if (disposed) {
+        markers.forEach((marker) => marker.setMap(null))
+        return
+      }
+      socialMarkersRef.current = markers
+    }).catch(() => undefined).finally(() => {
+      if (!disposed) setSocialMapLoading(false)
+    })
+    return () => {
+      disposed = true
+      socialMarkersRef.current.forEach((marker) => marker.setMap(null))
+      socialMarkersRef.current = []
+    }
+  }, [mapReady, showSocialMap])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const AMap = amapRef.current
     if (!map || !AMap) return
+    const restaurantElements = restaurantElementsRef.current
+    const restaurantMarkers = restaurantMarkersRef.current
 
     clusterRef.current?.setMap(null)
     clusterRef.current = null
-    restaurantElementsRef.current.clear()
-    restaurantMarkersRef.current.clear()
+    restaurantElements.clear()
+    restaurantMarkers.clear()
     if (restaurants.length === 0) return
 
     const { points, coordinateMap } = createClusterData(restaurants)
@@ -120,10 +230,15 @@ export function MapView({
         event.preventDefault()
         event.stopPropagation()
         event.stopImmediatePropagation()
+        suppressMapClearUntilRef.current = Date.now() + 450
         selectRef.current(restaurant)
       })
-      restaurantElementsRef.current.set(restaurant.id, content)
-      restaurantMarkersRef.current.set(restaurant.id, context.marker)
+      context.marker.on('click', () => {
+        suppressMapClearUntilRef.current = Date.now() + 450
+        selectRef.current(restaurant)
+      })
+      restaurantElements.set(restaurant.id, content)
+      restaurantMarkers.set(restaurant.id, context.marker)
       context.marker.setContent(content)
       context.marker.setAnchor('center')
       context.marker.setOffset(new AMap.Pixel(0, 0))
@@ -172,8 +287,8 @@ export function MapView({
     return () => {
       cluster.setMap(null)
       if (clusterRef.current === cluster) clusterRef.current = null
-      restaurantElementsRef.current.clear()
-      restaurantMarkersRef.current.clear()
+      restaurantElements.clear()
+      restaurantMarkers.clear()
     }
   }, [mapReady, restaurants])
 
@@ -208,6 +323,10 @@ export function MapView({
   return (
     <>
       <div className="amap-container" ref={containerRef} />
+      <button aria-pressed={showSocialMap} className={`social-map-toggle${showSocialMap ? ' is-active' : ''}`} onClick={() => setShowSocialMap((value) => !value)} type="button">
+        {socialMapLoading ? <LoaderCircle className="spin" size={14} /> : <UsersRound size={14} />}
+        {showSocialMap ? '隐藏社区足迹' : '显示社区足迹'}
+      </button>
       {loading ? (
         <div className="map-loading"><LoaderCircle className="spin" size={23} /> 正在加载地图</div>
       ) : null}

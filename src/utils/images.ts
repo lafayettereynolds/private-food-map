@@ -39,6 +39,10 @@ export function optimizeMarkerImage(file: File): Promise<string> {
   return optimizeImage(file, 1024, 0.82)
 }
 
+export function optimizeAvatarImage(file: File): Promise<string> {
+  return optimizeImage(file, 256, 0.76)
+}
+
 export function optimizeVisitPhoto(file: File): Promise<string> {
   return optimizeImage(file, 1920, 0.8)
 }

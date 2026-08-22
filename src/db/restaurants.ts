@@ -1,19 +1,29 @@
 import Dexie from 'dexie'
 import { db } from './appDb'
 import type {
+  DiningDuration,
+  DiningMode,
+  DiningOccasion,
   MarkerType,
+  NoiseLevel,
+  PaymentMode,
   PoiSearchResult,
+  PortionLevel,
   PreferenceLevel,
   QueueDuration,
+  RecommendationSourceType,
   Restaurant,
   RestaurantStatus,
   StarRating,
+  TransportConvenience,
   Visit,
   VisitDish,
+  Visibility,
 } from '../types/domain'
 import { calculatePricePerPerson } from '../types/domain'
 import { syncQueueId } from '../types/sync'
 import { requestCloudSync } from '../services/syncEvents'
+import { createSharedMealInvitations } from './social'
 
 export class DuplicateRestaurantError extends Error {
   constructor() {
@@ -53,9 +63,26 @@ function normalizeCompanions(companions: string[]) {
 export interface InitialVisitInput {
   visitedAt: string
   rating: StarRating
+  visibility: Visibility
+  diningMode: DiningMode
   totalPrice: number | null
+  myActualSpend: number | null
+  paymentMode: PaymentMode | null
   partySize: number
   queueDuration: QueueDuration
+  diningOccasion: DiningOccasion | null
+  valueRating: StarRating | null
+  environmentRating: StarRating | null
+  serviceRating: StarRating | null
+  noiseLevel: NoiseLevel | null
+  diningDuration: DiningDuration | null
+  portionLevel: PortionLevel | null
+  transportConvenience: TransportConvenience | null
+  specialNotes: string
+  recommendationSourceType: RecommendationSourceType | null
+  recommendationSourceUserId: string | null
+  recommendationSourceText: string
+  sharedParticipantUserIds: string[]
   companions: string[]
   dishes: VisitDish[]
   note: string
@@ -83,6 +110,7 @@ export async function addRestaurantFromPoi(
   const restaurantId = existingRestaurant?.id ?? createId()
   const restaurant: Restaurant = {
     id: restaurantId,
+    userId: existingRestaurant?.userId ?? 'owner',
     amapPoiId: input.poi.amapPoiId,
     name: input.poi.name,
     address: input.address.trim() || input.poi.address,
@@ -112,16 +140,34 @@ export async function addRestaurantFromPoi(
   const visit: Visit | null = input.initialVisit
     ? {
         id: createId(),
+        userId: 'owner',
         restaurantId,
         visitedAt: input.initialVisit.visitedAt,
         rating: input.initialVisit.rating,
+        visibility: input.initialVisit.visibility,
+        diningMode: input.initialVisit.diningMode,
         totalPrice: input.initialVisit.totalPrice,
+        myActualSpend: input.initialVisit.myActualSpend,
+        paymentMode: input.initialVisit.paymentMode,
         pricePerPerson: calculatePricePerPerson(
           input.initialVisit.totalPrice,
           Math.max(1, input.initialVisit.partySize, input.initialVisit.companions.length + 1),
         ),
         partySize: Math.max(1, input.initialVisit.partySize, input.initialVisit.companions.length + 1),
         queueDuration: input.initialVisit.queueDuration,
+        diningOccasion: input.initialVisit.diningOccasion,
+        valueRating: input.initialVisit.valueRating,
+        environmentRating: input.initialVisit.environmentRating,
+        serviceRating: input.initialVisit.serviceRating,
+        noiseLevel: input.initialVisit.noiseLevel,
+        diningDuration: input.initialVisit.diningDuration,
+        portionLevel: input.initialVisit.portionLevel,
+        transportConvenience: input.initialVisit.transportConvenience,
+        specialNotes: input.initialVisit.specialNotes.trim(),
+        recommendationSourceType: input.initialVisit.recommendationSourceType,
+        recommendationSourceUserId: input.initialVisit.recommendationSourceUserId,
+        recommendationSourceText: input.initialVisit.recommendationSourceText.trim(),
+        sharedMealId: null,
         companions: input.initialVisit.companions,
         dishes: normalizeDishes(input.initialVisit.dishes),
         note: input.initialVisit.note.trim(),
@@ -152,6 +198,9 @@ export async function addRestaurantFromPoi(
         })
       }
     })
+    if (visit && input.initialVisit?.sharedParticipantUserIds.length) {
+      await createSharedMealInvitations(visit, input.initialVisit.sharedParticipantUserIds)
+    }
     requestCloudSync()
     return restaurant
   } catch (error) {
@@ -173,6 +222,8 @@ export interface RestaurantBasicsUpdate {
   markerImageData: string | null
   markerPhotoId: string | null
   markerEmoji: string
+  latitude: number
+  longitude: number
 }
 
 export async function updateRestaurantBasics(
@@ -196,6 +247,8 @@ export async function updateRestaurantBasics(
       name: changes.name.trim(),
       address: changes.address.trim(),
       city: changes.city.trim(),
+      latitude: changes.latitude,
+      longitude: changes.longitude,
       tags: changes.tags.map((tag) => tag.trim()).filter(Boolean),
       markerEmoji: changes.markerEmoji.trim() || '🍽️',
       updatedAt: now,
@@ -218,9 +271,26 @@ export async function updateRestaurantBasics(
 export interface AddVisitInput {
   visitedAt: string
   rating: StarRating
+  visibility: Visibility
+  diningMode: DiningMode
   totalPrice: number | null
+  myActualSpend: number | null
+  paymentMode: PaymentMode | null
   partySize: number
   queueDuration: QueueDuration
+  diningOccasion: DiningOccasion | null
+  valueRating: StarRating | null
+  environmentRating: StarRating | null
+  serviceRating: StarRating | null
+  noiseLevel: NoiseLevel | null
+  diningDuration: DiningDuration | null
+  portionLevel: PortionLevel | null
+  transportConvenience: TransportConvenience | null
+  specialNotes: string
+  recommendationSourceType: RecommendationSourceType | null
+  recommendationSourceUserId: string | null
+  recommendationSourceText: string
+  sharedParticipantUserIds: string[]
   companions: string[]
   dishes: VisitDish[]
   note: string
@@ -235,13 +305,31 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
   const pricePerPerson = calculatePricePerPerson(input.totalPrice, normalizedPartySize)
   const visit: Visit = {
     id: createId(),
+    userId: 'owner',
     restaurantId,
     visitedAt: input.visitedAt,
     rating: input.rating,
+    visibility: input.visibility,
+    diningMode: input.diningMode,
     totalPrice: input.totalPrice,
+    myActualSpend: input.myActualSpend,
+    paymentMode: input.paymentMode,
     pricePerPerson,
     partySize: normalizedPartySize,
     queueDuration: input.queueDuration,
+    diningOccasion: input.diningOccasion,
+    valueRating: input.valueRating,
+    environmentRating: input.environmentRating,
+    serviceRating: input.serviceRating,
+    noiseLevel: input.noiseLevel,
+    diningDuration: input.diningDuration,
+    portionLevel: input.portionLevel,
+    transportConvenience: input.transportConvenience,
+    specialNotes: input.specialNotes.trim(),
+    recommendationSourceType: input.recommendationSourceType,
+    recommendationSourceUserId: input.recommendationSourceUserId,
+    recommendationSourceText: input.recommendationSourceText.trim(),
+    sharedMealId: null,
     companions,
     dishes: normalizeDishes(input.dishes),
     note: input.note.trim(),
@@ -286,6 +374,9 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
   })
 
   requestCloudSync()
+  if (input.sharedParticipantUserIds.length) {
+    await createSharedMealInvitations(visit, input.sharedParticipantUserIds)
+  }
   return visit
 }
 
@@ -306,10 +397,26 @@ export async function updateVisit(id: string, input: AddVisitInput) {
       ...existingVisit,
       visitedAt: input.visitedAt,
       rating: input.rating,
+      visibility: input.visibility,
+      diningMode: input.diningMode,
       totalPrice: input.totalPrice,
+      myActualSpend: input.myActualSpend,
+      paymentMode: input.paymentMode,
       pricePerPerson,
       partySize: normalizedPartySize,
       queueDuration: input.queueDuration,
+      diningOccasion: input.diningOccasion,
+      valueRating: input.valueRating,
+      environmentRating: input.environmentRating,
+      serviceRating: input.serviceRating,
+      noiseLevel: input.noiseLevel,
+      diningDuration: input.diningDuration,
+      portionLevel: input.portionLevel,
+      transportConvenience: input.transportConvenience,
+      specialNotes: input.specialNotes.trim(),
+      recommendationSourceType: input.recommendationSourceType,
+      recommendationSourceUserId: input.recommendationSourceUserId,
+      recommendationSourceText: input.recommendationSourceText.trim(),
       companions,
       dishes: normalizeDishes(input.dishes),
       note: input.note.trim(),

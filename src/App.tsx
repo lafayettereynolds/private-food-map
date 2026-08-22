@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   CheckCircle2,
+  Globe2,
+  Map as MapIcon,
   MapPin,
   PanelLeftClose,
   PanelLeftOpen,
@@ -11,6 +13,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   Utensils,
+  UserRound,
+  UsersRound,
 } from 'lucide-react'
 import { AddRestaurantModal } from './components/AddRestaurantModal'
 import { AddVisitModal } from './components/AddVisitModal'
@@ -19,14 +23,22 @@ import { MapView } from './components/MapView'
 import { RestaurantEditorModal } from './components/RestaurantEditorModal'
 import {
   RestaurantFilters,
+  type DiningModeFilter,
+  type DiningOccasionFilter,
+  type PriceRangeFilter,
   type QueueFilter,
+  type RecommendationSourceFilter,
   type ScoreBandFilter,
+  type VisitPeriodFilter,
   type VisitCountFilter,
 } from './components/RestaurantFilters'
 import { RestaurantList } from './components/RestaurantList'
 import { RestaurantPreviewCard } from './components/RestaurantPreviewCard'
 import { SettingsModal } from './components/SettingsModal'
 import { CloudSyncIndicator } from './components/CloudSyncIndicator'
+import { CommunityPage } from './components/CommunityPage'
+import { FriendsPage } from './components/FriendsPage'
+import { ProfilePage } from './components/ProfilePage'
 import { CLOUD_SYNC_ENABLED, IS_DEVELOPMENT } from './config/appEnvironment'
 import { db } from './db/appDb'
 import {
@@ -40,19 +52,24 @@ import {
   type RestaurantBasicsUpdate,
 } from './db/restaurants'
 import { seedSixtyVisitedRestaurants } from './db/seedRestaurants'
+import { CURRENT_USER_ID, ensureCurrentUser, setSharedMealInvitationStatus, updateCurrentUserProfile, upsertFriendship } from './db/social'
 import { fetchTasteRecommendations } from './services/recommendations'
 import { initializeCloudSync } from './services/cloudSync'
 import { useCloudSync } from './services/useCloudSync'
 import { initializePhotoSync } from './services/photoSync'
+import { fetchUserProfile } from './services/socialApi'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
   type RestaurantStatus,
   type RestaurantSummary,
+  type SharedMealParticipant,
+  type UserProfile,
   type Visit,
 } from './types/domain'
 
 type ActiveList = RestaurantStatus | 'recommended'
+type ActiveView = 'map' | 'community' | 'friends' | 'profile'
 
 export default function App() {
   const restaurants = useLiveQuery(
@@ -60,12 +77,23 @@ export default function App() {
     [],
   )
   const visits = useLiveQuery(() => db.visits.filter((visit) => !visit.deletedAt).toArray(), [])
+  const users = useLiveQuery(() => db.users.filter((user) => !user.deletedAt).toArray(), [])
+  const friendships = useLiveQuery(() => db.friendships.toArray(), [])
+  const sharedMeals = useLiveQuery(() => db.sharedMeals.filter((meal) => !meal.deletedAt).toArray(), [])
+  const sharedMealParticipants = useLiveQuery(() => db.sharedMealParticipants.toArray(), [])
   const cloudSyncState = useCloudSync()
   const [query, setQuery] = useState('')
+  const [activeView, setActiveView] = useState<ActiveView>('map')
+  const [viewedProfile, setViewedProfile] = useState<{ user: UserProfile; restaurants: RestaurantSummary[] } | null>(null)
   const [activeList, setActiveList] = useState<ActiveList>('visited')
   const [visitCountFilter, setVisitCountFilter] = useState<VisitCountFilter>('all')
   const [scoreBandFilter, setScoreBandFilter] = useState<ScoreBandFilter>('all')
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
+  const [diningModeFilter, setDiningModeFilter] = useState<DiningModeFilter>('all')
+  const [diningOccasionFilter, setDiningOccasionFilter] = useState<DiningOccasionFilter>('all')
+  const [recommendationSourceFilter, setRecommendationSourceFilter] = useState<RecommendationSourceFilter>('all')
+  const [priceRangeFilter, setPriceRangeFilter] = useState<PriceRangeFilter>('all')
+  const [visitPeriodFilter, setVisitPeriodFilter] = useState<VisitPeriodFilter>('all')
   const [companionFilter, setCompanionFilter] = useState('all')
   const [tagFilter, setTagFilter] = useState('all')
   const [cityFilter, setCityFilter] = useState('all')
@@ -75,6 +103,7 @@ export default function App() {
   const [showEditor, setShowEditor] = useState(false)
   const [showAddVisit, setShowAddVisit] = useState(false)
   const [editingVisit, setEditingVisit] = useState<Visit | null>(null)
+  const [acceptedMealParticipant, setAcceptedMealParticipant] = useState<SharedMealParticipant | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -86,6 +115,18 @@ export default function App() {
 
   const allRestaurants = useMemo(() => restaurants ?? [], [restaurants])
   const allVisits = useMemo(() => visits ?? [], [visits])
+  const allUsers = useMemo(() => users ?? [], [users])
+  const allFriendships = useMemo(() => friendships ?? [], [friendships])
+  const currentUser = allUsers.find((user) => user.id === CURRENT_USER_ID)
+  const friendOptions = useMemo(() => {
+    const userById = new Map(allUsers.map((user) => [user.id, user]))
+    return allFriendships.flatMap((friendship) => {
+      if (friendship.status !== 'accepted') return []
+      const otherId = friendship.requesterId === CURRENT_USER_ID ? friendship.addresseeId : friendship.addresseeId === CURRENT_USER_ID ? friendship.requesterId : null
+      const user = otherId ? userById.get(otherId) : undefined
+      return user ? [{ id: user.id, nickname: user.nickname }] : []
+    })
+  }, [allFriendships, allUsers])
   const companionOptions = useMemo(
     () => {
       const usageCounts = new Map<string, number>()
@@ -185,11 +226,24 @@ export default function App() {
       const relatedVisits = visitsByRestaurant.get(restaurant.id) ?? []
       if (
         activeList === 'visited' &&
-        (queueFilter !== 'all' || companionFilter !== 'all') &&
+        (
+          queueFilter !== 'all' ||
+          companionFilter !== 'all' ||
+          diningModeFilter !== 'all' ||
+          diningOccasionFilter !== 'all' ||
+          recommendationSourceFilter !== 'all' ||
+          priceRangeFilter !== 'all' ||
+          visitPeriodFilter !== 'all'
+        ) &&
         !relatedVisits.some(
           (visit) =>
             matchesQueueDuration(visit.queueDuration, queueFilter) &&
-            (companionFilter === 'all' || visit.companions.includes(companionFilter)),
+            (companionFilter === 'all' || visit.companions.includes(companionFilter)) &&
+            (diningModeFilter === 'all' || (visit.diningMode ?? 'dine_in') === diningModeFilter) &&
+            (diningOccasionFilter === 'all' || visit.diningOccasion === diningOccasionFilter) &&
+            (recommendationSourceFilter === 'all' || visit.recommendationSourceType === recommendationSourceFilter) &&
+            matchesPriceRange(visit.pricePerPerson, priceRangeFilter) &&
+            matchesVisitPeriod(visit.visitedAt, visitPeriodFilter),
         )
       ) return false
       if (!normalizedQuery) return true
@@ -211,13 +265,18 @@ export default function App() {
     activeList,
     cityFilter,
     companionFilter,
+    diningModeFilter,
+    diningOccasionFilter,
+    priceRangeFilter,
     query,
     queueFilter,
+    recommendationSourceFilter,
     scoreBandFilter,
     recommendations,
     summaries,
     tagFilter,
     visitCountFilter,
+    visitPeriodFilter,
     visitsByRestaurant,
   ])
 
@@ -232,7 +291,16 @@ export default function App() {
       (tagFilter !== 'all' ? 1 : 0) +
       (activeList === 'visited' && visitCountFilter !== 'all' ? 1 : 0) +
       (activeList === 'visited' && queueFilter !== 'all' ? 1 : 0) +
-      (activeList === 'visited' && companionFilter !== 'all' ? 1 : 0)
+      (activeList === 'visited' && companionFilter !== 'all' ? 1 : 0) +
+      (activeList === 'visited' && diningModeFilter !== 'all' ? 1 : 0) +
+      (activeList === 'visited' && diningOccasionFilter !== 'all' ? 1 : 0) +
+      (activeList === 'visited' && recommendationSourceFilter !== 'all' ? 1 : 0) +
+      (activeList === 'visited' && priceRangeFilter !== 'all' ? 1 : 0) +
+      (activeList === 'visited' && visitPeriodFilter !== 'all' ? 1 : 0)
+
+  useEffect(() => {
+    void ensureCurrentUser()
+  }, [])
 
   useEffect(() => {
     let cleanup: (() => void) | undefined
@@ -321,6 +389,7 @@ export default function App() {
   }, [activeList, summaries])
 
   const handleSelect = useCallback((restaurant: RestaurantSummary) => {
+    setActiveView('map')
     setSelectedId(restaurant.id)
     setShowFilters(false)
     if (window.matchMedia('(max-width: 760px)').matches) {
@@ -334,6 +403,11 @@ export default function App() {
     if (list !== 'visited') {
       setVisitCountFilter('all')
       setQueueFilter('all')
+      setDiningModeFilter('all')
+      setDiningOccasionFilter('all')
+      setRecommendationSourceFilter('all')
+      setPriceRangeFilter('all')
+      setVisitPeriodFilter('all')
       setCompanionFilter('all')
     }
     if (list === 'recommended') {
@@ -371,10 +445,14 @@ export default function App() {
 
   async function handleAddVisit(input: AddVisitInput) {
     if (!selectedRestaurant) return
-    await addVisit(selectedRestaurant.id, input)
+    const visit = await addVisit(selectedRestaurant.id, input)
+    if (acceptedMealParticipant) {
+      await setSharedMealInvitationStatus(acceptedMealParticipant.id, 'accepted', visit.id)
+    }
     setActiveList('visited')
     setShowAddVisit(false)
     setEditingVisit(null)
+    setAcceptedMealParticipant(null)
     setToast('到访记录已保存')
   }
 
@@ -388,7 +466,26 @@ export default function App() {
 
   function openNewVisit() {
     setEditingVisit(null)
+    setAcceptedMealParticipant(null)
     setShowAddVisit(true)
+  }
+
+  function acceptMealInvitation(participant: SharedMealParticipant, restaurant: RestaurantSummary) {
+    setActiveView('map')
+    setSelectedId(restaurant.id)
+    setEditingVisit(null)
+    setAcceptedMealParticipant(participant)
+    setShowAddVisit(true)
+  }
+
+  async function viewUserProfile(user: UserProfile) {
+    setActiveView('profile')
+    if (user.id === CURRENT_USER_ID) {
+      setViewedProfile(null)
+      return
+    }
+    const remote = await fetchUserProfile(user.id).catch(() => null)
+    setViewedProfile(remote ?? { user, restaurants: [] })
   }
 
   async function handleSaveRecommendation() {
@@ -429,6 +526,11 @@ export default function App() {
     setVisitCountFilter('all')
     setScoreBandFilter('all')
     setQueueFilter('all')
+    setDiningModeFilter('all')
+    setDiningOccasionFilter('all')
+    setRecommendationSourceFilter('all')
+    setPriceRangeFilter('all')
+    setVisitPeriodFilter('all')
     setCompanionFilter('all')
     setTagFilter('all')
     setCityFilter('all')
@@ -445,11 +547,10 @@ export default function App() {
         <div className="topbar-actions">
           <CloudSyncIndicator onOpenSettings={() => setShowSettings(true)} state={cloudSyncState} />
           <button className="settings-button" aria-label="数据与设置" onClick={() => setShowSettings(true)} type="button"><Settings size={18} /></button>
-          <button className="primary-button" onClick={() => setShowAddModal(true)} type="button"><Plus size={17} /> <span>添加餐厅</span></button>
         </div>
       </header>
 
-      <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}${selectedRestaurant ? ' has-selection' : ''}`}>
+      {activeView === 'map' ? <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}${selectedRestaurant ? ' has-selection' : ''}`}>
         <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}${showFilters && isSidebarOpen ? ' has-open-filters' : ''}`}>
           {isSidebarOpen ? <>
             <div className="sidebar-heading">
@@ -477,6 +578,16 @@ export default function App() {
               cityOptions={cityOptions}
               companion={companionFilter}
               companionOptions={companionOptions}
+              diningMode={diningModeFilter}
+              diningOccasion={diningOccasionFilter}
+              onDiningModeChange={setDiningModeFilter}
+              onDiningOccasionChange={setDiningOccasionFilter}
+              onPriceRangeChange={setPriceRangeFilter}
+              onRecommendationSourceChange={setRecommendationSourceFilter}
+              onVisitPeriodChange={setVisitPeriodFilter}
+              priceRange={priceRangeFilter}
+              recommendationSource={recommendationSourceFilter}
+              visitPeriod={visitPeriodFilter}
               onCityChange={setCityFilter}
               onClose={() => setShowFilters(false)}
               onCompanionChange={setCompanionFilter}
@@ -512,14 +623,39 @@ export default function App() {
         </aside>
 
         <section className="map-panel" aria-label="私人美食地图">
-          <MapView onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
+          <MapView currentUser={currentUser} onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
           {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
-      </section>
+      </section> : activeView === 'profile' && (viewedProfile?.user ?? currentUser) ? (
+        <ProfilePage editable={!viewedProfile} onSave={updateCurrentUserProfile} onSelectRestaurant={handleSelect} restaurants={viewedProfile?.restaurants ?? summaries} user={(viewedProfile?.user ?? currentUser) as UserProfile} />
+      ) : activeView === 'friends' ? (
+        <FriendsPage
+          currentUserId={CURRENT_USER_ID}
+          friendships={allFriendships}
+          onAcceptMeal={acceptMealInvitation}
+          onDeclineMeal={(participant) => void setSharedMealInvitationStatus(participant.id, 'declined')}
+          onFriendshipChange={(friendship) => void upsertFriendship(friendship)}
+          onViewProfile={(user) => void viewUserProfile(user)}
+          participants={sharedMealParticipants ?? []}
+          restaurants={summaries}
+          sharedMeals={sharedMeals ?? []}
+          users={allUsers}
+        />
+      ) : (
+        <CommunityPage onSelectRestaurant={handleSelect} onViewProfile={(user) => void viewUserProfile(user)} restaurants={summaries} users={allUsers} />
+      )}
 
-      {showAddModal ? <AddRestaurantModal companionOptions={companionOptions} existingRestaurantsByPoiId={existingRestaurantsByPoiId} onAdd={handleAdd} onClose={() => setShowAddModal(false)} onRecordExisting={handleRecordExisting} /> : null}
+      <nav aria-label="主要功能" className="bottom-navigation">
+        <button className={activeView === 'map' ? 'is-active' : ''} onClick={() => setActiveView('map')} type="button"><MapIcon size={18} /><span>地图</span></button>
+        <button className={activeView === 'community' ? 'is-active' : ''} onClick={() => setActiveView('community')} type="button"><Globe2 size={18} /><span>社区</span></button>
+        <button aria-label="添加餐厅" className="bottom-navigation__add" onClick={() => setShowAddModal(true)} type="button"><Plus size={21} /><span>添加餐厅</span></button>
+        <button className={activeView === 'friends' ? 'is-active' : ''} onClick={() => setActiveView('friends')} type="button"><UsersRound size={18} /><span>好友</span></button>
+        <button className={activeView === 'profile' && !viewedProfile ? 'is-active' : ''} onClick={() => { setViewedProfile(null); setActiveView('profile') }} type="button"><UserRound size={18} /><span>我的</span></button>
+      </nav>
+
+      {showAddModal ? <AddRestaurantModal companionOptions={companionOptions} existingRestaurantsByPoiId={existingRestaurantsByPoiId} friendOptions={friendOptions} onAdd={handleAdd} onClose={() => setShowAddModal(false)} onRecordExisting={handleRecordExisting} /> : null}
       {showEditor && selectedRestaurant ? <RestaurantEditorModal onClose={() => setShowEditor(false)} onSave={handleSave} restaurant={selectedRestaurant} /> : null}
-      {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? 'new-visit'} onClose={() => { setShowAddVisit(false); setEditingVisit(null) }} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} restaurant={selectedRestaurant} /> : null}
+      {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} friendOptions={friendOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? acceptedMealParticipant?.id ?? 'new-visit'} onClose={() => { setShowAddVisit(false); setEditingVisit(null); setAcceptedMealParticipant(null) }} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} restaurant={selectedRestaurant} /> : null}
       {showDeleteConfirm && selectedRestaurant ? <ConfirmDeleteModal onCancel={() => setShowDeleteConfirm(false)} onConfirm={handleDelete} restaurantName={selectedRestaurant.name} visitCount={selectedRestaurant.visitCount} /> : null}
       {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} visitCount={allVisits.length} /> : null}
       {toast ? <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div> : null}
@@ -545,4 +681,19 @@ function matchesQueueDuration(queueDuration: Visit['queueDuration'], filter: Que
   if (filter === 'all') return true
   if (filter === 'unrecorded') return queueDuration === null
   return queueDuration === filter
+}
+
+function matchesPriceRange(price: number | null, filter: PriceRangeFilter) {
+  if (filter === 'all') return true
+  if (price === null) return false
+  if (filter === 'under100') return price < 100
+  if (filter === '100to200') return price >= 100 && price <= 200
+  return price > 200
+}
+
+function matchesVisitPeriod(visitedAt: string, filter: VisitPeriodFilter) {
+  if (filter === 'all') return true
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - (filter === 'sixMonths' ? 6 : 12))
+  return new Date(visitedAt) >= cutoff
 }

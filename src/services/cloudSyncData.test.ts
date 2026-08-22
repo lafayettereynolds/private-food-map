@@ -78,6 +78,7 @@ describe('cloud sync data', () => {
 function makeRestaurant(changes: Partial<Restaurant> = {}): Restaurant {
   return {
     id: 'restaurant-1',
+    userId: 'owner',
     amapPoiId: 'poi-1',
     name: '测试餐厅',
     address: '测试路 1 号',
@@ -109,6 +110,7 @@ function makeRestaurant(changes: Partial<Restaurant> = {}): Restaurant {
 function makePhoto(changes: Partial<Photo> = {}): Photo {
   return {
     id: 'photo-1',
+    userId: 'owner',
     restaurantId: 'restaurant-1',
     visitId: null,
     kind: 'restaurant-marker',
@@ -132,13 +134,31 @@ function makePhoto(changes: Partial<Photo> = {}): Photo {
 function makeVisit(changes: Partial<Visit> = {}): Visit {
   return {
     id: 'visit-1',
+    userId: 'owner',
     restaurantId: 'restaurant-1',
     visitedAt: '2026-08-20T10:30:00.000Z',
     rating: 5,
+    visibility: 'private',
+    diningMode: 'dine_in',
     totalPrice: 256,
+    myActualSpend: null,
+    paymentMode: null,
     pricePerPerson: 128,
     partySize: 2,
     queueDuration: 'under15',
+    diningOccasion: null,
+    valueRating: null,
+    environmentRating: null,
+    serviceRating: null,
+    noiseLevel: null,
+    diningDuration: null,
+    portionLevel: null,
+    transportConvenience: null,
+    specialNotes: '',
+    recommendationSourceType: null,
+    recommendationSourceUserId: null,
+    recommendationSourceText: '',
+    sharedMealId: null,
     companions: ['朋友'],
     dishes: [{ id: 'dish-1', name: '东坡肉', taste: '偏甜', rating: 5, price: 88, imageData: 'local-dish-photo', photoId: null }],
     note: '本地感受',
@@ -156,6 +176,10 @@ function snapshot(changes: Partial<CloudSnapshot>): CloudSnapshot {
     restaurants: [],
     visits: [],
     photos: [],
+    users: [],
+    friendships: [],
+    sharedMeals: [],
+    sharedMealParticipants: [],
     serverTime: '2026-08-20T15:00:00.000Z',
     ...changes,
   }

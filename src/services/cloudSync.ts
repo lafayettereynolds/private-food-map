@@ -5,9 +5,19 @@ import type {
   CloudSyncResult,
   CloudSyncState,
 } from '../types/cloudSync'
-import type { Photo, Restaurant, Visit } from '../types/domain'
+import type { Friendship, Photo, Restaurant, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
 import type { StoredSyncStatus, SyncQueueItem } from '../types/sync'
-import { activeCounts, mergeCloudData, toCloudPhoto, toCloudRestaurant, toCloudVisit } from './cloudSyncData'
+import {
+  activeCounts,
+  mergeCloudData,
+  toCloudFriendship,
+  toCloudPhoto,
+  toCloudRestaurant,
+  toCloudSharedMeal,
+  toCloudSharedMealParticipant,
+  toCloudUser,
+  toCloudVisit,
+} from './cloudSyncData'
 import { CLOUD_SYNC_REQUEST_EVENT } from './syncEvents'
 
 const API_PATH = '/api/sync'
@@ -89,10 +99,14 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
   await storeMetadata('syncing', attemptAt, null)
 
   try {
-    const [localRestaurants, localVisits, localPhotos, queuedAtStart, cloudBefore] = await Promise.all([
+    const [localRestaurants, localVisits, localPhotos, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants, queuedAtStart, cloudBefore] = await Promise.all([
       db.restaurants.toArray(),
       db.visits.toArray(),
       db.photos.toArray(),
+      db.users.toArray(),
+      db.friendships.toArray(),
+      db.sharedMeals.toArray(),
+      db.sharedMealParticipants.toArray(),
       db.syncQueue.toArray(),
       fetchCloudSnapshot(),
     ])
@@ -112,15 +126,11 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
       return { localCounts, cloudCounts: cloudCountsBefore, migrationRequired: true }
     }
 
-    const cloudAfter = await pushLocalSnapshot(localRestaurants, localVisits, localPhotos)
-    const merged = mergeCloudData(localRestaurants, localVisits, localPhotos, cloudAfter)
+    const cloudAfter = await pushLocalSnapshot(localRestaurants, localVisits, localPhotos, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants)
+    const merged = mergeCloudData(localRestaurants, localVisits, localPhotos, cloudAfter, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants)
     await db.transaction(
       'rw',
-      db.restaurants,
-      db.visits,
-      db.photos,
-      db.syncQueue,
-      db.syncMetadata,
+      [db.restaurants, db.visits, db.photos, db.users, db.friendships, db.sharedMeals, db.sharedMealParticipants, db.syncQueue, db.syncMetadata],
       async () => {
         for (const restaurant of merged.restaurants) {
           const current = await db.restaurants.get(restaurant.id)
@@ -134,6 +144,13 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
           const current = await db.photos.get(photo.id)
           if (!current || current.updatedAt <= photo.updatedAt) await db.photos.put(photo)
         }
+        for (const user of merged.users) {
+          const current = await db.users.get(user.id)
+          if (!current || current.updatedAt <= user.updatedAt) await db.users.put(user)
+        }
+        for (const friendship of merged.friendships) await db.friendships.put(friendship)
+        for (const meal of merged.sharedMeals) await db.sharedMeals.put(meal)
+        for (const participant of merged.sharedMealParticipants) await db.sharedMealParticipants.put(participant)
         await clearCompletedQueueItems(queuedAtStart)
         await db.syncMetadata.put({
           key: 'cloud',
@@ -171,6 +188,10 @@ async function pushLocalSnapshot(
   restaurants: Restaurant[],
   visits: Visit[],
   photos: Photo[],
+  users: UserProfile[],
+  friendships: Friendship[],
+  sharedMeals: SharedMeal[],
+  sharedMealParticipants: SharedMealParticipant[],
 ) {
   const response = await fetch(API_PATH, {
     method: 'POST',
@@ -179,6 +200,10 @@ async function pushLocalSnapshot(
       restaurants: restaurants.map(toCloudRestaurant),
       visits: visits.map(toCloudVisit),
       photos: photos.map(toCloudPhoto),
+      users: users.map(toCloudUser),
+      friendships: friendships.map(toCloudFriendship),
+      sharedMeals: sharedMeals.map(toCloudSharedMeal),
+      sharedMealParticipants: sharedMealParticipants.map(toCloudSharedMealParticipant),
     }),
   })
   return readSyncResponse(response)
@@ -193,7 +218,13 @@ async function readSyncResponse(response: Response): Promise<CloudSnapshot> {
     throw new Error(message)
   }
   if (!isCloudSnapshot(payload)) throw new Error('云端返回的数据格式无法识别。')
-  return payload
+  return {
+    ...payload,
+    users: Array.isArray(payload.users) ? payload.users : [],
+    friendships: Array.isArray(payload.friendships) ? payload.friendships : [],
+    sharedMeals: Array.isArray(payload.sharedMeals) ? payload.sharedMeals : [],
+    sharedMealParticipants: Array.isArray(payload.sharedMealParticipants) ? payload.sharedMealParticipants : [],
+  }
 }
 
 async function clearCompletedQueueItems(items: SyncQueueItem[]) {

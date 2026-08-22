@@ -1,14 +1,22 @@
-import type { Photo, Restaurant, Visit, VisitDish } from './domain'
+import type { Friendship, Photo, Restaurant, SharedMeal, SharedMealParticipant, UserProfile, Visit, VisitDish } from './domain'
 
 export type CloudRestaurant = Omit<Restaurant, 'markerImageData'>
 export type CloudVisitDish = Omit<VisitDish, 'imageData'>
 export type CloudVisit = Omit<Visit, 'dishes' | 'photos'> & { dishes: CloudVisitDish[] }
 export type CloudPhoto = Omit<Photo, 'localState' | 'lastError'>
+export type CloudUser = UserProfile
+export type CloudFriendship = Friendship
+export type CloudSharedMeal = SharedMeal
+export type CloudSharedMealParticipant = SharedMealParticipant
 
 export interface CloudSnapshot {
   restaurants: CloudRestaurant[]
   visits: CloudVisit[]
   photos: CloudPhoto[]
+  users: CloudUser[]
+  friendships: CloudFriendship[]
+  sharedMeals: CloudSharedMeal[]
+  sharedMealParticipants: CloudSharedMealParticipant[]
   serverTime: string
 }
 

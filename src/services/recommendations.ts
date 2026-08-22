@@ -76,6 +76,7 @@ export async function fetchTasteRecommendations(
     .slice(0, 12)
     .map(({ poi, score, reasons }) => ({
       id: `recommendation-${poi.amapPoiId}`,
+      userId: 'owner',
       amapPoiId: poi.amapPoiId,
       name: poi.name,
       address: poi.address,

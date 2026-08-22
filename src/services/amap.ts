@@ -1,6 +1,9 @@
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { APP_ENVIRONMENT } from '../config/appEnvironment'
-import type { PoiSearchResult } from '../types/domain'
+import type { Coordinates, PoiSearchResult } from '../types/domain'
+import { normalizeRestaurantKeyword } from './restaurantSearch'
+
+export { normalizeRestaurantKeyword } from './restaurantSearch'
 
 export interface AMapLngLat {
   getLng(): number
@@ -113,6 +116,12 @@ export interface AMapNamespace {
   PlaceSearch: new (options: Record<string, unknown>) => {
     search(
       keyword: string,
+      callback: (status: string, result: PlaceSearchResult | string) => void,
+    ): void
+    searchNearBy(
+      keyword: string,
+      center: [number, number],
+      radius: number,
       callback: (status: string, result: PlaceSearchResult | string) => void,
     ): void
   }
@@ -261,10 +270,23 @@ function textValue(value: string | string[] | undefined) {
 export async function searchRestaurantPois(
   keyword: string,
   city?: string,
+  options: { center?: Coordinates; timeoutMs?: number; radiusMeters?: number } = {},
 ): Promise<PoiSearchResult[]> {
+  const normalizedKeyword = normalizeRestaurantKeyword(keyword)
+  if (!normalizedKeyword) return []
   const AMap = await loadAmap()
 
   return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      callback()
+    }
+    const timeout = window.setTimeout(() => {
+      finish(() => reject(new Error('搜索超时，请检查网络后重试。')))
+    }, options.timeoutMs ?? 8_000)
     const search = new AMap.PlaceSearch({
       city: city?.trim() || '全国',
       citylimit: Boolean(city?.trim()),
@@ -274,16 +296,20 @@ export async function searchRestaurantPois(
       extensions: 'all',
     })
 
-    search.search(keyword.trim(), (status, result) => {
+    const handleResult = (status: string, result: PlaceSearchResult | string) => {
+      if (status === 'no_data') {
+        finish(() => resolve([]))
+        return
+      }
       if (status !== 'complete' || typeof result === 'string') {
         const message =
           typeof result === 'string' ? result : result.info || '搜索失败，请稍后重试。'
-        reject(new Error(message))
+        finish(() => reject(new Error(message)))
         return
       }
 
       const pois = result.poiList?.pois ?? []
-      resolve(
+      finish(() => resolve(
         pois.flatMap((poi) => {
           if (!poi.id || !poi.name || !poi.location) return []
           return [
@@ -299,7 +325,26 @@ export async function searchRestaurantPois(
             },
           ]
         }),
+      ))
+    }
+
+    if (options.center) {
+      search.searchNearBy(
+        normalizedKeyword,
+        [options.center.longitude, options.center.latitude],
+        options.radiusMeters ?? 8_000,
+        handleResult,
       )
-    })
+    } else {
+      search.search(normalizedKeyword, handleResult)
+    }
   })
+}
+
+export function searchNearbyRestaurantPois(
+  center: Coordinates,
+  city?: string,
+  options: { timeoutMs?: number; radiusMeters?: number } = {},
+) {
+  return searchRestaurantPois('餐厅', city, { center, radiusMeters: options.radiusMeters ?? 2_000, timeoutMs: options.timeoutMs })
 }

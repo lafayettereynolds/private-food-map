@@ -6,6 +6,8 @@ import { ModalShell } from './ModalShell'
 import { QueueDurationPicker } from './QueueDurationPicker'
 import { StarRating } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
+import { VisitExtraFields } from './VisitExtraFields'
+import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddVisitInput } from '../db/restaurants'
 import {
   calculatePricePerPerson,
@@ -21,13 +23,14 @@ import { splitCompanions } from '../utils/companions'
 
 interface AddVisitModalProps {
   companionOptions: string[]
+  friendOptions?: Array<{ id: string; nickname: string }>
   initialVisit?: Visit
   restaurant: RestaurantSummary
   onClose: () => void
   onSave: (input: AddVisitInput) => Promise<void>
 }
 
-export function AddVisitModal({ companionOptions, initialVisit, restaurant, onClose, onSave }: AddVisitModalProps) {
+export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, restaurant, onClose, onSave }: AddVisitModalProps) {
   const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
@@ -40,6 +43,25 @@ export function AddVisitModal({ companionOptions, initialVisit, restaurant, onCl
   const [feeling, setFeeling] = useState(initialVisit?.note ?? '')
   const [photos, setPhotos] = useState<string[]>(() => [...(initialVisit?.photos ?? [])])
   const [photoIds, setPhotoIds] = useState<Array<string | null>>(() => [...(initialVisit?.photoIds ?? [])])
+  const [extraFields, setExtraFields] = useState<VisitExtraFieldsValue>(() => initialVisit ? {
+    visibility: initialVisit.visibility ?? 'private',
+    diningMode: initialVisit.diningMode ?? 'dine_in',
+    myActualSpend: initialVisit.myActualSpend?.toString() ?? '',
+    paymentMode: initialVisit.paymentMode ?? null,
+    diningOccasion: initialVisit.diningOccasion ?? null,
+    valueRating: initialVisit.valueRating ?? null,
+    environmentRating: initialVisit.environmentRating ?? null,
+    serviceRating: initialVisit.serviceRating ?? null,
+    noiseLevel: initialVisit.noiseLevel ?? null,
+    diningDuration: initialVisit.diningDuration ?? null,
+    portionLevel: initialVisit.portionLevel ?? null,
+    transportConvenience: initialVisit.transportConvenience ?? null,
+    specialNotes: initialVisit.specialNotes ?? '',
+    recommendationSourceType: initialVisit.recommendationSourceType ?? null,
+    recommendationSourceUserId: initialVisit.recommendationSourceUserId ?? null,
+    recommendationSourceText: initialVisit.recommendationSourceText ?? '',
+    sharedParticipantUserIds: [],
+  } : createDefaultVisitExtraFields())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -55,15 +77,37 @@ export function AddVisitModal({ companionOptions, initialVisit, restaurant, onCl
       setError('用餐人数至少为 1 人。')
       return
     }
+    const numericActualSpend = extraFields.myActualSpend ? Number(extraFields.myActualSpend) : null
+    if (numericActualSpend !== null && (!Number.isFinite(numericActualSpend) || numericActualSpend < 0)) {
+      setError('请输入正确的个人实际消费。')
+      return
+    }
     setSaving(true)
     setError('')
     try {
       await onSave({
         visitedAt: localDateTimeToIso(date, time),
         rating,
+        visibility: extraFields.visibility,
+        diningMode: extraFields.diningMode,
         totalPrice: numericPrice,
+        myActualSpend: numericActualSpend,
+        paymentMode: extraFields.paymentMode,
         partySize: numericPartySize,
         queueDuration,
+        diningOccasion: extraFields.diningOccasion,
+        valueRating: extraFields.valueRating,
+        environmentRating: extraFields.environmentRating,
+        serviceRating: extraFields.serviceRating,
+        noiseLevel: extraFields.noiseLevel,
+        diningDuration: extraFields.diningDuration,
+        portionLevel: extraFields.portionLevel,
+        transportConvenience: extraFields.transportConvenience,
+        specialNotes: extraFields.specialNotes,
+        recommendationSourceType: extraFields.recommendationSourceType,
+        recommendationSourceUserId: extraFields.recommendationSourceUserId,
+        recommendationSourceText: extraFields.recommendationSourceText,
+        sharedParticipantUserIds: extraFields.sharedParticipantUserIds,
         companions: splitCompanions(companions),
         dishes,
         note: feeling,
@@ -85,6 +129,7 @@ export function AddVisitModal({ companionOptions, initialVisit, restaurant, onCl
     >
       <form className="editor-form" onSubmit={handleSubmit}>
         <label className="field"><span>本次个人评价</span><StarRating onChange={setRating} value={rating} /></label>
+        <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} value={extraFields} />
         <div className="field-grid visit-time-grid">
           <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input onChange={(event) => setDate(event.target.value)} required type="date" value={date} /></div></label>
           <label className="field"><span>时间</span><input onChange={(event) => setTime(event.target.value)} required type="time" value={time} /></label>

@@ -5,13 +5,15 @@ Taste Map 是一个本地优先的私人美食足迹 Web App，用来记录去�
 ## 主要功能
 
 - “我去过 / 我想去 / 推荐”三份清单与多维筛选；推荐会分析历史评分、口味标签与高分菜品，并排除已经记录的餐厅
-- 通过高德搜索添加餐厅，也支持手动添加地图中没有的小店或摊位
-- 每次到访可记录总价、人数、评分、排队时长、饭搭子、菜品、菜品星级、口味、照片和感受
+- 添加餐厅时先展示 GPS 附近餐厅；高德 POI 搜索支持 KFC、星巴克等品牌关键词，也支持手动添加地图中没有的小店或摊位
+- 每次到访可记录到店/外卖、三级可见范围、总价、本人实付、消费方式、人数、评分、排队与用餐时长、饭搭子、菜品、照片、感受和更多可选维度
 - 自动汇总到访次数、10 分制评分、平均人均、平均排队时长和最近到访
 - 地图使用餐厅图片或表情作为标记，外圈颜色根据 10 分制评分区间自动生成
 - 设置中支持完整 JSON 数据导出和合并导入
 - 正式网站支持 D1 跨设备同步、离线修改重试、软删除和首次本地数据安全迁移
 - Google Drive 采用 BYOS（自带存储）模式，使用最小 `drive.file` 权限同步餐厅、到访和菜品照片
+- 用户资料、好友请求、独立 Visit 的共同饭局邀请、个人饮食时间线和仅由公开 Visit 生成的社区 Feed
+- 地图默认只显示私人足迹；“社区足迹”图层可随时打开或关闭，并且只读取允许公开的记录
 
 ## 环境要求
 
@@ -86,7 +88,7 @@ VITE_AMAP_PROD_SECURITY_KEY=
 如果需要手动运行，开发版可使用：
 
 ```bash
-pnpm dev -- --host 127.0.0.1 --port 5173 --strictPort
+pnpm exec vite --host 127.0.0.1 --port 5173 --strictPort
 ```
 
 手动构建正式版前应设置 `VITE_APP_ENV=production`，再在 4173 端口运行预览。日常使用不需要手动执行这些命令。
@@ -106,16 +108,16 @@ Cloudflare 配置保存在 `wrangler.jsonc`：
 
 - D1 database：`food-map-db`
 - Worker binding：`DB`
-- Worker API：`GET /api/sync`、`POST /api/sync`
-- Schema migrations：`migrations/0001_initial.sql`、`migrations/0002_add_google_drive_photos.sql`
+- Worker API：`/api/sync`、`/api/community`、`/api/profiles/:id`、`/api/users/search`、`/api/friendships`、`/api/shared-meals`
+- Schema migrations：`migrations/0001_initial.sql` 至 `migrations/0004_user_avatar_thumbnail.sql`
 
 同步顺序始终是：先读 IndexedDB 并立即显示，再在后台连接 Worker；新增、编辑和删除也会先写本地，再异步同步 D1。网络失败时本地记录和同步队列都会保留，可通过顶部“同步失败”或设置中的“立即同步”重试。
 
-Restaurant 和 Visit 使用原有稳定 ID，通过 `updatedAt` 执行 Last Write Wins。删除写入 `deletedAt` 软删除标记，防止旧设备把已删除记录重新上传。
+Restaurant 和 Visit 使用原有稳定 ID，通过 `updatedAt` 执行 Last Write Wins。删除写入 `deletedAt` 软删除标记，防止旧设备把已删除记录重新上传。旧 Visit 在迁移和读取时自动使用 `visibility=private`、`diningMode=dine_in`；其他新增字段允许为空，不会要求清库或重建数据。
 
 照片采用三层存储：
 
-- Cloudflare D1：只保存 Photo metadata、`driveFileId` 及 Restaurant / Visit / Dish 引用
+- Cloudflare D1：保存结构化记录、Photo metadata、`driveFileId` 及 Restaurant / Visit / Dish 引用；另保存压缩至 256px 的用户头像缩略图，供好友和社区跨账号显示
 - Google Drive：保存实际私有图片文件，不创建公开链接或共享权限
 - IndexedDB：保存待上传原图和最近使用的 Blob 缓存；缓存上限约 300 MB，可在设置中单独清除
 
@@ -153,9 +155,15 @@ pnpm run deploy
 
 当新设备 IndexedDB 为空、D1 已有数据时，App 会自动下载并写入该设备的 IndexedDB。
 
-### 访问保护
+### 用户身份与访问保护
 
-D1 只能通过 Worker binding 访问，前端不会获得 D1 credential 或 Cloudflare API Token。由于数据包含私人笔记，正式 URL 应在 Cloudflare Dashboard 中配置 Cloudflare Access；项目本身不擅自创建登录系统或修改 Access 策略。
+D1 只能通过 Worker binding 访问，前端不会获得 D1 credential 或 Cloudflare API Token。Worker 使用 Cloudflare Access 注入的已认证邮箱识别用户，并把每个浏览器内的本地 `owner` 安全映射到云端真实账号；第二个账号不会读到第一个账号的私人同步快照。未经过 Access 的本地开发请求只使用单机 `owner` 兼容模式。
+
+由于数据包含私人笔记，正式 Worker 路由必须在 Cloudflare Zero Trust 中由 Access Application 保护。Access 未配置时，Worker 无法获得真实多用户身份，不应把该 URL 当作开放公共服务。社区接口只返回 `visibility=public`；好友个人页额外返回 `friends`，`private` 永远只返回给记录本人。
+
+### 平台无关的数据契约
+
+`Restaurant`、`Visit`、`User`、`Friendship`、`SharedMeal` 与同步 JSON 都不依赖 React 组件或浏览器 DOM。高德品牌关键词归一化、隐私枚举、用餐方式和 Worker API 也位于独立类型/服务层。后续 iOS 客户端可复用同一套 D1 表和 HTTP JSON API；本轮没有创建 iOS UI。
 
 ## 数据存在哪里
 

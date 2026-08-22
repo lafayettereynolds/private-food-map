@@ -3,7 +3,17 @@ export type PreferenceLevel = 'favorite' | 'like' | 'normal' | 'avoid'
 export type ScoreBand = 1 | 2 | 3 | 4 | 5
 export type MarkerType = 'image' | 'emoji'
 export type StarRating = 1 | 2 | 3 | 4 | 5
-export type PhotoKind = 'restaurant-marker' | 'visit' | 'dish'
+export type PhotoKind = 'restaurant-marker' | 'visit' | 'dish' | 'avatar'
+export type Visibility = 'private' | 'friends' | 'public'
+export type DiningMode = 'dine_in' | 'takeout'
+export type PaymentMode = 'aa' | 'my_treat' | 'treated' | 'separate' | 'other'
+export type DiningOccasion = 'solo' | 'date' | 'friends' | 'family' | 'business' | 'celebration' | 'other'
+export type NoiseLevel = 'quiet' | 'normal' | 'loud' | 'very_loud'
+export type DiningDuration = 'under30' | 'under60' | 'under90' | 'under120' | 'over120'
+export type PortionLevel = 'small' | 'normal' | 'generous'
+export type TransportConvenience = 'very_convenient' | 'convenient' | 'normal' | 'inconvenient'
+export type RecommendationSourceType = 'friend' | 'xiaohongshu' | 'douyin' | 'dianping' | 'blogger' | 'self' | 'other'
+export type FriendshipStatus = 'pending' | 'accepted' | 'rejected' | 'removed'
 export type QueueDuration =
   | 'none'
   | 'under15'
@@ -15,6 +25,7 @@ export type QueueDuration =
 
 export interface Restaurant {
   id: string
+  userId: string
   amapPoiId: string
   name: string
   address: string
@@ -43,13 +54,31 @@ export interface Restaurant {
 
 export interface Visit {
   id: string
+  userId: string
   restaurantId: string
   visitedAt: string
   rating: StarRating | null
+  visibility: Visibility
+  diningMode: DiningMode
   totalPrice: number | null
+  myActualSpend: number | null
+  paymentMode: PaymentMode | null
   pricePerPerson: number | null
   partySize: number
   queueDuration: QueueDuration | null
+  diningOccasion: DiningOccasion | null
+  valueRating: StarRating | null
+  environmentRating: StarRating | null
+  serviceRating: StarRating | null
+  noiseLevel: NoiseLevel | null
+  diningDuration: DiningDuration | null
+  portionLevel: PortionLevel | null
+  transportConvenience: TransportConvenience | null
+  specialNotes: string
+  recommendationSourceType: RecommendationSourceType | null
+  recommendationSourceUserId: string | null
+  recommendationSourceText: string
+  sharedMealId: string | null
   companions: string[]
   dishes: VisitDish[]
   note: string
@@ -72,6 +101,7 @@ export interface VisitDish {
 
 export interface Photo {
   id: string
+  userId: string
   restaurantId: string | null
   visitId: string | null
   kind: PhotoKind
@@ -88,6 +118,50 @@ export interface Photo {
   deletedAt: string | null
   localState: 'synced' | 'delete-pending'
   lastError: string | null
+}
+
+export interface UserProfile {
+  id: string
+  nickname: string
+  email: string | null
+  bio: string
+  city: string
+  avatarImageData: string | null
+  avatarPhotoId: string | null
+  authProvider: 'cloudflare-access' | 'local'
+  authSubject: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface Friendship {
+  id: string
+  requesterId: string
+  addresseeId: string
+  status: FriendshipStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SharedMeal {
+  id: string
+  restaurantId: string
+  createdByUserId: string
+  occurredAt: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface SharedMealParticipant {
+  id: string
+  sharedMealId: string
+  userId: string
+  visitId: string | null
+  status: 'pending' | 'accepted' | 'declined'
+  createdAt: string
+  updatedAt: string
 }
 
 export interface PhotoCacheEntry {
@@ -166,6 +240,64 @@ export interface PoiSearchResult {
   merchantImageUrl: string | null
 }
 
+export interface Coordinates {
+  longitude: number
+  latitude: number
+}
+
+export interface CommunityVisit {
+  visit: Visit
+  restaurant: Pick<Restaurant, 'id' | 'name' | 'address' | 'city' | 'latitude' | 'longitude'>
+  user: Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId'>
+}
+
+export const DINING_MODE_OPTIONS: { value: DiningMode; label: string }[] = [
+  { value: 'dine_in', label: '到店' },
+  { value: 'takeout', label: '外卖' },
+]
+
+export const VISIBILITY_OPTIONS: { value: Visibility; label: string; description: string }[] = [
+  { value: 'private', label: '仅自己', description: '只有你能看到' },
+  { value: 'friends', label: '好友可见', description: '已接受的好友可见' },
+  { value: 'public', label: '公开', description: '会出现在社区' },
+]
+
+export const PAYMENT_MODE_OPTIONS: { value: PaymentMode; label: string }[] = [
+  { value: 'aa', label: 'AA' },
+  { value: 'my_treat', label: '我请客' },
+  { value: 'treated', label: '别人请客' },
+  { value: 'separate', label: '各付各的' },
+  { value: 'other', label: '其他' },
+]
+
+export const DINING_OCCASION_OPTIONS: { value: DiningOccasion; label: string }[] = [
+  { value: 'solo', label: '一个人' },
+  { value: 'date', label: '约会' },
+  { value: 'friends', label: '朋友聚餐' },
+  { value: 'family', label: '家庭聚餐' },
+  { value: 'business', label: '商务' },
+  { value: 'celebration', label: '庆祝' },
+  { value: 'other', label: '其他' },
+]
+
+export const RECOMMENDATION_SOURCE_OPTIONS: { value: RecommendationSourceType; label: string }[] = [
+  { value: 'friend', label: '好友推荐' },
+  { value: 'xiaohongshu', label: '小红书' },
+  { value: 'douyin', label: '抖音' },
+  { value: 'dianping', label: '大众点评' },
+  { value: 'blogger', label: '美食博主' },
+  { value: 'self', label: '自己发现' },
+  { value: 'other', label: '其他' },
+]
+
+export function diningModeLabel(value: DiningMode | null | undefined) {
+  return DINING_MODE_OPTIONS.find((option) => option.value === (value ?? 'dine_in'))?.label ?? '到店'
+}
+
+export function visibilityLabel(value: Visibility | null | undefined) {
+  return VISIBILITY_OPTIONS.find((option) => option.value === (value ?? 'private'))?.label ?? '仅自己'
+}
+
 export const RATING_META: Record<
   StarRating,
   { label: string; shortLabel: string; color: string }
@@ -208,7 +340,7 @@ export const SCORE_BAND_META: Record<
   4: { label: '7.0–8.9 分', shortLabel: '喜欢', color: '#3c75bd' },
   3: { label: '5.0–6.9 分', shortLabel: '不错', color: '#7b62b5' },
   2: { label: '3.0–4.9 分', shortLabel: '一般', color: '#c87818' },
-  1: { label: '1.0–2.9 分', shortLabel: '不爱', color: '#c34f56' },
+  1: { label: '1.0–2.9 分', shortLabel: '不爱', color: '#a42b36' },
 }
 
 export function scoreBandFromScore(score: number | null | undefined): ScoreBand | null {
@@ -222,7 +354,24 @@ export function scoreBandFromScore(score: number | null | undefined): ScoreBand 
 
 export function scoreColor(score: number | null | undefined) {
   const band = scoreBandFromScore(score)
-  return band ? SCORE_BAND_META[band].color : UNRATED_COLOR
+  if (!band || score === null || score === undefined) return UNRATED_COLOR
+  const ranges: Record<ScoreBand, { minimum: number; maximum: number; light: string; deep: string; reverse?: boolean }> = {
+    5: { minimum: 9, maximum: 10, light: '#46a47b', deep: '#176f49' },
+    4: { minimum: 7, maximum: 8.9, light: '#6594d3', deep: '#2b5ca9' },
+    3: { minimum: 5, maximum: 6.9, light: '#9178bd', deep: '#644b9f' },
+    2: { minimum: 3, maximum: 4.9, light: '#dfa04d', deep: '#b9650e' },
+    1: { minimum: 1, maximum: 2.9, light: '#cb4650', deep: '#851522', reverse: true },
+  }
+  const range = ranges[band]
+  const progress = Math.max(0, Math.min(1, (score - range.minimum) / (range.maximum - range.minimum)))
+  return mixHex(range.light, range.deep, range.reverse ? 1 - progress : progress)
+}
+
+function mixHex(from: string, to: string, amount: number) {
+  const parse = (value: string) => [1, 3, 5].map((index) => Number.parseInt(value.slice(index, index + 2), 16))
+  const start = parse(from)
+  const end = parse(to)
+  return `#${start.map((channel, index) => Math.round(channel + (end[index] - channel) * amount).toString(16).padStart(2, '0')).join('')}`
 }
 
 export const STATUS_META: Record<RestaurantStatus, { label: string }> = {

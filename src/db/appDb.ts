@@ -1,7 +1,16 @@
 import Dexie, { type EntityTable } from 'dexie'
 import { DATABASE_NAME } from '../config/appEnvironment'
 import { calculatePricePerPerson } from '../types/domain'
-import type { Photo, PhotoCacheEntry, Restaurant, Visit } from '../types/domain'
+import type {
+  Friendship,
+  Photo,
+  PhotoCacheEntry,
+  Restaurant,
+  SharedMeal,
+  SharedMealParticipant,
+  UserProfile,
+  Visit,
+} from '../types/domain'
 import type { SyncMetadata, SyncQueueItem } from '../types/sync'
 
 const legacyRestaurantSchema =
@@ -18,6 +27,10 @@ class FoodMapDatabase extends Dexie {
   syncMetadata!: EntityTable<SyncMetadata, 'key'>
   photos!: EntityTable<Photo, 'id'>
   photoCache!: EntityTable<PhotoCacheEntry, 'photoId'>
+  users!: EntityTable<UserProfile, 'id'>
+  friendships!: EntityTable<Friendship, 'id'>
+  sharedMeals!: EntityTable<SharedMeal, 'id'>
+  sharedMealParticipants!: EntityTable<SharedMealParticipant, 'id'>
 
   constructor() {
     super(DATABASE_NAME)
@@ -203,6 +216,66 @@ class FoodMapDatabase extends Dexie {
             ? visit.dishes.map((dish: Record<string, unknown>) => ({ ...dish, photoId: dish.photoId ?? null }))
             : []
         })
+      })
+
+    this.version(11)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt',
+        syncQueue: 'id, entityType, entityId, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        const now = new Date().toISOString()
+        await transaction.table('restaurants').toCollection().modify((restaurant) => {
+          restaurant.userId ??= 'owner'
+        })
+        await transaction.table('visits').toCollection().modify((visit) => {
+          visit.userId ??= 'owner'
+          visit.visibility ??= 'private'
+          visit.diningMode ??= 'dine_in'
+          visit.myActualSpend ??= null
+          visit.paymentMode ??= null
+          visit.diningOccasion ??= null
+          visit.valueRating ??= null
+          visit.environmentRating ??= null
+          visit.serviceRating ??= null
+          visit.noiseLevel ??= null
+          visit.diningDuration ??= null
+          visit.portionLevel ??= null
+          visit.transportConvenience ??= null
+          visit.specialNotes ??= ''
+          visit.recommendationSourceType ??= null
+          visit.recommendationSourceUserId ??= null
+          visit.recommendationSourceText ??= ''
+          visit.sharedMealId ??= null
+        })
+        await transaction.table('photos').toCollection().modify((photo) => {
+          photo.userId ??= 'owner'
+        })
+        const users = transaction.table('users')
+        if (!(await users.get('owner'))) {
+          await users.put({
+            id: 'owner',
+            nickname: 'Taste Map 用户',
+            email: null,
+            bio: '',
+            city: '',
+            avatarImageData: null,
+            avatarPhotoId: null,
+            authProvider: 'local',
+            authSubject: null,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+          })
+        }
       })
   }
 }

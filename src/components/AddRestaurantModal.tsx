@@ -21,17 +21,20 @@ import { MarkerStyleField } from './MarkerStyleField'
 import { QueueDurationPicker } from './QueueDurationPicker'
 import { StarRating } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
+import { VisitExtraFields } from './VisitExtraFields'
+import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddRestaurantInput } from '../db/restaurants'
 import {
-  detectCurrentCity,
   detectCurrentLocation,
   isAmapConfigured,
   resolveAddressLocation,
+  searchNearbyRestaurantPois,
   searchRestaurantPois,
 } from '../services/amap'
 import { calculatePricePerPerson } from '../types/domain'
 import type {
   MarkerType,
+  Coordinates,
   PoiSearchResult,
   QueueDuration,
   RestaurantStatus,
@@ -43,6 +46,7 @@ import { currentDateAndTime, localDateTimeToIso } from '../utils/date'
 
 interface AddRestaurantModalProps {
   companionOptions: string[]
+  friendOptions?: Array<{ id: string; nickname: string }>
   existingRestaurantsByPoiId: Map<string, RestaurantSummary>
   onAdd: (input: AddRestaurantInput) => Promise<void>
   onRecordExisting: (restaurant: RestaurantSummary) => void
@@ -55,6 +59,7 @@ function splitValues(value: string) {
 
 export function AddRestaurantModal({
   companionOptions,
+  friendOptions = [],
   existingRestaurantsByPoiId,
   onAdd,
   onRecordExisting,
@@ -65,6 +70,10 @@ export function AddRestaurantModal({
   const [city, setCity] = useState(() => localStorage.getItem('private-food-map-last-city') ?? '')
   const [locatingCity, setLocatingCity] = useState(isAmapConfigured)
   const cityEditedRef = useRef(false)
+  const searchRequestIdRef = useRef(0)
+  const [currentLocation, setCurrentLocation] = useState<Coordinates | null>(null)
+  const [nearbyResults, setNearbyResults] = useState<PoiSearchResult[]>([])
+  const [nearbyLoading, setNearbyLoading] = useState(isAmapConfigured)
   const [results, setResults] = useState<PoiSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -88,18 +97,33 @@ export function AddRestaurantModal({
   const [markerType, setMarkerType] = useState<MarkerType>('emoji')
   const [markerImageData, setMarkerImageData] = useState<string | null>(null)
   const [markerEmoji, setMarkerEmoji] = useState('🍽️')
+  const [extraFields, setExtraFields] = useState<VisitExtraFieldsValue>(() => createDefaultVisitExtraFields())
 
   useEffect(() => {
     if (!isAmapConfigured) return
     let active = true
-    detectCurrentCity()
-      .then((detectedCity) => {
-        localStorage.setItem('private-food-map-last-city', detectedCity)
-        if (active && !cityEditedRef.current) setCity(detectedCity)
+    detectCurrentLocation()
+      .then(async (detected) => {
+        localStorage.setItem('private-food-map-last-city', detected.city)
+        if (!active) return
+        setCurrentLocation({ longitude: detected.longitude, latitude: detected.latitude })
+        if (!cityEditedRef.current) setCity(detected.city)
+        try {
+          const nearby = await searchNearbyRestaurantPois(
+            { longitude: detected.longitude, latitude: detected.latitude },
+            detected.city,
+          )
+          if (active) setNearbyResults(nearby.slice(0, 8))
+        } catch {
+          // 附近餐厅失败时保留原有搜索入口，不阻断添加流程。
+        }
       })
       .catch(() => undefined)
       .finally(() => {
-        if (active) setLocatingCity(false)
+        if (active) {
+          setLocatingCity(false)
+          setNearbyLoading(false)
+        }
       })
     return () => {
       active = false
@@ -108,17 +132,31 @@ export function AddRestaurantModal({
 
   async function handleSearch(event: FormEvent) {
     event.preventDefault()
-    if (!keyword.trim()) return
+    const trimmedKeyword = keyword.trim()
+    if (!trimmedKeyword) {
+      setResults([])
+      setHasSearched(false)
+      setLoading(false)
+      return
+    }
+    const requestId = ++searchRequestIdRef.current
     setLoading(true)
     setError('')
     setHasSearched(true)
     try {
-      setResults(await searchRestaurantPois(keyword, city))
+      const matches = await searchRestaurantPois(trimmedKeyword, city, {
+        center: currentLocation ?? undefined,
+        radiusMeters: 20_000,
+        timeoutMs: 8_000,
+      })
+      if (requestId !== searchRequestIdRef.current) return
+      setResults(matches)
     } catch (searchError) {
+      if (requestId !== searchRequestIdRef.current) return
       setResults([])
-      setError(searchError instanceof Error ? searchError.message : '搜索失败，请稍后重试。')
+      setError(searchError instanceof Error ? searchError.message : '搜索失败，请重新尝试。')
     } finally {
-      setLoading(false)
+      if (requestId === searchRequestIdRef.current) setLoading(false)
     }
   }
 
@@ -147,6 +185,11 @@ export function AddRestaurantModal({
       setError('用餐人数至少为 1 人。')
       return
     }
+    const numericActualSpend = extraFields.myActualSpend ? Number(extraFields.myActualSpend) : null
+    if (numericActualSpend !== null && (!Number.isFinite(numericActualSpend) || numericActualSpend < 0)) {
+      setError('请输入正确的个人实际消费。')
+      return
+    }
 
     setSaving(true)
     setError('')
@@ -168,9 +211,26 @@ export function AddRestaurantModal({
             ? {
                 visitedAt: localDateTimeToIso(visitDate, visitTime),
                 rating,
+                visibility: extraFields.visibility,
+                diningMode: extraFields.diningMode,
                 totalPrice: numericPrice,
+                myActualSpend: numericActualSpend,
+                paymentMode: extraFields.paymentMode,
                 partySize: numericPartySize,
                 queueDuration,
+                diningOccasion: extraFields.diningOccasion,
+                valueRating: extraFields.valueRating,
+                environmentRating: extraFields.environmentRating,
+                serviceRating: extraFields.serviceRating,
+                noiseLevel: extraFields.noiseLevel,
+                diningDuration: extraFields.diningDuration,
+                portionLevel: extraFields.portionLevel,
+                transportConvenience: extraFields.transportConvenience,
+                specialNotes: extraFields.specialNotes,
+                recommendationSourceType: extraFields.recommendationSourceType,
+                recommendationSourceUserId: extraFields.recommendationSourceUserId,
+                recommendationSourceText: extraFields.recommendationSourceText,
+                sharedParticipantUserIds: extraFields.sharedParticipantUserIds,
                 companions: splitValues(companions),
                 dishes,
                 note: feeling,
@@ -210,12 +270,23 @@ export function AddRestaurantModal({
           keyword={keyword}
           locatingCity={locatingCity}
           loading={loading}
+          nearbyLoading={nearbyLoading}
+          nearbyResults={nearbyResults}
           onChoose={choosePoi}
           onCityChange={(value) => {
             cityEditedRef.current = true
             setCity(value)
           }}
-          onKeywordChange={setKeyword}
+          onKeywordChange={(value) => {
+            searchRequestIdRef.current += 1
+            setKeyword(value)
+            setLoading(false)
+            setError('')
+            if (!value.trim()) {
+              setResults([])
+              setHasSearched(false)
+            }
+          }}
           onManualAdd={() => setManualMode(true)}
           onRecordExisting={onRecordExisting}
           onSearch={handleSearch}
@@ -255,6 +326,7 @@ export function AddRestaurantModal({
                 <span>个人评价</span>
                 <StarRating onChange={setRating} value={rating} />
               </label>
+              <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} value={extraFields} />
               <div className="field-grid visit-time-grid">
                 <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input max="9999-12-31" onChange={(event) => setVisitDate(event.target.value)} required type="date" value={visitDate} /></div></label>
                 <label className="field"><span>时间</span><input onChange={(event) => setVisitTime(event.target.value)} required type="time" value={visitTime} /></label>
@@ -305,6 +377,8 @@ interface SearchStepProps {
   keyword: string
   locatingCity: boolean
   loading: boolean
+  nearbyLoading: boolean
+  nearbyResults: PoiSearchResult[]
   results: PoiSearchResult[]
   onCityChange: (value: string) => void
   onKeywordChange: (value: string) => void
@@ -322,6 +396,8 @@ function SearchStep({
   keyword,
   locatingCity,
   loading,
+  nearbyLoading,
+  nearbyResults,
   results,
   onCityChange,
   onKeywordChange,
@@ -341,24 +417,21 @@ function SearchStep({
         <button className="primary-button search-submit" disabled={!isAmapConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
       </form>
       {error ? <p className="form-error">{error}</p> : null}
+      {!hasSearched && (nearbyLoading || nearbyResults.length) ? (
+        <section className="nearby-restaurant-section">
+          <header><div><LocateFixed size={16} /><strong>附近餐厅</strong></div><span>按当前位置优先</span></header>
+          {nearbyLoading ? <div className="nearby-loading"><LoaderCircle className="spin" size={17} /> 正在寻找附近餐厅</div> : null}
+          {!nearbyLoading ? <PoiResultList
+            existingRestaurantsByPoiId={existingRestaurantsByPoiId}
+            onChoose={onChoose}
+            onRecordExisting={onRecordExisting}
+            results={nearbyResults}
+          /> : null}
+        </section>
+      ) : null}
       <div className="poi-results" aria-live="polite">
-        {results.map((poi) => {
-          const existingRestaurant = existingRestaurantsByPoiId.get(poi.amapPoiId)
-          return (
-            <article className="poi-result" key={poi.amapPoiId}>
-              {poi.merchantImageUrl ? <img className="poi-result__image" alt="" src={poi.merchantImageUrl} /> : <span className="poi-result__pin"><MapPin size={17} /></span>}
-              <div className="poi-result__body"><strong>{poi.name}</strong><p>{poi.address}</p><span>{poi.city}{poi.district ? ` · ${poi.district}` : ''}</span></div>
-              <button
-                className={existingRestaurant ? 'repeat-visit-button' : 'secondary-button'}
-                onClick={() => existingRestaurant ? onRecordExisting(existingRestaurant) : onChoose(poi)}
-                type="button"
-              >
-                {existingRestaurant ? <><Plus size={15} /> 再去一次</> : '选择'}
-              </button>
-            </article>
-          )
-        })}
-        {hasSearched && !loading && !error && results.length === 0 ? <div className="empty-results"><Search size={21} /><strong>没有找到匹配的餐厅</strong><p>换一个名称，或填写城市后再试。</p></div> : null}
+        <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={results} />
+        {hasSearched && !loading && !error && results.length === 0 ? <div className="empty-results"><Search size={21} /><strong>没有找到匹配的餐厅或地点，请尝试其他关键词。</strong></div> : null}
         {!hasSearched ? <div className="search-hint"><span>搜索建议</span><p>名称太常见时，加上城市会更准确，例如“杭州 寿喜烧”。</p></div> : null}
       </div>
       <button className="manual-restaurant-entry" onClick={onManualAdd} type="button">
@@ -367,6 +440,26 @@ function SearchStep({
       </button>
     </>
   )
+}
+
+function PoiResultList({
+  existingRestaurantsByPoiId,
+  results,
+  onChoose,
+  onRecordExisting,
+}: Pick<SearchStepProps, 'existingRestaurantsByPoiId' | 'results' | 'onChoose' | 'onRecordExisting'>) {
+  return results.map((poi) => {
+    const existingRestaurant = existingRestaurantsByPoiId.get(poi.amapPoiId)
+    return (
+      <article className="poi-result" key={poi.amapPoiId}>
+        {poi.merchantImageUrl ? <img className="poi-result__image" alt="" src={poi.merchantImageUrl} /> : <span className="poi-result__pin"><MapPin size={17} /></span>}
+        <div className="poi-result__body"><strong>{poi.name}</strong><p>{poi.address}</p><span>{poi.city}{poi.district ? ` · ${poi.district}` : ''}</span></div>
+        <button className={existingRestaurant ? 'repeat-visit-button' : 'secondary-button'} onClick={() => existingRestaurant ? onRecordExisting(existingRestaurant) : onChoose(poi)} type="button">
+          {existingRestaurant ? <><Plus size={15} /> 再去一次</> : '选择'}
+        </button>
+      </article>
+    )
+  })
 }
 
 function ManualRestaurantStep({

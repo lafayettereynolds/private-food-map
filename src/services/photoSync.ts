@@ -6,6 +6,7 @@ import { cachePhotoBlob, removeCachedPhoto } from './photoAssets'
 import { drivePhotoReference } from './cloudSyncData'
 import { CLOUD_SYNC_REQUEST_EVENT, requestCloudSync } from './syncEvents'
 import { DATABASE_NAME } from '../config/appEnvironment'
+import { CURRENT_USER_ID } from '../db/social'
 
 export interface PhotoSyncState {
   status: 'idle' | 'syncing' | 'synced' | 'error'
@@ -204,6 +205,7 @@ async function uploadPendingPhoto(pending: PendingPhoto, driveAccountId: string)
     const now = new Date().toISOString()
     const photo: Photo = {
       id: photoId,
+      userId: CURRENT_USER_ID,
       restaurantId: pending.restaurantId,
       visitId: pending.visitId,
       kind: pending.kind,

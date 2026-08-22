@@ -1,8 +1,12 @@
-import type { Photo, Restaurant, Visit } from '../types/domain'
+import type { Friendship, Photo, Restaurant, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
 import type {
+  CloudFriendship,
   CloudPhoto,
   CloudRestaurant,
+  CloudSharedMeal,
+  CloudSharedMealParticipant,
   CloudSnapshot,
+  CloudUser,
   CloudVisit,
   SyncCounts,
 } from '../types/cloudSync'
@@ -32,11 +36,31 @@ export function toCloudPhoto(photo: Photo): CloudPhoto {
   return cloudPhoto
 }
 
+export function toCloudUser(user: UserProfile): CloudUser {
+  return user
+}
+
+export function toCloudFriendship(friendship: Friendship): CloudFriendship {
+  return friendship
+}
+
+export function toCloudSharedMeal(meal: SharedMeal): CloudSharedMeal {
+  return meal
+}
+
+export function toCloudSharedMealParticipant(participant: SharedMealParticipant): CloudSharedMealParticipant {
+  return participant
+}
+
 export function mergeCloudData(
   localRestaurants: Restaurant[],
   localVisits: Visit[],
   localPhotos: Photo[],
   cloud: CloudSnapshot,
+  localUsers: UserProfile[] = [],
+  localFriendships: Friendship[] = [],
+  localSharedMeals: SharedMeal[] = [],
+  localSharedMealParticipants: SharedMealParticipant[] = [],
 ) {
   const restaurants = mergeById(
     localRestaurants,
@@ -45,7 +69,11 @@ export function mergeCloudData(
   )
   const visits = mergeById(localVisits, cloud.visits, mergeVisit)
   const photos = mergeById(localPhotos, cloud.photos, mergePhoto)
-  return { restaurants, visits, photos }
+  const users = mergeById(localUsers, cloud.users ?? [], mergeUser)
+  const friendships = mergeById(localFriendships, cloud.friendships ?? [], mergeLatest)
+  const sharedMeals = mergeById(localSharedMeals, cloud.sharedMeals ?? [], mergeLatest)
+  const sharedMealParticipants = mergeById(localSharedMealParticipants, cloud.sharedMealParticipants ?? [], mergeLatest)
+  return { restaurants, visits, photos, users, friendships, sharedMeals, sharedMealParticipants }
 }
 
 export function activeCounts(
@@ -115,6 +143,22 @@ function mergeVisit(local: Visit | undefined, cloud: CloudVisit): Visit {
 function mergePhoto(local: Photo | undefined, cloud: CloudPhoto): Photo {
   if (local && local.updatedAt >= cloud.updatedAt) return local
   return { ...cloud, localState: 'synced', lastError: null }
+}
+
+function mergeUser(local: UserProfile | undefined, cloud: CloudUser): UserProfile {
+  if (local && local.updatedAt >= cloud.updatedAt) return local
+  return {
+    ...cloud,
+    avatarImageData: cloud.avatarImageData ?? (
+      local?.avatarPhotoId === cloud.avatarPhotoId
+        ? local.avatarImageData
+        : cloud.avatarPhotoId ? drivePhotoReference(cloud.avatarPhotoId) : null
+    ),
+  }
+}
+
+function mergeLatest<Local extends { updatedAt: string }, Cloud extends Local>(local: Local | undefined, cloud: Cloud): Local {
+  return local && local.updatedAt >= cloud.updatedAt ? local : cloud
 }
 
 export const DRIVE_PHOTO_REFERENCE_PREFIX = 'drive-photo:'
