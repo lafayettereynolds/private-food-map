@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
+  Bookmark,
   CheckCircle2,
   Globe2,
   List,
@@ -107,6 +108,7 @@ export default function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showRoulette, setShowRoulette] = useState(false)
+  const [rouletteRestaurantIds, setRouletteRestaurantIds] = useState<string[]>([])
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [recommendations, setRecommendations] = useState<RestaurantSummary[]>([])
@@ -479,6 +481,19 @@ export default function App() {
     setShowAddVisit(true)
   }
 
+  function addSelectedRestaurantToRoulette() {
+    if (!selectedRestaurant) return
+    if (rouletteRestaurantIds.includes(selectedRestaurant.id)) {
+      setToast(`${selectedRestaurant.name} 已经在转盘里`)
+    } else if (rouletteRestaurantIds.length >= 10) {
+      setToast('转盘最多保留 10 家餐厅，请先移除一家。')
+    } else {
+      setRouletteRestaurantIds([...rouletteRestaurantIds, selectedRestaurant.id])
+      setToast(`${selectedRestaurant.name} 已添加到转盘`)
+    }
+    setShowRoulette(true)
+  }
+
   function acceptMealInvitation(participant: SharedMealParticipant, restaurant: RestaurantSummary) {
     setActiveView('map')
     setSelectedId(restaurant.id)
@@ -607,7 +622,7 @@ export default function App() {
           ) : null}
 
           {activeList === 'footprints' ? (
-            <div className="restaurant-list footprints-list"><TasteFootprints onSelectRestaurant={handleSelect} restaurants={summaries.filter((restaurant) => restaurant.status === 'visited')} /></div>
+            <div className="restaurant-list footprints-list"><TasteFootprints onSelectRestaurant={handleSelect} restaurants={summaries.filter((restaurant) => restaurant.status === 'visited')} user={currentUser} /></div>
           ) : <>
             <div className="list-result-line"><span>{activeList === 'visited' ? '去过' : activeList === 'wantToGo' ? '想去' : '根据你的口味推荐'}</span><strong>{visibleRestaurants.length} 家</strong></div>
             <RestaurantList
@@ -629,7 +644,7 @@ export default function App() {
 
         <section className="map-panel" aria-label="私人美食地图">
           <MapView currentUser={currentUser} onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
-          {selectedRestaurant ? <RestaurantPreviewCard onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
+          {selectedRestaurant ? <RestaurantPreviewCard onAddToRoulette={addSelectedRestaurantToRoulette} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
         {!isSidebarOpen ? <CollectionTabs activeList={activeList} className="map-collection-tabs" counts={listCounts} onChoose={chooseList} /> : null}
         <button className="map-view-mode-toggle" onClick={toggleMapList} type="button">{isSidebarOpen ? <MapIcon size={17} /> : <List size={17} />}{isSidebarOpen ? '查看地图' : '查看列表'}</button>
@@ -661,7 +676,7 @@ export default function App() {
       )}
 
       <nav aria-label="主要功能" className="bottom-navigation">
-        <button className={activeView === 'map' ? 'is-active' : ''} onClick={() => setActiveView('map')} type="button"><MapIcon size={18} /><span>地图</span></button>
+        <button className={activeView === 'map' && !isSidebarOpen ? 'is-active' : ''} onClick={() => { setActiveView('map'); setSelectedId(null); setIsSidebarOpen(false) }} type="button"><MapIcon size={18} /><span>地图</span></button>
         <button className={activeView === 'community' ? 'is-active' : ''} onClick={() => setActiveView('community')} type="button"><Globe2 size={18} /><span>社区</span></button>
         <button aria-label="添加餐厅" className="bottom-navigation__add" onClick={() => setShowAddModal(true)} type="button"><Plus size={21} /><span>添加餐厅</span></button>
         <button className={`bottom-navigation__profile${activeView === 'profile' && !viewedProfile ? ' is-active' : ''}`} onClick={() => { setViewedProfile(null); setActiveView('profile') }} type="button"><UserRound size={18} /><span>我的</span></button>
@@ -672,7 +687,7 @@ export default function App() {
       {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} friendOptions={friendOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? acceptedMealParticipant?.id ?? 'new-visit'} onClose={() => { setShowAddVisit(false); setEditingVisit(null); setAcceptedMealParticipant(null) }} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} restaurant={selectedRestaurant} /> : null}
       {showDeleteConfirm && selectedRestaurant ? <ConfirmDeleteModal onCancel={() => setShowDeleteConfirm(false)} onConfirm={handleDelete} restaurantName={selectedRestaurant.name} visitCount={selectedRestaurant.visitCount} /> : null}
       {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} visitCount={allVisits.length} /> : null}
-      {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={handleSelect} restaurants={summaries} /> : null}
+      {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={handleSelect} onSelectedRestaurantIdsChange={setRouletteRestaurantIds} restaurants={summaries} selectedRestaurantIds={rouletteRestaurantIds} /> : null}
       {toast ? <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div> : null}
     </main>
   )
@@ -692,8 +707,8 @@ function CollectionTabs({
   showFootprints?: boolean
 }) {
   return <div className={`collection-tabs${showFootprints ? ' has-footprints' : ''}${className ? ` ${className}` : ''}`} aria-label="餐厅列表分类">
-    <button className={activeList === 'visited' ? 'is-active' : ''} onClick={() => onChoose('visited')} type="button"><span>我去过的</span><strong>{counts.visited}</strong></button>
-    <button className={activeList === 'wantToGo' ? 'is-active' : ''} onClick={() => onChoose('wantToGo')} type="button"><span>我想去的</span><strong>{counts.wantToGo}</strong></button>
+    <button className={activeList === 'visited' ? 'is-active' : ''} onClick={() => onChoose('visited')} type="button"><span><CheckCircle2 size={11} /> 去过</span><strong>{counts.visited}</strong></button>
+    <button className={activeList === 'wantToGo' ? 'is-active' : ''} onClick={() => onChoose('wantToGo')} type="button"><span><Bookmark size={11} /> 想吃</span><strong>{counts.wantToGo}</strong></button>
     <button className={activeList === 'recommended' ? 'is-active' : ''} onClick={() => onChoose('recommended')} type="button"><span><Sparkles size={11} /> 推荐</span><strong>{counts.recommended}</strong></button>
     {showFootprints ? <button className={activeList === 'footprints' ? 'is-active' : ''} onClick={() => onChoose('footprints')} type="button"><span>味觉足迹</span><strong>{counts.footprints}</strong></button> : null}
   </div>

@@ -69,7 +69,6 @@ export function AddRestaurantModal({
   const initialTime = currentDateAndTime()
   const [keyword, setKeyword] = useState('')
   const [city, setCity] = useState(() => localStorage.getItem('private-food-map-last-city') ?? '')
-  const initialCityRef = useRef(city)
   const [locatingCity, setLocatingCity] = useState(isAmapConfigured)
   const cityEditedRef = useRef(false)
   const searchRequestIdRef = useRef(0)
@@ -77,6 +76,8 @@ export function AddRestaurantModal({
   const [nearbyResults, setNearbyResults] = useState<PoiSearchResult[]>([])
   const [nearbyLoading, setNearbyLoading] = useState(isAmapConfigured)
   const [nearbyMessage, setNearbyMessage] = useState('')
+  const [locationLabel, setLocationLabel] = useState('')
+  const [locationAttempt, setLocationAttempt] = useState(0)
   const [results, setResults] = useState<PoiSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -108,52 +109,51 @@ export function AddRestaurantModal({
       return
     }
     let active = true
-    let foundResults = false
-    const fallbackCity = initialCityRef.current.trim() || localStorage.getItem('private-food-map-last-city') || '杭州'
+    let completed = false
+    setLocatingCity(true)
+    setNearbyLoading(true)
+    setNearbyResults([])
+    setNearbyMessage('')
+    setLocationLabel('')
     const watchdog = window.setTimeout(() => {
       if (!active) return
       setLocatingCity(false)
       setNearbyLoading(false)
-      if (!foundResults) setNearbyMessage('附近餐厅加载超时，可以直接搜索名称或稍后重试。')
-    }, 10_000)
-    setNearbyMessage('')
-    const showNearby = (nearby: PoiSearchResult[], message = '') => {
-      if (!active || !nearby.length) return
-      foundResults = true
-      setNearbyResults(nearby.slice(0, 8))
-      setNearbyMessage(message)
-      setNearbyLoading(false)
-    }
-    const cityFallbackTask = searchRestaurantPois('餐厅', fallbackCity, { timeoutMs: 6_000 })
-      .then((nearby) => showNearby(nearby, `暂按${fallbackCity}展示，允许定位后会优先显示身边餐厅。`))
-      .catch(() => undefined)
-    const gpsTask = detectCurrentCoordinates()
-      .then(async (coordinates) => {
+      if (!completed) setNearbyMessage('高精度定位超时，没有展示城市兜底结果。请开启精确定位后重试。')
+    }, 14_000)
+    void (async () => {
+      try {
+        const coordinates = await detectCurrentCoordinates()
         if (!active) return
         setCurrentLocation(coordinates)
         const [nearby, detected] = await Promise.all([
-          searchNearbyRestaurantPois(coordinates, undefined, { timeoutMs: 6_000, radiusMeters: 3_000 }).catch(() => []),
+          searchNearbyRestaurantPois(coordinates, undefined, { timeoutMs: 7_000, radiusMeters: 1_500 }).catch(() => []),
           resolveCoordinatesLocation(coordinates).catch(() => null),
         ])
-        showNearby(nearby)
         if (active && detected) {
           localStorage.setItem('private-food-map-last-city', detected.city)
           if (!cityEditedRef.current) setCity(detected.city)
+          setLocationLabel(detected.address || [detected.city, detected.district].filter(Boolean).join(' · '))
         }
-      })
-      .catch(() => undefined)
-    void Promise.allSettled([cityFallbackTask, gpsTask]).then(() => {
-      if (!active) return
-      window.clearTimeout(watchdog)
-      setLocatingCity(false)
-      setNearbyLoading(false)
-      if (!foundResults) setNearbyMessage('没有获取到附近餐厅，请直接搜索名称或检查定位权限。')
-    })
+        if (!active) return
+        setNearbyResults(nearby.slice(0, 8))
+        setNearbyMessage(nearby.length ? '以下餐厅按 GPS 坐标 1.5 公里内检索。' : '已获得精确位置，但 1.5 公里内没有找到餐厅。')
+      } catch (locationError) {
+        if (active) setNearbyMessage(locationError instanceof Error ? locationError.message : '高精度定位失败，请重新尝试。')
+      } finally {
+        completed = true
+        window.clearTimeout(watchdog)
+        if (active) {
+          setLocatingCity(false)
+          setNearbyLoading(false)
+        }
+      }
+    })()
     return () => {
       active = false
       window.clearTimeout(watchdog)
     }
-  }, [])
+  }, [locationAttempt])
 
   async function handleSearch(event: FormEvent) {
     event.preventDefault()
@@ -297,6 +297,7 @@ export function AddRestaurantModal({
           locatingCity={locatingCity}
           loading={loading}
           nearbyLoading={nearbyLoading}
+          locationLabel={locationLabel}
           nearbyMessage={nearbyMessage}
           nearbyResults={nearbyResults}
           onChoose={choosePoi}
@@ -315,6 +316,7 @@ export function AddRestaurantModal({
             }
           }}
           onManualAdd={() => setManualMode(true)}
+          onRetryLocation={() => setLocationAttempt((attempt) => attempt + 1)}
           onRecordExisting={onRecordExisting}
           onSearch={handleSearch}
           results={results}
@@ -405,12 +407,14 @@ interface SearchStepProps {
   locatingCity: boolean
   loading: boolean
   nearbyLoading: boolean
+  locationLabel: string
   nearbyMessage: string
   nearbyResults: PoiSearchResult[]
   results: PoiSearchResult[]
   onCityChange: (value: string) => void
   onKeywordChange: (value: string) => void
   onManualAdd: () => void
+  onRetryLocation: () => void
   onChoose: (poi: PoiSearchResult) => void
   onRecordExisting: (restaurant: RestaurantSummary) => void
   onSearch: (event: FormEvent) => void
@@ -425,12 +429,14 @@ function SearchStep({
   locatingCity,
   loading,
   nearbyLoading,
+  locationLabel,
   nearbyMessage,
   nearbyResults,
   results,
   onCityChange,
   onKeywordChange,
   onManualAdd,
+  onRetryLocation,
   onChoose,
   onRecordExisting,
   onSearch,
@@ -442,13 +448,13 @@ function SearchStep({
       ) : null}
       <form className="poi-search-form" onSubmit={onSearch}>
         <label className="field field--grow"><span>餐厅名称</span><div className="input-with-icon"><Search size={17} /><input autoFocus onChange={(event) => onKeywordChange(event.target.value)} placeholder="例如：寿喜烧" value={keyword} /></div></label>
-        <label className="field field--city"><span>城市 {locatingCity ? '· 正在定位' : '· GPS 优先'}</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" value={city} /></label>
+        <label className="field field--city"><span>搜索城市 {locatingCity ? '· 正在精确定位' : ''}</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" value={city} />{locationLabel ? <small className="gps-location-detail"><LocateFixed size={12} /> 已定位：{locationLabel}</small> : null}</label>
         <button className="primary-button search-submit" disabled={!isAmapConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
       </form>
       {error ? <p className="form-error">{error}</p> : null}
       {!hasSearched ? (
         <section className="nearby-restaurant-section">
-          <header><div><LocateFixed size={16} /><strong>附近餐厅</strong></div><span>按当前位置优先</span></header>
+          <header><div><LocateFixed size={16} /><strong>附近餐厅</strong></div><span>{locationLabel ? 'GPS 1.5 公里内' : '仅使用精确 GPS'}</span></header>
           {nearbyLoading ? <div className="nearby-loading"><LoaderCircle className="spin" size={17} /> 正在寻找附近餐厅</div> : null}
           {!nearbyLoading ? <PoiResultList
             existingRestaurantsByPoiId={existingRestaurantsByPoiId}
@@ -456,7 +462,7 @@ function SearchStep({
             onRecordExisting={onRecordExisting}
             results={nearbyResults}
           /> : null}
-          {!nearbyLoading && nearbyMessage ? <div className="nearby-status-message"><MapPin size={16} /><span>{nearbyMessage}</span></div> : null}
+          {!nearbyLoading && nearbyMessage ? <div className="nearby-status-message"><MapPin size={16} /><span>{nearbyMessage}</span><button onClick={onRetryLocation} type="button">重新定位</button></div> : null}
         </section>
       ) : null}
       <div className="poi-results" aria-live="polite">

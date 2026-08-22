@@ -102,16 +102,17 @@ export function FriendsPage({
       const otherId = friendship.requesterId === currentUserId ? friendship.addresseeId : friendship.requesterId
       return <FriendRow actions={<><span className="relationship-status">{friendship.status === 'accepted' ? '互相关注' : '已关注'}</span><button aria-label="取消关注" onClick={() => mutate(friendship, 'removed')} title="取消关注" type="button"><UserMinus size={15} /></button></>} key={friendship.id} onViewProfile={onViewProfile} user={userById.get(otherId)} />
     })}</div> : <p className="inline-empty">还没有关注其他用户。</p>}</section>
-    <section className="social-section"><h2>查找用户</h2><label className="people-search"><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="搜索昵称或城市" value={query} /></label>{query.trim() ? <div className="friend-list">{results.length ? results.map((user) => {
-      const existing = friendshipByUser.get(user.id)
-      return <FriendRow actions={existing && existing.status !== 'removed' && existing.status !== 'rejected' ? <span className="relationship-status">{existing.status === 'accepted' ? '互相关注' : existing.requesterId === currentUserId ? '已关注' : '关注你'}</span> : <button aria-label={`关注 ${user.nickname}`} onClick={() => requestFriend(user.id)} title="关注" type="button"><UserPlus size={15} /></button>} key={user.id} onViewProfile={onViewProfile} user={user} />
-    }) : <p className="inline-empty">没有找到这个用户。</p>}</div> : null}</section>
   </>
+
+  const discoveryContent = <section className="social-section people-discovery"><h2>发现好友</h2><p>按昵称或城市找到其他 Taste Map 用户。</p><label className="people-search"><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="搜索昵称或城市" value={query} /></label>{query.trim() ? <div className="friend-list">{results.length ? results.map((user) => {
+    const existing = friendshipByUser.get(user.id)
+    return <FriendRow actions={existing && existing.status !== 'removed' && existing.status !== 'rejected' ? <span className="relationship-status">{existing.status === 'accepted' ? '互相关注' : existing.requesterId === currentUserId ? '已关注' : '关注你'}</span> : <button aria-label={`关注 ${user.nickname}`} onClick={() => requestFriend(user.id)} title="关注" type="button"><UserPlus size={15} /></button>} key={user.id} onViewProfile={onViewProfile} user={user} />
+  }) : <p className="inline-empty">没有找到这个用户。</p>}</div> : null}</section>
 
   return <section className={embedded ? 'profile-connections' : 'social-page friends-page'}>
     {!embedded ? <header className="social-page__heading"><div><span className="eyebrow">PEOPLE</span><h1>我的关注</h1><p>饭搭子仍可自由填写；互相关注后可以邀请共同饭局。</p></div><UsersRound size={28} /></header> : null}
     <div className="relationship-counts relationship-counts--profile"><button onClick={() => setConnectionsOpen(true)} type="button"><strong>{followers.length}</strong><span>关注我的</span></button><button onClick={() => setConnectionsOpen(true)} type="button"><strong>{following.length}</strong><span>我关注的</span></button></div>
-    {embedded ? <details className="profile-connections-details" onToggle={(event) => setConnectionsOpen(event.currentTarget.open)} open={connectionsOpen}><summary>管理关注与饭局</summary><div>{connectionContent}</div></details> : connectionContent}
+    {embedded ? <><details className="profile-connections-details" onToggle={(event) => setConnectionsOpen(event.currentTarget.open)} open={connectionsOpen}><summary>管理关注与饭局</summary><div>{connectionContent}</div></details><details className="people-discovery-details"><summary><Search size={15} /> 发现好友</summary>{discoveryContent}</details></> : <>{connectionContent}{discoveryContent}</>}
   </section>
 }
 

@@ -4,7 +4,7 @@ import type { RestaurantStatus, RestaurantSummary } from '../types/domain'
 import { ModalShell } from './ModalShell'
 
 const MAX_RESTAURANTS = 10
-const WHEEL_COLORS = ['#1f67a8', '#ecb44d', '#5b88b5', '#d77a61', '#467b70', '#8b6daf', '#3f78a8', '#d39645', '#637e9d', '#b86665']
+const WHEEL_COLORS = ['#4F6F8C', '#D6A754', '#6F8FA8', '#C96F62', '#608477', '#8B739F', '#7394AE', '#C68C4E', '#7D8FA1', '#B66767']
 
 type RouletteSource = 'temporary' | 'mine'
 type RoulettePhase = 'setup' | 'wheel'
@@ -16,16 +16,17 @@ interface RouletteItem {
   restaurant?: RestaurantSummary
 }
 
-export function RestaurantRoulette({ restaurants, onClose, onSelectRestaurant }: {
+export function RestaurantRoulette({ restaurants, selectedRestaurantIds, onSelectedRestaurantIdsChange, onClose, onSelectRestaurant }: {
   restaurants: RestaurantSummary[]
+  selectedRestaurantIds: string[]
+  onSelectedRestaurantIdsChange: (ids: string[]) => void
   onClose: () => void
   onSelectRestaurant: (restaurant: RestaurantSummary) => void
 }) {
-  const [source, setSource] = useState<RouletteSource>('temporary')
+  const [source, setSource] = useState<RouletteSource>(selectedRestaurantIds.length ? 'mine' : 'temporary')
   const [phase, setPhase] = useState<RoulettePhase>('setup')
   const [temporaryName, setTemporaryName] = useState('')
   const [temporaryItems, setTemporaryItems] = useState<RouletteItem[]>([])
-  const [selectedRestaurantIds, setSelectedRestaurantIds] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [tagFilter, setTagFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -77,19 +78,20 @@ export function RestaurantRoulette({ restaurants, onClose, onSelectRestaurant }:
 
   function toggleRestaurant(id: string) {
     setMessage('')
-    setSelectedRestaurantIds((ids) => {
-      if (ids.includes(id)) return ids.filter((item) => item !== id)
-      if (ids.length >= MAX_RESTAURANTS) {
-        setMessage('轮盘最多添加 10 家餐厅。')
-        return ids
-      }
-      return [...ids, id]
-    })
+    if (selectedRestaurantIds.includes(id)) {
+      onSelectedRestaurantIdsChange(selectedRestaurantIds.filter((item) => item !== id))
+      return
+    }
+    if (selectedRestaurantIds.length >= MAX_RESTAURANTS) {
+      setMessage('轮盘最多添加 10 家餐厅。')
+      return
+    }
+    onSelectedRestaurantIdsChange([...selectedRestaurantIds, id])
   }
 
   function addFilteredRestaurants() {
     const additions = filteredRestaurants.filter((restaurant) => !selectedRestaurantIds.includes(restaurant.id)).slice(0, MAX_RESTAURANTS - selectedRestaurantIds.length)
-    setSelectedRestaurantIds((ids) => [...ids, ...additions.map((restaurant) => restaurant.id)])
+    onSelectedRestaurantIdsChange([...selectedRestaurantIds, ...additions.map((restaurant) => restaurant.id)])
     setMessage(additions.length ? `已加入 ${additions.length} 家符合条件的餐厅。` : '当前结果已经全部加入。')
   }
 
@@ -114,17 +116,25 @@ export function RestaurantRoulette({ restaurants, onClose, onSelectRestaurant }:
     }, 3600)
   }
 
-  const wheelBackground = `conic-gradient(from -90deg, ${selectedItems.map((_, index) => {
+  const wheelBackground = selectedItems.length ? `conic-gradient(from -90deg, ${selectedItems.map((_, index) => {
     const start = index / selectedItems.length * 100
     const end = (index + 1) / selectedItems.length * 100
     return `${WHEEL_COLORS[index]} ${start}% ${end}%`
-  }).join(', ')})`
+  }).join(', ')})` : '#e7edf2'
 
   return <ModalShell description="临时输入，或从自己的清单挑选；至少 2 家、最多 10 家。" onClose={onClose} size="large" title="今天吃什么">
     <div className="roulette-source-tabs" aria-label="轮盘餐厅来源">
       <button className={source === 'temporary' ? 'is-active' : ''} disabled={phase === 'wheel'} onClick={() => switchSource('temporary')} type="button">临时餐厅</button>
       <button className={source === 'mine' ? 'is-active' : ''} disabled={phase === 'wheel'} onClick={() => switchSource('mine')} type="button">我的餐厅</button>
     </div>
+
+    {phase === 'setup' ? <div className="roulette-live-preview" aria-label={`当前轮盘有 ${selectedItems.length} 家餐厅`}>
+      <div className="roulette-wheel-wrap roulette-wheel-wrap--preview"><div className="roulette-pointer" /><div className={`roulette-wheel${selectedItems.length ? '' : ' is-empty'}`} style={{ '--wheel-background': wheelBackground, '--wheel-rotation': '0deg' } as CSSProperties}>{selectedItems.map((item, index) => {
+        const angle = (index + 0.5) * 360 / selectedItems.length
+        return <span className="roulette-wheel-label" key={item.id} style={{ '--label-angle': `${angle}deg` } as CSSProperties}>{item.name}</span>
+      })}<div className="roulette-wheel-center">{selectedItems.length ? <strong>{selectedItems.length}</strong> : <Plus size={22} />}</div></div></div>
+      <div><strong>{selectedItems.length ? `${selectedItems.length} 家候选餐厅` : '先添加候选餐厅'}</strong><span>{selectedItems.length < 2 ? '加入两家后即可开始转动' : '轮盘已经可以开始'}</span></div>
+    </div> : null}
 
     {phase === 'setup' ? <div className="roulette-setup">
       {source === 'temporary' ? <>

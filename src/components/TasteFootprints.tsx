@@ -1,15 +1,18 @@
 import { MapPin, Star } from 'lucide-react'
-import type { RestaurantSummary } from '../types/domain'
+import type { RestaurantSummary, UserProfile } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { RestaurantAvatar } from './RestaurantAvatar'
 import { SyncedImage } from './SyncedImage'
+import { UserAvatar } from './UserAvatar'
 
 export function TasteFootprints({
   restaurants,
   onSelectRestaurant,
+  user,
 }: {
   restaurants: RestaurantSummary[]
   onSelectRestaurant: (restaurant: RestaurantSummary) => void
+  user?: UserProfile
 }) {
   const footprints = restaurants
     .flatMap((restaurant) => restaurant.visits.map((visit) => ({ restaurant, visit })))
@@ -31,14 +34,17 @@ export function TasteFootprints({
               ? visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index], alt: `${restaurant.name} 到访照片 ${index + 1}` }))
               : dishPhotos
             return <article className="footprint-card" key={visit.id}>
-              <button className="footprint-card__restaurant" onClick={() => onSelectRestaurant(restaurant)} type="button">
-                <RestaurantAvatar restaurant={restaurant} />
-                <span className="footprint-card__meta"><strong>{restaurant.name}</strong><time>{formatVisitDateTime(visit.visitedAt)}</time></span>
-                {visit.rating ? <b><Star fill="currentColor" size={12} /> {visit.rating} 星</b> : null}
-              </button>
-              {visit.note ? <p>{visit.note}</p> : null}
-              {photos.length ? <div className={`footprint-photos count-${Math.min(photos.length, 3)}`}>{photos.slice(0, 9).map((photo, index) => <SyncedImage alt={photo.alt} key={`${visit.id}-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</div> : null}
-              {visit.dishes.some((dish) => dish.name) ? <div className="footprint-dishes">{visit.dishes.filter((dish) => dish.name).slice(0, 4).map((dish) => <span key={dish.id}>{dish.name}{dish.rating ? ` · ${dish.rating} 星` : ''}</span>)}</div> : null}
+              <span className="footprint-author-avatar">
+                {user ? <UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /> : <RestaurantAvatar restaurant={restaurant} />}
+              </span>
+              <div className="footprint-card__content">
+                <header className="footprint-card__author"><span><strong>{user?.nickname || '我的味觉记录'}</strong><time>{formatVisitDateTime(visit.visitedAt)}</time></span>{visit.rating ? <b><Star fill="currentColor" size={12} /> {visit.rating} 星</b> : null}</header>
+                <button className="footprint-card__restaurant" onClick={() => onSelectRestaurant(restaurant)} type="button"><strong>{restaurant.name}</strong><span>{restaurant.city}</span></button>
+                {visit.note ? <p>{visit.note}</p> : null}
+                {photos.length ? <div className={`footprint-photos count-${Math.min(photos.length, 3)}`}>{photos.slice(0, 9).map((photo, index) => <SyncedImage alt={photo.alt} key={`${visit.id}-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</div> : null}
+                {visit.dishes.some((dish) => dish.name) ? <div className="footprint-dishes">{visit.dishes.filter((dish) => dish.name).slice(0, 4).map((dish) => <span key={dish.id}>{dish.name}{dish.rating ? ` · ${dish.rating} 星` : ''}</span>)}</div> : null}
+                <footer><MapPin size={12} /><span>{restaurant.address || restaurant.city}</span></footer>
+              </div>
             </article>
           })}
         </div>

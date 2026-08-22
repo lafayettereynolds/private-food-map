@@ -1,4 +1,4 @@
-import { CalendarClock, Clock3, Edit3, MapPin, Navigation, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
+import { CalendarClock, Clock3, Dices, Edit3, MapPin, Navigation, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
 import { RestaurantAvatar } from './RestaurantAvatar'
 import { diningModeLabel, formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
@@ -12,6 +12,7 @@ interface RestaurantPreviewCardProps {
   onAddVisit: () => void
   onEditVisit: (visit: Visit) => void
   onSaveRecommendation: () => void
+  onAddToRoulette: () => void
 }
 
 export function RestaurantPreviewCard({
@@ -22,6 +23,7 @@ export function RestaurantPreviewCard({
   onAddVisit,
   onEditVisit,
   onSaveRecommendation,
+  onAddToRoulette,
 }: RestaurantPreviewCardProps) {
   const navigationUrl = createNavigationUrl(restaurant)
   return (
@@ -95,6 +97,7 @@ export function RestaurantPreviewCard({
       ) : null}
       <div className="map-card__actions">
         <a className="navigation-button compact-button" href={navigationUrl} rel="noreferrer" target="_blank"><Navigation size={15} /> 到这里去</a>
+        <button className="roulette-add-button compact-button" onClick={onAddToRoulette} type="button"><Dices size={15} /> 添加到转盘</button>
         {restaurant.isRecommendation ? (
           <button className="primary-button compact-button" onClick={onSaveRecommendation} type="button"><Plus size={15} /> 加入想去</button>
         ) : (

@@ -1,5 +1,16 @@
 # Taste Map 变更记录
 
+## 2026-08-22 — 地图交互、转盘与个人页细化
+
+- 地图与列表分类栏统一为带图标且居中的“去过 / 想吃 / 推荐”；底栏保留“地图 / 社区 / 我的”，添加餐厅改为悬在社区正上方的小型快捷按钮。
+- “附近餐厅”改为只使用设备高精度 GPS 的 1.5 公里检索，失败或超时会停止 Loading 并允许重新定位，不再混入城市级结果。
+- 餐厅详情增加“添加到转盘”；候选餐厅在当前会话累计，转盘从空状态开始始终可见，候选每增加一家就立即增加一个分区。
+- 味觉足迹调整为头像在左、笔记和照片优先的连续动态流；个人页修复预设头像显示，移除头像相机角标，并将头像、资料和地图隐私合并到同一折叠面板。
+- 用户查找从关注管理中拆出为独立“发现好友”入口；App 主要蓝色统一为 `#4F6F8C`。
+- 关键文件：`src/App.tsx`、`src/components/AddRestaurantModal.tsx`、`src/components/FriendsPage.tsx`、`src/components/ProfilePage.tsx`、`src/components/RestaurantPreviewCard.tsx`、`src/components/RestaurantRoulette.tsx`、`src/components/TasteFootprints.tsx`、`src/services/amap.ts`、`src/styles/global.css`。
+- Migration：无；本次没有新增、删除或修改数据字段、数据库结构或同步协议，因此未重复执行既有 migration。
+- 已知问题：真实附近结果依赖设备授予精确定位权限；拒绝权限时只显示重试提示，不展示近似城市结果。
+
 ## 2026-08-22
 
 - 完成：桌面/手机完整地图与列表双模式、地图常驻分类栏和列表入口、蓝色底部导航、个人页整合、头像预设与会员上传限制、饭搭子复用、到访编辑和体验字段、价格语义、转盘工具、地图分享权限、测试数据恢复及当前位置头像定位气泡。

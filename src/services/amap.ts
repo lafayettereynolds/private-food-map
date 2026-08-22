@@ -48,6 +48,13 @@ interface GeocodeResult {
   }>
 }
 
+interface AMapGeolocationResult {
+  info?: string
+  position?: AMapLngLat
+  accuracy?: number
+  location_type?: string
+}
+
 export interface AMapInstance {
   destroy(): void
   addControl(control: unknown): void
@@ -135,6 +142,9 @@ export interface AMapNamespace {
       callback: (status: string, result: GeocodeResult | string) => void,
     ): void
   }
+  Geolocation: new (options?: Record<string, unknown>) => {
+    getCurrentPosition(callback: (status: string, result: AMapGeolocationResult | string) => void): void
+  }
 }
 
 declare global {
@@ -175,6 +185,7 @@ export function loadAmap(): Promise<AMapNamespace> {
         'AMap.ToolBar',
         'AMap.Scale',
         'AMap.Geocoder',
+        'AMap.Geolocation',
         'AMap.MarkerCluster',
       ],
     }) as Promise<AMapNamespace>
@@ -192,16 +203,34 @@ export interface ResolvedLocation {
 }
 
 export async function detectCurrentCoordinates(): Promise<Coordinates> {
-  if (!navigator.geolocation) throw new Error('当前浏览器不支持定位。')
-
-  const position = await withTimeout(new Promise<GeolocationPosition>((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: false,
-      timeout: 4500,
-      maximumAge: 5 * 60 * 1000,
+  const AMap = await withTimeout(loadAmap(), 8_000, '地图服务加载超时，请检查网络后重试。')
+  return withTimeout(new Promise<Coordinates>((resolve, reject) => {
+    const geolocation = new AMap.Geolocation({
+      enableHighAccuracy: true,
+      timeout: 10_000,
+      maximumAge: 0,
+      convert: true,
+      GeoLocationFirst: true,
+      noIpLocate: 3,
+      needAddress: false,
+      showButton: false,
+      showMarker: false,
+      showCircle: false,
+      panToLocation: false,
+      zoomToAccuracy: false,
     })
-  }), 5_000, '定位超时，请检查浏览器的位置权限后重试。')
-  return { longitude: position.coords.longitude, latitude: position.coords.latitude }
+    geolocation.getCurrentPosition((status, result) => {
+      if (status !== 'complete' || typeof result === 'string' || !result.position) {
+        reject(new Error(typeof result === 'string' ? result : result.info || '高精度定位失败，请检查位置权限。'))
+        return
+      }
+      if (result.location_type?.toLocaleLowerCase().includes('ip') || (result.accuracy ?? 0) > 1_000) {
+        reject(new Error('当前只能获得粗略网络位置，无法据此推荐附近餐厅。请开启设备精确定位。'))
+        return
+      }
+      resolve({ longitude: result.position.getLng(), latitude: result.position.getLat() })
+    })
+  }), 11_000, '高精度定位超时，请开启设备精确定位后重试。')
 }
 
 export async function resolveCoordinatesLocation(coordinates: Coordinates): Promise<ResolvedLocation> {
