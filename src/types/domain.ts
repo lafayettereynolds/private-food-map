@@ -14,6 +14,7 @@ export type PortionLevel = 'small' | 'normal' | 'generous'
 export type TransportConvenience = 'very_convenient' | 'convenient' | 'normal' | 'inconvenient'
 export type RecommendationSourceType = 'friend' | 'xiaohongshu' | 'douyin' | 'dianping' | 'blogger' | 'self' | 'other'
 export type FriendshipStatus = 'pending' | 'accepted' | 'rejected' | 'removed'
+export type CompanionLinkRequestStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled'
 export type AvatarPresetId = 'polar-bear' | 'penguin' | 'cat' | 'dog' | 'parrot' | 'dinosaur' | 'shiba' | 'panda' | 'otter' | 'hedgehog' | 'rabbit' | 'koala' | 'fox' | 'raccoon' | 'deer' | 'whale'
 export type MembershipTier = 'free' | 'member'
 export type QueueDuration =
@@ -52,6 +53,7 @@ export interface Restaurant {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+  isTestData?: boolean
 }
 
 export interface Visit {
@@ -87,6 +89,7 @@ export interface Visit {
   recommendationSourceText: string
   sharedMealId: string | null
   companions: string[]
+  companionIds: string[]
   dishes: VisitDish[]
   note: string
   photos: string[]
@@ -94,6 +97,37 @@ export interface Visit {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+  isTestData?: boolean
+}
+
+export interface DiningCompanion {
+  id: string
+  ownerUserId: string
+  displayName: string
+  linkedUserId: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface CompanionLinkRequest {
+  id: string
+  companionId: string
+  companionDisplayName: string
+  requesterUserId: string
+  targetUserId: string
+  status: CompanionLinkRequestStatus
+  visitCount: number
+  restaurantCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HistoricalMealFact {
+  sourceVisitId: string
+  restaurant: Pick<Restaurant, 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl'>
+  visitedAt: string
+  sharedMealId: string | null
 }
 
 export interface VisitDish {
@@ -144,6 +178,15 @@ export interface UserProfile {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+  isTestUser?: boolean
+}
+
+export interface Follow {
+  id: string
+  followerId: string
+  followedUserId: string
+  createdAt: string
+  isTestData?: boolean
 }
 
 export interface Friendship {
@@ -153,6 +196,7 @@ export interface Friendship {
   status: FriendshipStatus
   createdAt: string
   updatedAt: string
+  isTestData?: boolean
 }
 
 export interface SharedMeal {
@@ -163,6 +207,7 @@ export interface SharedMeal {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+  isTestData?: boolean
 }
 
 export interface SharedMealParticipant {
@@ -173,6 +218,7 @@ export interface SharedMealParticipant {
   status: 'pending' | 'accepted' | 'declined'
   createdAt: string
   updatedAt: string
+  isTestData?: boolean
 }
 
 export interface PhotoCacheEntry {
@@ -258,8 +304,10 @@ export interface Coordinates {
 
 export interface CommunityVisit {
   visit: Visit
-  restaurant: Pick<Restaurant, 'id' | 'name' | 'address' | 'city' | 'latitude' | 'longitude'>
+  restaurant: Pick<Restaurant, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl'>
   user: Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
+  similarity?: number | null
+  recommendationReason?: string | null
 }
 
 export const DINING_MODE_OPTIONS: { value: DiningMode; label: string }[] = [
@@ -270,7 +318,7 @@ export const DINING_MODE_OPTIONS: { value: DiningMode; label: string }[] = [
 export const VISIBILITY_OPTIONS: { value: Visibility; label: string; description: string }[] = [
   { value: 'private', label: '仅自己', description: '只有你能看到' },
   { value: 'friends', label: '互相关注', description: '互相关注的用户可见' },
-  { value: 'public', label: '公开', description: '会出现在社区' },
+  { value: 'public', label: '公开', description: '会出现在发现' },
 ]
 
 export const PAYMENT_MODE_OPTIONS: { value: PaymentMode; label: string }[] = [

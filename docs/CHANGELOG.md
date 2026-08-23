@@ -1,5 +1,15 @@
 # Taste Map 变更记录
 
+## 2026-08-23 — 发现、社交评分、测试用户与餐厅详情
+
+- 完成发现五栏及各自独立的数据逻辑；为你推荐改为“与曾吃餐厅相似 XX%”，同味之选继续呈现相似用户，餐厅卡增加图片及想吃/抽签图标。
+- 增加 40 个可重复生成的开发测试用户、66 家测试餐厅、1326 条到访和关注/好友/想吃/共同饭局关系；关注数字、用户列表和公开资料均可点击查看。
+- 餐厅详情增加全部用户、好友、口味相似用户评分与重复到访率；发现页和地图列表均在当前上下文打开完整详情，手机端不再露出后方地图。
+- 轮盘完成统一候选池、等分扇区、删除/清空、结果卡及贯穿旋转过程的可静音提示音；附近餐厅修复高德照片字段类型异常造成的无限 Loading，并按精确 GPS 距离排序 3 组关键词结果。
+- 关键文件：`worker/index.ts`、`worker/restaurantStats.ts`、`scripts/seed-test-users.mjs`、`src/App.tsx`、`src/components/CommunityPage.tsx`、`src/components/ProfilePage.tsx`、`src/components/FriendsPage.tsx`、`src/components/RestaurantPreviewCard.tsx`、`src/components/RestaurantRoulette.tsx`、`src/services/amap.ts`。
+- Migration：新增并各执行一次本地 `0008_dining_companion_links.sql`、`0009_discovery_follows_and_test_markers.sql`；远端既有 `0008`，本轮仅增量应用待执行的 `0009`，未清空或重命名正式数据库。
+- 已知问题：正式发现页不会自动生成模拟用户；真实内容数量取决于公开用户、关注关系与到访数据。
+
 ## 2026-08-23 — 当前位置与附近餐厅修复
 
 - 当前位置头像标记改为圆形定位气泡，外圈和尖角统一使用 App 主色 `#4F6F8C`。

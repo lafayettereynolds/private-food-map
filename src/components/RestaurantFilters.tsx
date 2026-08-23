@@ -13,7 +13,7 @@ import {
 } from '../types/domain'
 
 export type VisitCountFilter = 'all' | '1' | '2' | '3' | '5' | '10'
-export type ScoreBandFilter = 'all' | ScoreBand
+export type ScoreBandFilter = ScoreBand[]
 export type QueueFilter = 'all' | QueueDuration | 'unrecorded'
 export type DiningModeFilter = 'all' | DiningMode
 export type DiningOccasionFilter = 'all' | DiningOccasion
@@ -118,13 +118,13 @@ export function RestaurantFilters({
         </div>
       ) : null}
       <div className="filter-group">
-        <span>评分区间</span>
+        <span>评分区间 · 可多选</span>
         <div>
-          <button className={scoreBand === 'all' ? 'is-active' : ''} onClick={() => onScoreBandChange('all')} type="button">全部</button>
+          <button className={!scoreBand.length ? 'is-active' : ''} onClick={() => onScoreBandChange([])} type="button">全部</button>
           {SCORE_BAND_ORDER.map((value) => {
             const item = SCORE_BAND_META[value]
             return (
-            <button className={scoreBand === value ? 'is-active' : ''} key={value} onClick={() => onScoreBandChange(value)} type="button">
+            <button className={scoreBand.includes(value) ? 'is-active' : ''} key={value} onClick={() => onScoreBandChange(scoreBand.includes(value) ? scoreBand.filter((item) => item !== value) : [...scoreBand, value])} type="button">
               <i className="filter-color-dot" style={{ background: item.color }} />{item.label}
             </button>
             )

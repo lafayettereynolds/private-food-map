@@ -102,6 +102,13 @@ export function AddRestaurantModal({
   const [markerEmoji, setMarkerEmoji] = useState('🍽️')
   const [extraFields, setExtraFields] = useState<VisitExtraFieldsValue>(() => createDefaultVisitExtraFields())
 
+  function updateCompanions(next: string) {
+    const previousCount = splitValues(companions).length
+    const nextCount = splitValues(next).length
+    setCompanions(next)
+    setPartySize((current) => String(Math.max(1, (Number(current) || 1) + nextCount - previousCount)))
+  }
+
   useEffect(() => {
     if (!isAmapConfigured) {
       setLocatingCity(false)
@@ -327,7 +334,7 @@ export function AddRestaurantModal({
 
           <div className="selected-poi-card">
             {selectedPoi.merchantImageUrl ? <img alt="" src={selectedPoi.merchantImageUrl} /> : <span><MapPin size={18} /></span>}
-            <div><strong>{selectedPoi.name}</strong><p>{selectedPoi.city}{selectedPoi.district ? ` · ${selectedPoi.district}` : ''}</p></div>
+            <div><strong>{selectedPoi.name}</strong><label className="selected-poi-card__address"><MapPin size={13} /><input aria-label="餐厅地址" onChange={(event) => setAddress(event.target.value)} required value={address} /></label></div>
           </div>
 
           <div className="collection-choice" aria-label="餐厅状态">
@@ -335,26 +342,18 @@ export function AddRestaurantModal({
             <button className={status === 'wantToGo' ? 'is-active' : ''} onClick={() => setStatus('wantToGo')} type="button"><MapPin size={15} /> 我想去</button>
           </div>
 
-          <div className="form-section">
-            <h3>基本信息</h3>
-            <label className="field field-with-leading-icon">
-              <span>地址</span>
-              <div><MapPin size={16} /><input onChange={(event) => setAddress(event.target.value)} required value={address} /></div>
-            </label>
-            <label className="field field-with-leading-icon">
-              <span>{status === 'visited' ? extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）' : '预计人均价格（元）'}</span>
-              <div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder={status === 'visited' ? '例如 193.50' : '例如 180.00'} step="0.01" type="number" value={price} /></div>
-              {status === 'visited' && extraFields.paymentMode !== 'separate' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">{partySize} 人 · 约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}
-            </label>
-          </div>
-
           {status === 'visited' ? (
             <div className="form-section">
               <h3>这次体验</h3>
-              <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
               <label className="field">
                 <span>个人评价</span>
                 <StarRating onChange={setRating} value={rating} />
+              </label>
+              <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
+              <label className="field field-with-leading-icon">
+                <span>{extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）'}</span>
+                <div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 193.50" step="0.01" type="number" value={price} /></div>
+                {extraFields.paymentMode !== 'separate' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">{partySize} 人 · 约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}
               </label>
               <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="primary" value={extraFields} />
               <div className="field-grid visit-time-grid">
@@ -363,14 +362,14 @@ export function AddRestaurantModal({
               </div>
               <div className="field-grid party-grid">
                 <label className="field field-with-leading-icon"><span>用餐人数</span><div><Users size={16} /><input inputMode="numeric" min="1" onChange={(event) => setPartySize(event.target.value)} required step="1" type="number" value={partySize} /></div></label>
-                <CompanionPicker onChange={setCompanions} options={companionOptions} value={companions} />
+                <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
               </div>
               <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
               <VisitPhotoPicker onChange={(nextPhotos) => setPhotos(nextPhotos)} photoIds={photos.map(() => null)} value={photos} />
               <DishEditor onChange={setDishes} value={dishes} />
               <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
             </div>
-          ) : null}
+          ) : <div className="form-section"><label className="field field-with-leading-icon"><span>预计人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 180.00" step="0.01" type="number" value={price} /></div></label></div>}
 
           <div className="form-section">
             <h3>整理与显示</h3>

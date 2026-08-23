@@ -3,6 +3,8 @@ import { DATABASE_NAME } from '../config/appEnvironment'
 import { calculatePricePerPerson } from '../types/domain'
 import type {
   Friendship,
+  Follow,
+  DiningCompanion,
   Photo,
   PhotoCacheEntry,
   Restaurant,
@@ -29,8 +31,10 @@ class FoodMapDatabase extends Dexie {
   photoCache!: EntityTable<PhotoCacheEntry, 'photoId'>
   users!: EntityTable<UserProfile, 'id'>
   friendships!: EntityTable<Friendship, 'id'>
+  follows!: EntityTable<Follow, 'id'>
   sharedMeals!: EntityTable<SharedMeal, 'id'>
   sharedMealParticipants!: EntityTable<SharedMealParticipant, 'id'>
+  diningCompanions!: EntityTable<DiningCompanion, 'id'>
 
   constructor() {
     super(DATABASE_NAME)
@@ -350,6 +354,57 @@ class FoodMapDatabase extends Dexie {
           visit.diningOccasion = visit.diningOccasions[0] ?? null
         })
       })
+
+    this.version(15)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt',
+        diningCompanions: 'id, ownerUserId, displayName, linkedUserId, updatedAt, deletedAt',
+        syncQueue: 'id, entityType, entityId, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        const now = new Date().toISOString()
+        const companions = transaction.table('diningCompanions')
+        const companionByName = new Map<string, string>()
+        const visits = await transaction.table('visits').toArray()
+        visits.forEach((visit) => {
+          const names = Array.isArray(visit.companions) ? visit.companions.map((name: string) => name.trim()).filter(Boolean) : []
+          names.forEach((name: string) => {
+            const key = name.toLocaleLowerCase('zh-CN')
+            if (!companionByName.has(key)) companionByName.set(key, `companion:owner:${encodeURIComponent(key)}`)
+          })
+        })
+        await companions.bulkPut([...companionByName].map(([key, id]) => {
+          const displayName = visits.flatMap((visit) => Array.isArray(visit.companions) ? visit.companions : []).find((name: string) => name.trim().toLocaleLowerCase('zh-CN') === key) ?? key
+          return { id, ownerUserId: 'owner', displayName, linkedUserId: null, createdAt: now, updatedAt: now, deletedAt: null }
+        }))
+        await transaction.table('visits').toCollection().modify((visit) => {
+          const names = Array.isArray(visit.companions) ? visit.companions.map((name: string) => name.trim()).filter(Boolean) : []
+          visit.companionIds = names.map((name: string) => companionByName.get(name.toLocaleLowerCase('zh-CN')) as string)
+        })
+      })
+
+    this.version(16).stores({
+      restaurants: restaurantSchema,
+      visits: visitSchema,
+      photos: 'id, userId, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+      photoCache: 'photoId, cachedAt, lastAccessedAt',
+      users: 'id, nickname, email, updatedAt, deletedAt, isTestUser',
+      friendships: 'id, requesterId, addresseeId, status, updatedAt, isTestData',
+      follows: 'id, followerId, followedUserId, createdAt, isTestData',
+      sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt, isTestData',
+      sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt, isTestData',
+      diningCompanions: 'id, ownerUserId, displayName, linkedUserId, updatedAt, deletedAt',
+      syncQueue: 'id, entityType, entityId, updatedAt',
+      syncMetadata: 'key',
+    })
   }
 }
 

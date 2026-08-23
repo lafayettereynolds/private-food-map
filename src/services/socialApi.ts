@@ -1,21 +1,44 @@
 import { CLOUD_SYNC_ENABLED } from '../config/appEnvironment'
 import type { CloudVisit } from '../types/cloudSync'
-import type { CommunityVisit, RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import type { CompanionLinkRequest, CommunityVisit, DiningCompanion, Follow, HistoricalMealFact, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { drivePhotoReference } from './cloudSyncData'
 
 export type PublicUser = Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
 
+export function publicUserToProfile(user: PublicUser): UserProfile {
+  return {
+    ...user,
+    email: null,
+    avatarImageData: user.avatarImageData ?? (user.avatarPhotoId ? drivePhotoReference(user.avatarPhotoId) : null),
+    avatarPresetId: user.avatarPresetId ?? 'polar-bear',
+    membershipTier: user.membershipTier ?? 'free',
+    mapSharingEnabled: false,
+    mapVisibility: 'private',
+    authProvider: 'cloudflare-access',
+    authSubject: null,
+    createdAt: '',
+    updatedAt: '',
+    deletedAt: null,
+  }
+}
+
 interface CommunityResponse {
+  mode: DiscoveryMode
+  city: string
   items: Array<{
     visit: CloudVisit
-    restaurant: Pick<RestaurantSummary, 'id' | 'name' | 'address' | 'city' | 'latitude' | 'longitude'>
+    restaurant: Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl'>
     user: PublicUser
+    similarity?: number | null
+    recommendationReason?: string | null
   }>
 }
 
-export async function fetchCommunityFeed(): Promise<CommunityVisit[]> {
+export type DiscoveryMode = 'following' | 'for_you' | 'similar' | 'latest' | 'trending'
+
+export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city = '', trendWindow: 7 | 30 = 7): Promise<CommunityVisit[]> {
   if (!CLOUD_SYNC_ENABLED) return []
-  const response = await apiFetch<CommunityResponse>('/api/community')
+  const response = await apiFetch<CommunityResponse>(`/api/community?mode=${mode}&city=${encodeURIComponent(city)}&window=${trendWindow}`)
   return response.items.map((item) => ({
     visit: cloudVisitToLocal(item.visit),
     restaurant: item.restaurant,
@@ -37,13 +60,21 @@ export async function fetchCommunityFeed(): Promise<CommunityVisit[]> {
       updatedAt: '',
       deletedAt: null,
     },
+    similarity: item.similarity ?? null,
+    recommendationReason: item.recommendationReason ?? null,
   }))
 }
 
 export async function searchCloudUsers(query: string): Promise<PublicUser[]> {
-  if (!CLOUD_SYNC_ENABLED || !query.trim()) return []
+  if (!CLOUD_SYNC_ENABLED) return []
   const result = await apiFetch<{ users: PublicUser[] }>(`/api/users/search?q=${encodeURIComponent(query.trim())}`)
   return result.users
+}
+
+export async function fetchFollows(): Promise<Follow[]> {
+  if (!CLOUD_SYNC_ENABLED) return []
+  const result = await apiFetch<{ follows: Follow[] }>('/api/follows')
+  return result.follows
 }
 
 export async function fetchUserProfile(userId: string) {
@@ -52,20 +83,7 @@ export async function fetchUserProfile(userId: string) {
     user: PublicUser
     items: Array<{ visit: CloudVisit; restaurant: Pick<RestaurantSummary, 'id' | 'name' | 'address' | 'city' | 'latitude' | 'longitude'> }>
   }>(`/api/profiles/${encodeURIComponent(userId)}`)
-  const user: UserProfile = {
-    ...result.user,
-    email: null,
-    avatarImageData: result.user.avatarImageData ?? (result.user.avatarPhotoId ? drivePhotoReference(result.user.avatarPhotoId) : null),
-    avatarPresetId: result.user.avatarPresetId ?? 'polar-bear',
-    membershipTier: result.user.membershipTier ?? 'free',
-    mapSharingEnabled: false,
-    mapVisibility: 'private',
-    authProvider: 'cloudflare-access',
-    authSubject: null,
-    createdAt: '',
-    updatedAt: '',
-    deletedAt: null,
-  }
+  const user = publicUserToProfile(result.user)
   const grouped = new Map<string, RestaurantSummary>()
   result.items.forEach((item) => {
     const visit = cloudVisitToLocal(item.visit)
@@ -128,6 +146,40 @@ export async function respondToFriendship(friendshipId: string, status: 'accepte
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(status === 'removed' ? { action: 'remove', friendshipId } : { action: 'respond', friendshipId, status }),
+  })
+}
+
+export async function fetchCompanionLinks() {
+  if (!CLOUD_SYNC_ENABLED) return { companions: [] as DiningCompanion[], requests: [] as CompanionLinkRequest[], users: [] as PublicUser[] }
+  return apiFetch<{ companions: DiningCompanion[]; requests: CompanionLinkRequest[]; users: PublicUser[] }>('/api/companion-links')
+}
+
+export async function requestCompanionLink(companion: Pick<DiningCompanion, 'id' | 'displayName'>, targetUserId: string) {
+  return apiFetch<CompanionLinkRequest>('/api/companion-links', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'request', companionId: companion.id, displayName: companion.displayName, targetUserId }),
+  })
+}
+
+export async function respondToCompanionLink(requestId: string, status: 'accepted' | 'rejected') {
+  return apiFetch<CompanionLinkRequest>('/api/companion-links', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'respond', requestId, status }),
+  })
+}
+
+export async function unlinkCompanion(companionId: string) {
+  return apiFetch<DiningCompanion>('/api/companion-links', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'unlink', companionId }),
+  })
+}
+
+export async function fetchCompanionHistory(requestId: string) {
+  return apiFetch<{ request: CompanionLinkRequest; facts: HistoricalMealFact[] }>(`/api/companion-links/${encodeURIComponent(requestId)}/history`)
+}
+
+export async function importCompanionHistory(requestId: string, sourceVisitIds: string[]) {
+  return apiFetch<{ imported: number }>('/api/companion-links', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'import', requestId, sourceVisitIds }),
   })
 }
 

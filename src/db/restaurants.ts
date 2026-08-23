@@ -24,6 +24,7 @@ import { calculatePricePerPerson } from '../types/domain'
 import { syncQueueId } from '../types/sync'
 import { requestCloudSync } from '../services/syncEvents'
 import { createSharedMealInvitations } from './social'
+import { ensureDiningCompanions } from './diningCompanions'
 
 export class DuplicateRestaurantError extends Error {
   constructor() {
@@ -146,6 +147,8 @@ export async function addRestaurantFromPoi(
     deletedAt: null,
   }
 
+  const normalizedInitialCompanions = input.initialVisit ? normalizeCompanions(input.initialVisit.companions) : []
+  const initialCompanionIds = (await ensureDiningCompanions(normalizedInitialCompanions)).map((companion) => companion.id)
   const visit: Visit | null = input.initialVisit
     ? {
         id: createId(),
@@ -182,7 +185,8 @@ export async function addRestaurantFromPoi(
         recommendationSourceUserId: input.initialVisit.recommendationSourceUserId,
         recommendationSourceText: input.initialVisit.recommendationSourceText.trim(),
         sharedMealId: null,
-        companions: input.initialVisit.companions,
+        companions: normalizedInitialCompanions,
+        companionIds: initialCompanionIds,
         dishes: normalizeDishes(input.initialVisit.dishes),
         note: input.initialVisit.note.trim(),
         photos: input.initialVisit.photos,
@@ -320,6 +324,7 @@ export interface AddVisitInput {
 export async function addVisit(restaurantId: string, input: AddVisitInput) {
   const now = new Date().toISOString()
   const companions = normalizeCompanions(input.companions)
+  const companionIds = (await ensureDiningCompanions(companions)).map((companion) => companion.id)
   const normalizedPartySize = Math.max(1, input.partySize, companions.length + 1)
   const pricePerPerson = calculatePricePerPerson(input.totalPrice, normalizedPartySize)
   const visit: Visit = {
@@ -355,6 +360,7 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
     recommendationSourceText: input.recommendationSourceText.trim(),
     sharedMealId: null,
     companions,
+    companionIds,
     dishes: normalizeDishes(input.dishes),
     note: input.note.trim(),
     photos: input.photos,
@@ -407,6 +413,7 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
 export async function updateVisit(id: string, input: AddVisitInput) {
   const now = new Date().toISOString()
   const companions = normalizeCompanions(input.companions)
+  const companionIds = (await ensureDiningCompanions(companions)).map((companion) => companion.id)
   const normalizedPartySize = Math.max(1, input.partySize, companions.length + 1)
   const pricePerPerson = calculatePricePerPerson(input.totalPrice, normalizedPartySize)
   let updatedVisit: Visit | null = null
@@ -447,6 +454,7 @@ export async function updateVisit(id: string, input: AddVisitInput) {
       recommendationSourceUserId: input.recommendationSourceUserId,
       recommendationSourceText: input.recommendationSourceText.trim(),
       companions,
+      companionIds,
       dishes: normalizeDishes(input.dishes),
       note: input.note.trim(),
       photos: input.photos,

@@ -50,7 +50,7 @@ export function VisitExtraFields({
             </div>
           </div>
         </div>
-        <ChoiceField allowEmpty label="消费方式" value={value.paymentMode ?? ''} onChange={(next) => update('paymentMode', (next || null) as PaymentMode | null)} options={PAYMENT_MODE_OPTIONS} />
+        <ChoiceField allowEmpty emptyLabel="单人消费" label="消费方式" value={value.paymentMode ?? ''} onChange={(next) => update('paymentMode', (next || null) as PaymentMode | null)} options={PAYMENT_MODE_OPTIONS} />
         <TagChoiceField label="性价比" onChange={(next) => update('valueTags', next)} options={['偏贵', '合理', '划算', '超值']} value={value.valueTags} />
         <ChoiceField allowEmpty label="菜量" value={value.portionLevel ?? ''} onChange={(next) => update('portionLevel', (next || null) as PortionLevel | null)} options={[
           { value: 'small', label: '偏少' }, { value: 'normal', label: '正常' }, { value: 'generous', label: '很足' },
@@ -103,8 +103,8 @@ export function VisitExtraFields({
   )
 }
 
-function ChoiceField({ label, value, options, allowEmpty = false, onChange }: { label: string; value: string; options: ReadonlyArray<{ value: string; label: string }>; allowEmpty?: boolean; onChange: (value: string) => void }) {
-  return <fieldset className="direct-choice-field"><legend>{label}</legend><div>{allowEmpty ? <button className={!value ? 'is-active' : ''} onClick={() => onChange('')} type="button">不记录</button> : null}{options.map((option) => <button className={value === option.value ? 'is-active' : ''} key={option.value} onClick={() => onChange(option.value)} type="button">{option.label}</button>)}</div></fieldset>
+function ChoiceField({ label, value, options, allowEmpty = false, emptyLabel = '不记录', onChange }: { label: string; value: string; options: ReadonlyArray<{ value: string; label: string }>; allowEmpty?: boolean; emptyLabel?: string; onChange: (value: string) => void }) {
+  return <fieldset className="direct-choice-field"><legend>{label}</legend><div>{allowEmpty ? <button className={!value ? 'is-active' : ''} onClick={() => onChange('')} type="button">{emptyLabel}</button> : null}{options.map((option) => <button className={value === option.value ? 'is-active' : ''} key={option.value} onClick={() => onChange(option.value)} type="button">{option.label}</button>)}</div></fieldset>
 }
 
 function MultiChoiceField({ label, value, options, onChange }: { label: string; value: DiningOccasion[]; options: ReadonlyArray<{ value: DiningOccasion; label: string }>; onChange: (value: DiningOccasion[]) => void }) {

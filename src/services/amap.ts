@@ -390,7 +390,9 @@ export async function searchRestaurantPois(
               district: textValue(poi.adname),
               longitude: poi.location.getLng(),
               latitude: poi.location.getLat(),
-              merchantImageUrl: poi.photos?.find((photo) => photo.url)?.url ?? null,
+              merchantImageUrl: Array.isArray(poi.photos)
+                ? poi.photos.find((photo) => photo?.url)?.url ?? null
+                : null,
             },
           ]
         }),
@@ -415,5 +417,39 @@ export function searchNearbyRestaurantPois(
   city?: string,
   options: { timeoutMs?: number; radiusMeters?: number } = {},
 ) {
-  return searchRestaurantPois('', city, { center, categoryOnly: true, radiusMeters: options.radiusMeters ?? 2_000, timeoutMs: options.timeoutMs })
+  // AMap returns noticeably different nearby POIs for these common terms. Query
+  // them in parallel, merge duplicates, and sort ourselves by the precise GPS
+  // coordinate so the list is genuinely nearby rather than city-wide results.
+  const searchOptions = {
+    center,
+    radiusMeters: options.radiusMeters ?? 2_000,
+    timeoutMs: options.timeoutMs,
+  }
+  return Promise.allSettled(
+    ['餐厅', '美食', '饭店'].map((keyword) => searchRestaurantPois(keyword, city, searchOptions)),
+  ).then((results) => {
+    const merged = new Map<string, PoiSearchResult>()
+    results.forEach((result) => {
+      if (result.status !== 'fulfilled') return
+      result.value.forEach((poi) => merged.set(poi.amapPoiId, poi))
+    })
+    const restaurants = [...merged.values()].sort(
+      (left, right) => distanceMeters(center, left) - distanceMeters(center, right),
+    )
+    if (restaurants.length) return restaurants
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failure) throw failure.reason
+    return restaurants
+  })
+}
+
+function distanceMeters(origin: Coordinates, target: Coordinates) {
+  const radians = (degrees: number) => degrees * Math.PI / 180
+  const latitudeDelta = radians(target.latitude - origin.latitude)
+  const longitudeDelta = radians(target.longitude - origin.longitude)
+  const originLatitude = radians(origin.latitude)
+  const targetLatitude = radians(target.latitude)
+  const value = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(originLatitude) * Math.cos(targetLatitude) * Math.sin(longitudeDelta / 2) ** 2
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value))
 }

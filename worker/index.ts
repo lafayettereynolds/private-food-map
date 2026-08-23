@@ -28,6 +28,9 @@ import type {
   TransportConvenience,
   Visibility,
 } from '../src/types/domain'
+import { readRestaurantSocialStats } from './restaurantStats'
+import { calculateTasteSimilarities } from './tasteSimilarity'
+import { rankTasteTags } from '../src/services/tasteProfileCore'
 
 interface Env {
   DB: D1Database
@@ -95,6 +98,7 @@ interface VisitRow {
   recommendation_source_text: string
   shared_meal_id: string | null
   companions_json: string
+  companion_ids_json: string
   dishes_json: string
   note: string
   photo_ids_json: string
@@ -150,6 +154,13 @@ interface FriendshipRow {
   updated_at: string
 }
 
+interface FollowRow {
+  id: string
+  follower_id: string
+  followed_user_id: string
+  created_at: string
+}
+
 interface SharedMealRow {
   id: string
   restaurant_id: string
@@ -166,6 +177,27 @@ interface SharedMealParticipantRow {
   user_id: string
   visit_id: string | null
   status: CloudSharedMealParticipant['status']
+  created_at: string
+  updated_at: string
+}
+
+interface DiningCompanionRow {
+  id: string
+  owner_user_id: string
+  display_name: string
+  linked_user_id: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+interface CompanionLinkRequestRow {
+  id: string
+  companion_id: string
+  companion_display_name: string
+  requester_user_id: string
+  target_user_id: string
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled'
   created_at: string
   updated_at: string
 }
@@ -223,9 +255,9 @@ const VISIT_UPSERT = `
     value_tags_json, environment_tags_json, service_tags_json,
     noise_level, dining_duration, portion_level, transport_convenience, special_notes,
     recommendation_source_type, recommendation_source_user_id, recommendation_source_text,
-    shared_meal_id, companions_json, dishes_json, note, photo_ids_json,
+    shared_meal_id, companions_json, companion_ids_json, dishes_json, note, photo_ids_json,
     created_at, updated_at, deleted_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     user_id = excluded.user_id,
     restaurant_id = excluded.restaurant_id,
@@ -258,6 +290,7 @@ const VISIT_UPSERT = `
     recommendation_source_text = excluded.recommendation_source_text,
     shared_meal_id = excluded.shared_meal_id,
     companions_json = excluded.companions_json,
+    companion_ids_json = excluded.companion_ids_json,
     dishes_json = excluded.dishes_json,
     note = excluded.note,
     photo_ids_json = excluded.photo_ids_json,
@@ -389,12 +422,22 @@ export default {
         })).filter((item) => item.userId === viewer.id || sharedMeals.some((meal) => meal.id === item.sharedMealId)))
         return json(await readSnapshot(env.DB, viewer.id))
       }
-      if (url.pathname === '/api/community' && request.method === 'GET') return json(await readCommunity(env.DB, viewer.id))
+      if (url.pathname === '/api/community' && request.method === 'GET') return json(await readCommunity(env.DB, viewer.id, url.searchParams.get('mode') ?? 'for_you', url.searchParams.get('city') ?? '', url.searchParams.get('window') === '30' ? 30 : 7))
+      if (url.pathname === '/api/follows' && request.method === 'GET') return json(await readFollows(env.DB, viewer.id))
+      if (url.pathname === '/api/follows' && request.method === 'POST') return json(await mutateFollow(env.DB, viewer.id, request))
+      const restaurantStatsMatch = url.pathname.match(/^\/api\/restaurants\/([^/]+)\/stats$/)
+      if (restaurantStatsMatch && request.method === 'GET') {
+        return json(await readRestaurantSocialStats(env.DB, viewer.id, decodeURIComponent(restaurantStatsMatch[1])))
+      }
       if (url.pathname.startsWith('/api/profiles/') && request.method === 'GET') {
         const profileId = decodeURIComponent(url.pathname.slice('/api/profiles/'.length))
         return json(await readProfile(env.DB, viewer.id, profileId))
       }
       if (url.pathname === '/api/users/search' && request.method === 'GET') return json(await searchUsers(env.DB, viewer.id, url.searchParams.get('q') ?? ''))
+      if (url.pathname === '/api/companion-links' && request.method === 'GET') return json(await readCompanionLinks(env.DB, viewer.id))
+      if (url.pathname === '/api/companion-links' && request.method === 'POST') return json(await mutateCompanionLink(env.DB, viewer.id, request))
+      const companionHistoryMatch = url.pathname.match(/^\/api\/companion-links\/([^/]+)\/history$/)
+      if (companionHistoryMatch && request.method === 'GET') return json(await readCompanionHistory(env.DB, viewer.id, decodeURIComponent(companionHistoryMatch[1])))
       if (url.pathname === '/api/friendships' && request.method === 'GET') return json(await readFriendships(env.DB, viewer.id))
       if (url.pathname === '/api/friendships' && request.method === 'POST') return json(await mutateFriendship(env.DB, viewer.id, request))
       if (url.pathname === '/api/shared-meals' && request.method === 'GET') return json(await readSharedMeals(env.DB, viewer.id))
@@ -495,6 +538,7 @@ async function upsertVisits(database: D1Database, visits: CloudVisit[]) {
     visit.recommendationSourceText ?? '',
     visit.sharedMealId ?? null,
     JSON.stringify(visit.companions),
+    JSON.stringify(visit.companionIds ?? []),
     JSON.stringify(visit.dishes),
     visit.note,
     JSON.stringify(visit.photoIds ?? []),
@@ -663,50 +707,298 @@ async function shortHash(value: string) {
   return [...new Uint8Array(digest)].slice(0, 12).map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-async function readCommunity(database: D1Database, viewerId: string) {
-  const [visitsResult, restaurantsResult, usersResult, friendshipsResult] = await database.batch([
-    database.prepare(`SELECT * FROM visits WHERE deleted_at IS NULL ORDER BY visited_at DESC LIMIT 160`),
+async function readCommunity(database: D1Database, viewerId: string, requestedMode: string, requestedCity: string, trendWindow: 7 | 30) {
+  const mode = ['following', 'for_you', 'similar', 'latest', 'trending'].includes(requestedMode) ? requestedMode : 'for_you'
+  const [visitsResult, restaurantsResult, usersResult, followsResult, wantsResult] = await database.batch([
+    database.prepare(`SELECT * FROM visits WHERE deleted_at IS NULL AND (user_id = ? OR visibility = 'public') ORDER BY visited_at DESC LIMIT 5000`).bind(viewerId),
     database.prepare(`SELECT * FROM restaurants WHERE deleted_at IS NULL AND id IN (
       SELECT restaurant_id FROM visits WHERE deleted_at IS NULL
     )`),
     database.prepare(`SELECT * FROM users WHERE deleted_at IS NULL AND id IN (
       SELECT user_id FROM visits WHERE deleted_at IS NULL
     )`),
-    database.prepare(`SELECT * FROM friendships WHERE status = 'accepted' AND (requester_id = ? OR addressee_id = ?)`)
-      .bind(viewerId, viewerId),
+    database.prepare(`SELECT * FROM follows WHERE follower_id = ?`).bind(viewerId),
+    database.prepare(`SELECT restaurant_id, created_at FROM want_to_go WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 3000`),
   ])
-  const restaurants = new Map((restaurantsResult.results as unknown as RestaurantRow[]).map((row) => [row.id, {
-    id: row.id,
-    name: row.name,
-    address: row.address,
-    city: row.city,
-    latitude: row.latitude,
-    longitude: row.longitude,
-  }]))
+  const restaurantRows = restaurantsResult.results as unknown as RestaurantRow[]
+  const restaurants = new Map(restaurantRows.map((row) => [row.id, row]))
   const users = new Map((usersResult.results as unknown as UserRow[]).map((row) => [row.id, publicUser(row)]))
   const userRows = new Map((usersResult.results as unknown as UserRow[]).map((row) => [row.id, row]))
-  const followedUserIds = new Set((friendshipsResult.results as unknown as FriendshipRow[]).flatMap((row) => [row.requester_id, row.addressee_id]))
+  const followedUserIds = new Set((followsResult.results as unknown as FollowRow[]).map((row) => row.followed_user_id))
+  const visitRows = visitsResult.results as unknown as VisitRow[]
+  const signals = visitRows.flatMap((row) => {
+    const restaurant = restaurants.get(row.restaurant_id)
+    return row.rating && restaurant ? [{ userId: row.user_id, poiId: restaurant.amap_poi_id, ratingOutOfTen: Number(row.rating) * 2, tags: parseStringArray(restaurant.tags_json) }] : []
+  })
+  const similarityByUser = new Map(calculateTasteSimilarities(signals, viewerId).map((item) => [item.userId, item.similarity]))
+  const viewerVisitedRestaurantIds = new Set(visitRows.filter((row) => row.user_id === viewerId).map((row) => row.restaurant_id))
+  const defaultCity = requestedCity.trim() || userRows.get(viewerId)?.city || '杭州市'
+  const now = Date.now()
+  const candidates = visitRows.flatMap((row) => {
+    if (row.user_id === viewerId || row.visibility !== 'public') return []
+    const restaurant = restaurants.get(row.restaurant_id)
+    const user = users.get(row.user_id)
+    const userRow = userRows.get(row.user_id)
+    if (!restaurant || !user || !userRow?.map_sharing_enabled || userRow.map_visibility !== 'public') return []
+    return [{
+      row,
+      restaurant,
+      user,
+      similarity: similarityByUser.get(row.user_id) ?? null,
+      recommendationReason: null as string | null,
+    }]
+  })
+  let selected = candidates
+  if (mode === 'following') selected = candidates.filter((item) => followedUserIds.has(item.row.user_id))
+  if (mode === 'for_you') selected = personalizedCandidates(candidates.filter((item) => !viewerVisitedRestaurantIds.has(item.restaurant.id)), visitRows.flatMap((row) => {
+    const restaurant = restaurants.get(row.restaurant_id)
+    return row.user_id === viewerId && row.rating && restaurant ? [{ restaurant, ratingOutOfTen: Number(row.rating) * 2 }] : []
+  }), defaultCity)
+  if (mode === 'similar') selected = uniqueCandidatesByRestaurant(candidates
+    .filter((item) => item.similarity !== null && item.similarity >= 0.58 && (!requestedCity || item.restaurant.city === defaultCity))
+    .sort((a, b) => recommendationRank(b, now, defaultCity) - recommendationRank(a, now, defaultCity)))
+  if (mode === 'latest' && requestedCity) selected = candidates.filter((item) => item.restaurant.city === defaultCity)
+  if (mode === 'trending') selected = trendingCandidates(candidates, wantsResult.results as Array<{ restaurant_id: string; created_at: string }>, defaultCity, now, trendWindow)
   return {
-    items: (visitsResult.results as unknown as VisitRow[]).flatMap((row) => {
-      const restaurant = restaurants.get(row.restaurant_id)
-      const user = users.get(row.user_id)
-      const userRow = userRows.get(row.user_id)
-      const canSeeMap = row.user_id === viewerId || Boolean(userRow?.map_sharing_enabled) && (
-        userRow?.map_visibility === 'public' ||
-        userRow?.map_visibility === 'friends' && followedUserIds.has(row.user_id)
-      )
-      return restaurant && user && canSeeMap ? [{ visit: rowToVisit(row), restaurant, user }] : []
-    }),
+    mode, city: defaultCity,
+    items: selected.slice(0, 160).map(({ row, restaurant, user, similarity, recommendationReason }) => ({
+      visit: rowToVisit(row),
+      restaurant: { id: restaurant.id, amapPoiId: restaurant.amap_poi_id, name: restaurant.name, address: restaurant.address, city: restaurant.city, latitude: restaurant.latitude, longitude: restaurant.longitude, merchantImageUrl: restaurant.merchant_image_url },
+      user, similarity: similarity === null ? null : Math.round(similarity * 100),
+      recommendationReason: recommendationReason ?? null,
+    })),
   }
+}
+
+function uniqueCandidatesByRestaurant<T extends { restaurant: RestaurantRow }>(items: T[]) {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.restaurant.id)) return false
+    seen.add(item.restaurant.id)
+    return true
+  })
+}
+
+function personalizedCandidates(candidates: Array<{ row: VisitRow; restaurant: RestaurantRow; user: ReturnType<typeof publicUser>; similarity: number | null; recommendationReason: string | null }>, viewerHistory: Array<{ restaurant: RestaurantRow; ratingOutOfTen: number }>, city: string) {
+  if (viewerHistory.length < 3) return []
+  const rankedTags = rankTasteTags(viewerHistory.map((signal) => ({ tags: parseStringArray(signal.restaurant.tags_json), restaurantKey: signal.restaurant.amap_poi_id, ratingOutOfTen: signal.ratingOutOfTen })))
+  const tagValues = new Map(rankedTags.map((item) => [item.tag.trim().toLocaleLowerCase(), item]))
+  const byRestaurant = new Map<string, { item: typeof candidates[number]; score: number }>()
+  candidates.filter((item) => item.restaurant.city === city).forEach((item) => {
+    const tags = parseStringArray(item.restaurant.tags_json)
+    const matched = tags.flatMap((rawTag) => {
+      const value = tagValues.get(rawTag.trim().toLocaleLowerCase())
+      return value ? [{ tag: rawTag, score: value.score, count: value.visits }] : []
+    }).sort((a, b) => b.score - a.score || b.count - a.count)
+    if (!matched.length) return
+    const best = matched[0]
+    const nearest = viewerHistory.filter((history) => history.ratingOutOfTen >= 8).map((history) => {
+      const historyTags = parseStringArray(history.restaurant.tags_json)
+      const intersection = tags.filter((tag) => historyTags.some((historyTag) => historyTag.trim().toLocaleLowerCase() === tag.trim().toLocaleLowerCase())).length
+      const union = new Set([...tags, ...historyTags].map((tag) => tag.trim().toLocaleLowerCase())).size
+      const tagSimilarity = union ? intersection / union : 0
+      const candidateRating = Math.max(0, Math.min(10, Number(item.row.rating ?? 0) * 2))
+      const ratingAffinity = Math.max(0, 1 - Math.abs(history.ratingOutOfTen - candidateRating) / 10)
+      const similarity = Math.min(0.97, 0.55 + tagSimilarity * 0.27 + ratingAffinity * 0.15)
+      return { history, similarity, tagSimilarity }
+    }).sort((a, b) => b.tagSimilarity - a.tagSimilarity || b.history.ratingOutOfTen - a.history.ratingOutOfTen)[0]
+    if (!nearest) return
+    const similarityPercent = Math.round(nearest.similarity * 100)
+    const score = best.score * 8 + Math.min(best.count, 8) + Number(item.row.rating ?? 0) * 3 + similarityPercent
+    const referenceName = nearest.history.restaurant.name.replace(/[（(][^）)]*[）)]/g, '').trim()
+    const current = byRestaurant.get(item.restaurant.id)
+    if (!current || score > current.score) byRestaurant.set(item.restaurant.id, { item: { ...item, similarity: nearest.similarity, recommendationReason: `与「${referenceName}」相似 ${similarityPercent}%` }, score })
+  })
+  return [...byRestaurant.values()].sort((a, b) => b.score - a.score).map((entry) => entry.item)
+}
+
+function recommendationRank(item: { row: VisitRow; restaurant: RestaurantRow; similarity: number | null }, now: number, city: string) {
+  const recency = Math.max(0, 1 - (now - Date.parse(item.row.visited_at)) / (120 * 86400000))
+  return (item.similarity ?? 0) * 60 + Number(item.row.rating ?? 0) * 6 + recency * 12 + (item.restaurant.city === city ? 10 : 0)
+}
+
+function trendingCandidates(candidates: Array<{ row: VisitRow; restaurant: RestaurantRow; user: ReturnType<typeof publicUser>; similarity: number | null; recommendationReason: string | null }>, wants: Array<{ restaurant_id: string; created_at: string }>, city: string, now: number, trendWindow: 7 | 30) {
+  const grouped = new Map<string, typeof candidates>()
+  candidates.filter((item) => item.restaurant.city === city).forEach((item) => grouped.set(item.restaurant.id, [...(grouped.get(item.restaurant.id) ?? []), item]))
+  return [...grouped.values()].map((items) => {
+    const recent7 = new Set(items.filter((item) => now - Date.parse(item.row.visited_at) <= 7 * 86400000).map((item) => item.row.user_id)).size
+    const recent30 = new Set(items.filter((item) => now - Date.parse(item.row.visited_at) <= 30 * 86400000).map((item) => item.row.user_id)).size
+    const previous30 = new Set(items.filter((item) => { const age = now - Date.parse(item.row.visited_at); return age > 30 * 86400000 && age <= 60 * 86400000 }).map((item) => item.row.user_id)).size
+    const recentWants = wants.filter((want) => want.restaurant_id === items[0].restaurant.id && now - Date.parse(want.created_at) <= 30 * 86400000).length
+    const highScores = items.filter((item) => now - Date.parse(item.row.visited_at) <= 30 * 86400000 && Number(item.row.rating ?? 0) >= 4).length
+    const recentUsers = trendWindow === 7 ? recent7 : recent30
+    const score = recentUsers * (trendWindow === 7 ? 3 : 1.5) + recentWants * 1.2 + highScores * 0.7 - previous30 * 0.6
+    const latest = [...items].sort((a, b) => b.row.visited_at.localeCompare(a.row.visited_at))[0]
+    return { item: { ...latest, recommendationReason: `近 ${trendWindow} 天有 ${recentUsers} 位用户到访` }, score }
+  }).sort((a, b) => b.score - a.score).map((entry) => entry.item)
+}
+
+async function readFollows(database: D1Database, viewerId: string) {
+  const result = await database.prepare('SELECT * FROM follows WHERE follower_id = ? OR followed_user_id = ? ORDER BY created_at DESC').bind(viewerId, viewerId).all<FollowRow>()
+  const clientUserId = (id: string) => id === viewerId ? 'owner' : id
+  return { follows: result.results.map((row) => ({ id: row.id, followerId: clientUserId(row.follower_id), followedUserId: clientUserId(row.followed_user_id), createdAt: row.created_at })) }
+}
+
+async function mutateFollow(database: D1Database, viewerId: string, request: Request) {
+  const body = await readObjectBody(request)
+  if (typeof body.userId !== 'string' || body.userId === viewerId) throw new RequestError('关注用户无效。', 400)
+  const id = `follow:${viewerId}:${body.userId}`
+  if (body.action === 'remove') {
+    await database.prepare('DELETE FROM follows WHERE follower_id = ? AND followed_user_id = ?').bind(viewerId, body.userId).run()
+    return { removed: true }
+  }
+  if (body.action !== 'add') throw new RequestError('关注操作无效。', 400)
+  await database.prepare('INSERT OR IGNORE INTO follows (id, follower_id, followed_user_id, created_at) VALUES (?, ?, ?, ?)').bind(id, viewerId, body.userId, new Date().toISOString()).run()
+  return { id, followerId: viewerId, followedUserId: body.userId }
 }
 
 async function searchUsers(database: D1Database, viewerId: string, query: string) {
   const keyword = query.trim()
-  if (!keyword) return { users: [] }
+  if (!keyword) {
+    const suggestions = await database.prepare(`SELECT * FROM users
+      WHERE id != ? AND deleted_at IS NULL
+      ORDER BY is_test_user DESC, nickname LIMIT 100`).bind(viewerId).all<UserRow>()
+    return { users: suggestions.results.map(publicUser) }
+  }
   const result = await database.prepare(`SELECT * FROM users
     WHERE id != ? AND deleted_at IS NULL AND (nickname LIKE ? OR city LIKE ?)
     ORDER BY nickname LIMIT 20`).bind(viewerId, `%${keyword}%`, `%${keyword}%`).all<UserRow>()
   return { users: result.results.map(publicUser) }
+}
+
+async function readCompanionLinks(database: D1Database, viewerId: string) {
+  const [companionsResult, requestsResult] = await database.batch([
+    database.prepare(`SELECT * FROM dining_companions WHERE deleted_at IS NULL AND (owner_user_id = ? OR linked_user_id = ?) ORDER BY updated_at DESC`).bind(viewerId, viewerId),
+    database.prepare(`SELECT * FROM companion_link_requests WHERE requester_user_id = ? OR target_user_id = ? ORDER BY updated_at DESC`).bind(viewerId, viewerId),
+  ])
+  const requests = requestsResult.results as unknown as CompanionLinkRequestRow[]
+  const userIds = [...new Set(requests.flatMap((item) => [item.requester_user_id, item.target_user_id]))]
+  const users = userIds.length
+    ? await database.prepare(`SELECT * FROM users WHERE deleted_at IS NULL AND id IN (${userIds.map(() => '?').join(',')})`).bind(...userIds).all<UserRow>()
+    : { results: [] as UserRow[] }
+  return {
+    companions: (companionsResult.results as unknown as DiningCompanionRow[]).map(rowToDiningCompanion),
+    requests: await Promise.all(requests.map((row) => companionLinkRequestWithCounts(database, row))),
+    users: users.results.map(publicUser),
+  }
+}
+
+async function mutateCompanionLink(database: D1Database, viewerId: string, request: Request) {
+  const body = await readObjectBody(request)
+  const now = new Date().toISOString()
+  if (body.action === 'request' && typeof body.companionId === 'string' && typeof body.displayName === 'string' && typeof body.targetUserId === 'string') {
+    if (body.targetUserId === viewerId) throw new RequestError('不能关联到自己的账号。', 400)
+    const target = await database.prepare('SELECT id FROM users WHERE id = ? AND deleted_at IS NULL').bind(body.targetUserId).first()
+    if (!target) throw new RequestError('没有找到要关联的用户。', 404)
+    const displayName = body.displayName.trim()
+    if (!displayName) throw new RequestError('饭搭子名称不能为空。', 400)
+    await database.prepare(`INSERT INTO dining_companions (id, owner_user_id, display_name, linked_user_id, created_at, updated_at, deleted_at)
+      VALUES (?, ?, ?, NULL, ?, ?, NULL)
+      ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at, deleted_at = NULL
+      WHERE dining_companions.owner_user_id = ?`).bind(body.companionId, viewerId, displayName, now, now, viewerId).run()
+    const id = `companion-link:${viewerId}:${body.companionId}:${body.targetUserId}`
+    await database.prepare(`INSERT INTO companion_link_requests (id, companion_id, companion_display_name, requester_user_id, target_user_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+      ON CONFLICT(id) DO UPDATE SET status = 'pending', companion_display_name = excluded.companion_display_name, updated_at = excluded.updated_at`)
+      .bind(id, body.companionId, displayName, viewerId, body.targetUserId, now, now).run()
+    const row = await database.prepare('SELECT * FROM companion_link_requests WHERE id = ?').bind(id).first<CompanionLinkRequestRow>()
+    return companionLinkRequestWithCounts(database, row as CompanionLinkRequestRow)
+  }
+  if (body.action === 'respond' && typeof body.requestId === 'string' && (body.status === 'accepted' || body.status === 'rejected')) {
+    const row = await database.prepare('SELECT * FROM companion_link_requests WHERE id = ? AND target_user_id = ? AND status = \'pending\'')
+      .bind(body.requestId, viewerId).first<CompanionLinkRequestRow>()
+    if (!row) throw new RequestError('没有找到待处理的关联请求。', 404)
+    await database.prepare('UPDATE companion_link_requests SET status = ?, updated_at = ? WHERE id = ?').bind(body.status, now, row.id).run()
+    if (body.status === 'accepted') await database.prepare('UPDATE dining_companions SET linked_user_id = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?').bind(viewerId, now, row.companion_id, row.requester_user_id).run()
+    return companionLinkRequestWithCounts(database, { ...row, status: body.status, updated_at: now })
+  }
+  if (body.action === 'cancel' && typeof body.requestId === 'string') {
+    const row = await database.prepare('SELECT * FROM companion_link_requests WHERE id = ? AND requester_user_id = ?').bind(body.requestId, viewerId).first<CompanionLinkRequestRow>()
+    if (!row) throw new RequestError('没有找到这条关联请求。', 404)
+    await database.prepare("UPDATE companion_link_requests SET status = 'cancelled', updated_at = ? WHERE id = ?").bind(now, row.id).run()
+    return companionLinkRequestWithCounts(database, { ...row, status: 'cancelled', updated_at: now })
+  }
+  if (body.action === 'unlink' && typeof body.companionId === 'string') {
+    const companion = await database.prepare('SELECT * FROM dining_companions WHERE id = ? AND (owner_user_id = ? OR linked_user_id = ?)').bind(body.companionId, viewerId, viewerId).first<DiningCompanionRow>()
+    if (!companion) throw new RequestError('没有找到这位饭搭子。', 404)
+    await database.prepare('UPDATE dining_companions SET linked_user_id = NULL, updated_at = ? WHERE id = ?').bind(now, companion.id).run()
+    return { ...rowToDiningCompanion(companion), linkedUserId: null, updatedAt: now }
+  }
+  if (body.action === 'import' && typeof body.requestId === 'string' && Array.isArray(body.sourceVisitIds)) {
+    return importCompanionHistory(database, viewerId, body.requestId, body.sourceVisitIds.filter((id): id is string => typeof id === 'string'))
+  }
+  throw new RequestError('饭搭子关联操作格式不正确。', 400)
+}
+
+async function readCompanionHistory(database: D1Database, viewerId: string, requestId: string) {
+  const request = await database.prepare(`SELECT * FROM companion_link_requests WHERE id = ? AND status = 'accepted' AND (requester_user_id = ? OR target_user_id = ?)`)
+    .bind(requestId, viewerId, viewerId).first<CompanionLinkRequestRow>()
+  if (!request) throw new RequestError('没有找到已接受的历史关联。', 404)
+  const facts = await companionHistoryFacts(database, request)
+  return { request: await companionLinkRequestWithCounts(database, request), facts }
+}
+
+async function companionLinkRequestWithCounts(database: D1Database, row: CompanionLinkRequestRow) {
+  const facts = await companionHistoryFacts(database, row)
+  return {
+    id: row.id,
+    companionId: row.companion_id,
+    companionDisplayName: row.companion_display_name,
+    requesterUserId: row.requester_user_id,
+    targetUserId: row.target_user_id,
+    status: row.status,
+    visitCount: facts.length,
+    restaurantCount: new Set(facts.map((fact) => fact.restaurant.amapPoiId)).size,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+async function companionHistoryFacts(database: D1Database, request: CompanionLinkRequestRow) {
+  const result = await database.prepare(`SELECT v.*, r.amap_poi_id, r.name, r.address, r.city, r.latitude, r.longitude, r.merchant_image_url
+    FROM visits v JOIN restaurants r ON r.id = v.restaurant_id
+    WHERE v.user_id = ? AND v.deleted_at IS NULL AND r.deleted_at IS NULL ORDER BY v.visited_at DESC`)
+    .bind(request.requester_user_id).all<VisitRow & RestaurantRow>()
+  return result.results.flatMap((row) => {
+    const companionIds = parseStringArray(row.companion_ids_json)
+    const companionNames = parseStringArray(row.companions_json)
+    if (!companionIds.includes(request.companion_id) && !companionNames.some((name) => name.trim().toLocaleLowerCase('zh-CN') === request.companion_display_name.trim().toLocaleLowerCase('zh-CN'))) return []
+    return [{
+      sourceVisitId: row.id,
+      restaurant: { amapPoiId: row.amap_poi_id, name: row.name, address: row.address, city: row.city, latitude: row.latitude, longitude: row.longitude, merchantImageUrl: row.merchant_image_url },
+      visitedAt: row.visited_at,
+      sharedMealId: row.shared_meal_id,
+    }]
+  })
+}
+
+async function importCompanionHistory(database: D1Database, viewerId: string, requestId: string, sourceVisitIds: string[]) {
+  const request = await database.prepare(`SELECT * FROM companion_link_requests WHERE id = ? AND target_user_id = ? AND status = 'accepted'`).bind(requestId, viewerId).first<CompanionLinkRequestRow>()
+  if (!request) throw new RequestError('没有找到可导入的历史关联。', 404)
+  const selected = new Set(sourceVisitIds)
+  const facts = (await companionHistoryFacts(database, request)).filter((fact) => selected.has(fact.sourceVisitId))
+  const now = new Date().toISOString()
+  let imported = 0
+  for (const fact of facts) {
+    let restaurant = await database.prepare('SELECT * FROM restaurants WHERE user_id = ? AND amap_poi_id = ? AND deleted_at IS NULL LIMIT 1').bind(viewerId, fact.restaurant.amapPoiId).first<RestaurantRow>()
+    if (!restaurant) {
+      const restaurantId = `history-restaurant:${viewerId}:${await shortHash(fact.restaurant.amapPoiId)}`
+      const cloudRestaurant: CloudRestaurant = {
+        id: restaurantId, userId: viewerId, ...fact.restaurant, status: 'visited', preferenceLevel: 'normal', overallRating: null, foodRating: null, environmentRating: null, serviceRating: null, valueRating: null, tags: [], longTermNote: '', pricePerPerson: null, markerType: fact.restaurant.merchantImageUrl ? 'image' : 'emoji', markerPhotoId: null, markerEmoji: '🍽️', createdAt: now, updatedAt: now, deletedAt: null,
+      }
+      await upsertRestaurants(database, [cloudRestaurant])
+      restaurant = await database.prepare('SELECT * FROM restaurants WHERE id = ?').bind(restaurantId).first<RestaurantRow>()
+    }
+    const visitId = `history-visit:${viewerId}:${await shortHash(`${requestId}:${fact.sourceVisitId}`)}`
+    const exists = await database.prepare('SELECT id FROM visits WHERE id = ?').bind(visitId).first()
+    if (exists) continue
+    const visit: CloudVisit = {
+      id: visitId, userId: viewerId, restaurantId: (restaurant as RestaurantRow).id, visitedAt: fact.visitedAt, rating: null, visibility: 'private', diningMode: 'dine_in', totalPrice: null, myActualSpend: null, paymentMode: null, pricePerPerson: null, partySize: 1, queueDuration: null, diningOccasions: [], diningOccasion: null, diningOccasionText: '', valueRating: null, environmentRating: null, serviceRating: null, valueTags: [], environmentTags: [], serviceTags: [], noiseLevel: null, diningDuration: null, portionLevel: null, transportConvenience: null, specialNotes: '', recommendationSourceType: null, recommendationSourceUserId: null, recommendationSourceText: '', sharedMealId: fact.sharedMealId, companions: [], companionIds: [], dishes: [], note: '', photoIds: [], createdAt: now, updatedAt: now, deletedAt: null,
+    }
+    await upsertVisits(database, [visit])
+    imported += 1
+  }
+  return { imported }
 }
 
 async function readProfile(database: D1Database, viewerId: string, profileId: string) {
@@ -820,6 +1112,18 @@ function publicUser(row: UserRow) {
   return { id: row.id, nickname: row.nickname, bio: row.bio, city: row.city, avatarImageData: row.avatar_image_data, avatarPhotoId: row.avatar_photo_id, avatarPresetId: row.avatar_preset_id ?? 'polar-bear', membershipTier: row.membership_tier ?? 'free' }
 }
 
+function rowToDiningCompanion(row: DiningCompanionRow) {
+  return {
+    id: row.id,
+    ownerUserId: row.owner_user_id,
+    displayName: row.display_name,
+    linkedUserId: row.linked_user_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+  }
+}
+
 async function readObjectBody(request: Request) {
   const value: unknown = await request.json().catch(() => null)
   if (!isRecord(value)) throw new RequestError('请求不是有效的 JSON 对象。', 400)
@@ -897,6 +1201,7 @@ function rowToVisit(row: VisitRow): CloudVisit {
     recommendationSourceText: row.recommendation_source_text ?? '',
     sharedMealId: row.shared_meal_id,
     companions: parseStringArray(row.companions_json),
+    companionIds: parseStringArray(row.companion_ids_json),
     dishes: parseDishes(row.dishes_json),
     note: row.note,
     photoIds: parseNullableStringArray(row.photo_ids_json),

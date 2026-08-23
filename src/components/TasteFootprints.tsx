@@ -1,5 +1,5 @@
-import { MapPin, Star } from 'lucide-react'
-import type { RestaurantSummary, UserProfile } from '../types/domain'
+import { MapPin, Star, Store, Truck } from 'lucide-react'
+import { diningModeLabel, type RestaurantSummary, type UserProfile } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { RestaurantAvatar } from './RestaurantAvatar'
 import { SyncedImage } from './SyncedImage'
@@ -43,7 +43,10 @@ export function TasteFootprints({
                 {visit.note ? <p>{visit.note}</p> : null}
                 {photos.length ? <div className={`footprint-photos count-${Math.min(photos.length, 3)}`}>{photos.slice(0, 9).map((photo, index) => <SyncedImage alt={photo.alt} key={`${visit.id}-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</div> : null}
                 {visit.dishes.some((dish) => dish.name) ? <div className="footprint-dishes">{visit.dishes.filter((dish) => dish.name).slice(0, 4).map((dish) => <span key={dish.id}>{dish.name}{dish.rating ? ` · ${dish.rating} 星` : ''}</span>)}</div> : null}
-                <footer><MapPin size={12} /><span>{restaurant.address || restaurant.city}</span></footer>
+                <footer>
+                  <span className="footprint-mode">{visit.diningMode === 'takeout' ? <Truck size={12} /> : <Store size={12} />}{diningModeLabel(visit.diningMode)}</span>
+                  <span className="footprint-location"><MapPin size={12} />{restaurant.address || restaurant.city}</span>
+                </footer>
               </div>
             </article>
           })}

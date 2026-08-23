@@ -1,4 +1,4 @@
-export type SyncEntityType = 'restaurant' | 'visit'
+export type SyncEntityType = 'restaurant' | 'visit' | 'user'
 
 export interface SyncQueueItem {
   id: string

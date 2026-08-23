@@ -66,6 +66,13 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
     recommendationSourceText: initialVisit.recommendationSourceText ?? '',
     sharedParticipantUserIds: [],
   } : createDefaultVisitExtraFields())
+
+  function updateCompanions(next: string) {
+    const previousCount = splitCompanions(companions).length
+    const nextCount = splitCompanions(next).length
+    setCompanions(next)
+    setPartySize((current) => String(Math.max(1, (Number(current) || 1) + nextCount - previousCount)))
+  }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -143,7 +150,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         <label className="field field-with-leading-icon"><span>{extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）'}</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 193.50" step="0.01" type="number" value={price} /></div>{extraFields.paymentMode !== 'separate' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">{partySize} 人 · 约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}</label>
         <div className="field-grid party-grid">
           <label className="field field-with-leading-icon"><span>用餐人数</span><div><Users size={16} /><input min="1" onChange={(event) => setPartySize(event.target.value)} required step="1" type="number" value={partySize} /></div></label>
-          <CompanionPicker onChange={setCompanions} options={companionOptions} value={companions} />
+          <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
         </div>
         <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
         <VisitPhotoPicker onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds) }} photoIds={photoIds} value={photos} />

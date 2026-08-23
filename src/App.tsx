@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Bookmark,
   CheckCircle2,
+  Dices,
   Globe2,
   List,
   Map as MapIcon,
@@ -15,6 +16,7 @@ import {
   Sparkles,
   Utensils,
   UserRound,
+  X,
 } from 'lucide-react'
 import { AddRestaurantModal } from './components/AddRestaurantModal'
 import { AddVisitModal } from './components/AddVisitModal'
@@ -38,7 +40,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { CommunityPage } from './components/CommunityPage'
 import { FriendsPage } from './components/FriendsPage'
 import { ProfilePage } from './components/ProfilePage'
-import { RestaurantRoulette } from './components/RestaurantRoulette'
+import { RestaurantRoulette, type RouletteTemporaryCandidate } from './components/RestaurantRoulette'
 import { TasteFootprints } from './components/TasteFootprints'
 import { CLOUD_SYNC_ENABLED, IS_DEVELOPMENT } from './config/appEnvironment'
 import { db } from './db/appDb'
@@ -58,13 +60,14 @@ import { fetchTasteRecommendations } from './services/recommendations'
 import { initializeCloudSync } from './services/cloudSync'
 import { useCloudSync } from './services/useCloudSync'
 import { initializePhotoSync } from './services/photoSync'
-import { fetchUserProfile } from './services/socialApi'
+import { fetchFollows, fetchUserProfile, publicUserToProfile, searchCloudUsers } from './services/socialApi'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
   type RestaurantStatus,
   type RestaurantSummary,
   type SharedMealParticipant,
+  type Follow,
   type UserProfile,
   type Visit,
 } from './types/domain'
@@ -88,7 +91,7 @@ export default function App() {
   const [viewedProfile, setViewedProfile] = useState<{ user: UserProfile; restaurants: RestaurantSummary[] } | null>(null)
   const [activeList, setActiveList] = useState<ActiveList>('visited')
   const [visitCountFilter, setVisitCountFilter] = useState<VisitCountFilter>('all')
-  const [scoreBandFilter, setScoreBandFilter] = useState<ScoreBandFilter>('all')
+  const [scoreBandFilter, setScoreBandFilter] = useState<ScoreBandFilter>([])
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [diningModeFilter, setDiningModeFilter] = useState<DiningModeFilter>('all')
   const [diningOccasionFilter, setDiningOccasionFilter] = useState<DiningOccasionFilter>('all')
@@ -109,16 +112,25 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showRoulette, setShowRoulette] = useState(false)
   const [rouletteRestaurantIds, setRouletteRestaurantIds] = useState<string[]>([])
+  const [rouletteTemporaryItems, setRouletteTemporaryItems] = useState<RouletteTemporaryCandidate[]>([])
+  const [rouletteRestaurantSnapshots, setRouletteRestaurantSnapshots] = useState<RestaurantSummary[]>([])
+  const [showRouletteCandidates, setShowRouletteCandidates] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [recommendations, setRecommendations] = useState<RestaurantSummary[]>([])
   const [recommendationsLoading, setRecommendationsLoading] = useState(false)
   const [recommendationError, setRecommendationError] = useState('')
+  const [cloudFollows, setCloudFollows] = useState<Follow[]>([])
+  const [cloudUsers, setCloudUsers] = useState<UserProfile[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const allRestaurants = useMemo(() => restaurants ?? [], [restaurants])
   const allVisits = useMemo(() => visits ?? [], [visits])
-  const allUsers = useMemo(() => users ?? [], [users])
+  const allUsers = useMemo(() => {
+    const merged = new Map(cloudUsers.map((user) => [user.id, user]))
+    ;(users ?? []).forEach((user) => merged.set(user.id, user))
+    return [...merged.values()]
+  }, [cloudUsers, users])
   const allFriendships = useMemo(() => friendships ?? [], [friendships])
   const currentUser = allUsers.find((user) => user.id === CURRENT_USER_ID)
   const friendOptions = useMemo(() => {
@@ -130,6 +142,8 @@ export default function App() {
       return user ? [{ id: user.id, nickname: user.nickname }] : []
     })
   }, [allFriendships, allUsers])
+  const followingCount = cloudFollows.filter((item) => item.followerId === CURRENT_USER_ID).length
+  const followerCount = cloudFollows.filter((item) => item.followedUserId === CURRENT_USER_ID).length
   const companionOptions = useMemo(
     () => {
       const usageCounts = new Map<string, number>()
@@ -204,6 +218,18 @@ export default function App() {
 
   const selectedRestaurant = summaries.find((item) => item.id === selectedId)
     ?? recommendations.find((item) => item.id === selectedId)
+  const rouletteRestaurantOptions = useMemo(() => {
+    const byId = new Map(summaries.map((restaurant) => [restaurant.id, restaurant]))
+    rouletteRestaurantSnapshots.forEach((restaurant) => { if (!byId.has(restaurant.id)) byId.set(restaurant.id, restaurant) })
+    return [...byId.values()]
+  }, [rouletteRestaurantSnapshots, summaries])
+  const rouletteCandidates = useMemo(() => [
+    ...rouletteRestaurantIds.flatMap((id) => {
+      const restaurant = rouletteRestaurantOptions.find((item) => item.id === id)
+      return restaurant ? [{ id, name: restaurant.name }] : []
+    }),
+    ...rouletteTemporaryItems,
+  ], [rouletteRestaurantIds, rouletteRestaurantOptions, rouletteTemporaryItems])
   const listCounts = useMemo(
     () => ({
       visited: summaries.filter((restaurant) => restaurant.status === 'visited').length,
@@ -225,8 +251,8 @@ export default function App() {
       if (activeList === 'visited' && !matchesVisitCount(restaurant.visitCount, visitCountFilter)) return false
       if (
         activeList !== 'recommended' &&
-        scoreBandFilter !== 'all' &&
-        scoreBandFromScore(restaurant.scoreOutOfTen) !== scoreBandFilter
+        scoreBandFilter.length > 0 &&
+        !scoreBandFilter.some((band) => band === scoreBandFromScore(restaurant.scoreOutOfTen))
       ) return false
       if (activeList !== 'recommended' && cityFilter !== 'all' && restaurant.city !== cityFilter) return false
       if (activeList !== 'recommended' && tagFilter !== 'all' && !restaurant.tags.includes(tagFilter)) return false
@@ -293,7 +319,7 @@ export default function App() {
   )
   const activeFilterCount = activeList === 'recommended' || activeList === 'footprints'
     ? 0
-    : (scoreBandFilter !== 'all' ? 1 : 0) +
+    : (scoreBandFilter.length ? 1 : 0) +
       (cityFilter !== 'all' ? 1 : 0) +
       (tagFilter !== 'all' ? 1 : 0) +
       (activeList === 'visited' && visitCountFilter !== 'all' ? 1 : 0) +
@@ -357,6 +383,16 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    let active = true
+    void Promise.all([fetchFollows(), searchCloudUsers('')]).then(([follows, people]) => {
+      if (!active) return
+      setCloudFollows(follows)
+      setCloudUsers(people.map(publicUserToProfile))
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [cloudSyncState.lastSuccessfulSyncAt])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -402,6 +438,12 @@ export default function App() {
     setIsSidebarOpen(false)
   }, [])
 
+  const handleListSelect = useCallback((restaurant: RestaurantSummary) => {
+    setSelectedId(restaurant.id)
+    setShowFilters(false)
+    setIsSidebarOpen(true)
+  }, [])
+
   function chooseList(list: ActiveList) {
     setActiveList(list)
     setSelectedId(null)
@@ -416,7 +458,7 @@ export default function App() {
       setCompanionFilter('all')
     }
     if (list === 'recommended' || list === 'footprints') {
-      setScoreBandFilter('all')
+      setScoreBandFilter([])
       setTagFilter('all')
       setCityFilter('all')
       setShowFilters(false)
@@ -483,15 +525,34 @@ export default function App() {
 
   function addSelectedRestaurantToRoulette() {
     if (!selectedRestaurant) return
-    if (rouletteRestaurantIds.includes(selectedRestaurant.id)) {
-      setToast(`${selectedRestaurant.name} 已经在转盘里`)
-    } else if (rouletteRestaurantIds.length >= 10) {
-      setToast('转盘最多保留 10 家餐厅，请先移除一家。')
-    } else {
-      setRouletteRestaurantIds([...rouletteRestaurantIds, selectedRestaurant.id])
-      setToast(`${selectedRestaurant.name} 已添加到转盘`)
+    toggleRouletteRestaurant(selectedRestaurant)
+  }
+
+  function toggleRouletteRestaurant(restaurant: RestaurantSummary) {
+    if (rouletteRestaurantIds.includes(restaurant.id)) {
+      setRouletteRestaurantIds((ids) => ids.filter((id) => id !== restaurant.id))
+      setToast(`已从抽签中移除「${restaurant.name}」`)
+      return
     }
-    setShowRoulette(true)
+    if (rouletteRestaurantIds.length + rouletteTemporaryItems.length >= 10) {
+      setToast('最多选择 10 家餐厅')
+      return
+    }
+    setRouletteRestaurantSnapshots((items) => items.some((item) => item.id === restaurant.id) ? items : [...items, restaurant])
+    setRouletteRestaurantIds((ids) => [...ids, restaurant.id])
+    setToast(`已加入「${restaurant.name}」 · ${rouletteRestaurantIds.length + rouletteTemporaryItems.length + 1}/10`)
+  }
+
+  function removeRouletteCandidate(id: string) {
+    if (id.startsWith('temporary-')) setRouletteTemporaryItems((items) => items.filter((item) => item.id !== id))
+    else setRouletteRestaurantIds((ids) => ids.filter((item) => item !== id))
+  }
+
+  function clearRouletteCandidates() {
+    setRouletteRestaurantIds([])
+    setRouletteTemporaryItems([])
+    setShowRouletteCandidates(false)
+    setToast('抽签候选已清空')
   }
 
   function acceptMealInvitation(participant: SharedMealParticipant, restaurant: RestaurantSummary) {
@@ -539,6 +600,35 @@ export default function App() {
     setToast(`${saved.name} 已加入想去清单`)
   }
 
+  async function handleAddDiscoveryWant(restaurant: RestaurantSummary) {
+    const existing = summaries.find((item) => item.amapPoiId === restaurant.amapPoiId || (item.name === restaurant.name && item.address === restaurant.address))
+    if (existing) {
+      setToast(existing.status === 'visited' ? `「${existing.name}」已经在去过清单里` : `「${existing.name}」已经在想吃清单里`)
+      return
+    }
+    const saved = await addRestaurantFromPoi({
+      poi: {
+        amapPoiId: restaurant.amapPoiId,
+        name: restaurant.name,
+        address: restaurant.address,
+        city: restaurant.city,
+        district: '',
+        latitude: restaurant.latitude,
+        longitude: restaurant.longitude,
+        merchantImageUrl: restaurant.merchantImageUrl,
+      },
+      address: restaurant.address,
+      status: 'wantToGo',
+      tags: restaurant.tags,
+      pricePerPerson: restaurant.pricePerPerson,
+      markerType: restaurant.merchantImageUrl ? 'image' : 'emoji',
+      markerImageData: null,
+      markerEmoji: restaurant.markerEmoji || '🍽️',
+      initialVisit: null,
+    })
+    setToast(`「${saved.name}」已加入想吃`)
+  }
+
   function handleRecordExisting(restaurant: RestaurantSummary) {
     setSelectedId(restaurant.id)
     setShowAddModal(false)
@@ -548,7 +638,7 @@ export default function App() {
 
   function resetFilters() {
     setVisitCountFilter('all')
-    setScoreBandFilter('all')
+    setScoreBandFilter([])
     setQueueFilter('all')
     setDiningModeFilter('all')
     setDiningOccasionFilter('all')
@@ -559,6 +649,55 @@ export default function App() {
     setTagFilter('all')
     setCityFilter('all')
   }
+
+  const filtersPanel = activeList !== 'recommended' && activeList !== 'footprints' ? (
+    <RestaurantFilters
+      city={cityFilter}
+      cityOptions={cityOptions}
+      companion={companionFilter}
+      companionOptions={companionOptions}
+      diningMode={diningModeFilter}
+      diningOccasion={diningOccasionFilter}
+      onDiningModeChange={setDiningModeFilter}
+      onDiningOccasionChange={setDiningOccasionFilter}
+      onPriceRangeChange={setPriceRangeFilter}
+      onRecommendationSourceChange={setRecommendationSourceFilter}
+      onVisitPeriodChange={setVisitPeriodFilter}
+      priceRange={priceRangeFilter}
+      recommendationSource={recommendationSourceFilter}
+      visitPeriod={visitPeriodFilter}
+      onCityChange={setCityFilter}
+      onClose={() => setShowFilters(false)}
+      onCompanionChange={setCompanionFilter}
+      onQueueDurationChange={setQueueFilter}
+      onScoreBandChange={setScoreBandFilter}
+      onReset={resetFilters}
+      onTagChange={setTagFilter}
+      onVisitCountChange={setVisitCountFilter}
+      queueDuration={queueFilter}
+      scoreBand={scoreBandFilter}
+      showVisitCount={activeList === 'visited'}
+      tag={tagFilter}
+      tagOptions={tagOptions}
+      visitCount={visitCountFilter}
+    />
+  ) : null
+
+  const renderEmbeddedFriends = (embeddedView: 'discover' | 'following' | 'followers') => !viewedProfile ? <FriendsPage
+    currentUserId={CURRENT_USER_ID}
+    embedded
+    embeddedView={embeddedView}
+    follows={cloudFollows}
+    friendships={allFriendships}
+    onAcceptMeal={acceptMealInvitation}
+    onDeclineMeal={(participant) => void setSharedMealInvitationStatus(participant.id, 'declined')}
+    onFriendshipChange={(friendship) => void upsertFriendship(friendship)}
+    onViewProfile={(user) => void viewUserProfile(user)}
+    participants={sharedMealParticipants ?? []}
+    restaurants={summaries}
+    sharedMeals={sharedMeals ?? []}
+    users={allUsers}
+  /> : null
 
   return (
     <main className="app-shell">
@@ -571,7 +710,7 @@ export default function App() {
       </header>
 
       {activeView === 'map' ? <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}${selectedRestaurant ? ' has-selection' : ''}`}>
-        <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}${showFilters && isSidebarOpen ? ' has-open-filters' : ''}`}>
+        <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}${showFilters && isSidebarOpen ? ' has-open-filters' : ''}${selectedRestaurant && isSidebarOpen ? ' has-detail' : ''}`}>
           {isSidebarOpen ? <>
             <div className="sidebar-heading">
               <div><span className="eyebrow">MY TASTE MAP</span><h1>我的美食清单</h1></div>
@@ -588,41 +727,10 @@ export default function App() {
             {activeList !== 'recommended' ? <button className={`filter-toggle${showFilters ? ' is-active' : ''}`} aria-label="筛选餐厅" onClick={() => setShowFilters((current) => !current)} type="button"><SlidersHorizontal size={17} />{activeFilterCount ? <b>{activeFilterCount}</b> : null}</button> : null}
           </div> : null}
 
-          {showFilters ? (
-            <RestaurantFilters
-              city={cityFilter}
-              cityOptions={cityOptions}
-              companion={companionFilter}
-              companionOptions={companionOptions}
-              diningMode={diningModeFilter}
-              diningOccasion={diningOccasionFilter}
-              onDiningModeChange={setDiningModeFilter}
-              onDiningOccasionChange={setDiningOccasionFilter}
-              onPriceRangeChange={setPriceRangeFilter}
-              onRecommendationSourceChange={setRecommendationSourceFilter}
-              onVisitPeriodChange={setVisitPeriodFilter}
-              priceRange={priceRangeFilter}
-              recommendationSource={recommendationSourceFilter}
-              visitPeriod={visitPeriodFilter}
-              onCityChange={setCityFilter}
-              onClose={() => setShowFilters(false)}
-              onCompanionChange={setCompanionFilter}
-              onQueueDurationChange={setQueueFilter}
-              onScoreBandChange={setScoreBandFilter}
-              onReset={resetFilters}
-              onTagChange={setTagFilter}
-              onVisitCountChange={setVisitCountFilter}
-              queueDuration={queueFilter}
-              scoreBand={scoreBandFilter}
-              showVisitCount={activeList === 'visited'}
-              tag={tagFilter}
-              tagOptions={tagOptions}
-              visitCount={visitCountFilter}
-            />
-          ) : null}
+          {showFilters ? filtersPanel : null}
 
           {activeList === 'footprints' ? (
-            <div className="restaurant-list footprints-list"><TasteFootprints onSelectRestaurant={handleSelect} restaurants={summaries.filter((restaurant) => restaurant.status === 'visited')} user={currentUser} /></div>
+            <div className="restaurant-list footprints-list"><TasteFootprints onSelectRestaurant={handleListSelect} restaurants={summaries.filter((restaurant) => restaurant.status === 'visited')} user={currentUser} /></div>
           ) : <>
             <div className="list-result-line"><span>{activeList === 'visited' ? '去过' : activeList === 'wantToGo' ? '想去' : '根据你的口味推荐'}</span><strong>{visibleRestaurants.length} 家</strong></div>
             <RestaurantList
@@ -630,7 +738,7 @@ export default function App() {
             emptyMessage={activeList === 'recommended' ? recommendationError : undefined}
             isLoading={restaurants === undefined || visits === undefined || (activeList === 'recommended' && recommendationsLoading)}
             onAdd={() => setShowAddModal(true)}
-            onSelect={handleSelect}
+            onSelect={handleListSelect}
             query={query}
             restaurants={visibleRestaurants}
             selectedId={selectedRestaurant?.id}
@@ -644,40 +752,51 @@ export default function App() {
 
         <section className="map-panel" aria-label="私人美食地图">
           <MapView currentUser={currentUser} onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
-          {selectedRestaurant ? <RestaurantPreviewCard onAddToRoulette={addSelectedRestaurantToRoulette} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
+          {!isSidebarOpen && activeList !== 'recommended' && activeList !== 'footprints' ? <div className={`map-filter-control${showFilters ? ' is-open' : ''}`}>
+            <button aria-expanded={showFilters} className={`map-filter-button${showFilters ? ' is-active' : ''}`} onClick={() => setShowFilters((current) => !current)} type="button"><SlidersHorizontal size={16} /><span>筛选</span>{activeFilterCount ? <b>{activeFilterCount}</b> : null}</button>
+            {showFilters ? <div className="map-filters-popover">{filtersPanel}</div> : null}
+          </div> : null}
+          {selectedRestaurant && !isSidebarOpen ? <RestaurantPreviewCard isInRoulette={rouletteRestaurantIds.includes(selectedRestaurant.id)} onAddToRoulette={addSelectedRestaurantToRoulette} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
         {!isSidebarOpen ? <CollectionTabs activeList={activeList} className="map-collection-tabs" counts={listCounts} onChoose={chooseList} /> : null}
         <button className="map-view-mode-toggle" onClick={toggleMapList} type="button">{isSidebarOpen ? <MapIcon size={17} /> : <List size={17} />}{isSidebarOpen ? '查看地图' : '查看列表'}</button>
       </section> : activeView === 'profile' && (viewedProfile?.user ?? currentUser) ? (
         <ProfilePage
           cloudSyncState={cloudSyncState}
-          connections={!viewedProfile ? <FriendsPage
-            currentUserId={CURRENT_USER_ID}
-            embedded
-            friendships={allFriendships}
-            onAcceptMeal={acceptMealInvitation}
-            onDeclineMeal={(participant) => void setSharedMealInvitationStatus(participant.id, 'declined')}
-            onFriendshipChange={(friendship) => void upsertFriendship(friendship)}
-            onViewProfile={(user) => void viewUserProfile(user)}
-            participants={sharedMealParticipants ?? []}
-            restaurants={summaries}
-            sharedMeals={sharedMeals ?? []}
-            users={allUsers}
-          /> : null}
+          connections={renderEmbeddedFriends('discover')}
           editable={!viewedProfile}
+          followerConnections={renderEmbeddedFriends('followers')}
+          followerCount={viewedProfile ? 0 : followerCount}
+          followingConnections={renderEmbeddedFriends('following')}
+          followingCount={viewedProfile ? 0 : followingCount}
           onMapPrivacyChange={updateCurrentUserMapPrivacy}
           onOpenRoulette={() => setShowRoulette(true)}
           onOpenSettings={() => setShowSettings(true)}
           onSave={updateCurrentUserProfile}
+          restaurants={viewedProfile?.restaurants ?? summaries}
           user={(viewedProfile?.user ?? currentUser) as UserProfile}
+          visits={viewedProfile ? viewedProfile.restaurants.flatMap((restaurant) => restaurant.visits) : allVisits}
         />
       ) : (
-        <CommunityPage onSelectRestaurant={handleSelect} onViewProfile={(user) => void viewUserProfile(user)} restaurants={summaries} users={allUsers} />
+        <CommunityPage candidateRestaurantIds={rouletteRestaurantIds} onAddToWant={(restaurant) => void handleAddDiscoveryWant(restaurant)} onToggleCandidate={toggleRouletteRestaurant} onViewProfile={(user) => void viewUserProfile(user)} restaurants={summaries} users={allUsers} />
       )}
+
+      {activeView === 'map' && selectedRestaurant && isSidebarOpen ? <section className="app-restaurant-detail" aria-label={`${selectedRestaurant.name} 餐厅详情`}><RestaurantPreviewCard isInRoulette={rouletteRestaurantIds.includes(selectedRestaurant.id)} onAddToRoulette={addSelectedRestaurantToRoulette} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /></section> : null}
+
+      {activeView === 'map' && rouletteCandidates.length ? <aside className="wheel-candidate-bar" aria-label="抽签候选">
+        <strong>已选 {rouletteCandidates.length}/10</strong>
+        <button onClick={() => setShowRouletteCandidates((visible) => !visible)} type="button">查看</button>
+        <button className="is-primary" disabled={rouletteCandidates.length < 2} onClick={() => setShowRoulette(true)} title={rouletteCandidates.length < 2 ? '至少选择 2 家餐厅' : '开始抽'} type="button"><Dices size={15} /> 开始抽</button>
+        {showRouletteCandidates ? <div className="wheel-candidate-popover">
+          <header><strong>当前候选</strong><button onClick={clearRouletteCandidates} type="button">清空</button></header>
+          <div>{rouletteCandidates.map((item) => <span key={item.id}>{item.name}<button aria-label={`移除 ${item.name}`} onClick={() => removeRouletteCandidate(item.id)} type="button"><X size={12} /></button></span>)}</div>
+          {rouletteCandidates.length < 2 ? <p>至少再选 1 家餐厅才能开始抽</p> : null}
+        </div> : null}
+      </aside> : null}
 
       <nav aria-label="主要功能" className="bottom-navigation">
         <button className={activeView === 'map' && !isSidebarOpen ? 'is-active' : ''} onClick={() => { setActiveView('map'); setSelectedId(null); setIsSidebarOpen(false) }} type="button"><MapIcon size={18} /><span>地图</span></button>
-        <button className={activeView === 'community' ? 'is-active' : ''} onClick={() => setActiveView('community')} type="button"><Globe2 size={18} /><span>社区</span></button>
+        <button className={activeView === 'community' ? 'is-active' : ''} onClick={() => setActiveView('community')} type="button"><Globe2 size={18} /><span>发现</span></button>
         <button aria-label="添加餐厅" className="bottom-navigation__add" onClick={() => setShowAddModal(true)} type="button"><Plus size={21} /><span>添加餐厅</span></button>
         <button className={`bottom-navigation__profile${activeView === 'profile' && !viewedProfile ? ' is-active' : ''}`} onClick={() => { setViewedProfile(null); setActiveView('profile') }} type="button"><UserRound size={18} /><span>我的</span></button>
       </nav>
@@ -687,7 +806,7 @@ export default function App() {
       {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} friendOptions={friendOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? acceptedMealParticipant?.id ?? 'new-visit'} onClose={() => { setShowAddVisit(false); setEditingVisit(null); setAcceptedMealParticipant(null) }} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} restaurant={selectedRestaurant} /> : null}
       {showDeleteConfirm && selectedRestaurant ? <ConfirmDeleteModal onCancel={() => setShowDeleteConfirm(false)} onConfirm={handleDelete} restaurantName={selectedRestaurant.name} visitCount={selectedRestaurant.visitCount} /> : null}
       {showSettings ? <SettingsModal onClose={() => setShowSettings(false)} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} visitCount={allVisits.length} /> : null}
-      {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={handleSelect} onSelectedRestaurantIdsChange={setRouletteRestaurantIds} restaurants={summaries} selectedRestaurantIds={rouletteRestaurantIds} /> : null}
+      {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={handleSelect} onSelectedRestaurantIdsChange={setRouletteRestaurantIds} onTemporaryItemsChange={setRouletteTemporaryItems} restaurants={rouletteRestaurantOptions} selectedRestaurantIds={rouletteRestaurantIds} temporaryItems={rouletteTemporaryItems} /> : null}
       {toast ? <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div> : null}
     </main>
   )

@@ -101,6 +101,7 @@ async function seedRestaurants() {
         recommendationSourceText: '',
         sharedMealId: null,
         companions: partySize > 1 ? randomCompanions(partySize - 1, random) : [],
+        companionIds: [],
         dishes: [],
         note: random() > 0.55 ? ['味道比预期好，会再来。', '环境舒服，适合朋友聚餐。', '出餐很快，招牌菜值得点。', '整体不错，下次想试试别的菜。'][Math.floor(random() * 4)] : '',
         photos: [],

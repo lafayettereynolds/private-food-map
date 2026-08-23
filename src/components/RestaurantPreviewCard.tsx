@@ -1,8 +1,9 @@
-import { CalendarClock, Clock3, Dices, Edit3, MapPin, Navigation, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Clock3, Dices, Edit3, MapPin, Navigation, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
 import { RestaurantAvatar } from './RestaurantAvatar'
 import { diningModeLabel, formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
+import { RestaurantSocialStatsPanel } from './RestaurantSocialStatsPanel'
 
 interface RestaurantPreviewCardProps {
   restaurant: RestaurantSummary
@@ -13,6 +14,7 @@ interface RestaurantPreviewCardProps {
   onEditVisit: (visit: Visit) => void
   onSaveRecommendation: () => void
   onAddToRoulette: () => void
+  isInRoulette: boolean
 }
 
 export function RestaurantPreviewCard({
@@ -24,6 +26,7 @@ export function RestaurantPreviewCard({
   onEditVisit,
   onSaveRecommendation,
   onAddToRoulette,
+  isInRoulette,
 }: RestaurantPreviewCardProps) {
   const navigationUrl = createNavigationUrl(restaurant)
   return (
@@ -46,7 +49,8 @@ export function RestaurantPreviewCard({
         <span><small>平均排队</small><strong>{formatAverageQueueDuration(restaurant.averageQueueMinutes)}</strong></span>
         <span><small>最近到访</small><strong>{restaurant.latestVisitDate ? new Date(restaurant.latestVisitDate).toLocaleDateString('zh-CN') : '—'}</strong></span>
       </div>
-      {restaurant.tags.length ? <div className="tag-row">{restaurant.tags.slice(0, 5).map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
+      {restaurant.amapPoiId ? <RestaurantSocialStatsPanel amapPoiId={restaurant.amapPoiId} /> : null}
+      <section className="restaurant-basic-info" aria-label="餐厅信息"><header>餐厅信息</header><dl><div><dt>菜系 / 标签</dt><dd>{restaurant.tags.length ? restaurant.tags.slice(0, 5).join(' · ') : '暂未记录'}</dd></div><div><dt>参考人均</dt><dd>{restaurant.pricePerPerson !== null ? `¥${restaurant.pricePerPerson}` : restaurant.averagePricePerPerson !== null ? `约 ¥${restaurant.averagePricePerPerson}` : '暂未记录'}</dd></div><div><dt>收藏状态</dt><dd>{restaurant.isRecommendation ? '来自发现' : STATUS_META[restaurant.status].label}</dd></div></dl></section>
       {restaurant.longTermNote ? <p className="map-card__note">{restaurant.longTermNote}</p> : null}
       {restaurant.visits.length ? (
         <section className="visit-history-preview">
@@ -97,7 +101,7 @@ export function RestaurantPreviewCard({
       ) : null}
       <div className="map-card__actions">
         <a className="navigation-button compact-button" href={navigationUrl} rel="noreferrer" target="_blank"><Navigation size={15} /> 到这里去</a>
-        <button className="roulette-add-button compact-button" onClick={onAddToRoulette} type="button"><Dices size={15} /> 添加到转盘</button>
+        <button aria-pressed={isInRoulette} className={`roulette-add-button compact-button${isInRoulette ? ' is-selected' : ''}`} onClick={onAddToRoulette} type="button">{isInRoulette ? <CheckCircle2 size={15} /> : <Dices size={15} />} {isInRoulette ? '已加入抽签' : '加入抽签'}</button>
         {restaurant.isRecommendation ? (
           <button className="primary-button compact-button" onClick={onSaveRecommendation} type="button"><Plus size={15} /> 加入想去</button>
         ) : (

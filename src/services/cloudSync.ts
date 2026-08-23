@@ -126,7 +126,8 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
       return { localCounts, cloudCounts: cloudCountsBefore, migrationRequired: true }
     }
 
-    const cloudAfter = await pushLocalSnapshot(localRestaurants, localVisits, localPhotos, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants)
+    const dirtyUserIds = new Set(queuedAtStart.filter((item) => item.entityType === 'user').map((item) => item.entityId))
+    const cloudAfter = await pushLocalSnapshot(localRestaurants, localVisits, localPhotos, localUsers.filter((user) => dirtyUserIds.has(user.id)), localFriendships, localSharedMeals, localSharedMealParticipants)
     const merged = mergeCloudData(localRestaurants, localVisits, localPhotos, cloudAfter, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants)
     await db.transaction(
       'rw',

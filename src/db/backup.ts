@@ -162,6 +162,7 @@ export async function importFoodMapBackup(rawText: string) {
         recommendationSourceText: imported.recommendationSourceText ?? '',
         sharedMealId: imported.sharedMealId ?? null,
         companions: Array.isArray(imported.companions) ? imported.companions : [],
+        companionIds: Array.isArray(imported.companionIds) ? imported.companionIds : [],
         dishes: Array.isArray(imported.dishes)
           ? imported.dishes.map((dish) => ({
               ...dish,

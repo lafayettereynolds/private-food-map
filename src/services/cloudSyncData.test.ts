@@ -162,6 +162,7 @@ function makeVisit(changes: Partial<Visit> = {}): Visit {
     recommendationSourceText: '',
     sharedMealId: null,
     companions: ['朋友'],
+    companionIds: [],
     dishes: [{ id: 'dish-1', name: '东坡肉', taste: '偏甜', rating: 5, price: 88, imageData: 'local-dish-photo', photoId: null }],
     note: '本地感受',
     photos: [],

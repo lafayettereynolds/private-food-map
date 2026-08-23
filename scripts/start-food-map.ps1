@@ -119,6 +119,9 @@ if (-not (Test-Path -LiteralPath $pnpmExecutable) -or -not (Test-Path -LiteralPa
 
 $env:Path = "$nodeDirectory;$env:Path"
 $env:VITE_APP_ENV = $Environment
+if (-not $isProduction) {
+  $env:VITE_CLOUD_SYNC_ENABLED = 'true'
+}
 
 if (-not (Test-Path -LiteralPath (Join-Path $projectDirectory 'node_modules\vite\package.json'))) {
   $installProcess = Start-Process -FilePath $pnpmExecutable `
@@ -144,10 +147,38 @@ if ($isProduction) {
     Show-LauncherMessage 'Taste Map production build failed.'
     exit 1
   }
-  $serverArguments = $pnpmProjectArguments + @('run', 'preview', '--', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
+  $serverArguments = $pnpmProjectArguments + @('exec', 'vite', 'preview', '--config', 'vite.config.ts', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
 }
 else {
-  $serverArguments = $pnpmProjectArguments + @('run', 'dev', '--', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
+  $seedProcess = Start-Process -FilePath $pnpmExecutable `
+    -ArgumentList ($pnpmProjectArguments + @('run', 'seed:test-users')) `
+    -WorkingDirectory $projectDirectory `
+    -WindowStyle Hidden `
+    -Wait `
+    -PassThru
+  if ($seedProcess.ExitCode -ne 0) {
+    Show-LauncherMessage 'Taste Map 测试数据初始化失败。'
+    exit 1
+  }
+  $backendPort = 8788
+  $backendListener = Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $backendListener) {
+    Start-Process -FilePath $pnpmExecutable `
+      -ArgumentList ($pnpmProjectArguments + @('exec', 'wrangler', 'dev', '--local', '--port', "$backendPort")) `
+      -WorkingDirectory $projectDirectory `
+      -WindowStyle Hidden
+    $backendReady = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt += 1) {
+      Start-Sleep -Milliseconds 500
+      $backendReady = [bool](Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1)
+      if ($backendReady) { break }
+    }
+    if (-not $backendReady) {
+      Show-LauncherMessage 'Taste Map 测试服务启动失败。'
+      exit 1
+    }
+  }
+  $serverArguments = $pnpmProjectArguments + @('exec', 'vite', '--config', 'vite.config.ts', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
 }
 
 Start-Process -FilePath $pnpmExecutable `

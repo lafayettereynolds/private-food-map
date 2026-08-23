@@ -1,6 +1,7 @@
 import { db } from './appDb'
 import type { Friendship, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
 import { requestCloudSync } from '../services/syncEvents'
+import { syncQueueId } from '../types/sync'
 
 export const CURRENT_USER_ID = 'owner'
 
@@ -43,7 +44,10 @@ export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickn
     updatedAt: new Date().toISOString(),
     deletedAt: null,
   }
-  await db.users.put(updated)
+  await db.transaction('rw', db.users, db.syncQueue, async () => {
+    await db.users.put(updated)
+    await db.syncQueue.put({ id: syncQueueId('user', updated.id), entityType: 'user', entityId: updated.id, updatedAt: updated.updatedAt })
+  })
   requestCloudSync()
   return updated
 }
@@ -57,7 +61,10 @@ export async function updateCurrentUserMapPrivacy(changes: Pick<UserProfile, 'ma
     updatedAt: new Date().toISOString(),
     deletedAt: null,
   }
-  await db.users.put(updated)
+  await db.transaction('rw', db.users, db.syncQueue, async () => {
+    await db.users.put(updated)
+    await db.syncQueue.put({ id: syncQueueId('user', updated.id), entityType: 'user', entityId: updated.id, updatedAt: updated.updatedAt })
+  })
   requestCloudSync()
   return updated
 }
