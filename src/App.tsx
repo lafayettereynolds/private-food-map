@@ -14,7 +14,6 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
-  Utensils,
   UserRound,
   X,
 } from 'lucide-react'
@@ -703,7 +702,7 @@ export default function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark"><Utensils size={18} /></span>
+          <span className="brand-mark"><img alt="" aria-hidden="true" src="/icons/taste-map-icon-192.png" /></span>
           <div><strong>Taste Map</strong><span>我的私人美食地图</span></div>
           {IS_DEVELOPMENT ? <span className="environment-badge" title="当前使用 food-map-dev 测试数据库">🧪 测试环境</span> : null}
         </div>

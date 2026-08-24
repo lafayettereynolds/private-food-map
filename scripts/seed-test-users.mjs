@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -17,6 +17,8 @@ const random = seededRandom(hashSeed(SEED))
 const sql = action === 'reset' ? resetSql() : buildSeedSql()
 const temporaryDirectory = mkdtempSync(join(tmpdir(), 'taste-map-test-seed-'))
 const sqlFile = join(temporaryDirectory, `${action}.sql`)
+const markerDirectory = join(process.cwd(), '.wrangler')
+const markerFile = join(markerDirectory, 'taste-map-test-data.seeded')
 writeFileSync(sqlFile, sql, 'utf8')
 
 try {
@@ -24,7 +26,13 @@ try {
     cwd: process.cwd(), stdio: 'inherit', shell: process.platform === 'win32',
   })
   if (result.status !== 0) process.exit(result.status ?? 1)
-  if (action === 'reset') console.log('已清空本机开发 D1 中的发现测试数据；正式数据未触碰。')
+  if (action === 'reset') {
+    rmSync(markerFile, { force: true })
+    console.log('已清空本机开发 D1 中的发现测试数据；正式数据未触碰。')
+  } else {
+    mkdirSync(markerDirectory, { recursive: true })
+    writeFileSync(markerFile, `${SEED}\n`, 'utf8')
+  }
 } finally {
   rmSync(temporaryDirectory, { recursive: true, force: true })
 }

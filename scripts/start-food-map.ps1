@@ -10,6 +10,7 @@ $projectDirectory = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')
 $isProduction = $Environment -eq 'production'
 $port = if ($isProduction) { 4173 } else { 5173 }
 $appUrl = "http://localhost:$port/"
+$healthUrl = "http://127.0.0.1:$port/"
 $runtimeDependencies = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies'
 $bundledPnpmExecutable = Join-Path $runtimeDependencies 'bin\fallback\pnpm.cmd'
 $bundledNodeDirectory = Join-Path $runtimeDependencies 'node\bin'
@@ -17,7 +18,7 @@ $pnpmCommand = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
 $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
 $pnpmExecutable = if ($pnpmCommand) { $pnpmCommand.Source } else { $bundledPnpmExecutable }
 $nodeDirectory = if ($nodeCommand) { Split-Path -Parent $nodeCommand.Source } else { $bundledNodeDirectory }
-$pnpmProjectArguments = @('dlx', 'pnpm@9.15.9')
+$pnpmProjectArguments = @()
 
 function Show-LauncherMessage([string]$message) {
   Add-Type -AssemblyName PresentationFramework
@@ -40,7 +41,10 @@ function Test-PortInUse {
 
 function Test-TasteMapReady {
   try {
-    $response = Invoke-WebRequest -UseBasicParsing -Uri $appUrl -TimeoutSec 2
+    # Windows PowerShell 5 may spend several seconds resolving localhost over
+    # IPv6 even though Vite listens on IPv4. Use the explicit loopback address
+    # for readiness checks while keeping the user-facing URL unchanged.
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $healthUrl -TimeoutSec 2
     if ($response.StatusCode -ne 200 -or $response.Content -notmatch '<title>Taste Map') {
       return $false
     }
@@ -150,15 +154,18 @@ if ($isProduction) {
   $serverArguments = $pnpmProjectArguments + @('exec', 'vite', 'preview', '--config', 'vite.config.ts', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
 }
 else {
-  $seedProcess = Start-Process -FilePath $pnpmExecutable `
-    -ArgumentList ($pnpmProjectArguments + @('run', 'seed:test-users')) `
-    -WorkingDirectory $projectDirectory `
-    -WindowStyle Hidden `
-    -Wait `
-    -PassThru
-  if ($seedProcess.ExitCode -ne 0) {
-    Show-LauncherMessage 'Taste Map 测试数据初始化失败。'
-    exit 1
+  $testDataMarker = Join-Path $projectDirectory '.wrangler\taste-map-test-data.seeded'
+  if (-not (Test-Path -LiteralPath $testDataMarker)) {
+    $seedProcess = Start-Process -FilePath $pnpmExecutable `
+      -ArgumentList ($pnpmProjectArguments + @('run', 'seed:test-users')) `
+      -WorkingDirectory $projectDirectory `
+      -WindowStyle Hidden `
+      -Wait `
+      -PassThru
+    if ($seedProcess.ExitCode -ne 0) {
+      Show-LauncherMessage 'Taste Map test data could not be initialized.'
+      exit 1
+    }
   }
   $backendPort = 8788
   $backendListener = Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -174,7 +181,7 @@ else {
       if ($backendReady) { break }
     }
     if (-not $backendReady) {
-      Show-LauncherMessage 'Taste Map 测试服务启动失败。'
+      Show-LauncherMessage 'Taste Map test service could not be started.'
       exit 1
     }
   }
