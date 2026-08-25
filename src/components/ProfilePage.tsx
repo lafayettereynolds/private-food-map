@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ChevronRight, Database, Dices, LockKeyhole, ReceiptText, Save, Settings, ShieldCheck, UserPlus, UsersRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Copy, Database, Dices, LockKeyhole, ReceiptText, Save, Settings, ShieldCheck, UserCheck, UserPlus, UsersRound } from 'lucide-react'
 import type { CloudSyncState } from '../types/cloudSync'
 import type { DiningCompanion, RestaurantSummary, UserProfile, Visibility, Visit } from '../types/domain'
 import { buildProfileInsights } from '../services/profileInsights'
@@ -13,7 +13,7 @@ import { reviewService, type PeriodReview } from '../services/reviewService'
 import { SyncedImage } from './SyncedImage'
 import { CompanionInsightsPanel, RecommendationSourceInsightsPanel } from './ProfileAnalyticsPanels'
 
-export function ProfilePage({ user, restaurants = [], visits = [], diningCompanions = [], sourceUsers = [], followerCount = 0, followingCount = 0, onSave, editable = true, cloudSyncState, connections, followerConnections, followingConnections, onBack, onOpenRoulette, onOpenSettings, onMapPrivacyChange, onSelectRestaurant }: {
+export function ProfilePage({ user, restaurants = [], visits = [], diningCompanions = [], sourceUsers = [], followerCount = 0, followingCount = 0, onSave, editable = true, isFollowing = false, followPending = false, cloudSyncState, connections, followerConnections, followingConnections, onBack, onOpenRoulette, onOpenSettings, onMapPrivacyChange, onSelectRestaurant, onToggleFollow }: {
   user: UserProfile
   restaurants?: RestaurantSummary[]
   visits?: Visit[]
@@ -23,6 +23,8 @@ export function ProfilePage({ user, restaurants = [], visits = [], diningCompani
   followingCount?: number
   onSave: (changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'>) => Promise<unknown>
   editable?: boolean
+  isFollowing?: boolean
+  followPending?: boolean
   cloudSyncState?: CloudSyncState
   connections?: ReactNode
   followerConnections?: ReactNode
@@ -32,28 +34,36 @@ export function ProfilePage({ user, restaurants = [], visits = [], diningCompani
   onOpenSettings?: () => void
   onMapPrivacyChange?: (changes: Pick<UserProfile, 'mapSharingEnabled' | 'mapVisibility'>) => Promise<unknown>
   onSelectRestaurant?: (restaurant: RestaurantSummary) => void
+  onToggleFollow?: () => void
 }) {
   const [page, setPage] = useState<'dashboard' | 'account'>('dashboard')
   const [editorOpen, setEditorOpen] = useState(false)
   const [connectionsOpen, setConnectionsOpen] = useState<'discover' | 'following' | 'followers' | null>(null)
+  const [copiedUserId, setCopiedUserId] = useState(false)
   const [detail, setDetail] = useState<'month' | 'year' | 'day' | 'taste' | 'data' | 'companions' | 'sources' | null>(null)
   const insights = useMemo(() => buildProfileInsights(restaurants, visits), [restaurants, visits])
   const monthReview = useMemo(() => reviewService.monthly(restaurants, visits, new Date().getFullYear(), new Date().getMonth() + 1), [restaurants, visits])
   const yearReview = useMemo(() => reviewService.annual(restaurants, visits, new Date().getFullYear()), [restaurants, visits])
+  async function copyUserId() {
+    await navigator.clipboard?.writeText(user.id)
+    setCopiedUserId(true)
+    window.setTimeout(() => setCopiedUserId(false), 1600)
+  }
   if (page === 'account') return <AccountPrivacyPage onBack={() => setPage('dashboard')} onMapPrivacyChange={onMapPrivacyChange} onOpenSettings={onOpenSettings} user={user} />
 
   return <section className="social-page profile-page profile-dashboard">
     <div className="profile-dashboard__top">{editable ? <><button onClick={() => setConnectionsOpen('discover')} type="button"><UserPlus size={17} />添加好友</button><button aria-label="账号与隐私" onClick={() => setPage('account')} type="button"><Settings size={19} /></button></> : <><button onClick={onBack} type="button"><ArrowLeft size={17} />返回</button><span>公开主页</span></>}</div>
     <header className="profile-dashboard__header">
       <button aria-label={editable ? '编辑个人资料' : `${user.nickname} 的头像`} className="profile-avatar profile-dashboard__avatar" disabled={!editable} onClick={() => setEditorOpen(true)} type="button"><UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></button>
-      <div><h1>{user.nickname}</h1><p>{user.city ? `${user.city} · ` : ''}{user.bio || '记录每一次真实的味觉记忆。'}</p>{editable ? <button className="profile-edit-button" onClick={() => setEditorOpen(true)} type="button">编辑资料</button> : null}</div>
+      <div className="profile-dashboard__identity"><h1>{user.nickname}</h1><p>{user.city ? `${user.city} · ` : ''}{user.bio || '记录每一次真实的味觉记忆。'}</p><div className="profile-dashboard__identity-actions"><button className="profile-user-id" onClick={() => void copyUserId()} title="复制用户 ID" type="button"><span>ID · {user.id}</span>{copiedUserId ? <Check size={13} /> : <Copy size={13} />}</button>{editable ? <button className="profile-edit-button" onClick={() => setEditorOpen(true)} type="button">编辑资料</button> : <button className={`profile-follow-button${isFollowing ? ' is-following' : ''}`} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button>}</div></div>
     </header>
     <div className={`profile-dashboard__counts${editable ? '' : ' is-public'}`}>{editable ? <><button onClick={() => setConnectionsOpen('following')} type="button"><strong>{followingCount}</strong><small>我关注的</small></button><button onClick={() => setConnectionsOpen('followers')} type="button"><strong>{followerCount}</strong><small>关注我的</small></button></> : null}<span><strong>{visits.length}</strong><small>公开记录</small></span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></span></div>
     {editable ? <button className="profile-roulette-card" onClick={onOpenRoulette} type="button"><span><Dices size={22} /></span><div><strong>今天吃什么</strong><small>从候选餐厅中随机挑一家</small></div><ChevronRight size={18} /></button> : null}
-    <ProfileSection action="查看全部" onAction={() => setDetail('month')} title="回味"><div className="profile-memory-grid"><MemoryCard onClick={() => setDetail('month')} title="本月回顾" subtitle={`${new Date().getMonth() + 1} 月食记`} values={[`${monthReview.visitCount} 次用餐`, `${monthReview.restaurantCount} 家餐厅`, `¥${Math.round(monthReview.actualSpend)} 实际消费`]} /><MemoryCard onClick={() => setDetail('year')} title="年度回顾" subtitle={`${new Date().getFullYear()} 食味年鉴`} values={[`${yearReview.visitCount} 次用餐`, `${yearReview.restaurantCount} 家餐厅`, `${yearReview.cityCount} 个城市`]} /><MemoryCard onClick={() => setDetail('day')} title="那年今日" subtitle={`${new Date().getMonth() + 1} 月 ${new Date().getDate()} 日`} values={insights.onThisDay.length ? insights.onThisDay.slice(0, 2).map((visit) => restaurants.find((item) => item.id === visit.restaurantId)?.name ?? '一次味觉记忆') : ['还没有往年记录']} /></div></ProfileSection>
-    <ProfileSection action="查看完整档案" onAction={() => setDetail('taste')} title="我的口味档案"><TasteProfileSummary onClick={() => setDetail('taste')} profile={insights.tasteProfile} /></ProfileSection>
+    {editable ? <ProfileSection action="查看全部" onAction={() => setDetail('month')} title="回味"><div className="profile-memory-grid"><MemoryCard onClick={() => setDetail('month')} title="本月回顾" subtitle={`${new Date().getMonth() + 1} 月食记`} values={[`${monthReview.visitCount} 次用餐`, `${monthReview.restaurantCount} 家餐厅`, `¥${Math.round(monthReview.actualSpend)} 实际消费`]} /><MemoryCard onClick={() => setDetail('year')} title="年度回顾" subtitle={`${new Date().getFullYear()} 食味年鉴`} values={[`${yearReview.visitCount} 次用餐`, `${yearReview.restaurantCount} 家餐厅`, `${yearReview.cityCount} 个城市`]} /><MemoryCard onClick={() => setDetail('day')} title="那年今日" subtitle={`${new Date().getMonth() + 1} 月 ${new Date().getDate()} 日`} values={insights.onThisDay.length ? insights.onThisDay.slice(0, 2).map((visit) => restaurants.find((item) => item.id === visit.restaurantId)?.name ?? '一次味觉记忆') : ['还没有往年记录']} /></div></ProfileSection> : null}
+    {editable ? <ProfileSection action="查看完整档案" onAction={() => setDetail('taste')} title="我的口味档案"><TasteProfileSummary onClick={() => setDetail('taste')} profile={insights.tasteProfile} /></ProfileSection> : null}
     {editable ? <RestaurantListsSection onSelectRestaurant={onSelectRestaurant} restaurants={restaurants} /> : null}
-    <ProfileSection action="查看全部" onAction={() => setDetail('data')} title="我的数据"><button className="profile-data-grid" onClick={() => setDetail('data')} type="button"><span><strong>{visits.length}</strong><small>总用餐次数</small></span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></span><span><strong>{insights.averageScore?.toFixed(1) ?? '—'}</strong><small>平均评分</small></span><span><strong>{insights.cityCount}</strong><small>去过城市</small></span></button>{editable ? <div className="profile-analytics-links"><button onClick={() => setDetail('companions')} type="button"><UsersRound size={18} /><span><strong>饭搭子分析</strong><small>一起吃过什么、消费与共同回忆</small></span><ChevronRight size={17} /></button><button onClick={() => setDetail('sources')} type="button"><ReceiptText size={18} /><span><strong>推荐来源分析</strong><small>哪些人或平台过去更适合你</small></span><ChevronRight size={17} /></button></div> : null}</ProfileSection>
+    {!editable ? <ProfileSection title="公开记录"><div className="public-profile-records">{restaurants.length ? restaurants.map((restaurant) => <button disabled={!onSelectRestaurant} key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><span><strong>{restaurant.name}</strong><small>{restaurant.city}{restaurant.visitCount ? ` · 去过 ${restaurant.visitCount} 次` : ''}</small></span><ChevronRight size={16} /></button>) : <p>这个用户暂时没有对你公开餐厅记录。</p>}</div></ProfileSection> : null}
+    {editable ? <ProfileSection action="查看全部" onAction={() => setDetail('data')} title="我的数据"><button className="profile-data-grid" onClick={() => setDetail('data')} type="button"><span><strong>{visits.length}</strong><small>总用餐次数</small></span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></span><span><strong>{insights.averageScore?.toFixed(1) ?? '—'}</strong><small>平均评分</small></span><span><strong>{insights.cityCount}</strong><small>去过城市</small></span></button><div className="profile-analytics-links"><button onClick={() => setDetail('companions')} type="button"><UsersRound size={18} /><span><strong>饭搭子分析</strong><small>一起吃过什么、消费与共同回忆</small></span><ChevronRight size={17} /></button><button onClick={() => setDetail('sources')} type="button"><ReceiptText size={18} /><span><strong>推荐来源分析</strong><small>哪些人或平台过去更适合你</small></span><ChevronRight size={17} /></button></div></ProfileSection> : null}
     {editable ? <div className="profile-settings-links"><button onClick={onOpenSettings} type="button"><Database size={19} /><span><strong>数据与设置</strong><small>云同步、备份、恢复与图片存储</small></span><ChevronRight size={18} /></button><button onClick={() => setPage('account')} type="button"><ShieldCheck size={19} /><span><strong>账号与隐私</strong><small>账号安全、地图隐私与权限管理</small></span><ChevronRight size={18} /></button>{cloudSyncState ? <small className="profile-sync-line">{cloudSyncState.status === 'synced' ? '云端已同步' : cloudSyncState.status === 'syncing' ? '正在同步' : cloudSyncState.errorMessage || '等待同步'}</small> : null}</div> : null}
     {editorOpen ? <ProfileEditorModal onClose={() => setEditorOpen(false)} onSave={onSave} user={user} /> : null}
     {connectionsOpen ? <ModalShell description={connectionsOpen === 'discover' ? '搜索昵称或城市，找到想关注的 Taste Map 用户。' : '点击用户可以查看对方的公开资料。'} onClose={() => setConnectionsOpen(null)} size="large" title={connectionsOpen === 'discover' ? '发现好友' : connectionsOpen === 'following' ? '我关注的' : '关注我的'}>{connectionsOpen === 'discover' ? connections : connectionsOpen === 'following' ? followingConnections : followerConnections}</ModalShell> : null}
@@ -61,7 +71,8 @@ export function ProfilePage({ user, restaurants = [], visits = [], diningCompani
   </section>
 }
 
-function ProfileSection({ title, action, onAction, children }: { title: string; action: string; onAction?: () => void; children: ReactNode }) { return <section className="profile-dashboard__section"><header><h2>{title}</h2><button disabled={!onAction} onClick={onAction} type="button">{action}</button></header>{children}</section> }
+function ProfileSection({ title, action, onAction, children }: { title: string; action?: string; onAction?: () => void; children: ReactNode }) { return <section className="profile-dashboard__section"><header><h2>{title}</h2>{action ? <button disabled={!onAction} onClick={onAction} type="button">{action}</button> : null}</header>{children}</section> }
+
 function MemoryCard({ title, subtitle, values, onClick }: { title: string; subtitle: string; values: string[]; onClick: () => void }) { return <button onClick={onClick} type="button"><strong>{title}</strong><span>{subtitle}</span><div>{values.map((value) => <small key={value}>{value}</small>)}</div><ChevronRight size={15} /></button> }
 
 type TasteProfile = ReturnType<typeof buildProfileInsights>['tasteProfile']

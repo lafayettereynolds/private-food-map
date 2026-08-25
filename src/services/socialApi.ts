@@ -87,6 +87,15 @@ export async function fetchFollows(): Promise<Follow[]> {
   return result.follows
 }
 
+export async function setFollow(userId: string, followed: boolean): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return
+  await apiFetch('/api/follows', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: followed ? 'add' : 'remove', userId }),
+  })
+}
+
 export async function fetchPublicRestaurantList(listId: string) {
   if (!CLOUD_SYNC_ENABLED) return null
   return apiFetch<{

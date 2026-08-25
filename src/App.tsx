@@ -63,7 +63,7 @@ import { mapService } from './services/mapService'
 import { initializeCloudSync } from './services/cloudSync'
 import { useCloudSync } from './services/useCloudSync'
 import { initializePhotoSync } from './services/photoSync'
-import { fetchFollows, fetchUserProfile, publicUserToProfile, searchCloudUsers, type DiscoveryMode } from './services/socialApi'
+import { fetchFollows, fetchUserProfile, publicUserToProfile, searchCloudUsers, setFollow, type DiscoveryMode } from './services/socialApi'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
@@ -136,6 +136,7 @@ export default function App() {
   const [recommendationsLoading, setRecommendationsLoading] = useState(false)
   const [recommendationError, setRecommendationError] = useState('')
   const [cloudFollows, setCloudFollows] = useState<Follow[]>([])
+  const [followPending, setFollowPending] = useState(false)
   const [cloudUsers, setCloudUsers] = useState<UserProfile[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -674,6 +675,27 @@ export default function App() {
     setViewedProfile(remote ?? { user, restaurants: [], followerCount: 0, followingCount: 0 })
   }
 
+  async function toggleViewedProfileFollow() {
+    if (!viewedProfile || followPending) return
+    const targetUserId = viewedProfile.user.id
+    const currentlyFollowing = cloudFollows.some((follow) => follow.followerId === CURRENT_USER_ID && follow.followedUserId === targetUserId)
+    setFollowPending(true)
+    try {
+      await setFollow(targetUserId, !currentlyFollowing)
+      const nextFollows = await fetchFollows()
+      setCloudFollows(nextFollows)
+      setViewedProfile((current) => current && current.user.id === targetUserId ? {
+        ...current,
+        followerCount: Math.max(0, current.followerCount + (currentlyFollowing ? -1 : 1)),
+      } : current)
+      setToast(currentlyFollowing ? '已取消关注' : '已关注')
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : '关注操作失败，请稍后重试')
+    } finally {
+      setFollowPending(false)
+    }
+  }
+
   async function handleSaveRecommendation() {
     if (!selectedRestaurant?.isRecommendation) return
     const saved = await addRestaurantFromPoi({
@@ -894,14 +916,17 @@ export default function App() {
           editable={!viewedProfile}
           followerConnections={renderEmbeddedFriends('followers')}
           followerCount={viewedProfile ? viewedProfile.followerCount : followerCount}
+          followPending={followPending}
           followingConnections={renderEmbeddedFriends('following')}
           followingCount={viewedProfile ? viewedProfile.followingCount : followingCount}
+          isFollowing={Boolean(viewedProfile && cloudFollows.some((follow) => follow.followerId === CURRENT_USER_ID && follow.followedUserId === viewedProfile.user.id))}
           key={(viewedProfile?.user ?? currentUser)?.id ?? 'profile'}
           onMapPrivacyChange={updateCurrentUserMapPrivacy}
           onBack={viewedProfile ? () => { setViewedProfile(null); setActiveView(profileReturnView) } : undefined}
           onOpenRoulette={() => setShowRoulette(true)}
           onOpenSettings={() => setShowSettings(true)}
           onSelectRestaurant={handleProfileListSelect}
+          onToggleFollow={viewedProfile ? () => void toggleViewedProfileFollow() : undefined}
           onSave={updateCurrentUserProfile}
           restaurants={viewedProfile?.restaurants ?? summaries}
           user={(viewedProfile?.user ?? currentUser) as UserProfile}

@@ -1259,8 +1259,8 @@ async function searchUsers(database: D1Database, viewerId: string, query: string
     return { users: suggestions.results.map(publicUser) }
   }
   const result = await database.prepare(`SELECT * FROM users
-    WHERE id != ? AND deleted_at IS NULL AND (nickname LIKE ? OR city LIKE ?)
-    ORDER BY nickname LIMIT 20`).bind(viewerId, `%${keyword}%`, `%${keyword}%`).all<UserRow>()
+    WHERE id != ? AND deleted_at IS NULL AND (id LIKE ? OR nickname LIKE ? OR city LIKE ?)
+    ORDER BY nickname LIMIT 20`).bind(viewerId, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`).all<UserRow>()
   return { users: result.results.map(publicUser) }
 }
 
