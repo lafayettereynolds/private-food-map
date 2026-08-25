@@ -67,7 +67,7 @@ function normalizeLabels(labels: string[]) {
 
 export interface InitialVisitInput {
   visitedAt: string
-  rating: StarRating
+  rating: StarRating | null
   visibility: Visibility
   diningMode: DiningMode
   totalPrice: number | null
@@ -137,6 +137,8 @@ export async function addRestaurantFromPoi(
     tags: input.tags,
     longTermNote: '',
     pricePerPerson: input.pricePerPerson,
+    phone: input.poi.phone ?? null,
+    openingHours: input.poi.openingHours ?? null,
     markerType: input.markerType,
     markerImageData: input.markerImageData,
     markerPhotoId: null,
@@ -236,6 +238,8 @@ export interface RestaurantBasicsUpdate {
   status: RestaurantStatus
   tags: string[]
   pricePerPerson: number | null
+  phone: string | null
+  openingHours: string | null
   markerType: MarkerType
   markerImageData: string | null
   markerPhotoId: string | null
@@ -288,7 +292,7 @@ export async function updateRestaurantBasics(
 
 export interface AddVisitInput {
   visitedAt: string
-  rating: StarRating
+  rating: StarRating | null
   visibility: Visibility
   diningMode: DiningMode
   totalPrice: number | null

@@ -5,7 +5,7 @@ import type {
   CloudSyncResult,
   CloudSyncState,
 } from '../types/cloudSync'
-import type { Friendship, Photo, Restaurant, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
+import type { Friendship, Photo, Restaurant, RestaurantListCollection, RestaurantListItem, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
 import type { StoredSyncStatus, SyncQueueItem } from '../types/sync'
 import {
   activeCounts,
@@ -13,12 +13,15 @@ import {
   toCloudFriendship,
   toCloudPhoto,
   toCloudRestaurant,
+  toCloudRestaurantList,
+  toCloudRestaurantListItem,
   toCloudSharedMeal,
   toCloudSharedMealParticipant,
   toCloudUser,
   toCloudVisit,
 } from './cloudSyncData'
 import { CLOUD_SYNC_REQUEST_EVENT } from './syncEvents'
+import { normalizedSyncOperation, retryDelayMilliseconds } from './syncQueue'
 
 const API_PATH = '/api/sync'
 const listeners = new Set<() => void>()
@@ -54,13 +57,16 @@ export async function initializeCloudSync() {
 
   const onSyncRequested = () => scheduleCloudSync()
   const onOnline = () => scheduleCloudSync(100)
+  const onVisibilityChange = () => { if (document.visibilityState === 'visible') scheduleCloudSync(100) }
   window.addEventListener(CLOUD_SYNC_REQUEST_EVENT, onSyncRequested)
   window.addEventListener('online', onOnline)
+  document.addEventListener('visibilitychange', onVisibilityChange)
   void syncNow().catch(() => undefined)
 
   return () => {
     window.removeEventListener(CLOUD_SYNC_REQUEST_EVENT, onSyncRequested)
     window.removeEventListener('online', onOnline)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
     if (scheduledSync !== null) window.clearTimeout(scheduledSync)
   }
 }
@@ -99,7 +105,9 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
   await storeMetadata('syncing', attemptAt, null)
 
   try {
-    const [localRestaurants, localVisits, localPhotos, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants, queuedAtStart, cloudBefore] = await Promise.all([
+    const previousMetadata = await db.syncMetadata.get('cloud')
+    const since = previousMetadata?.lastSuccessfulSyncAt ?? null
+    const [localRestaurants, localVisits, localPhotos, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants, localRestaurantLists, localRestaurantListItems, rawQueue, cloudBefore] = await Promise.all([
       db.restaurants.toArray(),
       db.visits.toArray(),
       db.photos.toArray(),
@@ -107,15 +115,24 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
       db.friendships.toArray(),
       db.sharedMeals.toArray(),
       db.sharedMealParticipants.toArray(),
+      db.restaurantLists.toArray(),
+      db.restaurantListItems.toArray(),
       db.syncQueue.toArray(),
-      fetchCloudSnapshot(),
+      fetchCloudSnapshot(since),
     ])
+    const nowMilliseconds = Date.now()
+    const queuedAtStart = rawQueue
+      .map(normalizedSyncOperation)
+      .filter((item) => !item.nextAttemptAt || Date.parse(item.nextAttemptAt) <= nowMilliseconds)
+    if (queuedAtStart.length) {
+      await db.syncQueue.bulkPut(queuedAtStart.map((item) => ({ ...item, status: 'syncing' as const, lastError: null })))
+    }
     const localCounts = activeCounts(localRestaurants, localVisits, localPhotos)
     const cloudCountsBefore = activeCounts(cloudBefore.restaurants, cloudBefore.visits, cloudBefore.photos)
     const cloudIsCompletelyEmpty = cloudBefore.restaurants.length === 0 && cloudBefore.visits.length === 0
     const localHasData = localCounts.restaurants > 0 || localCounts.visits > 0
 
-    if (cloudIsCompletelyEmpty && localHasData && !allowInitialUpload) {
+    if (!since && cloudIsCompletelyEmpty && localHasData && !allowInitialUpload) {
       updateState({
         status: 'migrationRequired',
         localCounts,
@@ -127,11 +144,27 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
     }
 
     const dirtyUserIds = new Set(queuedAtStart.filter((item) => item.entityType === 'user').map((item) => item.entityId))
-    const cloudAfter = await pushLocalSnapshot(localRestaurants, localVisits, localPhotos, localUsers.filter((user) => dirtyUserIds.has(user.id)), localFriendships, localSharedMeals, localSharedMealParticipants)
-    const merged = mergeCloudData(localRestaurants, localVisits, localPhotos, cloudAfter, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants)
+    const dirtyRestaurantIds = new Set(queuedAtStart.filter((item) => item.entityType === 'restaurant').map((item) => item.entityId))
+    const dirtyVisitIds = new Set(queuedAtStart.filter((item) => item.entityType === 'visit').map((item) => item.entityId))
+    const dirtyListIds = new Set(queuedAtStart.filter((item) => item.entityType === 'restaurantList').map((item) => item.entityId))
+    const dirtyListItemIds = new Set(queuedAtStart.filter((item) => item.entityType === 'restaurantListItem').map((item) => item.entityId))
+    const cloudAfter = queuedAtStart.length || localPhotos.length || localFriendships.length || localSharedMeals.length
+      ? await pushLocalSnapshot(
+          since ? localRestaurants.filter((item) => dirtyRestaurantIds.has(item.id)) : localRestaurants,
+          since ? localVisits.filter((item) => dirtyVisitIds.has(item.id)) : localVisits,
+          localPhotos,
+          localUsers.filter((user) => dirtyUserIds.has(user.id)),
+          localFriendships,
+          localSharedMeals,
+          localSharedMealParticipants,
+          since ? localRestaurantLists.filter((item) => dirtyListIds.has(item.id)) : localRestaurantLists,
+          since ? localRestaurantListItems.filter((item) => dirtyListItemIds.has(item.id)) : localRestaurantListItems,
+        )
+      : cloudBefore
+    const merged = mergeCloudData(localRestaurants, localVisits, localPhotos, cloudAfter, localUsers, localFriendships, localSharedMeals, localSharedMealParticipants, localRestaurantLists, localRestaurantListItems)
     await db.transaction(
       'rw',
-      [db.restaurants, db.visits, db.photos, db.users, db.friendships, db.sharedMeals, db.sharedMealParticipants, db.syncQueue, db.syncMetadata],
+      [db.restaurants, db.visits, db.photos, db.users, db.friendships, db.sharedMeals, db.sharedMealParticipants, db.restaurantLists, db.restaurantListItems, db.syncQueue, db.syncMetadata],
       async () => {
         for (const restaurant of merged.restaurants) {
           const current = await db.restaurants.get(restaurant.id)
@@ -152,6 +185,8 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
         for (const friendship of merged.friendships) await db.friendships.put(friendship)
         for (const meal of merged.sharedMeals) await db.sharedMeals.put(meal)
         for (const participant of merged.sharedMealParticipants) await db.sharedMealParticipants.put(participant)
+        for (const list of merged.restaurantLists) await db.restaurantLists.put(list)
+        for (const item of merged.restaurantListItems) await db.restaurantListItems.put(item)
         await clearCompletedQueueItems(queuedAtStart)
         await db.syncMetadata.put({
           key: 'cloud',
@@ -174,14 +209,28 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
     return { localCounts: activeCounts(merged.restaurants, merged.visits, merged.photos), cloudCounts, migrationRequired: false }
   } catch (error) {
     const message = error instanceof Error ? error.message : '云端同步失败，请稍后重试。'
+    const queued = await db.syncQueue.toArray().catch(() => [])
+    const failedAt = Date.now()
+    await db.syncQueue.bulkPut(queued.map((rawItem) => {
+      const item = normalizedSyncOperation(rawItem)
+      const attemptCount = item.attemptCount + 1
+      return {
+        ...item,
+        status: 'failed' as const,
+        attemptCount,
+        nextAttemptAt: new Date(failedAt + retryDelayMilliseconds(attemptCount)).toISOString(),
+        lastError: message,
+      }
+    })).catch(() => undefined)
     updateState({ status: 'error', errorMessage: message })
     await storeMetadata('error', attemptAt, message)
     throw error
   }
 }
 
-async function fetchCloudSnapshot(): Promise<CloudSnapshot> {
-  const response = await fetch(API_PATH, { headers: { Accept: 'application/json' }, cache: 'no-store' })
+async function fetchCloudSnapshot(since: string | null): Promise<CloudSnapshot> {
+  const path = since ? `${API_PATH}?since=${encodeURIComponent(since)}` : API_PATH
+  const response = await fetch(path, { headers: { Accept: 'application/json' }, cache: 'no-store' })
   return readSyncResponse(response)
 }
 
@@ -193,6 +242,8 @@ async function pushLocalSnapshot(
   friendships: Friendship[],
   sharedMeals: SharedMeal[],
   sharedMealParticipants: SharedMealParticipant[],
+  restaurantLists: RestaurantListCollection[],
+  restaurantListItems: RestaurantListItem[],
 ) {
   const response = await fetch(API_PATH, {
     method: 'POST',
@@ -205,6 +256,8 @@ async function pushLocalSnapshot(
       friendships: friendships.map(toCloudFriendship),
       sharedMeals: sharedMeals.map(toCloudSharedMeal),
       sharedMealParticipants: sharedMealParticipants.map(toCloudSharedMealParticipant),
+      restaurantLists: restaurantLists.map(toCloudRestaurantList),
+      restaurantListItems: restaurantListItems.map(toCloudRestaurantListItem),
     }),
   })
   return readSyncResponse(response)
@@ -225,6 +278,8 @@ async function readSyncResponse(response: Response): Promise<CloudSnapshot> {
     friendships: Array.isArray(payload.friendships) ? payload.friendships : [],
     sharedMeals: Array.isArray(payload.sharedMeals) ? payload.sharedMeals : [],
     sharedMealParticipants: Array.isArray(payload.sharedMealParticipants) ? payload.sharedMealParticipants : [],
+    restaurantLists: Array.isArray(payload.restaurantLists) ? payload.restaurantLists : [],
+    restaurantListItems: Array.isArray(payload.restaurantListItems) ? payload.restaurantListItems : [],
   }
 }
 

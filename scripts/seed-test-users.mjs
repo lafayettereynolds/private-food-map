@@ -115,6 +115,7 @@ function buildRestaurants(now) {
   const cuisines = ['杭帮菜', '日料', '烧肉', '川菜', '东南亚菜', '火锅', '西餐', '云南菜', '烧肉', '甜品']
   const restaurants = hangzhouNames.map((name, index) => ({
     id: `sample-restaurant-${String(index + 1).padStart(2, '0')}`, name, city: '杭州市',
+    amapPoiId: `sample-amap-poi-${String(index + 1).padStart(2, '0')}`,
     address: `${index < 20 ? '来福士中心' : '湖滨银泰'}附近 ${20 + index} 号`,
     latitude: 30.2465 + ((index % 7) - 3) * 0.0013, longitude: 120.19 + ((index % 9) - 4) * 0.0016,
     cuisine: cuisines[index % cuisines.length], isTestData: true,
@@ -131,11 +132,17 @@ function buildRestaurants(now) {
     extraIndex += 1
     restaurants.push({
       id: `${TEST_PREFIX}restaurant-${String(extraIndex).padStart(2, '0')}`, name, city,
+      amapPoiId: `seed-poi-${TEST_PREFIX}restaurant-${String(extraIndex).padStart(2, '0')}`,
       address: `${city}测试街区 ${index + 1} 号`, latitude: Number(latitude) + index * 0.003,
       longitude: Number(longitude) + index * 0.003, cuisine: ['日料', '咖啡', '烧肉', '火锅', '西餐', '甜品'][index % 6], isTestData: true,
     })
   }))
-  return restaurants.map((item) => ({ ...item, createdAt: isoDaysAgo(now, 760) }))
+  return restaurants.map((item, index) => ({
+    ...item,
+    phone: `0571-${String(87000000 + index * 191).slice(0, 8)}`,
+    openingHours: index % 6 === 0 ? '10:30–23:00' : '11:00–22:00',
+    createdAt: isoDaysAgo(now, 760),
+  }))
 }
 
 function buildVisits(users, restaurants, now) {
@@ -267,7 +274,7 @@ function buildHistoricalCompanions(users, visits, now) {
   return { rows, visitUpdates }
 }
 
-function insertRestaurant(r) { return `INSERT OR IGNORE INTO restaurants (id,user_id,amap_poi_id,name,address,city,latitude,longitude,status,preference_level,tags_json,long_term_note,marker_type,merchant_image_url,marker_emoji,created_at,updated_at,is_test_data) VALUES (${q(r.id)},'owner',${q(`seed-poi-${r.id}`)},${q(r.name)},${q(r.address)},${q(r.city)},${r.latitude},${r.longitude},'visited','normal',${q(JSON.stringify([r.cuisine]))},'','image',${q(foodImageUrl(r.cuisine))},'🍽️',${q(r.createdAt)},${q(r.createdAt)},${r.isTestData ? 1 : 0});` }
+function insertRestaurant(r) { return `INSERT INTO restaurants (id,user_id,amap_poi_id,name,address,city,latitude,longitude,status,preference_level,tags_json,long_term_note,phone,opening_hours,marker_type,merchant_image_url,marker_emoji,created_at,updated_at,is_test_data) VALUES (${q(r.id)},'owner',${q(r.amapPoiId)},${q(r.name)},${q(r.address)},${q(r.city)},${r.latitude},${r.longitude},'visited','normal',${q(JSON.stringify([r.cuisine]))},'',${q(r.phone)},${q(r.openingHours)},'image',${q(foodImageUrl(r.cuisine))},'🍽️',${q(r.createdAt)},${q(r.createdAt)},${r.isTestData ? 1 : 0}) ON CONFLICT(id) DO UPDATE SET amap_poi_id=excluded.amap_poi_id,name=excluded.name,address=excluded.address,city=excluded.city,latitude=excluded.latitude,longitude=excluded.longitude,tags_json=excluded.tags_json,phone=excluded.phone,opening_hours=excluded.opening_hours,merchant_image_url=excluded.merchant_image_url,is_test_data=1;` }
 function updateRestaurantImage(r) { return `UPDATE restaurants SET merchant_image_url = COALESCE(merchant_image_url, ${q(foodImageUrl(r.cuisine))}) WHERE id = ${q(r.id)};` }
 
 function foodImageUrl(cuisine) {
@@ -281,7 +288,18 @@ function foodImageUrl(cuisine) {
   return images[cuisine] ?? 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=320&q=75'
 }
 function insertUser(u) { return `INSERT INTO users (id,auth_provider,nickname,bio,city,avatar_preset_id,membership_tier,map_sharing_enabled,map_visibility,created_at,updated_at,is_test_user) VALUES (${q(u.id)},'local',${q(u.nickname)},${q(`测试口味组 ${u.cluster}`)},${q(u.city)},${q(u.avatar)},'free',1,'public',${q(u.createdAt)},${q(u.createdAt)},1);` }
-function insertVisit(v) { const ppp = Math.round(v.totalPrice / v.partySize); return `INSERT INTO visits (id,user_id,restaurant_id,visited_at,rating,total_price,price_per_person,party_size,queue_duration,companions_json,dishes_json,note,created_at,updated_at,visibility,dining_mode,my_actual_spend,special_notes,shared_meal_id,photo_ids_json,value_tags_json,environment_tags_json,service_tags_json,dining_occasions_json,companion_ids_json,is_test_data) VALUES (${q(v.id)},${q(v.userId)},${q(v.restaurantId)},${q(v.visitedAt)},${v.rating},${v.totalPrice},${ppp},${v.partySize},'under30','[]','[]',${q(v.note)},${q(v.visitedAt)},${q(v.visitedAt)},${q(v.visibility)},${q(v.diningMode)},${ppp},'',${q(v.sharedMealId ?? null)},'[]','[]','[]','[]','[]','[]',1);` }
+function insertVisit(v) {
+  const ppp = Math.round(v.totalPrice / v.partySize)
+  const variant = hashSeed(v.id) % 4
+  const sources = ['friend', 'xiaohongshu', 'dianping', 'self']
+  const sourceLabels = ['好友推荐', '小红书收藏', '大众点评', '自己发现']
+  const occasions = ['friends', 'date', 'family', 'solo']
+  const valueTags = ['合理', '超值', '划算', '偏贵']
+  const environmentTags = ['舒适', '有氛围', '安静', '热闹']
+  const serviceTags = ['周到', '专业', '高效', '热情']
+  const specialNotes = variant === 2 ? '周末高峰建议提前到店。' : ''
+  return `INSERT INTO visits (id,user_id,restaurant_id,visited_at,rating,total_price,price_per_person,party_size,queue_duration,companions_json,dishes_json,note,created_at,updated_at,visibility,dining_mode,my_actual_spend,special_notes,shared_meal_id,photo_ids_json,value_rating,environment_rating,service_rating,value_tags_json,environment_tags_json,service_tags_json,dining_occasions_json,recommendation_source_type,recommendation_source_text,noise_level,dining_duration,portion_level,transport_convenience,companion_ids_json,is_test_data) VALUES (${q(v.id)},${q(v.userId)},${q(v.restaurantId)},${q(v.visitedAt)},${v.rating},${v.totalPrice},${ppp},${v.partySize},'under30','[]','[]',${q(v.note)},${q(v.visitedAt)},${q(v.visitedAt)},${q(v.visibility)},${q(v.diningMode)},${ppp},${q(specialNotes)},${q(v.sharedMealId ?? null)},'[]',${v.rating},${Math.max(2.5, v.rating - 0.5)},${Math.min(5, v.rating + 0.5)},${q(JSON.stringify([valueTags[variant]]))},${q(JSON.stringify([environmentTags[variant]]))},${q(JSON.stringify([serviceTags[variant]]))},${q(JSON.stringify([occasions[variant]]))},${q(sources[variant])},${q(sourceLabels[variant])},${q(['quiet','normal','loud','normal'][variant])},${q(['under30','under45','under60','under90'][variant])},${q(['normal','generous','normal','small'][variant])},${q(['very_convenient','convenient','normal','convenient'][variant])},'[]',1);`
+}
 function insertFollow(v) { return `INSERT INTO follows (id,follower_id,followed_user_id,created_at,is_test_data) VALUES (${q(v.id)},${q(v.followerId)},${q(v.followedUserId)},${q(v.createdAt)},1);` }
 function insertFriendship(v) { return `INSERT INTO friendships (id,requester_id,addressee_id,status,created_at,updated_at,is_test_data) VALUES (${q(v.id)},${q(v.requesterId)},${q(v.addresseeId)},${q(v.status)},${q(v.createdAt)},${q(v.createdAt)},1);` }
 function insertWant(v) { return `INSERT INTO want_to_go (id,user_id,restaurant_id,created_at,is_test_data) VALUES (${q(v.id)},${q(v.userId)},${q(v.restaurantId)},${q(v.createdAt)},1);` }

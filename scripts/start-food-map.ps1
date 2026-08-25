@@ -154,6 +154,20 @@ if ($isProduction) {
   $serverArguments = $pnpmProjectArguments + @('exec', 'vite', 'preview', '--config', 'vite.config.ts', '--host', '127.0.0.1', '--port', "$port", '--strictPort')
 }
 else {
+  # Migrations are incremental and Wrangler only applies files that have not
+  # been recorded yet. Run this on every development start so a previously
+  # seeded database still receives later schema additions without being reset.
+  $migrationProcess = Start-Process -FilePath $pnpmExecutable `
+    -ArgumentList ($pnpmProjectArguments + @('run', 'd1:migrate:local')) `
+    -WorkingDirectory $projectDirectory `
+    -WindowStyle Hidden `
+    -Wait `
+    -PassThru
+  if ($migrationProcess.ExitCode -ne 0) {
+    Show-LauncherMessage 'Taste Map test database could not be updated safely.'
+    exit 1
+  }
+
   $testDataMarker = Join-Path $projectDirectory '.wrangler\taste-map-test-data.seeded'
   if (-not (Test-Path -LiteralPath $testDataMarker)) {
     $seedProcess = Start-Process -FilePath $pnpmExecutable `

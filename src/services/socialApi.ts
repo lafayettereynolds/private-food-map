@@ -1,6 +1,6 @@
-import { CLOUD_SYNC_ENABLED } from '../config/appEnvironment'
+import { CLOUD_SYNC_ENABLED, IS_DEVELOPMENT } from '../config/appEnvironment'
 import type { CloudVisit } from '../types/cloudSync'
-import type { CompanionLinkRequest, CommunityVisit, DiningCompanion, Follow, HistoricalMealFact, RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import type { CompanionLinkRequest, CommunityVisit, DiningCompanion, Follow, HistoricalMealFact, RestaurantListCollection, RestaurantListItem, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { drivePhotoReference } from './cloudSyncData'
 
 export type PublicUser = Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
@@ -31,6 +31,11 @@ interface CommunityResponse {
     user: PublicUser
     similarity?: number | null
     recommendationReason?: string | null
+    recommendationType?: CommunityVisit['recommendationType']
+    recommendationRank?: number | null
+    recommendationConfidence?: CommunityVisit['recommendationConfidence']
+    reasonCodes?: CommunityVisit['reasonCodes']
+    surface?: CommunityVisit['surface']
   }>
 }
 
@@ -62,6 +67,11 @@ export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city =
     },
     similarity: item.similarity ?? null,
     recommendationReason: item.recommendationReason ?? null,
+    recommendationType: item.recommendationType ?? null,
+    recommendationRank: item.recommendationRank ?? null,
+    recommendationConfidence: item.recommendationConfidence ?? null,
+    reasonCodes: item.reasonCodes ?? [],
+    surface: item.surface ?? null,
   }))
 }
 
@@ -77,11 +87,22 @@ export async function fetchFollows(): Promise<Follow[]> {
   return result.follows
 }
 
+export async function fetchPublicRestaurantList(listId: string) {
+  if (!CLOUD_SYNC_ENABLED) return null
+  return apiFetch<{
+    list: Omit<RestaurantListCollection, 'customCoverImageData'>
+    items: RestaurantListItem[]
+    restaurants: Array<Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'tags' | 'merchantImageUrl' | 'markerEmoji'>>
+  }>(`/api/restaurant-lists/${encodeURIComponent(listId)}`)
+}
+
 export async function fetchUserProfile(userId: string) {
   if (!CLOUD_SYNC_ENABLED) return null
   const result = await apiFetch<{
     user: PublicUser
-    items: Array<{ visit: CloudVisit; restaurant: Pick<RestaurantSummary, 'id' | 'name' | 'address' | 'city' | 'latitude' | 'longitude'> }>
+    items: Array<{ visit: CloudVisit; restaurant: Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'tags' | 'pricePerPerson' | 'phone' | 'openingHours' | 'merchantImageUrl' | 'markerEmoji'> }>
+    followerCount: number
+    followingCount: number
   }>(`/api/profiles/${encodeURIComponent(userId)}`)
   const user = publicUserToProfile(result.user)
   const grouped = new Map<string, RestaurantSummary>()
@@ -100,7 +121,7 @@ export async function fetchUserProfile(userId: string) {
     grouped.set(item.restaurant.id, {
       ...item.restaurant,
       userId,
-      amapPoiId: `profile-${item.restaurant.id}`,
+      amapPoiId: item.restaurant.amapPoiId || `profile-${item.restaurant.id}`,
       status: 'visited',
       preferenceLevel: 'normal',
       overallRating: null,
@@ -108,14 +129,14 @@ export async function fetchUserProfile(userId: string) {
       environmentRating: null,
       serviceRating: null,
       valueRating: null,
-      tags: [],
+      tags: item.restaurant.tags ?? [],
       longTermNote: '',
-      pricePerPerson: visit.pricePerPerson,
-      markerType: 'emoji',
+      pricePerPerson: item.restaurant.pricePerPerson ?? visit.pricePerPerson,
+      markerType: item.restaurant.merchantImageUrl ? 'image' : 'emoji',
       markerImageData: null,
       markerPhotoId: null,
-      merchantImageUrl: null,
-      markerEmoji: '🍽️',
+      merchantImageUrl: item.restaurant.merchantImageUrl ?? null,
+      markerEmoji: item.restaurant.markerEmoji || '🍽️',
       createdAt: visit.createdAt,
       updatedAt: visit.updatedAt,
       deletedAt: null,
@@ -129,8 +150,15 @@ export async function fetchUserProfile(userId: string) {
       averageQueueMinutes: null,
     })
   })
-  grouped.forEach((restaurant) => restaurant.visits.sort((a, b) => b.visitedAt.localeCompare(a.visitedAt)))
-  return { user, restaurants: [...grouped.values()] }
+  grouped.forEach((restaurant) => {
+    restaurant.visits.sort((a, b) => b.visitedAt.localeCompare(a.visitedAt))
+    const ratings = restaurant.visits.flatMap((visit) => visit.rating === null ? [] : [visit.rating])
+    restaurant.averageRating = ratings.length ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length : null
+    restaurant.scoreOutOfTen = restaurant.averageRating === null ? null : restaurant.averageRating * 2
+    const prices = restaurant.visits.flatMap((visit) => visit.pricePerPerson === null ? [] : [visit.pricePerPerson]).sort((a, b) => a - b)
+    restaurant.averagePricePerPerson = prices.length ? prices[Math.floor(prices.length / 2)] : null
+  })
+  return { user, restaurants: [...grouped.values()], followerCount: result.followerCount ?? 0, followingCount: result.followingCount ?? 0 }
 }
 
 export async function sendFriendRequest(userId: string) {
@@ -184,6 +212,11 @@ export async function importCompanionHistory(requestId: string, sourceVisitIds: 
 }
 
 function cloudVisitToLocal(visit: CloudVisit): Visit {
+  const syncedPhotos = visit.photoIds.map((photoId) => photoId ? drivePhotoReference(photoId) : '')
+  const isDiscoveryTestVisit = visit.isTestData || visit.id.startsWith('test-discovery-')
+  const demoPhotos = IS_DEVELOPMENT && isDiscoveryTestVisit && !syncedPhotos.some(Boolean)
+    ? testVisitPhotos(visit.id)
+    : syncedPhotos
   return {
     ...visit,
     userId: visit.userId ?? 'owner',
@@ -210,8 +243,24 @@ function cloudVisitToLocal(visit: CloudVisit): Visit {
     recommendationSourceText: visit.recommendationSourceText ?? '',
     sharedMealId: visit.sharedMealId ?? null,
     dishes: visit.dishes.map((dish) => ({ ...dish, imageData: dish.photoId ? drivePhotoReference(dish.photoId) : null })),
-    photos: visit.photoIds.map((photoId) => photoId ? drivePhotoReference(photoId) : ''),
+    photos: demoPhotos,
+    photoIds: demoPhotos === syncedPhotos ? visit.photoIds : demoPhotos.map(() => null),
   }
+}
+
+const TEST_VISIT_PHOTOS = [
+  'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=1200&q=82',
+  'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=1200&q=82',
+  'https://images.unsplash.com/photo-1559314809-0d155014e29e?auto=format&fit=crop&w=1200&q=82',
+  'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=1200&q=82',
+  'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?auto=format&fit=crop&w=1200&q=82',
+  'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=1200&q=82',
+]
+
+function testVisitPhotos(visitId: string) {
+  const seed = [...visitId].reduce((total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0, 17)
+  const count = 2 + (seed % 2)
+  return Array.from({ length: count }, (_, index) => TEST_VISIT_PHOTOS[(seed + index * 2) % TEST_VISIT_PHOTOS.length])
 }
 
 async function apiFetch<Result = unknown>(input: string, init: RequestInit = {}): Promise<Result> {

@@ -8,6 +8,8 @@ import type {
   Photo,
   PhotoCacheEntry,
   Restaurant,
+  RestaurantListCollection,
+  RestaurantListItem,
   SharedMeal,
   SharedMealParticipant,
   UserProfile,
@@ -35,6 +37,8 @@ class FoodMapDatabase extends Dexie {
   sharedMeals!: EntityTable<SharedMeal, 'id'>
   sharedMealParticipants!: EntityTable<SharedMealParticipant, 'id'>
   diningCompanions!: EntityTable<DiningCompanion, 'id'>
+  restaurantLists!: EntityTable<RestaurantListCollection, 'id'>
+  restaurantListItems!: EntityTable<RestaurantListItem, 'id'>
 
   constructor() {
     super(DATABASE_NAME)
@@ -405,6 +409,100 @@ class FoodMapDatabase extends Dexie {
       syncQueue: 'id, entityType, entityId, updatedAt',
       syncMetadata: 'key',
     })
+
+    this.version(17)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt, isTestUser',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt, isTestData',
+        follows: 'id, followerId, followedUserId, createdAt, isTestData',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt, isTestData',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt, isTestData',
+        diningCompanions: 'id, ownerUserId, displayName, linkedUserId, updatedAt, deletedAt',
+        syncQueue: 'id, entityType, entityId, status, nextAttemptAt, updatedAt',
+        syncMetadata: 'key',
+      })
+
+    this.version(18)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, storageProvider, syncStatus, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt, isTestUser',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt, isTestData',
+        follows: 'id, followerId, followedUserId, createdAt, isTestData',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt, isTestData',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt, isTestData',
+        diningCompanions: 'id, ownerUserId, displayName, linkedUserId, updatedAt, deletedAt',
+        syncQueue: 'id, entityType, entityId, status, nextAttemptAt, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('photos').toCollection().modify((photo) => {
+          photo.storageProvider ??= 'google-drive'
+          photo.storageKey ??= photo.driveFileId ?? ''
+          photo.thumbnailStorageKey ??= null
+          photo.thumbnailFileSize ??= null
+          photo.visibility ??= 'private'
+          photo.syncStatus ??= photo.localState === 'delete-pending' ? 'delete-pending' : 'synced'
+        })
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('syncQueue').toCollection().modify((item) => {
+          item.operationId ??= item.id
+          item.action ??= 'upsert'
+          item.status ??= 'pending'
+          item.attemptCount ??= 0
+          item.nextAttemptAt ??= null
+          item.lastError ??= null
+          item.createdAt ??= item.updatedAt
+        })
+      })
+
+    this.version(19).stores({
+      restaurants: restaurantSchema,
+      visits: visitSchema,
+      photos: 'id, userId, restaurantId, visitId, kind, storageProvider, syncStatus, updatedAt, deletedAt, localState',
+      photoCache: 'photoId, cachedAt, lastAccessedAt',
+      users: 'id, nickname, email, updatedAt, deletedAt, isTestUser',
+      friendships: 'id, requesterId, addresseeId, status, updatedAt, isTestData',
+      follows: 'id, followerId, followedUserId, createdAt, isTestData',
+      sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt, isTestData',
+      sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt, isTestData',
+      diningCompanions: 'id, ownerUserId, displayName, linkedUserId, updatedAt, deletedAt',
+      restaurantLists: 'id, userId, title, visibility, isRanked, updatedAt, deletedAt',
+      restaurantListItems: 'id, listId, restaurantId, position, updatedAt, deletedAt, &[listId+restaurantId]',
+      syncQueue: 'id, entityType, entityId, status, nextAttemptAt, updatedAt',
+      syncMetadata: 'key',
+    })
+
+    this.version(20)
+      .stores({
+        restaurants: restaurantSchema,
+        visits: visitSchema,
+        photos: 'id, userId, restaurantId, visitId, kind, storageProvider, syncStatus, updatedAt, deletedAt, localState',
+        photoCache: 'photoId, cachedAt, lastAccessedAt',
+        users: 'id, nickname, email, updatedAt, deletedAt, isTestUser',
+        friendships: 'id, requesterId, addresseeId, status, updatedAt, isTestData',
+        follows: 'id, followerId, followedUserId, createdAt, isTestData',
+        sharedMeals: 'id, restaurantId, createdByUserId, occurredAt, updatedAt, deletedAt, isTestData',
+        sharedMealParticipants: 'id, sharedMealId, userId, visitId, status, updatedAt, isTestData',
+        diningCompanions: 'id, ownerUserId, displayName, linkedUserId, updatedAt, deletedAt',
+        restaurantLists: 'id, userId, title, visibility, isRanked, updatedAt, deletedAt',
+        restaurantListItems: 'id, listId, restaurantId, position, updatedAt, deletedAt, &[listId+restaurantId]',
+        syncQueue: 'id, entityType, entityId, status, nextAttemptAt, updatedAt',
+        syncMetadata: 'key',
+      })
+      .upgrade(async (transaction) => {
+        await transaction.table('restaurants').toCollection().modify((restaurant) => {
+          restaurant.phone ??= null
+          restaurant.openingHours ??= null
+        })
+      })
   }
 }
 

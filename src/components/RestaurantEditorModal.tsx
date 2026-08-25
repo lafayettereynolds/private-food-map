@@ -4,7 +4,7 @@ import { MarkerStyleField } from './MarkerStyleField'
 import { ModalShell } from './ModalShell'
 import type { RestaurantBasicsUpdate } from '../db/restaurants'
 import type { MarkerType, Restaurant, RestaurantStatus } from '../types/domain'
-import { detectCurrentLocation, resolveAddressLocation, searchRestaurantPois } from '../services/amap'
+import { mapService } from '../services/mapService'
 
 interface RestaurantEditorModalProps {
   restaurant: Restaurant
@@ -22,6 +22,8 @@ export function RestaurantEditorModal({
   const [city, setCity] = useState(restaurant.city)
   const [status, setStatus] = useState<RestaurantStatus>(restaurant.status)
   const [price, setPrice] = useState(restaurant.pricePerPerson?.toString() ?? '')
+  const [phone, setPhone] = useState(restaurant.phone ?? '')
+  const [openingHours, setOpeningHours] = useState(restaurant.openingHours ?? '')
   const [markerType, setMarkerType] = useState<MarkerType>(restaurant.markerType)
   const [markerImageData, setMarkerImageData] = useState(restaurant.markerImageData)
   const [markerPhotoId, setMarkerPhotoId] = useState(restaurant.markerPhotoId)
@@ -50,6 +52,8 @@ export function RestaurantEditorModal({
         city,
         status,
         pricePerPerson: numericPrice,
+        phone: phone.trim() || null,
+        openingHours: openingHours.trim() || null,
         tags: restaurant.tags,
         markerType,
         markerImageData,
@@ -70,9 +74,9 @@ export function RestaurantEditorModal({
     setError('')
     setLocationMessage('')
     try {
-      const matches = await searchRestaurantPois(name, city, { timeoutMs: 8_000 })
+      const matches = await mapService.searchRestaurantPois(name, city, { timeoutMs: 8_000 })
       const exact = matches.find((item) => item.amapPoiId === restaurant.amapPoiId) ?? matches[0]
-      const resolved = exact ?? await resolveAddressLocation(address, city)
+      const resolved = exact ?? await mapService.resolveAddressLocation(address, city)
       setLatitude(resolved.latitude)
       setLongitude(resolved.longitude)
       if ('address' in resolved && resolved.address) setAddress(resolved.address)
@@ -89,7 +93,7 @@ export function RestaurantEditorModal({
     setError('')
     setLocationMessage('')
     try {
-      const current = await detectCurrentLocation()
+      const current = await mapService.detectCurrentLocation()
       setLatitude(current.latitude)
       setLongitude(current.longitude)
       setAddress(current.address)
@@ -118,6 +122,10 @@ export function RestaurantEditorModal({
         </div>
         {locationMessage ? <p className="location-success"><Check size={14} /> {locationMessage}</p> : null}
         <label className="field field-with-leading-icon"><span>参考人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} step="0.01" type="number" value={price} /></div>{status === 'visited' ? <small className="price-calculation">去过的餐厅会优先显示到访记录自动计算的人均。</small> : null}</label>
+        <div className="field-grid">
+          <label className="field"><span>联系电话</span><input inputMode="tel" onChange={(event) => setPhone(event.target.value)} placeholder="例如：0571-88888888" value={phone} /></label>
+          <label className="field"><span>营业时间</span><input onChange={(event) => setOpeningHours(event.target.value)} placeholder="例如：11:00–22:00" value={openingHours} /></label>
+        </div>
         <MarkerStyleField
           markerEmoji={markerEmoji}
           markerImageData={markerImageData}

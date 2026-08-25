@@ -27,6 +27,7 @@ const areaNames = ['武林广场', '西溪', '大运河', '滨江', '钱江新�
 const cuisines = ['杭帮菜', '日料', '火锅', '烧烤', '粤菜', '西餐', '川菜', '融合菜']
 const emojis = ['🍲', '🍣', '🥩', '🍜', '🥘', '🍕', '🍤', '🥟']
 const queueDurations: QueueDuration[] = ['none', 'under15', 'under30', 'under60', 'under90', 'under120', 'over120']
+const TEST_SEED_VERSION = 'taste-map-dev-restaurants-2026-08-24-v3'
 
 let seedPromise: Promise<number> | null = null
 
@@ -38,14 +39,14 @@ export function seedSixtyVisitedRestaurants() {
 async function seedRestaurants() {
   const ids = names.map((_, index) => `sample-restaurant-${String(index + 1).padStart(2, '0')}`)
   const existing = await db.restaurants.bulkGet(ids)
-  const missingIndexes = existing.flatMap((restaurant, index) => restaurant ? [] : [index])
-  if (!missingIndexes.length) return 0
+  const isCurrentSeed = typeof window !== 'undefined' && window.localStorage.getItem('taste-map-dev-restaurant-seed') === TEST_SEED_VERSION
+  if (isCurrentSeed && existing.every(Boolean)) return 0
 
   const restaurants: Restaurant[] = []
   const visits: Visit[] = []
   const now = new Date().toISOString()
 
-  missingIndexes.forEach((index) => {
+  names.forEach((_, index) => {
     const random = seededRandom(index + 20260820)
     const area = index < 20 ? '来福士中心' : index < 40 ? '湖滨银泰' : areaNames[index - 40]
     const center = index < 20
@@ -82,23 +83,23 @@ async function seedRestaurants() {
         pricePerPerson: calculatePricePerPerson(totalPrice, partySize),
         partySize,
         queueDuration: queueDurations[Math.floor(random() * queueDurations.length)],
-        diningOccasions: [],
+        diningOccasions: [(['solo', 'friends', 'family', 'date'] as const)[Math.floor(random() * 4)]],
         diningOccasion: null,
         diningOccasionText: '',
-        valueRating: null,
-        environmentRating: null,
-        serviceRating: null,
-        valueTags: [],
-        environmentTags: [],
-        serviceTags: [],
-        noiseLevel: null,
-        diningDuration: null,
-        portionLevel: null,
-        transportConvenience: null,
-        specialNotes: '',
-        recommendationSourceType: null,
+        valueRating: rating,
+        environmentRating: (1 + Math.floor(random() * 5)) as StarRating,
+        serviceRating: (1 + Math.floor(random() * 5)) as StarRating,
+        valueTags: [(['划算', '合理', '偏贵', '超值'] as const)[Math.floor(random() * 4)]],
+        environmentTags: [(['安静', '热闹', '舒适', '有氛围'] as const)[Math.floor(random() * 4)]],
+        serviceTags: [(['热情', '专业', '高效', '周到'] as const)[Math.floor(random() * 4)]],
+        noiseLevel: (['quiet', 'normal', 'loud'] as const)[Math.floor(random() * 3)],
+        diningDuration: (['under30', 'under45', 'under60', 'under90'] as const)[Math.floor(random() * 4)],
+        portionLevel: (['small', 'normal', 'generous'] as const)[Math.floor(random() * 3)],
+        transportConvenience: (['very_convenient', 'convenient', 'normal'] as const)[Math.floor(random() * 3)],
+        specialNotes: random() > 0.72 ? '周末高峰建议提前到店。' : '',
+        recommendationSourceType: (['friend', 'xiaohongshu', 'dianping', 'self'] as const)[Math.floor(random() * 4)],
         recommendationSourceUserId: null,
-        recommendationSourceText: '',
+        recommendationSourceText: ['朋友推荐', '收藏后到店', '附近发现', '再次到访'][Math.floor(random() * 4)],
         sharedMealId: null,
         companions: partySize > 1 ? randomCompanions(partySize - 1, random) : [],
         companionIds: [],
@@ -133,21 +134,26 @@ async function seedRestaurants() {
       tags: [cuisines[cuisineIndex], area],
       longTermNote: '',
       pricePerPerson: averagePrice,
-      markerType: 'emoji',
+      phone: `0571-${String(86000000 + index * 137).slice(0, 8)}`,
+      openingHours: index % 5 === 0 ? '10:30–23:00' : '11:00–22:00',
+      markerType: 'image',
       markerImageData: null,
       markerPhotoId: null,
-      merchantImageUrl: null,
+      merchantImageUrl: foodImageUrl(cuisines[cuisineIndex]),
       markerEmoji: emojis[cuisineIndex],
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      isTestData: true,
     })
   })
 
   await db.transaction('rw', db.restaurants, db.visits, async () => {
+    await db.visits.where('restaurantId').anyOf(ids).delete()
     await db.restaurants.bulkPut(restaurants)
     await db.visits.bulkPut(visits)
   })
+  if (typeof window !== 'undefined') window.localStorage.setItem('taste-map-dev-restaurant-seed', TEST_SEED_VERSION)
   return restaurants.length
 }
 
@@ -165,4 +171,18 @@ function seededRandom(seed: number) {
 function randomCompanions(count: number, random: () => number) {
   const pool = ['小王', '妈妈', '同事', '朋友', '家人']
   return [...new Set(Array.from({ length: Math.min(count, 3) }, () => pool[Math.floor(random() * pool.length)]))]
+}
+
+function foodImageUrl(cuisine: string) {
+  const images: Record<string, string> = {
+    日料: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=480&q=78',
+    烧烤: 'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?auto=format&fit=crop&w=480&q=78',
+    火锅: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=480&q=78',
+    川菜: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=480&q=78',
+    西餐: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=480&q=78',
+    杭帮菜: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?auto=format&fit=crop&w=480&q=78',
+    粤菜: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=480&q=78',
+    融合菜: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=480&q=78',
+  }
+  return images[cuisine] ?? images.融合菜
 }

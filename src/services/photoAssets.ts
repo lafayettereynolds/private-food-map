@@ -1,5 +1,6 @@
 import { db } from '../db/appDb'
-import { downloadGoogleDrivePhoto, getGoogleDriveState } from './googleDrive'
+import { getGoogleDriveState } from './googleDrive'
+import { photoStorageProviderFor } from './photoStorage'
 import { photoIdFromReference } from './cloudSyncData'
 
 const MAX_CACHE_BYTES = 300 * 1024 * 1024
@@ -30,7 +31,9 @@ export async function resolvePhotoSource(source: string | null | undefined, expl
     throw new Error('当前连接的是另一个 Google Drive 账号，无法读取原有照片。')
   }
 
-  const blob = await downloadGoogleDrivePhoto(photo.driveFileId)
+  const provider = photoStorageProviderFor(photo)
+  if (!provider.isAvailable()) throw new Error('当前图片存储服务不可用，请稍后重试。')
+  const blob = await provider.download(photo.thumbnailStorageKey || photo.storageKey || photo.driveFileId)
   await cachePhotoBlob(photoId, blob)
   return rememberObjectUrl(photoId, blob)
 }

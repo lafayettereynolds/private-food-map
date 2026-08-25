@@ -170,7 +170,7 @@ export function SettingsModal({
       ) : null}
       <div className="data-setting-list">
         <section>
-          <div><strong>云端同步</strong><p>{CLOUD_SYNC_ENABLED ? `通过 Cloudflare D1 同步餐厅、到访、评分、标签、笔记和照片索引。${syncState.lastSuccessfulSyncAt ? ` 上次成功：${new Date(syncState.lastSuccessfulSyncAt).toLocaleString('zh-CN')}` : ''}` : '当前本地测试或预览环境不会连接正式 D1。'}</p></div>
+          <div><strong>云端同步</strong><p>{CLOUD_SYNC_ENABLED ? `通过 Cloudflare D1 同步餐厅、到访、评分、笔记和照片索引。${syncState.lastSuccessfulSyncAt ? ` 上次成功：${new Date(syncState.lastSuccessfulSyncAt).toLocaleString('zh-CN')}` : ''}` : '当前本地测试或预览环境不会连接正式 D1。'}</p></div>
           {CLOUD_SYNC_ENABLED ? <button className="secondary-button" disabled={syncState.status === 'syncing'} onClick={() => void syncData()} type="button">{syncState.status === 'syncing' ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />} 立即同步</button> : <span className="local-only-chip"><Cloud size={14} /> 仅本地</span>}
         </section>
         <section className="google-drive-setting">
@@ -194,7 +194,7 @@ export function SettingsModal({
           <button className="secondary-button" disabled={!cacheBytes} onClick={() => void clearPhotoCache()} type="button"><Trash2 size={15} /> 清除缓存</button>
         </section>
         <section>
-          <div><strong>导出完整备份</strong><p>包含餐厅、评分、到访历史、菜品、标签、笔记和 Drive 图片索引；不包含 Drive 图片二进制。</p></div>
+          <div><strong>导出完整备份</strong><p>包含餐厅、评分、到访历史、菜品、笔记和 Drive 图片索引；不包含 Drive 图片二进制。</p></div>
           <button className="secondary-button" disabled={exporting} onClick={exportData} type="button">
             {exporting ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />} 导出
           </button>

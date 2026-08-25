@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
-import { Check, MapPin, Plus, RotateCw, Search, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
+import { Check, ChevronRight, Lightbulb, MapPin, Plus, RotateCw, Search, Sparkles, Star, Utensils, Volume2, VolumeX, X } from 'lucide-react'
 import type { RestaurantStatus, RestaurantSummary } from '../types/domain'
 import { ModalShell } from './ModalShell'
 import { RestaurantAvatar } from './RestaurantAvatar'
 
 const MAX_RESTAURANTS = 10
 const SPIN_DURATION_MS = 4_200
-const WHEEL_COLORS = ['#7893A8', '#8EA7A0', '#D7B77E', '#B9ADC4', '#91AC94', '#D3A58D', '#9CAEBB', '#C6B58C', '#92A7B4', '#B7A3AC']
+const WHEEL_COLORS = ['#DCE5ED', '#D7E3DF', '#F0D7B5', '#E3DDE8', '#DEE7DC', '#EADBD2', '#DCE4E8', '#E8E0CF', '#D7E2E8', '#E4DADF']
 
 type StatusFilter = 'all' | RestaurantStatus
 
@@ -38,7 +38,6 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
 }) {
   const [temporaryName, setTemporaryName] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [tagFilter, setTagFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [rotation, setRotation] = useState(0)
   const [spinning, setSpinning] = useState(false)
@@ -48,16 +47,15 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
   const audioContextRef = useRef<AudioContext | null>(null)
   const tickTimeoutRef = useRef<number | null>(null)
   const spinTimeoutRef = useRef<number | null>(null)
+  const pickerRef = useRef<HTMLElement | null>(null)
 
-  const tags = useMemo(() => [...new Set(restaurants.flatMap((restaurant) => restaurant.tags).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [restaurants])
   const filteredRestaurants = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase('zh-CN')
     return restaurants.filter((restaurant) => {
       if (statusFilter !== 'all' && restaurant.status !== statusFilter) return false
-      if (tagFilter !== 'all' && !restaurant.tags.includes(tagFilter)) return false
-      return !keyword || [restaurant.name, restaurant.city, ...restaurant.tags].some((item) => item.toLocaleLowerCase('zh-CN').includes(keyword))
+      return !keyword || [restaurant.name, restaurant.city, restaurant.address].some((item) => item.toLocaleLowerCase('zh-CN').includes(keyword))
     })
-  }, [restaurants, search, statusFilter, tagFilter])
+  }, [restaurants, search, statusFilter])
   const selectedItems = useMemo<RouletteItem[]>(() => {
     const savedItems = selectedRestaurantIds.flatMap((id) => {
       const restaurant = restaurants.find((item) => item.id === id)
@@ -66,6 +64,8 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
     return [...savedItems, ...temporaryItems.map((item) => ({ ...item, restaurant: undefined }))]
   }, [restaurants, selectedRestaurantIds, temporaryItems])
   const winner = selectedItems.find((item) => item.id === winnerId) ?? null
+  const visualSegmentCount = Math.min(MAX_RESTAURANTS, Math.max(5, selectedItems.length || 5))
+  const wheelItems = useMemo(() => Array.from({ length: visualSegmentCount }, (_, index) => selectedItems[index] ?? null), [selectedItems, visualSegmentCount])
 
   useEffect(() => {
     if (winnerId && !selectedItems.some((item) => item.id === winnerId)) setWinnerId(null)
@@ -142,7 +142,7 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
   function spin() {
     if (spinning || selectedItems.length < 2) return
     const winnerIndex = Math.floor(Math.random() * selectedItems.length)
-    const segmentAngle = 360 / selectedItems.length
+    const segmentAngle = 360 / visualSegmentCount
     const targetAngle = 360 - (winnerIndex + 0.5) * segmentAngle
     const nextRotation = Math.ceil(rotation / 360) * 360 + 5 * 360 + targetAngle
     setSpinning(true)
@@ -213,11 +213,12 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
     tickTimeoutRef.current = null
   }
 
-  const wheelBackground = selectedItems.length ? `conic-gradient(from 0deg, ${selectedItems.map((_, index) => {
-    const start = index / selectedItems.length * 100
-    const end = (index + 1) / selectedItems.length * 100
-    return `${WHEEL_COLORS[index]} ${start}% ${end}%`
-  }).join(', ')})` : '#e9eef2'
+  const wheelBackground = `conic-gradient(from 0deg, ${wheelItems.map((item, index) => {
+    const start = index / visualSegmentCount * 100
+    const end = (index + 1) / visualSegmentCount * 100
+    const color = item ? WHEEL_COLORS[index] : index % 2 ? '#F4F1ED' : '#F1EEF3'
+    return `${color} ${start}% calc(${end}% - 0.35%), #fff calc(${end}% - 0.35%) ${end}%`
+  }).join(', ')})`
 
   const wheelStyle = {
     '--wheel-background': wheelBackground,
@@ -225,39 +226,57 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
     '--spin-duration': `${SPIN_DURATION_MS}ms`,
   } as CSSProperties
 
-  return <ModalShell description="从我的餐厅中挑选，或自定义添加；至少 2 家，最多 10 家。" onClose={onClose} size="large" title="今天吃什么">
+  function scrollToPicker() {
+    pickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  return <ModalShell description="从我的餐厅中随机挑选一家，帮你决定！" onClose={onClose} size="large" title="今天吃什么 ✦">
     <div className="roulette-layout">
       <section className="roulette-candidate-pool" aria-label={`已选餐厅 ${selectedItems.length} / ${MAX_RESTAURANTS}`}>
-        <header><strong>已选餐厅</strong><span>{selectedItems.length} / {MAX_RESTAURANTS}</span><button className="roulette-clear" disabled={!selectedItems.length || spinning} onClick={clearCandidates} type="button">清空</button></header>
+        <header><strong>候选餐厅</strong><span>{selectedItems.length} / {MAX_RESTAURANTS}</span><button className="roulette-clear" disabled={!selectedItems.length || spinning} onClick={clearCandidates} type="button">清空</button></header>
         <div className="roulette-candidate-chips">
-          {selectedItems.map((item) => <span className="roulette-candidate-chip" key={item.id}>{item.name}<button aria-label={`移除 ${item.name}`} disabled={spinning} onClick={() => removeItem(item)} type="button"><X size={13} /></button></span>)}
+          {selectedItems.map((item) => <span className="roulette-candidate-chip" key={item.id}>
+            {item.restaurant ? <RestaurantAvatar restaurant={item.restaurant} /> : <span className="roulette-temporary-avatar"><Utensils size={13} /></span>}
+            <span>{item.name}</span>
+            <button aria-label={`移除 ${item.name}`} disabled={spinning} onClick={() => removeItem(item)} type="button"><X size={13} /></button>
+          </span>)}
           {!selectedItems.length ? <span className="roulette-candidate-empty">从下方选择餐厅，轮盘会立即生成</span> : null}
         </div>
-        <p className={selectedItems.length >= 2 ? 'is-ready' : ''}>{selectedItems.length < 2 ? '至少选择 2 家餐厅' : '候选已就绪，可以开始抽取'}</p>
       </section>
 
       <section className="roulette-wheel-stage" aria-label={`当前轮盘有 ${selectedItems.length} 个扇区`}>
+        <p className={`roulette-ready-tip${selectedItems.length >= 2 ? ' is-ready' : ''}`}><span><Lightbulb size={15} /></span>{selectedItems.length < 2 ? '至少选择 2 家餐厅，就可以开始抽选' : '点击转盘中央，随机决定今天去哪家吃吧！'}</p>
         <div className="roulette-wheel-wrap">
           <button aria-label={soundEnabled ? '关闭转盘声音' : '开启转盘声音'} className="roulette-sound-toggle" onClick={() => { if (soundEnabled) stopTicking(); setSoundEnabled((enabled) => !enabled) }} title={soundEnabled ? '关闭声音' : '开启声音'} type="button">{soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}</button>
-          <div className="roulette-pointer" />
+          <div className="roulette-pointer"><MapPin size={44} strokeWidth={1.7} /></div>
           <div className={`roulette-wheel${selectedItems.length ? '' : ' is-empty'}`} style={wheelStyle}>
-            {selectedItems.map((item, index) => {
-              const angle = (index + 0.5) * 360 / selectedItems.length
-              return <span className="roulette-wheel-label" key={item.id} style={{ '--label-angle': `${angle}deg` } as CSSProperties}><span style={{ '--label-upright': `${-(angle + rotation)}deg`, '--spin-duration': `${SPIN_DURATION_MS}ms` } as CSSProperties}>{shortRestaurantName(item.name)}</span></span>
+            {wheelItems.map((item, index) => {
+              const angle = (index + 0.5) * 360 / visualSegmentCount
+              return <span className={`roulette-wheel-label${item ? '' : ' is-vacant'}`} key={item?.id ?? `vacant-${index}`} style={{ '--label-angle': `${angle}deg` } as CSSProperties}>
+                <span className="roulette-wheel-label__content" style={{ '--label-upright': `${-(angle + rotation)}deg`, '--spin-duration': `${SPIN_DURATION_MS}ms` } as CSSProperties}>
+                  {item ? <>
+                    {item.restaurant ? <RestaurantAvatar restaurant={item.restaurant} /> : <span className="roulette-wheel-temporary-avatar"><Utensils size={16} /></span>}
+                    <strong>{shortRestaurantName(item.name)}</strong>
+                    <small>{item.restaurant?.city || (item.restaurant ? '我的餐厅' : '临时候选')}</small>
+                    {item.restaurant?.scoreOutOfTen != null ? <b><Star size={12} fill="currentColor" /> {item.restaurant.scoreOutOfTen.toFixed(1)}</b> : null}
+                  </> : <button aria-label="添加更多餐厅" onClick={(event) => { event.stopPropagation(); scrollToPicker() }} type="button"><Plus size={21} /><strong>添加更多餐厅</strong><small>最多 10 家</small></button>}
+                </span>
+              </span>
             })}
           </div>
           <button className="roulette-wheel-center" disabled={selectedItems.length < 2 || spinning} onClick={spin} type="button">
-            <span>{spinning ? '抽取中' : winner ? '再抽' : '开始'}</span>
+            <span>{spinning ? '抽取中' : winner ? '再抽一次' : '开始'}</span><small>{spinning ? '正在转动' : '随机选一家'}</small>
           </button>
         </div>
         {winner ? <div className="roulette-winner" role="status">
           <span><Sparkles size={17} /></span>
           <div><small>今天吃</small><strong>{winner.name}</strong></div>
           <div className="roulette-winner__actions"><button disabled={spinning} onClick={spin} type="button"><RotateCw size={14} /> 再抽一次</button>{winner.restaurant ? <button className="is-primary" onClick={() => { onClose(); onSelectRestaurant(winner.restaurant!) }} type="button"><MapPin size={14} /> 查看详情</button> : null}</div>
-        </div> : <p className="roulette-wheel-hint">{selectedItems.length < 2 ? '选满两家后，点击轮盘中央开始' : '点击轮盘中央，随机决定今天吃什么'}</p>}
+        </div> : null}
+        <button className="roulette-manage-button" onClick={scrollToPicker} type="button"><span><Plus size={20} /></span><div><strong>管理候选餐厅</strong><small>添加、查看或调整候选餐厅</small></div><ChevronRight size={22} /></button>
       </section>
 
-      <section className="roulette-picker">
+      <section className="roulette-picker" ref={pickerRef}>
         <header><div><strong>选择餐厅</strong><span>点击餐厅即可加入，再点一次取消</span></div><b>{filteredRestaurants.length} 家</b></header>
         <div className="roulette-picker-tools">
           <label className="roulette-search"><Search size={15} /><input onChange={(event) => setSearch(event.target.value)} placeholder="搜索我的餐厅" value={search} /></label>
@@ -265,14 +284,13 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
         </div>
         <div className="roulette-filter-row">
           <div className="roulette-filter-group"><span>餐厅状态</span><div>{([['all', '全部'], ['visited', '去过'], ['wantToGo', '想吃']] as [StatusFilter, string][]).map(([value, label]) => <button className={statusFilter === value ? 'is-active' : ''} key={value} onClick={() => setStatusFilter(value)} type="button">{label}</button>)}</div></div>
-          <div className="roulette-filter-group"><span>菜系 / 标签</span><div className="roulette-tags"><button className={tagFilter === 'all' ? 'is-active' : ''} onClick={() => setTagFilter('all')} type="button">全部</button>{tags.map((tag) => <button className={tagFilter === tag ? 'is-active' : ''} key={tag} onClick={() => setTagFilter(tag)} type="button">{tag}</button>)}</div></div>
         </div>
         <div className="roulette-result-toolbar"><span>最多选择 10 家</span><button disabled={!filteredRestaurants.length || selectedItems.length >= MAX_RESTAURANTS || spinning} onClick={addFilteredRestaurants} type="button"><Sparkles size={13} /> 加入当前结果</button></div>
         <div className="roulette-restaurant-list">{filteredRestaurants.map((restaurant) => {
           const selected = selectedRestaurantIds.includes(restaurant.id)
           return <button aria-pressed={selected} className={selected ? 'is-selected' : ''} disabled={spinning} key={restaurant.id} onClick={() => toggleRestaurant(restaurant)} type="button">
             <RestaurantAvatar restaurant={restaurant} />
-            <div><strong>{restaurant.name}</strong><small>{restaurant.status === 'visited' ? '去过' : '想吃'}{restaurant.tags.length ? ` · ${restaurant.tags.slice(0, 2).join('、')}` : ''}{restaurant.city ? ` · ${restaurant.city}` : ''}</small></div>
+            <div><strong>{restaurant.name}</strong><small>{restaurant.status === 'visited' ? '去过' : '想吃'}{restaurant.city ? ` · ${restaurant.city}` : ''}</small></div>
             <span className="roulette-selection-indicator">{selected ? <Check size={14} /> : null}</span>
           </button>
         })}{!filteredRestaurants.length ? <div className="roulette-list-empty">没有符合当前条件的餐厅</div> : null}</div>

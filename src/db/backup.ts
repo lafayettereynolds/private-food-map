@@ -1,6 +1,6 @@
 import { db } from './appDb'
 import { APP_ENVIRONMENT, DATABASE_NAME } from '../config/appEnvironment'
-import type { Friendship, Photo, Restaurant, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
+import { isStarRating, type Friendship, type Photo, type Restaurant, type RestaurantListCollection, type RestaurantListItem, type SharedMeal, type SharedMealParticipant, type UserProfile, type Visit } from '../types/domain'
 import type { CloudPhoto } from '../types/cloudSync'
 import { syncQueueId } from '../types/sync'
 import { requestCloudSync } from '../services/syncEvents'
@@ -8,7 +8,7 @@ import { BACKUP_FILE_PREFIX } from '../config/appEnvironment'
 
 interface FoodMapBackup {
   app: 'Taste Map'
-  version: 3
+  version: 4
   environment: typeof APP_ENVIRONMENT
   databaseName: string
   exportedAt: string
@@ -19,6 +19,8 @@ interface FoodMapBackup {
   friendships: Friendship[]
   sharedMeals: SharedMeal[]
   sharedMealParticipants: SharedMealParticipant[]
+  restaurantLists: RestaurantListCollection[]
+  restaurantListItems: RestaurantListItem[]
 }
 
 function createId() {
@@ -27,7 +29,7 @@ function createId() {
 }
 
 export async function createFoodMapBackup() {
-  const [restaurants, visits, localPhotos, users, friendships, sharedMeals, sharedMealParticipants] = await Promise.all([
+  const [restaurants, visits, localPhotos, users, friendships, sharedMeals, sharedMealParticipants, restaurantLists, restaurantListItems] = await Promise.all([
     db.restaurants.toArray(),
     db.visits.toArray(),
     db.photos.toArray(),
@@ -35,6 +37,8 @@ export async function createFoodMapBackup() {
     db.friendships.toArray(),
     db.sharedMeals.toArray(),
     db.sharedMealParticipants.toArray(),
+    db.restaurantLists.toArray(),
+    db.restaurantListItems.toArray(),
   ])
   const photos = localPhotos.map(({ localState, lastError, ...photo }) => {
     void localState
@@ -43,7 +47,7 @@ export async function createFoodMapBackup() {
   })
   const backup: FoodMapBackup = {
     app: 'Taste Map',
-    version: 3,
+    version: 4,
     environment: APP_ENVIRONMENT,
     databaseName: DATABASE_NAME,
     exportedAt: new Date().toISOString(),
@@ -54,6 +58,8 @@ export async function createFoodMapBackup() {
     friendships,
     sharedMeals,
     sharedMealParticipants,
+    restaurantLists,
+    restaurantListItems,
   }
   return JSON.stringify(backup, null, 2)
 }
@@ -88,13 +94,15 @@ export async function importFoodMapBackup(rawText: string) {
   const importedFriendships = (parsed.friendships ?? []).filter(isFriendshipShape)
   const importedSharedMeals = (parsed.sharedMeals ?? []).filter(isSharedMealShape)
   const importedSharedMealParticipants = (parsed.sharedMealParticipants ?? []).filter(isSharedMealParticipantShape)
+  const importedRestaurantLists = (parsed.restaurantLists ?? []).filter(isRestaurantListShape)
+  const importedRestaurantListItems = (parsed.restaurantListItems ?? []).filter(isRestaurantListItemShape)
   if (!importedRestaurants.length && !importedVisits.length) {
     throw new Error('备份中没有可导入的记录。')
   }
 
   let restaurantCount = 0
   let visitCount = 0
-  await db.transaction('rw', [db.restaurants, db.visits, db.photos, db.users, db.friendships, db.sharedMeals, db.sharedMealParticipants, db.syncQueue], async () => {
+  await db.transaction('rw', [db.restaurants, db.visits, db.photos, db.users, db.friendships, db.sharedMeals, db.sharedMealParticipants, db.restaurantLists, db.restaurantListItems, db.syncQueue], async () => {
     const existingRestaurants = await db.restaurants.toArray()
     const existingByPoiId = new Map(existingRestaurants.map((restaurant) => [restaurant.amapPoiId, restaurant]))
     const existingById = new Map(existingRestaurants.map((restaurant) => [restaurant.id, restaurant]))
@@ -116,6 +124,8 @@ export async function importFoodMapBackup(rawText: string) {
         markerEmoji: imported.markerEmoji || '🍽️',
         longTermNote: imported.longTermNote ?? '',
         pricePerPerson: imported.pricePerPerson ?? null,
+        phone: imported.phone ?? null,
+        openingHours: imported.openingHours ?? null,
         updatedAt: imported.updatedAt || new Date().toISOString(),
         deletedAt: imported.deletedAt ?? null,
       }
@@ -194,6 +204,12 @@ export async function importFoodMapBackup(rawText: string) {
         ...imported,
         userId: imported.userId ?? 'owner',
         restaurantId: imported.restaurantId ? (restaurantIdMap.get(imported.restaurantId) ?? imported.restaurantId) : null,
+        storageProvider: imported.storageProvider ?? 'google-drive',
+        storageKey: imported.storageKey ?? imported.driveFileId ?? '',
+        thumbnailStorageKey: imported.thumbnailStorageKey ?? null,
+        thumbnailFileSize: imported.thumbnailFileSize ?? null,
+        visibility: imported.visibility ?? 'private',
+        syncStatus: imported.syncStatus ?? 'synced',
         localState: 'synced',
         lastError: null,
       }
@@ -210,20 +226,33 @@ export async function importFoodMapBackup(rawText: string) {
     if (importedFriendships.length) await db.friendships.bulkPut(importedFriendships)
     if (importedSharedMeals.length) await db.sharedMeals.bulkPut(importedSharedMeals)
     if (importedSharedMealParticipants.length) await db.sharedMealParticipants.bulkPut(importedSharedMealParticipants)
+    if (importedRestaurantLists.length) {
+      await db.restaurantLists.bulkPut(importedRestaurantLists)
+      for (const list of importedRestaurantLists) await db.syncQueue.put({ id: syncQueueId('restaurantList', list.id), entityType: 'restaurantList', entityId: list.id, updatedAt: list.updatedAt })
+    }
+    if (importedRestaurantListItems.length) {
+      const normalizedItems = importedRestaurantListItems.map((item) => ({ ...item, restaurantId: restaurantIdMap.get(item.restaurantId) ?? item.restaurantId }))
+      await db.restaurantListItems.bulkPut(normalizedItems)
+      for (const item of normalizedItems) await db.syncQueue.put({ id: syncQueueId('restaurantListItem', item.id), entityType: 'restaurantListItem', entityId: item.id, updatedAt: item.updatedAt })
+    }
   })
 
   requestCloudSync()
   return { restaurantCount, visitCount }
 }
 
-function isStarRating(value: unknown): value is 1 | 2 | 3 | 4 | 5 {
-  return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 5
-}
-
-function isBackupShape(value: unknown): value is { restaurants: unknown[]; visits: unknown[]; photos?: unknown[]; users?: unknown[]; friendships?: unknown[]; sharedMeals?: unknown[]; sharedMealParticipants?: unknown[] } {
+function isBackupShape(value: unknown): value is { restaurants: unknown[]; visits: unknown[]; photos?: unknown[]; users?: unknown[]; friendships?: unknown[]; sharedMeals?: unknown[]; sharedMealParticipants?: unknown[]; restaurantLists?: unknown[]; restaurantListItems?: unknown[] } {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
   return Array.isArray(candidate.restaurants) && Array.isArray(candidate.visits)
+}
+
+function isRestaurantListShape(value: unknown): value is RestaurantListCollection {
+  return Boolean(value && typeof value === 'object' && typeof (value as Partial<RestaurantListCollection>).id === 'string' && typeof (value as Partial<RestaurantListCollection>).title === 'string')
+}
+
+function isRestaurantListItemShape(value: unknown): value is RestaurantListItem {
+  return Boolean(value && typeof value === 'object' && typeof (value as Partial<RestaurantListItem>).id === 'string' && typeof (value as Partial<RestaurantListItem>).listId === 'string' && typeof (value as Partial<RestaurantListItem>).restaurantId === 'string')
 }
 
 function isUserShape(value: unknown): value is UserProfile {

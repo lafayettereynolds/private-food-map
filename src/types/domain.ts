@@ -2,7 +2,8 @@ export type RestaurantStatus = 'visited' | 'wantToGo'
 export type PreferenceLevel = 'favorite' | 'like' | 'normal' | 'avoid'
 export type ScoreBand = 1 | 2 | 3 | 4 | 5
 export type MarkerType = 'image' | 'emoji'
-export type StarRating = 1 | 2 | 3 | 4 | 5
+export type WholeStarRating = 1 | 2 | 3 | 4 | 5
+export type StarRating = 0.5 | 1 | 1.5 | 2 | 2.5 | 3 | 3.5 | 4 | 4.5 | 5
 export type PhotoKind = 'restaurant-marker' | 'visit' | 'dish' | 'avatar'
 export type Visibility = 'private' | 'friends' | 'public'
 export type DiningMode = 'dine_in' | 'takeout'
@@ -45,6 +46,8 @@ export interface Restaurant {
   tags: string[]
   longTermNote: string
   pricePerPerson: number | null
+  phone?: string | null
+  openingHours?: string | null
   markerType: MarkerType
   markerImageData: string | null
   markerPhotoId: string | null
@@ -146,7 +149,10 @@ export interface Photo {
   restaurantId: string | null
   visitId: string | null
   kind: PhotoKind
-  storageProvider: 'google-drive'
+  storageProvider: 'google-drive' | 'cloudkit' | 'r2' | 'oss' | 'cos'
+  storageKey: string
+  thumbnailStorageKey: string | null
+  thumbnailFileSize: number | null
   driveAccountId: string
   driveFileId: string
   fileName: string | null
@@ -154,6 +160,8 @@ export interface Photo {
   fileSize: number
   width: number | null
   height: number | null
+  visibility: Visibility
+  syncStatus: 'pending' | 'uploading' | 'synced' | 'failed' | 'delete-pending'
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -221,6 +229,34 @@ export interface SharedMealParticipant {
   isTestData?: boolean
 }
 
+export type RestaurantListCoverMode = 'automatic' | 'custom'
+
+export interface RestaurantListCollection {
+  id: string
+  userId: string
+  title: string
+  description: string
+  visibility: Visibility
+  isRanked: boolean
+  coverMode: RestaurantListCoverMode
+  customCoverImageData: string | null
+  customCoverPhotoId: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface RestaurantListItem {
+  id: string
+  listId: string
+  restaurantId: string
+  position: number
+  note: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
 export interface PhotoCacheEntry {
   photoId: string
   blob: Blob
@@ -237,6 +273,9 @@ export interface RestaurantSummary extends Restaurant {
   latestVisit: Visit | null
   visits: Visit[]
   averagePricePerPerson: number | null
+  priceConfidence?: 'unknown' | 'low' | 'medium' | 'high'
+  priceSource?: 'unknown' | 'manual' | 'visit_median'
+  priceSampleCount?: number
   averageQueueMinutes: number | null
   recommendationScore?: number
   recommendationReason?: string
@@ -295,6 +334,8 @@ export interface PoiSearchResult {
   latitude: number
   longitude: number
   merchantImageUrl: string | null
+  phone?: string | null
+  openingHours?: string | null
 }
 
 export interface Coordinates {
@@ -308,6 +349,11 @@ export interface CommunityVisit {
   user: Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
   similarity?: number | null
   recommendationReason?: string | null
+  recommendationType?: 'for_you' | 'similar_taste' | 'trending' | null
+  recommendationRank?: number | null
+  recommendationConfidence?: 'low' | 'medium' | 'high' | null
+  reasonCodes?: Array<'TASTE_MATCH' | 'PRICE_MATCH' | 'QUALITY' | 'NEARBY' | 'REPEAT_AFFINITY' | 'SIMILAR_USERS' | 'EXPLORATION' | 'TRENDING' | 'COLD_START'>
+  surface?: 'map' | 'discover' | null
 }
 
 export const DINING_MODE_OPTIONS: { value: DiningMode; label: string }[] = [
@@ -358,7 +404,7 @@ export function visibilityLabel(value: Visibility | null | undefined) {
 }
 
 export const RATING_META: Record<
-  StarRating,
+  WholeStarRating,
   { label: string; shortLabel: string; color: string }
 > = {
   5: { label: '挚爱', shortLabel: '5 星', color: '#2f9b66' },
@@ -370,9 +416,17 @@ export const RATING_META: Record<
 
 export const UNRATED_COLOR = '#9ea3a0'
 
-export function nearestStar(rating: number | null | undefined): StarRating | null {
+export function nearestStar(rating: number | null | undefined): WholeStarRating | null {
   if (!rating) return null
-  return Math.min(5, Math.max(1, Math.round(rating))) as StarRating
+  return Math.min(5, Math.max(1, Math.round(rating))) as WholeStarRating
+}
+
+export function isStarRating(value: unknown): value is StarRating {
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue)
+    && numericValue >= 0.5
+    && numericValue <= 5
+    && Number.isInteger(numericValue * 2)
 }
 
 export function ratingColor(rating: number | null | undefined) {
@@ -386,7 +440,7 @@ export function ratingLabel(rating: number | null | undefined) {
 }
 
 export function starToTenScore(rating: number | null | undefined) {
-  return rating ? Math.round(rating * 20) / 10 : null
+  return rating == null ? null : Math.round(rating * 20) / 10
 }
 
 export const SCORE_BAND_ORDER: ScoreBand[] = [5, 4, 3, 2, 1]

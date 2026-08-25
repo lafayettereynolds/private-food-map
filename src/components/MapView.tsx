@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { KeyRound, LoaderCircle, MapPin, RotateCcw } from 'lucide-react'
 import {
-  isAmapConfigured,
-  loadAmap,
-  detectCurrentLocation,
   type AMapInstance,
   type AMapMarkerInstance,
   type AMapMarkerClusterInstance,
@@ -11,6 +8,7 @@ import {
   type AMapMarkerClusterRenderContext,
   type AMapNamespace,
 } from '../services/amap'
+import { mapService } from '../services/mapService'
 import { scoreColor, type Coordinates, type RestaurantSummary, type UserProfile } from '../types/domain'
 import { resolvePhotoSource } from '../services/photoAssets'
 import { wantedMarkerScale } from '../utils/mapMarkers'
@@ -47,7 +45,7 @@ export function MapView({
   const suppressMapClearUntilRef = useRef(0)
   const selectRef = useRef(onSelect)
   const clearSelectionRef = useRef(onClearSelection)
-  const [loading, setLoading] = useState(isAmapConfigured)
+  const [loading, setLoading] = useState(mapService.isConfigured)
   const [mapReady, setMapReady] = useState(false)
   const [error, setError] = useState('')
   const [currentCoordinates, setCurrentCoordinates] = useState<Coordinates | null>(null)
@@ -57,13 +55,13 @@ export function MapView({
   clearSelectionRef.current = onClearSelection
 
   useEffect(() => {
-    if (!isAmapConfigured || !containerRef.current) return
+    if (!mapService.isConfigured || !containerRef.current) return
     const restaurantElements = restaurantElementsRef.current
     const restaurantMarkers = restaurantMarkersRef.current
     let disposed = false
     let detachMapClick: (() => void) | undefined
 
-    loadAmap()
+    mapService.loadWebMapSdk()
       .then((AMap) => {
         if (disposed || !containerRef.current) return
         amapRef.current = AMap
@@ -112,7 +110,7 @@ export function MapView({
   useEffect(() => {
     if (!mapRef.current || !amapRef.current) return
     let disposed = false
-    void detectCurrentLocation().then((location) => {
+    void mapService.detectCurrentLocation().then((location) => {
       if (!disposed) setCurrentCoordinates({ longitude: location.longitude, latitude: location.latitude })
     }).catch(() => {
       if (!disposed) setCurrentCoordinates(null)
@@ -267,7 +265,7 @@ export function MapView({
     })
   }, [selectedRestaurant?.id])
 
-  if (!isAmapConfigured) {
+  if (!mapService.isConfigured) {
     return (
       <MapFallback
         icon={<KeyRound size={22} />}

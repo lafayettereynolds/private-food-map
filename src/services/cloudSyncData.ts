@@ -1,8 +1,10 @@
-import type { Friendship, Photo, Restaurant, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
+import type { Friendship, Photo, Restaurant, RestaurantListCollection, RestaurantListItem, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
 import type {
   CloudFriendship,
   CloudPhoto,
   CloudRestaurant,
+  CloudRestaurantList,
+  CloudRestaurantListItem,
   CloudSharedMeal,
   CloudSharedMealParticipant,
   CloudSnapshot,
@@ -52,6 +54,16 @@ export function toCloudSharedMealParticipant(participant: SharedMealParticipant)
   return participant
 }
 
+export function toCloudRestaurantList(list: RestaurantListCollection): CloudRestaurantList {
+  const { customCoverImageData, ...cloudList } = list
+  void customCoverImageData
+  return cloudList
+}
+
+export function toCloudRestaurantListItem(item: RestaurantListItem): CloudRestaurantListItem {
+  return item
+}
+
 export function mergeCloudData(
   localRestaurants: Restaurant[],
   localVisits: Visit[],
@@ -61,6 +73,8 @@ export function mergeCloudData(
   localFriendships: Friendship[] = [],
   localSharedMeals: SharedMeal[] = [],
   localSharedMealParticipants: SharedMealParticipant[] = [],
+  localRestaurantLists: RestaurantListCollection[] = [],
+  localRestaurantListItems: RestaurantListItem[] = [],
 ) {
   const restaurants = mergeById(
     localRestaurants,
@@ -73,7 +87,9 @@ export function mergeCloudData(
   const friendships = mergeById(localFriendships, cloud.friendships ?? [], mergeLatest)
   const sharedMeals = mergeById(localSharedMeals, cloud.sharedMeals ?? [], mergeLatest)
   const sharedMealParticipants = mergeById(localSharedMealParticipants, cloud.sharedMealParticipants ?? [], mergeLatest)
-  return { restaurants, visits, photos, users, friendships, sharedMeals, sharedMealParticipants }
+  const restaurantLists = mergeById(localRestaurantLists, cloud.restaurantLists ?? [], mergeRestaurantList)
+  const restaurantListItems = mergeById(localRestaurantListItems, cloud.restaurantListItems ?? [], mergeLatest)
+  return { restaurants, visits, photos, users, friendships, sharedMeals, sharedMealParticipants, restaurantLists, restaurantListItems }
 }
 
 export function activeCounts(
@@ -158,6 +174,14 @@ function mergeUser(local: UserProfile | undefined, cloud: CloudUser): UserProfil
         ? local.avatarImageData
         : cloud.avatarPhotoId ? drivePhotoReference(cloud.avatarPhotoId) : null
     ),
+  }
+}
+
+function mergeRestaurantList(local: RestaurantListCollection | undefined, cloud: CloudRestaurantList): RestaurantListCollection {
+  if (local && local.updatedAt >= cloud.updatedAt) return local
+  return {
+    ...cloud,
+    customCoverImageData: local?.customCoverPhotoId === cloud.customCoverPhotoId ? local.customCoverImageData : null,
   }
 }
 

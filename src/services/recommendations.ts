@@ -1,4 +1,4 @@
-import { searchRestaurantPois } from './amap'
+import { mapService } from './mapService'
 import type { PoiSearchResult, RestaurantSummary } from '../types/domain'
 
 interface TasteKeyword {
@@ -36,7 +36,7 @@ export async function fetchTasteRecommendations(
   const searches = await Promise.allSettled(
     keywords.map(async (item) => ({
       item,
-      pois: await withTimeout(searchRestaurantPois(item.keyword, city), 8_000),
+      pois: await withTimeout(mapService.searchRestaurantPois(item.keyword, city), 8_000),
     })),
   )
   const successfulSearches = searches.filter(

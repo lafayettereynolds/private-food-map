@@ -1,12 +1,13 @@
 import { db } from '../db/appDb'
 import { syncQueueId } from '../types/sync'
 import type { Photo } from '../types/domain'
-import { deleteGoogleDrivePhoto, getGoogleDriveState, subscribeGoogleDrive, uploadGoogleDrivePhoto } from './googleDrive'
+import { getGoogleDriveState, subscribeGoogleDrive } from './googleDrive'
 import { cachePhotoBlob, removeCachedPhoto } from './photoAssets'
 import { drivePhotoReference } from './cloudSyncData'
 import { CLOUD_SYNC_REQUEST_EVENT, requestCloudSync } from './syncEvents'
 import { DATABASE_NAME } from '../config/appEnvironment'
 import { CURRENT_USER_ID } from '../db/social'
+import { activeWebPhotoStorageProvider, photoStorageProviderFor } from './photoStorage'
 
 export interface PhotoSyncState {
   status: 'idle' | 'syncing' | 'synced' | 'error'
@@ -89,7 +90,7 @@ export async function markPhotoIdsForDeletion(photoIds: Array<string | null | un
   const ids = [...new Set(photoIds.filter((id): id is string => Boolean(id)))]
   if (!ids.length) return
   const now = new Date().toISOString()
-  await db.photos.where('id').anyOf(ids).modify({ localState: 'delete-pending', updatedAt: now, lastError: null })
+  await db.photos.where('id').anyOf(ids).modify({ localState: 'delete-pending', syncStatus: 'delete-pending', updatedAt: now, lastError: null })
   await refreshPendingPhotoCount()
   schedulePhotoSync(100)
 }
@@ -197,26 +198,38 @@ async function uploadPendingPhoto(pending: PendingPhoto, driveAccountId: string)
   if (blob.size > 5 * 1024 * 1024) throw new Error('压缩后的图片仍超过 5 MB，请换一张图片重试。')
   const photoId = createId()
   const dimensions = await readImageDimensions(blob)
-  let driveFileId: string | null = null
+  const provider = activeWebPhotoStorageProvider()
+  let storageKey: string | null = null
+  let thumbnailStorageKey: string | null = null
   let uploadedPhoto: Photo | null = null
   try {
-    const uploaded = await uploadGoogleDrivePhoto(photoId, blob)
-    driveFileId = uploaded.driveFileId
+    const [uploaded, thumbnail] = await Promise.all([
+      provider.upload(photoId, blob, 'original'),
+      createThumbnailBlob(blob).then((thumbnailBlob) => provider.upload(photoId, thumbnailBlob, 'thumbnail')),
+    ])
+    storageKey = uploaded.storageKey
+    thumbnailStorageKey = thumbnail.storageKey
     const now = new Date().toISOString()
+    const sourceVisit = pending.visitId ? await db.visits.get(pending.visitId) : null
     const photo: Photo = {
       id: photoId,
       userId: CURRENT_USER_ID,
       restaurantId: pending.restaurantId,
       visitId: pending.visitId,
       kind: pending.kind,
-      storageProvider: 'google-drive',
+      storageProvider: provider.id,
+      storageKey: uploaded.storageKey,
+      thumbnailStorageKey: thumbnail.storageKey,
+      thumbnailFileSize: thumbnail.fileSize,
       driveAccountId,
-      driveFileId: uploaded.driveFileId,
+      driveFileId: uploaded.storageKey,
       fileName: uploaded.fileName,
       mimeType: blob.type,
       fileSize: uploaded.fileSize,
       width: dimensions.width,
       height: dimensions.height,
+      visibility: sourceVisit?.visibility ?? 'private',
+      syncStatus: 'synced',
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -227,14 +240,16 @@ async function uploadPendingPhoto(pending: PendingPhoto, driveAccountId: string)
     await saveUploadedPhoto(pending, photo)
     await cachePhotoBlob(photoId, blob)
   } catch (error) {
-    if (driveFileId) {
-      const removed = await deleteGoogleDrivePhoto(driveFileId).then(() => true).catch(() => false)
+    if (storageKey) {
+      const removed = await provider.delete(storageKey).then(() => true).catch(() => false)
+      if (thumbnailStorageKey) await provider.delete(thumbnailStorageKey).catch(() => undefined)
       if (!removed && uploadedPhoto) {
         await db.photos.put({
           ...uploadedPhoto,
           restaurantId: null,
           visitId: null,
           localState: 'delete-pending',
+          syncStatus: 'delete-pending',
           lastError: 'Drive 文件已上传，但本地关联失败；正在等待自动清理。',
         }).catch(() => undefined)
       }
@@ -290,9 +305,11 @@ async function deletePendingPhoto(photo: Photo) {
   if (account.accountId !== photo.driveAccountId) {
     throw new Error('当前 Google Drive 账号与这张照片不一致，暂未删除原图。')
   }
-  await deleteGoogleDrivePhoto(photo.driveFileId)
+  const provider = photoStorageProviderFor(photo)
+  await provider.delete(photo.storageKey || photo.driveFileId)
+  if (photo.thumbnailStorageKey) await provider.delete(photo.thumbnailStorageKey).catch(() => undefined)
   const now = new Date().toISOString()
-  await db.photos.update(photo.id, { deletedAt: now, updatedAt: now, localState: 'synced', lastError: null })
+  await db.photos.update(photo.id, { deletedAt: now, updatedAt: now, localState: 'synced', syncStatus: 'synced', lastError: null })
   await removeCachedPhoto(photo.id)
 }
 
@@ -322,6 +339,29 @@ async function readImageDimensions(blob: Blob) {
     return { width: image.naturalWidth || null, height: image.naturalHeight || null }
   } catch {
     return { width: null, height: null }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function createThumbnailBlob(blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  try {
+    const image = new Image()
+    image.src = url
+    await image.decode()
+    const scale = Math.min(1, 480 / Math.max(image.naturalWidth, image.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('当前浏览器无法生成照片缩略图。')
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (thumbnail) => thumbnail ? resolve(thumbnail) : reject(new Error('照片缩略图生成失败。')),
+      'image/webp',
+      0.72,
+    ))
   } finally {
     URL.revokeObjectURL(url)
   }

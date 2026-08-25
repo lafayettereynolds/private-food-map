@@ -1,9 +1,18 @@
-export type SyncEntityType = 'restaurant' | 'visit' | 'user'
+export type SyncEntityType = 'restaurant' | 'visit' | 'user' | 'restaurantList' | 'restaurantListItem'
+export type SyncOperationStatus = 'pending' | 'syncing' | 'synced' | 'failed'
+export type SyncOperationAction = 'upsert' | 'delete'
 
 export interface SyncQueueItem {
   id: string
+  operationId?: string
   entityType: SyncEntityType
   entityId: string
+  action?: SyncOperationAction
+  status?: SyncOperationStatus
+  attemptCount?: number
+  nextAttemptAt?: string | null
+  lastError?: string | null
+  createdAt?: string
   updatedAt: string
 }
 

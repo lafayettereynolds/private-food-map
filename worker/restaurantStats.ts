@@ -48,13 +48,20 @@ export async function readRestaurantSocialStats(database: D1Database, viewerId: 
   const similarUserIds = findSimilarTasteUserIds(signals, viewerId)
   const similarVisits = publicOtherVisits.filter((visit) => similarUserIds.has(visit.user_id))
   const publicVisitsByUser = groupRatingsByUser(publicOtherVisits)
+  const friendVisitsByUser = groupRatingsByUser(friendVisits)
+  const similarVisitsByUser = groupRatingsByUser(similarVisits)
   const repeatVisitors = [...publicVisitsByUser.values()].filter((ratings) => ratings.length >= 2).length
 
   return {
     overallUserRating: averageUserRatings(publicOtherVisits),
+    overallUserCount: publicVisitsByUser.size,
     friendAverageRating: averageUserRatings(friendVisits),
+    friendUserCount: friendVisitsByUser.size,
     similarTasteAverageRating: averageUserRatings(similarVisits),
+    similarTasteUserCount: similarVisitsByUser.size,
     repeatVisitRate: publicVisitsByUser.size ? Math.round((repeatVisitors / publicVisitsByUser.size) * 100) : null,
+    repeatVisitorCount: repeatVisitors,
+    uniqueVisitorCount: publicVisitsByUser.size,
   }
 }
 

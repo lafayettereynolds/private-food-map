@@ -6,6 +6,8 @@ import {
   LoaderCircle,
   LocateFixed,
   MapPin,
+  Clock3,
+  Phone,
   Plus,
   Search,
   Store,
@@ -23,15 +25,7 @@ import { VisitPhotoPicker } from './VisitPhotoPicker'
 import { VisitExtraFields } from './VisitExtraFields'
 import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddRestaurantInput } from '../db/restaurants'
-import {
-  detectCurrentCoordinates,
-  detectCurrentLocation,
-  isAmapConfigured,
-  resolveCoordinatesLocation,
-  resolveAddressLocation,
-  searchNearbyRestaurantPois,
-  searchRestaurantPois,
-} from '../services/amap'
+import { mapService } from '../services/mapService'
 import { calculatePricePerPerson } from '../types/domain'
 import type {
   MarkerType,
@@ -69,12 +63,12 @@ export function AddRestaurantModal({
   const initialTime = currentDateAndTime()
   const [keyword, setKeyword] = useState('')
   const [city, setCity] = useState(() => localStorage.getItem('private-food-map-last-city') ?? '')
-  const [locatingCity, setLocatingCity] = useState(isAmapConfigured)
+  const [locatingCity, setLocatingCity] = useState(mapService.isConfigured)
   const cityEditedRef = useRef(false)
   const searchRequestIdRef = useRef(0)
   const [currentLocation, setCurrentLocation] = useState<Coordinates | null>(null)
   const [nearbyResults, setNearbyResults] = useState<PoiSearchResult[]>([])
-  const [nearbyLoading, setNearbyLoading] = useState(isAmapConfigured)
+  const [nearbyLoading, setNearbyLoading] = useState(mapService.isConfigured)
   const [nearbyMessage, setNearbyMessage] = useState('')
   const [locationLabel, setLocationLabel] = useState('')
   const [locationAttempt, setLocationAttempt] = useState(0)
@@ -94,7 +88,7 @@ export function AddRestaurantModal({
   const [dishes, setDishes] = useState<VisitDish[]>([])
   const [feeling, setFeeling] = useState('')
   const [photos, setPhotos] = useState<string[]>([])
-  const [rating, setRating] = useState<StarRatingValue>(5)
+  const [rating, setRating] = useState<StarRatingValue | null>(null)
   const [visitDate, setVisitDate] = useState(initialTime.date)
   const [visitTime, setVisitTime] = useState(initialTime.time)
   const [markerType, setMarkerType] = useState<MarkerType>('emoji')
@@ -110,7 +104,7 @@ export function AddRestaurantModal({
   }
 
   useEffect(() => {
-    if (!isAmapConfigured) {
+    if (!mapService.isConfigured) {
       setLocatingCity(false)
       setNearbyLoading(false)
       return
@@ -130,12 +124,12 @@ export function AddRestaurantModal({
     }, 12_000)
     void (async () => {
       try {
-        const coordinates = await detectCurrentCoordinates()
+        const coordinates = await mapService.detectCurrentCoordinates()
         if (!active) return
         setCurrentLocation(coordinates)
         const [nearby, detected] = await Promise.all([
-          searchNearbyRestaurantPois(coordinates, undefined, { timeoutMs: 5_000, radiusMeters: 3_000 }),
-          resolveCoordinatesLocation(coordinates).catch(() => null),
+          mapService.searchNearbyRestaurantPois(coordinates, undefined, { timeoutMs: 5_000, radiusMeters: 3_000 }),
+          mapService.resolveCoordinatesLocation(coordinates).catch(() => null),
         ])
         if (active && detected) {
           localStorage.setItem('private-food-map-last-city', detected.city)
@@ -176,7 +170,7 @@ export function AddRestaurantModal({
     setError('')
     setHasSearched(true)
     try {
-      const matches = await searchRestaurantPois(trimmedKeyword, city, {
+      const matches = await mapService.searchRestaurantPois(trimmedKeyword, city, {
         center: currentLocation ?? undefined,
         radiusMeters: 20_000,
         timeoutMs: 8_000,
@@ -334,7 +328,14 @@ export function AddRestaurantModal({
 
           <div className="selected-poi-card">
             {selectedPoi.merchantImageUrl ? <img alt="" src={selectedPoi.merchantImageUrl} /> : <span><MapPin size={18} /></span>}
-            <div><strong>{selectedPoi.name}</strong><label className="selected-poi-card__address"><MapPin size={13} /><input aria-label="餐厅地址" onChange={(event) => setAddress(event.target.value)} required value={address} /></label></div>
+            <div>
+              <strong>{selectedPoi.name}</strong>
+              <label className="selected-poi-card__address"><MapPin size={13} /><input aria-label="餐厅地址" onChange={(event) => setAddress(event.target.value)} required value={address} /></label>
+              {(selectedPoi.phone || selectedPoi.openingHours) ? <div className="selected-poi-business-info">
+                {selectedPoi.phone ? <span><Phone size={12} />{selectedPoi.phone}</span> : null}
+                {selectedPoi.openingHours ? <span><Clock3 size={12} />{selectedPoi.openingHours}</span> : null}
+              </div> : null}
+            </div>
           </div>
 
           <div className="collection-choice" aria-label="餐厅状态">
@@ -346,7 +347,7 @@ export function AddRestaurantModal({
             <div className="form-section">
               <h3>这次体验</h3>
               <label className="field">
-                <span>个人评价</span>
+                <span>个人评价 <small>可选</small></span>
                 <StarRating onChange={setRating} value={rating} />
               </label>
               <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
@@ -369,7 +370,7 @@ export function AddRestaurantModal({
               <DishEditor onChange={setDishes} value={dishes} />
               <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
             </div>
-          ) : <div className="form-section"><label className="field field-with-leading-icon"><span>预计人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 180.00" step="0.01" type="number" value={price} /></div></label></div>}
+          ) : <div className="form-section want-to-go-details"><p>餐厅名称、详细地址、图片、电话和营业时间会一起保存；预计价格可按需补充。</p><label className="field field-with-leading-icon"><span>预计人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 180.00" step="0.01" type="number" value={price} /></div></label></div>}
 
           <div className="form-section">
             <h3>整理与显示</h3>
@@ -442,13 +443,13 @@ function SearchStep({
 }: SearchStepProps) {
   return (
     <>
-      {!isAmapConfigured ? (
+      {!mapService.isConfigured ? (
         <div className="config-notice"><TriangleAlert size={19} /><div><strong>还需要配置高德地图</strong><p>填入高德 Key 和安全密钥后，餐厅搜索就会启用。</p></div></div>
       ) : null}
       <form className="poi-search-form" onSubmit={onSearch}>
         <label className="field field--grow"><span>餐厅名称</span><div className="input-with-icon"><Search size={17} /><input autoFocus onChange={(event) => onKeywordChange(event.target.value)} placeholder="例如：寿喜烧" value={keyword} /></div></label>
         <label className="field field--city"><span>搜索城市 {locatingCity ? '· 正在精确定位' : ''}</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" value={city} />{locationLabel ? <small className="gps-location-detail"><LocateFixed size={12} /> 已定位：{locationLabel}</small> : null}</label>
-        <button className="primary-button search-submit" disabled={!isAmapConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
+        <button className="primary-button search-submit" disabled={!mapService.isConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
       </form>
       {error ? <p className="form-error">{error}</p> : null}
       {!hasSearched ? (
@@ -521,7 +522,7 @@ function ManualRestaurantStep({
     setLocating(true)
     setError('')
     try {
-      const current = await detectCurrentLocation()
+      const current = await mapService.detectCurrentLocation()
       setAddress(current.address)
       onCityChange(current.city)
       setLocation(current)
@@ -538,7 +539,7 @@ function ManualRestaurantStep({
     setResolving(true)
     setError('')
     try {
-      const resolved = location ?? await resolveAddressLocation(address, city)
+      const resolved = location ?? await mapService.resolveAddressLocation(address, city)
       onChoose({
         amapPoiId: createManualPoiId(name, city, resolved.longitude, resolved.latitude),
         name: name.trim(),

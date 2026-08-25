@@ -11,7 +11,6 @@ import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../ty
 import type { AddVisitInput } from '../db/restaurants'
 import {
   calculatePricePerPerson,
-  nearestStar,
   type QueueDuration,
   type RestaurantSummary,
   type StarRating as StarRatingValue,
@@ -34,7 +33,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
   const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
-  const [rating, setRating] = useState<StarRatingValue>(initialVisit?.rating ?? nearestStar(restaurant.averageRating) ?? 5)
+  const [rating, setRating] = useState<StarRatingValue | null>(initialVisit?.rating ?? null)
   const [price, setPrice] = useState((initialVisit?.paymentMode === 'separate' ? initialVisit.myActualSpend : initialVisit?.totalPrice)?.toString() ?? '')
   const [companions, setCompanions] = useState(initialVisit?.companions.join('、') ?? '')
   const [partySize, setPartySize] = useState(initialVisit?.partySize.toString() ?? '1')
@@ -141,7 +140,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
     >
       <form className="editor-form" onSubmit={handleSubmit}>
         <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
-        <label className="field"><span>本次个人评价</span><StarRating onChange={setRating} value={rating} /></label>
+        <label className="field"><span>个人评价 <small>可选</small></span><StarRating onChange={setRating} value={rating} /></label>
         <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="primary" value={extraFields} />
         <div className="field-grid visit-time-grid">
           <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input onChange={(event) => setDate(event.target.value)} required type="date" value={date} /></div></label>

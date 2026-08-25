@@ -20,6 +20,8 @@ export type DiningOccasionFilter = 'all' | DiningOccasion
 export type RecommendationSourceFilter = 'all' | RecommendationSourceType
 export type PriceRangeFilter = 'all' | 'under100' | '100to200' | 'over200'
 export type VisitPeriodFilter = 'all' | 'sixMonths' | 'year'
+export type RecommendationDistanceFilter = 'all' | '1' | '3' | '5' | '10'
+export type RecommendationSortFilter = 'recommended' | 'nearest' | 'rating'
 
 interface RestaurantFiltersProps {
   visitCount: VisitCountFilter
@@ -31,12 +33,15 @@ interface RestaurantFiltersProps {
   priceRange: PriceRangeFilter
   visitPeriod: VisitPeriodFilter
   companion: string
-  tag: string
   city: string
   companionOptions: string[]
-  tagOptions: string[]
   cityOptions: string[]
   showVisitCount: boolean
+  isRecommendation?: boolean
+  recommendationDistance?: RecommendationDistanceFilter
+  recommendationSort?: RecommendationSortFilter
+  recommendationLocationStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  recommendationLocationLabel?: string
   onVisitCountChange: (value: VisitCountFilter) => void
   onScoreBandChange: (value: ScoreBandFilter) => void
   onQueueDurationChange: (value: QueueFilter) => void
@@ -46,10 +51,11 @@ interface RestaurantFiltersProps {
   onPriceRangeChange: (value: PriceRangeFilter) => void
   onVisitPeriodChange: (value: VisitPeriodFilter) => void
   onCompanionChange: (value: string) => void
-  onTagChange: (value: string) => void
   onCityChange: (value: string) => void
   onReset: () => void
   onClose: () => void
+  onRecommendationDistanceChange?: (value: RecommendationDistanceFilter) => void
+  onRecommendationSortChange?: (value: RecommendationSortFilter) => void
 }
 
 export function RestaurantFilters({
@@ -62,12 +68,15 @@ export function RestaurantFilters({
   priceRange,
   visitPeriod,
   companion,
-  tag,
   city,
   companionOptions,
-  tagOptions,
   cityOptions,
   showVisitCount,
+  isRecommendation = false,
+  recommendationDistance = 'all',
+  recommendationSort = 'recommended',
+  recommendationLocationStatus = 'idle',
+  recommendationLocationLabel = '已按当前位置计算距离',
   onVisitCountChange,
   onScoreBandChange,
   onQueueDurationChange,
@@ -77,10 +86,11 @@ export function RestaurantFilters({
   onPriceRangeChange,
   onVisitPeriodChange,
   onCompanionChange,
-  onTagChange,
   onCityChange,
   onReset,
   onClose,
+  onRecommendationDistanceChange,
+  onRecommendationSortChange,
 }: RestaurantFiltersProps) {
   return (
     <section className="filters-panel">
@@ -131,6 +141,12 @@ export function RestaurantFilters({
           })}
         </div>
       </div>
+      {isRecommendation ? <div className="filter-group">
+        <span>距离</span>
+        <div>
+          {([['all', '不限'], ['1', '1 km 内'], ['3', '3 km 内'], ['5', '5 km 内'], ['10', '10 km 内']] as const).map(([value, label]) => <button className={recommendationDistance === value ? 'is-active' : ''} key={value} onClick={() => onRecommendationDistanceChange?.(value)} type="button">{label}</button>)}
+        </div>
+      </div> : null}
       {showVisitCount ? (
         <div className="filter-group">
           <span>等待时长</span>
@@ -148,12 +164,13 @@ export function RestaurantFilters({
       {showVisitCount ? <FilterChoices label="人均价格" value={priceRange} options={[{ value: 'under100', label: '¥100 以下' }, { value: '100to200', label: '¥100–200' }, { value: 'over200', label: '¥200 以上' }]} onChange={(value) => onPriceRangeChange(value as PriceRangeFilter)} /> : null}
       {showVisitCount ? <FilterChoices label="到访时间" value={visitPeriod} allLabel="不限" options={[{ value: 'sixMonths', label: '最近半年' }, { value: 'year', label: '最近一年' }]} onChange={(value) => onVisitPeriodChange(value as VisitPeriodFilter)} /> : null}
       <div className="filter-select-grid">
+        {isRecommendation ? <label><span>排序</span><select aria-label="推荐排序" onChange={(event) => onRecommendationSortChange?.(event.target.value as RecommendationSortFilter)} value={recommendationSort}><option value="recommended">综合推荐</option><option value="nearest">距离最近</option><option value="rating">评分最高</option></select></label> : null}
         <FilterSelect label="城市" value={city} allLabel="全部城市" options={cityOptions} onChange={onCityChange} />
-        <FilterSelect label="标签 / 菜系" value={tag} allLabel="全部标签" options={tagOptions} onChange={onTagChange} />
         {showVisitCount ? (
           <FilterSelect label="饭搭子" value={companion} allLabel="全部饭搭子" options={companionOptions} onChange={onCompanionChange} />
         ) : null}
       </div>
+      {isRecommendation && (recommendationDistance !== 'all' || recommendationSort === 'nearest') ? <p className={`recommendation-filter-location is-${recommendationLocationStatus}`}>{recommendationLocationStatus === 'loading' ? '正在确定距离基准…' : recommendationLocationStatus === 'ready' ? recommendationLocationLabel : recommendationLocationStatus === 'error' ? '无法取得位置，距离条件暂未生效' : ''}</p> : null}
     </section>
   )
 }

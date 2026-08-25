@@ -7,6 +7,7 @@ interface ModalShellProps {
   onClose: () => void
   children: ReactNode
   size?: 'small' | 'medium' | 'large'
+  backdropClassName?: string
 }
 
 export function ModalShell({
@@ -15,6 +16,7 @@ export function ModalShell({
   onClose,
   children,
   size = 'medium',
+  backdropClassName = '',
 }: ModalShellProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -29,7 +31,7 @@ export function ModalShell({
   }, [onClose])
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className={`modal-backdrop${backdropClassName ? ` ${backdropClassName}` : ''}`} role="presentation" onMouseDown={onClose}>
       <section
         aria-describedby={description ? 'modal-description' : undefined}
         aria-labelledby="modal-title"

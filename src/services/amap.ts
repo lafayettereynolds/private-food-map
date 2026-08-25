@@ -18,6 +18,9 @@ interface AMapPoi {
   adname?: string | string[]
   location?: AMapLngLat
   photos?: { url?: string }[]
+  tel?: string | string[]
+  biz_ext?: { open_time?: string }
+  business?: { opentime_today?: string; opentime_week?: string }
 }
 
 interface PlaceSearchResult {
@@ -393,6 +396,8 @@ export async function searchRestaurantPois(
               merchantImageUrl: Array.isArray(poi.photos)
                 ? poi.photos.find((photo) => photo?.url)?.url ?? null
                 : null,
+              phone: textValue(poi.tel) || null,
+              openingHours: poi.business?.opentime_today || poi.business?.opentime_week || poi.biz_ext?.open_time || null,
             },
           ]
         }),

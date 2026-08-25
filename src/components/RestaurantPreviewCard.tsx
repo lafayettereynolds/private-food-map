@@ -1,12 +1,15 @@
-import { CalendarClock, CheckCircle2, Clock3, Dices, Edit3, MapPin, Navigation, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
+import { Bookmark, CalendarClock, CheckCircle2, ChevronDown, Clock3, Dices, Edit3, Images, MapPin, Navigation, Phone, Plus, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
 import { RestaurantAvatar } from './RestaurantAvatar'
-import { diningModeLabel, formatAverageQueueDuration, queueDurationLabel, scoreColor, starToTenScore, STATUS_META, type RestaurantSummary, type Visit } from '../types/domain'
+import { DINING_OCCASION_OPTIONS, diningModeLabel, formatAverageQueueDuration, queueDurationLabel, starToTenScore, STATUS_META, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
 import { RestaurantSocialStatsPanel } from './RestaurantSocialStatsPanel'
+import { mapService } from '../services/mapService'
 
 interface RestaurantPreviewCardProps {
   restaurant: RestaurantSummary
+  historyRestaurants?: RestaurantSummary[]
+  additionalUserPhotos?: Array<{ source: string; photoId?: string | null }>
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
@@ -15,10 +18,13 @@ interface RestaurantPreviewCardProps {
   onSaveRecommendation: () => void
   onAddToRoulette: () => void
   isInRoulette: boolean
+  onAddToWant?: () => void
 }
 
 export function RestaurantPreviewCard({
   restaurant,
+  historyRestaurants = [],
+  additionalUserPhotos = [],
   onClose,
   onEdit,
   onDelete,
@@ -27,34 +33,66 @@ export function RestaurantPreviewCard({
   onSaveRecommendation,
   onAddToRoulette,
   isInRoulette,
+  onAddToWant,
 }: RestaurantPreviewCardProps) {
-  const navigationUrl = createNavigationUrl(restaurant)
+  const navigationUrl = mapService.directionsUrl(restaurant)
+  const recordedSpend = restaurant.visits.map((visit) => visit.myActualSpend ?? visit.pricePerPerson).filter((value): value is number => value !== null)
+  const averageActualSpend = recordedSpend.length ? Math.round(recordedSpend.reduce((sum, value) => sum + value, 0) / recordedSpend.length) : null
+  const stableCover = restaurant.merchantImageUrl
+  const allUserPhotos = uniqueUserPhotos([
+    ...additionalUserPhotos,
+    ...restaurant.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] }))),
+  ])
+  const userPhotos = allUserPhotos.slice(0, 4)
+  const overviewFacets = buildOverviewFacets(restaurant.visits)
   return (
     <article className="map-card">
       <button className="map-card__close" aria-label="关闭餐厅卡片" onClick={onClose} type="button"><X size={16} /></button>
-      <div className="map-card__title-row">
-        <RestaurantAvatar restaurant={restaurant} size="large" />
-        <div>
-          <span>{restaurant.city} · {STATUS_META[restaurant.status].label}</span>
-          <h2>{restaurant.name}</h2>
-          {restaurant.scoreOutOfTen !== null ? (
-            <p className="map-card__rating" style={{ color: scoreColor(restaurant.scoreOutOfTen) }}><Star fill="currentColor" size={13} /> {restaurant.scoreOutOfTen.toFixed(1)} / 10</p>
-          ) : <p className="map-card__rating">{restaurant.isRecommendation ? '为你推荐 · 尚未去过' : '想去清单'}</p>}
+      <section className="restaurant-detail-header" aria-label="餐厅信息">
+        <div className="restaurant-detail-gallery" aria-label="餐厅与用户图片">
+          <div className="restaurant-detail-gallery__merchant">
+            {stableCover ? <img alt={`${restaurant.name} 商家图片`} loading="lazy" src={stableCover} /> : <span className="restaurant-detail-gallery__placeholder"><RestaurantAvatar restaurant={restaurant} size="large" /></span>}
+            <em>商家图片</em>
+          </div>
         </div>
-      </div>
-      <p className="map-card__address"><MapPin size={14} /> {restaurant.address}</p>
-      <div className="map-card__meta">
-        <span><small>到访次数</small><strong>{restaurant.visitCount} 次</strong></span>
-        <span><small>平均人均</small><strong>{restaurant.averagePricePerPerson !== null ? `¥${restaurant.averagePricePerPerson}` : '—'}</strong></span>
-        <span><small>平均排队</small><strong>{formatAverageQueueDuration(restaurant.averageQueueMinutes)}</strong></span>
-        <span><small>最近到访</small><strong>{restaurant.latestVisitDate ? new Date(restaurant.latestVisitDate).toLocaleDateString('zh-CN') : '—'}</strong></span>
-      </div>
-      {restaurant.amapPoiId ? <RestaurantSocialStatsPanel amapPoiId={restaurant.amapPoiId} /> : null}
-      <section className="restaurant-basic-info" aria-label="餐厅信息"><header>餐厅信息</header><dl><div><dt>菜系 / 标签</dt><dd>{restaurant.tags.length ? restaurant.tags.slice(0, 5).join(' · ') : '暂未记录'}</dd></div><div><dt>参考人均</dt><dd>{restaurant.pricePerPerson !== null ? `¥${restaurant.pricePerPerson}` : restaurant.averagePricePerPerson !== null ? `约 ¥${restaurant.averagePricePerPerson}` : '暂未记录'}</dd></div><div><dt>收藏状态</dt><dd>{restaurant.isRecommendation ? '来自发现' : STATUS_META[restaurant.status].label}</dd></div></dl></section>
-      {restaurant.longTermNote ? <p className="map-card__note">{restaurant.longTermNote}</p> : null}
+        <div className="map-card__title-row">
+          <div>
+            <span>{restaurant.city} · {STATUS_META[restaurant.status].label}</span>
+            <h2>{restaurant.name}</h2>
+          </div>
+          <div className="restaurant-title-actions" aria-label="餐厅快捷操作">
+            <button aria-label="记录去过" onClick={onAddVisit} title="去过" type="button"><Plus size={16} /></button>
+            <button aria-label="加入想吃" onClick={onAddToWant ?? onSaveRecommendation} title="想吃" type="button"><Bookmark size={16} /></button>
+            <button aria-label={isInRoulette ? '移出抽签' : '加入抽签'} aria-pressed={isInRoulette} className={isInRoulette ? 'is-selected' : ''} onClick={onAddToRoulette} title={isInRoulette ? '已加入抽签' : '抽签'} type="button">{isInRoulette ? <CheckCircle2 size={16} /> : <Dices size={16} />}</button>
+          </div>
+        </div>
+        <p className="map-card__address"><MapPin size={14} /> {restaurant.address}</p>
+        {restaurant.averagePricePerPerson !== null ? <div className="restaurant-detail-reference"><span>参考人均约 ¥{restaurant.averagePricePerPerson}</span></div> : null}
+        <div className="restaurant-contact-actions">
+          {restaurant.phone ? <a href={`tel:${restaurant.phone.replace(/\s+/g, '')}`}><Phone size={14} /><span><small>电话</small><strong>{restaurant.phone}</strong></span></a> : null}
+          {restaurant.openingHours ? <span><Clock3 size={14} /><span><small>营业时间</small><strong>{restaurant.openingHours}</strong></span></span> : null}
+          <a href={navigationUrl} rel="noreferrer" target="_blank"><Navigation size={14} /><span><small>路线</small><strong>到这里去</strong></span></a>
+        </div>
+      </section>
+      <RestaurantSocialStatsPanel amapPoiId={restaurant.amapPoiId} historyRestaurants={historyRestaurants} restaurant={restaurant} />
+      <section className="restaurant-user-photos" aria-label="用户实拍">
+        <header><strong><Images size={14} /> 用户实拍</strong><span>{allUserPhotos.length ? `${allUserPhotos.length} 张` : '暂无实拍'}</span></header>
+        {userPhotos.length ? <div>{userPhotos.map((photo, index) => <span key={`${photo.photoId ?? photo.source}-${index}`}><SyncedImage alt={`${restaurant.name} 用户实拍 ${index + 1}`} loading="lazy" photoId={photo.photoId} source={photo.source} /></span>)}</div> : <p>记录到访并上传照片后，会显示在这里。</p>}
+      </section>
+      {restaurant.status === 'visited' ? <section className="restaurant-visit-overview" aria-label="我的到访概览">
+        <header><strong>我的到访概览</strong></header>
+        <div className="restaurant-visit-overview__metrics">
+          <span><small>到访次数</small><strong>{restaurant.visitCount} 次</strong></span>
+          <span><small>平均消费</small><strong>{averageActualSpend !== null ? `¥${averageActualSpend}` : '—'}</strong></span>
+          <span><small>平均排队</small><strong>{restaurant.averageQueueMinutes !== null ? formatAverageQueueDuration(restaurant.averageQueueMinutes) : '—'}</strong></span>
+          <span><small>最近到访</small><strong>{restaurant.latestVisitDate ? new Date(restaurant.latestVisitDate).toLocaleDateString('zh-CN') : '—'}</strong></span>
+        </div>
+        {overviewFacets.length ? <div className="restaurant-visit-overview__facets">{overviewFacets.map((facet) => <section key={facet.label}><small>{facet.label}</small><div>{facet.values.map((value) => <span key={`${facet.label}-${value}`}>{value}</span>)}</div></section>)}</div> : <p className="restaurant-visit-overview__empty">继续记录适合场景、服务和环境后，这里会形成你的餐厅画像。</p>}
+      </section> : null}
+      {restaurant.longTermNote ? <p className="map-card__note restaurant-summary-note">{restaurant.longTermNote}</p> : null}
       {restaurant.visits.length ? (
-        <section className="visit-history-preview">
-          <header><strong>到访历史</strong><span>{restaurant.visits.length} 条 · 可滚动查看</span></header>
+        <details className="visit-history-preview" open>
+          <summary><strong>到访历史</strong><span>{restaurant.visits.length} 条 · 展开查看 <ChevronDown size={14} /></span></summary>
           <div className="visit-history-scroll">
             {restaurant.visits.map((visit, index) => (
               <article className="visit-history-row" key={visit.id}>
@@ -97,33 +135,51 @@ export function RestaurantPreviewCard({
               </article>
             ))}
           </div>
-        </section>
+        </details>
       ) : null}
       <div className="map-card__actions">
-        <a className="navigation-button compact-button" href={navigationUrl} rel="noreferrer" target="_blank"><Navigation size={15} /> 到这里去</a>
-        <button aria-pressed={isInRoulette} className={`roulette-add-button compact-button${isInRoulette ? ' is-selected' : ''}`} onClick={onAddToRoulette} type="button">{isInRoulette ? <CheckCircle2 size={15} /> : <Dices size={15} />} {isInRoulette ? '已加入抽签' : '加入抽签'}</button>
-        {restaurant.isRecommendation ? (
-          <button className="primary-button compact-button" onClick={onSaveRecommendation} type="button"><Plus size={15} /> 加入想去</button>
-        ) : (
-          <>
-            <button className="primary-button compact-button" onClick={onAddVisit} type="button"><Plus size={15} /> 记录到访</button>
-            <button className="secondary-button" onClick={onEdit} type="button"><Edit3 size={15} /> 编辑</button>
-            <button className="danger-ghost-button" onClick={onDelete} type="button"><Trash2 size={15} /> 删除</button>
-          </>
-        )}
+        {!restaurant.isRecommendation ? <><button className="secondary-button" onClick={onEdit} type="button"><Edit3 size={15} /> 编辑</button><button className="danger-ghost-button" onClick={onDelete} type="button"><Trash2 size={15} /> 删除</button></> : null}
       </div>
     </article>
   )
 }
 
-function createNavigationUrl(restaurant: RestaurantSummary) {
-  const parameters = new URLSearchParams({
-    from: '',
-    to: `${restaurant.longitude},${restaurant.latitude},${restaurant.name}`,
-    mode: 'car',
-    policy: '0',
-    src: 'taste-map',
-    callnative: '1',
+function uniqueUserPhotos(photos: Array<{ source: string; photoId?: string | null }>) {
+  const seen = new Set<string>()
+  return photos.filter((photo) => {
+    const key = photo.photoId || photo.source
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
   })
-  return `https://uri.amap.com/navigation?${parameters.toString()}`
+}
+
+function buildOverviewFacets(visits: Visit[]) {
+  const occasionLabels = new Map(DINING_OCCASION_OPTIONS.map((option) => [option.value, option.label]))
+  const diningDurationLabels: Record<NonNullable<Visit['diningDuration']>, string> = {
+    under15: '15 分钟以内', under30: '30 分钟以内', under45: '45 分钟以内', under60: '1 小时以内', under90: '1.5 小时以内', under120: '2 小时以内', over120: '超过 2 小时',
+  }
+  const noiseLabels: Record<NonNullable<Visit['noiseLevel']>, string> = { quiet: '安静', normal: '正常', loud: '较吵', very_loud: '很吵' }
+  const portionLabels: Record<NonNullable<Visit['portionLevel']>, string> = { small: '偏少', normal: '正常', generous: '很足' }
+  const transportLabels: Record<NonNullable<Visit['transportConvenience']>, string> = { very_convenient: '很方便', convenient: '比较方便', normal: '一般', inconvenient: '不方便' }
+  const occasions = visits.flatMap((visit) => {
+    const values = visit.diningOccasions?.length ? visit.diningOccasions : visit.diningOccasion ? [visit.diningOccasion] : []
+    return values.map((value) => value === 'other' && visit.diningOccasionText ? visit.diningOccasionText : occasionLabels.get(value) ?? value)
+  })
+  return [
+    { label: '适合场景', values: topValues(occasions) },
+    { label: '服务', values: topValues(visits.flatMap((visit) => visit.serviceTags ?? [])) },
+    { label: '环境', values: topValues(visits.flatMap((visit) => visit.environmentTags ?? [])) },
+    { label: '性价比', values: topValues(visits.flatMap((visit) => visit.valueTags ?? [])) },
+    { label: '上餐时长', values: topValues(visits.flatMap((visit) => visit.diningDuration ? [diningDurationLabels[visit.diningDuration]] : []), 1) },
+    { label: '菜量', values: topValues(visits.flatMap((visit) => visit.portionLevel ? [portionLabels[visit.portionLevel]] : []), 1) },
+    { label: '用餐环境', values: topValues(visits.flatMap((visit) => visit.noiseLevel ? [noiseLabels[visit.noiseLevel]] : []), 1) },
+    { label: '交通', values: topValues(visits.flatMap((visit) => visit.transportConvenience ? [transportLabels[visit.transportConvenience]] : []), 1) },
+  ].filter((facet) => facet.values.length)
+}
+
+function topValues(values: string[], limit = 3) {
+  const counts = new Map<string, number>()
+  values.filter(Boolean).forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1))
+  return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'zh-CN')).slice(0, limit).map(([value]) => value)
 }
