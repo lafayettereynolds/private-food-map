@@ -12,7 +12,8 @@ export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyResta
   const [loading, setLoading] = useState(true)
   const personalVisits = restaurant.visits.filter((visit) => visit.userId === CURRENT_USER_ID)
   const personalRating = personalRestaurantRating(personalVisits, CURRENT_USER_ID)
-  const prediction = personalVisits.length ? null : predictPersonalTasteScore(restaurant, historyRestaurants)
+  const isCurrentUsersVisitedRestaurant = !restaurant.isRecommendation && restaurant.userId === CURRENT_USER_ID && restaurant.status === 'visited'
+  const prediction = isCurrentUsersVisitedRestaurant ? null : predictPersonalTasteScore(restaurant, historyRestaurants)
 
   useEffect(() => {
     const controller = new AbortController()

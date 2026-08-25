@@ -22,8 +22,20 @@ export const BACKUP_FILE_PREFIX = IS_DEVELOPMENT
 
 const explicitlyEnabledCloudSync = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'true'
 const explicitlyDisabledCloudSync = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'false'
+const explicitlyEnabledSocialApi = import.meta.env.VITE_SOCIAL_API_ENABLED === 'true'
+const explicitlyDisabledSocialApi = import.meta.env.VITE_SOCIAL_API_ENABLED === 'false'
 const isSecureHostedApp = typeof window !== 'undefined' && window.location.protocol === 'https:'
+const isLocalDevelopmentApp = typeof window !== 'undefined' && IS_DEVELOPMENT && (
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+)
 
 export const CLOUD_SYNC_ENABLED = !explicitlyDisabledCloudSync && (
-  explicitlyEnabledCloudSync || (!IS_DEVELOPMENT && isSecureHostedApp)
+  !IS_DEVELOPMENT && (explicitlyEnabledCloudSync || isSecureHostedApp)
+)
+
+// Social discovery is a read-oriented channel. Local development may use it to
+// preview follows, community feeds and aggregate ratings without enabling the
+// personal IndexedDB <-> D1 synchronization channel above.
+export const SOCIAL_API_ENABLED = !explicitlyDisabledSocialApi && (
+  explicitlyEnabledSocialApi || isLocalDevelopmentApp || (!IS_DEVELOPMENT && isSecureHostedApp)
 )

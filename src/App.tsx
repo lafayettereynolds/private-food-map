@@ -63,7 +63,7 @@ import { mapService } from './services/mapService'
 import { initializeCloudSync } from './services/cloudSync'
 import { useCloudSync } from './services/useCloudSync'
 import { initializePhotoSync } from './services/photoSync'
-import { fetchFollows, fetchUserProfile, publicUserToProfile, searchCloudUsers, setFollow, type DiscoveryMode } from './services/socialApi'
+import { fetchFollows, fetchUserProfile, publicUserToProfile, searchCloudUsers, sendFriendRequest, setFollow, type DiscoveryMode } from './services/socialApi'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
@@ -83,10 +83,10 @@ type ActiveView = 'map' | 'community' | 'profile'
 
 export default function App() {
   const restaurants = useLiveQuery(
-    () => db.restaurants.orderBy('createdAt').reverse().filter((restaurant) => !restaurant.deletedAt).toArray(),
+    () => db.restaurants.orderBy('createdAt').reverse().filter((restaurant) => !restaurant.deletedAt && restaurant.userId === CURRENT_USER_ID).toArray(),
     [],
   )
-  const visits = useLiveQuery(() => db.visits.filter((visit) => !visit.deletedAt).toArray(), [])
+  const visits = useLiveQuery(() => db.visits.filter((visit) => !visit.deletedAt && visit.userId === CURRENT_USER_ID).toArray(), [])
   const users = useLiveQuery(() => db.users.filter((user) => !user.deletedAt).toArray(), [])
   const friendships = useLiveQuery(() => db.friendships.toArray(), [])
   const sharedMeals = useLiveQuery(() => db.sharedMeals.filter((meal) => !meal.deletedAt).toArray(), [])
@@ -137,8 +137,10 @@ export default function App() {
   const [recommendationError, setRecommendationError] = useState('')
   const [cloudFollows, setCloudFollows] = useState<Follow[]>([])
   const [followPending, setFollowPending] = useState(false)
+  const [friendPending, setFriendPending] = useState(false)
   const [cloudUsers, setCloudUsers] = useState<UserProfile[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const profileReturnScrollRef = useRef(0)
 
   const allRestaurants = useMemo(() => restaurants ?? [], [restaurants])
   const allVisits = useMemo(() => visits ?? [], [visits])
@@ -160,6 +162,10 @@ export default function App() {
   }, [allFriendships, allUsers])
   const followingCount = cloudFollows.filter((item) => item.followerId === CURRENT_USER_ID).length
   const followerCount = cloudFollows.filter((item) => item.followedUserId === CURRENT_USER_ID).length
+  const viewedFriendship = viewedProfile ? allFriendships.find((friendship) => friendship.status !== 'removed' && (
+    (friendship.requesterId === CURRENT_USER_ID && friendship.addresseeId === viewedProfile.user.id)
+    || (friendship.addresseeId === CURRENT_USER_ID && friendship.requesterId === viewedProfile.user.id)
+  )) : undefined
   const companionOptions = useMemo(
     () => {
       const usageCounts = new Map<string, number>()
@@ -191,8 +197,18 @@ export default function App() {
 
   const summaries = useMemo<RestaurantSummary[]>(
     () =>
-      allRestaurants.map((restaurant) => {
+      allRestaurants.flatMap((restaurant) => {
         const restaurantVisits = visitsByRestaurant.get(restaurant.id) ?? []
+        // Old development builds could pull public demo restaurants into the
+        // owner's IndexedDB and mark them as visited without an owner Visit.
+        // Keep legitimate no-detail Hangzhou memories, but never present
+        // foreign-city demo rows as the current user's visit history.
+        if (
+          IS_DEVELOPMENT &&
+          restaurant.status === 'visited' &&
+          restaurantVisits.length === 0 &&
+          !restaurant.city.includes('杭州')
+        ) return []
         const ratedVisits = restaurantVisits.filter((visit) => visit.rating !== null)
         const priceInsight = restaurantPriceInsight(restaurant, restaurantVisits)
         const queuedVisits = restaurantVisits
@@ -205,7 +221,7 @@ export default function App() {
         const averageQueueMinutes = queuedVisits.length
           ? queuedVisits.reduce((sum, minutes) => sum + minutes, 0) / queuedVisits.length
           : null
-        return {
+        return [{
           ...restaurant,
           markerType: restaurant.markerType || 'emoji',
           markerImageData: restaurant.markerImageData ?? null,
@@ -224,7 +240,7 @@ export default function App() {
           priceSource: priceInsight.source,
           priceSampleCount: priceInsight.sampleCount,
           averageQueueMinutes,
-        }
+        }]
       }),
     [allRestaurants, visitsByRestaurant],
   )
@@ -664,8 +680,10 @@ export default function App() {
   }
 
   async function viewUserProfile(user: UserProfile) {
+    profileReturnScrollRef.current = window.scrollY
     setProfileReturnView(activeView)
     setActiveView('profile')
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }))
     if (user.id === CURRENT_USER_ID) {
       setViewedProfile(null)
       return
@@ -673,6 +691,24 @@ export default function App() {
     setViewedProfile({ user, restaurants: [], followerCount: 0, followingCount: 0 })
     const remote = await fetchUserProfile(user.id).catch(() => null)
     setViewedProfile(remote ?? { user, restaurants: [], followerCount: 0, followingCount: 0 })
+  }
+
+  function returnFromViewedProfile() {
+    const returnView = profileReturnView
+    const returnScroll = profileReturnScrollRef.current
+    setViewedProfile(null)
+    setActiveView(returnView)
+    let attempts = 0
+    const restoreScroll = () => {
+      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+      if (maxScroll + 2 >= returnScroll || attempts >= 12) {
+        window.scrollTo({ top: Math.min(returnScroll, maxScroll), behavior: 'auto' })
+        return
+      }
+      attempts += 1
+      window.setTimeout(restoreScroll, 100)
+    }
+    window.requestAnimationFrame(() => window.requestAnimationFrame(restoreScroll))
   }
 
   async function toggleViewedProfileFollow() {
@@ -693,6 +729,20 @@ export default function App() {
       setToast(error instanceof Error ? error.message : '关注操作失败，请稍后重试')
     } finally {
       setFollowPending(false)
+    }
+  }
+
+  async function requestViewedProfileFriendship() {
+    if (!viewedProfile || friendPending) return
+    setFriendPending(true)
+    try {
+      const friendship = await sendFriendRequest(viewedProfile.user.id)
+      await upsertFriendship(friendship)
+      setToast('好友申请已发送')
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : '好友申请发送失败，请稍后重试')
+    } finally {
+      setFriendPending(false)
     }
   }
 
@@ -917,12 +967,15 @@ export default function App() {
           followerConnections={renderEmbeddedFriends('followers')}
           followerCount={viewedProfile ? viewedProfile.followerCount : followerCount}
           followPending={followPending}
+          friendPending={friendPending}
+          friendStatus={viewedFriendship?.status ?? null}
           followingConnections={renderEmbeddedFriends('following')}
           followingCount={viewedProfile ? viewedProfile.followingCount : followingCount}
           isFollowing={Boolean(viewedProfile && cloudFollows.some((follow) => follow.followerId === CURRENT_USER_ID && follow.followedUserId === viewedProfile.user.id))}
           key={(viewedProfile?.user ?? currentUser)?.id ?? 'profile'}
           onMapPrivacyChange={updateCurrentUserMapPrivacy}
-          onBack={viewedProfile ? () => { setViewedProfile(null); setActiveView(profileReturnView) } : undefined}
+          onAddFriend={viewedProfile ? () => void requestViewedProfileFriendship() : undefined}
+          onBack={viewedProfile ? returnFromViewedProfile : undefined}
           onOpenRoulette={() => setShowRoulette(true)}
           onOpenSettings={() => setShowSettings(true)}
           onSelectRestaurant={handleProfileListSelect}
@@ -930,6 +983,7 @@ export default function App() {
           onSave={updateCurrentUserProfile}
           restaurants={viewedProfile?.restaurants ?? summaries}
           user={(viewedProfile?.user ?? currentUser) as UserProfile}
+          viewerRestaurants={summaries}
           visits={viewedProfile ? viewedProfile.restaurants.flatMap((restaurant) => restaurant.visits) : allVisits}
         />
       ) : (

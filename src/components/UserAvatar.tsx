@@ -25,7 +25,9 @@ export function UserAvatar({
   membershipTier?: MembershipTier
   alt?: string
 }) {
-  return membershipTier === 'member' && (avatarImageData || avatarPhotoId)
-    ? <SyncedImage alt={alt} photoId={avatarPhotoId} source={avatarImageData} />
-    : <PresetAvatar id={avatarPresetId} />
+  return <span className="user-avatar-content">
+    {membershipTier === 'member' && (avatarImageData || avatarPhotoId)
+      ? <SyncedImage alt={alt} photoId={avatarPhotoId} source={avatarImageData} />
+      : <PresetAvatar id={avatarPresetId} />}
+  </span>
 }

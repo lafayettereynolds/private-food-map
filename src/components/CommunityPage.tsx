@@ -1,4 +1,4 @@
-import { BookmarkPlus, Check, Dices, Globe2, LocateFixed, MapPin, Plus, SlidersHorizontal, X } from 'lucide-react'
+import { BookmarkPlus, Check, Dices, Globe2, Heart, LocateFixed, MapPin, MessageCircle, Plus, Send, Share2, SlidersHorizontal, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { scoreColor, type CommunityVisit, type Coordinates, type RestaurantSummary, type UserProfile, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
@@ -24,6 +24,16 @@ interface FeedItem {
   reasonCodes?: CommunityVisit['reasonCodes']
   surface?: CommunityVisit['surface']
 }
+
+interface CommunityEngagement {
+  liked: boolean
+  likeCount: number
+  comments: string[]
+  shareCount: number
+}
+
+const EMPTY_ENGAGEMENT: CommunityEngagement = { liked: false, likeCount: 0, comments: [], shareCount: 0 }
+const COMMUNITY_ENGAGEMENT_STORAGE_KEY = 'taste-map-community-engagement-v1'
 
 const DISCOVERY_TABS: Array<{ value: DiscoveryMode; label: string }> = [
   { value: 'following', label: '关注' },
@@ -77,6 +87,10 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [distanceAnchor, setDistanceAnchor] = useState<'device' | 'city' | null>(null)
   const [anchorKey, setAnchorKey] = useState('')
+  const [engagement, setEngagement] = useState<Record<string, CommunityEngagement>>(readCommunityEngagement)
+  const [commentingItem, setCommentingItem] = useState<FeedItem | null>(null)
+  const [commentText, setCommentText] = useState('')
+  const [shareMessage, setShareMessage] = useState('')
   const userById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users])
   const cityOptions = useMemo(() => [...new Set(['杭州市', '上海市', '北京市', '东京', '大阪', '香港', ...restaurants.map((restaurant) => restaurant.city).filter(Boolean)])], [restaurants])
 
@@ -179,6 +193,39 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
 
   const activeRecommendationFilterCount = recommendationFilterResolution.activeFilters.length
 
+  useEffect(() => {
+    localStorage.setItem(COMMUNITY_ENGAGEMENT_STORAGE_KEY, JSON.stringify(engagement))
+  }, [engagement])
+
+  function updateEngagement(visitId: string, update: (current: CommunityEngagement) => CommunityEngagement) {
+    setEngagement((current) => ({ ...current, [visitId]: update(current[visitId] ?? EMPTY_ENGAGEMENT) }))
+  }
+
+  function toggleLike(item: FeedItem) {
+    updateEngagement(item.visit.id, (current) => ({ ...current, liked: !current.liked, likeCount: Math.max(0, current.likeCount + (current.liked ? -1 : 1)) }))
+  }
+
+  function submitComment() {
+    if (!commentingItem || !commentText.trim()) return
+    updateEngagement(commentingItem.visit.id, (current) => ({ ...current, comments: [...current.comments, commentText.trim()] }))
+    setCommentText('')
+  }
+
+  async function shareItem(item: FeedItem) {
+    const url = `${window.location.origin}${window.location.pathname}${window.location.search}`
+    const shareData = { title: item.restaurant.name, text: `看看 ${item.restaurant.name} 的这条 Taste Map 到访记录`, url }
+    const canUseNativeShare = typeof navigator.share === 'function'
+    try {
+      if (canUseNativeShare) await navigator.share(shareData)
+      else await navigator.clipboard.writeText(`${shareData.text}\n${url}`)
+      updateEngagement(item.visit.id, (current) => ({ ...current, shareCount: current.shareCount + 1 }))
+      setShareMessage(canUseNativeShare ? '已打开分享' : '分享链接已复制')
+      window.setTimeout(() => setShareMessage(''), 1800)
+    } catch {
+      // The native share sheet can be cancelled without treating it as an app error.
+    }
+  }
+
   function resetRecommendationFilters() {
     setDistanceFilter('all')
     setRatingFilter('all')
@@ -203,20 +250,26 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
     {mode === 'trending' ? <div className="trend-window"><button className={trendWindow === 7 ? 'active' : ''} onClick={() => setTrendWindow(7)} type="button">近 7 天</button><button className={trendWindow === 30 ? 'active' : ''} onClick={() => setTrendWindow(30)} type="button">近 30 天</button></div> : null}
     {loading ? <div className="social-empty"><span className="loading-spinner" /><strong>正在整理发现内容</strong></div> : null}
     {!loading && error ? <div className="social-empty"><strong>暂时无法加载</strong><p>{error}</p></div> : null}
-    {!loading && !error && visibleFeed.length ? <div className="community-feed">{visibleFeed.map((item) => <DiscoveryCard candidateRestaurantIds={candidateRestaurantIds} distance={coordinates ? distanceKilometers(coordinates, item.restaurant) : null} item={item} key={item.visit.id} mode={mode} onAddToWant={onAddToWant} onMarkVisited={onMarkVisited} onOpen={() => { trackDiscoveryRecommendationEvent('restaurantDetailOpen', item as CommunityVisit); setSelectedItem(item) }} onToggleCandidate={onToggleCandidate} onViewProfile={onViewProfile} />)}</div> : null}
+    {!loading && !error && visibleFeed.length ? <div className="community-feed">{visibleFeed.map((item) => <DiscoveryCard candidateRestaurantIds={candidateRestaurantIds} distance={coordinates ? distanceKilometers(coordinates, item.restaurant) : null} engagement={engagement[item.visit.id] ?? EMPTY_ENGAGEMENT} item={item} key={item.visit.id} mode={mode} onAddToWant={onAddToWant} onComment={() => setCommentingItem(item)} onLike={() => toggleLike(item)} onMarkVisited={onMarkVisited} onOpen={() => { trackDiscoveryRecommendationEvent('restaurantDetailOpen', item as CommunityVisit); setSelectedItem(item) }} onShare={() => void shareItem(item)} onToggleCandidate={onToggleCandidate} onViewProfile={onViewProfile} />)}</div> : null}
     {!loading && !error && !visibleFeed.length ? <div className="social-empty compact-recommendation-empty"><Globe2 size={22} /><strong>{mode === 'for_you' && feed.length ? filterEmptyState.title : mode === 'for_you' ? '还没有足够信息推荐' : mode === 'similar' ? '当前地区还没有足够的同味数据' : mode === 'latest' ? '这里最近还没有公开到访记录' : mode === 'trending' ? '近期样本不足，暂时还没有形成趋势' : '最近还没有新的关注动态'}</strong><p>{mode === 'for_you' && feed.length ? filterEmptyState.message : mode === 'for_you' ? '多记录几家餐厅后，我们会逐渐了解你的口味。' : mode === 'similar' ? '有更多真实同味到访后会自动出现。' : mode === 'following' ? '可以先去发现好友，或稍后再看看。' : '换一个城市或稍后再看看。'}</p>{mode === 'for_you' && recommendationFilterResolution.relaxationSuggestion ? <button className="secondary-button recommendation-relax-button" onClick={() => applyRelaxation(recommendationFilterResolution.relaxationSuggestion!)} type="button">{filterEmptyState.actionLabel}</button> : null}</div> : null}
     {selectedItem ? <ModalShell description={mode === 'for_you' ? selectedItem.recommendationReason || '根据你的历史口味推荐' : `${selectedItem.user.nickname} 的公开到访记录`} onClose={() => setSelectedItem(null)} size="large" title="餐厅信息"><div className="discovery-restaurant-preview"><RestaurantPreviewCard additionalUserPhotos={selectedItem.visit.photos.map((source, index) => ({ source, photoId: selectedItem.visit.photoIds[index] }))} historyRestaurants={restaurants} isInRoulette={candidateRestaurantIds.includes(selectedItem.restaurant.id)} onAddToRoulette={() => onToggleCandidate(selectedItem.restaurant)} onAddVisit={() => onMarkVisited(selectedItem.restaurant)} onClose={() => setSelectedItem(null)} onDelete={() => undefined} onEdit={() => undefined} onEditVisit={() => undefined} onSaveRecommendation={() => onAddToWant(selectedItem.restaurant)} restaurant={{ ...selectedItem.restaurant, isRecommendation: true }} /></div></ModalShell> : null}
+    {commentingItem ? <ModalShell description={commentingItem.restaurant.name} onClose={() => { setCommentingItem(null); setCommentText('') }} title="评论"><div className="community-comment-panel"><div className="community-comment-list">{(engagement[commentingItem.visit.id]?.comments ?? []).length ? engagement[commentingItem.visit.id].comments.map((comment, index) => <p key={`${commentingItem.visit.id}-comment-${index}`}><strong>我</strong><span>{comment}</span></p>) : <p className="community-comment-empty">还没有评论，来说说你的想法。</p>}</div><form onSubmit={(event) => { event.preventDefault(); submitComment() }}><input autoFocus maxLength={280} onChange={(event) => setCommentText(event.target.value)} placeholder="写下评论" value={commentText} /><button aria-label="发送评论" disabled={!commentText.trim()} type="submit"><Send size={17} /></button></form></div></ModalShell> : null}
+    {shareMessage ? <p aria-live="polite" className="community-share-toast">{shareMessage}</p> : null}
   </section>
 }
 
-function DiscoveryCard({ item, mode, distance, candidateRestaurantIds, onAddToWant, onMarkVisited, onOpen, onToggleCandidate, onViewProfile }: {
+function DiscoveryCard({ item, mode, distance, engagement, candidateRestaurantIds, onAddToWant, onComment, onLike, onMarkVisited, onOpen, onShare, onToggleCandidate, onViewProfile }: {
   item: FeedItem
   mode: DiscoveryMode
   distance: number | null
+  engagement: CommunityEngagement
   candidateRestaurantIds: string[]
   onAddToWant: (restaurant: RestaurantSummary) => void
+  onComment: () => void
+  onLike: () => void
   onMarkVisited: (restaurant: RestaurantSummary) => void
   onOpen: () => void
+  onShare: () => void
   onToggleCandidate: (restaurant: RestaurantSummary) => void
   onViewProfile: (user: UserProfile) => void
 }) {
@@ -232,7 +285,7 @@ function DiscoveryCard({ item, mode, distance, candidateRestaurantIds, onAddToWa
     {media.length ? <button className={`community-media count-${media.length}`} aria-label={`查看 ${item.restaurant.name} 详情`} onClick={onOpen} type="button">{media.map((photo, index) => <SyncedImage alt={`${item.restaurant.name} 图片 ${index + 1}`} key={`${item.visit.id}-media-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</button> : null}
     {mode !== 'for_you' && item.visit.note ? <p className="community-note"><strong>笔记</strong>{item.visit.note}</p> : null}
     {item.recommendationReason ? <p className="discovery-reason">{item.recommendationReason}</p> : null}
-    <footer className="discovery-feed-card__footer"><span>{mode === 'for_you' ? '根据你的就餐历史推荐' : formatVisitDateTime(item.visit.visitedAt)}</span><div className="discovery-card-quick-actions"><button aria-label="记录去过" onClick={() => onMarkVisited(item.restaurant)} title="记录去过" type="button"><Plus size={18} /></button><button aria-label="加入想吃" onClick={() => { trackDiscoveryRecommendationEvent('wantToGoAdded', item as CommunityVisit); onAddToWant(item.restaurant) }} title="加入想吃" type="button"><BookmarkPlus size={18} /></button><button aria-label={selected ? '移出抽签' : '加入抽签'} aria-pressed={selected} className={selected ? 'is-selected' : ''} onClick={() => { if (!selected) trackDiscoveryRecommendationEvent('wheelCandidateAdded', item as CommunityVisit); onToggleCandidate(item.restaurant) }} title={selected ? '移出抽签' : '加入抽签'} type="button">{selected ? <Check size={18} /> : <Dices size={18} />}</button></div></footer>
+    <footer className="discovery-feed-card__footer"><div className="community-engagement-actions"><button aria-label={engagement.liked ? '取消点赞' : '点赞'} aria-pressed={engagement.liked} className={engagement.liked ? 'is-liked' : ''} onClick={onLike} title="点赞" type="button"><Heart fill={engagement.liked ? 'currentColor' : 'none'} size={19} />{engagement.likeCount ? <span>{engagement.likeCount}</span> : null}</button><button aria-label="评论" onClick={onComment} title="评论" type="button"><MessageCircle size={19} />{engagement.comments.length ? <span>{engagement.comments.length}</span> : null}</button><button aria-label="转发" onClick={onShare} title="转发" type="button"><Share2 size={19} />{engagement.shareCount ? <span>{engagement.shareCount}</span> : null}</button></div><div className="discovery-card-quick-actions"><button aria-label="记录去过" onClick={() => onMarkVisited(item.restaurant)} title="记录去过" type="button"><Plus size={18} /></button><button aria-label="加入想吃" onClick={() => { trackDiscoveryRecommendationEvent('wantToGoAdded', item as CommunityVisit); onAddToWant(item.restaurant) }} title="加入想吃" type="button"><BookmarkPlus size={18} /></button><button aria-label={selected ? '移出抽签' : '加入抽签'} aria-pressed={selected} className={selected ? 'is-selected' : ''} onClick={() => { if (!selected) trackDiscoveryRecommendationEvent('wheelCandidateAdded', item as CommunityVisit); onToggleCandidate(item.restaurant) }} title={selected ? '移出抽签' : '加入抽签'} type="button">{selected ? <Check size={18} /> : <Dices size={18} />}</button></div></footer>
   </article>
 }
 
@@ -251,5 +304,15 @@ function communityRestaurant(item: CommunityVisit): RestaurantSummary {
     markerType: item.restaurant.merchantImageUrl ? 'image' : 'emoji', markerImageData: null, markerPhotoId: null, markerEmoji: '🍽️', createdAt: item.visit.createdAt,
     updatedAt: item.visit.updatedAt, deletedAt: null, visitCount: 1, averageRating: item.visit.rating, scoreOutOfTen: item.visit.rating ? item.visit.rating * 2 : null,
     latestVisitDate: item.visit.visitedAt, latestVisit: item.visit, visits: [item.visit], averagePricePerPerson: item.visit.pricePerPerson, averageQueueMinutes: null,
+  }
+}
+
+function readCommunityEngagement(): Record<string, CommunityEngagement> {
+  try {
+    const raw = localStorage.getItem(COMMUNITY_ENGAGEMENT_STORAGE_KEY)
+    if (!raw) return {}
+    return JSON.parse(raw) as Record<string, CommunityEngagement>
+  } catch {
+    return {}
   }
 }

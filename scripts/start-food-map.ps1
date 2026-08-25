@@ -124,7 +124,8 @@ if (-not (Test-Path -LiteralPath $pnpmExecutable) -or -not (Test-Path -LiteralPa
 $env:Path = "$nodeDirectory;$env:Path"
 $env:VITE_APP_ENV = $Environment
 if (-not $isProduction) {
-  $env:VITE_CLOUD_SYNC_ENABLED = 'true'
+  $env:VITE_CLOUD_SYNC_ENABLED = 'false'
+  $env:VITE_SOCIAL_API_ENABLED = 'true'
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $projectDirectory 'node_modules\vite\package.json'))) {

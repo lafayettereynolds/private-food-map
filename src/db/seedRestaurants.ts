@@ -1,7 +1,7 @@
 import { db } from './appDb'
 import { calculatePricePerPerson, type QueueDuration, type Restaurant, type StarRating, type Visit } from '../types/domain'
 
-const names = [
+const hangzhouNames = [
   '桂满陇·江南小馆（来福士店）', '山葵家精致料理（来福士店）', '浅草君日式烧肉（来福士店）', '椒响川菜（来福士店）', '南洋里新加坡料理（来福士店）',
   '潮上潮汕牛肉锅（来福士店）', '月影铁板烧（来福士店）', '云炉云南菜（来福士店）', '金栗韩式烤肉（来福士店）', '鹿港小镇（来福士店）',
   '拾味融合菜（来福士店）', '海风里海鲜餐厅（来福士店）', '小吊梨汤（来福士店）', '樱田寿司（来福士店）', '炙焰牛排馆（来福士店）',
@@ -16,6 +16,27 @@ const names = [
   '良渚食集', '湘湖人家', '文三路小酒馆', '大兜路素食馆', '复兴路砂锅店',
 ]
 
+const crossCitySeeds = [
+  { name: '梧桐里本帮菜（静安店）', city: '上海市', area: '静安寺', longitude: 121.4452, latitude: 31.2231 },
+  { name: '外滩小馆（黄浦店）', city: '上海市', area: '外滩', longitude: 121.4908, latitude: 31.2383 },
+  { name: '胡同里涮肉（东城店）', city: '北京市', area: '东城区', longitude: 116.4188, latitude: 39.9287 },
+  { name: '京味小院（朝阳店）', city: '北京市', area: '三里屯', longitude: 116.4551, latitude: 39.9364 },
+  { name: '荔湾艇仔粥（西关店）', city: '广州市', area: '荔湾区', longitude: 113.2484, latitude: 23.1189 },
+  { name: '珠江夜宴（天河店）', city: '广州市', area: '天河区', longitude: 113.3278, latitude: 23.1292 },
+  { name: '南山海鲜档（后海店）', city: '深圳市', area: '南山区', longitude: 113.9424, latitude: 22.5177 },
+  { name: '福田潮汕牛肉锅', city: '深圳市', area: '福田区', longitude: 114.0579, latitude: 22.5417 },
+  { name: '玉林串串香（武侯店）', city: '成都市', area: '玉林', longitude: 104.0532, latitude: 30.6255 },
+  { name: '宽窄巷子川味馆', city: '成都市', area: '青羊区', longitude: 104.0557, latitude: 30.6714 },
+  { name: '金陵盐水鸭（夫子庙店）', city: '南京市', area: '夫子庙', longitude: 118.7882, latitude: 32.0205 },
+  { name: '玄武湖畔小馆', city: '南京市', area: '玄武区', longitude: 118.8036, latitude: 32.0718 },
+  { name: '平江路苏帮菜', city: '苏州市', area: '姑苏区', longitude: 120.6357, latitude: 31.3147 },
+  { name: '金鸡湖融合料理', city: '苏州市', area: '工业园区', longitude: 120.7054, latitude: 31.3226 },
+  { name: '中环茶餐厅', city: '香港', area: '中环', longitude: 114.1579, latitude: 22.2849 },
+  { name: '尖沙咀烧味', city: '香港', area: '尖沙咀', longitude: 114.1722, latitude: 22.2976 },
+] as const
+
+const names = [...hangzhouNames, ...crossCitySeeds.map((item) => item.name)]
+
 const otherCenters = [
   [120.1692, 30.2746], [120.0648, 30.2722], [120.1434, 30.3192], [120.1908, 30.2088], [120.2129, 30.2479],
   [120.1201, 30.2912], [120.1356, 30.2285], [120.1571, 30.2368], [120.2134, 30.2932], [120.1173, 30.2247],
@@ -27,7 +48,7 @@ const areaNames = ['武林广场', '西溪', '大运河', '滨江', '钱江新�
 const cuisines = ['杭帮菜', '日料', '火锅', '烧烤', '粤菜', '西餐', '川菜', '融合菜']
 const emojis = ['🍲', '🍣', '🥩', '🍜', '🥘', '🍕', '🍤', '🥟']
 const queueDurations: QueueDuration[] = ['none', 'under15', 'under30', 'under60', 'under90', 'under120', 'over120']
-const TEST_SEED_VERSION = 'taste-map-dev-restaurants-2026-08-24-v3'
+const TEST_SEED_VERSION = 'taste-map-dev-restaurants-2026-08-25-v4-cross-city'
 
 let seedPromise: Promise<number> | null = null
 
@@ -48,13 +69,16 @@ async function seedRestaurants() {
 
   names.forEach((_, index) => {
     const random = seededRandom(index + 20260820)
-    const area = index < 20 ? '来福士中心' : index < 40 ? '湖滨银泰' : areaNames[index - 40]
-    const center = index < 20
+    const crossCity = index >= hangzhouNames.length ? crossCitySeeds[index - hangzhouNames.length] : null
+    const area = crossCity?.area ?? (index < 20 ? '来福士中心' : index < 40 ? '湖滨银泰' : areaNames[index - 40])
+    const center = crossCity
+      ? [crossCity.longitude, crossCity.latitude] as const
+      : index < 20
       ? [120.2196, 30.2465] as const
       : index < 40
         ? [120.1631, 30.2575] as const
         : otherCenters[index - 40]
-    const radius = index < 40 ? 0.00125 : 0.00045
+    const radius = crossCity ? 0.0022 : index < 40 ? 0.00125 : 0.00045
     const angle = random() * Math.PI * 2
     const distance = Math.sqrt(random()) * radius
     const longitude = center[0] + Math.cos(angle) * distance
@@ -121,7 +145,7 @@ async function seedRestaurants() {
       amapPoiId: `sample-amap-poi-${String(index + 1).padStart(2, '0')}`,
       name: names[index],
       address: `${area}附近 ${20 + index} 号`,
-      city: '杭州市',
+      city: crossCity?.city ?? '杭州市',
       latitude,
       longitude,
       status: 'visited',
@@ -134,7 +158,7 @@ async function seedRestaurants() {
       tags: [cuisines[cuisineIndex], area],
       longTermNote: '',
       pricePerPerson: averagePrice,
-      phone: `0571-${String(86000000 + index * 137).slice(0, 8)}`,
+      phone: crossCity ? null : `0571-${String(86000000 + index * 137).slice(0, 8)}`,
       openingHours: index % 5 === 0 ? '10:30–23:00' : '11:00–22:00',
       markerType: 'image',
       markerImageData: null,

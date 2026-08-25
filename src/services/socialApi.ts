@@ -1,6 +1,6 @@
-import { CLOUD_SYNC_ENABLED, IS_DEVELOPMENT } from '../config/appEnvironment'
+import { IS_DEVELOPMENT, SOCIAL_API_ENABLED } from '../config/appEnvironment'
 import type { CloudVisit } from '../types/cloudSync'
-import type { CompanionLinkRequest, CommunityVisit, DiningCompanion, Follow, HistoricalMealFact, RestaurantListCollection, RestaurantListItem, RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import type { CompanionLinkRequest, CommunityVisit, DiningCompanion, Follow, Friendship, HistoricalMealFact, RestaurantListCollection, RestaurantListItem, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { drivePhotoReference } from './cloudSyncData'
 
 export type PublicUser = Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
@@ -42,7 +42,7 @@ interface CommunityResponse {
 export type DiscoveryMode = 'following' | 'for_you' | 'similar' | 'latest' | 'trending'
 
 export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city = '', trendWindow: 7 | 30 = 7): Promise<CommunityVisit[]> {
-  if (!CLOUD_SYNC_ENABLED) return []
+  if (!SOCIAL_API_ENABLED) return []
   const response = await apiFetch<CommunityResponse>(`/api/community?mode=${mode}&city=${encodeURIComponent(city)}&window=${trendWindow}`)
   return response.items.map((item) => ({
     visit: cloudVisitToLocal(item.visit),
@@ -76,19 +76,19 @@ export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city =
 }
 
 export async function searchCloudUsers(query: string): Promise<PublicUser[]> {
-  if (!CLOUD_SYNC_ENABLED) return []
+  if (!SOCIAL_API_ENABLED) return []
   const result = await apiFetch<{ users: PublicUser[] }>(`/api/users/search?q=${encodeURIComponent(query.trim())}`)
   return result.users
 }
 
 export async function fetchFollows(): Promise<Follow[]> {
-  if (!CLOUD_SYNC_ENABLED) return []
+  if (!SOCIAL_API_ENABLED) return []
   const result = await apiFetch<{ follows: Follow[] }>('/api/follows')
   return result.follows
 }
 
 export async function setFollow(userId: string, followed: boolean): Promise<void> {
-  if (!CLOUD_SYNC_ENABLED) return
+  if (!SOCIAL_API_ENABLED) return
   await apiFetch('/api/follows', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -97,7 +97,7 @@ export async function setFollow(userId: string, followed: boolean): Promise<void
 }
 
 export async function fetchPublicRestaurantList(listId: string) {
-  if (!CLOUD_SYNC_ENABLED) return null
+  if (!SOCIAL_API_ENABLED) return null
   return apiFetch<{
     list: Omit<RestaurantListCollection, 'customCoverImageData'>
     items: RestaurantListItem[]
@@ -106,7 +106,7 @@ export async function fetchPublicRestaurantList(listId: string) {
 }
 
 export async function fetchUserProfile(userId: string) {
-  if (!CLOUD_SYNC_ENABLED) return null
+  if (!SOCIAL_API_ENABLED) return null
   const result = await apiFetch<{
     user: PublicUser
     items: Array<{ visit: CloudVisit; restaurant: Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'tags' | 'pricePerPerson' | 'phone' | 'openingHours' | 'merchantImageUrl' | 'markerEmoji'> }>
@@ -170,8 +170,8 @@ export async function fetchUserProfile(userId: string) {
   return { user, restaurants: [...grouped.values()], followerCount: result.followerCount ?? 0, followingCount: result.followingCount ?? 0 }
 }
 
-export async function sendFriendRequest(userId: string) {
-  return apiFetch('/api/friendships', {
+export async function sendFriendRequest(userId: string): Promise<Friendship> {
+  return apiFetch<Friendship>('/api/friendships', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'request', userId }),
@@ -187,7 +187,7 @@ export async function respondToFriendship(friendshipId: string, status: 'accepte
 }
 
 export async function fetchCompanionLinks() {
-  if (!CLOUD_SYNC_ENABLED) return { companions: [] as DiningCompanion[], requests: [] as CompanionLinkRequest[], users: [] as PublicUser[] }
+  if (!SOCIAL_API_ENABLED) return { companions: [] as DiningCompanion[], requests: [] as CompanionLinkRequest[], users: [] as PublicUser[] }
   return apiFetch<{ companions: DiningCompanion[]; requests: CompanionLinkRequest[]; users: PublicUser[] }>('/api/companion-links')
 }
 

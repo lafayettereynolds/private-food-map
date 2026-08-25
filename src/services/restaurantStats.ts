@@ -1,8 +1,8 @@
-import { CLOUD_SYNC_ENABLED } from '../config/appEnvironment'
+import { SOCIAL_API_ENABLED } from '../config/appEnvironment'
 import type { RestaurantSocialStats } from '../types/restaurantStats'
 
 export async function fetchRestaurantSocialStats(amapPoiId: string, signal?: AbortSignal): Promise<RestaurantSocialStats | null> {
-  if (!CLOUD_SYNC_ENABLED || !amapPoiId) return null
+  if (!SOCIAL_API_ENABLED || !amapPoiId) return null
   const response = await fetch(`/api/restaurants/${encodeURIComponent(amapPoiId)}/stats`, {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },

@@ -326,17 +326,21 @@ export function AddRestaurantModal({
         <form className="personalize-form" onSubmit={handleAdd}>
           <button className="back-button" onClick={() => setSelectedPoi(null)} type="button"><ArrowLeft size={15} /> 返回搜索结果</button>
 
-          <div className="selected-poi-card">
-            {selectedPoi.merchantImageUrl ? <img alt="" src={selectedPoi.merchantImageUrl} /> : <span><MapPin size={18} /></span>}
-            <div>
-              <strong>{selectedPoi.name}</strong>
-              <label className="selected-poi-card__address"><MapPin size={13} /><input aria-label="餐厅地址" onChange={(event) => setAddress(event.target.value)} required value={address} /></label>
-              {(selectedPoi.phone || selectedPoi.openingHours) ? <div className="selected-poi-business-info">
-                {selectedPoi.phone ? <span><Phone size={12} />{selectedPoi.phone}</span> : null}
-                {selectedPoi.openingHours ? <span><Clock3 size={12} />{selectedPoi.openingHours}</span> : null}
-              </div> : null}
+          <section className="selected-restaurant-detail-header">
+            <div className="selected-restaurant-detail-hero">
+              {selectedPoi.merchantImageUrl ? <img alt={`${selectedPoi.name} 商家图片`} src={selectedPoi.merchantImageUrl} /> : <span><Store size={30} /></span>}
+              <small>商家图片</small>
             </div>
-          </div>
+            <div className="selected-restaurant-detail-copy">
+              <p>{[selectedPoi.city, status === 'visited' ? '去过' : '想吃'].filter(Boolean).join(' · ')}</p>
+              <h2>{selectedPoi.name}</h2>
+              <label className="selected-poi-card__address"><MapPin size={14} /><input aria-label="餐厅地址" onChange={(event) => setAddress(event.target.value)} required value={address} /></label>
+              <div className="selected-poi-business-info">
+                <span><Phone size={13} /><small>电话</small><strong>{selectedPoi.phone || '暂无电话'}</strong></span>
+                <span><Clock3 size={13} /><small>营业时间</small><strong>{selectedPoi.openingHours || '暂无营业时间'}</strong></span>
+              </div>
+            </div>
+          </section>
 
           <div className="collection-choice" aria-label="餐厅状态">
             <button className={status === 'visited' ? 'is-active' : ''} onClick={() => setStatus('visited')} type="button"><Check size={15} /> 我去过</button>
@@ -370,7 +374,11 @@ export function AddRestaurantModal({
               <DishEditor onChange={setDishes} value={dishes} />
               <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
             </div>
-          ) : <div className="form-section want-to-go-details"><p>餐厅名称、详细地址、图片、电话和营业时间会一起保存；预计价格可按需补充。</p><label className="field field-with-leading-icon"><span>预计人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 180.00" step="0.01" type="number" value={price} /></div></label></div>}
+          ) : <div className="form-section want-to-go-details">
+            <h3><MapPin size={15} /> 想吃计划</h3>
+            <p>餐厅名称、详细地址、图片、电话和营业时间已统一显示在上方；这里只需要补充你想去前要记录的内容。</p>
+            <label className="field field-with-leading-icon"><span>预计人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 180.00" step="0.01" type="number" value={price} /></div></label>
+          </div>}
 
           <div className="form-section">
             <h3>整理与显示</h3>

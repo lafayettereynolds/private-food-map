@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, Copy, Database, Dices, Image as ImageIcon, LockKeyhole, Save, Settings, ShieldCheck, Sparkles, UserCheck, UserPlus, UsersRound, Utensils } from 'lucide-react'
+import { Activity, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Bookmark, CalendarDays, Check, ChevronRight, Clock3, Copy, Database, Dices, Heart, Image as ImageIcon, Info, ListChecks, LockKeyhole, MapPinned, MoreHorizontal, Repeat2, Save, Settings, Share2, ShieldCheck, Sparkles, Star, Store, ThumbsDown, ThumbsUp, TrendingUp, UserCheck, UserPlus, UsersRound, Utensils, WalletCards } from 'lucide-react'
 import type { CloudSyncState } from '../types/cloudSync'
-import type { DiningCompanion, RestaurantSummary, UserProfile, Visibility, Visit } from '../types/domain'
+import { scoreColor, type DiningCompanion, type FriendshipStatus, type RestaurantSummary, type UserProfile, type Visibility, type Visit } from '../types/domain'
 import { buildProfileInsights } from '../services/profileInsights'
 import { optimizeAvatarImage } from '../utils/images'
 import { AVATAR_PRESETS } from '../utils/avatarPresets'
+import { publicUserId } from '../utils/publicUserId'
 import { ModalShell } from './ModalShell'
 import { PresetAvatar, UserAvatar } from './UserAvatar'
 import { MembershipAdminEntry } from './MembershipAdminPanel'
@@ -13,9 +14,10 @@ import { reviewService, type PeriodReview } from '../services/reviewService'
 import { SyncedImage } from './SyncedImage'
 import { CompanionInsightsPanel, RecommendationSourceInsightsPanel } from './ProfileAnalyticsPanels'
 
-export function ProfilePage({ user, restaurants = [], visits = [], diningCompanions = [], sourceUsers = [], followerCount = 0, followingCount = 0, onSave, editable = true, isFollowing = false, followPending = false, cloudSyncState, connections, followerConnections, followingConnections, onBack, onOpenRoulette, onOpenSettings, onMapPrivacyChange, onSelectRestaurant, onToggleFollow }: {
+export function ProfilePage({ user, restaurants = [], viewerRestaurants = [], visits = [], diningCompanions = [], sourceUsers = [], followerCount = 0, followingCount = 0, onSave, editable = true, isFollowing = false, followPending = false, friendStatus = null, friendPending = false, cloudSyncState, connections, followerConnections, followingConnections, onAddFriend, onBack, onOpenRoulette, onOpenSettings, onMapPrivacyChange, onSelectRestaurant, onToggleFollow }: {
   user: UserProfile
   restaurants?: RestaurantSummary[]
+  viewerRestaurants?: RestaurantSummary[]
   visits?: Visit[]
   diningCompanions?: DiningCompanion[]
   sourceUsers?: UserProfile[]
@@ -25,10 +27,13 @@ export function ProfilePage({ user, restaurants = [], visits = [], diningCompani
   editable?: boolean
   isFollowing?: boolean
   followPending?: boolean
+  friendStatus?: FriendshipStatus | null
+  friendPending?: boolean
   cloudSyncState?: CloudSyncState
   connections?: ReactNode
   followerConnections?: ReactNode
   followingConnections?: ReactNode
+  onAddFriend?: () => void
   onBack?: () => void
   onOpenRoulette?: () => void
   onOpenSettings?: () => void
@@ -44,19 +49,21 @@ export function ProfilePage({ user, restaurants = [], visits = [], diningCompani
   const insights = useMemo(() => buildProfileInsights(restaurants, visits), [restaurants, visits])
   const monthReview = useMemo(() => reviewService.monthly(restaurants, visits, new Date().getFullYear(), new Date().getMonth() + 1), [restaurants, visits])
   const yearReview = useMemo(() => reviewService.annual(restaurants, visits, new Date().getFullYear()), [restaurants, visits])
+  const numericUserId = useMemo(() => publicUserId(user.id), [user.id])
   async function copyUserId() {
-    await navigator.clipboard?.writeText(user.id)
+    await navigator.clipboard?.writeText(numericUserId)
     setCopiedUserId(true)
     window.setTimeout(() => setCopiedUserId(false), 1600)
   }
   if (page === 'account') return <AccountPrivacyPage onBack={() => setPage('dashboard')} onMapPrivacyChange={onMapPrivacyChange} onOpenSettings={onOpenSettings} user={user} />
+  if (!editable) return <PublicUserProfile followPending={followPending} friendPending={friendPending} friendStatus={friendStatus} followerCount={followerCount} followingCount={followingCount} isFollowing={isFollowing} onAddFriend={onAddFriend} onBack={onBack} onSelectRestaurant={onSelectRestaurant} onToggleFollow={onToggleFollow} restaurants={restaurants} user={user} viewerRestaurants={viewerRestaurants} visits={visits} />
 
   return <section className={`social-page profile-page profile-dashboard${editable ? ' profile-dashboard--owner' : ' profile-dashboard--public'}`}>
     <div className="profile-dashboard__hero">
       <div className="profile-dashboard__top">{editable ? <><button onClick={() => setConnectionsOpen('discover')} type="button"><UserPlus size={17} />添加好友</button><button aria-label="账号与隐私" onClick={() => setPage('account')} type="button"><Settings size={20} /></button></> : <><button onClick={onBack} type="button"><ArrowLeft size={17} />返回</button><span>公开主页</span></>}</div>
       <header className="profile-dashboard__header">
         <button aria-label={editable ? '编辑个人资料' : `${user.nickname} 的头像`} className="profile-avatar profile-dashboard__avatar" disabled={!editable} onClick={() => setEditorOpen(true)} type="button"><UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></button>
-        <div className="profile-dashboard__identity"><h1>{user.nickname}</h1><p>{user.city ? `${user.city} · ` : ''}{user.bio || '记录每一次真实的味觉记忆。'}</p><div className="profile-dashboard__identity-actions"><button className="profile-user-id" onClick={() => void copyUserId()} title="复制用户 ID" type="button"><span>ID · {user.id}</span>{copiedUserId ? <Check size={13} /> : <Copy size={13} />}</button>{editable ? <button className="profile-edit-button" onClick={() => setEditorOpen(true)} type="button">编辑资料</button> : <button className={`profile-follow-button${isFollowing ? ' is-following' : ''}`} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button>}</div></div>
+        <div className="profile-dashboard__identity"><h1>{user.nickname}</h1><p>{user.city ? `${user.city} · ` : ''}{user.bio || '记录每一次真实的味觉记忆。'}</p><div className="profile-dashboard__identity-actions"><button className="profile-user-id" onClick={() => void copyUserId()} title="复制用户 ID" type="button"><span>ID {numericUserId}</span>{copiedUserId ? <Check size={13} /> : <Copy size={13} />}</button>{editable ? <button className="profile-edit-button" onClick={() => setEditorOpen(true)} type="button">编辑资料</button> : <button className={`profile-follow-button${isFollowing ? ' is-following' : ''}`} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button>}</div></div>
       </header>
       <div className={`profile-dashboard__counts${editable ? '' : ' is-public'}`}>{editable ? <><button onClick={() => setConnectionsOpen('following')} type="button"><strong>{followingCount}</strong><small>我关注的</small></button><button onClick={() => setConnectionsOpen('followers')} type="button"><strong>{followerCount}</strong><small>关注我的</small></button><button onClick={() => setDetail('data')} type="button"><strong>{visits.length}</strong><small>公开记录</small></button><button onClick={() => setDetail('data')} type="button"><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></button></> : <><span><strong>{visits.length}</strong><small>公开记录</small></span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></span></>}</div>
     </div>
@@ -73,6 +80,133 @@ export function ProfilePage({ user, restaurants = [], visits = [], diningCompani
   </section>
 }
 
+type PublicProfileTab = 'activity' | 'lists' | 'taste'
+type PublicProfileView = 'visited' | 'map' | 'mutual' | null
+
+function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, followerCount, followingCount, isFollowing, followPending = false, friendStatus, friendPending, onBack, onSelectRestaurant, onToggleFollow, onAddFriend }: {
+  user: UserProfile
+  restaurants: RestaurantSummary[]
+  viewerRestaurants: RestaurantSummary[]
+  visits: Visit[]
+  followerCount: number
+  followingCount: number
+  isFollowing: boolean
+  followPending?: boolean
+  friendStatus: FriendshipStatus | null
+  friendPending: boolean
+  onBack?: () => void
+  onSelectRestaurant?: (restaurant: RestaurantSummary) => void
+  onToggleFollow?: () => void
+  onAddFriend?: () => void
+}) {
+  const [tab, setTab] = useState<PublicProfileTab>('activity')
+  const [view, setView] = useState<PublicProfileView>(null)
+  const [shared, setShared] = useState(false)
+  const insights = useMemo(() => buildProfileInsights(restaurants, visits), [restaurants, visits])
+  const visitedRestaurants = useMemo(() => restaurants.filter((restaurant) => restaurant.status === 'visited' || restaurant.visitCount > 0).sort(comparePublicRestaurants), [restaurants])
+  const wantRestaurants = useMemo(() => restaurants.filter((restaurant) => restaurant.status === 'wantToGo'), [restaurants])
+  const representativeRestaurants = visitedRestaurants.slice(0, 4)
+  const activityRestaurants = useMemo(() => [...visitedRestaurants].sort((a, b) => (b.latestVisitDate ?? '').localeCompare(a.latestVisitDate ?? '')), [visitedRestaurants])
+  const viewerWantKeys = useMemo(() => new Set(viewerRestaurants.filter((restaurant) => restaurant.status === 'wantToGo').map(publicRestaurantKey)), [viewerRestaurants])
+  const mutualWants = wantRestaurants.filter((restaurant) => viewerWantKeys.has(publicRestaurantKey(restaurant)))
+  const cityGroups = useMemo(() => {
+    const counts = new Map<string, number>()
+    visitedRestaurants.forEach((restaurant) => counts.set(restaurant.city || '其他城市', (counts.get(restaurant.city || '其他城市') ?? 0) + 1))
+    return [...counts].sort((a, b) => b[1] - a[1])
+  }, [visitedRestaurants])
+  const publicLists = useMemo(() => buildPublicProfileLists(visitedRestaurants), [visitedRestaurants])
+  const friendLabel = friendPending ? '处理中…' : friendStatus === 'accepted' ? '已是好友' : friendStatus === 'pending' ? '已申请' : '加好友'
+  const numericUserId = useMemo(() => publicUserId(user.id), [user.id])
+
+  function openView(next: Exclude<PublicProfileView, null>) {
+    setView(next)
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+  }
+  async function shareProfile() {
+    const shareData = { title: `${user.nickname} 的 Taste Map`, text: `看看 ${user.nickname} 的公开美食主页`, url: window.location.href }
+    if (navigator.share) await navigator.share(shareData).catch(() => undefined)
+    else await navigator.clipboard?.writeText(window.location.href)
+    setShared(true)
+    window.setTimeout(() => setShared(false), 1600)
+  }
+
+  if (view) return <section className="social-page public-user-profile public-user-profile--subpage">
+    <header className="public-user-profile__subhead"><button onClick={() => setView(null)} type="button"><ArrowLeft size={18} />返回</button><h1>{view === 'visited' ? '去过的餐厅' : view === 'map' ? 'TA 的公开地图' : '我们都想吃'}</h1><span /></header>
+    {view === 'map' ? <div className="public-profile-map-summary"><div className="public-profile-map-summary__canvas"><MapPinned size={38} /><strong>{visitedRestaurants.length}</strong><small>公开足迹</small></div><div className="public-profile-city-list">{cityGroups.length ? cityGroups.map(([city, count]) => <div key={city}><strong>{city}</strong><span>{count} 家</span></div>) : <p>暂时没有公开城市足迹。</p>}</div></div> : <PublicRestaurantRows emptyText={view === 'mutual' ? '你们暂时还没有共同想吃的餐厅。' : '这个用户暂时没有公开到访记录。'} onSelectRestaurant={onSelectRestaurant} restaurants={view === 'mutual' ? mutualWants : visitedRestaurants} />}
+  </section>
+
+  return <section className="social-page public-user-profile">
+    <header className="public-user-profile__hero">
+      <div className="public-user-profile__top"><button onClick={onBack} type="button"><ArrowLeft size={19} /><span>返回</span></button><div><button aria-label="分享主页" onClick={() => void shareProfile()} type="button">{shared ? <Check size={19} /> : <Share2 size={19} />}</button><button aria-label="更多" type="button"><MoreHorizontal size={21} /></button></div></div>
+      <div className="public-user-profile__identity">
+        <span className="public-user-profile__avatar"><UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></span>
+        <div><h1>{user.nickname}</h1><strong>@{publicHandle(user)}</strong><p>{user.city || '未设置城市'}{user.bio ? ` · ${user.bio}` : ''}</p><span><BadgeCheck size={13} />ID {numericUserId}</span></div>
+      </div>
+      <div className="public-user-profile__actions"><button className={isFollowing ? 'is-following' : ''} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={16} /> : <UserPlus size={16} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button><button disabled={friendPending || friendStatus === 'accepted' || friendStatus === 'pending' || !onAddFriend} onClick={onAddFriend} type="button"><UsersRound size={16} />{friendLabel}</button></div>
+      <div className="public-user-profile__metrics"><span><strong>{followingCount}</strong><small>关注</small></span><span><strong>{followerCount}</strong><small>粉丝</small></span><span><strong>{visits.length}</strong><small>公开到访</small></span><span><strong>{visitedRestaurants.length}</strong><small>去过餐厅</small></span></div>
+    </header>
+
+    <section className="public-profile-shortcuts">
+      <button onClick={() => setTab('activity')} type="button"><Activity size={20} /><strong>动态</strong><small>{visits.length} 条</small></button>
+      <button onClick={() => openView('mutual')} type="button"><Bookmark size={20} /><strong>想吃</strong><small>{wantRestaurants.length} 家</small></button>
+      <button onClick={() => setTab('lists')} type="button"><ListChecks size={20} /><strong>食单</strong><small>{publicLists.length} 个</small></button>
+      <button onClick={() => openView('map')} type="button"><MapPinned size={20} /><strong>地图</strong><small>查看轨迹</small></button>
+    </section>
+
+    <button className="public-profile-mutual" onClick={() => openView('mutual')} type="button"><Heart size={19} /><span><strong>我们都想吃 {mutualWants.length} 家</strong><small>{mutualWants.length ? '一起去试试这些店吧' : '共同收藏的餐厅会显示在这里'}</small></span><span className="public-profile-mutual__avatars">{mutualWants.slice(0, 3).map((restaurant) => <RestaurantThumb key={restaurant.id} restaurant={restaurant} />)}</span><ChevronRight size={18} /></button>
+
+    <ProfileSection action={representativeRestaurants.length ? '查看全部' : undefined} onAction={representativeRestaurants.length ? () => openView('visited') : undefined} title="最代表 TA 的餐厅"><div className="public-profile-representative">{representativeRestaurants.length ? representativeRestaurants.map((restaurant) => <button key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || restaurant.city}{restaurant.scoreOutOfTen !== null ? ` · ${restaurant.scoreOutOfTen.toFixed(1)}` : ''}</small></button>) : <p>继续公开记录后，这里会形成 TA 的代表餐厅。</p>}</div></ProfileSection>
+
+    <nav className="public-profile-tabs" aria-label="公开主页内容"><button className={tab === 'activity' ? 'is-active' : ''} onClick={() => setTab('activity')} type="button">动态</button><button className={tab === 'lists' ? 'is-active' : ''} onClick={() => setTab('lists')} type="button">食单</button><button className={tab === 'taste' ? 'is-active' : ''} onClick={() => setTab('taste')} type="button">口味</button></nav>
+    {tab === 'activity' ? <section className="public-profile-activity"><header><h2>最近公开到访</h2>{activityRestaurants.length ? <button onClick={() => openView('visited')} type="button">查看全部</button> : null}</header>{activityRestaurants.length ? activityRestaurants.slice(0, 8).map((restaurant) => <PublicActivityCard key={restaurant.id} onSelectRestaurant={onSelectRestaurant} restaurant={restaurant} />) : <p className="public-profile-empty">这个用户暂时没有公开动态。</p>}</section> : null}
+    {tab === 'lists' ? <section className="public-profile-lists"><header><h2>TA 的公开食单</h2></header>{publicLists.length ? publicLists.map((list) => <article key={list.title}><div className="public-profile-list-cover">{list.restaurants.slice(0, 4).map((restaurant) => <RestaurantThumb key={restaurant.id} restaurant={restaurant} />)}</div><div><strong>{list.title}</strong><small>{list.restaurants.length} 家餐厅</small><p>{list.description}</p></div></article>) : <p className="public-profile-empty">这个用户暂时没有公开食单。</p>}</section> : null}
+    {tab === 'taste' ? <section className="public-profile-taste"><header><h2>TA 的口味偏好</h2><span>公开信息</span></header><dl><div><dt>偏爱菜系</dt><dd>{insights.tasteProfile.preferredCuisines.slice(0, 5).map((item) => item.label).join(' · ') || '数据积累中'}</dd></div><div><dt>常去价位</dt><dd>{insights.tasteProfile.preferredPriceRange}</dd></div><div><dt>偏好氛围</dt><dd>{insights.tasteProfile.highRatingTraits.slice(0, 4).map((item) => item.label).join(' · ') || '数据积累中'}</dd></div></dl><p>{insights.tasteProfile.summary}</p><small>基于 {insights.tasteProfile.validVisitCount} 次公开有效记录生成</small></section> : null}
+  </section>
+}
+
+function PublicActivityCard({ restaurant, onSelectRestaurant }: { restaurant: RestaurantSummary; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
+  const latest = restaurant.latestVisit
+  const score = restaurant.scoreOutOfTen
+  return <button className="public-profile-activity-card" onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><span><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || '餐厅'} · {restaurant.city}</small>{score !== null ? <em style={{ color: scoreColor(score) }}><Star size={12} fill="currentColor" />{score.toFixed(1)}</em> : null}<small>去过 {restaurant.visitCount} 次{restaurant.latestVisitDate ? ` · 最近 ${formatPublicDate(restaurant.latestVisitDate)}` : ''}</small>{latest?.note ? <p>“{latest.note}”</p> : null}</span><Bookmark size={17} /></button>
+}
+
+function PublicRestaurantRows({ restaurants, emptyText, onSelectRestaurant }: { restaurants: RestaurantSummary[]; emptyText: string; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
+  return <div className="public-profile-restaurant-rows">{restaurants.length ? restaurants.map((restaurant) => <button key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><span><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || '餐厅'} · {restaurant.city}</small><small>去过 {restaurant.visitCount} 次{restaurant.latestVisitDate ? ` · 最近 ${formatPublicDate(restaurant.latestVisitDate)}` : ''}</small></span>{restaurant.scoreOutOfTen !== null ? <em style={{ color: scoreColor(restaurant.scoreOutOfTen) }}>{restaurant.scoreOutOfTen.toFixed(1)}</em> : null}<ChevronRight size={17} /></button>) : <p className="public-profile-empty">{emptyText}</p>}</div>
+}
+
+function RestaurantThumb({ restaurant }: { restaurant: RestaurantSummary }) {
+  const photo = publicRestaurantPhoto(restaurant)
+  return <span className="public-profile-restaurant-thumb">{photo ? <SyncedImage alt="" loading="lazy" photoId={photo.photoId} source={photo.source} /> : <Utensils size={20} />}</span>
+}
+
+function publicRestaurantPhoto(restaurant: RestaurantSummary) {
+  for (const visit of restaurant.visits) {
+    if (visit.photos[0]) return { source: visit.photos[0], photoId: visit.photoIds[0] ?? null }
+  }
+  const source = restaurant.markerImageData || restaurant.merchantImageUrl
+  return source || restaurant.markerPhotoId ? { source, photoId: restaurant.markerPhotoId } : null
+}
+
+function comparePublicRestaurants(a: RestaurantSummary, b: RestaurantSummary) {
+  return (b.scoreOutOfTen ?? -1) - (a.scoreOutOfTen ?? -1) || b.visitCount - a.visitCount || (b.latestVisitDate ?? '').localeCompare(a.latestVisitDate ?? '')
+}
+
+function buildPublicProfileLists(restaurants: RestaurantSummary[]) {
+  if (!restaurants.length) return []
+  const frequent = [...restaurants].sort((a, b) => b.visitCount - a.visitCount).slice(0, 8)
+  const rated = [...restaurants].filter((item) => item.scoreOutOfTen !== null).sort(comparePublicRestaurants).slice(0, 8)
+  const recent = [...restaurants].sort((a, b) => (b.latestVisitDate ?? '').localeCompare(a.latestVisitDate ?? '')).slice(0, 8)
+  return [
+    { title: '最常回去的店', description: 'TA 反复到访、最熟悉的一组餐厅', restaurants: frequent },
+    rated.length ? { title: 'TA 的高分餐厅', description: '按公开评分整理的心头好', restaurants: rated } : null,
+    { title: '最近去过', description: '按最近公开到访整理', restaurants: recent },
+  ].filter((item): item is { title: string; description: string; restaurants: RestaurantSummary[] } => Boolean(item?.restaurants.length))
+}
+
+function publicRestaurantKey(restaurant: RestaurantSummary) { return restaurant.amapPoiId || `${restaurant.city}:${restaurant.name}` }
+function publicHandle(user: UserProfile) { return (user.nickname || user.id).replace(/\s+/g, '').replace(/[^\w\u4e00-\u9fff-]/g, '').toLowerCase() || user.id }
+function formatPublicDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : `${date.getMonth() + 1}月${date.getDate()}日` }
+
 function ProfileSection({ title, action, onAction, children }: { title: string; action?: string; onAction?: () => void; children: ReactNode }) { return <section className="profile-dashboard__section"><header><h2>{title}</h2>{action ? <button disabled={!onAction} onClick={onAction} type="button">{action}</button> : null}</header>{children}</section> }
 
 function MemoryCard({ title, subtitle, values, icon, onClick }: { title: string; subtitle: string; values: string[]; icon: ReactNode; onClick: () => void }) { return <button onClick={onClick} type="button"><span className="profile-memory-card__icon">{icon}</span><span className="profile-memory-card__copy"><strong>{title}</strong><small>{subtitle}</small><em>{values.join(' · ')}</em></span><ChevronRight size={15} /></button> }
@@ -84,7 +218,7 @@ function TasteProfileSummary({ profile, onClick }: { profile: TasteProfile; onCl
 }
 
 function ProfileDetailModal({ detail, insights, visits, restaurants, diningCompanions, sourceUsers, ownerUserId, monthReview, yearReview, premium, onClose, onSelectRestaurant }: { detail: 'month' | 'year' | 'day' | 'taste' | 'data' | 'companions' | 'sources'; insights: ReturnType<typeof buildProfileInsights>; visits: Visit[]; restaurants: RestaurantSummary[]; diningCompanions: DiningCompanion[]; sourceUsers: UserProfile[]; ownerUserId: string; monthReview: PeriodReview; yearReview: PeriodReview; premium: boolean; onClose: () => void; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
-  if (detail === 'taste') return <ModalShell description="根据真实到访、评分、重复到访与结构化体验持续更新。" onClose={onClose} size="large" title="完整口味档案"><TasteProfileDetails profile={insights.tasteProfile} /></ModalShell>
+  if (detail === 'taste') return <ModalShell description="根据真实到访、评分、重复到访与结构化体验持续更新。" onClose={onClose} size="large" title="完整口味档案"><TasteProfileDetails profile={insights.tasteProfile} restaurants={restaurants} /></ModalShell>
   if (detail === 'data') return <ModalShell description="只统计当前账号的有效记录。" onClose={onClose} size="large" title="我的数据"><div className="profile-data-detail"><span><strong>{visits.length}</strong>总用餐次数</span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong>去过餐厅</span><span><strong>{insights.cityCount}</strong>去过城市</span><span><strong>{insights.tasteProfile.repeatVisit.tendency}</strong>复购倾向</span></div></ModalShell>
   if (detail === 'companions') return <ModalShell description="只基于你自己的真实共同到访记录，不评价关系质量。" onClose={onClose} size="large" title="饭搭子分析"><CompanionInsightsPanel companions={diningCompanions} onSelectRestaurant={onSelectRestaurant} ownerUserId={ownerUserId} restaurants={restaurants} visits={visits} /></ModalShell>
   if (detail === 'sources') return <ModalShell description="推荐的价值由真实到访、评分和再次到访验证。" onClose={onClose} size="large" title="推荐来源分析"><RecommendationSourceInsightsPanel onSelectRestaurant={onSelectRestaurant} restaurants={restaurants} sourceUsers={sourceUsers} visits={visits} /></ModalShell>
@@ -106,9 +240,34 @@ function ReviewDetail({ review, premium, onClose }: { review: PeriodReview; prem
   </div></ModalShell>
 }
 
-function TasteProfileDetails({ profile }: { profile: TasteProfile }) {
+function TasteProfileDetails({ profile, restaurants }: { profile: TasteProfile; restaurants: RestaurantSummary[] }) {
   const percent = (value: number) => `${Math.round(value * 100)}%`
-  return <div className="taste-profile-details"><section><h3>菜系偏好</h3>{profile.preferredCuisines.length ? <ol>{profile.preferredCuisines.map((item) => <li key={item.label}><span>{item.label}</span><small>{item.visits} 次相关记录 · 均分 {item.averageRating.toFixed(1)}</small></li>)}</ol> : <p>多记录一些包含菜系信息的餐厅后生成。</p>}</section><section><h3>价位偏好</h3>{profile.sweetPriceRange ? <p>高分甜蜜价位：{profile.sweetPriceRange}</p> : null}<div className="taste-profile-bars">{profile.priceBuckets.map((bucket) => <div key={bucket.key}><span>{bucket.label}</span><i><b style={{ width: percent(bucket.share) }} /></i><em>{percent(bucket.share)}</em></div>)}</div></section><section><h3>高分触发器</h3><div className="taste-profile-tags">{profile.highRatingTraits.length ? profile.highRatingTraits.map((item) => <span key={item.label}>{item.label}</span>) : <p>高分特征仍在形成中。</p>}</div></section>{profile.pitfallTraits.length ? <section><h3>踩雷因素</h3><div className="taste-profile-tags">{profile.pitfallTraits.map((item) => <span key={item.label}>{item.label}</span>)}</div><small>只表示这些特征更常伴随低分记录，不代表因果。</small></section> : null}{profile.hiddenPreferences.length ? <section><h3>经常选择 ≠ 真正喜欢</h3><p>{profile.hiddenPreferences.map((item) => item.label).join('、')} 出现较多，但评分低于你的整体平均。</p></section> : null}<section><h3>用餐场景偏好</h3><div className="taste-profile-bars">{profile.scenes.slice(0, 6).map((scene) => <div key={scene.label}><span>{scene.label}</span><i><b style={{ width: percent(scene.share) }} /></i><em>{percent(scene.share)}</em></div>)}</div></section><section className="taste-profile-compact-grid"><div><h3>到店 / 外卖</h3><p>到店 {percent(profile.diningMode.dineInShare)} · 外卖 {percent(profile.diningMode.takeoutShare)}</p></div><div><h3>探索 / 复购</h3><p>{profile.repeatVisit.tendency} · 重复到访 {percent(profile.repeatVisit.share)}</p></div></section>{profile.repeatVisit.preferences.length ? <section><h3>复购偏好</h3><div className="taste-profile-tags">{profile.repeatVisit.preferences.map((item) => <span key={item.label}>{item.label} · {item.count} 次</span>)}</div></section> : null}{profile.sourceQuality.length ? <section><h3>推荐来源质量</h3><p>{profile.sourceQuality.slice(0, 3).map((item) => `${item.label} ${item.averageRating.toFixed(1)} 分`).join(' · ')}</p></section> : null}{profile.recentTasteChanges.length ? <section><h3>近期口味变化</h3><p>最近 90 天更常出现：{profile.recentTasteChanges.join('、')}。</p></section> : null}<section><h3>评分习惯</h3><div className="taste-rating-grid"><span><strong>{profile.ratingBehavior.average?.toFixed(1) ?? '—'}</strong>平均评分</span><span><strong>{percent(profile.ratingBehavior.aboveEightShare)}</strong>8 分以上</span><span><strong>{percent(profile.ratingBehavior.aboveNineShare)}</strong>9 分以上</span><span><strong>{profile.ratingBehavior.stability?.toFixed(1) ?? '—'}</strong>评分波动</span></div></section>{profile.highConfidenceRules.length ? <section><h3>高置信度总结</h3>{profile.highConfidenceRules.map((rule) => <p key={rule}>{rule}</p>)}</section> : null}<section className="taste-profile-conclusion"><h3>口味总结</h3><p>{profile.summary}</p><small>基于 {profile.validVisitCount} 次有效记录 · 各模块按自己的样本量标记置信度</small></section></div>
+  const maturity = Math.min(96, Math.round(28 + profile.validVisitCount * .42))
+  const recurringRestaurants = profile.repeatVisit.preferences.map((item) => ({ ...item, restaurant: restaurants.find((restaurant) => restaurant.name === item.label) })).slice(0, 4)
+  return <div className="taste-profile-report">
+    <header className="taste-profile-report__intro"><div><small>基于 {profile.validVisitCount} 次有效记录 · 最近持续更新</small><h2>{profile.summary}</h2></div><span><Utensils size={34} /></span></header>
+    <div className="taste-profile-report__columns">
+      <div className="taste-profile-report__column">
+        <section className="taste-profile-maturity"><header><h3>档案成熟度</h3><Info size={14} /></header><strong>{maturity}%</strong><div><i><b style={{ width: `${maturity}%` }} /></i><span>记录越多，洞察越准确</span></div></section>
+        <section className="taste-profile-keyfacts"><span><Utensils size={18} /><small>偏爱菜系</small><strong>{profile.preferredCuisines.slice(0, 2).map((item) => item.label).join('、') || '积累中'}</strong></span><span><WalletCards size={18} /><small>常见预算</small><strong>{profile.preferredPriceRange}</strong></span><span><Store size={18} /><small>用餐倾向</small><strong>{profile.diningMode.dineInShare >= .5 ? '到店为主' : '外卖更多'}</strong></span></section>
+        <blockquote>{profile.summary}</blockquote>
+        <section><header className="taste-section-title"><h3>你真正喜欢什么</h3><small>综合偏好</small></header>{profile.preferredCuisines.length ? <ol className="taste-cuisine-ranking">{profile.preferredCuisines.map((item, index) => <li key={item.label}><span>{index + 1}</span><div><strong>{item.label}</strong><small>{item.visits} 次 · 平均 {item.averageRating.toFixed(1)} 分</small></div><em>{item.score >= 0 ? '偏好明显' : '仍在尝试'}</em></li>)}</ol> : <p>多记录一些带评分的餐厅后生成。</p>}</section>
+        <section><header className="taste-section-title"><h3>你的常见预算</h3><small>{profile.preferredPriceRange}</small></header><div className="taste-profile-bars">{profile.priceBuckets.filter((bucket) => bucket.count || profile.priceBuckets.length <= 4).map((bucket) => <div key={bucket.key}><span>{bucket.label}</span><i><b style={{ width: percent(bucket.share) }} /></i><em>{percent(bucket.share)}</em></div>)}</div></section>
+      </div>
+      <div className="taste-profile-report__column">
+        <section><header className="taste-section-title"><h3>什么会影响你的体验</h3><Info size={14} /></header><div className="taste-impact-block"><strong><ThumbsUp size={16} />更容易让你加分</strong><div className="taste-profile-tags">{profile.highRatingTraits.length ? profile.highRatingTraits.map((item) => <span key={item.label}>{item.label}</span>) : <span>继续记录后生成</span>}</div></div><div className="taste-impact-block is-negative"><strong><ThumbsDown size={16} />更容易让你减分</strong><div className="taste-profile-tags">{profile.pitfallTraits.length ? profile.pitfallTraits.map((item) => <span key={item.label}>{item.label}</span>) : <span>暂无稳定踩雷因素</span>}</div></div><small className="taste-profile-note">只展示记录中的相关性，不代表因果。</small></section>
+        <section><header className="taste-section-title"><h3>你通常怎么吃</h3></header><h4>用餐场景偏好</h4><div className="taste-scene-grid">{profile.scenes.slice(0, 4).map((scene) => <span key={scene.label}><UsersRound size={18} /><strong>{scene.label}</strong><small>{percent(scene.share)}</small></span>)}</div><div className="taste-split-stat"><span><small>到店 / 外卖</small><strong>{percent(profile.diningMode.dineInShare)}</strong><em>到店为主</em></span><span><small>复购倾向</small><strong>{percent(profile.repeatVisit.share)}</strong><em>{profile.repeatVisit.tendency}</em></span></div></section>
+        <section><header className="taste-section-title"><h3>你最常回去的餐厅</h3><Repeat2 size={15} /></header>{recurringRestaurants.length ? <div className="taste-repeat-restaurants">{recurringRestaurants.map((item) => <article key={item.label}>{item.restaurant ? <RestaurantThumb restaurant={item.restaurant} /> : <span><Store size={18} /></span>}<strong>{item.label}</strong><small>{item.count} 次 · 平均 {item.averageRating.toFixed(1)}</small></article>)}</div> : <p>重复到访后，这里会出现最熟悉的餐厅。</p>}</section>
+        <section><header className="taste-section-title"><h3>最近的口味变化</h3><TrendingUp size={15} /></header>{profile.recentTasteChanges.length ? <p>近 90 天更常出现：<strong>{profile.recentTasteChanges.join('、')}</strong></p> : <p>近期还没有明显变化，继续记录后会自动比较。</p>}</section>
+      </div>
+      <div className="taste-profile-report__column">
+        <section><header className="taste-section-title"><h3>你的打分风格</h3><Info size={14} /></header><strong className="taste-rating-style">{profile.ratingBehavior.average !== null && profile.ratingBehavior.average >= 8 ? '整体偏宽松' : profile.ratingBehavior.average !== null && profile.ratingBehavior.average < 6 ? '整体偏严格' : '整体偏中性'}</strong><p>平均评分 <b>{profile.ratingBehavior.average?.toFixed(1) ?? '—'}</b></p><div className="taste-rating-grid"><span><strong>{percent(profile.ratingBehavior.aboveEightShare)}</strong>8 分以上</span><span><strong>{percent(profile.ratingBehavior.aboveNineShare)}</strong>9 分以上</span><span><strong>{profile.ratingBehavior.stability?.toFixed(1) ?? '—'}</strong>评分波动</span></div></section>
+        <section><header className="taste-section-title"><h3>推荐来源</h3><Sparkles size={15} /></header>{profile.sourceQuality.length ? <div className="taste-source-summary">{profile.sourceQuality.slice(0, 3).map((item) => <span key={item.label}><strong>{item.label}</strong><small>{item.count} 次验证 · 平均 {item.averageRating.toFixed(1)}</small></span>)}</div> : <p>记录推荐来源并实际到访后，这里会显示哪些来源更懂你。</p>}</section>
+        <section><header className="taste-section-title"><h3>更多数据</h3></header><div className="taste-more-links"><span><MapPinned size={16} /><div><strong>城市偏好</strong><small>去过城市与区域分布</small></div><ChevronRight size={15} /></span><span><Clock3 size={16} /><div><strong>用餐时段偏好</strong><small>你更常在什么时候吃</small></div><ChevronRight size={15} /></span><span><Utensils size={16} /><div><strong>用餐类型偏好</strong><small>菜系、场景与复购关系</small></div><ChevronRight size={15} /></span><span><Activity size={16} /><div><strong>更多维度</strong><small>查看完整口味数据</small></div><ChevronRight size={15} /></span></div></section>
+        <section className="taste-profile-conclusion"><Sparkles size={24} /><h3>口味档案会随你的记录持续更新</h3><p>记录越多，洞察越准确。</p><small>口味档案只基于你的记录生成，不会对外公开。</small></section>
+      </div>
+    </div>
+  </div>
 }
 
 function ProfileEditorModal({ user, onSave, onClose }: { user: UserProfile; onSave: (changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'>) => Promise<unknown>; onClose: () => void }) {
