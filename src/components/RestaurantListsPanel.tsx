@@ -18,7 +18,7 @@ export function RestaurantListsSection({ restaurants, editable = true, onSelectR
     <header><h2>我的食单</h2>{editable ? <button onClick={() => setCreating(true)} type="button"><Plus size={14} />新建</button> : null}</header>
     {lists.length ? <div className="restaurant-list-collection-grid">{lists.map((list) => {
       const listItems = items.filter((item) => item.listId === list.id).sort((a, b) => a.position - b.position)
-      return <button key={list.id} onClick={() => setSelectedId(list.id)} type="button"><RestaurantListCover items={listItems} list={list} restaurants={restaurants} /><span><strong>{list.title}</strong><small>{listItems.length} 家餐厅{list.isRanked ? ' · 排名榜单' : ''}</small></span></button>
+      return <button key={list.id} onClick={() => setSelectedId(list.id)} type="button"><span><strong>{list.title}</strong><small>{listItems.length} 家餐厅{list.isRanked ? ' · 排名榜单' : ''}</small></span><RestaurantListCover items={listItems} list={list} restaurants={restaurants} /></button>
     })}</div> : <button className="restaurant-list-empty" disabled={!editable} onClick={() => setCreating(true)} type="button"><ListPlus size={20} /><strong>建立第一份食单</strong><small>整理一组餐厅，也记录你自己的观点。</small></button>}
     {creating ? <RestaurantListEditor onClose={() => setCreating(false)} /> : null}
     {selected ? <RestaurantListDetail editable={editable} items={items.filter((item) => item.listId === selected.id)} list={selected} onClose={() => setSelectedId(null)} onSelectRestaurant={onSelectRestaurant} restaurants={restaurants} /> : null}
