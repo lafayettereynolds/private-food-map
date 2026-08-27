@@ -10,6 +10,7 @@ final class Restaurant {
     var longitude: Double
     var appleMapItemIdentifier: String?
     var city: String = ""
+    private var statusValue: String = RestaurantStatus.visited.rawValue
     var createdAt: Date
     var updatedAt: Date
     @Attribute(.unique) var remoteID: String?
@@ -24,6 +25,11 @@ final class Restaurant {
         set { syncStatusValue = newValue.rawValue }
     }
 
+    var status: RestaurantStatus {
+        get { RestaurantStatus(rawValue: statusValue) ?? .visited }
+        set { statusValue = newValue.rawValue }
+    }
+
     init(
         id: UUID = UUID(),
         name: String,
@@ -32,6 +38,7 @@ final class Restaurant {
         longitude: Double,
         appleMapItemIdentifier: String? = nil,
         city: String = "",
+        status: RestaurantStatus = .visited,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         remoteID: String? = nil,
@@ -48,6 +55,7 @@ final class Restaurant {
         self.longitude = longitude
         self.appleMapItemIdentifier = appleMapItemIdentifier
         self.city = city
+        self.statusValue = status.rawValue
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.remoteID = remoteID ?? id.uuidString

@@ -102,6 +102,83 @@ struct TasteMapTests {
         #expect(try context.fetch(FetchDescriptor<Restaurant>()).count == 1)
     }
 
+    @Test("加入想吃只创建 Restaurant 并保留 Apple Maps identity")
+    func addingWantToGoCreatesRestaurantWithoutVisit() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let candidate = RestaurantCandidate(
+            name: "想吃餐厅",
+            address: "想吃地址",
+            latitude: 30.25,
+            longitude: 120.16,
+            appleMapItemIdentifier: "apple-want-to-go"
+        )
+
+        let restaurant = try LocalTasteMapStore(context: context).addToWantToGo(
+            candidate: candidate,
+            among: []
+        )
+        let mutations = try context.fetch(FetchDescriptor<SyncMutation>())
+        let payload = try #require(mutations.first?.payload)
+        let record = try JSONDecoder().decode(RestaurantJSONContractV1.self, from: payload)
+
+        #expect(restaurant.status == .wantToGo)
+        #expect(try context.fetch(FetchDescriptor<Visit>()).isEmpty)
+        #expect(mutations.count == 1)
+        #expect(record.status == .wantToGo)
+        #expect(record.placeIdentities.first?.provider == .appleMaps)
+        #expect(record.placeIdentities.first?.externalId == "apple-want-to-go")
+    }
+
+    @Test("想吃餐厅新增 Visit 后转为去过且不重复创建 Restaurant")
+    func wantToGoTransitionsToVisited() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let store = LocalTasteMapStore(context: context)
+        let candidate = RestaurantCandidate(
+            name: "状态转换餐厅",
+            address: "状态转换地址",
+            latitude: 31.23,
+            longitude: 121.47,
+            appleMapItemIdentifier: "apple-status-transition"
+        )
+        let restaurant = try store.addToWantToGo(candidate: candidate, among: [])
+
+        _ = try store.createVisit(restaurantId: restaurant.id, rating: nil)
+
+        let restaurants = try context.fetch(FetchDescriptor<Restaurant>())
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let restaurantMutation = try #require(
+            context.fetch(FetchDescriptor<SyncMutation>()).first { $0.entityType == .restaurant }
+        )
+        let payload = try #require(restaurantMutation.payload)
+        let record = try JSONDecoder().decode(RestaurantJSONContractV1.self, from: payload)
+        #expect(restaurants.count == 1)
+        #expect(visits.count == 1)
+        #expect(restaurant.status == .visited)
+        #expect(record.status == .visited)
+    }
+
+    @Test("重复加入想吃会复用同一个 Restaurant")
+    func duplicateWantToGoUsesExistingRestaurant() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let store = LocalTasteMapStore(context: context)
+        let candidate = RestaurantCandidate(
+            name: "不重复餐厅",
+            address: "不重复地址",
+            latitude: 30.2,
+            longitude: 120.2,
+            appleMapItemIdentifier: "apple-want-dedup"
+        )
+        let first = try store.addToWantToGo(candidate: candidate, among: [])
+        let second = try store.addToWantToGo(candidate: candidate, among: [first])
+
+        #expect(first.id == second.id)
+        #expect(try context.fetch(FetchDescriptor<Restaurant>()).count == 1)
+        #expect(try context.fetch(FetchDescriptor<SyncMutation>()).count == 1)
+    }
+
     @Test("不合法或非半星评分不会被保存")
     func ratingValidation() {
         #expect(Visit.validatedRating(nil) == nil)
@@ -128,6 +205,36 @@ struct TasteMapTests {
         #expect(visits.first?.rating == nil)
     }
 
+    @Test("磁盘容器重开后想吃状态仍存在")
+    func wantToGoPersistsAcrossContainerRelaunch() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TasteMapWantTests-\(UUID().uuidString)")
+            .appendingPathExtension("store")
+        defer { removeStoreFiles(at: storeURL) }
+
+        do {
+            let container = try makePersistentContainer(at: storeURL)
+            let context = container.mainContext
+            _ = try LocalTasteMapStore(context: context).addToWantToGo(
+                candidate: RestaurantCandidate(
+                    name: "重启后仍想吃",
+                    address: "持久化地址",
+                    latitude: 30.25,
+                    longitude: 120.16,
+                    appleMapItemIdentifier: "apple-persistent-want"
+                ),
+                among: []
+            )
+        }
+
+        let reopenedContainer = try makePersistentContainer(at: storeURL)
+        let restaurant = try #require(
+            reopenedContainer.mainContext.fetch(FetchDescriptor<Restaurant>()).first
+        )
+        #expect(restaurant.status == .wantToGo)
+        #expect(restaurant.appleMapItemIdentifier == "apple-persistent-want")
+    }
+
     @Test("搜索失败会结束 Loading 并给出可重试错误")
     func searchFailureDoesNotLoadForever() async {
         let viewModel = RestaurantSearchViewModel(
@@ -139,6 +246,22 @@ struct TasteMapTests {
         #expect(viewModel.isLoading == false)
         #expect(viewModel.results.isEmpty)
         #expect(viewModel.errorMessage != nil)
+    }
+
+    @Test("搜索结果保留 Apple Maps identity 和坐标")
+    func searchResultPreservesAppleIdentity() async throws {
+        let viewModel = RestaurantSearchViewModel(
+            searchService: SuccessfulRestaurantSearchService()
+        )
+
+        await viewModel.search(query: "真实餐厅")
+
+        let result = try #require(viewModel.results.first)
+        #expect(viewModel.isLoading == false)
+        #expect(result.name == "真实餐厅")
+        #expect(result.latitude == 30.25)
+        #expect(result.longitude == 120.16)
+        #expect(result.appleMapItemIdentifier == "apple-real-search-result")
     }
 
     private func makeRestaurant(appleIdentifier: String? = nil) -> Restaurant {
@@ -185,5 +308,17 @@ private struct FailingRestaurantSearchService: RestaurantSearching {
 
     func search(query: String) async throws -> [RestaurantCandidate] {
         throw ExpectedFailure()
+    }
+}
+
+private struct SuccessfulRestaurantSearchService: RestaurantSearching {
+    func search(query: String) async throws -> [RestaurantCandidate] {
+        [RestaurantCandidate(
+            name: query,
+            address: "真实地址",
+            latitude: 30.25,
+            longitude: 120.16,
+            appleMapItemIdentifier: "apple-real-search-result"
+        )]
     }
 }

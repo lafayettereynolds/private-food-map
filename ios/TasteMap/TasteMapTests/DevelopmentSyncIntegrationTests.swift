@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import TasteMap
 
@@ -149,6 +150,47 @@ struct DevelopmentSyncIntegrationTests {
         let deleted = try await client.pull(cursor: initial.nextCursor, limit: 200)
         #expect(deleted.tombstones.contains { $0.entityType == .visit && $0.entityId == visitID })
         #expect(deleted.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurantID })
+    }
+
+    @Test("iOS want-to-go local-first flow round-trips through Development Worker and D1")
+    func developmentWantToGoRoundTrip() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let configuration = APIConfiguration.current()
+        #expect(configuration.environment == .development)
+        #expect(configuration.baseURL?.absoluteString == "https://api-dev.tastemap.cn")
+
+        let runID = UUID().uuidString.lowercased()
+        let client = URLSessionSyncAPIClient(
+            configuration: configuration,
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p1a:\(runID)")
+        )
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let store = LocalTasteMapStore(context: context)
+        let restaurant = try store.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P1-A Development Wishlist Restaurant",
+                address: "Development D1 only",
+                latitude: 37.3349,
+                longitude: -122.009,
+                appleMapItemIdentifier: "apple-p1a-\(runID)"
+            ),
+            among: []
+        )
+
+        try await SyncEngine(context: context, api: client).synchronize()
+
+        #expect(restaurant.status == .wantToGo)
+        #expect(restaurant.serverVersion == 1)
+        #expect(restaurant.syncStatus == .synced)
+        #expect(try context.fetch(FetchDescriptor<Visit>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<SyncMutation>()).isEmpty)
+
+        try store.delete(restaurant)
+        try await SyncEngine(context: context, api: client).synchronize()
+        #expect(restaurant.deletedAt != nil)
+        #expect(restaurant.serverVersion == 2)
     }
 
     private func deletion(

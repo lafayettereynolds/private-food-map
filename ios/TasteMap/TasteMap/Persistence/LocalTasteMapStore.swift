@@ -5,7 +5,11 @@ import SwiftData
 struct LocalTasteMapStore {
     let context: ModelContext
 
-    func restaurant(for candidate: RestaurantCandidate, among restaurants: [Restaurant]) throws -> Restaurant {
+    func restaurant(
+        for candidate: RestaurantCandidate,
+        among restaurants: [Restaurant],
+        status: RestaurantStatus = .visited
+    ) throws -> Restaurant {
         if let existing = RestaurantDeduplicator.match(for: candidate, in: restaurants) {
             return existing
         }
@@ -15,12 +19,23 @@ struct LocalTasteMapStore {
             address: candidate.address,
             latitude: candidate.latitude,
             longitude: candidate.longitude,
-            appleMapItemIdentifier: candidate.appleMapItemIdentifier
+            appleMapItemIdentifier: candidate.appleMapItemIdentifier,
+            status: status
         )
         context.insert(restaurant)
         if restaurant.remoteID == nil || restaurant.serverVersion == 0 {
             try enqueue(restaurant)
         }
+        return restaurant
+    }
+
+    @discardableResult
+    func addToWantToGo(
+        candidate: RestaurantCandidate,
+        among restaurants: [Restaurant]
+    ) throws -> Restaurant {
+        let restaurant = try restaurant(for: candidate, among: restaurants, status: .wantToGo)
+        try context.save()
         return restaurant
     }
 
@@ -36,7 +51,13 @@ struct LocalTasteMapStore {
             .first(where: { $0.id == restaurantId && $0.deletedAt == nil }) else {
             throw LocalTasteMapStoreError.restaurantNotFound
         }
-        if restaurant.remoteID == nil || restaurant.serverVersion == 0 {
+        let isTransitioningFromWantToGo = restaurant.status == .wantToGo
+        if isTransitioningFromWantToGo {
+            restaurant.status = .visited
+            restaurant.updatedAt = .now
+            restaurant.syncStatus = .pending
+        }
+        if isTransitioningFromWantToGo || restaurant.remoteID == nil || restaurant.serverVersion == 0 {
             try enqueue(restaurant)
         }
         let visit = Visit(

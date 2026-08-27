@@ -32,6 +32,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["我的"].exists)
         XCTAssertTrue(app.buttons["添加餐厅"].exists)
         XCTAssertTrue(app.segmentedControls.buttons["去过"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["想吃"].exists)
 
         app.buttons["添加餐厅"].tap()
         XCTAssertTrue(app.navigationBars["搜索餐厅"].waitForExistence(timeout: 5))

@@ -1,6 +1,9 @@
+import SwiftData
 import SwiftUI
 
 struct RootTabView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var restaurants: [Restaurant]
     @State private var selectedTab: AppTab = .map
     @State private var isShowingSearch = false
     @State private var pendingCandidate: RestaurantCandidate?
@@ -19,8 +22,17 @@ struct RootTabView: View {
                     isShowingVisitEditor = true
                 }
             }) {
-                RestaurantSearchView { candidate in
-                    pendingCandidate = candidate
+                RestaurantSearchView { candidate, action in
+                    switch action {
+                    case .wantToGo:
+                        _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
+                            candidate: candidate,
+                            among: restaurants
+                        )
+                        selectedTab = .map
+                    case .recordVisit:
+                        pendingCandidate = candidate
+                    }
                 }
             }
             .sheet(isPresented: $isShowingVisitEditor, onDismiss: {

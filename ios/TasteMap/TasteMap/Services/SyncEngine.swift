@@ -204,6 +204,7 @@ final class SyncEngine {
             longitude: record.longitude,
             appleMapItemIdentifier: appleIdentifier(record),
             city: record.city,
+            status: restaurantStatus(record),
             createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
             updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
             remoteID: record.id,
@@ -286,6 +287,7 @@ final class SyncEngine {
         restaurant.latitude = record.latitude
         restaurant.longitude = record.longitude
         restaurant.appleMapItemIdentifier = appleIdentifier(record)
+        restaurant.status = restaurantStatus(record)
         restaurant.createdAt = SyncRecordMapper.date(record.createdAt) ?? restaurant.createdAt
         restaurant.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? restaurant.updatedAt
         restaurant.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)
@@ -365,5 +367,12 @@ final class SyncEngine {
 
     private func appleIdentifier(_ record: RestaurantJSONContractV1) -> String? {
         record.placeIdentities.first(where: { $0.provider == .appleMaps })?.externalId
+    }
+
+    private func restaurantStatus(_ record: RestaurantJSONContractV1) -> RestaurantStatus {
+        switch record.status {
+        case .visited: .visited
+        case .wantToGo: .wantToGo
+        }
     }
 }

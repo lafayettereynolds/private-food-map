@@ -29,7 +29,7 @@ enum SyncRecordMapper {
         } else {
             identities = [try RestaurantPlaceIdentityContract(
                 provider: .manual,
-                externalId: "tastemap:(remoteID)",
+                externalId: "tastemap:\(remoteID)",
                 isPrimary: true,
                 createdAt: dateString(restaurant.createdAt),
                 updatedAt: dateString(restaurant.updatedAt)
@@ -45,7 +45,7 @@ enum SyncRecordMapper {
             city: restaurant.city,
             latitude: restaurant.latitude,
             longitude: restaurant.longitude,
-            status: previous?.status ?? .visited,
+            status: restaurant.status.contractValue,
             preferenceLevel: previous?.preferenceLevel ?? .normal,
             overallRating: previous?.overallRating,
             foodRating: previous?.foodRating,
@@ -94,5 +94,14 @@ enum SyncRecordMapper {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value)
+    }
+}
+
+private extension RestaurantStatus {
+    var contractValue: RestaurantJSONContractV1.RestaurantStatusContract {
+        switch self {
+        case .visited: .visited
+        case .wantToGo: .wantToGo
+        }
     }
 }

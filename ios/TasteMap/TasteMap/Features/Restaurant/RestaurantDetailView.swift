@@ -41,6 +41,10 @@ struct RestaurantDetailView: View {
                         Text(restaurant.address)
                             .foregroundStyle(.secondary)
                     }
+                    LabeledContent("状态") {
+                        Label(restaurant.status.title, systemImage: restaurant.status.systemImage)
+                            .foregroundStyle(restaurant.status == .wantToGo ? .blue : .primary)
+                    }
                 }
 
                 Section("我的记录") {
@@ -83,7 +87,10 @@ struct RestaurantDetailView: View {
                     Button {
                         isAddingVisit = true
                     } label: {
-                        Label("记录再次到访", systemImage: "plus.circle.fill")
+                        Label(
+                            restaurant.status == .wantToGo ? "记录去过" : "记录再次到访",
+                            systemImage: "plus.circle.fill"
+                        )
                             .frame(maxWidth: .infinity)
                     }
                 }

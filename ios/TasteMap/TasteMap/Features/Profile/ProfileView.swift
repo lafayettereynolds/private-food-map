@@ -19,6 +19,10 @@ struct ProfileView: View {
         Set(activeVisits.map(\.restaurantId)).count
     }
 
+    private var wantToGoRestaurantCount: Int {
+        activeRestaurants.filter { $0.status == .wantToGo }.count
+    }
+
     private var averageRating: Double? {
         let ratings = activeVisits.compactMap(\.rating)
         guard !ratings.isEmpty else { return nil }
@@ -75,6 +79,7 @@ struct ProfileView: View {
 
                 Section("我的记录") {
                     LabeledContent("去过的餐厅", value: "\(visitedRestaurantCount)")
+                    LabeledContent("想吃的餐厅", value: "\(wantToGoRestaurantCount)")
                     LabeledContent("到访记录", value: "\(activeVisits.count)")
                     LabeledContent(
                         "我的平均评分",

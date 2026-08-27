@@ -26,6 +26,32 @@ struct SyncEngineTests {
         #expect(api.visitRecords.first?.rating == nil)
     }
 
+    @Test("Want-to-go Restaurant survives push and pull without creating a Visit")
+    func wantToGoRoundTripPreservesStatus() async throws {
+        let sourceContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let sourceContext = sourceContainer.mainContext
+        let restaurant = try LocalTasteMapStore(context: sourceContext).addToWantToGo(
+            candidate: appleCandidate(),
+            among: []
+        )
+        let api = EchoSyncAPI()
+
+        try await SyncEngine(context: sourceContext, api: api).synchronize()
+
+        #expect(restaurant.status == .wantToGo)
+        #expect(api.restaurantRecords.first?.status == .wantToGo)
+        #expect(try sourceContext.fetch(FetchDescriptor<Visit>()).isEmpty)
+
+        let receivingContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receivingContext = receivingContainer.mainContext
+        try await SyncEngine(context: receivingContext, api: api).synchronize()
+        let pulled = try #require(receivingContext.fetch(FetchDescriptor<Restaurant>()).first)
+
+        #expect(pulled.status == .wantToGo)
+        #expect(pulled.appleMapItemIdentifier == "apple-place-only")
+        #expect(try receivingContext.fetch(FetchDescriptor<Visit>()).isEmpty)
+    }
+
     @Test("Offline queue survives process restart and interrupted upload")
     func persistentQueueSurvivesRestart() async throws {
         let url = FileManager.default.temporaryDirectory

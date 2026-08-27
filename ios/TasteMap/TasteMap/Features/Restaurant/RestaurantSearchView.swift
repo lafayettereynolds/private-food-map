@@ -3,18 +3,21 @@ import SwiftUI
 struct RestaurantSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: RestaurantSearchViewModel
-    @State private var query = ""
+    @State private var query: String
+    @State private var actionError: String?
 
-    let onSelect: (RestaurantCandidate) -> Void
+    let onAction: (RestaurantCandidate, RestaurantSearchAction) throws -> Void
 
     init(
         searchService: any RestaurantSearching = MapKitRestaurantSearchService(),
-        onSelect: @escaping (RestaurantCandidate) -> Void
+        initialQuery: String = "",
+        onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) throws -> Void
     ) {
         _viewModel = StateObject(
             wrappedValue: RestaurantSearchViewModel(searchService: searchService)
         )
-        self.onSelect = onSelect
+        _query = State(initialValue: initialQuery)
+        self.onAction = onAction
     }
 
     var body: some View {
@@ -42,24 +45,36 @@ struct RestaurantSearchView: View {
                     ContentUnavailableView.search(text: query)
                 } else {
                     List(viewModel.results) { candidate in
-                        Button {
-                            onSelect(candidate)
-                            dismiss()
-                        } label: {
+                        VStack(alignment: .leading, spacing: 12) {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(candidate.name)
                                     .font(.headline)
-                                    .foregroundStyle(.primary)
                                 if !candidate.address.isEmpty {
                                     Text(candidate.address)
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+
+                            HStack(spacing: 10) {
+                                Button {
+                                    perform(.wantToGo, candidate: candidate)
+                                } label: {
+                                    Label("加入想吃", systemImage: "bookmark")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button {
+                                    perform(.recordVisit, candidate: candidate)
+                                } label: {
+                                    Label("记录去过", systemImage: "fork.knife")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
                         }
-                        .buttonStyle(.plain)
+                        .padding(.vertical, 5)
                     }
                     .listStyle(.plain)
                 }
@@ -70,11 +85,67 @@ struct RestaurantSearchView: View {
             .onSubmit(of: .search) {
                 Task { await viewModel.search(query: query) }
             }
+            .task {
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   viewModel.results.isEmpty {
+                    await viewModel.search(query: query)
+                }
+            }
+            .alert("无法保存餐厅", isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            )) {
+                Button("好", role: .cancel) { actionError = nil }
+            } message: {
+                Text(actionError ?? "请稍后重试。")
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
             }
         }
+    }
+
+    private func perform(_ action: RestaurantSearchAction, candidate: RestaurantCandidate) {
+        do {
+            try onAction(candidate, action)
+            dismiss()
+        } catch {
+            actionError = "餐厅先保存在本地时出现问题，请重试。"
+        }
+    }
+}
+
+enum RestaurantSearchAction: Sendable {
+    case wantToGo
+    case recordVisit
+}
+
+#Preview("Search results") {
+    RestaurantSearchView(
+        searchService: PreviewRestaurantSearchService(),
+        initialQuery: "寿喜烧"
+    ) { _, _ in }
+}
+
+private struct PreviewRestaurantSearchService: RestaurantSearching {
+    func search(query: String) async throws -> [RestaurantCandidate] {
+        [
+            RestaurantCandidate(
+                name: "牛 New 寿喜烧（一个用于验证长名称展示的门店）",
+                address: "杭州市上城区东宁路与和兴路交叉口",
+                latitude: 30.29,
+                longitude: 120.21,
+                appleMapItemIdentifier: "preview-apple-place-1"
+            ),
+            RestaurantCandidate(
+                name: "山葵家精致料理",
+                address: "杭州市拱墅区湖墅南路",
+                latitude: 30.28,
+                longitude: 120.16,
+                appleMapItemIdentifier: "preview-apple-place-2"
+            ),
+        ]
     }
 }
