@@ -16,7 +16,6 @@ export function UserAvatar({
   avatarImageData,
   avatarPhotoId,
   avatarPresetId,
-  membershipTier = 'free',
   alt = '',
 }: {
   avatarImageData: string | null
@@ -26,8 +25,10 @@ export function UserAvatar({
   alt?: string
 }) {
   return <span className="user-avatar-content">
-    {membershipTier === 'member' && (avatarImageData || avatarPhotoId)
-      ? <SyncedImage alt={alt} photoId={avatarPhotoId} source={avatarImageData} />
-      : <PresetAvatar id={avatarPresetId} />}
+    <span className="user-avatar-clip">
+      {avatarImageData || avatarPhotoId
+        ? <SyncedImage alt={alt} photoId={avatarPhotoId} source={avatarImageData} />
+        : <PresetAvatar id={avatarPresetId} />}
+    </span>
   </span>
 }

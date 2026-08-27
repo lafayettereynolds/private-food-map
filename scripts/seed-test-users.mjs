@@ -87,6 +87,7 @@ function buildUsers(now) {
     ['E', 6, '东京', ['日料', '西餐', '咖啡']], ['F', 4, '杭州', []],
   ]
   const avatarIds = ['polar-bear', 'penguin', 'cat', 'dog', 'parrot', 'dinosaur', 'shiba', 'panda', 'otter', 'hedgehog', 'rabbit', 'koala', 'fox', 'raccoon', 'deer', 'whale']
+  const joinedDates = ['2024-03-12T08:00:00.000Z', '2024-09-18T08:00:00.000Z', '2025-02-06T08:00:00.000Z', '2025-07-24T08:00:00.000Z', '2026-01-16T08:00:00.000Z', '2026-05-09T08:00:00.000Z']
   let index = 0
   return clusters.flatMap(([cluster, count, city, preferences]) => Array.from({ length: count }, (_, clusterIndex) => {
     index += 1
@@ -94,7 +95,8 @@ function buildUsers(now) {
     return {
       id, cluster, clusterIndex, nickname: `TestUser${String(index).padStart(2, '0')}`,
       city, preferences, avatar: avatarIds[(index - 1) % avatarIds.length],
-      createdAt: isoDaysAgo(now, 90 + Math.floor(random() * 620)),
+      createdAt: joinedDates[(index - 1) % joinedDates.length],
+      membershipTier: index % 4 === 0 ? 'member' : 'free',
     }
   }))
 }
@@ -225,6 +227,11 @@ function buildFriendships(users, now) {
   rows.push(friendshipRow('owner', users.find((u) => u.cluster === 'E').id, 'pending', now))
   rows.push(friendshipRow(users.find((u) => u.cluster === 'C' && u.clusterIndex === 1).id, 'owner', 'rejected', now))
   users.slice(0, 20).forEach((user, index) => rows.push(friendshipRow(user.id, users[(index + 7) % users.length].id, 'accepted', now)))
+  // Stable mutual-friend scenarios for the owner recommendation preview.
+  rows.push(friendshipRow(users[0].id, users[3].id, 'accepted', now))
+  rows.push(friendshipRow(users[1].id, users[3].id, 'accepted', now))
+  rows.push(friendshipRow(users[0].id, users[10].id, 'accepted', now))
+  rows.push(friendshipRow(users[8].id, users[20].id, 'accepted', now))
   return uniqueBy(rows, (row) => [row.requesterId, row.addresseeId].sort().join(':'))
 }
 
@@ -260,7 +267,8 @@ function buildSharedMeals(users, restaurants, visits, now) {
 
 function buildHistoricalCompanions(users, visits, now) {
   const scenarios = [
-    [users[0], users[22], '小王', 12], [users[1], users[27], '阿宁', 8], [users[2], users[31], '小林', 6],
+    [{ id: 'owner' }, users[22], '小王', 10],
+    [users[0], users[23], '阿宁', 12], [users[1], users[27], '小林', 8], [users[2], users[31], '小周', 6],
   ]
   const rows = []
   const visitUpdates = []
@@ -287,7 +295,7 @@ function foodImageUrl(cuisine) {
   }
   return images[cuisine] ?? 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=320&q=75'
 }
-function insertUser(u) { return `INSERT INTO users (id,auth_provider,nickname,bio,city,avatar_preset_id,membership_tier,map_sharing_enabled,map_visibility,created_at,updated_at,is_test_user) VALUES (${q(u.id)},'local',${q(u.nickname)},${q(`测试口味组 ${u.cluster}`)},${q(u.city)},${q(u.avatar)},'free',1,'public',${q(u.createdAt)},${q(u.createdAt)},1);` }
+function insertUser(u) { return `INSERT INTO users (id,auth_provider,nickname,bio,city,avatar_preset_id,membership_tier,map_sharing_enabled,map_visibility,created_at,updated_at,is_test_user) VALUES (${q(u.id)},'local',${q(u.nickname)},${q(`测试口味组 ${u.cluster}`)},${q(u.city)},${q(u.avatar)},${q(u.membershipTier)},1,'public',${q(u.createdAt)},${q(u.createdAt)},1);` }
 function insertVisit(v) {
   const ppp = Math.round(v.totalPrice / v.partySize)
   const variant = hashSeed(v.id) % 4
@@ -305,7 +313,7 @@ function insertFriendship(v) { return `INSERT INTO friendships (id,requester_id,
 function insertWant(v) { return `INSERT INTO want_to_go (id,user_id,restaurant_id,created_at,is_test_data) VALUES (${q(v.id)},${q(v.userId)},${q(v.restaurantId)},${q(v.createdAt)},1);` }
 function insertSharedMeal(v) { return `INSERT INTO shared_meals (id,restaurant_id,created_by_user_id,occurred_at,created_at,updated_at,is_test_data) VALUES (${q(v.id)},${q(v.restaurantId)},${q(v.creator)},${q(v.occurredAt)},${q(v.occurredAt)},${q(v.occurredAt)},1);` }
 function insertParticipant(v) { return `INSERT INTO shared_meal_participants (id,shared_meal_id,user_id,visit_id,status,created_at,updated_at,is_test_data) VALUES (${q(v.id)},${q(v.mealId)},${q(v.userId)},${q(v.visitId)},'accepted',${q(v.createdAt)},${q(v.createdAt)},1);` }
-function insertCompanion(v) { return `INSERT INTO dining_companions (id,owner_user_id,display_name,linked_user_id,created_at,updated_at,is_test_data) VALUES (${q(v.id)},${q(v.ownerUserId)},${q(v.displayName)},NULL,${q(v.createdAt)},${q(v.createdAt)},1);` }
+function insertCompanion(v) { return `INSERT INTO dining_companions (id,owner_user_id,display_name,linked_user_id,created_at,updated_at,is_test_data) VALUES (${q(v.id)},${q(v.ownerUserId)},${q(v.displayName)},${q(v.targetUserId)},${q(v.createdAt)},${q(v.createdAt)},1);` }
 
 function followRow(followerId, followedUserId, now) { return { id: `${TEST_PREFIX}follow-${followerId.replace(TEST_PREFIX, '')}-${followedUserId.replace(TEST_PREFIX, '')}`, followerId, followedUserId, createdAt: isoDaysAgo(now, Math.floor(random() * 240)) } }
 function friendshipRow(requesterId, addresseeId, status, now) { return { id: `${TEST_PREFIX}friend-${requesterId.replace(TEST_PREFIX, '')}-${addresseeId.replace(TEST_PREFIX, '')}`, requesterId, addresseeId, status, createdAt: isoDaysAgo(now, Math.floor(random() * 180)) } }

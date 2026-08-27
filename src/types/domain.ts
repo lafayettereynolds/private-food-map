@@ -108,6 +108,8 @@ export interface DiningCompanion {
   ownerUserId: string
   displayName: string
   linkedUserId: string | null
+  privateAvatarData?: string | null
+  relationshipLabel?: string | null
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -345,14 +347,20 @@ export interface Coordinates {
 
 export interface CommunityVisit {
   visit: Visit
-  restaurant: Pick<Restaurant, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl'>
+  restaurant: Pick<Restaurant, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl' | 'phone' | 'openingHours' | 'pricePerPerson' | 'tags' | 'markerEmoji'>
   user: Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
   similarity?: number | null
   recommendationReason?: string | null
+  recommendationReasons?: string[]
   recommendationType?: 'for_you' | 'similar_taste' | 'trending' | null
   recommendationRank?: number | null
   recommendationConfidence?: 'low' | 'medium' | 'high' | null
-  reasonCodes?: Array<'TASTE_MATCH' | 'PRICE_MATCH' | 'QUALITY' | 'NEARBY' | 'REPEAT_AFFINITY' | 'SIMILAR_USERS' | 'EXPLORATION' | 'TRENDING' | 'COLD_START'>
+  recommendationFitLevel?: import('./recommendation').RecommendationFitLevel | null
+  primaryReasons?: import('./recommendation').RecommendationReason[]
+  secondaryReasons?: import('./recommendation').RecommendationReason[]
+  publicRating?: import('./recommendation').PublicRatingReference | null
+  isExploration?: boolean
+  reasonCodes?: import('./recommendation').RecommendationReasonCode[]
   surface?: 'map' | 'discover' | null
 }
 

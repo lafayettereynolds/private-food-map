@@ -93,6 +93,8 @@ export async function fetchTasteRecommendations(
       tags: keywords.filter((item) => reasons.some((reason) => reason.includes(`“${item.keyword}”`))).map((item) => item.keyword),
       longTermNote: '',
       pricePerPerson: null,
+      phone: poi.phone ?? null,
+      openingHours: poi.openingHours ?? null,
       markerType: poi.merchantImageUrl ? 'image' : 'emoji',
       markerImageData: null,
       markerPhotoId: null,

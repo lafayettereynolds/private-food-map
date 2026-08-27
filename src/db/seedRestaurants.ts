@@ -1,5 +1,6 @@
 import { db } from './appDb'
-import { calculatePricePerPerson, type QueueDuration, type Restaurant, type StarRating, type Visit } from '../types/domain'
+import { LOCAL_TEST_ACCOUNT, LOCAL_TEST_VIEWER_ID } from '../config/appEnvironment'
+import { calculatePricePerPerson, type DiningCompanion, type QueueDuration, type Restaurant, type RestaurantListCollection, type RestaurantListItem, type StarRating, type Visit } from '../types/domain'
 
 const hangzhouNames = [
   '桂满陇·江南小馆（来福士店）', '山葵家精致料理（来福士店）', '浅草君日式烧肉（来福士店）', '椒响川菜（来福士店）', '南洋里新加坡料理（来福士店）',
@@ -49,6 +50,8 @@ const cuisines = ['杭帮菜', '日料', '火锅', '烧烤', '粤菜', '西餐',
 const emojis = ['🍲', '🍣', '🥩', '🍜', '🥘', '🍕', '🍤', '🥟']
 const queueDurations: QueueDuration[] = ['none', 'under15', 'under30', 'under60', 'under90', 'under120', 'over120']
 const TEST_SEED_VERSION = 'taste-map-dev-restaurants-2026-08-25-v4-cross-city'
+const FREE_TEST_SEED_VERSION = 'taste-map-test-seed-2026-08-26-v6-companion-insights'
+export const TASTE_MAP_TEST_SEED = 20260826
 
 let seedPromise: Promise<number> | null = null
 
@@ -58,6 +61,7 @@ export function seedSixtyVisitedRestaurants() {
 }
 
 async function seedRestaurants() {
+  if (LOCAL_TEST_ACCOUNT === 'free') return seedFreeTestAccount()
   const ids = names.map((_, index) => `sample-restaurant-${String(index + 1).padStart(2, '0')}`)
   const existing = await db.restaurants.bulkGet(ids)
   const isCurrentSeed = typeof window !== 'undefined' && window.localStorage.getItem('taste-map-dev-restaurant-seed') === TEST_SEED_VERSION
@@ -181,6 +185,195 @@ async function seedRestaurants() {
   return restaurants.length
 }
 
+async function seedFreeTestAccount() {
+  const storageKey = `taste-map-test-seed:${LOCAL_TEST_VIEWER_ID}`
+  const ids = Array.from({ length: 50 }, (_, index) => `free-tester-sample-restaurant-${String(index + 1).padStart(2, '0')}`)
+  const isCurrentSeed = typeof window !== 'undefined' && window.localStorage.getItem(storageKey) === FREE_TEST_SEED_VERSION
+  const existing = await db.restaurants.bulkGet(ids)
+  if (isCurrentSeed && existing.every(Boolean)) return 0
+
+  const tokyoSeeds = [
+    { name: '银座鮨青木', city: '东京都', area: '银座', longitude: 139.7647, latitude: 35.6717 },
+    { name: '代官山烧鸟研究所', city: '东京都', area: '代官山', longitude: 139.7038, latitude: 35.6481 },
+    { name: '表参道咖啡小馆', city: '东京都', area: '表参道', longitude: 139.7122, latitude: 35.6652 },
+    { name: '新宿出汁料理', city: '东京都', area: '新宿', longitude: 139.7006, latitude: 35.6903 },
+  ] as const
+  const freeSeeds = [
+    ...hangzhouNames.slice(0, 42).map((name, index) => ({ name, city: '杭州市', area: index < 20 ? '来福士中心' : index < 40 ? '湖滨银泰' : areaNames[index - 40], longitude: NaN, latitude: NaN })),
+    ...crossCitySeeds.slice(0, 4),
+    ...tokyoSeeds,
+  ]
+  const visitCounts = [6, 5, 5, 5, 4, 4, 4, 4, 3, 3, ...Array.from({ length: 25 }, () => 1)]
+  const restaurants: Restaurant[] = []
+  const visits: Visit[] = []
+  const now = new Date('2026-08-25T12:00:00.000Z').toISOString()
+  const sourceTypes = ['friend', 'xiaohongshu', 'douyin', 'dianping', 'other', 'other', 'self', 'other'] as const
+  const sourceLabels = ['朋友小王', '小红书', '抖音', '大众点评', '为你推荐', '同味之选', '路过发现', '同事推荐']
+  const companions: DiningCompanion[] = [
+    { id: 'free-tester-companion-1', displayName: '小王', linkedUserId: 'discovery-user-01', privateAvatarData: null, relationshipLabel: '朋友' },
+    { id: 'free-tester-companion-2', displayName: '妈妈', linkedUserId: 'discovery-user-02', privateAvatarData: null, relationshipLabel: '家人' },
+    { id: 'free-tester-companion-3', displayName: '同事阿宁', linkedUserId: null, privateAvatarData: privateCompanionAvatarData('宁', '#506C8C'), relationshipLabel: '同事' },
+    { id: 'free-tester-companion-4', displayName: '大学朋友', linkedUserId: null, privateAvatarData: null, relationshipLabel: '同学' },
+    { id: 'free-tester-companion-5', displayName: '表姐', linkedUserId: null, privateAvatarData: null, relationshipLabel: '亲友' },
+    { id: 'free-tester-companion-6', displayName: '黄渝梭', linkedUserId: null, privateAvatarData: null, relationshipLabel: '朋友' },
+    { id: 'free-tester-companion-7', displayName: '朋友', linkedUserId: null, privateAvatarData: null, relationshipLabel: '朋友' },
+    { id: 'free-tester-companion-8', displayName: '家人', linkedUserId: null, privateAvatarData: null, relationshipLabel: '家人' },
+  ].map((companion) => ({
+    ...companion,
+    ownerUserId: LOCAL_TEST_VIEWER_ID,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  }))
+  const companionById = new Map(companions.map((companion) => [companion.id, companion]))
+
+  freeSeeds.forEach((seed, index) => {
+    const random = seededRandom(TASTE_MAP_TEST_SEED + index * 97)
+    const cuisineIndex = index % cuisines.length
+    let longitude = seed.longitude
+    let latitude = seed.latitude
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+      const center = index < 20 ? [120.2196, 30.2465] as const : index < 40 ? [120.1631, 30.2575] as const : otherCenters[(index - 40) % otherCenters.length]
+      const angle = random() * Math.PI * 2
+      const distance = Math.sqrt(random()) * (index < 40 ? 0.00125 : 0.0005)
+      longitude = center[0] + Math.cos(angle) * distance
+      latitude = center[1] + Math.sin(angle) * distance
+    }
+    const restaurantId = ids[index]
+    const count = visitCounts[index] ?? 0
+    const restaurantVisits: Visit[] = []
+    for (let visitIndex = 0; visitIndex < count; visitIndex += 1) {
+      const companionIds = freeSeedCompanionIds(index, visitIndex)
+      const companionNames = companionIds
+        .map((companionId) => companionById.get(companionId)?.displayName)
+        .filter((displayName): displayName is string => Boolean(displayName))
+      const partySize = Math.max(1 + Math.floor(random() * 5), companionNames.length + 1)
+      const totalPrice = 58 + Math.round(random() * 680)
+      const rating = random() < 0.08 ? null : ((2 + Math.round(random() * 6) / 2) as StarRating)
+      const visitedAt = new Date(Date.parse(now) - (index * 11 + visitIndex * 37 + Math.floor(random() * 20)) * 86400000).toISOString()
+      const sourceIndex = (index + visitIndex) % sourceTypes.length
+      restaurantVisits.push({
+        id: `${restaurantId}-visit-${visitIndex + 1}`,
+        userId: LOCAL_TEST_VIEWER_ID,
+        restaurantId,
+        visitedAt,
+        rating,
+        visibility: visitIndex % 4 === 0 ? 'public' : 'private',
+        diningMode: random() > 0.2 ? 'dine_in' : 'takeout',
+        totalPrice,
+        myActualSpend: Math.round((totalPrice / partySize) * 100) / 100,
+        paymentMode: partySize === 1 ? null : (['aa', 'my_treat', 'treated', 'separate'] as const)[Math.floor(random() * 4)],
+        pricePerPerson: calculatePricePerPerson(totalPrice, partySize),
+        partySize,
+        queueDuration: queueDurations[Math.floor(random() * queueDurations.length)],
+        diningOccasions: [(['solo', 'friends', 'family', 'date', 'business'] as const)[Math.floor(random() * 5)]],
+        diningOccasion: null,
+        diningOccasionText: '',
+        valueRating: rating,
+        environmentRating: rating ? (Math.max(1, Math.min(5, rating + (random() > 0.5 ? 0.5 : -0.5))) as StarRating) : null,
+        serviceRating: rating,
+        valueTags: [(['划算', '合理', '偏贵', '超值'] as const)[Math.floor(random() * 4)]],
+        environmentTags: [(['安静', '热闹', '舒适', '有氛围'] as const)[Math.floor(random() * 4)]],
+        serviceTags: [(['热情', '专业', '高效', '周到'] as const)[Math.floor(random() * 4)]],
+        noiseLevel: (['quiet', 'normal', 'loud'] as const)[Math.floor(random() * 3)],
+        diningDuration: (['under30', 'under45', 'under60', 'under90'] as const)[Math.floor(random() * 4)],
+        portionLevel: (['small', 'normal', 'generous'] as const)[Math.floor(random() * 3)],
+        transportConvenience: (['very_convenient', 'convenient', 'normal'] as const)[Math.floor(random() * 3)],
+        specialNotes: random() > 0.72 ? '周末高峰建议提前到店。' : '',
+        recommendationSourceType: sourceTypes[sourceIndex],
+        recommendationSourceUserId: sourceTypes[sourceIndex] === 'friend' ? 'discovery-user-01' : null,
+        recommendationSourceText: sourceLabels[sourceIndex],
+        sharedMealId: null,
+        companions: companionNames,
+        companionIds,
+        dishes: random() > 0.45 ? [{ id: `${restaurantId}-dish-${visitIndex + 1}`, name: ['招牌烤肉', '季节刺身', '特色锅物', '手作甜品'][index % 4], taste: ['鲜香', '清爽', '浓郁', '微甜'][index % 4], rating, price: 28 + index % 8 * 9, imageData: null, photoId: null }] : [],
+        note: random() > 0.35 ? ['味道比预期好，会再来。', '环境舒服，适合朋友聚餐。', '招牌菜稳定，服务也很周到。', '这次体验一般，下次会换一道菜。'][Math.floor(random() * 4)] : '',
+        photos: [],
+        photoIds: [],
+        createdAt: visitedAt,
+        updatedAt: visitedAt,
+        deletedAt: null,
+        isTestData: true,
+      })
+    }
+    visits.push(...restaurantVisits)
+    const rated = restaurantVisits.filter((visit) => visit.rating !== null)
+    const averageRating = rated.length ? rated.reduce((sum, visit) => sum + (visit.rating ?? 0), 0) / rated.length : null
+    const averagePrice = restaurantVisits.length ? Math.round(restaurantVisits.reduce((sum, visit) => sum + (visit.pricePerPerson ?? 0), 0) / restaurantVisits.length) : 70 + index * 3
+    restaurants.push({
+      id: restaurantId,
+      userId: LOCAL_TEST_VIEWER_ID,
+      amapPoiId: `free-test-poi-${String(index + 1).padStart(2, '0')}`,
+      name: seed.name,
+      address: `${seed.area}附近 ${20 + index} 号`,
+      city: seed.city,
+      latitude,
+      longitude,
+      status: count > 0 ? 'visited' : 'wantToGo',
+      preferenceLevel: averageRating === null ? 'normal' : averageRating >= 4.5 ? 'favorite' : averageRating >= 3.5 ? 'like' : averageRating >= 2.5 ? 'normal' : 'avoid',
+      overallRating: null,
+      foodRating: null,
+      environmentRating: null,
+      serviceRating: null,
+      valueRating: null,
+      tags: [cuisines[cuisineIndex]],
+      longTermNote: count > 1 ? '多次到访，整体表现稳定。' : '',
+      pricePerPerson: averagePrice,
+      phone: seed.city === '杭州市' ? `0571-${String(86000000 + index * 137).slice(0, 8)}` : null,
+      openingHours: index % 5 === 0 ? '10:30–23:00' : '11:00–22:00',
+      markerType: 'image',
+      markerImageData: null,
+      markerPhotoId: null,
+      merchantImageUrl: foodImageUrl(cuisines[cuisineIndex]),
+      markerEmoji: emojis[cuisineIndex],
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      isTestData: true,
+    })
+  })
+
+  const lists: RestaurantListCollection[] = ['适合约会的店', '杭州朋友聚餐', '一个人也舒服', '今年想再去'].map((title, index) => ({
+    id: `free-tester-list-${index + 1}`,
+    userId: LOCAL_TEST_VIEWER_ID,
+    title,
+    description: ['安静、有氛围，适合慢慢吃。', '人数多也方便的餐厅。', '一个人也不会尴尬。', '表现稳定，值得再次到访。'][index],
+    visibility: index < 2 ? 'public' : 'private',
+    isRanked: index === 3,
+    coverMode: 'automatic',
+    customCoverImageData: null,
+    customCoverPhotoId: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  }))
+  const listItems: RestaurantListItem[] = lists.flatMap((list, listIndex) => Array.from({ length: 6 }, (_, position) => ({
+    id: `${list.id}-item-${position + 1}`,
+    listId: list.id,
+    restaurantId: ids[(listIndex * 7 + position) % 35],
+    position,
+    note: position === 0 ? '最适合作为这一食单的第一家。' : '',
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  })))
+
+  await db.transaction('rw', db.restaurants, db.visits, db.diningCompanions, db.restaurantLists, db.restaurantListItems, async () => {
+    await db.visits.filter((visit) => visit.userId === LOCAL_TEST_VIEWER_ID).delete()
+    await db.restaurants.filter((restaurant) => restaurant.userId === LOCAL_TEST_VIEWER_ID).delete()
+    await db.diningCompanions.where('ownerUserId').equals(LOCAL_TEST_VIEWER_ID).delete()
+    await db.restaurantLists.where('userId').equals(LOCAL_TEST_VIEWER_ID).delete()
+    await db.restaurantListItems.where('id').startsWith('free-tester-list-').delete()
+    await db.restaurants.bulkPut(restaurants)
+    await db.visits.bulkPut(visits)
+    await db.diningCompanions.bulkPut(companions)
+    await db.restaurantLists.bulkPut(lists)
+    await db.restaurantListItems.bulkPut(listItems)
+  })
+  if (typeof window !== 'undefined') window.localStorage.setItem(storageKey, FREE_TEST_SEED_VERSION)
+  return restaurants.length
+}
+
 function seededRandom(seed: number) {
   let state = seed >>> 0
   return () => {
@@ -195,6 +388,23 @@ function seededRandom(seed: number) {
 function randomCompanions(count: number, random: () => number) {
   const pool = ['小王', '妈妈', '同事', '朋友', '家人']
   return [...new Set(Array.from({ length: Math.min(count, 3) }, () => pool[Math.floor(random() * pool.length)]))]
+}
+
+function freeSeedCompanionIds(restaurantIndex: number, visitIndex: number) {
+  if (restaurantIndex === 0) return ['free-tester-companion-1']
+  if (restaurantIndex === 1 || restaurantIndex === 2) return ['free-tester-companion-2']
+  if (restaurantIndex === 3 && visitIndex === 0) return ['free-tester-companion-3']
+  if ([20, 21, 22].includes(restaurantIndex)) return ['free-tester-companion-4']
+  if ([23, 24].includes(restaurantIndex)) return ['free-tester-companion-5']
+  if (restaurantIndex === 4) return ['free-tester-companion-7']
+  if (restaurantIndex === 5) return ['free-tester-companion-8']
+  if (restaurantIndex % 7 === 0 && visitIndex === 0) return ['free-tester-companion-6']
+  return []
+}
+
+function privateCompanionAvatarData(label: string, color: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><rect width="160" height="160" rx="80" fill="${color}"/><circle cx="80" cy="62" r="27" fill="#fff" fill-opacity=".94"/><path d="M32 143c4-34 22-51 48-51s44 17 48 51" fill="#fff" fill-opacity=".94"/><text x="80" y="151" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="700" fill="${color}">${label}</text></svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 
 function foodImageUrl(cuisine: string) {

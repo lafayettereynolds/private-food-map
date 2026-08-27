@@ -2,6 +2,7 @@ import { Check, Search, UserMinus, UserPlus, UsersRound, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Follow, Friendship, RestaurantSummary, SharedMeal, SharedMealParticipant, UserProfile } from '../types/domain'
 import { UserAvatar } from './UserAvatar'
+import { PremiumBurgerBadge } from './PremiumBurgerBadge'
 import { publicUserToProfile, respondToFriendship, searchCloudUsers, sendFriendRequest } from '../services/socialApi'
 import { CompanionLinkManager } from './CompanionLinkManager'
 
@@ -102,10 +103,10 @@ export function FriendsPage({
     })}</div> : <p className="inline-empty">还没有关注其他用户。</p>}</section>
   </>
 
-  const discoveryContent = <section className="social-section people-discovery"><h2>发现好友</h2><p>按昵称或城市找到其他 Taste Map 用户。</p><label className="people-search"><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="搜索昵称或城市" value={query} /></label><div className="friend-list">{results.length ? results.map((user) => {
+  const discoveryContent = <section className="social-section people-discovery"><h2>搜索用户</h2><p>按昵称、用户名或城市找到其他 Taste Map 用户。</p><label className="people-search"><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="搜索昵称 / 用户名 / 城市" value={query} /></label>{!embedded || query.trim() ? <div className="friend-list">{results.length ? results.map((user) => {
     const existing = friendshipByUser.get(user.id)
     return <FriendRow actions={existing && existing.status !== 'removed' && existing.status !== 'rejected' ? <span className="relationship-status">{existing.status === 'accepted' ? '互相关注' : existing.requesterId === currentUserId ? '已关注' : '关注你'}</span> : <button aria-label={`关注 ${user.nickname}`} onClick={() => requestFriend(user.id)} title="关注" type="button"><UserPlus size={15} /></button>} key={user.id} onViewProfile={onViewProfile} user={user} />
-  }) : <p className="inline-empty">没有找到这个用户。</p>}</div></section>
+  }) : <p className="inline-empty">没有找到这个用户。</p>}</div> : <p className="people-discovery__hint">输入关键词后显示搜索结果。</p>}</section>
 
   const followingContent = <section className="social-section people-discovery"><h2>我关注的</h2><p>这些用户的新公开记录会出现在你的“关注”页面。</p><div className="friend-list">{followingUsers.length ? followingUsers.map(({ follow, user }) => <FriendRow actions={<span className="relationship-status">已关注</span>} key={follow.id} onViewProfile={onViewProfile} user={user} />) : followingFollows.length ? <p className="inline-empty">正在加载用户资料…</p> : <p className="inline-empty">还没有关注其他用户。</p>}</div></section>
   const followersContent = <section className="social-section people-discovery"><h2>关注我的</h2><p>点击头像或昵称，可以查看对方的公开资料。</p><div className="friend-list">{followerUsers.length ? followerUsers.map(({ follow, user }) => <FriendRow actions={<span className="relationship-status">关注你</span>} key={follow.id} onViewProfile={onViewProfile} user={user} />) : followerFollows.length ? <p className="inline-empty">正在加载用户资料…</p> : <p className="inline-empty">还没有人关注你。</p>}</div></section>
@@ -119,7 +120,7 @@ export function FriendsPage({
 
 function FriendRow({ user, actions, onViewProfile }: { user?: UserProfile; actions: ReactNode; onViewProfile: (user: UserProfile) => void }) {
   if (!user) return null
-  return <article className="friend-row"><button className="user-avatar-small" onClick={() => onViewProfile(user)} type="button"><UserAvatar alt="" avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></button><button className="friend-profile-link" onClick={() => onViewProfile(user)} type="button"><strong>{user.nickname}</strong><span>{user.city || '未填写城市'}</span></button><div className="friend-row__actions">{actions}</div></article>
+  return <article className="friend-row"><button className="user-avatar-small" onClick={() => onViewProfile(user)} type="button"><UserAvatar alt="" avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></button><button className="friend-profile-link" onClick={() => onViewProfile(user)} type="button"><strong><span>{user.nickname}</span>{user.membershipTier === 'member' ? <PremiumBurgerBadge /> : null}</strong><span>{user.city || '未填写城市'}</span></button><div className="friend-row__actions">{actions}</div></article>
 }
 
 function createRelationshipId(first: string, second: string) {

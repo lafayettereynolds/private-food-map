@@ -30,6 +30,44 @@ export function createCompanionId(name: string) {
   return `companion:owner:${encodeURIComponent(normalize(name))}`
 }
 
+export async function updateDiningCompanionProfile(companion: DiningCompanion, ownerUserId: string, input: {
+  displayName: string
+  privateAvatarData: string | null
+  relationshipLabel: string | null
+}) {
+  if (companion.ownerUserId !== ownerUserId) throw new Error('只能修改自己的饭搭子')
+  const displayName = input.displayName.trim()
+  if (!displayName) throw new Error('饭搭子名字不能为空')
+  const now = new Date().toISOString()
+  const existing = await db.diningCompanions.get(companion.id)
+  const updated: DiningCompanion = {
+    ...(existing ?? companion),
+    ownerUserId,
+    displayName,
+    privateAvatarData: input.privateAvatarData,
+    relationshipLabel: input.relationshipLabel?.trim() || null,
+    createdAt: existing?.createdAt || companion.createdAt || now,
+    updatedAt: now,
+    deletedAt: null,
+  }
+  await db.transaction('rw', db.diningCompanions, db.visits, async () => {
+    await db.diningCompanions.put(updated)
+    if (displayName !== companion.displayName) {
+      const oldName = normalize(companion.displayName)
+      const relatedVisits = await db.visits.where('userId').equals(ownerUserId).filter((visit) => !visit.deletedAt && (
+        visit.companionIds.includes(companion.id) || visit.companions.some((name) => normalize(name) === oldName)
+      )).toArray()
+      await Promise.all(relatedVisits.map((visit) => db.visits.put({
+        ...visit,
+        companionIds: visit.companionIds.includes(companion.id) ? visit.companionIds : [...visit.companionIds, companion.id],
+        companions: visit.companions.map((name) => normalize(name) === oldName ? displayName : name),
+        updatedAt: now,
+      })))
+    }
+  })
+  return updated
+}
+
 function normalize(value: string) {
   return value.trim().toLocaleLowerCase('zh-CN')
 }

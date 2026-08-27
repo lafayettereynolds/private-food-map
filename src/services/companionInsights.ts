@@ -1,6 +1,32 @@
-import type { DiningCompanion, RestaurantSummary, Visit } from '../types/domain'
+import type { DiningCompanion, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 
-export type CompanionInsightConfidence = 'INSUFFICIENT' | 'EMERGING' | 'STABLE'
+export type CompanionInsightConfidence = 'INSUFFICIENT' | 'EMERGING' | 'LIGHT' | 'STABLE'
+export type CompanionListMode = 'ALL' | 'RECENT' | 'FREQUENT' | 'HISTORICAL'
+export type CompanionKind = 'PERSON' | 'CATEGORY_LIKE'
+
+export interface CompanionAnalysisConfig {
+  historyCompanionMinSharedVisits: number
+  historyCompanionInactiveDays: number
+  confidenceInsufficientMaxVisits: number
+  confidenceEmergingMaxVisits: number
+  confidenceLightMaxVisits: number
+}
+
+export const COMPANION_ANALYSIS_CONFIG: CompanionAnalysisConfig = {
+  historyCompanionMinSharedVisits: 3,
+  historyCompanionInactiveDays: 90,
+  confidenceInsufficientMaxVisits: 2,
+  confidenceEmergingMaxVisits: 5,
+  confidenceLightMaxVisits: 10,
+}
+
+export interface CompanionAvatarModel {
+  kind: 'IMAGE' | 'CHARACTER' | 'CATEGORY' | 'PLACEHOLDER'
+  imageData: string | null
+  photoId: string | null
+  character: string | null
+  themeIndex: number
+}
 
 export interface CompanionInsights {
   companion: DiningCompanion
@@ -23,10 +49,60 @@ export interface CompanionInsights {
   linkedUserStatus: 'UNLINKED' | 'LINKED_RESTRICTED'
 }
 
-export function companionInsightConfidence(sharedVisitCount: number): CompanionInsightConfidence {
-  if (sharedVisitCount < 3) return 'INSUFFICIENT'
-  if (sharedVisitCount < 6) return 'EMERGING'
+export function companionInsightConfidence(sharedVisitCount: number, config = COMPANION_ANALYSIS_CONFIG): CompanionInsightConfidence {
+  if (sharedVisitCount <= config.confidenceInsufficientMaxVisits) return 'INSUFFICIENT'
+  if (sharedVisitCount <= config.confidenceEmergingMaxVisits) return 'EMERGING'
+  if (sharedVisitCount <= config.confidenceLightMaxVisits) return 'LIGHT'
   return 'STABLE'
+}
+
+export function companionKind(companion: Pick<DiningCompanion, 'displayName'>): CompanionKind {
+  const name = normalize(companion.displayName)
+  return CATEGORY_LIKE_NAMES.has(name) ? 'CATEGORY_LIKE' : 'PERSON'
+}
+
+export function companionAvatarCharacter(displayName: string) {
+  const value = displayName.trim()
+  if (!value) return '·'
+  if (/^[a-z]/i.test(value)) return value[0].toLocaleUpperCase()
+  if (value.length >= 2 && value[0] === value[1]) return value[0]
+  if (value.length >= 2 && ['小', '老', '阿'].includes(value[0])) return value[1]
+  return value[0]
+}
+
+export function companionAvatarThemeIndex(companionId: string, themeCount = 6) {
+  let hash = 0
+  for (let index = 0; index < companionId.length; index += 1) hash = ((hash << 5) - hash + companionId.charCodeAt(index)) | 0
+  return Math.abs(hash) % Math.max(1, themeCount)
+}
+
+export function resolveCompanionAvatar(companion: DiningCompanion, linkedUser?: Pick<UserProfile, 'avatarImageData' | 'avatarPhotoId'> | null, privateAvatarData: string | null = companion.privateAvatarData ?? null): CompanionAvatarModel {
+  const themeIndex = companionAvatarThemeIndex(companion.id)
+  if (linkedUser?.avatarImageData || linkedUser?.avatarPhotoId) return { kind: 'IMAGE', imageData: linkedUser.avatarImageData, photoId: linkedUser.avatarPhotoId, character: null, themeIndex }
+  if (privateAvatarData) return { kind: 'IMAGE', imageData: privateAvatarData, photoId: null, character: null, themeIndex }
+  if (companionKind(companion) === 'CATEGORY_LIKE') return { kind: 'CATEGORY', imageData: null, photoId: null, character: null, themeIndex }
+  const character = companionAvatarCharacter(companion.displayName)
+  if (character) return { kind: 'CHARACTER', imageData: null, photoId: null, character, themeIndex }
+  return { kind: 'PLACEHOLDER', imageData: null, photoId: null, character: null, themeIndex }
+}
+
+export function selectCompanionInsights(insights: CompanionInsights[], mode: CompanionListMode, query = '', now = new Date(), config = COMPANION_ANALYSIS_CONFIG) {
+  const normalizedQuery = normalize(query)
+  const searched = normalizedQuery ? insights.filter((item) => normalize(item.companion.displayName).includes(normalizedQuery)) : [...insights]
+  if (mode === 'RECENT') return searched.sort(compareLatestDesc)
+  if (mode === 'FREQUENT') return searched.sort(compareFrequent)
+  if (mode === 'HISTORICAL') {
+    const cutoff = now.getTime() - config.historyCompanionInactiveDays * 86400000
+    return searched.filter((item) => item.sharedVisitCount >= config.historyCompanionMinSharedVisits && item.latestVisitedAt !== null && Date.parse(item.latestVisitedAt) < cutoff).sort(compareFrequent)
+  }
+  return searched.sort(compareFrequent)
+}
+
+export function companionProfileLabel(confidence: CompanionInsightConfidence) {
+  if (confidence === 'INSUFFICIENT') return '样本不足'
+  if (confidence === 'EMERGING') return '逐渐形成'
+  if (confidence === 'LIGHT') return '轻量画像'
+  return '稳定画像'
 }
 
 export function buildCompanionInsights(companion: DiningCompanion, restaurants: RestaurantSummary[], visits: Visit[]): CompanionInsights {
@@ -84,8 +160,17 @@ export function buildCompanionDirectory(companions: DiningCompanion[], visits: V
 }
 
 function normalize(value: string) { return value.trim().toLocaleLowerCase('zh-CN') }
+function compareLatestDesc(left: CompanionInsights, right: CompanionInsights) {
+  if (!left.latestVisitedAt && !right.latestVisitedAt) return left.companion.displayName.localeCompare(right.companion.displayName, 'zh-CN')
+  if (!left.latestVisitedAt) return 1
+  if (!right.latestVisitedAt) return -1
+  return right.latestVisitedAt.localeCompare(left.latestVisitedAt) || right.sharedVisitCount - left.sharedVisitCount
+}
+function compareFrequent(left: CompanionInsights, right: CompanionInsights) { return right.sharedVisitCount - left.sharedVisitCount || compareLatestDesc(left, right) }
 function groupBy<T, K>(values: T[], key: (value: T) => K) { const result = new Map<K, T[]>(); values.forEach((value) => result.set(key(value), [...(result.get(key(value)) ?? []), value])); return result }
 function sum(values: number[]) { return values.reduce((total, value) => total + value, 0) }
 function averageOrNull(values: number[]) { return values.length ? Math.round(sum(values) / values.length * 10) / 10 : null }
 function rankLabels(values: string[]) { const counts = new Map<string, number>(); values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1)); return [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count) }
 function occasionLabel(value: Visit['diningOccasions'][number]) { return ({ solo: '一个人', date: '约会', friends: '朋友聚餐', family: '家庭聚餐', business: '商务', celebration: '庆祝', other: '其他' })[value] }
+
+const CATEGORY_LIKE_NAMES = new Set(['朋友', '好友', '家人', '同事', '同学', '同伴', '亲友', '团队', '同事们', '朋友们', '家里人'])

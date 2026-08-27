@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
 interface ModalShellProps {
@@ -18,6 +18,8 @@ export function ModalShell({
   size = 'medium',
   backdropClassName = '',
 }: ModalShellProps) {
+  const [viewportMetrics, setViewportMetrics] = useState<{ height: number; offsetTop: number } | null>(null)
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -30,8 +32,33 @@ export function ModalShell({
     }
   }, [onClose])
 
+  useEffect(() => {
+    const viewport = window.visualViewport
+    const updateViewportMetrics = () => setViewportMetrics({
+      height: viewport?.height ?? window.innerHeight,
+      offsetTop: viewport?.offsetTop ?? 0,
+    })
+    updateViewportMetrics()
+    viewport?.addEventListener('resize', updateViewportMetrics)
+    viewport?.addEventListener('scroll', updateViewportMetrics)
+    window.addEventListener('resize', updateViewportMetrics)
+    return () => {
+      viewport?.removeEventListener('resize', updateViewportMetrics)
+      viewport?.removeEventListener('scroll', updateViewportMetrics)
+      window.removeEventListener('resize', updateViewportMetrics)
+    }
+  }, [])
+
   return (
-    <div className={`modal-backdrop${backdropClassName ? ` ${backdropClassName}` : ''}`} role="presentation" onMouseDown={onClose}>
+    <div
+      className={`modal-backdrop${backdropClassName ? ` ${backdropClassName}` : ''}`}
+      role="presentation"
+      onMouseDown={onClose}
+      style={viewportMetrics ? {
+        '--modal-viewport-height': `${viewportMetrics.height}px`,
+        '--modal-viewport-offset-top': `${viewportMetrics.offsetTop}px`,
+      } as CSSProperties : undefined}
+    >
       <section
         aria-describedby={description ? 'modal-description' : undefined}
         aria-labelledby="modal-title"
@@ -50,7 +77,7 @@ export function ModalShell({
             <X size={18} />
           </button>
         </header>
-        {children}
+        <div className="modal-content">{children}</div>
       </section>
     </div>
   )

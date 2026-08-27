@@ -7,7 +7,14 @@ import type { RestaurantSocialStats } from '../types/restaurantStats'
 import { predictPersonalTasteScore } from '../services/personalTasteScore'
 import { CURRENT_USER_ID } from '../db/social'
 
-export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyRestaurants = [] }: { amapPoiId: string; restaurant: RestaurantSummary; historyRestaurants?: RestaurantSummary[] }) {
+export interface PersonalRatingOverride {
+  score: number | null
+  count: number
+  label: '我的评分' | '历史预测'
+  description?: string
+}
+
+export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyRestaurants = [], personalRatingOverride }: { amapPoiId: string; restaurant: RestaurantSummary; historyRestaurants?: RestaurantSummary[]; personalRatingOverride?: PersonalRatingOverride }) {
   const [stats, setStats] = useState<RestaurantSocialStats | null>(null)
   const [loading, setLoading] = useState(true)
   const personalVisits = restaurant.visits.filter((visit) => visit.userId === CURRENT_USER_ID)
@@ -25,10 +32,15 @@ export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyResta
     return () => controller.abort()
   }, [amapPoiId])
 
-  return <section className="restaurant-social-stats" aria-label="评分参考">
+  return <section className="restaurant-social-stats" aria-label="评分参考" data-summary-module="rating-reference">
     <header><span><UsersRound size={13} />评分参考</span>{loading ? <RefreshCw className="is-spinning" size={12} /> : null}</header>
     <div className="restaurant-social-stats__ratings">
-      <PersonalStat count={prediction ? prediction.ratedRestaurantCount : personalRating.ratedVisitCount} description={prediction?.description} label={prediction ? '历史预测' : '我的评分'} value={prediction?.score ?? personalRating.score} />
+      <PersonalStat
+        count={personalRatingOverride?.count ?? (prediction ? prediction.ratedRestaurantCount : personalRating.ratedVisitCount)}
+        description={personalRatingOverride?.description ?? prediction?.description}
+        label={personalRatingOverride?.label ?? (prediction ? '历史预测' : '我的评分')}
+        value={personalRatingOverride ? personalRatingOverride.score : prediction?.score ?? personalRating.score}
+      />
       <GroupStat count={stats?.overallUserCount ?? 0} label="全部用户" loading={loading} value={stats?.overallUserRating ?? null} />
       <GroupStat count={stats?.friendUserCount ?? 0} label="好友评分" loading={loading} value={stats?.friendAverageRating ?? null} />
       <GroupStat count={stats?.similarTasteUserCount ?? 0} label="同味评分" loading={loading} value={stats?.similarTasteAverageRating ?? null} />

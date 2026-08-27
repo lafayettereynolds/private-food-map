@@ -1,7 +1,9 @@
 param(
   [Parameter(Mandatory = $true)]
   [ValidateSet('development', 'production')]
-  [string]$Environment
+  [string]$Environment,
+  [ValidateSet('premium', 'free')]
+  [string]$TestAccount = 'premium'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 $projectDirectory = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $isProduction = $Environment -eq 'production'
 $port = if ($isProduction) { 4173 } else { 5173 }
-$appUrl = "http://localhost:$port/"
+$appUrl = if ($isProduction) { "http://localhost:$port/" } else { "http://localhost:$port/?testAccount=$TestAccount" }
 $healthUrl = "http://127.0.0.1:$port/"
 $runtimeDependencies = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies'
 $bundledPnpmExecutable = Join-Path $runtimeDependencies 'bin\fallback\pnpm.cmd'
@@ -126,6 +128,7 @@ $env:VITE_APP_ENV = $Environment
 if (-not $isProduction) {
   $env:VITE_CLOUD_SYNC_ENABLED = 'false'
   $env:VITE_SOCIAL_API_ENABLED = 'true'
+  $env:VITE_TEST_ACCOUNT = $TestAccount
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $projectDirectory 'node_modules\vite\package.json'))) {

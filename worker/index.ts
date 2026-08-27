@@ -33,7 +33,13 @@ import type {
 } from '../src/types/domain'
 import { readRestaurantSocialStats } from './restaurantStats'
 import { calculateTasteSimilarities } from './tasteSimilarity'
+import { rankFriendRecommendations } from './friendRecommendation'
 import { rankTasteTags } from '../src/services/tasteProfileCore'
+import {
+  ExternalLinkResolveError,
+  resolveExternalRestaurantEvidence,
+  type ExternalRestaurantResolveInput,
+} from './externalRestaurantLinkResolver'
 
 interface Env {
   DB: D1Database
@@ -154,6 +160,7 @@ interface UserRow {
   created_at: string
   updated_at: string
   deleted_at: string | null
+  is_test_user: number
 }
 
 interface MembershipEntitlementRow {
@@ -484,7 +491,14 @@ export default {
     if (!isSameOriginRequest(request, url)) return json({ error: '不允许跨站访问同步 API。' }, 403)
 
     try {
+      const publicRestaurantMatch = url.pathname.match(/^\/api\/public\/restaurants\/([a-f0-9]{24})$/)
+      if (publicRestaurantMatch && request.method === 'GET') {
+        return json(await readPublicRestaurant(env.DB, publicRestaurantMatch[1]))
+      }
       const viewer = await resolveViewer(request, env.DB)
+      if (url.pathname === '/api/external-place/resolve' && request.method === 'POST') {
+        return json(await resolveExternalPlaceRequest(env.DB, viewer.id, request))
+      }
       if (url.pathname === '/api/sync' && request.method === 'GET') return json(await readSnapshot(env.DB, viewer.id, url.searchParams.get('since')))
       if (url.pathname === '/api/sync' && request.method === 'POST') {
         const payload = await readPayload(request)
@@ -518,12 +532,15 @@ export default {
         await upsertRestaurantListItems(env.DB, payload.restaurantListItems)
         return json(await readSnapshot(env.DB, viewer.id))
       }
-      if (url.pathname === '/api/community' && request.method === 'GET') return json(await readCommunity(env.DB, viewer.id, url.searchParams.get('mode') ?? 'for_you', url.searchParams.get('city') ?? '', url.searchParams.get('window') === '30' ? 30 : 7))
+      if (url.pathname === '/api/community' && request.method === 'GET') {
+        const membership = await readViewerMembership(env.DB, viewer)
+        return json(await readCommunity(env.DB, viewer.id, url.searchParams.get('mode') ?? 'for_you', url.searchParams.get('city') ?? '', url.searchParams.get('window') === '30' ? 30 : 7, membership.isPremium))
+      }
       if (url.pathname === '/api/recommendation-events' && request.method === 'POST') {
         return json(await createRecommendationEvent(env.DB, viewer.id, request), 201)
       }
       if (url.pathname === '/api/membership' && request.method === 'GET') {
-        return json({ entitlement: await readEffectiveMembership(env.DB, viewer.id), isAdmin: isMembershipAdmin(request, env, viewer) })
+        return json({ entitlement: await readViewerMembership(env.DB, viewer), isAdmin: isMembershipAdmin(request, env, viewer) })
       }
       if (url.pathname === '/api/admin/memberships' && request.method === 'GET') {
         requireMembershipAdmin(request, env, viewer)
@@ -535,6 +552,9 @@ export default {
       }
       if (url.pathname === '/api/follows' && request.method === 'GET') return json(await readFollows(env.DB, viewer.id))
       if (url.pathname === '/api/follows' && request.method === 'POST') return json(await mutateFollow(env.DB, viewer.id, request))
+      if (url.pathname === '/api/friend-recommendations' && request.method === 'GET') {
+        return json(await readFriendRecommendations(env.DB, viewer.id, Boolean(request.headers.get('X-Taste-Map-Test-User'))))
+      }
       const restaurantStatsMatch = url.pathname.match(/^\/api\/restaurants\/([^/]+)\/stats$/)
       if (restaurantStatsMatch && request.method === 'GET') {
         return json(await readRestaurantSocialStats(env.DB, viewer.id, decodeURIComponent(restaurantStatsMatch[1])))
@@ -564,6 +584,202 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>
+
+interface ExternalPlaceCandidate {
+  restaurantId: string | null
+  amapPoiId: string
+  name: string
+  address: string
+  city: string
+  latitude: number
+  longitude: number
+  merchantImageUrl: string | null
+  phone: string | null
+  openingHours: string | null
+  matchScore: number
+}
+
+async function resolveExternalPlaceRequest(database: D1Database, viewerId: string, request: Request) {
+  const contentLength = Number(request.headers.get('content-length') ?? 0)
+  if (contentLength > 32_000) throw new RequestError('分享内容过大，无法解析。', 413)
+  const payload = await request.json().catch(() => {
+    throw new RequestError('链接解析请求不是有效的 JSON。', 400)
+  }) as ExternalRestaurantResolveInput
+  if (!isRecord(payload) || (typeof payload.url !== 'string' && typeof payload.text !== 'string')) {
+    throw new RequestError('请提供餐厅链接或分享文字。', 400)
+  }
+
+  let evidence
+  try {
+    evidence = await resolveExternalRestaurantEvidence({
+      url: typeof payload.url === 'string' ? payload.url : undefined,
+      text: typeof payload.text === 'string' ? payload.text : undefined,
+      currentCity: typeof payload.currentCity === 'string' ? payload.currentCity.slice(0, 80) : undefined,
+    })
+  } catch (error) {
+    if (error instanceof ExternalLinkResolveError) throw new RequestError(error.message, error.status)
+    throw error
+  }
+
+  const candidates = await findExternalPlaceCandidates(database, viewerId, evidence)
+  if (evidence.provider === 'amap' && evidence.externalId && evidence.name && evidence.address && evidence.latitude !== null && evidence.longitude !== null) {
+    if (!candidates.some((candidate) => candidate.amapPoiId === evidence.externalId)) {
+      candidates.unshift({
+        restaurantId: null,
+        amapPoiId: evidence.externalId,
+        name: evidence.name,
+        address: evidence.address,
+        city: evidence.city,
+        latitude: evidence.latitude,
+        longitude: evidence.longitude,
+        merchantImageUrl: null,
+        phone: null,
+        openingHours: null,
+        matchScore: 100,
+      })
+    }
+  }
+
+  const ranked = candidates.sort((left, right) => right.matchScore - left.matchScore).slice(0, 8)
+  const topScore = ranked[0]?.matchScore ?? 0
+  const confidence = topScore >= 85 && (ranked.length === 1 || topScore - (ranked[1]?.matchScore ?? 0) >= 20)
+    ? 'HIGH'
+    : ranked.length > 0
+      ? 'MEDIUM'
+      : evidence.name
+        ? 'LOW'
+        : 'NONE'
+  const matchType = confidence === 'HIGH' ? 'single' : confidence === 'MEDIUM' ? 'multiple' : 'search_fallback'
+
+  return {
+    sourceType: evidence.sourceType,
+    sourceHost: evidence.sourceUrl ? new URL(evidence.sourceUrl).hostname : null,
+    confidence,
+    matchType,
+    candidates: ranked.map(({ matchScore, ...candidate }) => {
+      void matchScore
+      return candidate
+    }),
+    searchFallback: evidence.name ? {
+      keyword: evidence.name,
+      city: evidence.city,
+      addressHint: evidence.address,
+      latitude: evidence.latitude,
+      longitude: evidence.longitude,
+    } : null,
+    sourceSuggestion: recommendationSourceSuggestion(evidence.sourceType, evidence.sourceUrl),
+    message: confidence === 'NONE'
+      ? '没有识别出餐厅，请改用名称搜索。'
+      : confidence === 'LOW'
+        ? '已提取餐厅线索，请从搜索结果中确认具体门店。'
+        : confidence === 'MEDIUM'
+          ? '找到多个可能的门店，请选择正确的一家。'
+          : '已识别餐厅，请确认后继续。',
+  }
+}
+
+async function findExternalPlaceCandidates(
+  database: D1Database,
+  viewerId: string,
+  evidence: Awaited<ReturnType<typeof resolveExternalRestaurantEvidence>>,
+) {
+  const result = await database.prepare(`
+    SELECT DISTINCT r.*
+    FROM restaurants r
+    LEFT JOIN visits v ON v.restaurant_id = r.id AND v.deleted_at IS NULL AND v.visibility = 'public'
+    WHERE r.deleted_at IS NULL
+      AND (r.user_id = ? OR v.id IS NOT NULL)
+      AND (
+        (? <> '' AND r.amap_poi_id = ?)
+        OR (? <> '' AND r.name LIKE ?)
+        OR (? <> '' AND r.address LIKE ?)
+      )
+    ORDER BY r.updated_at DESC
+    LIMIT 80
+  `).bind(
+    viewerId,
+    evidence.provider === 'amap' ? evidence.externalId ?? '' : '',
+    evidence.provider === 'amap' ? evidence.externalId ?? '' : '',
+    evidence.name,
+    `%${escapeSqlLike(evidence.name)}%`,
+    evidence.address,
+    `%${escapeSqlLike(evidence.address.slice(0, 32))}%`,
+  ).all()
+  const seen = new Set<string>()
+  const candidates: ExternalPlaceCandidate[] = []
+  for (const row of result.results as unknown as RestaurantRow[]) {
+    if (seen.has(row.amap_poi_id)) continue
+    seen.add(row.amap_poi_id)
+    const matchScore = scoreExternalPlaceCandidate(evidence, row)
+    if (matchScore < 35) continue
+    candidates.push({
+      restaurantId: row.user_id === viewerId ? row.id : null,
+      amapPoiId: row.amap_poi_id,
+      name: row.name,
+      address: row.address,
+      city: row.city,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      merchantImageUrl: row.merchant_image_url,
+      phone: row.phone,
+      openingHours: row.opening_hours,
+      matchScore,
+    })
+  }
+  return candidates
+}
+
+function scoreExternalPlaceCandidate(
+  evidence: Awaited<ReturnType<typeof resolveExternalRestaurantEvidence>>,
+  row: RestaurantRow,
+) {
+  let score = 0
+  if (evidence.provider === 'amap' && evidence.externalId && row.amap_poi_id === evidence.externalId) score += 100
+  const evidenceName = normalizeExternalIdentityText(evidence.name)
+  const rowName = normalizeExternalIdentityText(row.name)
+  if (evidenceName && rowName === evidenceName) score += 48
+  else if (evidenceName && (rowName.includes(evidenceName) || evidenceName.includes(rowName))) score += 34
+  const evidenceAddress = normalizeExternalIdentityText(evidence.address)
+  const rowAddress = normalizeExternalIdentityText(row.address)
+  if (evidenceAddress && rowAddress === evidenceAddress) score += 34
+  else if (evidenceAddress && (rowAddress.includes(evidenceAddress) || evidenceAddress.includes(rowAddress))) score += 22
+  if (evidence.latitude !== null && evidence.longitude !== null) {
+    const distance = externalDistanceMeters(evidence.latitude, evidence.longitude, row.latitude, row.longitude)
+    if (distance <= 80) score += 36
+    else if (distance <= 300) score += 20
+    else if (distance <= 1_500) score += 8
+  }
+  if (evidence.city && normalizeExternalIdentityText(evidence.city) === normalizeExternalIdentityText(row.city)) score += 6
+  return score
+}
+
+function normalizeExternalIdentityText(value: string) {
+  return value.normalize('NFKC').toLocaleLowerCase('zh-CN').replace(/[\s—_·•（）()【】[\]，,。.-]/g, '').replace(/(餐厅|饭店|店)$/g, '')
+}
+
+function externalDistanceMeters(leftLatitude: number, leftLongitude: number, rightLatitude: number, rightLongitude: number) {
+  const radians = (degrees: number) => degrees * Math.PI / 180
+  const latitudeDelta = radians(rightLatitude - leftLatitude)
+  const longitudeDelta = radians(rightLongitude - leftLongitude)
+  const leftRadians = radians(leftLatitude)
+  const rightRadians = radians(rightLatitude)
+  const value = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(leftRadians) * Math.cos(rightRadians) * Math.sin(longitudeDelta / 2) ** 2
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value))
+}
+
+function recommendationSourceSuggestion(sourceType: string, sourceUrl: string | null) {
+  const hostname = sourceUrl ? new URL(sourceUrl).hostname.toLowerCase() : ''
+  if (hostname.includes('xiaohongshu')) return '小红书'
+  if (hostname.includes('dianping')) return '大众点评'
+  if (hostname.includes('douyin')) return '抖音'
+  if (sourceType === 'apple_maps') return 'Apple 地图'
+  if (sourceType === 'amap') return '高德地图'
+  return '链接分享'
+}
+
+function escapeSqlLike(value: string) {
+  return value.replace(/[%_]/g, '')
+}
 
 async function readPayload(request: Request): Promise<SyncPayload> {
   const contentLength = Number(request.headers.get('content-length') ?? 0)
@@ -855,9 +1071,16 @@ interface ViewerIdentity {
   email: string | null
   authProvider: 'cloudflare-access' | 'local'
   authSubject: string | null
+  testMembership?: 'premium' | 'free'
 }
 
 async function resolveViewer(request: Request, database: D1Database): Promise<ViewerIdentity> {
+  const hostname = new URL(request.url).hostname
+  const localTestUser = request.headers.get('X-Taste-Map-Test-User')
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    if (localTestUser === 'free-tester') return { id: 'free-tester', email: null, authProvider: 'local', authSubject: null, testMembership: 'free' }
+    return { id: 'owner', email: null, authProvider: 'local', authSubject: null, testMembership: 'premium' }
+  }
   const accessEmail = request.headers.get('Cf-Access-Authenticated-User-Email')?.trim().toLowerCase() ?? null
   const accessAssertion = request.headers.get('Cf-Access-Jwt-Assertion')
   if (!accessEmail || !accessAssertion) {
@@ -886,7 +1109,7 @@ async function resolveViewer(request: Request, database: D1Database): Promise<Vi
 
 function isMembershipAdmin(request: Request, env: Env, viewer: ViewerIdentity) {
   const hostname = new URL(request.url).hostname
-  if ((hostname === 'localhost' || hostname === '127.0.0.1') && viewer.authProvider === 'local') return true
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && viewer.authProvider === 'local') return viewer.testMembership !== 'free'
   if (!viewer.email) return false
   const allowed = (env.ADMIN_EMAILS ?? '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
   return allowed.includes(viewer.email.toLowerCase())
@@ -916,6 +1139,28 @@ async function readEffectiveMembership(database: D1Database, userId: string) {
     isLifetime: primary?.isLifetime ?? false,
     entitlements,
   }
+}
+
+async function readViewerMembership(database: D1Database, viewer: ViewerIdentity) {
+  if (viewer.testMembership === 'premium') {
+    const startsAt = '2026-01-01T00:00:00.000Z'
+    return {
+      isPremium: true,
+      source: 'admin_grant' as const,
+      startsAt,
+      expiresAt: null,
+      isLifetime: true,
+      entitlements: [{
+        id: 'local-premium-owner', userId: viewer.id, source: 'admin_grant' as const,
+        startsAt, expiresAt: null, isLifetime: true, status: 'active' as const,
+        note: '本地全功能测试账号', createdAt: startsAt, updatedAt: startsAt, revokedAt: null,
+      }],
+    }
+  }
+  if (viewer.testMembership === 'free') {
+    return { isPremium: false, source: null, startsAt: null, expiresAt: null, isLifetime: false, entitlements: [] }
+  }
+  return readEffectiveMembership(database, viewer.id)
 }
 
 async function searchMembershipUsers(database: D1Database, query: string) {
@@ -1053,7 +1298,75 @@ async function shortHash(value: string) {
   return [...new Uint8Array(digest)].slice(0, 12).map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-async function readCommunity(database: D1Database, viewerId: string, requestedMode: string, requestedCity: string, trendWindow: 7 | 30) {
+const PUBLIC_RESTAURANT_CUISINES = new Set([
+  '中餐', '日料', '日本料理', '韩餐', '韩国料理', '西餐', '法餐', '意大利菜', '泰国菜', '东南亚菜',
+  '杭帮菜', '江浙菜', '川菜', '粤菜', '湘菜', '火锅', '烧烤', '咖啡', '甜品', '小吃', '面馆', '快餐',
+])
+
+async function readPublicRestaurant(database: D1Database, publicRestaurantId: string) {
+  const result = await database.prepare('SELECT * FROM restaurants WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 5000').all()
+  const rows = result.results as unknown as RestaurantRow[]
+  const matchingRows: RestaurantRow[] = []
+  for (const row of rows) {
+    if (await publicRestaurantIdForRow(row) === publicRestaurantId) matchingRows.push(row)
+  }
+  if (!matchingRows.length) throw new RequestError('没有找到这家餐厅，或公开链接已经失效。', 404)
+
+  const canonical = [...matchingRows].sort((left, right) => publicRestaurantCompleteness(right) - publicRestaurantCompleteness(left))[0]
+  const placeholders = matchingRows.map(() => '?').join(', ')
+  const visits = await database.prepare(`
+    SELECT user_id, rating
+    FROM visits
+    WHERE deleted_at IS NULL
+      AND visibility = 'public'
+      AND rating IS NOT NULL
+      AND restaurant_id IN (${placeholders})
+  `).bind(...matchingRows.map((row) => row.id)).all()
+  const ratingsByUser = new Map<string, number[]>()
+  for (const visit of visits.results as unknown as Array<{ user_id: string; rating: number }>) {
+    const ratings = ratingsByUser.get(visit.user_id) ?? []
+    ratings.push(Number(visit.rating) * 2)
+    ratingsByUser.set(visit.user_id, ratings)
+  }
+  const userRatings = [...ratingsByUser.values()].map((ratings) => ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length)
+  const sampleCount = userRatings.length
+  const publicRating = sampleCount >= 5 ? {
+    value: Math.round((userRatings.reduce((sum, rating) => sum + rating, 0) / sampleCount) * 10) / 10,
+    sampleCount,
+    confidence: sampleCount < 10 ? 'low' : 'normal',
+  } : null
+
+  return {
+    publicRestaurantId,
+    name: canonical.name,
+    coverImageUrl: canonical.merchant_image_url || null,
+    cuisines: parseStringArray(canonical.tags_json).filter((tag) => PUBLIC_RESTAURANT_CUISINES.has(tag)).slice(0, 3),
+    pricePerPerson: canonical.price_per_person,
+    city: canonical.city,
+    address: canonical.address,
+    phone: canonical.phone,
+    openingHours: canonical.opening_hours,
+    publicRating,
+  }
+}
+
+async function publicRestaurantIdForRow(row: RestaurantRow) {
+  const identity = row.amap_poi_id
+    ? `amap:${row.amap_poi_id}`
+    : `restaurant:${normalizePublicIdentity(row.name)}|${normalizePublicIdentity(row.city)}|${normalizePublicIdentity(row.address)}`
+  return shortHash(`taste-map-public:${identity}`)
+}
+
+function normalizePublicIdentity(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/\s+/g, '')
+}
+
+function publicRestaurantCompleteness(row: RestaurantRow) {
+  return Number(Boolean(row.merchant_image_url)) * 8 + Number(Boolean(row.phone)) * 4 + Number(Boolean(row.opening_hours)) * 4 +
+    Number(Boolean(row.address)) * 2 + Number(Boolean(row.price_per_person)) + parseStringArray(row.tags_json).length
+}
+
+async function readCommunity(database: D1Database, viewerId: string, requestedMode: string, requestedCity: string, trendWindow: 7 | 30, isPremium = false) {
   const mode = ['following', 'for_you', 'similar', 'latest', 'trending'].includes(requestedMode) ? requestedMode : 'for_you'
   const [visitsResult, restaurantsResult, usersResult, followsResult, wantsResult] = await database.batch([
     database.prepare(`SELECT * FROM visits WHERE deleted_at IS NULL AND (user_id = ? OR visibility = 'public') ORDER BY visited_at DESC LIMIT 5000`).bind(viewerId),
@@ -1094,16 +1407,21 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
       recommendationReason: null as string | null,
     }]
   })
+  const ratedHistoryCount = visitRows.filter((visit) => visit.user_id === viewerId && visit.rating).length
+  const viewerRatedVisits = visitRows.filter((visit) => visit.user_id === viewerId && visit.rating != null)
+  const deepRecommendation = isPremium && ratedHistoryCount >= 12
+  const publicRatings = aggregatePublicRestaurantRatings(visitRows)
   let selected = candidates
   if (mode === 'following') selected = candidates.filter((item) => followedUserIds.has(item.row.user_id))
   if (mode === 'for_you') selected = personalizedCandidates(candidates.filter((item) => !viewerVisitedRestaurantIds.has(item.restaurant.id)), visitRows.flatMap((row) => {
     const restaurant = restaurants.get(row.restaurant_id)
     return row.user_id === viewerId && row.rating && restaurant ? [{ restaurant, ratingOutOfTen: Number(row.rating) * 2 }] : []
   }), defaultCity)
-  if (mode === 'similar') selected = uniqueCandidatesByRestaurant(candidates
+  if (mode === 'similar' && !isPremium) selected = []
+  if (mode === 'similar' && isPremium) selected = uniqueCandidatesByRestaurant(candidates
     .filter((item) => item.similarity !== null && item.similarity >= 0.58 && (!requestedCity || item.restaurant.city === defaultCity))
     .sort((a, b) => recommendationRank(b, now, defaultCity) - recommendationRank(a, now, defaultCity)))
-  if (mode === 'similar' && !selected.length) selected = personalizedCandidates(
+  if (mode === 'similar' && isPremium && !selected.length) selected = personalizedCandidates(
     candidates.filter((item) => !viewerVisitedRestaurantIds.has(item.restaurant.id)),
     visitRows.flatMap((row) => {
       const restaurant = restaurants.get(row.restaurant_id)
@@ -1115,18 +1433,108 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
   if (mode === 'trending') selected = trendingCandidates(candidates, wantsResult.results as Array<{ restaurant_id: string; created_at: string }>, defaultCity, now, trendWindow)
   return {
     mode, city: defaultCity,
-    items: selected.slice(0, 160).map(({ row, restaurant, user, similarity, recommendationReason }, index) => ({
-      visit: rowToVisit(row),
-      restaurant: { id: restaurant.id, amapPoiId: restaurant.amap_poi_id, name: restaurant.name, address: restaurant.address, city: restaurant.city, latitude: restaurant.latitude, longitude: restaurant.longitude, merchantImageUrl: restaurant.merchant_image_url },
-      user, similarity: similarity === null ? null : Math.round(similarity * 100),
-      recommendationReason: recommendationReason ?? null,
-      recommendationType: mode === 'similar' ? 'similar_taste' : mode === 'trending' ? 'trending' : mode === 'for_you' ? 'for_you' : null,
-      recommendationRank: index + 1,
-      recommendationConfidence: recommendationConfidence(mode, similarity, visitRows.filter((visit) => visit.user_id === viewerId && visit.rating).length),
-      reasonCodes: recommendationReasonCodes(mode, similarity, recommendationReason),
-      surface: 'discover',
-    })),
+    access: {
+      entitlementTier: isPremium ? 'premium' : 'free',
+      experienceTier: mode === 'for_you' && deepRecommendation ? 'deep' : 'basic',
+      profileConfidence: ratedHistoryCount >= 12 ? 'ready' : 'insufficient',
+      advancedFiltersEnabled: isPremium,
+      fullExplanationEnabled: deepRecommendation,
+      similarTasteEnabled: isPremium,
+      message: isPremium
+        ? deepRecommendation
+          ? '深度推荐已开启 · 结合长期口味、近期偏好和重复到访进行排序'
+          : '你的口味正在形成 · 继续积累评分后会自动启用深度推荐'
+        : null,
+    },
+    items: selected.slice(0, 160).map(({ row, restaurant, user, similarity, recommendationReason }, index) => {
+      const isExploration = mode === 'for_you' && ((index + 1) % 5 === 0 || Number(row.rating ?? 0) * 2 < 5.5)
+      const reasons = mode === 'for_you'
+        ? buildRecommendationReasons(recommendationReason, restaurant, viewerRatedVisits, restaurants, isExploration)
+        : []
+      const primaryLimit = deepRecommendation ? 3 : 1
+      const primaryReasons = reasons.slice(0, primaryLimit)
+      const primaryTexts = new Set(primaryReasons.map((item) => item.text))
+      const secondaryReasons = deepRecommendation ? reasons.filter((item) => !primaryTexts.has(item.text)).slice(0, 5) : []
+      return {
+        visit: rowToVisit(row),
+        restaurant: { id: restaurant.id, amapPoiId: restaurant.amap_poi_id, name: restaurant.name, address: restaurant.address, city: restaurant.city, latitude: restaurant.latitude, longitude: restaurant.longitude, merchantImageUrl: restaurant.merchant_image_url, phone: restaurant.phone, openingHours: restaurant.opening_hours, pricePerPerson: restaurant.price_per_person, tags: parseStringArray(restaurant.tags_json), markerEmoji: restaurant.marker_emoji },
+        user, similarity: similarity === null ? null : Math.round(similarity * 100),
+        recommendationReason: primaryReasons[0]?.text ?? null,
+        recommendationReasons: mode === 'for_you' ? reasons.map((item) => item.text) : undefined,
+        primaryReasons: mode === 'for_you' ? primaryReasons : undefined,
+        secondaryReasons: mode === 'for_you' ? secondaryReasons : undefined,
+        recommendationFitLevel: mode === 'for_you' ? recommendationFitLevel(index, deepRecommendation, reasons.length, isExploration) : undefined,
+        isExploration,
+        publicRating: publicRatings.get(restaurant.id) ?? { value: null, sampleCount: 0 },
+        recommendationType: mode === 'similar' ? 'similar_taste' : mode === 'trending' ? 'trending' : mode === 'for_you' ? 'for_you' : null,
+        recommendationRank: index + 1,
+        recommendationConfidence: recommendationConfidence(mode, similarity, ratedHistoryCount),
+        reasonCodes: mode === 'for_you' ? reasons.map((item) => item.code) : recommendationReasonCodes(mode, similarity, recommendationReason),
+        surface: 'discover',
+      }
+    }),
   }
+}
+
+function buildRecommendationReasons(reason: string | null, restaurant: RestaurantRow, viewerVisits: VisitRow[], restaurants: Map<string, RestaurantRow>, exploration: boolean) {
+  const tags = parseStringArray(restaurant.tags_json)
+  const normalizedTags = new Set(tags.map((tag) => tag.trim().toLocaleLowerCase()).filter(Boolean))
+  const relatedVisits = viewerVisits.filter((visit) => {
+    const visitedRestaurant = restaurants.get(visit.restaurant_id)
+    if (!visitedRestaurant) return false
+    return parseStringArray(visitedRestaurant.tags_json).some((tag) => normalizedTags.has(tag.trim().toLocaleLowerCase()))
+  })
+  const ratingsByRestaurant = new Map<string, number[]>()
+  relatedVisits.forEach((visit) => ratingsByRestaurant.set(visit.restaurant_id, [...(ratingsByRestaurant.get(visit.restaurant_id) ?? []), Number(visit.rating) * 2]))
+  const relatedRestaurantAverages = [...ratingsByRestaurant.values()].map((ratings) => ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length)
+  const relatedAverage = relatedRestaurantAverages.length ? relatedRestaurantAverages.reduce((sum, rating) => sum + rating, 0) / relatedRestaurantAverages.length : null
+  const tagLabel = tags.slice(0, 2).join('、') || '同类口味'
+  const repeatedRestaurantCount = [...ratingsByRestaurant.values()].filter((ratings) => ratings.length >= 2).length
+  const highRatedPrices = viewerVisits.flatMap((visit) => {
+    if (Number(visit.rating) * 2 < 8) return []
+    const visitedRestaurant = restaurants.get(visit.restaurant_id)
+    const price = Number(visitedRestaurant?.price_per_person ?? 0)
+    return price > 0 ? [price] : []
+  }).sort((left, right) => left - right)
+  const candidatePrice = Number(restaurant.price_per_person ?? 0)
+  const priceLow = highRatedPrices.length ? Math.round(highRatedPrices[Math.floor((highRatedPrices.length - 1) * .2)]) : 0
+  const priceHigh = highRatedPrices.length ? Math.round(highRatedPrices[Math.floor((highRatedPrices.length - 1) * .8)]) : 0
+  const reasons = [
+    reason && /相似\s*\d+%/.test(reason) ? { code: 'HIGH_CUISINE_MATCH', text: reason } : null,
+    relatedAverage !== null ? { code: 'HIGH_CUISINE_MATCH', text: `你过去 ${relatedRestaurantAverages.length} 家${tagLabel}相关餐厅的平均评分为 ${relatedAverage.toFixed(1)}` } : null,
+    repeatedRestaurantCount > 0 ? { code: 'REPEAT_VISIT_PATTERN', text: `${tagLabel}是你会重复到访的类型，${repeatedRestaurantCount} 家同类餐厅曾再次到访` } : null,
+    candidatePrice > 0 && priceLow > 0 && candidatePrice >= priceLow && candidatePrice <= priceHigh
+      ? { code: 'PRICE_RANGE_MATCH', text: `这家人均约 ¥${Math.round(candidatePrice)}，落在你高分餐厅常见的 ¥${priceLow}–${priceHigh} 区间` }
+      : null,
+    exploration && relatedRestaurantAverages.length < 2 ? { code: 'SHORT_TERM_DIVERSITY', text: `这类口味在你的历史记录中较少，适合作为一次探索` } : null,
+  ].filter((item): item is { code: string; text: string } => Boolean(item))
+  return reasons.filter((item, index) => reasons.findIndex((candidate) => candidate.text === item.text) === index).slice(0, 8)
+}
+
+function recommendationFitLevel(index: number, deep: boolean, evidenceCount: number, exploration: boolean) {
+  if (exploration) return 'EXPLORATION'
+  if (deep && evidenceCount >= 2 && index < 12) return 'STRONG_MATCH'
+  if (evidenceCount >= 1) return 'GOOD_MATCH'
+  return 'MODERATE_MATCH'
+}
+
+function aggregatePublicRestaurantRatings(visits: VisitRow[]) {
+  const byRestaurantAndUser = new Map<string, number[]>()
+  visits.forEach((visit) => {
+    if (visit.visibility !== 'public' || visit.rating == null) return
+    const key = `${visit.restaurant_id}\u0000${visit.user_id}`
+    byRestaurantAndUser.set(key, [...(byRestaurantAndUser.get(key) ?? []), Number(visit.rating) * 2])
+  })
+  const byRestaurant = new Map<string, number[]>()
+  byRestaurantAndUser.forEach((ratings, key) => {
+    const restaurantId = key.split('\u0000')[0]
+    const userAverage = ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+    byRestaurant.set(restaurantId, [...(byRestaurant.get(restaurantId) ?? []), userAverage])
+  })
+  return new Map([...byRestaurant.entries()].map(([restaurantId, ratings]) => [restaurantId, {
+    value: Math.round((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length) * 10) / 10,
+    sampleCount: ratings.length,
+  }]))
 }
 
 function recommendationConfidence(mode: string, similarity: number | null, viewerRatedCount: number) {
@@ -1153,8 +1561,9 @@ function uniqueCandidatesByRestaurant<T extends { restaurant: RestaurantRow }>(i
 }
 
 function personalizedCandidates(candidates: Array<{ row: VisitRow; restaurant: RestaurantRow; user: ReturnType<typeof publicUser>; similarity: number | null; recommendationReason: string | null }>, viewerHistory: Array<{ restaurant: RestaurantRow; ratingOutOfTen: number }>, city: string) {
+  const qualityCandidates = candidates.filter((item) => item.row.rating == null || Number(item.row.rating) * 2 >= 5.5)
   if (viewerHistory.length < 3) {
-    return uniqueCandidatesByRestaurant(candidates.filter((item) => item.restaurant.city === city)
+    return uniqueCandidatesByRestaurant(qualityCandidates.filter((item) => item.restaurant.city === city)
       .sort((left, right) => Number(right.row.rating ?? 0) - Number(left.row.rating ?? 0) || right.row.visited_at.localeCompare(left.row.visited_at)))
       .slice(0, 60)
       .map((item) => ({ ...item, recommendationReason: '基于当前城市公开高分记录的初步推荐' }))
@@ -1162,7 +1571,7 @@ function personalizedCandidates(candidates: Array<{ row: VisitRow; restaurant: R
   const rankedTags = rankTasteTags(viewerHistory.map((signal) => ({ tags: parseStringArray(signal.restaurant.tags_json), restaurantKey: signal.restaurant.amap_poi_id, ratingOutOfTen: signal.ratingOutOfTen })))
   const tagValues = new Map(rankedTags.map((item) => [item.tag.trim().toLocaleLowerCase(), item]))
   const byRestaurant = new Map<string, { item: typeof candidates[number]; score: number }>()
-  candidates.filter((item) => item.restaurant.city === city).forEach((item) => {
+  qualityCandidates.filter((item) => item.restaurant.city === city).forEach((item) => {
     const tags = parseStringArray(item.restaurant.tags_json)
     const matched = tags.flatMap((rawTag) => {
       const value = tagValues.get(rawTag.trim().toLocaleLowerCase())
@@ -1262,6 +1671,91 @@ async function searchUsers(database: D1Database, viewerId: string, query: string
     WHERE id != ? AND deleted_at IS NULL AND (id LIKE ? OR nickname LIKE ? OR city LIKE ?)
     ORDER BY nickname LIMIT 20`).bind(viewerId, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`).all<UserRow>()
   return { users: result.results.map(publicUser) }
+}
+
+interface FriendRecommendationVisitRow {
+  user_id: string
+  rating: number
+  amap_poi_id: string
+  tags_json: string
+}
+
+async function readFriendRecommendations(database: D1Database, viewerId: string, allowTestUsers: boolean) {
+  const [viewer, usersResult, friendshipsResult, companionsResult, visitsResult] = await Promise.all([
+    database.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').bind(viewerId).first<UserRow>(),
+    database.prepare(`SELECT * FROM users
+      WHERE id != ? AND deleted_at IS NULL
+        AND map_sharing_enabled = 1 AND map_visibility != 'private'
+      ORDER BY nickname LIMIT 300`).bind(viewerId).all<UserRow>(),
+    database.prepare(`SELECT * FROM friendships
+      WHERE requester_id = ? OR addressee_id = ? OR status = 'accepted'
+      ORDER BY updated_at DESC`).bind(viewerId, viewerId).all<FriendshipRow>(),
+    database.prepare(`SELECT linked_user_id FROM dining_companions
+      WHERE owner_user_id = ? AND linked_user_id IS NOT NULL AND deleted_at IS NULL`).bind(viewerId).all<{ linked_user_id: string }>(),
+    database.prepare(`SELECT v.user_id, v.rating, r.amap_poi_id, r.tags_json
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id
+      WHERE v.deleted_at IS NULL AND r.deleted_at IS NULL AND v.rating IS NOT NULL
+        AND (v.user_id = ? OR v.visibility = 'public')`).bind(viewerId).all<FriendRecommendationVisitRow>(),
+  ])
+  if (!viewer) return { recommendations: [] }
+
+  const friendshipRows = friendshipsResult.results
+  const excluded = new Set<string>()
+  const acceptedNeighbors = new Map<string, Set<string>>()
+  const addAcceptedNeighbor = (first: string, second: string) => {
+    const neighbors = acceptedNeighbors.get(first) ?? new Set<string>()
+    neighbors.add(second)
+    acceptedNeighbors.set(first, neighbors)
+  }
+  const rejectionCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+  friendshipRows.forEach((row) => {
+    if (row.status === 'accepted') {
+      addAcceptedNeighbor(row.requester_id, row.addressee_id)
+      addAcceptedNeighbor(row.addressee_id, row.requester_id)
+    }
+    if (row.requester_id !== viewerId && row.addressee_id !== viewerId) return
+    const otherId = row.requester_id === viewerId ? row.addressee_id : row.requester_id
+    if (row.status === 'accepted' || row.status === 'pending') excluded.add(otherId)
+    if (row.status === 'rejected' && Date.parse(row.updated_at) >= rejectionCutoff) excluded.add(otherId)
+  })
+
+  const linkedCompanionIds = new Set(companionsResult.results.map((row) => row.linked_user_id))
+  const signals = visitsResult.results.map((row) => ({
+    userId: row.user_id,
+    poiId: row.amap_poi_id,
+    ratingOutOfTen: Number(row.rating) * 2,
+    tags: parseStringArray(row.tags_json),
+  }))
+  const similarities = new Map(calculateTasteSimilarities(signals, viewerId).map((item) => [item.userId, item]))
+  const ratedPoisByUser = new Map<string, Set<string>>()
+  visitsResult.results.forEach((row) => {
+    const pois = ratedPoisByUser.get(row.user_id) ?? new Set<string>()
+    pois.add(row.amap_poi_id)
+    ratedPoisByUser.set(row.user_id, pois)
+  })
+  const viewerPois = ratedPoisByUser.get(viewerId) ?? new Set<string>()
+  const viewerFriends = acceptedNeighbors.get(viewerId) ?? new Set<string>()
+  const candidatesById = new Map(usersResult.results.filter((user) => allowTestUsers || !user.is_test_user).filter((user) => !excluded.has(user.id)).map((user) => [user.id, user]))
+  const ranked = rankFriendRecommendations([...candidatesById.values()].map((candidate) => {
+    const candidateFriends = acceptedNeighbors.get(candidate.id) ?? new Set<string>()
+    const candidatePois = ratedPoisByUser.get(candidate.id) ?? new Set<string>()
+    const similarity = similarities.get(candidate.id)
+    return {
+      userId: candidate.id,
+      mutualFriendCount: [...viewerFriends].filter((friendId) => candidateFriends.has(friendId)).length,
+      linkedCompanion: linkedCompanionIds.has(candidate.id),
+      tasteSimilarity: similarity?.similarity ?? null,
+      tasteSignalCount: similarity?.signalCount ?? 0,
+      sharedRestaurantCount: [...viewerPois].filter((poiId) => candidatePois.has(poiId)).length,
+      sameCity: Boolean(viewer.city.trim() && candidate.city.trim() && viewer.city.trim().toLocaleLowerCase() === candidate.city.trim().toLocaleLowerCase()),
+    }
+  }))
+  return {
+    recommendations: ranked.slice(0, 24).flatMap((recommendation) => {
+      const user = candidatesById.get(recommendation.userId)
+      return user ? [{ ...recommendation, user: publicUser(user), friendshipState: null }] : []
+    }),
+  }
 }
 
 async function readCompanionLinks(database: D1Database, viewerId: string) {
@@ -1411,14 +1905,33 @@ async function readProfile(database: D1Database, viewerId: string, profileId: st
       ? '1 = 0'
       : user.map_visibility === 'friends' && !friendship
         ? '1 = 0'
-        : '1 = 1'
-  const [visitsResult, restaurantsResult, followerResult, followingResult] = await database.batch([
+        : friendship
+          ? "visibility IN ('public', 'friends')"
+          : "visibility = 'public'"
+  const canViewRestaurantCollection = profileId === viewerId || Boolean(
+    user.map_sharing_enabled
+    && user.map_visibility !== 'private'
+    && (user.map_visibility !== 'friends' || friendship),
+  )
+  const [visitsResult, restaurantsResult, wantRestaurantsResult, followerResult, followingResult, followersResult, followingUsersResult] = await database.batch([
     database.prepare(`SELECT * FROM visits WHERE user_id = ? AND deleted_at IS NULL AND ${visibilitySql} ORDER BY visited_at DESC`).bind(profileId),
     database.prepare(`SELECT * FROM restaurants WHERE id IN (
       SELECT restaurant_id FROM visits WHERE user_id = ? AND deleted_at IS NULL AND ${visibilitySql}
     ) AND deleted_at IS NULL`).bind(profileId),
+    database.prepare(`SELECT * FROM restaurants
+      WHERE user_id = ? AND status = 'wantToGo' AND deleted_at IS NULL
+      AND ${canViewRestaurantCollection ? '1 = 1' : '1 = 0'}
+      ORDER BY updated_at DESC`).bind(profileId),
     database.prepare('SELECT COUNT(*) AS count FROM follows WHERE followed_user_id = ?').bind(profileId),
     database.prepare('SELECT COUNT(*) AS count FROM follows WHERE follower_id = ?').bind(profileId),
+    database.prepare(`SELECT u.* FROM follows f
+      JOIN users u ON u.id = f.follower_id
+      WHERE f.followed_user_id = ? AND u.deleted_at IS NULL
+      ORDER BY f.created_at DESC`).bind(profileId),
+    database.prepare(`SELECT u.* FROM follows f
+      JOIN users u ON u.id = f.followed_user_id
+      WHERE f.follower_id = ? AND u.deleted_at IS NULL
+      ORDER BY f.created_at DESC`).bind(profileId),
   ])
   const restaurants = new Map((restaurantsResult.results as unknown as RestaurantRow[]).map((row) => [row.id, {
     id: row.id, amapPoiId: row.amap_poi_id, name: row.name, address: row.address, city: row.city, latitude: row.latitude, longitude: row.longitude,
@@ -1431,8 +1944,11 @@ async function readProfile(database: D1Database, viewerId: string, profileId: st
       const restaurant = restaurants.get(row.restaurant_id)
       return restaurant ? [{ visit: rowToVisit(row), restaurant }] : []
     }),
+    wantRestaurants: (wantRestaurantsResult.results as unknown as RestaurantRow[]).map(rowToRestaurant),
     followerCount: Number((followerResult.results[0] as { count?: number } | undefined)?.count ?? 0),
     followingCount: Number((followingResult.results[0] as { count?: number } | undefined)?.count ?? 0),
+    followers: (followersResult.results as unknown as UserRow[]).map(publicUser),
+    following: (followingUsersResult.results as unknown as UserRow[]).map(publicUser),
   }
 }
 
@@ -1513,7 +2029,7 @@ async function createSharedMeal(database: D1Database, viewerId: string, request:
 }
 
 function publicUser(row: UserRow) {
-  return { id: row.id, nickname: row.nickname, bio: row.bio, city: row.city, avatarImageData: row.avatar_image_data, avatarPhotoId: row.avatar_photo_id, avatarPresetId: row.avatar_preset_id ?? 'polar-bear', membershipTier: row.membership_tier ?? 'free' }
+  return { id: row.id, nickname: row.nickname, bio: row.bio, city: row.city, avatarImageData: row.avatar_image_data, avatarPhotoId: row.avatar_photo_id, avatarPresetId: row.avatar_preset_id ?? 'polar-bear', membershipTier: row.membership_tier ?? 'free', createdAt: row.created_at }
 }
 
 function rowToDiningCompanion(row: DiningCompanionRow) {
@@ -1785,7 +2301,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isSameOriginRequest(request: Request, url: URL) {
   const origin = request.headers.get('origin')
-  return !origin || origin === url.origin
+  if (!origin || origin === url.origin) return true
+
+  // Vite's local proxy rewrites the request host to the Worker port while
+  // preserving the browser Origin. Treat loopback-to-loopback traffic as the
+  // same local app, but keep the strict equality rule everywhere else.
+  try {
+    const originUrl = new URL(origin)
+    const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+    return loopbackHosts.has(originUrl.hostname) && loopbackHosts.has(url.hostname)
+  } catch {
+    return false
+  }
 }
 
 function json(value: unknown, status = 200) {

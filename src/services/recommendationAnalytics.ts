@@ -6,7 +6,9 @@ export function trackRecommendationEvent(eventName: RecommendationEventName, rec
   const event: RecommendationEvent = {
     id: crypto.randomUUID(), userId: 'owner', eventName,
     recommendationType: recommendation.source, surface: recommendation.surface, restaurantId: recommendation.restaurant.id,
-    rank: recommendation.rank, score: recommendation.score, reasonCodes: recommendation.reasonCodes, createdAt: new Date().toISOString(),
+    rank: recommendation.rank, score: recommendation.score, reasonCodes: recommendation.reasonCodes,
+    fitLevel: recommendation.fitLevel, confidence: recommendation.confidence, isExploration: recommendation.isExploration,
+    createdAt: new Date().toISOString(),
   }
   if (SOCIAL_API_ENABLED) void fetch('/api/recommendation-events', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) }).catch(() => undefined)
   return event
@@ -17,7 +19,9 @@ export function trackDiscoveryRecommendationEvent(eventName: RecommendationEvent
   const event: RecommendationEvent = {
     id: crypto.randomUUID(), userId: 'owner', eventName,
     recommendationType: item.recommendationType, surface: item.surface, restaurantId: item.restaurant.id,
-    rank: item.recommendationRank ?? null, score: null, reasonCodes: item.reasonCodes ?? [], createdAt: new Date().toISOString(),
+    rank: item.recommendationRank ?? null, score: null, reasonCodes: item.reasonCodes ?? [],
+    fitLevel: item.recommendationFitLevel ?? undefined, confidence: item.recommendationConfidence ?? undefined,
+    isExploration: item.isExploration ?? false, createdAt: new Date().toISOString(),
   }
   if (SOCIAL_API_ENABLED) void fetch('/api/recommendation-events', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) }).catch(() => undefined)
   return event

@@ -1,5 +1,7 @@
-import { Bookmark, Check, ChevronRight, Dices, MapPin, Plus, Star } from 'lucide-react'
+import { ChevronRight, MapPin, Star } from 'lucide-react'
+import { PlusAction } from './PlusAction'
 import { RestaurantAvatar } from './RestaurantAvatar'
+import { RestaurantQuickActions } from './RestaurantQuickActions'
 import { scoreColor, type RestaurantSummary } from '../types/domain'
 
 interface RestaurantListProps {
@@ -46,7 +48,7 @@ export function RestaurantList({
         <h2>{emptyTitle || (query ? '没有匹配的餐厅' : activeList === 'visited' ? '还没有去过的餐厅' : activeList === 'wantToGo' ? '还没有想去的餐厅' : '还没有足够信息推荐')}</h2>
         <p>{emptyMessage || (query ? '试试搜索其他餐厅名称、城市或饭搭子。' : activeList === 'visited' ? '记录第一家吃过的餐厅，慢慢建立自己的味觉地图。' : activeList === 'wantToGo' ? '把惦记的餐厅先放进来，下次出门不用再翻收藏夹。' : '多记录餐厅评分和菜品星级，推荐会越来越贴合你的口味。')}</p>
         {emptyActionLabel && onEmptyAction ? <button className="secondary-button recommendation-relax-button" onClick={onEmptyAction} type="button">{emptyActionLabel}</button> : null}
-        {!query && !emptyActionLabel ? <button className="text-button" onClick={onAdd} type="button"><Plus size={16} /> 添加一家餐厅</button> : null}
+        {!query && !emptyActionLabel ? <PlusAction actionType="ADD_RESTAURANT" className="empty-list__add" context="global" label="添加一家餐厅" onAction={onAdd} showLabel /> : null}
       </div>
     )
   }
@@ -68,11 +70,15 @@ export function RestaurantList({
           </span>
           <ChevronRight size={15} />
         </button>
-        <span className="restaurant-row__quick-actions">
-          <button aria-label={`记录去过 ${restaurant.name}`} onClick={() => onMarkVisited(restaurant)} title="记录去过" type="button"><Plus size={15} /></button>
-          <button aria-label={`${restaurant.name} ${restaurant.status === 'wantToGo' ? '已在想吃' : '加入想吃'}`} className={restaurant.status === 'wantToGo' ? 'is-selected' : ''} onClick={() => onAddToWant(restaurant)} title="加入想吃" type="button">{restaurant.status === 'wantToGo' ? <Check size={14} /> : <Bookmark size={14} />}</button>
-          <button aria-label={`${restaurant.name} 加入转盘`} onClick={() => onAddToRoulette(restaurant)} title="加入转盘" type="button"><Dices size={15} /></button>
-        </span>
+        <RestaurantQuickActions
+          className="restaurant-row__quick-actions"
+          onRecordVisit={() => onMarkVisited(restaurant)}
+          onToggleWant={() => onAddToWant(restaurant)}
+          onToggleWheel={() => onAddToRoulette(restaurant)}
+          restaurantName={restaurant.name}
+          visitedActive={restaurant.status === 'visited'}
+          wantActive={restaurant.status === 'wantToGo'}
+        />
       </div>)}
     </div>
   )

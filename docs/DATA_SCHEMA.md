@@ -24,7 +24,7 @@
 ## 饭搭子与发现数据
 
 - `Visit.companionIds`: 单次到访关联的历史饭搭子 ID 数组；旧 `companions` 文本继续兼容展示。
-- `DiningCompanion`: 用户自己的历史饭搭子，可选关联真实 `linkedUserId`。
+- `DiningCompanion`: 用户自己的历史饭搭子，可选关联真实 `linkedUserId`；未关联账号时可使用可选的 `privateAvatarData` 保存私人头像、`relationshipLabel` 保存关系备注。
 - `CompanionLinkRequest`: 饭搭子身份关联邀请，状态为 `pending | accepted | rejected`。
 - `Follow`: 单向关注关系，由 `followerId` 与 `followedUserId` 唯一确定。
 - `WantToGo`: 用户与餐厅的想吃关系。
@@ -46,6 +46,7 @@
 - Dexie v13：补齐预设头像、会员等级和 `diningOccasionText`；只做增量默认值迁移，不清空数据。
 - Dexie v14：把旧 `diningOccasion` 单值增量转换为 `diningOccasions` 数组，并保留首项兼容镜像。
 - Dexie v15：增加饭搭子实体、饭搭子身份关联邀请和 Visit 的 `companionIds`，把旧文本饭搭子增量整理为本地实体。
+- 2026-08-26 兼容扩展：`DiningCompanion.privateAvatarData` 与 `relationshipLabel` 为非索引可选属性，Dexie 表结构和索引未变化，因此不升数据库版本；旧记录读取为 `undefined` 并按默认头像/空关系降级。
 - Dexie v16：增加单向关注和开发测试数据标记；不会自动向正式环境写入模拟数据。
 - Dexie v17：为同步队列增加状态/重试索引并加入图片缓存表。
 - Dexie v18：为 Photo 增加平台无关的存储、缩略图、可见性与同步状态，并为旧记录补齐默认值；同步队列补齐幂等操作字段。

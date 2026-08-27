@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Check, GripVertical, ImagePlus, ListPlus, Plus, Save, Search, Trash2, X } from 'lucide-react'
+import { Check, GripVertical, ImagePlus, ListPlus, Plus, Search, Trash2, X } from 'lucide-react'
 import { db } from '../db/appDb'
 import { addRestaurantToList, createRestaurantList, deleteRestaurantList, removeRestaurantFromList, reorderRestaurantListItems, updateRestaurantList, updateRestaurantListItem } from '../db/restaurantLists'
 import type { RestaurantListCollection, RestaurantListItem, RestaurantSummary, Visibility } from '../types/domain'
 import { ModalShell } from './ModalShell'
+import { StickyFormActionBar } from './StickyFormActionBar'
 import { RestaurantAvatar } from './RestaurantAvatar'
 import { fetchPublicRestaurantList } from '../services/socialApi'
 
@@ -76,8 +77,32 @@ function RestaurantListEditor({ onClose, initialRestaurantId }: { onClose: () =>
   const [description, setDescription] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
   const [isRanked, setIsRanked] = useState(false)
-  async function submit(event: FormEvent) { event.preventDefault(); const list = await createRestaurantList({ title, description, visibility, isRanked }); if (initialRestaurantId) await addRestaurantToList(list.id, initialRestaurantId); onClose() }
-  return <ModalShell description="普通合集不显示名次；排名榜单会按顺序显示 01、02、03。" onClose={onClose} title="新建食单"><form className="restaurant-list-editor" onSubmit={(event) => void submit(event)}><label className="field"><span>食单名称</span><input autoFocus maxLength={60} onChange={(event) => setTitle(event.target.value)} required value={title} /></label><label className="field"><span>简介</span><textarea maxLength={240} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} /></label><div className="restaurant-list-editor__choices"><label><input checked={isRanked} onChange={(event) => setIsRanked(event.target.checked)} type="checkbox" />排名榜单</label><label><span>可见范围</span><select onChange={(event) => setVisibility(event.target.value as Visibility)} value={visibility}><option value="private">仅自己</option><option value="friends">好友</option><option value="public">公开</option></select></label></div><button className="primary-button" type="submit"><Save size={15} />创建食单</button></form></ModalShell>
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    try {
+      const list = await createRestaurantList({ title, description, visibility, isRanked })
+      if (initialRestaurantId) await addRestaurantToList(list.id, initialRestaurantId)
+      onClose()
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : '创建失败，请重试')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return <ModalShell description="普通合集不显示名次；排名榜单会按顺序显示 01、02、03。" onClose={onClose} title="新建食单">
+    <form className="sticky-action-form" onSubmit={(event) => void submit(event)}>
+      <div className="restaurant-list-editor sticky-action-form__content">
+        <label className="field"><span>食单名称</span><input autoFocus maxLength={60} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
+        <label className="field"><span>简介</span><textarea maxLength={240} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} /></label>
+        <div className="restaurant-list-editor__choices"><label><input checked={isRanked} onChange={(event) => setIsRanked(event.target.checked)} type="checkbox" />排名榜单</label><label><span>可见范围</span><select onChange={(event) => setVisibility(event.target.value as Visibility)} value={visibility}><option value="private">仅自己</option><option value="friends">好友</option><option value="public">公开</option></select></label></div>
+      </div>
+      <StickyFormActionBar primaryDisabled={!title.trim()} primaryLabel="创建食单" primaryLoading={saving} secondaryAction={onClose} statusMessage={error} statusTone="error" />
+    </form>
+  </ModalShell>
 }
 
 function RestaurantListDetail({ list, items, restaurants, editable, onClose, onSelectRestaurant }: { list: RestaurantListCollection; items: RestaurantListItem[]; restaurants: RestaurantSummary[]; editable: boolean; onClose: () => void; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {

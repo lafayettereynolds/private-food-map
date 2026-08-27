@@ -1,24 +1,245 @@
 # Taste Map 变更记录
 
+## 2026-08-26 — Premium 入口与会员状态页简化
+
+- 免费用户的本人资料只保留轻量“开通 Premium”；会员用户移除“管理会员”，改为点击用户名旁 Burger 进入同一 Premium 页面。设置继续稳定保留“会员与订阅”。
+- 同一 Premium 页面按服务端 Entitlement 切换免费销售态和已开通状态态。会员状态页只展示当前方案、来源、适用日期、可展开权益和恢复购买；仅 App Store 月度/年度订阅显示订阅管理，永久、赠送、活动和兑换码使用各自状态分支。
+- 免费销售页继续只显示 StoreKit 本地化价格，年度节省比例动态计算；购买、恢复或会员状态变化后通过统一事件即时刷新，不需要重新加载页面。
+- 关键文件：`src/components/ProfilePage.tsx`、`src/components/PremiumPaywall.tsx`、`src/components/SettingsModal.tsx`、`src/services/membershipPresentation.ts`、`src/services/membershipPresentation.test.ts`、`src/styles/global.css`、`docs/PREMIUM_PRODUCT.md`。
+- Migration：无；本次只调整会员入口、状态呈现与前端权限刷新，没有修改字段、数据库结构或同步协议，未检查或重复执行 migration。
+- 验证：会员来源分支、Profile 会员入口、StoreKit 价格/年度节省逻辑共 18 项自动测试通过；TypeScript 检查与正式构建通过。构建仅保留项目原有的大分包提示。
+
+## 2026-08-26 — 推荐来源“最坑”结论与分享规则
+
+- 推荐来源分析顶部扩展为“最懂我 / 最容易种草 / 最稳定 / 最坑”；“最坑”综合低分率、高分命中、复购和相对个人基线动态计算，至少需要 6 家独立有评分餐厅，10 家起进入稳定样本。没有来源达到门槛时整项隐藏。
+- 同一家餐厅的多次 Visit 先汇总为一个餐厅评分样本，重复到访只提供次级信号；来源详情补充个人基线差、近期表现、真实低分餐厅与不适合菜系，支持全年、当年、当月和自定义时间范围的服务层计算。
+- 分享海报同步加入符合门槛的“最坑”来源，使用轻微暖色强调；人物来源保留当前真实姓名并随改名更新，不分享账号 ID、对方私密资料、笔记或消费。新增查看、打开详情和分享事件。
+- 关键文件：`src/services/recommendationSourceInsights.ts`、`src/components/ProfileAnalyticsPanels.tsx`、`src/services/analysisShare.ts`、`src/services/analysisPosterRenderer.ts`、`src/components/AnalysisShareSheet.tsx`、`src/styles/global.css`、`src/services/recommendationSourceInsights.test.ts`、`src/services/analysisShare.test.ts`。
+- Migration：无；本次仅增加由现有 Restaurant / Visit / 推荐来源动态计算的派生分析与展示，没有修改字段、数据库结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：推荐来源服务与分享共 26 项定向测试、TypeScript/Worker 类型检查和正式构建通过。
+
+## 2026-08-26 — 移动端半星评分命中修复
+
+- 修复手机端左右半星点击不稳定：根因是两个绝对定位半区按钮被移动端通用按钮尺寸规则放大后发生重叠；现改为每颗星一个独立 44px Pointer Events 命中区，并用当前星的边界与 `clientX` 判定左半/右半。
+- 新增/编辑到访、餐厅记录与菜品星级统一复用 `StarRating`；支持 0.5—5 星、即时半星填充、键盘半星步进、清除评分与纵向页面滚动，菜品不再只支持整数星。
+- 关键文件：`src/components/StarRating.tsx`、`src/components/DishEditor.tsx`、`src/utils/starRatingInteraction.ts`、`src/components/StarRating.test.tsx`、`src/styles/global.css`。
+- Migration：无；本次没有修改评分字段、数据库结构或同步协议，半星仍以既有数值类型原样保存，未检查或重复执行 migration，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：半星坐标、键盘交互与 10 分制换算共 10 项测试、TypeScript/Worker 类型检查、ESLint 与正式构建均通过；390×844 手机视口实测点击第 4 颗星左半边得到 3.5 星 / 7.0 分，半星填充正确且评分区域纵向滑动正常。Lint 仅保留 `CommunityPage.tsx` 的既有 Hook 依赖警告，构建仅保留既有包体积提示；真实 iPhone 触控仍建议在下一次设备验收时复核一次手感。
+
+## 2026-08-26 — “我的”页居中布局与添加好友整合
+
+- 将本人身份区改为居中结构：添加好友与设置位于顶部两侧，头像、昵称、Premium 标识、简介或加入时间和编辑资料形成单一视觉中心；头像在桌面端适度放大，移动端保持紧凑。
+- 顶部统计统一为带品牌色图标的“我关注的 / 关注我的 / 去过 / 想吃”四项等宽入口；去过和想吃继续按唯一餐厅统计，四项均可点击，极窄屏自动调整为 2×2。
+- 好友推荐从“我的”首页移除，完整保留在“添加好友”统一弹层；该弹层同时提供昵称、用户名或城市搜索与好友推荐，不再需要首页折叠或“查看更多”入口。“今天吃什么 / 我的口味档案”仍保持同一行。
+- 关键文件：`src/components/ProfilePage.tsx`、`src/components/FriendsPage.tsx`、`src/services/profileTopStats.ts`、`src/services/profileTopStats.test.ts`、`src/styles/global.css`。
+- Migration：无；本次仅调整 UI、文案与现有入口组合，没有修改数据字段、数据库结构或同步协议。
+- 验证：TypeScript 检查、22 个测试文件共 119 项测试和正式构建均通过；Development 页面实测首页布局、统一添加好友弹层与四项统计入口正常。Lint 无错误，仍只有 `CommunityPage.tsx` 的既有 Hook 依赖警告；构建保留既有大包体积提示。
+
+## 2026-08-26 — 添加与记录餐厅统一 Plus 图标
+
+- 新增可复用 `PlusAction`，将全局添加餐厅与已知餐厅记录到访拆成 `ADD_RESTAURANT` / `ADD_VISIT` 两个明确动作；去过的餐厅继续显示 `+`，辅助文案改为“再次记录到访”，不把按钮做成状态切换或次数徽标。
+- 地图底栏、餐厅列表、发现信息流、搜索已有餐厅结果和餐厅详情统一使用相同入口；发现页餐厅快捷操作继续固定为 `+ / 想吃 / 抽签`，分享、点赞、评论和添加好友不受影响。餐厅卡片内操作会阻止事件冒泡，避免误开其他页面。
+- 关键文件：`src/components/PlusAction.tsx`、`src/components/RestaurantQuickActions.tsx`、`src/components/RestaurantList.tsx`、`src/components/AddRestaurantModal.tsx`、`src/App.tsx`、`src/styles/global.css`、`src/components/RestaurantQuickActions.test.tsx`。
+- Migration：无；本次仅统一 UI、入口语义和点击行为，没有修改字段、数据库结构或本地/云端同步协议，未检查或重复执行 migration，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：完整测试 22 个文件共 119 项、TypeScript/Worker 类型检查及正式构建全部通过；ESLint 无错误，仅保留 `CommunityPage.tsx` 既有 Hook 依赖提示和既有构建包体积提示。
+
+## 2026-08-26 — Premium 统一会员入口与价格页
+
+- 新增统一的 Taste Map Premium 会员页，覆盖六项核心权益、免费/Premium 对比、恢复购买、订阅管理、数据保留说明、服务条款和隐私政策；本人资料、设置及全部受限功能统一进入该页面。免费账号展示月度/年度方案；已开通账号只展示当前权益、管理订阅和恢复购买，不重复显示价格或购买按钮。
+- 新增平台无关的 Membership Store Bridge：原生端从 StoreKit 返回本地化 `displayPrice`，年度节省比例只在同币种数值价格可用时计算；Web 显示“暂时无法获取订阅信息”、重试和 iPhone App 提示，不硬编码或伪造价格。
+- 购买、恢复和管理订阅后统一刷新服务端 Entitlement；自定义头像、深度推荐、同味能力、高级筛选、完整口味档案、饭搭子/推荐来源分析与照片上限均复用现有会员策略。免费版每次到访最多 3 张照片，点击第 4 张的“继续添加”会直接打开统一会员页；Premium 最多 20 张，到期不会删除既有数据或历史照片。
+- 关键文件：`src/components/PremiumPaywall.tsx`、`src/services/premiumPaywall.ts`、`src/services/membershipStore.ts`、`src/services/membershipService.ts`、`src/services/featurePolicy.ts`、`src/components/ProfilePage.tsx`、`src/components/SettingsModal.tsx`、`src/components/CommunityPage.tsx`、`src/components/VisitPhotoPicker.tsx`、`src/App.tsx`、`src/styles/global.css`、`docs/PREMIUM_PRODUCT.md`。
+- Migration：无；本次只增加会员入口、平台购买抽象、权限接线与 UI，没有修改 IndexedDB/D1 字段、数据库结构或同步协议，未检查或重复执行 migration，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：TypeScript 与 Worker 类型检查、22 个测试文件共 119 项测试、正式构建全部通过；会员与非会员页面已在 Development 浏览器中分别验证，构建仅保留既有主包体积提示。
+- 已知限制：iOS 端真实 StoreKit 商品、收据校验、续期和 App Store 沙盒/正式购买仍需在 Mac/Xcode 与服务端环境中完成；Web 只展示会员信息与当前资格，不提供购买。
+
+## 2026-08-26 — Profile 信息架构去重与文案精简
+
+- 本人主页移除固定品牌口号，改为优先显示真实个人简介；无简介时显示加入 Taste Map 的时间。顶部数据固定为“我关注的 / 关注我的 / 去过餐厅 / 想去餐厅”，不再显示“公开记录”。
+- 他人主页的顶部统计统一为“关注 / 粉丝 / 去过餐厅 / 想去餐厅”，四项均可进入权限过滤后的列表；移除重复的“动态 / 想吃 / 食单 / 地图”快捷宫格，只保留一组“动态 / 口味 / 食单”导航。想去从顶部统计进入，地图收敛为“TA 去过的餐厅 · N 家”轻量入口。
+- 公开内容语义明确区分：代表餐厅按 Restaurant 聚合，最近动态按 Visit 展示；共同想吃为 0 时隐藏。Worker 同时返回可见想吃、关注和粉丝摘要，陌生人、好友与本人继续使用既有可见性规则。
+- 关键文件：`src/components/ProfilePage.tsx`、`src/services/profileTopStats.ts`、`src/services/publicProfile.ts`、`src/services/socialApi.ts`、`src/App.tsx`、`worker/index.ts`、`src/styles/global.css`。
+- Migration：无；本次只调整 Profile 信息架构、动态选择器与现有接口响应，没有修改 IndexedDB/D1 字段、数据库结构或同步协议，未检查或重复执行 migration，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：完整测试 19 个文件共 112 项全部通过；TypeScript、Worker 类型检查和正式构建通过；测试环境实测本人四项统计、关注列表、公开用户单一导航、代表餐厅、轻量足迹及 Visit 动态。ESLint 无错误，仅保留 `CommunityPage.tsx` 既有依赖提示。
+
+## 2026-08-26 — 分析页与分享海报系统
+
+- 为完整口味档案、饭搭子分析、推荐来源分析、本月回味、年度回味和那年今日建立统一 `AnalysisShareData` 与分享入口；六类分析均可生成独立海报预览、在真实图片候选池内换图、保存 PNG 或调用系统分享。
+- 新增 `AnalysisShareService`、隐私过滤、`FoodVisualResolver` 和 `AnalysisPosterRenderer`：海报固定 1080 × 1440，主图优先到访实拍与匹配的餐厅封面，同一报告稳定选图，代表餐厅的图片、名称和说明按 `restaurantId` 一一对应。
+- 海报使用 Taste Map 官方北极熊汉堡图标、品牌 Token 和简洁编辑式布局，只保留 5–8 条可验证结论；不直接截取分析页，不分享邮箱、内部账号 ID、精确私人位置、未授权消费或饭搭子私密身份。
+- 关键文件：`src/types/analysisShare.ts`、`src/services/analysisShare.ts`、`src/services/foodVisualResolver.ts`、`src/services/analysisPosterRenderer.ts`、`src/components/AnalysisShareSheet.tsx`、`src/components/ProfilePage.tsx`、`src/styles/global.css`、`src/services/analysisShare.test.ts`、`docs/ANALYSIS_SHARE_SYSTEM.md`。
+- Migration：无；本次运行时生成分享数据和海报，没有修改 IndexedDB、D1 Schema 或同步协议，未检查或重复执行既有 migration，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：TypeScript 检查通过；19 个测试文件共 105 项全部通过；测试环境实测六类入口、海报预览、换图、保存图片和系统分享按钮均正常。
+- 已知限制：V1 不含二维码和持久化海报缓存；浏览器不支持文件型 Web Share API 时降级为保存 PNG；iOS 原生 Renderer 与分享面板留给后续客户端实现。
+
+## 2026-08-26 — 饭搭子头像与筛选排序修复
+
+- 将饭搭子头像优先级、类别识别、稳定文字头像、置信度和四种列表模式统一收拢到 `companionInsights` 服务；已绑定账号使用真实头像，普通名字由稳定 companionId 生成可读头像，家人/同事/朋友等类别不再伪装成真实用户。
+- “全部 / 最近 / 常一起 / 历史饭搭子”现在分别按真实共同次数、最近共同到访、频次与“至少 3 次且 90 天未共同到访”工作；搜索与当前模式组合，列表显示当前结果数量、明确选中态和对应空状态。
+- 摘要、列表和详情复用同一头像与排序结果，点击不同饭搭子会重建详情，避免沿用上一个对象的数据。
+- 未绑定真实账号的私人饭搭子新增轻量编辑：可修改名称、私人头像和关系备注；改名会保留原 companionId，并同步兼容已有 Visit 中的历史名称。
+- Development 免费测试种子升级为 8 位饭搭子，固定覆盖高频、最近、历史、低频、已绑定账号、私人头像、稳定文字头像和类别型记录；仅重建 `food-map-dev-free` 的测试账号数据。
+- 关键文件：`src/services/companionInsights.ts`、`src/services/companionInsights.test.ts`、`src/components/ProfileAnalyticsPanels.tsx`、`src/components/ProfilePage.tsx`、`src/styles/global.css`。
+- Migration：无；本次没有修改字段、数据库结构或本地/云端同步协议，未重复检查或执行既有 migration，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：完整自动测试 18 个文件、90 项全部通过；TypeScript 与正式构建通过。Development 浏览器实测 6 位饭搭子的全部/最近/常一起/历史、搜索、头像和详情切换均正常。
+- 数据：`DiningCompanion` 增加可选的 `privateAvatarData` 与 `relationshipLabel`；两者均为非索引可选属性，旧记录保持兼容，Dexie 无需升版或重建，未执行数据库迁移。类别型饭搭子仍按稳定名称词典识别。
+
+## 2026-08-26 — “我的”页顶部信息架构优化
+
+- 顶部四项统计统一为“我关注的 / 关注我的 / 去过餐厅 / 想去餐厅”，移除“公开记录”；去过和想去按稳定餐厅身份去重，并为四项补齐可点击列表。
+- 好友推荐移动到统计下方并改为默认折叠的轻量入口，展开首屏最多显示 3 位候选并保留“查看更多”；“今天吃什么 / 我的口味档案”改为同一行等宽等高紧凑卡片，极窄屏才纵向排列。
+- 新增 `profileTopStats` 统一计算个人页去过/想去的唯一餐厅，避免同一 POI 或重复本地记录造成数量虚高。
+- 关键文件：`src/components/ProfilePage.tsx`、`src/services/profileTopStats.ts`、`src/services/profileTopStats.test.ts`、`src/styles/global.css`。
+- Migration：无；本次仅调整 UI、统计选择器和页面交互，没有修改字段、数据库结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：完整测试套件 18 个文件、82 项测试通过；TypeScript 与正式构建通过。构建仅保留既有主包体积提示。
+
+## 2026-08-26 — “写下这家餐厅”页面结构强制纠错
+
+- 将选中餐厅后的组件树固定为“返回搜索 → 餐厅摘要 → 评分参考 → 用户实拍 → 我去过/我想去 → 状态表单 → 整理与显示 → 固定底部操作栏”；餐厅摘要改为无条件渲染，模式选择器只替换其下方表单。
+- 将共用摘要组件显式命名为 `RestaurantSummarySection`，保留旧名兼容导出；新增/编辑到访、餐厅编辑和地图/发现/搜索详情继续复用同一摘要。参考人均、电话和营业时间缺失时保留明确占位，不再导致两个模式顶部结构不一致。
+- 关键文件：`src/components/RestaurantRecordSummary.tsx`、`src/components/RestaurantSocialStatsPanel.tsx`、`src/components/AddRestaurantModal.tsx`、`src/components/AddVisitModal.tsx`、`src/components/RestaurantEditorModal.tsx`、`src/components/RestaurantPreviewCard.tsx`。
+- Migration：无；本次只纠正 UI/DOM 结构和共用组件，没有修改字段、数据库、同步协议或算法，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：TypeScript 与正式构建通过，17 个测试文件共 79 项测试通过；Development 实测同一肯德基 POI 在“我去过 / 我想去”之间切换，摘要、评分参考、用户实拍与固定保存栏顺序保持一致。
+- 已知问题：个别 POI 源本身没有参考人均、营业时间或公开实拍时显示真实空状态；全库 lint 仍有与本次无关的既有未使用导入/参数以及 Hook 依赖警告。
+
+## 2026-08-26 — 发现页 Restaurant 交互统一
+
+- 将关注、为你推荐、同味之选、最新和趋势五个分栏统一为同一套餐厅交互：餐厅卡右侧固定显示“记录去过 / 想吃 / 加入抽签”，社交互动继续独立位于左侧；移除原有分栏之间不一致的详情按钮和含义模糊的加号操作。
+- 新增可复用 `RestaurantQuickActions`；三项操作都阻止卡片点击冒泡，想吃与抽签即时切换状态，记录去过在当前发现上下文打开到访表单，不再强制切换地图或自动打开轮盘。
+- 餐厅正文、图片和名称在当前分栏打开完整餐厅详情，用户头像和昵称只进入用户主页；关闭详情会恢复原分栏和滚动位置。公开用户的 Visit 不再被详情误显示成当前用户自己的到访历史，公开详情也不会出现当前用户专属的编辑与删除入口。
+- 关键文件：`src/components/RestaurantQuickActions.tsx`、`src/components/RestaurantRecordSummary.tsx`、`src/components/RestaurantPreviewCard.tsx`、`src/components/CommunityPage.tsx`、`src/App.tsx`、`src/styles/global.css`。
+- Migration：无；本次只调整 UI、交互和当前查看者状态映射，没有修改字段、数据库结构或本地/云端同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：17 个测试文件、79 项测试全部通过；TypeScript、Worker 类型检查与正式构建通过。构建仅保留既有主包体积提示。
+
+## 2026-08-26 — 好友推荐折叠与会员标识优化
+
+- 将“我的”页好友推荐从横向卡片改为可折叠纵向列表：首次默认展开，之后用 `localStorage` 记忆用户选择；展开时先显示 3 位候选并提供“查看更多”，移除原生横向滚动条。
+- 推荐卡只保留头像、昵称、城市、一个真实理由、独立的“优先认识 / 推荐认识 / 可以认识”强度，以及轻量添加和隐藏操作；共同好友、已绑定饭搭子、同味相似度、共同餐厅与同城由服务层统一计算，会员身份不参与排序加权。
+- Premium Burger Badge 从头像角标移到用户名右侧，改为无圆底、无外框、无文字的小型彩色 SVG；免费用户不显示标识，显示状态继续由服务端 Entitlement 决定。
+- 本人和其他用户主页均显示既有账号创建月份；Development 测试种子补充 2024—2026 年稳定加入日期、免费/会员混合身份、互相关系和已绑定饭搭子场景。
+- 关键文件：`worker/friendRecommendation.ts`、`worker/friendRecommendation.test.ts`、`src/services/socialApi.ts`、`src/components/PremiumBurgerBadge.tsx`、`src/components/UserAvatar.tsx`、`src/components/ProfilePage.tsx`、`src/components/CommunityPage.tsx`、`src/components/FriendsPage.tsx`、`src/components/TasteFootprints.tsx`、`src/styles/global.css`。
+- Migration：无；本次复用现有 User、Friendship、Visit、DiningCompanion 和 Taste Similarity 数据，没有修改数据库字段、结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：完整测试套件 17 个文件、79 项测试通过，TypeScript、Worker 类型检查与正式构建通过；浏览器实测会员与免费用户名标识、默认展开、折叠状态刷新保留、首屏 3 人及 390px 手机宽度无横向溢出。
+- 已知限制：当前数据结构没有单独的用户屏蔽表，推荐暂以既有地图可见性作为可发现性边界；想吃记录尚无可复用的公开可见性口径，因此本轮不把共同想吃作为推荐理由。
+
+## 2026-08-26 — 外部餐厅链接识别与 iOS 分享导入基础
+
+- 新增统一 `ExternalRestaurantLinkResolver`，支持高德、Apple Maps、普通餐厅网页和分享文本；外部链接只产生候选和来源建议，唯一候选仍需确认，多候选必须选择，低置信度回落到现有 POI 搜索，不会自动创建、标记去过或加入想吃。
+- Worker 新增受登录保护的 `/api/external-place/resolve`，加入 HTTPS、回环/内网/云元数据拦截、逐跳重定向校验、超时、响应大小和内容类型限制；查询候选时只使用当前查看者有权读取的餐厅数据。
+- Web“添加餐厅”增加“粘贴餐厅链接”，识别成功后复用现有餐厅确认和记录流程；无结果、失败和不安全地址都会结束加载并给出明确提示。
+- 新增 iOS Share Extension、App Group 待处理导入、不可预测 `importId` 深链、主 App 确认页与授权请求注入的 Swift 源码；Xcode Target、签名、Capability 和真机分享面板留到 Mac 按 `docs/IOS_MAC_RELEASE_CHECKLIST.md` 完成。
+- 关键文件：`worker/externalRestaurantLinkResolver.ts`、`worker/externalRestaurantLinkResolver.test.ts`、`worker/index.ts`、`src/services/externalRestaurantLink.ts`、`src/components/AddRestaurantModal.tsx`、`src/styles/global.css`、`ios/`、`docs/IOS_MAC_RELEASE_CHECKLIST.md`。
+- Migration：无；本次使用短期 App Group 文件和运行时解析结果，没有修改 Restaurant、Visit、IndexedDB、D1 字段或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：TypeScript、6 项解析器定向测试、现有全部 76 项测试和正式构建通过；浏览器实测不安全链接即时失败、高德链接生成可确认候选且不自动保存、390px 手机视口无横向溢出。Windows 无法验证 Xcode 签名和系统分享面板，已单独列入 Mac 清单。
+
+## 2026-08-26 — 其他用户主页与公开地图优化
+
+- 将其他用户主页整理为身份与关系操作、公开统计、快捷入口、共同想吃、代表餐厅和公开内容分栏；零条共同想吃时不占位，口味分栏仅在样本足够时显示。
+- 公开地图替换静态示意图，按可见 Visit 聚合为一店一标，支持城市数量切换并默认进入可见餐厅最多的城市；Marker 可打开带封面、菜系、价格、城市和可见到访次数的餐厅预览。
+- Worker 在返回公开主页数据前执行隐私过滤：本人可见全部有效记录，已接受好友可见 `public + friends`，陌生人只可见 `public`；地图关闭、`private` 和仅好友范围均不会被前端绕过。
+- 关键文件：`src/services/publicProfile.ts`、`src/services/publicProfile.test.ts`、`src/components/ProfilePage.tsx`、`src/styles/global.css`、`worker/index.ts`。
+- Migration：无；本次复用现有用户、好友、Visit 和地图隐私字段，没有修改数据库结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：全部 15 个测试文件共 70 项测试通过，TypeScript 与正式构建通过；Development 实际打开 TestUser17 主页与公开地图，验证杭州/上海城市切换、真实 Marker 和餐厅预览正常。
+
+## 2026-08-26 — 发现页餐厅分享与公开落地页
+
+- 将发现五栏的“转发”统一为餐厅分享：点击后优先使用系统分享，不支持时打开轻量分享弹层，提供系统分享、复制链接和公开预览；取消分享保持静默，失败时给出明确提示。
+- 分享模型仅允许餐厅名称、稳定商家图、白名单菜系、可靠价格、城市/地址和达到 5 位独立用户阈值的公开评分；不会携带 Visit、用户、饭搭子、推荐证据、实际消费、Provider 标识、内部 ID 或令牌。
+- 新增稳定公开地址 `/restaurant/<publicRestaurantId>?ref=discover_share` 与最小公开餐厅页；Worker 公开接口按不可预测的稳定 ID 查找餐厅，只返回安全字段，并按独立用户等权聚合公开评分。
+- 移除公开分享计数；本地分析事件只记录安全的餐厅标识、发现分栏、推荐层级和分享方式，不新增持久化字段。
+- 关键文件：`src/services/restaurantShare.ts`、`src/components/RestaurantShareSheet.tsx`、`src/components/PublicRestaurantPage.tsx`、`src/components/CommunityPage.tsx`、`src/main.tsx`、`worker/index.ts`、`src/styles/global.css`、`src/services/restaurantShare.test.ts`。
+- Migration：无；本次没有修改数据库字段、数据结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：全部 14 个测试文件共 62 项测试通过，TypeScript 检查和正式构建通过；正式构建仅保留既有主包体积提示。
+
+## 2026-08-26 — 非会员完整测试数据与 Premium 汉堡 Badge
+
+- 为独立的非会员 Development 账号加入固定种子 `TASTE_MAP_TEST_SEED = 20260826`：50 家餐厅、68 条到访、15 家想吃、10 家重复到访餐厅、6 位饭搭子、8 类推荐来源、4 个食单与 24 条食单餐厅，覆盖杭州、上海、北京和东京及约 18 个月时间范围。
+- 修正免费测试数据的归属：所有餐厅、Visit、饭搭子和食单都写入 `free-tester` 对应的 `food-map-dev-free`，不再误写到会员测试账号；种子版本不变时不会重复生成，也不会触碰 Production。
+- 新增统一 Premium 汉堡矢量 Badge，并接入 `UserAvatar` 与 Development 账号切换提示；免费账号不显示负向身份标签。Badge 由服务端 Entitlement 对应的 `membershipTier` 决定，会员授予、更新和撤销会触发界面立即刷新。
+- 修复免费用户已拥有自定义头像或同步照片时被错误替换成预设头像的问题。
+- 关键文件：`src/db/seedRestaurants.ts`、`src/db/social.ts`、`src/components/PremiumBurgerBadge.tsx`、`src/components/UserAvatar.tsx`、`src/services/membershipService.ts`、`src/App.tsx`、`src/styles/global.css`、`docs/TEST_DISCOVERY_DATA.md`。
+- Migration：无；本次复用既有 Restaurant、Visit、DiningCompanion、RestaurantList、User 与 Membership 字段，没有修改数据库结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：TypeScript、Worker 类型检查与正式构建通过。当前运行服务可正常返回；Codex 内置浏览器本轮没有可附加标签页，因此未完成自动化点击验收，需在已打开的测试版刷新后确认最终视觉。
+
+## 2026-08-26 — 餐厅记录页统一信息摘要
+
+- 完成：新增可复用 `RestaurantRecordSummary`，并接入餐厅详情、添加餐厅、想吃计划、新增/编辑到访和编辑餐厅；表单前统一显示商家大图、城市/状态、名称、地址、参考价格、可用联系方式、路线、评分参考与用户实拍，适用入口继续显示去过/想吃/抽签快捷操作。
+- 完成：同店历史记录会合并补齐商家信息和到访实拍；没有实拍时使用正式空状态，移除“这里只需要补充”和“记录到访后会显示”等开发说明文案。
+- 关键文件：`src/components/RestaurantRecordSummary.tsx`、`src/components/RestaurantPreviewCard.tsx`、`src/components/AddRestaurantModal.tsx`、`src/components/AddVisitModal.tsx`、`src/components/RestaurantEditorModal.tsx`、`src/components/RestaurantSocialStatsPanel.tsx`、`src/styles/global.css`。
+- Migration：无。本次只统一展示与布局，不修改数据字段、数据库结构或同步协议。
+- 验证：`pnpm run build` 通过；Development 实际打开新增到访弹层，确认统一摘要顺序和固定底部保存栏正常。
+- 已知问题：构建仍有既有的 Vite 大块体积警告，不影响本次功能。
+
+## 2026-08-26 — 回顾系统重构
+
+- 将原有通用回顾详情拆为“本月回顾”、年度“食味年鉴”和免费的“那年今日”三种独立体验；新增照片优先的回忆卡、月度高光、年度关键餐厅、口味变化、城市足迹、饭搭子/来源洞察和有意义时才展示的同比/环比。
+- 消费口径统一为 `myActualSpend`，并按记录覆盖率区分隐藏、“已记录实际消费”和“总计”；单样本、空时段与缺少图片/笔记/来源/饭搭子时均使用真实降级，不生成虚假结论。
+- 权限：本月回顾和年度食味年鉴纳入 Premium，那年今日保持免费。
+- 关键文件：`src/services/reviewService.ts`、`src/services/reviewService.test.ts`、`src/services/featurePolicy.ts`、`src/components/ProfilePage.tsx`、`src/styles/global.css`。
+- Migration：无；本次仅重构由现有 Restaurant / Visit 动态计算的派生内容，未修改字段、数据库结构或同步协议。
+- 验证：TypeScript 检查通过；15 项回顾边界测试通过，并与全部现有测试共 52 项一起通过。
+- 已知限制：餐厅无实拍、稳定封面和 Provider 图时使用占位图；无可比历史时不展示同比/环比。
+
+## 2026-08-25 — 长表单固定保存栏统一
+
+- 新增可复用 `StickyFormActionBar`，统一提供取消、保存/保存修改、禁用、保存中和错误提示状态；操作栏固定在当前弹层或页面底部，表单内容独立滚动并预留底部安全空间。
+- 已接入新增/编辑到访、添加/编辑餐厅、手动添加小店、编辑个人资料与隐私、创建食单等长表单；短搜索、评论、轮盘临时输入和即时保存字段保持原交互。
+- Modal 使用可视视口高度与偏移响应手机键盘变化，底部操作栏使用安全区内边距；新增到访的可选字段不再阻止初始保存。
+- 关键文件：`index.html`、`src/components/StickyFormActionBar.tsx`、`src/components/ModalShell.tsx`、`src/components/AddVisitModal.tsx`、`src/components/AddRestaurantModal.tsx`、`src/components/RestaurantEditorModal.tsx`、`src/components/ProfilePage.tsx`、`src/components/RestaurantListsPanel.tsx`、`src/styles/global.css`。
+- Migration：无；本次仅调整表单交互与布局，没有修改字段、数据库结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：37 项自动测试和正式构建通过；浏览器实测桌面长表单滚动、手机尺寸及模拟键盘压缩高度下保存栏均持续可见，表单末项不被遮挡。
+- 已知限制：浏览器是否自动弹出系统输入法由设备决定；页面已跟随 `visualViewport` 更新高度，未引入平台专属键盘 API。
+
+## 2026-08-25 — Premium“为你推荐”核心理由与操作区优化
+
+- 将推荐适配度改为由 Recommendation Service 统一返回 `STRONG_MATCH / GOOD_MATCH / MODERATE_MATCH / EXPLORATION`，前端只展示“优先推荐 / 推荐给你 / 可以试试 / 换个口味”，匹配等级与证据置信度独立。
+- 推荐理由改为默认展开的结构化证据：Premium 主卡展示 2–3 条最高价值个性依据和最多一条注意项，免费版展示 1 条基础依据；完整分析仅补充次级证据。当前城市、附近、地址和泛化高分等低价值信息不再进入主理由。
+- “大家评分”与推荐适配完全分离，按独立评分用户等权聚合并显示样本置信度；1–4 人隐藏分数，5–9 人标记样本较少，10 人以上正常显示。
+- 推荐卡继续按稳定优先级展示 1–3 张真实可用图片；右下操作区精简为详情、想吃、抽签三枚 44px 纯图标按钮，补齐 tooltip、可访问名称和选中状态，不再保留大号文字详情按钮。
+- 关键文件：`src/types/recommendation.ts`、`src/types/domain.ts`、`src/services/recommendationService.ts`、`src/services/recommendationService.test.ts`、`src/services/recommendationAnalytics.ts`、`src/services/socialApi.ts`、`src/components/CommunityPage.tsx`、`src/styles/global.css`、`worker/index.ts`。
+- Migration：无；本次只调整运行时推荐响应、服务逻辑和 UI，没有修改持久化字段、数据库结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：Recommendation Service 的 3 项定向测试通过，TypeScript、Worker 类型检查与正式构建通过；浏览器已在桌面与 390px 手机宽度验证核心理由默认可见、至少两条会员依据以及恰好三枚图标操作。
+- 已知限制：当真实数据只有 1 张可用图片时卡片只显示 1 张，不使用重复图或演示图凑满三张；正式构建仍有既有主包体积提示。
+
+## 2026-08-25 — 餐厅详情一致性与分析页可读性修复
+
+- 统一地图、列表、想吃、推荐、发现和食单使用的餐厅详情数据：同一家餐厅存在多份精简/完整记录时会合并全部匹配记录，不再因先命中精简记录而丢失电话、营业时间、详细地址或图片。
+- 餐厅联系方式固定为“电话 / 营业时间 / 路线”三格；来源没有电话或营业时间时明确显示“暂无”，不再让整格消失，避免不同入口产生两套详情布局。
+- 饭搭子分析调整为可读的宽版“关系摘要 → 搜索筛选 → 饭搭子列表”结构；推荐来源分析保持“本页结论 → 分组来源列表 → Taste Map 推荐表现 → 最近成功案例”，并提高字号、留白和桌面弹窗宽度。
+- 关键文件：`src/components/RestaurantPreviewCard.tsx`、`src/components/ProfileAnalyticsPanels.tsx`、`src/components/CommunityPage.tsx`、`src/App.tsx`、`src/services/recommendations.ts`、`src/services/socialApi.ts`、`src/types/domain.ts`、`src/styles/global.css`、`worker/index.ts`。
+- Migration：无；本次未修改字段、数据库结构或同步协议，未检查或重复执行 migration，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：TypeScript 与正式构建通过；Development 浏览器实测去过与想吃餐厅均保留三格联系方式，饭搭子分析与推荐来源分析均能打开并显示真实测试数据。
+- 已知限制：POI 来源本身缺少电话或营业时间时只能显示“暂无”，不会伪造商家资料。
+
+## 2026-08-25 — 会员与非会员双账号测试环境
+
+- 将默认 Development 测试账号设为终身会员，开放完整推荐理由、同味之选、高级推荐筛选、完整口味档案、饭搭子分析、推荐来源分析、自定义头像及每次到访最多 20 张照片。
+- 新增严格非会员测试账号与桌面一键启动文件；该账号使用独立的 `food-map-dev-free`，免费版保留基础个性化推荐，每次到访最多 3 张照片，会员专属分析使用明确权益提示。
+- Worker 在 localhost 下识别受控测试身份并返回真实会员权限，线上环境不接受本地测试身份；当前会员测试版继续使用原 `food-map-dev`，Production `food-map-prod` 未修改。
+- 关键文件：`src/config/appEnvironment.ts`、`src/db/social.ts`、`src/services/membershipService.ts`、`src/services/featurePolicy.ts`、`src/services/socialApi.ts`、`src/components/CommunityPage.tsx`、`src/components/ProfilePage.tsx`、`src/components/VisitPhotoPicker.tsx`、`worker/index.ts`、`scripts/start-food-map.ps1`、`启动美食地图-测试版.bat`、`启动美食地图-非会员测试版.bat`。
+- Migration：无；本次复用既有会员字段与接口，只增加运行时测试身份、权限策略和独立数据库名，没有修改字段、数据库结构或同步协议，`docs/DATA_SCHEMA.md` 未修改。
+- 验证：TypeScript、Worker 类型检查和正式构建通过；会员/非会员接口、推荐分层、两套启动入口及两个 URL 均通过本地测试。构建仅保留既有主包体积提示。
+- 已知限制：真实订阅购买、续期和支付校验尚未接入；本轮非会员账号只用于本机 Development 权限测试。
+
 ## 2026-08-25 — 发现动态互动与食单添加收口
 
-- 为“关注 / 为你推荐 / 同味之选 / 最新 / 趋势”的每条餐厅动态补齐点赞、评论和转发，支持点赞切换与计数、评论列表与新增、系统分享/复制链接及分享计数；刷新后本地互动状态仍会保留。
+- 为“关注 / 为你推荐 / 同味之选 / 最新 / 趋势”的每条餐厅动态补齐点赞、评论和转发，支持点赞切换与计数、评论列表与新增；分享入口已在后续版本统一为餐厅分享，不再展示公开分享计数。刷新后本地互动状态仍会保留。
 - 动态卡片保持左侧社交互动、右侧“去过 / 想吃 / 抽签”的简洁布局，没有移除原有餐厅操作。
 - 食单详情补充“添加餐厅”入口，可搜索现有餐厅、排除重复项并直接加入当前食单；公开用户 ID 改为稳定的纯数字展示编码，头像在信息流与主页中保持圆形裁切。
 - 关键文件：`src/components/CommunityPage.tsx`、`src/components/RestaurantListsPanel.tsx`、`src/components/ProfilePage.tsx`、`src/components/UserAvatar.tsx`、`src/utils/publicUserId.ts`、`src/styles/global.css`。
 - Migration：无；本次未修改字段、数据库结构或同步协议，未检查或执行 migration，`docs/DATA_SCHEMA.md` 未修改。
-- 验证：TypeScript 与正式构建通过；浏览器实测“最新”和“趋势”所有动态均显示点赞、评论、转发，点赞/评论/分享计数可变化并在刷新后保留，控制台无错误或警告。
-- 已知限制：点赞、评论和转发计数当前只保存在本浏览器，尚未通过社交后端跨账号或跨设备同步。
+- 验证：TypeScript 与正式构建通过；浏览器实测“最新”和“趋势”所有动态均显示点赞、评论、转发，点赞/评论计数可变化并在刷新后保留，控制台无错误或警告。
+- 已知限制：点赞与评论状态当前只保存在本浏览器，尚未通过社交后端跨账号或跨设备同步。
 
 ## 2026-08-25 — 完整口味档案、分析页与跨城市测试数据
 
 - 按最终参考图重构“完整口味档案”，补齐档案结论、成熟度、菜系排名、预算分布、体验加减分项、用餐场景、到店/外卖、复购、常回餐厅、近期变化、打分风格、推荐来源和更多数据入口，并完成桌面三栏、平板双栏和手机单栏适配。
 - 饭搭子分析完善为关系摘要、筛选列表和单人洞察；推荐来源分析完善为本页结论、按人/平台/Taste Map/自己发现分组的来源列表、系统推荐表现和最近成功案例，均继续使用现有真实统计服务与餐厅证据。
 - Development 本地种子新增上海、北京、广州、深圳、成都、南京、苏州和香港 8 个城市共 16 家已到访测试餐厅；浏览器实测当前测试账号“去过”由杭州 61 家扩展为 77 家，Production 数据未写入、清理或重命名。
-- “写下这家餐厅”的去过与想吃状态统一复用完整商家信息头部；想吃分支移除重复商家信息，仅保留精简的想吃计划，去过分支继续使用完整 Visit 表单。
+- “写下这家餐厅”的去过与想吃状态统一复用完整商家信息区，补齐参考价格、路线、去过/想吃/抽签、四项评分参考和用户实拍；想吃分支仅保留精简计划，去过分支继续使用完整 Visit 表单，上传本次照片后会立即回显到实拍区。
 - 关键文件：`src/db/seedRestaurants.ts`、`src/components/ProfileAnalyticsPanels.tsx`、`src/components/ProfilePage.tsx`、`src/components/AddRestaurantModal.tsx`、`src/styles/global.css`。
 - Migration：无；本次未修改字段、数据库结构或同步协议，未执行或重复检查既有 migration，`docs/DATA_SCHEMA.md` 未修改。
-- 验证：正式构建通过；浏览器实测地图 77 家跨城市数据、完整口味档案、饭搭子总览与详情、推荐来源分析，以及添加餐厅的去过/想吃统一头部和分支表单均正常。构建仅保留既有主包体积提示。
+- 验证：正式构建通过；浏览器实测地图 77 家跨城市数据、完整口味档案、饭搭子总览与详情、推荐来源分析，以及添加餐厅的去过/想吃公共信息区、四列评分和各自分支表单均正常。构建仅保留既有主包体积提示。
 
 ## 2026-08-25 — 公开用户主页重构与发现返回定位
 

@@ -1,24 +1,33 @@
 import { db } from './appDb'
-import type { Friendship, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
+import { IS_DEVELOPMENT, LOCAL_TEST_ACCOUNT, LOCAL_TEST_VIEWER_ID } from '../config/appEnvironment'
+import type { Friendship, MembershipTier, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
 import { requestCloudSync } from '../services/syncEvents'
 import { syncQueueId } from '../types/sync'
 
-export const CURRENT_USER_ID = 'owner'
+export const CURRENT_USER_ID = LOCAL_TEST_VIEWER_ID
 
 export async function ensureCurrentUser() {
   const existing = await db.users.get(CURRENT_USER_ID)
-  if (existing) return existing
+  const expectedTier: MembershipTier = IS_DEVELOPMENT && LOCAL_TEST_ACCOUNT === 'premium' ? 'member' : 'free'
+  if (existing) {
+    if (IS_DEVELOPMENT && existing.membershipTier !== expectedTier) {
+      const updated = { ...existing, membershipTier: expectedTier, updatedAt: new Date().toISOString() }
+      await db.users.put(updated)
+      return updated
+    }
+    return existing
+  }
   const now = new Date().toISOString()
   const user: UserProfile = {
     id: CURRENT_USER_ID,
-    nickname: 'Taste Map 用户',
+    nickname: LOCAL_TEST_ACCOUNT === 'free' ? '非会员测试账号' : 'Taste Map 用户',
     email: null,
-    bio: '',
-    city: '',
+    bio: LOCAL_TEST_ACCOUNT === 'free' ? '喜欢日料、火锅和安静的小店。' : '',
+    city: LOCAL_TEST_ACCOUNT === 'free' ? '杭州市' : '',
     avatarImageData: null,
     avatarPhotoId: null,
     avatarPresetId: 'polar-bear',
-    membershipTier: 'free',
+    membershipTier: expectedTier,
     mapSharingEnabled: false,
     mapVisibility: 'private',
     authProvider: 'local',
@@ -39,8 +48,8 @@ export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickn
     nickname: changes.nickname.trim() || 'Taste Map 用户',
     bio: changes.bio.trim(),
     city: changes.city.trim(),
-    avatarImageData: current.membershipTier === 'member' ? changes.avatarImageData : null,
-    avatarPhotoId: current.membershipTier === 'member' ? changes.avatarPhotoId : null,
+    avatarImageData: current.membershipTier === 'member' ? changes.avatarImageData : current.avatarImageData,
+    avatarPhotoId: current.membershipTier === 'member' ? changes.avatarPhotoId : current.avatarPhotoId,
     updatedAt: new Date().toISOString(),
     deletedAt: null,
   }

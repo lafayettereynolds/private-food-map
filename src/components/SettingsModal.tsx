@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { AlertTriangle, CheckCircle2, Cloud, CloudUpload, Database, Download, HardDrive, Image, LoaderCircle, LogOut, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Cloud, CloudUpload, Database, Download, HardDrive, Image, LoaderCircle, LogOut, RefreshCw, Sparkles, Trash2, Upload } from 'lucide-react'
 import { downloadFoodMapBackup, importFoodMapBackup } from '../db/backup'
 import { ModalShell } from './ModalShell'
 import { CLOUD_SYNC_ENABLED, DATABASE_NAME, ENVIRONMENT_LABEL } from '../config/appEnvironment'
@@ -10,8 +10,11 @@ import { useGoogleDrive } from '../services/useGoogleDrive'
 import { enablePhotoAutoSync, getGoogleDriveAccountWarning, refreshPendingPhotoCount, syncPendingPhotos } from '../services/photoSync'
 import { usePhotoSync } from '../services/usePhotoSync'
 import { clearLocalPhotoCache, getLocalPhotoCacheBytes } from '../services/photoAssets'
+import type { MembershipTier } from '../types/domain'
+import { openPremiumPaywall } from '../services/premiumPaywall'
 
 interface SettingsModalProps {
+  membershipTier: MembershipTier
   restaurantCount: number
   visitCount: number
   onClose: () => void
@@ -19,6 +22,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({
+  membershipTier,
   restaurantCount,
   visitCount,
   onClose,
@@ -152,6 +156,11 @@ export function SettingsModal({
       size="small"
       title="数据与设置"
     >
+      <button className="settings-membership-entry" onClick={() => openPremiumPaywall('settings_entry')} type="button">
+        <span><Sparkles size={18} /></span>
+        <div><strong>会员与订阅</strong><small>{membershipTier === 'member' ? '查看当前方案、权益与恢复购买' : '查看功能对比与订阅方案'}</small></div>
+        <b>{membershipTier === 'member' ? '已开通' : '查看'}</b>
+      </button>
       <div className="settings-summary"><Database size={20} /><div><strong>{restaurantCount} 家餐厅</strong><span>{visitCount} 条到访记录 · {ENVIRONMENT_LABEL} · {DATABASE_NAME}</span></div></div>
       {CLOUD_SYNC_ENABLED && syncState.status === 'migrationRequired' ? (
         <div className="cloud-migration-notice">

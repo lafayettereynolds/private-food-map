@@ -1,9 +1,24 @@
-import { IS_DEVELOPMENT, SOCIAL_API_ENABLED } from '../config/appEnvironment'
+import { IS_DEVELOPMENT, SOCIAL_API_ENABLED, localTestHeaders } from '../config/appEnvironment'
 import type { CloudVisit } from '../types/cloudSync'
 import type { CompanionLinkRequest, CommunityVisit, DiningCompanion, Follow, Friendship, HistoricalMealFact, RestaurantListCollection, RestaurantListItem, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { drivePhotoReference } from './cloudSyncData'
 
-export type PublicUser = Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>
+export type PublicUser = Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier' | 'createdAt'>
+
+export type FriendRecommendationReasonCode = 'mutual_friends' | 'linked_companion' | 'taste_similarity' | 'shared_restaurants' | 'same_city'
+export type FriendRecommendationStrength = 'priority' | 'recommended' | 'discovery'
+
+export interface FriendRecommendation {
+  user: PublicUser
+  primaryReason: {
+    code: FriendRecommendationReasonCode
+    text: string
+    evidence: number | null
+  }
+  strength: FriendRecommendationStrength
+  score: number
+  friendshipState: 'pending' | null
+}
 
 export function publicUserToProfile(user: PublicUser): UserProfile {
   return {
@@ -16,7 +31,7 @@ export function publicUserToProfile(user: PublicUser): UserProfile {
     mapVisibility: 'private',
     authProvider: 'cloudflare-access',
     authSubject: null,
-    createdAt: '',
+    createdAt: user.createdAt,
     updatedAt: '',
     deletedAt: null,
   }
@@ -25,12 +40,19 @@ export function publicUserToProfile(user: PublicUser): UserProfile {
 interface CommunityResponse {
   mode: DiscoveryMode
   city: string
+  access?: CommunityFeedAccess
   items: Array<{
     visit: CloudVisit
-    restaurant: Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl'>
+    restaurant: Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl' | 'phone' | 'openingHours' | 'pricePerPerson' | 'tags' | 'markerEmoji'>
     user: PublicUser
     similarity?: number | null
     recommendationReason?: string | null
+    recommendationReasons?: string[]
+    recommendationFitLevel?: CommunityVisit['recommendationFitLevel']
+    primaryReasons?: CommunityVisit['primaryReasons']
+    secondaryReasons?: CommunityVisit['secondaryReasons']
+    publicRating?: CommunityVisit['publicRating']
+    isExploration?: boolean
     recommendationType?: CommunityVisit['recommendationType']
     recommendationRank?: number | null
     recommendationConfidence?: CommunityVisit['recommendationConfidence']
@@ -39,13 +61,29 @@ interface CommunityResponse {
   }>
 }
 
+export interface CommunityFeedAccess {
+  entitlementTier: 'free' | 'premium'
+  experienceTier: 'basic' | 'deep'
+  profileConfidence: 'insufficient' | 'ready'
+  advancedFiltersEnabled: boolean
+  fullExplanationEnabled: boolean
+  similarTasteEnabled: boolean
+  message: string | null
+}
+
+export interface CommunityFeedResult {
+  items: CommunityVisit[]
+  access: CommunityFeedAccess
+}
+
 export type DiscoveryMode = 'following' | 'for_you' | 'similar' | 'latest' | 'trending'
 
-export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city = '', trendWindow: 7 | 30 = 7): Promise<CommunityVisit[]> {
-  if (!SOCIAL_API_ENABLED) return []
+export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city = '', trendWindow: 7 | 30 = 7): Promise<CommunityFeedResult> {
+  const basicAccess: CommunityFeedAccess = { entitlementTier: 'free', experienceTier: 'basic', profileConfidence: 'insufficient', advancedFiltersEnabled: false, fullExplanationEnabled: false, similarTasteEnabled: false, message: null }
+  if (!SOCIAL_API_ENABLED) return { items: [], access: basicAccess }
   const response = await apiFetch<CommunityResponse>(`/api/community?mode=${mode}&city=${encodeURIComponent(city)}&window=${trendWindow}`)
-  return response.items.map((item) => ({
-    visit: cloudVisitToLocal(item.visit),
+  return { access: response.access ?? basicAccess, items: response.items.map((item) => ({
+    visit: cloudVisitToLocal(item.visit, mode !== 'for_you'),
     restaurant: item.restaurant,
     user: {
       id: item.user.id,
@@ -61,24 +99,36 @@ export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city =
       mapVisibility: 'private',
       authProvider: 'cloudflare-access',
       authSubject: null,
-      createdAt: '',
+      createdAt: item.user.createdAt,
       updatedAt: '',
       deletedAt: null,
     },
     similarity: item.similarity ?? null,
     recommendationReason: item.recommendationReason ?? null,
+    recommendationReasons: item.recommendationReasons ?? [],
+    recommendationFitLevel: item.recommendationFitLevel ?? null,
+    primaryReasons: item.primaryReasons ?? [],
+    secondaryReasons: item.secondaryReasons ?? [],
+    publicRating: item.publicRating ?? null,
+    isExploration: item.isExploration ?? false,
     recommendationType: item.recommendationType ?? null,
     recommendationRank: item.recommendationRank ?? null,
     recommendationConfidence: item.recommendationConfidence ?? null,
     reasonCodes: item.reasonCodes ?? [],
     surface: item.surface ?? null,
-  }))
+  })) }
 }
 
 export async function searchCloudUsers(query: string): Promise<PublicUser[]> {
   if (!SOCIAL_API_ENABLED) return []
   const result = await apiFetch<{ users: PublicUser[] }>(`/api/users/search?q=${encodeURIComponent(query.trim())}`)
   return result.users
+}
+
+export async function fetchFriendRecommendations(): Promise<FriendRecommendation[]> {
+  if (!SOCIAL_API_ENABLED) return []
+  const result = await apiFetch<{ recommendations: FriendRecommendation[] }>('/api/friend-recommendations')
+  return result.recommendations
 }
 
 export async function fetchFollows(): Promise<Follow[]> {
@@ -110,6 +160,9 @@ export async function fetchUserProfile(userId: string) {
   const result = await apiFetch<{
     user: PublicUser
     items: Array<{ visit: CloudVisit; restaurant: Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'tags' | 'pricePerPerson' | 'phone' | 'openingHours' | 'merchantImageUrl' | 'markerEmoji'> }>
+    wantRestaurants?: Array<Pick<RestaurantSummary, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'tags' | 'pricePerPerson' | 'phone' | 'openingHours' | 'merchantImageUrl' | 'markerEmoji'>>
+    followers?: PublicUser[]
+    following?: PublicUser[]
     followerCount: number
     followingCount: number
   }>(`/api/profiles/${encodeURIComponent(userId)}`)
@@ -167,7 +220,29 @@ export async function fetchUserProfile(userId: string) {
     const prices = restaurant.visits.flatMap((visit) => visit.pricePerPerson === null ? [] : [visit.pricePerPerson]).sort((a, b) => a - b)
     restaurant.averagePricePerPerson = prices.length ? prices[Math.floor(prices.length / 2)] : null
   })
-  return { user, restaurants: [...grouped.values()], followerCount: result.followerCount ?? 0, followingCount: result.followingCount ?? 0 }
+  for (const restaurant of result.wantRestaurants ?? []) {
+    if (grouped.has(restaurant.id)) continue
+    grouped.set(restaurant.id, {
+      ...restaurant,
+      userId,
+      amapPoiId: restaurant.amapPoiId || `profile-${restaurant.id}`,
+      status: 'wantToGo', preferenceLevel: 'normal', overallRating: null, foodRating: null, environmentRating: null,
+      serviceRating: null, valueRating: null, tags: restaurant.tags ?? [], longTermNote: '',
+      pricePerPerson: restaurant.pricePerPerson ?? null, markerType: restaurant.merchantImageUrl ? 'image' : 'emoji',
+      markerImageData: null, markerPhotoId: null, merchantImageUrl: restaurant.merchantImageUrl ?? null,
+      markerEmoji: restaurant.markerEmoji || '🍽️', createdAt: '', updatedAt: '', deletedAt: null,
+      visitCount: 0, averageRating: null, scoreOutOfTen: null, latestVisitDate: null, latestVisit: null,
+      visits: [], averagePricePerPerson: restaurant.pricePerPerson ?? null, averageQueueMinutes: null,
+    })
+  }
+  return {
+    user,
+    restaurants: [...grouped.values()],
+    followerCount: result.followerCount ?? 0,
+    followingCount: result.followingCount ?? 0,
+    followers: (result.followers ?? []).map(publicUserToProfile),
+    following: (result.following ?? []).map(publicUserToProfile),
+  }
 }
 
 export async function sendFriendRequest(userId: string): Promise<Friendship> {
@@ -220,10 +295,10 @@ export async function importCompanionHistory(requestId: string, sourceVisitIds: 
   })
 }
 
-function cloudVisitToLocal(visit: CloudVisit): Visit {
+function cloudVisitToLocal(visit: CloudVisit, allowDemoPhotos = true): Visit {
   const syncedPhotos = visit.photoIds.map((photoId) => photoId ? drivePhotoReference(photoId) : '')
   const isDiscoveryTestVisit = visit.isTestData || visit.id.startsWith('test-discovery-')
-  const demoPhotos = IS_DEVELOPMENT && isDiscoveryTestVisit && !syncedPhotos.some(Boolean)
+  const demoPhotos = allowDemoPhotos && IS_DEVELOPMENT && isDiscoveryTestVisit && !syncedPhotos.some(Boolean)
     ? testVisitPhotos(visit.id)
     : syncedPhotos
   return {
@@ -273,7 +348,7 @@ function testVisitPhotos(visitId: string) {
 }
 
 async function apiFetch<Result = unknown>(input: string, init: RequestInit = {}): Promise<Result> {
-  const response = await fetch(input, { ...init, credentials: 'same-origin', headers: { Accept: 'application/json', ...init.headers } })
+  const response = await fetch(input, { ...init, credentials: 'same-origin', headers: { Accept: 'application/json', ...localTestHeaders(), ...init.headers } })
   const payload: unknown = await response.json().catch(() => null)
   if (!response.ok) {
     const message = payload && typeof payload === 'object' && typeof (payload as Record<string, unknown>).error === 'string'

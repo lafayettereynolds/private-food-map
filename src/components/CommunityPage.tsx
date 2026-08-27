@@ -1,23 +1,36 @@
-import { BookmarkPlus, Check, Dices, Globe2, Heart, LocateFixed, MapPin, MessageCircle, Plus, Send, Share2, SlidersHorizontal, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, Globe2, Heart, LocateFixed, MapPin, MessageCircle, Send, Share2, SlidersHorizontal, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { scoreColor, type CommunityVisit, type Coordinates, type RestaurantSummary, type UserProfile, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
-import { fetchCommunityFeed, type DiscoveryMode } from '../services/socialApi'
+import { fetchCommunityFeed, type CommunityFeedAccess, type DiscoveryMode } from '../services/socialApi'
 import { trackDiscoveryRecommendationEvent } from '../services/recommendationAnalytics'
 import { mapService } from '../services/mapService'
 import { buildRecommendationEmptyState, candidateCentroid, distanceKilometers, resolveRecommendationFilters, sameCity, type RelaxationSuggestion } from '../services/recommendationFilterResolver'
 import { SyncedImage } from './SyncedImage'
 import { UserAvatar } from './UserAvatar'
+import { PremiumBurgerBadge } from './PremiumBurgerBadge'
 import { ModalShell } from './ModalShell'
 import { RestaurantPreviewCard } from './RestaurantPreviewCard'
 import { RestaurantAvatar } from './RestaurantAvatar'
+import { RestaurantShareSheet } from './RestaurantShareSheet'
+import { buildRestaurantShareModel, copyRestaurantShareLink, isShareCancellation, trackDiscoverShareEvent, type RestaurantShareModel } from '../services/restaurantShare'
+import { RestaurantQuickActions } from './RestaurantQuickActions'
+import { openPremiumPaywall } from '../services/premiumPaywall'
 
 interface FeedItem {
   user: UserProfile
   restaurant: RestaurantSummary
   visit: Visit
+  /** The current viewer's saved state. Remote public visits do not imply that I visited the restaurant. */
+  viewerRestaurantStatus: RestaurantSummary['status'] | null
   similarity?: number | null
   recommendationReason?: string | null
+  recommendationReasons?: string[]
+  recommendationFitLevel?: CommunityVisit['recommendationFitLevel']
+  primaryReasons?: CommunityVisit['primaryReasons']
+  secondaryReasons?: CommunityVisit['secondaryReasons']
+  publicRating?: CommunityVisit['publicRating']
+  isExploration?: boolean
   recommendationType?: CommunityVisit['recommendationType']
   recommendationRank?: number | null
   recommendationConfidence?: CommunityVisit['recommendationConfidence']
@@ -29,10 +42,9 @@ interface CommunityEngagement {
   liked: boolean
   likeCount: number
   comments: string[]
-  shareCount: number
 }
 
-const EMPTY_ENGAGEMENT: CommunityEngagement = { liked: false, likeCount: 0, comments: [], shareCount: 0 }
+const EMPTY_ENGAGEMENT: CommunityEngagement = { liked: false, likeCount: 0, comments: [] }
 const COMMUNITY_ENGAGEMENT_STORAGE_KEY = 'taste-map-community-engagement-v1'
 
 const DISCOVERY_TABS: Array<{ value: DiscoveryMode; label: string }> = [
@@ -62,13 +74,13 @@ const RATING_OPTIONS: Array<{ value: RecommendationRating; label: string }> = [
   { value: 7, label: '7 分以上' },
 ]
 
-export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode, onModeChange, onAddToWant, onMarkVisited, onToggleCandidate, onViewProfile }: {
+export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode, onModeChange, onToggleWant, onMarkVisited, onToggleCandidate, onViewProfile }: {
   users: UserProfile[]
   restaurants: RestaurantSummary[]
   candidateRestaurantIds: string[]
   mode: DiscoveryMode
   onModeChange: (mode: DiscoveryMode) => void
-  onAddToWant: (restaurant: RestaurantSummary) => void
+  onToggleWant: (restaurant: RestaurantSummary) => void
   onMarkVisited: (restaurant: RestaurantSummary) => void
   onToggleCandidate: (restaurant: RestaurantSummary) => void
   onViewProfile: (user: UserProfile) => void
@@ -76,6 +88,7 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
   const [city, setCity] = useState('杭州市')
   const [trendWindow, setTrendWindow] = useState<7 | 30>(7)
   const [cloudFeed, setCloudFeed] = useState<CommunityVisit[]>([])
+  const [feedAccess, setFeedAccess] = useState<CommunityFeedAccess | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null)
@@ -91,6 +104,11 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
   const [commentingItem, setCommentingItem] = useState<FeedItem | null>(null)
   const [commentText, setCommentText] = useState('')
   const [shareMessage, setShareMessage] = useState('')
+  const [shareModel, setShareModel] = useState<RestaurantShareModel | null>(null)
+  const [shareItemContext, setShareItemContext] = useState<FeedItem | null>(null)
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareSheetMessage, setShareSheetMessage] = useState('')
+  const discoveryScrollPositionRef = useRef(0)
   const userById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users])
   const cityOptions = useMemo(() => [...new Set(['杭州市', '上海市', '北京市', '东京', '大阪', '香港', ...restaurants.map((restaurant) => restaurant.city).filter(Boolean)])], [restaurants])
 
@@ -98,7 +116,7 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
     let active = true
     setLoading(true)
     setError('')
-    void fetchCommunityFeed(mode, city, trendWindow).then((items) => { if (active) setCloudFeed(items) })
+    void fetchCommunityFeed(mode, city, trendWindow).then((result) => { if (active) { setCloudFeed(result.items); setFeedAccess(result.access) } })
       .catch((feedError) => { if (active) setError(feedError instanceof Error ? feedError.message : '发现内容暂时无法加载。') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -110,12 +128,12 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
 
   const localFeed = useMemo<FeedItem[]>(() => mode === 'latest' ? restaurants.flatMap((restaurant) => restaurant.visits.flatMap((visit) => {
     const user = userById.get(visit.userId ?? 'owner')
-    return user?.mapSharingEnabled && user.mapVisibility === 'public' && (!city || restaurant.city === city) ? [{ user, restaurant, visit }] : []
+    return user?.mapSharingEnabled && user.mapVisibility === 'public' && (!city || restaurant.city === city) ? [{ user, restaurant, visit, viewerRestaurantStatus: restaurant.status }] : []
   })) : [], [city, mode, restaurants, userById])
   const feed = useMemo(() => {
     const items = new Map<string, FeedItem>(localFeed.map((item) => [item.visit.id, item]))
     cloudFeed.forEach((item) => {
-      const localRestaurant = restaurants.find((restaurant) => restaurant.id === item.restaurant.id)
+      const localRestaurant = findMatchingRestaurant(restaurants, item.restaurant)
       items.set(item.visit.id, {
         user: { ...item.user, email: null, mapSharingEnabled: false, mapVisibility: 'private', authProvider: 'cloudflare-access', authSubject: null, createdAt: '', updatedAt: '', deletedAt: null },
         restaurant: localRestaurant
@@ -125,13 +143,22 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
               markerType: localRestaurant.markerImageData || localRestaurant.markerPhotoId || localRestaurant.merchantImageUrl || item.restaurant.merchantImageUrl ? 'image' : localRestaurant.markerType,
             }
           : communityRestaurant(item),
-        visit: item.visit, similarity: item.similarity, recommendationReason: item.recommendationReason,
+        viewerRestaurantStatus: localRestaurant?.status ?? null,
+        visit: item.visit, similarity: item.similarity, recommendationReason: item.recommendationReason, recommendationReasons: item.recommendationReasons,
+        recommendationFitLevel: item.recommendationFitLevel, primaryReasons: item.primaryReasons,
+        secondaryReasons: item.secondaryReasons, publicRating: item.publicRating, isExploration: item.isExploration,
         recommendationType: item.recommendationType, recommendationRank: item.recommendationRank,
         recommendationConfidence: item.recommendationConfidence, reasonCodes: item.reasonCodes, surface: item.surface,
       })
     })
     return [...items.values()]
   }, [cloudFeed, localFeed, restaurants])
+
+  useEffect(() => {
+    if (!selectedItem) return
+    const refreshed = feed.find((item) => item.visit.id === selectedItem.visit.id)
+    if (refreshed) setSelectedItem(refreshed)
+  }, [feed, selectedItem?.visit.id])
 
   const needsLocation = distanceFilter !== 'all' || recommendationSort === 'nearest'
 
@@ -169,7 +196,7 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
 
   const recommendationCandidates = useMemo(() => feed.map((item) => ({
     ...item.restaurant,
-    scoreOutOfTen: item.restaurant.scoreOutOfTen ?? (item.visit.rating ? item.visit.rating * 2 : null),
+    scoreOutOfTen: item.publicRating?.value ?? item.restaurant.scoreOutOfTen ?? null,
     feedItem: item,
   })), [feed])
   const recommendationFilterResolution = useMemo(() => resolveRecommendationFilters(
@@ -212,17 +239,79 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
   }
 
   async function shareItem(item: FeedItem) {
-    const url = `${window.location.origin}${window.location.pathname}${window.location.search}`
-    const shareData = { title: item.restaurant.name, text: `看看 ${item.restaurant.name} 的这条 Taste Map 到访记录`, url }
-    const canUseNativeShare = typeof navigator.share === 'function'
     try {
-      if (canUseNativeShare) await navigator.share(shareData)
-      else await navigator.clipboard.writeText(`${shareData.text}\n${url}`)
-      updateEngagement(item.visit.id, (current) => ({ ...current, shareCount: current.shareCount + 1 }))
-      setShareMessage(canUseNativeShare ? '已打开分享' : '分享链接已复制')
-      window.setTimeout(() => setShareMessage(''), 1800)
+      const model = await buildRestaurantShareModel(item.restaurant, item.publicRating)
+      const eventContext = {
+        restaurantId: item.restaurant.id,
+        discoverTab: mode,
+        recommendationTier: feedAccess?.entitlementTier ?? 'unknown',
+      }
+      trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_open', ...eventContext })
+      setShareItemContext(item)
+      setShareModel(model)
+      setShareSheetMessage('')
+      if (typeof navigator.share !== 'function') return
+      setShareBusy(true)
+      trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_system', shareMethod: 'system', ...eventContext })
+      try {
+        await navigator.share({ title: model.title, text: model.text, url: model.url })
+        trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_success', shareMethod: 'system', ...eventContext })
+        setShareModel(null)
+        setShareItemContext(null)
+        setShareMessage('已打开系统分享')
+        window.setTimeout(() => setShareMessage(''), 1800)
+      } catch (error) {
+        if (isShareCancellation(error)) {
+          setShareModel(null)
+          return
+        }
+        trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_failed', shareMethod: 'system', ...eventContext })
+        setShareSheetMessage('暂时无法分享，可以复制链接。')
+      } finally {
+        setShareBusy(false)
+      }
     } catch {
-      // The native share sheet can be cancelled without treating it as an app error.
+      setShareMessage('暂时无法生成分享链接')
+      window.setTimeout(() => setShareMessage(''), 2200)
+    }
+  }
+
+  async function shareFromSheet() {
+    if (!shareModel || !shareItemContext || typeof navigator.share !== 'function') return
+    const eventContext = { restaurantId: shareItemContext.restaurant.id, discoverTab: mode, recommendationTier: feedAccess?.entitlementTier ?? 'unknown' }
+    setShareBusy(true)
+    setShareSheetMessage('')
+    trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_system', shareMethod: 'system', ...eventContext })
+    try {
+      await navigator.share({ title: shareModel.title, text: shareModel.text, url: shareModel.url })
+      trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_success', shareMethod: 'system', ...eventContext })
+      setShareModel(null)
+      setShareItemContext(null)
+    } catch (error) {
+      if (!isShareCancellation(error)) {
+        trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_failed', shareMethod: 'system', ...eventContext })
+        setShareSheetMessage('暂时无法分享，可以复制链接。')
+      }
+    } finally {
+      setShareBusy(false)
+    }
+  }
+
+  async function copyShareLink() {
+    if (!shareModel || !shareItemContext) return
+    const eventContext = { restaurantId: shareItemContext.restaurant.id, discoverTab: mode, recommendationTier: feedAccess?.entitlementTier ?? 'unknown' }
+    setShareBusy(true)
+    setShareSheetMessage('')
+    trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_copy_link', shareMethod: 'copy_link', ...eventContext })
+    try {
+      await copyRestaurantShareLink(shareModel)
+      trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_success', shareMethod: 'copy_link', ...eventContext })
+      setShareSheetMessage('链接已复制')
+    } catch {
+      trackDiscoverShareEvent({ eventName: 'discover_restaurant_share_failed', shareMethod: 'copy_link', ...eventContext })
+      setShareSheetMessage('复制失败，请重试')
+    } finally {
+      setShareBusy(false)
     }
   }
 
@@ -237,34 +326,47 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
     if (suggestion.type === 'rating') setRatingFilter(suggestion.to === null ? 'all' : suggestion.to as RecommendationRating)
   }
 
+  function openRestaurant(item: FeedItem) {
+    discoveryScrollPositionRef.current = window.scrollY
+    trackDiscoveryRecommendationEvent('restaurantDetailOpen', item as CommunityVisit)
+    setSelectedItem(item)
+  }
+
+  function closeRestaurant() {
+    setSelectedItem(null)
+    window.requestAnimationFrame(() => window.scrollTo({ top: discoveryScrollPositionRef.current }))
+  }
+
   const filterEmptyState = buildRecommendationEmptyState(recommendationFilterResolution.relaxationSuggestion, recommendationFilterResolution.emptyReason, '')
 
   return <section className="social-page community-page discovery-page">
     <header className="social-page__heading"><div><span className="eyebrow">DISCOVER</span><h1>发现</h1><p>按照你的口味，找到更值得参考的人和下一家餐厅。</p></div><Globe2 size={28} /></header>
     <div className="discovery-controls">
       <label className="discovery-city"><MapPin size={15} /><input aria-label="搜索发现城市" list="discovery-city-options" onChange={(event) => setCity(event.target.value)} placeholder="搜索城市" value={city} /><datalist id="discovery-city-options">{cityOptions.map((option) => <option key={option} value={option} />)}</datalist></label>
-      <div className="discovery-tabs" role="tablist">{DISCOVERY_TABS.map((tab) => <button aria-selected={mode === tab.value} className={mode === tab.value ? 'active' : ''} key={tab.value} onClick={() => onModeChange(tab.value)} role="tab" type="button">{tab.label}</button>)}</div>
+      <div className="discovery-tabs" role="tablist">{DISCOVERY_TABS.map((tab) => <button aria-selected={mode === tab.value} className={mode === tab.value ? 'active' : ''} key={tab.value} onClick={() => { if (tab.value === 'similar' && feedAccess && !feedAccess.similarTasteEnabled) { openPremiumPaywall('similar_taste'); return } onModeChange(tab.value) }} role="tab" type="button">{tab.label}</button>)}</div>
     </div>
-    {mode === 'for_you' ? <><div className="discovery-recommendation-toolbar"><p className="discovery-explainer">根据你跨城市积累的评分、菜系与重复到访偏好生成。</p><button aria-expanded={showRecommendationFilters} className={showRecommendationFilters ? 'is-active' : ''} onClick={() => setShowRecommendationFilters((current) => !current)} type="button"><SlidersHorizontal size={15} />筛选{activeRecommendationFilterCount ? <b>{activeRecommendationFilterCount}</b> : null}</button></div>{showRecommendationFilters ? <div className="discovery-recommendation-filters"><header><strong>筛选推荐</strong><button disabled={!activeRecommendationFilterCount} onClick={resetRecommendationFilters} type="button">重置</button></header><div className="discovery-filter-grid"><label><span>排序</span><select onChange={(event) => setRecommendationSort(event.target.value as RecommendationSort)} value={recommendationSort}><option value="recommended">综合推荐</option><option value="nearest">距离最近</option><option value="rating">评分最高</option></select></label><fieldset><legend>距离</legend><div>{DISTANCE_OPTIONS.map((option) => <button className={distanceFilter === option.value ? 'is-active' : ''} key={option.value} onClick={() => setDistanceFilter(option.value)} type="button">{option.label}</button>)}</div></fieldset><fieldset><legend>评分</legend><div>{RATING_OPTIONS.map((option) => <button className={ratingFilter === option.value ? 'is-active' : ''} key={option.value} onClick={() => setRatingFilter(option.value)} type="button">{option.label}</button>)}</div></fieldset></div>{needsLocation ? <p className={`discovery-location-status is-${locationStatus}`}>{locationStatus === 'loading' ? <><span className="loading-spinner" />正在确定距离基准…</> : locationStatus === 'error' ? <><X size={13} />无法取得距离基准，请先选择城市或允许定位。<button onClick={() => { setAnchorKey(''); setLocationStatus('idle') }} type="button">重试</button></> : locationStatus === 'ready' ? <><LocateFixed size={13} />{distanceAnchor === 'device' ? '已按当前位置计算距离' : `已按${city || '当前城市'}中心计算距离`}</> : null}</p> : null}</div> : null}</> : null}
-    {mode === 'similar' ? <p className="discovery-explainer">看看和你口味相近的人，在当前城市真正喜欢什么。</p> : null}
+    {mode === 'for_you' ? <><div className="discovery-recommendation-toolbar"><p className="discovery-explainer">根据你跨城市积累的评分、菜系与重复到访偏好生成。</p><button aria-expanded={showRecommendationFilters} className={showRecommendationFilters ? 'is-active' : ''} onClick={() => setShowRecommendationFilters((current) => !current)} type="button"><SlidersHorizontal size={15} />筛选{activeRecommendationFilterCount ? <b>{activeRecommendationFilterCount}</b> : null}</button></div>{feedAccess ? <button className={`recommendation-tier-note is-${feedAccess.entitlementTier}`} onClick={() => { if (feedAccess.entitlementTier !== 'premium') openPremiumPaywall('deep_recommendation') }} type="button"><strong>{feedAccess.entitlementTier === 'premium' ? feedAccess.experienceTier === 'deep' ? '深度推荐已开启' : 'Premium 已开启' : '免费基础推荐'}</strong><span>{feedAccess.entitlementTier === 'premium' ? feedAccess.message : '升级后可查看完整推荐依据与高级筛选'}</span></button> : null}{showRecommendationFilters ? <div className="discovery-recommendation-filters"><header><strong>筛选推荐</strong><button disabled={!activeRecommendationFilterCount} onClick={resetRecommendationFilters} type="button">重置</button></header><div className="discovery-filter-grid"><label><span>排序</span><select onChange={(event) => setRecommendationSort(event.target.value as RecommendationSort)} value={recommendationSort}><option value="recommended">综合推荐</option><option value="nearest">距离最近</option><option value="rating">评分最高</option></select></label><fieldset><legend>距离</legend><div>{DISTANCE_OPTIONS.map((option) => <button className={distanceFilter === option.value ? 'is-active' : ''} key={option.value} onClick={() => setDistanceFilter(option.value)} type="button">{option.label}</button>)}</div></fieldset><fieldset><legend>评分</legend><div>{RATING_OPTIONS.map((option) => <button className={ratingFilter === option.value ? 'is-active' : ''} key={option.value} onClick={() => setRatingFilter(option.value)} type="button">{option.label}</button>)}</div></fieldset><fieldset><legend>高级筛选</legend><div>{['推荐来源', '适合场景', '饭搭子'].map((label) => <button key={label} onClick={() => { if (!feedAccess?.advancedFiltersEnabled) openPremiumPaywall('advanced_recommendation_filters') }} title={feedAccess?.advancedFiltersEnabled ? label : 'Premium 功能'} type="button">{label}{feedAccess?.advancedFiltersEnabled ? '' : ' · 会员'}</button>)}</div></fieldset></div>{needsLocation ? <p className={`discovery-location-status is-${locationStatus}`}>{locationStatus === 'loading' ? <><span className="loading-spinner" />正在确定距离基准…</> : locationStatus === 'error' ? <><X size={13} />无法取得距离基准，请先选择城市或允许定位。<button onClick={() => { setAnchorKey(''); setLocationStatus('idle') }} type="button">重试</button></> : locationStatus === 'ready' ? <><LocateFixed size={13} />{distanceAnchor === 'device' ? '已按当前位置计算距离' : `已按${city || '当前城市'}中心计算距离`}</> : null}</p> : null}</div> : null}</> : null}
+    {mode === 'similar' ? <p className="discovery-explainer">{feedAccess && !feedAccess.similarTasteEnabled ? <>同味之选属于 Premium 深度洞察。<button onClick={() => openPremiumPaywall('similar_taste')} type="button">查看 Premium</button></> : '看看和你口味相近的人，在当前城市真正喜欢什么。'}</p> : null}
     {mode === 'trending' ? <div className="trend-window"><button className={trendWindow === 7 ? 'active' : ''} onClick={() => setTrendWindow(7)} type="button">近 7 天</button><button className={trendWindow === 30 ? 'active' : ''} onClick={() => setTrendWindow(30)} type="button">近 30 天</button></div> : null}
     {loading ? <div className="social-empty"><span className="loading-spinner" /><strong>正在整理发现内容</strong></div> : null}
     {!loading && error ? <div className="social-empty"><strong>暂时无法加载</strong><p>{error}</p></div> : null}
-    {!loading && !error && visibleFeed.length ? <div className="community-feed">{visibleFeed.map((item) => <DiscoveryCard candidateRestaurantIds={candidateRestaurantIds} distance={coordinates ? distanceKilometers(coordinates, item.restaurant) : null} engagement={engagement[item.visit.id] ?? EMPTY_ENGAGEMENT} item={item} key={item.visit.id} mode={mode} onAddToWant={onAddToWant} onComment={() => setCommentingItem(item)} onLike={() => toggleLike(item)} onMarkVisited={onMarkVisited} onOpen={() => { trackDiscoveryRecommendationEvent('restaurantDetailOpen', item as CommunityVisit); setSelectedItem(item) }} onShare={() => void shareItem(item)} onToggleCandidate={onToggleCandidate} onViewProfile={onViewProfile} />)}</div> : null}
+    {!loading && !error && visibleFeed.length ? <div className="community-feed">{visibleFeed.map((item) => <DiscoveryCard candidateRestaurantIds={candidateRestaurantIds} distance={coordinates ? distanceKilometers(coordinates, item.restaurant) : null} engagement={engagement[item.visit.id] ?? EMPTY_ENGAGEMENT} feedAccess={feedAccess} item={item} key={item.visit.id} mode={mode} onComment={() => setCommentingItem(item)} onLike={() => toggleLike(item)} onMarkVisited={onMarkVisited} onOpen={() => openRestaurant(item)} onShare={() => void shareItem(item)} onToggleCandidate={onToggleCandidate} onToggleWant={onToggleWant} onViewProfile={onViewProfile} />)}</div> : null}
     {!loading && !error && !visibleFeed.length ? <div className="social-empty compact-recommendation-empty"><Globe2 size={22} /><strong>{mode === 'for_you' && feed.length ? filterEmptyState.title : mode === 'for_you' ? '还没有足够信息推荐' : mode === 'similar' ? '当前地区还没有足够的同味数据' : mode === 'latest' ? '这里最近还没有公开到访记录' : mode === 'trending' ? '近期样本不足，暂时还没有形成趋势' : '最近还没有新的关注动态'}</strong><p>{mode === 'for_you' && feed.length ? filterEmptyState.message : mode === 'for_you' ? '多记录几家餐厅后，我们会逐渐了解你的口味。' : mode === 'similar' ? '有更多真实同味到访后会自动出现。' : mode === 'following' ? '可以先去发现好友，或稍后再看看。' : '换一个城市或稍后再看看。'}</p>{mode === 'for_you' && recommendationFilterResolution.relaxationSuggestion ? <button className="secondary-button recommendation-relax-button" onClick={() => applyRelaxation(recommendationFilterResolution.relaxationSuggestion!)} type="button">{filterEmptyState.actionLabel}</button> : null}</div> : null}
-    {selectedItem ? <ModalShell description={mode === 'for_you' ? selectedItem.recommendationReason || '根据你的历史口味推荐' : `${selectedItem.user.nickname} 的公开到访记录`} onClose={() => setSelectedItem(null)} size="large" title="餐厅信息"><div className="discovery-restaurant-preview"><RestaurantPreviewCard additionalUserPhotos={selectedItem.visit.photos.map((source, index) => ({ source, photoId: selectedItem.visit.photoIds[index] }))} historyRestaurants={restaurants} isInRoulette={candidateRestaurantIds.includes(selectedItem.restaurant.id)} onAddToRoulette={() => onToggleCandidate(selectedItem.restaurant)} onAddVisit={() => onMarkVisited(selectedItem.restaurant)} onClose={() => setSelectedItem(null)} onDelete={() => undefined} onEdit={() => undefined} onEditVisit={() => undefined} onSaveRecommendation={() => onAddToWant(selectedItem.restaurant)} restaurant={{ ...selectedItem.restaurant, isRecommendation: true }} /></div></ModalShell> : null}
+    {selectedItem ? <ModalShell description={mode === 'for_you' ? selectedItem.recommendationReason || '根据你的历史口味推荐' : `${selectedItem.user.nickname} 的公开到访记录`} onClose={closeRestaurant} size="large" title="餐厅信息"><div className="discovery-restaurant-preview"><RestaurantPreviewCard additionalUserPhotos={selectedItem.visit.photos.map((source, index) => ({ source, photoId: selectedItem.visit.photoIds[index] }))} historyRestaurants={restaurants} isInRoulette={candidateRestaurantIds.includes(selectedItem.restaurant.id)} onAddToRoulette={() => onToggleCandidate(selectedItem.restaurant)} onAddToWant={() => onToggleWant(selectedItem.restaurant)} onAddVisit={() => onMarkVisited(selectedItem.restaurant)} onClose={closeRestaurant} onDelete={() => undefined} onEdit={() => undefined} onEditVisit={() => undefined} onSaveRecommendation={() => onToggleWant(selectedItem.restaurant)} readOnly restaurant={{ ...selectedItem.restaurant, isRecommendation: true }} viewerStatus={selectedItem.viewerRestaurantStatus} /></div></ModalShell> : null}
     {commentingItem ? <ModalShell description={commentingItem.restaurant.name} onClose={() => { setCommentingItem(null); setCommentText('') }} title="评论"><div className="community-comment-panel"><div className="community-comment-list">{(engagement[commentingItem.visit.id]?.comments ?? []).length ? engagement[commentingItem.visit.id].comments.map((comment, index) => <p key={`${commentingItem.visit.id}-comment-${index}`}><strong>我</strong><span>{comment}</span></p>) : <p className="community-comment-empty">还没有评论，来说说你的想法。</p>}</div><form onSubmit={(event) => { event.preventDefault(); submitComment() }}><input autoFocus maxLength={280} onChange={(event) => setCommentText(event.target.value)} placeholder="写下评论" value={commentText} /><button aria-label="发送评论" disabled={!commentText.trim()} type="submit"><Send size={17} /></button></form></div></ModalShell> : null}
+    {shareModel ? <RestaurantShareSheet busy={shareBusy} canSystemShare={typeof navigator.share === 'function'} message={shareSheetMessage} model={shareModel} onClose={() => { setShareModel(null); setShareItemContext(null); setShareSheetMessage('') }} onCopy={() => void copyShareLink()} onSystemShare={() => void shareFromSheet()} /> : null}
     {shareMessage ? <p aria-live="polite" className="community-share-toast">{shareMessage}</p> : null}
   </section>
 }
 
-function DiscoveryCard({ item, mode, distance, engagement, candidateRestaurantIds, onAddToWant, onComment, onLike, onMarkVisited, onOpen, onShare, onToggleCandidate, onViewProfile }: {
+function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidateRestaurantIds, onToggleWant, onComment, onLike, onMarkVisited, onOpen, onShare, onToggleCandidate, onViewProfile }: {
   item: FeedItem
   mode: DiscoveryMode
   distance: number | null
   engagement: CommunityEngagement
+  feedAccess: CommunityFeedAccess | null
   candidateRestaurantIds: string[]
-  onAddToWant: (restaurant: RestaurantSummary) => void
+  onToggleWant: (restaurant: RestaurantSummary) => void
   onComment: () => void
   onLike: () => void
   onMarkVisited: (restaurant: RestaurantSummary) => void
@@ -273,24 +375,117 @@ function DiscoveryCard({ item, mode, distance, engagement, candidateRestaurantId
   onToggleCandidate: (restaurant: RestaurantSummary) => void
   onViewProfile: (user: UserProfile) => void
 }) {
+  const [showFullAnalysis, setShowFullAnalysis] = useState(false)
+  const wanted = item.viewerRestaurantStatus === 'wantToGo'
   const score = item.restaurant.scoreOutOfTen ?? (item.visit.rating ? item.visit.rating * 2 : null)
   const selected = candidateRestaurantIds.includes(item.restaurant.id)
-  const visitPhotos = item.visit.photos.slice(0, 3).map((source, index) => ({ source, photoId: item.visit.photoIds[index] }))
-  const fallbackImage = item.restaurant.merchantImageUrl || item.restaurant.markerImageData
-  const media = visitPhotos.length ? visitPhotos : fallbackImage ? [{ source: fallbackImage, photoId: item.restaurant.markerPhotoId }] : []
+  const media = recommendationMedia(item)
+  const fitLabel = recommendationFitLabel(item.recommendationFitLevel)
+  const publicRating = publicRatingPresentation(item.publicRating)
+  const reasonFallback = item.recommendationReasons?.map((text) => ({ text })) ?? (item.recommendationReason ? [{ text: item.recommendationReason }] : [])
+  const allReasons = dedupeRecommendationReasons([...(item.primaryReasons?.length ? item.primaryReasons : reasonFallback), ...(item.secondaryReasons ?? [])])
+  const highValueReasons = allReasons.filter(isHighValueRecommendationReason)
+  const isPremium = feedAccess?.entitlementTier === 'premium'
+  const coreReasonLimit = isPremium ? 3 : 1
+  const primaryReasons = (isPremium ? highValueReasons : (highValueReasons.length ? highValueReasons : allReasons)).slice(0, coreReasonLimit)
+  const primaryReasonTexts = new Set(primaryReasons.map((reason) => reason.text))
+  const cautionReason = allReasons.find((reason) => !primaryReasonTexts.has(reason.text) && isRecommendationCaution(reason.text))
+  const secondaryReasons = allReasons.filter((reason) => !primaryReasonTexts.has(reason.text) && reason !== cautionReason).slice(0, 5)
+  const canShowFullAnalysis = mode === 'for_you' && isPremium && Boolean(feedAccess?.fullExplanationEnabled) && secondaryReasons.length > 0
+  const evidenceTitle = item.recommendationFitLevel === 'EXPLORATION' ? '为什么推荐它' : '为什么适合你'
+  const price = item.restaurant.averagePricePerPerson ?? item.restaurant.pricePerPerson
+  const cuisines = item.restaurant.tags.filter(Boolean).slice(0, 2)
+  const metadata = [cuisines.join(' · '), price ? `约 ¥${Math.round(price)}/人` : '', distance !== null ? formatDistance(distance) : ''].filter(Boolean)
 
-  return <article className={`community-card discovery-feed-card is-${mode}`}>
-    {mode !== 'for_you' ? <header><button className="user-avatar-small" onClick={() => onViewProfile(item.user)} type="button"><UserAvatar alt="" avatarImageData={item.user.avatarImageData} avatarPhotoId={item.user.avatarPhotoId} avatarPresetId={item.user.avatarPresetId} membershipTier={item.user.membershipTier} /></button><button className="community-user-link" onClick={() => onViewProfile(item.user)} type="button"><strong>{item.user.nickname}</strong><time>{formatVisitDateTime(item.visit.visitedAt)}</time></button>{mode === 'similar' && item.similarity !== null && item.similarity !== undefined ? <span className="similarity-pill">口味相似 {item.similarity}%</span> : null}</header> : null}
-    <button className="community-restaurant" onClick={onOpen} type="button"><RestaurantAvatar restaurant={item.restaurant} /><div className="community-restaurant__body"><strong>{item.restaurant.name}</strong><span><MapPin size={12} /> {distance !== null ? `${formatDistance(distance)} · ` : ''}{item.restaurant.city} · {item.restaurant.address}</span></div>{score !== null ? <span className="community-score-orb" style={{ borderColor: scoreColor(score), color: scoreColor(score) }}>{score.toFixed(1)}</span> : null}</button>
-    {media.length ? <button className={`community-media count-${media.length}`} aria-label={`查看 ${item.restaurant.name} 详情`} onClick={onOpen} type="button">{media.map((photo, index) => <SyncedImage alt={`${item.restaurant.name} 图片 ${index + 1}`} key={`${item.visit.id}-media-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</button> : null}
+  const stopAndRun = (event: React.MouseEvent, action: () => void) => {
+    event.stopPropagation()
+    action()
+  }
+
+  return <article className={`community-card discovery-feed-card is-${mode}`} onClick={onOpen}>
+    {mode !== 'for_you' ? <header><button className="user-avatar-small" onClick={(event) => stopAndRun(event, () => onViewProfile(item.user))} type="button"><UserAvatar alt="" avatarImageData={item.user.avatarImageData} avatarPhotoId={item.user.avatarPhotoId} avatarPresetId={item.user.avatarPresetId} membershipTier={item.user.membershipTier} /></button><button className="community-user-link" onClick={(event) => stopAndRun(event, () => onViewProfile(item.user))} type="button"><strong><span>{item.user.nickname}</span>{item.user.membershipTier === 'member' ? <PremiumBurgerBadge /> : null}</strong><time>{formatVisitDateTime(item.visit.visitedAt)}</time></button>{mode === 'similar' && item.similarity !== null && item.similarity !== undefined ? <span className="similarity-pill">口味相似 {item.similarity}%</span> : null}</header> : null}
+    <button className="community-restaurant" onClick={(event) => stopAndRun(event, onOpen)} type="button"><RestaurantAvatar restaurant={item.restaurant} /><div className="community-restaurant__body"><strong>{item.restaurant.name}</strong>{mode === 'for_you' && metadata.length ? <small>{metadata.join(' · ')}</small> : null}<span><MapPin size={12} /> {item.restaurant.city} · {item.restaurant.address}</span></div>{mode === 'for_you' ? <span className={`recommendation-fit-badge is-${item.recommendationFitLevel?.toLowerCase() ?? 'good_match'}`}>{fitLabel}</span> : score !== null ? <span className="community-score-orb" style={{ borderColor: scoreColor(score), color: scoreColor(score) }}>{score.toFixed(1)}</span> : null}</button>
+    {mode === 'for_you' && item.publicRating ? <div className={`recommendation-public-rating is-${publicRating.confidence}`}><span>大家评分</span><strong style={publicRating.value !== null ? { color: scoreColor(publicRating.value) } : undefined}>{publicRating.value === null ? '—' : publicRating.value.toFixed(1)}</strong><small>{publicRating.note}</small></div> : null}
+    {media.length ? <button className={`community-media count-${media.length}`} aria-label={`查看 ${item.restaurant.name} 详情`} onClick={(event) => stopAndRun(event, onOpen)} type="button">{media.map((photo, index) => <SyncedImage alt={`${item.restaurant.name} 图片 ${index + 1}`} key={`${item.visit.id}-media-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</button> : null}
     {mode !== 'for_you' && item.visit.note ? <p className="community-note"><strong>笔记</strong>{item.visit.note}</p> : null}
-    {item.recommendationReason ? <p className="discovery-reason">{item.recommendationReason}</p> : null}
-    <footer className="discovery-feed-card__footer"><div className="community-engagement-actions"><button aria-label={engagement.liked ? '取消点赞' : '点赞'} aria-pressed={engagement.liked} className={engagement.liked ? 'is-liked' : ''} onClick={onLike} title="点赞" type="button"><Heart fill={engagement.liked ? 'currentColor' : 'none'} size={19} />{engagement.likeCount ? <span>{engagement.likeCount}</span> : null}</button><button aria-label="评论" onClick={onComment} title="评论" type="button"><MessageCircle size={19} />{engagement.comments.length ? <span>{engagement.comments.length}</span> : null}</button><button aria-label="转发" onClick={onShare} title="转发" type="button"><Share2 size={19} />{engagement.shareCount ? <span>{engagement.shareCount}</span> : null}</button></div><div className="discovery-card-quick-actions"><button aria-label="记录去过" onClick={() => onMarkVisited(item.restaurant)} title="记录去过" type="button"><Plus size={18} /></button><button aria-label="加入想吃" onClick={() => { trackDiscoveryRecommendationEvent('wantToGoAdded', item as CommunityVisit); onAddToWant(item.restaurant) }} title="加入想吃" type="button"><BookmarkPlus size={18} /></button><button aria-label={selected ? '移出抽签' : '加入抽签'} aria-pressed={selected} className={selected ? 'is-selected' : ''} onClick={() => { if (!selected) trackDiscoveryRecommendationEvent('wheelCandidateAdded', item as CommunityVisit); onToggleCandidate(item.restaurant) }} title={selected ? '移出抽签' : '加入抽签'} type="button">{selected ? <Check size={18} /> : <Dices size={18} />}</button></div></footer>
+    {mode === 'for_you' && primaryReasons.length ? <section className="recommendation-evidence"><strong>{evidenceTitle}</strong><ul>{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul>{cautionReason ? <div className="recommendation-evidence__caution"><strong>需要注意</strong><span>{cautionReason.text}</span></div> : null}<small>{recommendationEvidenceHint(item.recommendationConfidence)}</small>{canShowFullAnalysis ? <><button aria-expanded={showFullAnalysis} onClick={(event) => stopAndRun(event, () => setShowFullAnalysis((current) => !current))} type="button">查看完整分析 <ChevronDown className={showFullAnalysis ? 'is-open' : ''} size={15} /></button>{showFullAnalysis ? <ul className="recommendation-evidence__more">{secondaryReasons.map((reason, index) => <li key={`${reason.text}-detail-${index}`}>{reason.text}</li>)}</ul> : null}</> : null}</section> : primaryReasons.length ? <ul className="discovery-reasons">{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul> : null}
+    <footer className="discovery-feed-card__footer" onClick={(event) => event.stopPropagation()}><div className="community-engagement-actions"><button aria-label={engagement.liked ? '取消点赞' : '点赞'} aria-pressed={engagement.liked} className={engagement.liked ? 'is-liked' : ''} onClick={onLike} title="点赞" type="button"><Heart fill={engagement.liked ? 'currentColor' : 'none'} size={19} />{engagement.likeCount ? <span>{engagement.likeCount}</span> : null}</button><button aria-label="评论" onClick={onComment} title="评论" type="button"><MessageCircle size={19} />{engagement.comments.length ? <span>{engagement.comments.length}</span> : null}</button><button aria-label="分享餐厅" className="community-share-button" onClick={onShare} title="分享" type="button"><Share2 size={19} /></button></div><RestaurantQuickActions
+      className="discovery-card-quick-actions"
+      onRecordVisit={() => onMarkVisited(item.restaurant)}
+      onToggleWant={() => {
+        if (!wanted) trackDiscoveryRecommendationEvent('wantToGoAdded', item as CommunityVisit)
+        onToggleWant(item.restaurant)
+      }}
+      onToggleWheel={() => {
+        if (!selected) trackDiscoveryRecommendationEvent('wheelCandidateAdded', item as CommunityVisit)
+        onToggleCandidate(item.restaurant)
+      }}
+      restaurantName={item.restaurant.name}
+      visitedActive={item.viewerRestaurantStatus === 'visited'}
+      wantActive={wanted}
+      wheelActive={selected}
+    /></footer>
   </article>
 }
 
 function feedScore(item: FeedItem) {
-  return item.restaurant.scoreOutOfTen ?? (item.visit.rating ? item.visit.rating * 2 : 0)
+  return item.publicRating?.value ?? item.restaurant.scoreOutOfTen ?? 0
+}
+
+function recommendationFitLabel(level: CommunityVisit['recommendationFitLevel']) {
+  if (level === 'STRONG_MATCH') return '优先推荐'
+  if (level === 'GOOD_MATCH') return '推荐给你'
+  if (level === 'MODERATE_MATCH') return '可以试试'
+  if (level === 'EXPLORATION') return '换个口味'
+  return '推荐给你'
+}
+
+function dedupeRecommendationReasons<T extends { text: string }>(reasons: T[]) {
+  const seen = new Set<string>()
+  return reasons.filter((reason) => {
+    const normalized = reason.text.trim()
+    if (!normalized || seen.has(normalized)) return false
+    seen.add(normalized)
+    return true
+  })
+}
+
+function isHighValueRecommendationReason(reason: { code?: string; text: string }) {
+  const highValueCodes = new Set(['HIGH_CUISINE_MATCH', 'PRICE_RANGE_MATCH', 'REPEAT_VISIT_PATTERN', 'COMPANION_CONTEXT_MATCH', 'SOURCE_AFFINITY_MATCH', 'SHORT_TERM_DIVERSITY', 'SIMILAR_USERS'])
+  if (reason.code && highValueCodes.has(reason.code)) return true
+  return !/(当前城市|当前位置|附近|距离你|公开高分|综合长期口味|符合你的偏好|值得一试)/.test(reason.text)
+}
+
+function isRecommendationCaution(text: string) {
+  return /(略高|高于|排队|拥挤|较远|样本较少|记录仍较少|不多)/.test(text)
+}
+
+function recommendationEvidenceHint(confidence: CommunityVisit['recommendationConfidence']) {
+  if (confidence === 'high') return '基于较充分的历史记录与相关到访'
+  if (confidence === 'medium') return '基于现有历史记录，证据仍在积累'
+  return '当前相关记录较少，推荐仅供探索参考'
+}
+
+function publicRatingPresentation(rating: CommunityVisit['publicRating']) {
+  const sampleCount = rating?.sampleCount ?? 0
+  if (!sampleCount) return { value: null, note: '暂无评分', confidence: 'no-data' }
+  if (sampleCount < 5) return { value: null, note: `${sampleCount} 人 · 样本不足`, confidence: 'insufficient' }
+  if (sampleCount < 10) return { value: rating?.value ?? null, note: `${sampleCount} 人 · 样本较少`, confidence: 'low' }
+  return { value: rating?.value ?? null, note: `${sampleCount} 人`, confidence: 'normal' }
+}
+
+function recommendationMedia(item: FeedItem) {
+  const sources = [
+    item.restaurant.markerImageData ? { source: item.restaurant.markerImageData, photoId: item.restaurant.markerPhotoId } : null,
+    ...item.visit.photos.map((source, index) => source ? { source, photoId: item.visit.photoIds[index] } : null),
+    item.restaurant.merchantImageUrl ? { source: item.restaurant.merchantImageUrl, photoId: null } : null,
+  ].filter((photo): photo is { source: string; photoId: string | null } => Boolean(photo?.source))
+  const uniquePhotos = new Map<string, { source: string; photoId: string | null }>()
+  sources.forEach((photo) => {
+    const key = photo.photoId || photo.source
+    if (!uniquePhotos.has(key)) uniquePhotos.set(key, photo)
+  })
+  return [...uniquePhotos.values()].slice(0, 3)
 }
 
 function formatDistance(distance: number) {
@@ -300,18 +495,34 @@ function formatDistance(distance: number) {
 function communityRestaurant(item: CommunityVisit): RestaurantSummary {
   return {
     ...item.restaurant, userId: item.visit.userId, status: 'visited', preferenceLevel: 'normal', overallRating: null, isRecommendation: true,
-    foodRating: null, environmentRating: null, serviceRating: null, valueRating: null, tags: [], longTermNote: '', pricePerPerson: item.visit.pricePerPerson,
-    markerType: item.restaurant.merchantImageUrl ? 'image' : 'emoji', markerImageData: null, markerPhotoId: null, markerEmoji: '🍽️', createdAt: item.visit.createdAt,
+    foodRating: null, environmentRating: null, serviceRating: null, valueRating: null, tags: item.restaurant.tags ?? [], longTermNote: '', pricePerPerson: item.restaurant.pricePerPerson ?? item.visit.pricePerPerson,
+    markerType: item.restaurant.merchantImageUrl ? 'image' : 'emoji', markerImageData: null, markerPhotoId: null, markerEmoji: item.restaurant.markerEmoji || '🍽️', createdAt: item.visit.createdAt,
     updatedAt: item.visit.updatedAt, deletedAt: null, visitCount: 1, averageRating: item.visit.rating, scoreOutOfTen: item.visit.rating ? item.visit.rating * 2 : null,
     latestVisitDate: item.visit.visitedAt, latestVisit: item.visit, visits: [item.visit], averagePricePerPerson: item.visit.pricePerPerson, averageQueueMinutes: null,
   }
+}
+
+function findMatchingRestaurant(restaurants: RestaurantSummary[], remote: CommunityVisit['restaurant']) {
+  return restaurants.find((restaurant) => restaurant.id === remote.id
+    || Boolean(restaurant.amapPoiId && remote.amapPoiId && restaurant.amapPoiId === remote.amapPoiId)
+    || (normalizeRestaurantIdentity(restaurant.name) === normalizeRestaurantIdentity(remote.name)
+      && normalizeRestaurantIdentity(restaurant.address) === normalizeRestaurantIdentity(remote.address)))
+}
+
+function normalizeRestaurantIdentity(value: string) {
+  return value.toLocaleLowerCase('zh-CN').replace(/[\s·•・()（）\-—_]/g, '')
 }
 
 function readCommunityEngagement(): Record<string, CommunityEngagement> {
   try {
     const raw = localStorage.getItem(COMMUNITY_ENGAGEMENT_STORAGE_KEY)
     if (!raw) return {}
-    return JSON.parse(raw) as Record<string, CommunityEngagement>
+    const parsed = JSON.parse(raw) as Record<string, Partial<CommunityEngagement>>
+    return Object.fromEntries(Object.entries(parsed).map(([visitId, value]) => [visitId, {
+      liked: Boolean(value.liked),
+      likeCount: typeof value.likeCount === 'number' ? value.likeCount : 0,
+      comments: Array.isArray(value.comments) ? value.comments.filter((comment): comment is string => typeof comment === 'string') : [],
+    }]))
   } catch {
     return {}
   }

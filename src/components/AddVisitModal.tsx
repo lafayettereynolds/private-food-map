@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { CalendarClock, LoaderCircle, Users, WalletCards } from 'lucide-react'
+import { CalendarClock, Users, WalletCards } from 'lucide-react'
 import { CompanionPicker } from './CompanionPicker'
 import { DishEditor } from './DishEditor'
 import { ModalShell } from './ModalShell'
+import { StickyFormActionBar } from './StickyFormActionBar'
 import { QueueDurationPicker } from './QueueDurationPicker'
 import { StarRating } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
 import { VisitExtraFields } from './VisitExtraFields'
+import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddVisitInput } from '../db/restaurants'
 import {
@@ -24,12 +26,14 @@ interface AddVisitModalProps {
   companionOptions: string[]
   friendOptions?: Array<{ id: string; nickname: string }>
   initialVisit?: Visit
+  maxPhotos?: number
+  photoUpgradeAvailable?: boolean
   restaurant: RestaurantSummary
   onClose: () => void
   onSave: (input: AddVisitInput) => Promise<void>
 }
 
-export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, restaurant, onClose, onSave }: AddVisitModalProps) {
+export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onSave }: AddVisitModalProps) {
   const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
@@ -138,7 +142,15 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
       description={initialVisit ? `修改 ${restaurant.name} 的这次到访，保存后会更新原记录。` : `为 ${restaurant.name} 增加一条真实到访记录。`}
       onClose={onClose}
     >
-      <form className="editor-form" onSubmit={handleSubmit}>
+      <form className="sticky-action-form" onSubmit={handleSubmit}>
+        <div className="editor-form sticky-action-form__content">
+        <RestaurantSummarySection
+          additionalUserPhotos={photos.map((source, index) => ({ source, photoId: photoIds[index] }))}
+          className="is-form-summary"
+          historyRestaurants={[restaurant]}
+          restaurant={restaurant}
+        />
+        <div className="restaurant-record-form-divider"><span>{initialVisit ? '修改这次到访' : '这次到访'}</span></div>
         <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
         <label className="field"><span>个人评价 <small>可选</small></span><StarRating onChange={setRating} value={rating} /></label>
         <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="primary" value={extraFields} />
@@ -152,11 +164,17 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
           <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
         </div>
         <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
-        <VisitPhotoPicker onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds) }} photoIds={photoIds} value={photos} />
+        <VisitPhotoPicker maxPhotos={maxPhotos} onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds) }} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
         <DishEditor onChange={setDishes} value={dishes} />
         <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
-        {error ? <p className="form-error">{error}</p> : null}
-        <footer className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">取消</button><button className="primary-button" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : null} {initialVisit ? '保存修改' : '保存到访'}</button></footer>
+        </div>
+        <StickyFormActionBar
+          primaryLabel={initialVisit ? '保存修改' : '保存到我的地图'}
+          primaryLoading={saving}
+          secondaryAction={onClose}
+          statusMessage={error}
+          statusTone="error"
+        />
       </form>
     </ModalShell>
   )

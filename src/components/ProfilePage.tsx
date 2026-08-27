@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
-import { Activity, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Bookmark, CalendarDays, Check, ChevronRight, Clock3, Copy, Database, Dices, Heart, Image as ImageIcon, Info, ListChecks, LockKeyhole, MapPinned, MoreHorizontal, Repeat2, Save, Settings, Share2, ShieldCheck, Sparkles, Star, Store, ThumbsDown, ThumbsUp, TrendingUp, UserCheck, UserPlus, UsersRound, Utensils, WalletCards } from 'lucide-react'
+import { Activity, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Bookmark, CalendarDays, Check, ChevronRight, Clock3, Copy, Database, Dices, Heart, Image as ImageIcon, Info, LockKeyhole, MapPinned, MoreHorizontal, Repeat2, Settings, Share2, ShieldCheck, Sparkles, Star, Store, ThumbsDown, ThumbsUp, TrendingUp, UserCheck, UserPlus, UsersRound, Utensils, WalletCards, X } from 'lucide-react'
 import type { CloudSyncState } from '../types/cloudSync'
 import { scoreColor, type DiningCompanion, type FriendshipStatus, type RestaurantSummary, type UserProfile, type Visibility, type Visit } from '../types/domain'
 import { buildProfileInsights } from '../services/profileInsights'
@@ -7,20 +7,35 @@ import { optimizeAvatarImage } from '../utils/images'
 import { AVATAR_PRESETS } from '../utils/avatarPresets'
 import { publicUserId } from '../utils/publicUserId'
 import { ModalShell } from './ModalShell'
+import { StickyFormActionBar } from './StickyFormActionBar'
 import { PresetAvatar, UserAvatar } from './UserAvatar'
 import { MembershipAdminEntry } from './MembershipAdminPanel'
 import { RestaurantListsSection } from './RestaurantListsPanel'
-import { reviewService, type PeriodReview } from '../services/reviewService'
+import { reviewService, type OnThisDayReview, type PeriodReview, type ReviewMemory, type ReviewPhoto } from '../services/reviewService'
 import { SyncedImage } from './SyncedImage'
 import { CompanionInsightsPanel, RecommendationSourceInsightsPanel } from './ProfileAnalyticsPanels'
+import { canUseFeature, type MembershipFeature } from '../services/featurePolicy'
+import { buildPublicProfileMap, hasPublicTasteSummary, selectPublicProfileActivity, selectRepresentativeRestaurants, type PublicProfileActivity } from '../services/publicProfile'
+import { MapView } from './MapView'
+import type { FriendRecommendation } from '../services/socialApi'
+import { PremiumBurgerBadge } from './PremiumBurgerBadge'
+import { publicProfileTabLabels, selectUniqueProfileRestaurants, shouldShowMutualWant, shouldShowPremiumBurger, visibleProfileBio } from '../services/profileTopStats'
+import { buildCompanionShareData, buildOnThisDayShareData, buildPeriodReviewShareData, buildRecommendationSourceShareData, buildTasteProfileShareData } from '../services/analysisShare'
+import { AnalysisShareAction } from './AnalysisShareSheet'
+import type { AnalysisShareData } from '../types/analysisShare'
+import { openPremiumPaywall } from '../services/premiumPaywall'
 
-export function ProfilePage({ user, restaurants = [], viewerRestaurants = [], visits = [], diningCompanions = [], sourceUsers = [], followerCount = 0, followingCount = 0, onSave, editable = true, isFollowing = false, followPending = false, friendStatus = null, friendPending = false, cloudSyncState, connections, followerConnections, followingConnections, onAddFriend, onBack, onOpenRoulette, onOpenSettings, onMapPrivacyChange, onSelectRestaurant, onToggleFollow }: {
+export function ProfilePage({ user, restaurants = [], viewerRestaurants = [], visits = [], diningCompanions = [], sourceUsers = [], publicFollowers = [], publicFollowing = [], friendRecommendations = [], recommendationPendingIds = new Set<string>(), followerCount = 0, followingCount = 0, onSave, editable = true, isFollowing = false, followPending = false, friendStatus = null, friendPending = false, cloudSyncState, connections, followerConnections, followingConnections, onAddFriend, onBack, onOpenRoulette, onOpenSettings, onMapPrivacyChange, onRequestRecommendationFriend, onDismissFriendRecommendation, onSelectRestaurant, onSelectUser, onToggleFollow }: {
   user: UserProfile
   restaurants?: RestaurantSummary[]
   viewerRestaurants?: RestaurantSummary[]
   visits?: Visit[]
   diningCompanions?: DiningCompanion[]
   sourceUsers?: UserProfile[]
+  publicFollowers?: UserProfile[]
+  publicFollowing?: UserProfile[]
+  friendRecommendations?: FriendRecommendation[]
+  recommendationPendingIds?: ReadonlySet<string>
   followerCount?: number
   followingCount?: number
   onSave: (changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'>) => Promise<unknown>
@@ -38,17 +53,24 @@ export function ProfilePage({ user, restaurants = [], viewerRestaurants = [], vi
   onOpenRoulette?: () => void
   onOpenSettings?: () => void
   onMapPrivacyChange?: (changes: Pick<UserProfile, 'mapSharingEnabled' | 'mapVisibility'>) => Promise<unknown>
+  onRequestRecommendationFriend?: (userId: string) => void
+  onDismissFriendRecommendation?: (userId: string) => void
   onSelectRestaurant?: (restaurant: RestaurantSummary) => void
+  onSelectUser?: (user: UserProfile) => void
   onToggleFollow?: () => void
 }) {
   const [page, setPage] = useState<'dashboard' | 'account'>('dashboard')
   const [editorOpen, setEditorOpen] = useState(false)
   const [connectionsOpen, setConnectionsOpen] = useState<'discover' | 'following' | 'followers' | null>(null)
+  const [restaurantListOpen, setRestaurantListOpen] = useState<'visited' | 'wantToGo' | null>(null)
   const [copiedUserId, setCopiedUserId] = useState(false)
   const [detail, setDetail] = useState<'month' | 'year' | 'day' | 'taste' | 'data' | 'companions' | 'sources' | null>(null)
   const insights = useMemo(() => buildProfileInsights(restaurants, visits), [restaurants, visits])
   const monthReview = useMemo(() => reviewService.monthly(restaurants, visits, new Date().getFullYear(), new Date().getMonth() + 1), [restaurants, visits])
   const yearReview = useMemo(() => reviewService.annual(restaurants, visits, new Date().getFullYear()), [restaurants, visits])
+  const onThisDayReview = useMemo(() => reviewService.onThisDay(restaurants, visits), [restaurants, visits])
+  const visitedRestaurants = useMemo(() => selectUniqueProfileRestaurants(restaurants, 'visited'), [restaurants])
+  const wantToGoRestaurants = useMemo(() => selectUniqueProfileRestaurants(restaurants, 'wantToGo'), [restaurants])
   const numericUserId = useMemo(() => publicUserId(user.id), [user.id])
   async function copyUserId() {
     await navigator.clipboard?.writeText(numericUserId)
@@ -56,38 +78,77 @@ export function ProfilePage({ user, restaurants = [], viewerRestaurants = [], vi
     window.setTimeout(() => setCopiedUserId(false), 1600)
   }
   if (page === 'account') return <AccountPrivacyPage onBack={() => setPage('dashboard')} onMapPrivacyChange={onMapPrivacyChange} onOpenSettings={onOpenSettings} user={user} />
-  if (!editable) return <PublicUserProfile followPending={followPending} friendPending={friendPending} friendStatus={friendStatus} followerCount={followerCount} followingCount={followingCount} isFollowing={isFollowing} onAddFriend={onAddFriend} onBack={onBack} onSelectRestaurant={onSelectRestaurant} onToggleFollow={onToggleFollow} restaurants={restaurants} user={user} viewerRestaurants={viewerRestaurants} visits={visits} />
+  if (!editable) return <PublicUserProfile followPending={followPending} followers={publicFollowers} following={publicFollowing} friendPending={friendPending} friendStatus={friendStatus} followerCount={followerCount} followingCount={followingCount} isFollowing={isFollowing} onAddFriend={onAddFriend} onBack={onBack} onSelectRestaurant={onSelectRestaurant} onSelectUser={onSelectUser} onToggleFollow={onToggleFollow} restaurants={restaurants} user={user} viewerRestaurants={viewerRestaurants} visits={visits} />
 
   return <section className={`social-page profile-page profile-dashboard${editable ? ' profile-dashboard--owner' : ' profile-dashboard--public'}`}>
     <div className="profile-dashboard__hero">
       <div className="profile-dashboard__top">{editable ? <><button onClick={() => setConnectionsOpen('discover')} type="button"><UserPlus size={17} />添加好友</button><button aria-label="账号与隐私" onClick={() => setPage('account')} type="button"><Settings size={20} /></button></> : <><button onClick={onBack} type="button"><ArrowLeft size={17} />返回</button><span>公开主页</span></>}</div>
       <header className="profile-dashboard__header">
         <button aria-label={editable ? '编辑个人资料' : `${user.nickname} 的头像`} className="profile-avatar profile-dashboard__avatar" disabled={!editable} onClick={() => setEditorOpen(true)} type="button"><UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></button>
-        <div className="profile-dashboard__identity"><h1>{user.nickname}</h1><p>{user.city ? `${user.city} · ` : ''}{user.bio || '记录每一次真实的味觉记忆。'}</p><div className="profile-dashboard__identity-actions"><button className="profile-user-id" onClick={() => void copyUserId()} title="复制用户 ID" type="button"><span>ID {numericUserId}</span>{copiedUserId ? <Check size={13} /> : <Copy size={13} />}</button>{editable ? <button className="profile-edit-button" onClick={() => setEditorOpen(true)} type="button">编辑资料</button> : <button className={`profile-follow-button${isFollowing ? ' is-following' : ''}`} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button>}</div></div>
+        <div className="profile-dashboard__identity"><h1><span>{user.nickname}</span>{shouldShowPremiumBurger(user.membershipTier) ? <button aria-label="查看 Premium 会员状态" className="profile-premium-badge-entry" onClick={() => openPremiumPaywall('profile_entry')} title="查看 Premium 会员状态" type="button"><PremiumBurgerBadge /></button> : null}</h1>{visibleProfileBio(user.bio) ? <p>{visibleProfileBio(user.bio)}</p> : null}{formatJoinedMonth(user.createdAt) ? <small className="profile-joined-at">{formatJoinedMonth(user.createdAt)} 加入 Taste Map</small> : null}<div className="profile-dashboard__identity-actions"><button className="profile-user-id" onClick={() => void copyUserId()} title="复制用户 ID" type="button"><span>ID {numericUserId}</span>{copiedUserId ? <Check size={13} /> : <Copy size={13} />}</button>{editable ? <><button className="profile-edit-button" onClick={() => setEditorOpen(true)} type="button">编辑资料</button>{user.membershipTier !== 'member' ? <button className="profile-premium-entry" onClick={() => openPremiumPaywall('profile_entry')} type="button"><Sparkles size={14} />开通 Premium</button> : null}</> : <button className={`profile-follow-button${isFollowing ? ' is-following' : ''}`} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button>}</div></div>
       </header>
-      <div className={`profile-dashboard__counts${editable ? '' : ' is-public'}`}>{editable ? <><button onClick={() => setConnectionsOpen('following')} type="button"><strong>{followingCount}</strong><small>我关注的</small></button><button onClick={() => setConnectionsOpen('followers')} type="button"><strong>{followerCount}</strong><small>关注我的</small></button><button onClick={() => setDetail('data')} type="button"><strong>{visits.length}</strong><small>公开记录</small></button><button onClick={() => setDetail('data')} type="button"><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></button></> : <><span><strong>{visits.length}</strong><small>公开记录</small></span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></span></>}</div>
+      <div className={`profile-dashboard__counts${editable ? '' : ' is-public'}`}>{editable ? <><ProfileStat icon={<UserCheck size={18} />} label="我关注的" onClick={() => setConnectionsOpen('following')} value={followingCount} /><ProfileStat icon={<UsersRound size={18} />} label="关注我的" onClick={() => setConnectionsOpen('followers')} value={followerCount} /><ProfileStat icon={<MapPinned size={18} />} label="去过" onClick={() => setRestaurantListOpen('visited')} value={visitedRestaurants.length} /><ProfileStat icon={<Bookmark size={18} />} label="想吃" onClick={() => setRestaurantListOpen('wantToGo')} value={wantToGoRestaurants.length} /></> : <><span><strong>{visits.length}</strong><small>公开记录</small></span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></span></>}</div>
     </div>
-    {editable ? <button className="profile-roulette-card" onClick={onOpenRoulette} type="button"><span className="profile-roulette-card__visual"><Dices size={28} /></span><div><strong>今天吃什么</strong><small>从餐厅库中随机挑一家</small></div><span className="profile-roulette-card__arrow"><ArrowRight size={20} /></span></button> : null}
-    {editable ? <TasteProfileSummary onClick={() => setDetail('taste')} profile={insights.tasteProfile} /> : null}
-    {editable ? <ProfileSection title="回味"><div className="profile-memory-grid"><MemoryCard icon={<CalendarDays size={22} />} onClick={() => setDetail('month')} title="本月回顾" subtitle="回顾精彩味道" values={[`${monthReview.visitCount} 次用餐`, `${monthReview.restaurantCount} 家餐厅`]} /><MemoryCard icon={<BookOpen size={22} />} onClick={() => setDetail('year')} title="年度回顾" subtitle="你的味觉足迹" values={[`${yearReview.visitCount} 次用餐`, `${yearReview.restaurantCount} 家餐厅`]} /><MemoryCard icon={<ImageIcon size={22} />} onClick={() => setDetail('day')} title="那年今日" subtitle="回到味觉记忆" values={insights.onThisDay.length ? insights.onThisDay.slice(0, 1).map((visit) => restaurants.find((item) => item.id === visit.restaurantId)?.name ?? '一次味觉记忆') : ['还没有往年记录']} /></div></ProfileSection> : null}
+    {editable ? <div className="profile-quick-actions"><button className="profile-quick-card profile-quick-card--roulette" onClick={onOpenRoulette} type="button"><span className="profile-quick-card__visual"><Dices size={24} /></span><span className="profile-quick-card__copy"><strong>今天吃什么</strong><small>帮我挑一家</small></span><ArrowRight size={18} /></button><TasteProfileSummary onClick={() => canUseFeature(user.membershipTier, 'full_taste_profile') ? setDetail('taste') : openPremiumPaywall('full_taste_profile')} profile={insights.tasteProfile} /></div> : null}
+    {editable ? <ProfileSection title="回味"><div className="profile-memory-grid"><MemoryCard icon={<CalendarDays size={22} />} onClick={() => canUseFeature(user.membershipTier, 'monthly_review') ? setDetail('month') : openPremiumPaywall('monthly_review')} title="本月回顾" subtitle="回顾精彩味道" values={[`${monthReview.visitCount} 次用餐`, `${monthReview.restaurantCount} 家餐厅`]} /><MemoryCard icon={<BookOpen size={22} />} onClick={() => canUseFeature(user.membershipTier, 'annual_review') ? setDetail('year') : openPremiumPaywall('annual_review')} title="年度回顾" subtitle="你的食味年鉴" values={[`${yearReview.visitCount} 次用餐`, `${yearReview.restaurantCount} 家餐厅`]} /><MemoryCard icon={<ImageIcon size={22} />} onClick={() => setDetail('day')} title="那年今日" subtitle="回到味觉记忆" values={onThisDayReview.memories.length ? [onThisDayReview.memories[0].restaurantName] : ['还没有往年记录']} /></div></ProfileSection> : null}
     {editable ? <RestaurantListsSection onSelectRestaurant={onSelectRestaurant} restaurants={restaurants} /> : null}
     {!editable ? <ProfileSection title="公开记录"><div className="public-profile-records">{restaurants.length ? restaurants.map((restaurant) => <button disabled={!onSelectRestaurant} key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><span><strong>{restaurant.name}</strong><small>{restaurant.city}{restaurant.visitCount ? ` · 去过 ${restaurant.visitCount} 次` : ''}</small></span><ChevronRight size={16} /></button>) : <p>这个用户暂时没有对你公开餐厅记录。</p>}</div></ProfileSection> : null}
-    {editable ? <ProfileSection title="发现与洞察"><div className="profile-analytics-links"><button onClick={() => setDetail('companions')} type="button"><span className="profile-analytics-links__icon"><UsersRound size={24} /></span><span><strong>饭搭子分析</strong><small>看看你和谁最合拍</small></span><ChevronRight size={17} /></button><button onClick={() => setDetail('sources')} type="button"><span className="profile-analytics-links__icon"><Sparkles size={24} /></span><span><strong>推荐来源分析</strong><small>发现灵感从哪里来</small></span><ChevronRight size={17} /></button></div></ProfileSection> : null}
+    {editable ? <ProfileSection title="发现与洞察"><div className="profile-analytics-links"><button onClick={() => canUseFeature(user.membershipTier, 'companion_analysis') ? setDetail('companions') : openPremiumPaywall('companion_analysis')} type="button"><span className="profile-analytics-links__icon"><UsersRound size={24} /></span><span><strong>饭搭子分析</strong><small>看看你和谁最合拍</small></span><ChevronRight size={17} /></button><button onClick={() => canUseFeature(user.membershipTier, 'recommendation_source_analysis') ? setDetail('sources') : openPremiumPaywall('recommendation_source_analysis')} type="button"><span className="profile-analytics-links__icon"><Sparkles size={24} /></span><span><strong>推荐来源分析</strong><small>发现灵感从哪里来</small></span><ChevronRight size={17} /></button></div></ProfileSection> : null}
     {editable ? <div className="profile-settings-links"><button onClick={onOpenSettings} type="button"><Database size={19} /><span><strong>数据与设置</strong><small>云同步、备份、恢复与图片存储</small></span><ChevronRight size={18} /></button><button onClick={() => setPage('account')} type="button"><ShieldCheck size={19} /><span><strong>账号与隐私</strong><small>账号安全、地图隐私与权限管理</small></span><ChevronRight size={18} /></button>{cloudSyncState ? <small className="profile-sync-line">{cloudSyncState.status === 'synced' ? '云端已同步' : cloudSyncState.status === 'syncing' ? '正在同步' : cloudSyncState.errorMessage || '等待同步'}</small> : null}</div> : null}
     {editorOpen ? <ProfileEditorModal onClose={() => setEditorOpen(false)} onSave={onSave} user={user} /> : null}
-    {connectionsOpen ? <ModalShell description={connectionsOpen === 'discover' ? '搜索昵称或城市，找到想关注的 Taste Map 用户。' : '点击用户可以查看对方的公开资料。'} onClose={() => setConnectionsOpen(null)} size="large" title={connectionsOpen === 'discover' ? '发现好友' : connectionsOpen === 'following' ? '我关注的' : '关注我的'}>{connectionsOpen === 'discover' ? connections : connectionsOpen === 'following' ? followingConnections : followerConnections}</ModalShell> : null}
-    {detail ? <ProfileDetailModal detail={detail} diningCompanions={diningCompanions} insights={insights} monthReview={monthReview} onClose={() => setDetail(null)} onSelectRestaurant={onSelectRestaurant} ownerUserId={user.id} premium={user.membershipTier === 'member'} restaurants={restaurants} sourceUsers={sourceUsers} visits={visits} yearReview={yearReview} /> : null}
+    {connectionsOpen ? <ModalShell description={connectionsOpen === 'discover' ? '搜索用户，或从根据共同好友与口味生成的推荐中添加好友。' : '点击用户可以查看对方的公开资料。'} onClose={() => setConnectionsOpen(null)} size="large" title={connectionsOpen === 'discover' ? '添加好友' : connectionsOpen === 'following' ? '我关注的' : '关注我的'}>{connectionsOpen === 'discover' ? <div className="profile-add-friend-flow">{connections}<FriendRecommendationsSection onDismiss={onDismissFriendRecommendation} onRequestFriend={onRequestRecommendationFriend} pendingIds={recommendationPendingIds} recommendations={friendRecommendations} /></div> : connectionsOpen === 'following' ? followingConnections : followerConnections}</ModalShell> : null}
+    {restaurantListOpen ? <ModalShell description={restaurantListOpen === 'visited' ? '按餐厅去重显示，不会把多次到访重复计算。' : '显示当前保存在想吃清单中的餐厅。'} onClose={() => setRestaurantListOpen(null)} size="large" title={restaurantListOpen === 'visited' ? '去过' : '想吃'}><PublicRestaurantRows emptyText={restaurantListOpen === 'visited' ? '还没有去过的餐厅。' : '还没有想吃的餐厅。'} onSelectRestaurant={(restaurant) => { setRestaurantListOpen(null); onSelectRestaurant?.(restaurant) }} restaurants={restaurantListOpen === 'visited' ? visitedRestaurants : wantToGoRestaurants} /></ModalShell> : null}
+    {detail ? <ProfileDetailModal detail={detail} diningCompanions={diningCompanions} insights={insights} monthReview={monthReview} onClose={() => setDetail(null)} onSelectRestaurant={onSelectRestaurant} onThisDayReview={onThisDayReview} ownerUserId={user.id} premium={user.membershipTier === 'member'} restaurants={restaurants} sourceUsers={sourceUsers} user={user} visits={visits} yearReview={yearReview} /> : null}
   </section>
 }
 
-type PublicProfileTab = 'activity' | 'lists' | 'taste'
-type PublicProfileView = 'visited' | 'map' | 'mutual' | null
+function ProfileStat({ icon, value, label, onClick }: { icon: ReactNode; value: number; label: string; onClick: () => void }) {
+  return <button aria-label={`${label} ${value}`} onClick={onClick} type="button"><span aria-hidden="true" className="profile-dashboard__stat-icon">{icon}</span><strong>{value}</strong><small>{label}</small></button>
+}
 
-function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, followerCount, followingCount, isFollowing, followPending = false, friendStatus, friendPending, onBack, onSelectRestaurant, onToggleFollow, onAddFriend }: {
+function FriendRecommendationsSection({ recommendations, pendingIds, onRequestFriend, onDismiss }: {
+  recommendations: FriendRecommendation[]
+  pendingIds: ReadonlySet<string>
+  onRequestFriend?: (userId: string) => void
+  onDismiss?: (userId: string) => void
+}) {
+  const renderCard = (recommendation: FriendRecommendation) => {
+    const pending = recommendation.friendshipState === 'pending' || pendingIds.has(recommendation.user.id)
+    const strength = recommendation.strength ?? fallbackFriendRecommendationStrength(recommendation)
+    return <article className="profile-friend-recommendation" key={recommendation.user.id}>
+      <UserAvatar alt={recommendation.user.nickname} avatarImageData={recommendation.user.avatarImageData} avatarPhotoId={recommendation.user.avatarPhotoId} avatarPresetId={recommendation.user.avatarPresetId} membershipTier={recommendation.user.membershipTier} />
+      <div className="profile-friend-recommendation__body"><span className="profile-friend-recommendation__name"><strong>{recommendation.user.nickname}</strong>{recommendation.user.membershipTier === 'member' ? <PremiumBurgerBadge /> : null}</span><small>{recommendation.user.city || '未设置城市'}</small><p>{recommendation.primaryReason.text}</p><span className={`profile-friend-recommendation__strength is-${strength}`}>{friendRecommendationStrengthLabel(strength)}</span></div>
+      <div className="profile-friend-recommendation__actions"><button className="profile-friend-recommendation__add" disabled={pending || !onRequestFriend} onClick={() => onRequestFriend?.(recommendation.user.id)} type="button">{pending ? <UserCheck size={15} /> : <UserPlus size={15} />}{pending ? '已申请' : '加好友'}</button>{onDismiss ? <button aria-label={`隐藏 ${recommendation.user.nickname}`} className="profile-friend-recommendation__dismiss" onClick={() => onDismiss(recommendation.user.id)} title="隐藏推荐" type="button"><X size={14} /></button> : null}</div>
+    </article>
+  }
+  return <section className="profile-friend-recommendations profile-friend-recommendations--add-flow">
+    <header><div><strong>好友推荐</strong><small>根据共同好友、口味与餐厅足迹生成</small></div>{recommendations.length ? <span>{recommendations.length} 人</span> : null}</header>
+    {recommendations.length ? <div className="profile-friend-recommendations__list">{recommendations.map((item) => renderCard(item))}</div> : <p className="inline-empty">暂时没有新的好友推荐。</p>}
+  </section>
+}
+
+function fallbackFriendRecommendationStrength(recommendation: FriendRecommendation) {
+  if (recommendation.primaryReason.code === 'mutual_friends' || recommendation.primaryReason.code === 'linked_companion') return 'priority' as const
+  if (recommendation.primaryReason.code === 'taste_similarity' || recommendation.primaryReason.code === 'shared_restaurants') return 'recommended' as const
+  return 'discovery' as const
+}
+
+function friendRecommendationStrengthLabel(strength: FriendRecommendation['strength']) {
+  if (strength === 'priority') return '优先认识'
+  if (strength === 'recommended') return '推荐认识'
+  return '可以认识'
+}
+
+type PublicProfileTab = 'activity' | 'lists' | 'taste'
+type PublicProfileView = 'following' | 'followers' | 'visited' | 'want' | 'map' | 'mutual' | null
+
+function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, followers, following, followerCount, followingCount, isFollowing, followPending = false, friendStatus, friendPending, onBack, onSelectRestaurant, onSelectUser, onToggleFollow, onAddFriend }: {
   user: UserProfile
   restaurants: RestaurantSummary[]
   viewerRestaurants: RestaurantSummary[]
   visits: Visit[]
+  followers: UserProfile[]
+  following: UserProfile[]
   followerCount: number
   followingCount: number
   isFollowing: boolean
@@ -96,6 +157,7 @@ function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, follo
   friendPending: boolean
   onBack?: () => void
   onSelectRestaurant?: (restaurant: RestaurantSummary) => void
+  onSelectUser?: (user: UserProfile) => void
   onToggleFollow?: () => void
   onAddFriend?: () => void
 }) {
@@ -103,18 +165,15 @@ function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, follo
   const [view, setView] = useState<PublicProfileView>(null)
   const [shared, setShared] = useState(false)
   const insights = useMemo(() => buildProfileInsights(restaurants, visits), [restaurants, visits])
-  const visitedRestaurants = useMemo(() => restaurants.filter((restaurant) => restaurant.status === 'visited' || restaurant.visitCount > 0).sort(comparePublicRestaurants), [restaurants])
-  const wantRestaurants = useMemo(() => restaurants.filter((restaurant) => restaurant.status === 'wantToGo'), [restaurants])
-  const representativeRestaurants = visitedRestaurants.slice(0, 4)
-  const activityRestaurants = useMemo(() => [...visitedRestaurants].sort((a, b) => (b.latestVisitDate ?? '').localeCompare(a.latestVisitDate ?? '')), [visitedRestaurants])
+  const visitedRestaurants = useMemo(() => selectUniqueProfileRestaurants(restaurants, 'visited').sort(comparePublicRestaurants), [restaurants])
+  const wantRestaurants = useMemo(() => selectUniqueProfileRestaurants(restaurants, 'wantToGo'), [restaurants])
+  const representativeRestaurants = useMemo(() => selectRepresentativeRestaurants(visitedRestaurants, 4), [visitedRestaurants])
+  const recentActivity = useMemo(() => selectPublicProfileActivity(visitedRestaurants, 8), [visitedRestaurants])
   const viewerWantKeys = useMemo(() => new Set(viewerRestaurants.filter((restaurant) => restaurant.status === 'wantToGo').map(publicRestaurantKey)), [viewerRestaurants])
   const mutualWants = wantRestaurants.filter((restaurant) => viewerWantKeys.has(publicRestaurantKey(restaurant)))
-  const cityGroups = useMemo(() => {
-    const counts = new Map<string, number>()
-    visitedRestaurants.forEach((restaurant) => counts.set(restaurant.city || '其他城市', (counts.get(restaurant.city || '其他城市') ?? 0) + 1))
-    return [...counts].sort((a, b) => b[1] - a[1])
-  }, [visitedRestaurants])
   const publicLists = useMemo(() => buildPublicProfileLists(visitedRestaurants), [visitedRestaurants])
+  const showTasteSummary = useMemo(() => hasPublicTasteSummary(visits), [visits])
+  const tabLabels = useMemo(() => publicProfileTabLabels(showTasteSummary), [showTasteSummary])
   const friendLabel = friendPending ? '处理中…' : friendStatus === 'accepted' ? '已是好友' : friendStatus === 'pending' ? '已申请' : '加好友'
   const numericUserId = useMemo(() => publicUserId(user.id), [user.id])
 
@@ -131,8 +190,8 @@ function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, follo
   }
 
   if (view) return <section className="social-page public-user-profile public-user-profile--subpage">
-    <header className="public-user-profile__subhead"><button onClick={() => setView(null)} type="button"><ArrowLeft size={18} />返回</button><h1>{view === 'visited' ? '去过的餐厅' : view === 'map' ? 'TA 的公开地图' : '我们都想吃'}</h1><span /></header>
-    {view === 'map' ? <div className="public-profile-map-summary"><div className="public-profile-map-summary__canvas"><MapPinned size={38} /><strong>{visitedRestaurants.length}</strong><small>公开足迹</small></div><div className="public-profile-city-list">{cityGroups.length ? cityGroups.map(([city, count]) => <div key={city}><strong>{city}</strong><span>{count} 家</span></div>) : <p>暂时没有公开城市足迹。</p>}</div></div> : <PublicRestaurantRows emptyText={view === 'mutual' ? '你们暂时还没有共同想吃的餐厅。' : '这个用户暂时没有公开到访记录。'} onSelectRestaurant={onSelectRestaurant} restaurants={view === 'mutual' ? mutualWants : visitedRestaurants} />}
+    <header className="public-user-profile__subhead"><button onClick={() => setView(null)} type="button"><ArrowLeft size={18} />返回</button><h1>{view === 'following' ? 'TA 关注的' : view === 'followers' ? '关注 TA 的' : view === 'visited' ? '去过的餐厅' : view === 'want' ? 'TA 想吃的餐厅' : view === 'map' ? 'TA 的公开地图' : '我们都想吃'}</h1><span /></header>
+    {view === 'map' ? <PublicProfileMap onSelectRestaurant={onSelectRestaurant} restaurants={visitedRestaurants} user={user} /> : view === 'following' || view === 'followers' ? <PublicProfilePeopleRows emptyText={view === 'following' ? 'TA 暂时没有公开关注列表。' : 'TA 暂时没有公开粉丝列表。'} onSelectUser={onSelectUser} users={view === 'following' ? following : followers} /> : <PublicRestaurantRows emptyText={view === 'mutual' ? '你们暂时还没有共同想吃的餐厅。' : view === 'want' ? '这个用户暂时没有公开想吃的餐厅。' : '这个用户暂时没有公开到访记录。'} onSelectRestaurant={onSelectRestaurant} restaurants={view === 'mutual' ? mutualWants : view === 'want' ? wantRestaurants : visitedRestaurants} />}
   </section>
 
   return <section className="social-page public-user-profile">
@@ -140,38 +199,68 @@ function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, follo
       <div className="public-user-profile__top"><button onClick={onBack} type="button"><ArrowLeft size={19} /><span>返回</span></button><div><button aria-label="分享主页" onClick={() => void shareProfile()} type="button">{shared ? <Check size={19} /> : <Share2 size={19} />}</button><button aria-label="更多" type="button"><MoreHorizontal size={21} /></button></div></div>
       <div className="public-user-profile__identity">
         <span className="public-user-profile__avatar"><UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></span>
-        <div><h1>{user.nickname}</h1><strong>@{publicHandle(user)}</strong><p>{user.city || '未设置城市'}{user.bio ? ` · ${user.bio}` : ''}</p><span><BadgeCheck size={13} />ID {numericUserId}</span></div>
+        <div><h1><span>{user.nickname}</span>{shouldShowPremiumBurger(user.membershipTier) ? <PremiumBurgerBadge /> : null}</h1><strong>@{publicHandle(user)}</strong><p>{user.city || '未设置城市'}</p>{visibleProfileBio(user.bio) ? <p className="public-user-profile__bio">{visibleProfileBio(user.bio)}</p> : null}{formatJoinedMonth(user.createdAt) ? <small className="profile-joined-at">{formatJoinedMonth(user.createdAt)} 加入 Taste Map</small> : null}<span><BadgeCheck size={13} />ID {numericUserId}</span></div>
       </div>
       <div className="public-user-profile__actions"><button className={isFollowing ? 'is-following' : ''} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={16} /> : <UserPlus size={16} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button><button disabled={friendPending || friendStatus === 'accepted' || friendStatus === 'pending' || !onAddFriend} onClick={onAddFriend} type="button"><UsersRound size={16} />{friendLabel}</button></div>
-      <div className="public-user-profile__metrics"><span><strong>{followingCount}</strong><small>关注</small></span><span><strong>{followerCount}</strong><small>粉丝</small></span><span><strong>{visits.length}</strong><small>公开到访</small></span><span><strong>{visitedRestaurants.length}</strong><small>去过餐厅</small></span></div>
+      <div className="public-user-profile__metrics"><button onClick={() => openView('following')} type="button"><strong>{followingCount}</strong><small>关注</small></button><button onClick={() => openView('followers')} type="button"><strong>{followerCount}</strong><small>粉丝</small></button><button onClick={() => openView('visited')} type="button"><strong>{visitedRestaurants.length}</strong><small>去过餐厅</small></button><button onClick={() => openView('want')} type="button"><strong>{wantRestaurants.length}</strong><small>想去餐厅</small></button></div>
     </header>
 
-    <section className="public-profile-shortcuts">
-      <button onClick={() => setTab('activity')} type="button"><Activity size={20} /><strong>动态</strong><small>{visits.length} 条</small></button>
-      <button onClick={() => openView('mutual')} type="button"><Bookmark size={20} /><strong>想吃</strong><small>{wantRestaurants.length} 家</small></button>
-      <button onClick={() => setTab('lists')} type="button"><ListChecks size={20} /><strong>食单</strong><small>{publicLists.length} 个</small></button>
-      <button onClick={() => openView('map')} type="button"><MapPinned size={20} /><strong>地图</strong><small>查看轨迹</small></button>
-    </section>
+    <nav className="public-profile-tabs" aria-label="公开主页内容">{tabLabels.map((label) => { const nextTab: PublicProfileTab = label === '动态' ? 'activity' : label === '口味' ? 'taste' : 'lists'; return <button className={tab === nextTab ? 'is-active' : ''} key={label} onClick={() => setTab(nextTab)} type="button">{label}</button> })}</nav>
 
-    <button className="public-profile-mutual" onClick={() => openView('mutual')} type="button"><Heart size={19} /><span><strong>我们都想吃 {mutualWants.length} 家</strong><small>{mutualWants.length ? '一起去试试这些店吧' : '共同收藏的餐厅会显示在这里'}</small></span><span className="public-profile-mutual__avatars">{mutualWants.slice(0, 3).map((restaurant) => <RestaurantThumb key={restaurant.id} restaurant={restaurant} />)}</span><ChevronRight size={18} /></button>
+    {shouldShowMutualWant(mutualWants.length) ? <button className="public-profile-mutual" onClick={() => openView('mutual')} type="button"><Heart size={19} /><span><strong>我们都想吃 {mutualWants.length} 家</strong><small>一起去试试这些店吧</small></span><span className="public-profile-mutual__avatars">{mutualWants.slice(0, 3).map((restaurant) => <RestaurantThumb key={restaurant.id} restaurant={restaurant} />)}</span><ChevronRight size={18} /></button> : null}
 
-    <ProfileSection action={representativeRestaurants.length ? '查看全部' : undefined} onAction={representativeRestaurants.length ? () => openView('visited') : undefined} title="最代表 TA 的餐厅"><div className="public-profile-representative">{representativeRestaurants.length ? representativeRestaurants.map((restaurant) => <button key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || restaurant.city}{restaurant.scoreOutOfTen !== null ? ` · ${restaurant.scoreOutOfTen.toFixed(1)}` : ''}</small></button>) : <p>继续公开记录后，这里会形成 TA 的代表餐厅。</p>}</div></ProfileSection>
-
-    <nav className="public-profile-tabs" aria-label="公开主页内容"><button className={tab === 'activity' ? 'is-active' : ''} onClick={() => setTab('activity')} type="button">动态</button><button className={tab === 'lists' ? 'is-active' : ''} onClick={() => setTab('lists')} type="button">食单</button><button className={tab === 'taste' ? 'is-active' : ''} onClick={() => setTab('taste')} type="button">口味</button></nav>
-    {tab === 'activity' ? <section className="public-profile-activity"><header><h2>最近公开到访</h2>{activityRestaurants.length ? <button onClick={() => openView('visited')} type="button">查看全部</button> : null}</header>{activityRestaurants.length ? activityRestaurants.slice(0, 8).map((restaurant) => <PublicActivityCard key={restaurant.id} onSelectRestaurant={onSelectRestaurant} restaurant={restaurant} />) : <p className="public-profile-empty">这个用户暂时没有公开动态。</p>}</section> : null}
+    {tab === 'activity' ? <>
+      <ProfileSection action={representativeRestaurants.length ? '查看全部' : undefined} onAction={representativeRestaurants.length ? () => openView('visited') : undefined} title="最代表 TA 的餐厅"><div className="public-profile-representative">{representativeRestaurants.length ? representativeRestaurants.map((restaurant) => <button key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || restaurant.city}{restaurant.scoreOutOfTen !== null ? ` · ${restaurant.scoreOutOfTen.toFixed(1)}` : ''}</small><em>去过 {restaurant.visitCount} 次{restaurant.visitCount > 1 ? ' · 会再回去' : ''}</em></button>) : <p>继续公开记录后，这里会形成 TA 的代表餐厅。</p>}</div></ProfileSection>
+      <button className="public-profile-footprint" onClick={() => openView('map')} type="button"><MapPinned size={20} /><span><strong>TA 去过的餐厅 · {visitedRestaurants.length} 家</strong><small>查看公开城市足迹</small></span><span>查看全部<ChevronRight size={16} /></span></button>
+      <section className="public-profile-activity"><header><h2>最近公开到访</h2>{recentActivity.length ? <button onClick={() => openView('visited')} type="button">查看全部</button> : null}</header>{recentActivity.length ? recentActivity.map((activity) => <PublicActivityCard activity={activity} key={activity.visit.id} onSelectRestaurant={onSelectRestaurant} />) : <p className="public-profile-empty">这个用户暂时没有公开动态。</p>}</section>
+    </> : null}
     {tab === 'lists' ? <section className="public-profile-lists"><header><h2>TA 的公开食单</h2></header>{publicLists.length ? publicLists.map((list) => <article key={list.title}><div className="public-profile-list-cover">{list.restaurants.slice(0, 4).map((restaurant) => <RestaurantThumb key={restaurant.id} restaurant={restaurant} />)}</div><div><strong>{list.title}</strong><small>{list.restaurants.length} 家餐厅</small><p>{list.description}</p></div></article>) : <p className="public-profile-empty">这个用户暂时没有公开食单。</p>}</section> : null}
-    {tab === 'taste' ? <section className="public-profile-taste"><header><h2>TA 的口味偏好</h2><span>公开信息</span></header><dl><div><dt>偏爱菜系</dt><dd>{insights.tasteProfile.preferredCuisines.slice(0, 5).map((item) => item.label).join(' · ') || '数据积累中'}</dd></div><div><dt>常去价位</dt><dd>{insights.tasteProfile.preferredPriceRange}</dd></div><div><dt>偏好氛围</dt><dd>{insights.tasteProfile.highRatingTraits.slice(0, 4).map((item) => item.label).join(' · ') || '数据积累中'}</dd></div></dl><p>{insights.tasteProfile.summary}</p><small>基于 {insights.tasteProfile.validVisitCount} 次公开有效记录生成</small></section> : null}
+    {tab === 'taste' && showTasteSummary ? <section className="public-profile-taste"><header><h2>TA 的口味偏好</h2><span>公开信息</span></header><dl><div><dt>偏爱菜系</dt><dd>{insights.tasteProfile.preferredCuisines.slice(0, 5).map((item) => item.label).join(' · ') || '数据积累中'}</dd></div><div><dt>常去价位</dt><dd>{insights.tasteProfile.preferredPriceRange}</dd></div><div><dt>偏好氛围</dt><dd>{insights.tasteProfile.highRatingTraits.slice(0, 4).map((item) => item.label).join(' · ') || '数据积累中'}</dd></div></dl><p>{insights.tasteProfile.summary}</p><small>基于 {insights.tasteProfile.validVisitCount} 次公开有效记录生成</small></section> : null}
   </section>
 }
 
-function PublicActivityCard({ restaurant, onSelectRestaurant }: { restaurant: RestaurantSummary; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
-  const latest = restaurant.latestVisit
-  const score = restaurant.scoreOutOfTen
-  return <button className="public-profile-activity-card" onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><span><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || '餐厅'} · {restaurant.city}</small>{score !== null ? <em style={{ color: scoreColor(score) }}><Star size={12} fill="currentColor" />{score.toFixed(1)}</em> : null}<small>去过 {restaurant.visitCount} 次{restaurant.latestVisitDate ? ` · 最近 ${formatPublicDate(restaurant.latestVisitDate)}` : ''}</small>{latest?.note ? <p>“{latest.note}”</p> : null}</span><Bookmark size={17} /></button>
+function PublicProfileMap({ user, restaurants, onSelectRestaurant }: { user: UserProfile; restaurants: RestaurantSummary[]; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
+  const initialCity = useMemo(() => buildPublicProfileMap(restaurants).defaultCity, [restaurants])
+  const [selectedCity, setSelectedCity] = useState<string | null>(initialCity)
+  const [selectedRestaurant, setSelectedRestaurant] = useState<RestaurantSummary | undefined>()
+  const model = useMemo(() => buildPublicProfileMap(restaurants, selectedCity), [restaurants, selectedCity])
+
+  function selectCity(city: string) {
+    setSelectedCity(city)
+    setSelectedRestaurant(undefined)
+  }
+
+  if (!model.totalRestaurantCount) return <div className="public-profile-map-empty"><span><MapPinned size={24} /></span><h2>暂无可见的公开足迹</h2><p>对方公开到访餐厅后，会在这里形成地图。</p></div>
+
+  return <div className="public-profile-map">
+    <header className="public-profile-map__summary"><div><strong>{user.nickname} 的公开地图</strong><span>{model.totalRestaurantCount} 家可见餐厅</span></div><MapPinned size={21} /></header>
+    <nav className="public-profile-map__cities" aria-label="选择公开足迹城市">
+      {model.cities.map(({ city, restaurantCount }) => <button className={model.selectedCity === city ? 'is-active' : ''} key={city} onClick={() => selectCity(city)} type="button">{city}<span>{restaurantCount}</span></button>)}
+    </nav>
+    <div className="public-profile-map__canvas">
+      <MapView key={`${user.id}:${model.selectedCity ?? 'all'}`} onClearSelection={() => setSelectedRestaurant(undefined)} onSelect={setSelectedRestaurant} restaurants={model.restaurants} selectedRestaurant={selectedRestaurant} />
+      {selectedRestaurant ? <aside className="public-profile-map__preview">
+        <RestaurantThumb restaurant={selectedRestaurant} />
+        <span><strong>{selectedRestaurant.name}</strong><small>{[selectedRestaurant.tags[0], selectedRestaurant.averagePricePerPerson !== null ? `人均 ¥${Math.round(selectedRestaurant.averagePricePerPerson)}` : '', selectedRestaurant.city].filter(Boolean).join(' · ')}</small><em>TA 有 {selectedRestaurant.visitCount} 次可见到访记录</em></span>
+        {onSelectRestaurant ? <button onClick={() => onSelectRestaurant(selectedRestaurant)} type="button">查看详情<ChevronRight size={15} /></button> : null}
+      </aside> : null}
+    </div>
+  </div>
+}
+
+function PublicActivityCard({ activity, onSelectRestaurant }: { activity: PublicProfileActivity; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
+  const { restaurant, visit } = activity
+  const score = visit.rating === null ? null : visit.rating * 2
+  const photo = visit.photos[0] ? { source: visit.photos[0], photoId: visit.photoIds[0] ?? null } : null
+  return <button className="public-profile-activity-card" onClick={() => onSelectRestaurant?.(restaurant)} type="button">{photo ? <span className="public-profile-activity-card__photo"><SyncedImage alt="" loading="lazy" photoId={photo.photoId} source={photo.source} /></span> : <RestaurantThumb restaurant={restaurant} />}<span><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || '餐厅'} · {restaurant.city}</small>{score !== null ? <em style={{ color: scoreColor(score) }}><Star size={12} fill="currentColor" />{score.toFixed(1)}</em> : null}<small>{formatPublicDate(visit.visitedAt)}</small>{visit.note ? <p>“{visit.note}”</p> : null}</span><Bookmark size={17} /></button>
+}
+
+function PublicProfilePeopleRows({ users, emptyText, onSelectUser }: { users: UserProfile[]; emptyText: string; onSelectUser?: (user: UserProfile) => void }) {
+  return <div className="public-profile-people-rows">{users.length ? users.map((person) => <button disabled={!onSelectUser} key={person.id} onClick={() => onSelectUser?.(person)} type="button"><UserAvatar alt={person.nickname} avatarImageData={person.avatarImageData} avatarPhotoId={person.avatarPhotoId} avatarPresetId={person.avatarPresetId} membershipTier={person.membershipTier} /><span><strong>{person.nickname}{shouldShowPremiumBurger(person.membershipTier) ? <PremiumBurgerBadge /> : null}</strong><small>{person.city || '未设置城市'}{visibleProfileBio(person.bio) ? ` · ${visibleProfileBio(person.bio)}` : ''}</small></span><ChevronRight size={17} /></button>) : <p className="public-profile-empty">{emptyText}</p>}</div>
 }
 
 function PublicRestaurantRows({ restaurants, emptyText, onSelectRestaurant }: { restaurants: RestaurantSummary[]; emptyText: string; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
-  return <div className="public-profile-restaurant-rows">{restaurants.length ? restaurants.map((restaurant) => <button key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><span><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || '餐厅'} · {restaurant.city}</small><small>去过 {restaurant.visitCount} 次{restaurant.latestVisitDate ? ` · 最近 ${formatPublicDate(restaurant.latestVisitDate)}` : ''}</small></span>{restaurant.scoreOutOfTen !== null ? <em style={{ color: scoreColor(restaurant.scoreOutOfTen) }}>{restaurant.scoreOutOfTen.toFixed(1)}</em> : null}<ChevronRight size={17} /></button>) : <p className="public-profile-empty">{emptyText}</p>}</div>
+  return <div className="public-profile-restaurant-rows">{restaurants.length ? restaurants.map((restaurant) => <button key={restaurant.id} onClick={() => onSelectRestaurant?.(restaurant)} type="button"><RestaurantThumb restaurant={restaurant} /><span><strong>{restaurant.name}</strong><small>{restaurant.tags[0] || '餐厅'} · {restaurant.city}</small><small>{restaurant.status === 'wantToGo' ? '已加入想去' : `去过 ${restaurant.visitCount} 次${restaurant.latestVisitDate ? ` · 最近 ${formatPublicDate(restaurant.latestVisitDate)}` : ''}`}</small></span>{restaurant.scoreOutOfTen !== null ? <em style={{ color: scoreColor(restaurant.scoreOutOfTen) }}>{restaurant.scoreOutOfTen.toFixed(1)}</em> : null}<ChevronRight size={17} /></button>) : <p className="public-profile-empty">{emptyText}</p>}</div>
 }
 
 function RestaurantThumb({ restaurant }: { restaurant: RestaurantSummary }) {
@@ -206,6 +295,7 @@ function buildPublicProfileLists(restaurants: RestaurantSummary[]) {
 function publicRestaurantKey(restaurant: RestaurantSummary) { return restaurant.amapPoiId || `${restaurant.city}:${restaurant.name}` }
 function publicHandle(user: UserProfile) { return (user.nickname || user.id).replace(/\s+/g, '').replace(/[^\w\u4e00-\u9fff-]/g, '').toLowerCase() || user.id }
 function formatPublicDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : `${date.getMonth() + 1}月${date.getDate()}日` }
+function formatJoinedMonth(value?: string) { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? `${date.getFullYear()} 年 ${date.getMonth() + 1} 月` : '' }
 
 function ProfileSection({ title, action, onAction, children }: { title: string; action?: string; onAction?: () => void; children: ReactNode }) { return <section className="profile-dashboard__section"><header><h2>{title}</h2>{action ? <button disabled={!onAction} onClick={onAction} type="button">{action}</button> : null}</header>{children}</section> }
 
@@ -214,29 +304,105 @@ function MemoryCard({ title, subtitle, values, icon, onClick }: { title: string;
 type TasteProfile = ReturnType<typeof buildProfileInsights>['tasteProfile']
 
 function TasteProfileSummary({ profile, onClick }: { profile: TasteProfile; onClick: () => void }) {
-  return <button className="taste-profile-card taste-profile-card--summary" onClick={onClick} type="button"><span className="taste-profile-card__title"><Utensils size={18} /><strong>我的口味档案</strong><ChevronRight size={17} /></span>{profile.moduleConfidence.cuisines === 'insufficient' ? <p>{profile.summary}</p> : <dl><div><dt>偏爱菜系</dt><dd>{profile.preferredCuisines.slice(0, 3).map((item) => item.label).join(' · ') || '逐渐形成中'}</dd></div><div><dt>常去价位</dt><dd>{profile.preferredPriceRange}</dd></div><div><dt>偏好氛围</dt><dd>{profile.highRatingTraits.slice(0, 3).map((item) => item.label).join(' · ') || '继续记录后生成'}</dd></div><div className="taste-profile-summary"><dd>{profile.summary}</dd></div></dl>}<small>基于 {profile.validVisitCount} 次有效记录生成 · 持续更新中</small></button>
+  const cuisines = profile.preferredCuisines.slice(0, 3).map((item) => item.label).join(' · ') || '逐渐形成中'
+  const traits = profile.highRatingTraits.slice(0, 2).map((item) => item.label).join(' · ')
+  return <button className="profile-quick-card profile-quick-card--taste" onClick={onClick} type="button"><span className="profile-quick-card__visual"><Utensils size={24} /></span><span className="profile-quick-card__copy"><strong>我的口味档案</strong><small>{cuisines}</small><em>{[profile.preferredPriceRange, traits].filter(Boolean).join(' · ')}</em></span><ChevronRight size={18} /></button>
 }
 
-function ProfileDetailModal({ detail, insights, visits, restaurants, diningCompanions, sourceUsers, ownerUserId, monthReview, yearReview, premium, onClose, onSelectRestaurant }: { detail: 'month' | 'year' | 'day' | 'taste' | 'data' | 'companions' | 'sources'; insights: ReturnType<typeof buildProfileInsights>; visits: Visit[]; restaurants: RestaurantSummary[]; diningCompanions: DiningCompanion[]; sourceUsers: UserProfile[]; ownerUserId: string; monthReview: PeriodReview; yearReview: PeriodReview; premium: boolean; onClose: () => void; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
-  if (detail === 'taste') return <ModalShell description="根据真实到访、评分、重复到访与结构化体验持续更新。" onClose={onClose} size="large" title="完整口味档案"><TasteProfileDetails profile={insights.tasteProfile} restaurants={restaurants} /></ModalShell>
+function ProfileDetailModal({ detail, insights, visits, restaurants, diningCompanions, sourceUsers, user, ownerUserId, monthReview, yearReview, onThisDayReview, premium, onClose, onSelectRestaurant }: { detail: 'month' | 'year' | 'day' | 'taste' | 'data' | 'companions' | 'sources'; insights: ReturnType<typeof buildProfileInsights>; visits: Visit[]; restaurants: RestaurantSummary[]; diningCompanions: DiningCompanion[]; sourceUsers: UserProfile[]; user: UserProfile; ownerUserId: string; monthReview: PeriodReview; yearReview: PeriodReview; onThisDayReview: OnThisDayReview; premium: boolean; onClose: () => void; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
+  const membershipTier = premium ? 'member' : 'free'
+  const gatedDetails: Partial<Record<typeof detail, { feature: MembershipFeature; title: string; description: string }>> = {
+    taste: { feature: 'full_taste_profile', title: '完整口味档案', description: '查看完整偏好、预算、场景、评分风格与口味变化。' },
+    companions: { feature: 'companion_analysis', title: '饭搭子分析', description: '查看与你最常一起吃饭的人，以及共同偏好与到访洞察。' },
+    sources: { feature: 'recommendation_source_analysis', title: '推荐来源分析', description: '验证哪些人和平台更懂你的口味。' },
+    month: { feature: 'monthly_review', title: '本月回顾', description: '把本月的味觉照片、记忆与变化整理成一页回顾。' },
+    year: { feature: 'annual_review', title: '年度回顾', description: '查看完整食味年鉴、城市足迹与年度变化。' },
+  }
+  const gate = gatedDetails[detail]
+  if (gate && !canUseFeature(membershipTier, gate.feature)) return <ModalShell description="当前账号为免费版。" onClose={onClose} size="large" title={gate.title}><PremiumFeatureGate description={gate.description} feature={gate.feature} /></ModalShell>
+  if (detail === 'taste') {
+    const shareData = buildTasteProfileShareData(user, insights.tasteProfile, restaurants, visits)
+    return <ModalShell description="根据真实到访、评分、重复到访与结构化体验持续更新。" onClose={onClose} size="large" title="完整口味档案"><AnalysisShareToolbar data={shareData} /><TasteProfileDetails profile={insights.tasteProfile} restaurants={restaurants} /></ModalShell>
+  }
   if (detail === 'data') return <ModalShell description="只统计当前账号的有效记录。" onClose={onClose} size="large" title="我的数据"><div className="profile-data-detail"><span><strong>{visits.length}</strong>总用餐次数</span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong>去过餐厅</span><span><strong>{insights.cityCount}</strong>去过城市</span><span><strong>{insights.tasteProfile.repeatVisit.tendency}</strong>复购倾向</span></div></ModalShell>
-  if (detail === 'companions') return <ModalShell description="只基于你自己的真实共同到访记录，不评价关系质量。" onClose={onClose} size="large" title="饭搭子分析"><CompanionInsightsPanel companions={diningCompanions} onSelectRestaurant={onSelectRestaurant} ownerUserId={ownerUserId} restaurants={restaurants} visits={visits} /></ModalShell>
-  if (detail === 'sources') return <ModalShell description="推荐的价值由真实到访、评分和再次到访验证。" onClose={onClose} size="large" title="推荐来源分析"><RecommendationSourceInsightsPanel onSelectRestaurant={onSelectRestaurant} restaurants={restaurants} sourceUsers={sourceUsers} visits={visits} /></ModalShell>
-  if (detail === 'month' || detail === 'year') return <ReviewDetail premium={premium} review={detail === 'month' ? monthReview : yearReview} onClose={onClose} />
-  const selectedVisits = insights.onThisDay
-  return <ModalShell description={`${selectedVisits.length} 条真实到访记录`} onClose={onClose} size="large" title="那年今日"><div className="profile-memory-detail">{selectedVisits.length ? selectedVisits.map((visit) => <article key={visit.id}><time>{new Date(visit.visitedAt).toLocaleDateString('zh-CN')}</time><strong>{restaurants.find((item) => item.id === visit.restaurantId)?.name ?? '一次味觉记忆'}</strong>{visit.note ? <p>{visit.note}</p> : null}</article>) : <p>这一段时间还没有记录。</p>}</div></ModalShell>
+  if (detail === 'companions') {
+    const shareData = buildCompanionShareData(user, diningCompanions, restaurants, visits)
+    return <ModalShell description="只基于你自己的真实共同到访记录，不评价关系质量。" onClose={onClose} size="large" title="饭搭子分析"><AnalysisShareToolbar data={shareData} /><CompanionInsightsPanel companions={diningCompanions} linkedUsers={sourceUsers} onSelectRestaurant={onSelectRestaurant} ownerUserId={ownerUserId} restaurants={restaurants} visits={visits} /></ModalShell>
+  }
+  if (detail === 'sources') {
+    const shareData = buildRecommendationSourceShareData(user, restaurants, visits, sourceUsers)
+    return <ModalShell description="推荐的价值由真实到访、评分和再次到访验证。" onClose={onClose} size="large" title="推荐来源分析"><AnalysisShareToolbar data={shareData} /><RecommendationSourceInsightsPanel onSelectRestaurant={onSelectRestaurant} restaurants={restaurants} sourceUsers={sourceUsers} visits={visits} /></ModalShell>
+  }
+  if (detail === 'month' || detail === 'year') {
+    const review = detail === 'month' ? monthReview : yearReview
+    return <ReviewDetail review={review} shareData={buildPeriodReviewShareData(user, review)} onClose={onClose} />
+  }
+  return <OnThisDayDetail review={onThisDayReview} shareData={buildOnThisDayShareData(user, onThisDayReview)} onClose={onClose} />
 }
 
-function ReviewDetail({ review, premium, onClose }: { review: PeriodReview; premium: boolean; onClose: () => void }) {
+function AnalysisShareToolbar({ data }: { data: AnalysisShareData }) {
+  return <div className="analysis-share-toolbar"><div><Share2 size={18} /><span><strong>分享这份分析</strong><small>生成独立海报，不会截取当前页面</small></span></div><AnalysisShareAction data={data} /></div>
+}
+
+function PremiumFeatureGate({ description, feature }: { description: string; feature: MembershipFeature }) {
+  return <section className="premium-feature-gate"><span><LockKeyhole size={25} /></span><small>PREMIUM</small><h3>会员专属深度功能</h3><p>{description}</p><button onClick={() => openPremiumPaywall(feature)} type="button"><Sparkles size={16} /> 查看 Premium</button></section>
+}
+
+function ReviewPhotoImage({ photo, alt }: { photo: ReviewPhoto; alt: string }) {
+  return <SyncedImage alt={alt} fallback={<span className="review-photo-placeholder"><Utensils size={24} /></span>} loading="lazy" photoId={photo.photoId} source={photo.source} />
+}
+
+function ReviewMemoryCard({ memory, label }: { memory: ReviewMemory; label?: string }) {
+  return <article className="review-memory-card">
+    <ReviewPhotoImage alt={memory.restaurantName} photo={memory.photo} />
+    <div>{label ? <small>{label}</small> : null}<strong>{memory.restaurantName}</strong><span>{memory.city}{memory.scoreOutOfTen !== null ? ` · ${memory.scoreOutOfTen.toFixed(1)} 分` : ''}{memory.visitCount > 1 ? ` · ${memory.visitCount} 次` : ''}</span>{memory.note ? <p>{memory.note}</p> : null}<time>{new Date(memory.visitedAt).toLocaleDateString('zh-CN')}</time></div>
+  </article>
+}
+
+function ReviewMetrics({ review }: { review: PeriodReview }) {
+  const metrics: Array<[string, string]> = [
+    ['用餐', `${review.visitCount} 次`],
+    ['餐厅', `${review.restaurantCount} 家`],
+    [review.kind === 'year' ? '初次记录' : '新店', `${review.newRestaurantCount} 家`],
+  ]
+  if (review.kind === 'year') metrics.push(['再次到访', `${review.revisitCount} 家`])
+  return <><section className="period-review__hero">{metrics.map(([label, value]) => <span key={label}><strong>{value}</strong><small>{label}</small></span>)}</section>{review.visitCount ? <p className="period-review__spend-note">{review.spendDisplay === 'total' ? `实际消费总计 ¥${Math.round(review.actualSpend)}` : review.spendDisplay === 'recorded' ? `已记录实际消费 ¥${Math.round(review.actualSpend)}（${review.visitsWithSpend}/${review.visitCount} 次有金额）` : `实际消费记录覆盖 ${review.visitsWithSpend}/${review.visitCount} 次，暂不汇总金额`}</p> : null}</>
+}
+
+function ReviewInsightSections({ review }: { review: PeriodReview }) {
+  return <>
+    {review.companionInsight ? <section className="review-insight-card"><UsersRound size={19} /><div><h3>和谁一起吃</h3><strong>{review.companionInsight.name}</strong><p>一起记录 {review.companionInsight.count} 次，去过 {review.companionInsight.restaurantCount} 家餐厅。</p></div></section> : null}
+    {review.sourceInsight ? <section className="review-insight-card"><Sparkles size={19} /><div><h3>灵感从哪里来</h3><strong>{review.sourceInsight.title}</strong><p>{review.sourceInsight.body}</p></div></section> : null}
+    {review.changes.length ? <section><h3>{review.kind === 'month' ? '和上月相比' : '和去年相比'}</h3><div className="review-change-list">{review.changes.map((change) => <span className={`is-${change.tone}`} key={`${change.label}-${change.value}`}><small>{change.label}</small><strong>{change.value}</strong></span>)}</div></section> : null}
+  </>
+}
+
+function ReviewDetail({ review, shareData, onClose }: { review: PeriodReview; shareData: AnalysisShareData; onClose: () => void }) {
   const title = review.kind === 'month' ? `${review.month} 月回顾` : `${review.year} 食味年鉴`
-  return <ModalShell description={review.summary} onClose={onClose} size="large" title={title}><div className="period-review">
-    <section className="period-review__hero"><span><strong>{review.visitCount}</strong>次用餐</span><span><strong>{review.restaurantCount}</strong>家餐厅</span><span><strong>{review.newRestaurantCount}</strong>家新店</span><span><strong>¥{Math.round(review.actualSpend)}</strong>实际消费</span></section>
-    {review.highlights.length ? <section><h3>这一段最值得记住的事</h3>{review.highlights.map((item) => <p key={item}>{item}</p>)}</section> : null}
-    <section className="period-review__stories"><article><small>第一次</small><strong>{review.firstVisit?.name ?? '还没有记录'}</strong>{review.firstVisit ? <time>{new Date(review.firstVisit.visitedAt).toLocaleDateString('zh-CN')}</time> : null}</article><article><small>最喜欢</small><strong>{review.favorite?.name ?? '等待下一次高分'}</strong>{review.favorite?.scoreOutOfTen !== null && review.favorite ? <em>{review.favorite.scoreOutOfTen.toFixed(1)} 分</em> : null}</article><article><small>最熟悉</small><strong>{review.mostVisited?.name ?? '还没有重复到访'}</strong>{review.mostVisited ? <em>{review.mostVisited.visitCount} 次</em> : null}</article></section>
-    <section><h3>时间足迹</h3><div className="period-review__distribution">{review.timeDistribution.map((item) => <span key={item.label}><i style={{ height: `${Math.max(8, item.count / Math.max(1, ...review.timeDistribution.map((value) => value.count)) * 100)}%` }} /><small>{item.label}</small><b>{item.count}</b></span>)}</div></section>
-    {review.photoMemories.length ? <section><h3>照片回忆</h3><div className="period-review__photos">{review.photoMemories.slice(0, premium ? 18 : 6).map((photo, index) => <SyncedImage alt="用餐回忆" key={`${photo.visitId}-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</div></section> : null}
-    {premium ? <><section><h3>人与饭</h3><p>{review.companions.length ? review.companions.slice(0, 5).map((item) => `${item.name} ${item.count} 次`).join(' · ') : '这段时间以自己的节奏用餐。'}</p></section><section><h3>推荐来源故事</h3><p>{review.recommendationSources.length ? review.recommendationSources.slice(0, 4).map((item) => `${item.label} ${item.count} 次${item.averageScore !== null ? `，均分 ${item.averageScore.toFixed(1)}` : ''}`).join('；') : '还没有记录推荐来源。'}</p></section><section><h3>里程碑</h3>{review.milestones.length ? review.milestones.map((item) => <p key={item}>{item}</p>) : <p>继续记录，里程碑会自然出现。</p>}</section></> : <section className="period-review__premium"><LockKeyhole size={18} /><div><strong>会员可查看完整年鉴故事</strong><small>包括饭搭子、推荐来源、更多照片与历史比较。</small></div></section>}
-    {review.comparison ? <section><h3>和上一段相比</h3><p>用餐 {review.comparison.visitDelta >= 0 ? '+' : ''}{review.comparison.visitDelta} 次 · 实际消费 {review.comparison.spendDelta >= 0 ? '+' : ''}¥{Math.round(review.comparison.spendDelta)}</p></section> : null}
+  if (!review.visitCount) return <ModalShell description={review.summary} onClose={onClose} size="large" title={title}><AnalysisShareToolbar data={shareData} /><div className="review-empty"><CalendarDays size={30} /><strong>这段时间还没有到访记录</strong><p>下一次真实记录会自动出现在这里。</p></div></ModalShell>
+  return <ModalShell description={review.summary} onClose={onClose} size="large" title={title}><div className={`period-review period-review--${review.kind}`}>
+    <AnalysisShareToolbar data={shareData} />
+    {review.heroPhotos.length ? <section className="period-review__cover"><div>{review.heroPhotos.map((photo, index) => <ReviewPhotoImage alt={`${title}照片 ${index + 1}`} key={`${photo.photoId || photo.source}-${index}`} photo={photo} />)}</div><small>{review.kind === 'month' ? '本月照片记忆' : '这一年的食味拼图'}</small></section> : null}
+    <ReviewMetrics review={review} />
+    {review.highlightVisit ? <section><h3>{review.kind === 'month' ? '本月最值得记住' : '年度记忆'}</h3><ReviewMemoryCard memory={review.highlightVisit} /></section> : null}
+    {review.kind === 'month' ? <>
+      {review.diningPatterns.length ? <section><h3>这个月怎么吃</h3><div className="review-patterns">{review.diningPatterns.map((pattern) => <span key={pattern}>{pattern}</span>)}</div></section> : null}
+      <ReviewInsightSections review={review} />
+    </> : <>
+      {review.keyRestaurants.length ? <section><h3>这一年的关键餐厅</h3><div className="review-key-restaurants">{review.keyRestaurants.map((item) => <ReviewMemoryCard key={`${item.kind}-${item.memory.visitId}`} label={item.label} memory={item.memory} />)}</div></section> : null}
+      {review.tasteChanges.length ? <section><h3>口味变化</h3><div className="review-patterns">{review.tasteChanges.map((item) => <span key={item}>{item}</span>)}</div></section> : null}
+      {review.mapFootprint.length ? <section><h3>城市足迹</h3><div className="review-city-list">{review.mapFootprint.map((item) => <span key={item.city}><MapPinned size={15} /><strong>{item.city}</strong><small>{item.count} 次</small></span>)}</div></section> : null}
+      <section><h3>全年节奏</h3><div className="period-review__distribution">{review.timeDistribution.map((item) => <span key={item.label}><i style={{ height: `${Math.max(8, item.count / Math.max(1, ...review.timeDistribution.map((value) => value.count)) * 100)}%` }} /><small>{item.label}</small><b>{item.count}</b></span>)}</div></section>
+      <ReviewInsightSections review={review} />
+      {review.milestones.length ? <section><h3>年度里程碑</h3><div className="review-patterns">{review.milestones.map((item) => <span key={item}>{item}</span>)}</div></section> : null}
+    </>}
+  </div></ModalShell>
+}
+
+function OnThisDayDetail({ review, shareData, onClose }: { review: OnThisDayReview; shareData: AnalysisShareData; onClose: () => void }) {
+  return <ModalShell description={`${review.month} 月 ${review.day} 日的往年味觉记忆`} onClose={onClose} size="large" title="那年今日"><div className="on-this-day-review">
+    <AnalysisShareToolbar data={shareData} />
+    {review.memories.length ? review.memories.map((memory) => <article key={memory.visitId}><span className="on-this-day-review__year">{memory.yearsAgo} 年前</span><ReviewMemoryCard memory={memory} /></article>) : <div className="review-empty"><ImageIcon size={30} /><strong>今天还没有往年记录</strong><p>这里只显示同月同日的真实到访。</p></div>}
   </div></ModalShell>
 }
 
@@ -280,9 +446,44 @@ function ProfileEditorModal({ user, onSave, onClose }: { user: UserProfile; onSa
   const [avatarPresetId, setAvatarPresetId] = useState(user.avatarPresetId ?? 'polar-bear')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const hasChanges = nickname !== user.nickname
+    || bio !== (user.bio ?? '')
+    || city !== (user.city ?? '')
+    || avatarImageData !== (user.avatarImageData ?? null)
+    || avatarPhotoId !== (user.avatarPhotoId ?? null)
+    || avatarPresetId !== (user.avatarPresetId ?? AVATAR_PRESETS[0]?.id ?? '')
   async function chooseAvatar(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; event.target.value = ''; if (file && user.membershipTier === 'member') { setAvatarImageData(await optimizeAvatarImage(file)); setAvatarPhotoId(null) } }
-  async function submit(event: FormEvent) { event.preventDefault(); setSaving(true); setMessage(''); try { await onSave({ nickname, bio, city, avatarImageData, avatarPhotoId, avatarPresetId }); setMessage('个人资料已保存并等待云端同步') } finally { setSaving(false) } }
-  return <ModalShell description="头像、昵称、城市和简介统一在这里修改。" onClose={onClose} size="large" title="编辑资料"><form className="profile-editor-modal" onSubmit={submit}><div className="avatar-preset-grid">{AVATAR_PRESETS.map((preset) => <button aria-label={preset.label} className={avatarPresetId === preset.id && !avatarImageData && !avatarPhotoId ? 'is-active' : ''} key={preset.id} onClick={() => { setAvatarPresetId(preset.id); setAvatarImageData(null); setAvatarPhotoId(null) }} type="button"><PresetAvatar id={preset.id} /><small>{preset.label}</small></button>)}</div>{user.membershipTier === 'member' ? <button className="custom-avatar-upload" onClick={() => inputRef.current?.click()} type="button">自定义上传头像</button> : <p className="custom-avatar-locked"><LockKeyhole size={14} />会员可上传自定义头像；预设头像均可直接使用。</p>}<input accept="image/*" hidden onChange={chooseAvatar} ref={inputRef} type="file" /><div className="profile-editor-modal__fields"><label className="field"><span>昵称</span><input maxLength={30} onChange={(event) => setNickname(event.target.value)} required value={nickname} /></label><label className="field"><span>城市</span><input maxLength={30} onChange={(event) => setCity(event.target.value)} placeholder="例如：杭州" value={city} /></label><label className="field"><span>个人简介</span><textarea maxLength={160} onChange={(event) => setBio(event.target.value)} rows={3} value={bio} /></label></div><footer><span>{message}</span><button className="primary-button" disabled={saving} type="submit"><Save size={15} />{saving ? '保存中' : '保存资料'}</button></footer></form></ModalShell>
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setSaving(true)
+    setMessage('')
+    try {
+      await onSave({ nickname, bio, city, avatarImageData, avatarPhotoId, avatarPresetId })
+      setMessage('个人资料已保存并等待云端同步')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '保存失败，请重试')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return <ModalShell description="头像、昵称、城市和简介统一在这里修改。" onClose={onClose} size="large" title="编辑资料">
+    <form className="sticky-action-form" onSubmit={submit}>
+      <div className="profile-editor-modal sticky-action-form__content">
+        <div className="avatar-preset-grid">{AVATAR_PRESETS.map((preset) => <button aria-label={preset.label} className={avatarPresetId === preset.id && !avatarImageData && !avatarPhotoId ? 'is-active' : ''} key={preset.id} onClick={() => { setAvatarPresetId(preset.id); setAvatarImageData(null); setAvatarPhotoId(null) }} type="button"><PresetAvatar id={preset.id} /><small>{preset.label}</small></button>)}</div>
+        {user.membershipTier === 'member' ? <button className="custom-avatar-upload" onClick={() => inputRef.current?.click()} type="button">自定义上传头像</button> : <button className="custom-avatar-locked" onClick={() => openPremiumPaywall('custom_avatar')} type="button"><LockKeyhole size={14} />会员可上传自定义头像；预设头像均可直接使用。</button>}
+        <input accept="image/*" hidden onChange={chooseAvatar} ref={inputRef} type="file" />
+        <div className="profile-editor-modal__fields"><label className="field"><span>昵称</span><input maxLength={30} onChange={(event) => setNickname(event.target.value)} required value={nickname} /></label><label className="field"><span>城市</span><input maxLength={30} onChange={(event) => setCity(event.target.value)} placeholder="例如：杭州" value={city} /></label><label className="field"><span>个人简介</span><textarea maxLength={160} onChange={(event) => setBio(event.target.value)} rows={3} value={bio} /></label></div>
+      </div>
+      <StickyFormActionBar
+        primaryDisabled={!nickname.trim() || !hasChanges}
+        primaryLabel="保存资料"
+        primaryLoading={saving}
+        secondaryAction={onClose}
+        statusMessage={message}
+        statusTone={message.includes('失败') ? 'error' : 'success'}
+      />
+    </form>
+  </ModalShell>
 }
 
 function AccountPrivacyPage({ user, onBack, onOpenSettings, onMapPrivacyChange }: { user: UserProfile; onBack: () => void; onOpenSettings?: () => void; onMapPrivacyChange?: (changes: Pick<UserProfile, 'mapSharingEnabled' | 'mapVisibility'>) => Promise<unknown> }) {

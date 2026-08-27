@@ -2,12 +2,14 @@ import { useState, type FormEvent } from 'react'
 import { Check, LoaderCircle, LocateFixed, MapPin, RefreshCw, WalletCards } from 'lucide-react'
 import { MarkerStyleField } from './MarkerStyleField'
 import { ModalShell } from './ModalShell'
+import { RestaurantSummarySection } from './RestaurantRecordSummary'
+import { StickyFormActionBar } from './StickyFormActionBar'
 import type { RestaurantBasicsUpdate } from '../db/restaurants'
-import type { MarkerType, Restaurant, RestaurantStatus } from '../types/domain'
+import type { MarkerType, RestaurantStatus, RestaurantSummary } from '../types/domain'
 import { mapService } from '../services/mapService'
 
 interface RestaurantEditorModalProps {
-  restaurant: Restaurant
+  restaurant: RestaurantSummary
   onClose: () => void
   onSave: (changes: RestaurantBasicsUpdate) => Promise<void>
 }
@@ -106,9 +108,31 @@ export function RestaurantEditorModal({
     }
   }
 
+  const numericPreviewPrice = price && Number.isFinite(Number(price)) ? Number(price) : null
+  const previewRestaurant: RestaurantSummary = {
+    ...restaurant,
+    name,
+    address,
+    city,
+    status,
+    pricePerPerson: numericPreviewPrice,
+    phone: phone.trim() || null,
+    openingHours: openingHours.trim() || null,
+    latitude,
+    longitude,
+  }
+
   return (
-    <ModalShell title="编辑餐厅" description="修改地址和地图上的显示方式。" onClose={onClose}>
-      <form className="editor-form" onSubmit={handleSubmit}>
+    <ModalShell title="编辑餐厅" description="更新餐厅资料和地图上的显示方式。" onClose={onClose}>
+      <form className="sticky-action-form" onSubmit={handleSubmit}>
+        <div className="editor-form sticky-action-form__content">
+        <RestaurantSummarySection
+          className="is-form-summary"
+          historyRestaurants={[restaurant]}
+          referencePrice={numericPreviewPrice}
+          restaurant={previewRestaurant}
+        />
+        <div className="restaurant-record-form-divider"><span>餐厅资料</span></div>
         <label className="field"><span>餐厅名称</span><input autoFocus onChange={(event) => setName(event.target.value)} required value={name} /></label>
         <div className="field-grid">
           <label className="field"><span>城市</span><input onChange={(event) => setCity(event.target.value)} value={city} /></label>
@@ -136,8 +160,8 @@ export function RestaurantEditorModal({
           onImageChange={(value) => { setMarkerImageData(value); setMarkerPhotoId(value === restaurant.markerImageData ? restaurant.markerPhotoId : null) }}
           onTypeChange={setMarkerType}
         />
-        {error ? <p className="form-error">{error}</p> : null}
-        <footer className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">取消</button><button className="primary-button" disabled={saving || !name.trim()} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : null} 保存修改</button></footer>
+        </div>
+        <StickyFormActionBar primaryDisabled={!name.trim()} primaryLabel="保存修改" primaryLoading={saving} secondaryAction={onClose} statusMessage={error} statusTone="error" />
       </form>
     </ModalShell>
   )

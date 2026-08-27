@@ -2,6 +2,7 @@ import { MapPin, Star, Store, Truck } from 'lucide-react'
 import { diningModeLabel, type RestaurantSummary, type UserProfile } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { RestaurantAvatar } from './RestaurantAvatar'
+import { PremiumBurgerBadge } from './PremiumBurgerBadge'
 import { SyncedImage } from './SyncedImage'
 import { UserAvatar } from './UserAvatar'
 
@@ -38,7 +39,7 @@ export function TasteFootprints({
                 {user ? <UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /> : <RestaurantAvatar restaurant={restaurant} />}
               </span>
               <div className="footprint-card__content">
-                <header className="footprint-card__author"><span><strong>{user?.nickname || '我的味觉记录'}</strong><time>{formatVisitDateTime(visit.visitedAt)}</time></span>{visit.rating ? <b><Star fill="currentColor" size={12} /> {visit.rating} 星</b> : null}</header>
+                <header className="footprint-card__author"><span><strong><span>{user?.nickname || '我的味觉记录'}</span>{user?.membershipTier === 'member' ? <PremiumBurgerBadge /> : null}</strong><time>{formatVisitDateTime(visit.visitedAt)}</time></span>{visit.rating ? <b><Star fill="currentColor" size={12} /> {visit.rating} 星</b> : null}</header>
                 <button className="footprint-card__restaurant" onClick={() => onSelectRestaurant(restaurant)} type="button"><strong>{restaurant.name}</strong><span>{restaurant.city}</span></button>
                 {visit.note ? <p>{visit.note}</p> : null}
                 {photos.length ? <div className={`footprint-photos count-${Math.min(photos.length, 3)}`}>{photos.slice(0, 9).map((photo, index) => <SyncedImage alt={photo.alt} key={`${visit.id}-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</div> : null}

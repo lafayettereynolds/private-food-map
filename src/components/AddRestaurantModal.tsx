@@ -4,11 +4,9 @@ import {
   CalendarClock,
   Check,
   LoaderCircle,
+  Link2,
   LocateFixed,
   MapPin,
-  Clock3,
-  Phone,
-  Plus,
   Search,
   Store,
   TriangleAlert,
@@ -17,16 +15,19 @@ import {
 } from 'lucide-react'
 import { CompanionPicker } from './CompanionPicker'
 import { ModalShell } from './ModalShell'
+import { StickyFormActionBar } from './StickyFormActionBar'
+import { PlusAction } from './PlusAction'
 import { DishEditor } from './DishEditor'
 import { MarkerStyleField } from './MarkerStyleField'
 import { QueueDurationPicker } from './QueueDurationPicker'
 import { StarRating } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
 import { VisitExtraFields } from './VisitExtraFields'
+import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddRestaurantInput } from '../db/restaurants'
 import { mapService } from '../services/mapService'
-import { calculatePricePerPerson } from '../types/domain'
+import { calculatePricePerPerson, starToTenScore } from '../types/domain'
 import type {
   MarkerType,
   Coordinates,
@@ -38,12 +39,19 @@ import type {
   VisitDish,
 } from '../types/domain'
 import { currentDateAndTime, localDateTimeToIso } from '../utils/date'
+import { CURRENT_USER_ID } from '../db/social'
+import { resolveExternalRestaurantLink, type ExternalLinkResolveResult } from '../services/externalRestaurantLink'
 
 interface AddRestaurantModalProps {
   companionOptions: string[]
   friendOptions?: Array<{ id: string; nickname: string }>
+  maxPhotos?: number
+  photoUpgradeAvailable?: boolean
   existingRestaurantsByPoiId: Map<string, RestaurantSummary>
+  historyRestaurants: RestaurantSummary[]
+  isRouletteCandidate: (poi: PoiSearchResult) => boolean
   onAdd: (input: AddRestaurantInput) => Promise<void>
+  onToggleRoulette: (poi: PoiSearchResult) => void
   onRecordExisting: (restaurant: RestaurantSummary) => void
   onClose: () => void
 }
@@ -55,8 +63,13 @@ function splitValues(value: string) {
 export function AddRestaurantModal({
   companionOptions,
   friendOptions = [],
+  maxPhotos = 20,
+  photoUpgradeAvailable = false,
   existingRestaurantsByPoiId,
+  historyRestaurants,
+  isRouletteCandidate,
   onAdd,
+  onToggleRoulette,
   onRecordExisting,
   onClose,
 }: AddRestaurantModalProps) {
@@ -73,6 +86,9 @@ export function AddRestaurantModal({
   const [locationLabel, setLocationLabel] = useState('')
   const [locationAttempt, setLocationAttempt] = useState(0)
   const [results, setResults] = useState<PoiSearchResult[]>([])
+  const [externalLink, setExternalLink] = useState('')
+  const [externalLinkLoading, setExternalLinkLoading] = useState(false)
+  const [externalLinkResult, setExternalLinkResult] = useState<ExternalLinkResolveResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -95,6 +111,10 @@ export function AddRestaurantModal({
   const [markerImageData, setMarkerImageData] = useState<string | null>(null)
   const [markerEmoji, setMarkerEmoji] = useState('🍽️')
   const [extraFields, setExtraFields] = useState<VisitExtraFieldsValue>(() => createDefaultVisitExtraFields())
+
+  const referencePrice = status === 'visited'
+    ? calculatePricePerPerson(price ? Number(price) : null, Number(partySize))
+    : price && Number.isFinite(Number(price)) ? Number(price) : null
 
   function updateCompanions(next: string) {
     const previousCount = splitValues(companions).length
@@ -186,6 +206,51 @@ export function AddRestaurantModal({
     }
   }
 
+  async function handleExternalLinkResolve(event: FormEvent) {
+    event.preventDefault()
+    const value = externalLink.trim()
+    if (!value) return
+    setExternalLinkLoading(true)
+    setExternalLinkResult(null)
+    setError('')
+    try {
+      const resolved = await resolveExternalRestaurantLink(value, city)
+      setExternalLinkResult(resolved)
+      const sourceType = resolved.sourceSuggestion === '小红书' ? 'xiaohongshu'
+        : resolved.sourceSuggestion === '大众点评' ? 'dianping'
+          : resolved.sourceSuggestion === '抖音' ? 'douyin'
+            : 'other'
+      setExtraFields((current) => ({
+        ...current,
+        recommendationSourceType: sourceType,
+        recommendationSourceText: resolved.sourceSuggestion,
+      }))
+      if (resolved.candidates.length === 0 && resolved.searchFallback?.keyword) {
+        const fallback = resolved.searchFallback
+        setKeyword(fallback.keyword)
+        if (fallback.city) {
+          cityEditedRef.current = true
+          setCity(fallback.city)
+        }
+        setHasSearched(true)
+        setLoading(true)
+        const matches = await mapService.searchRestaurantPois(fallback.keyword, fallback.city || city, {
+          center: fallback.latitude !== null && fallback.longitude !== null
+            ? { latitude: fallback.latitude, longitude: fallback.longitude }
+            : currentLocation ?? undefined,
+          radiusMeters: 20_000,
+          timeoutMs: 8_000,
+        })
+        setResults(matches)
+      }
+    } catch (resolveError) {
+      setError(resolveError instanceof Error ? resolveError.message : '餐厅链接暂时无法解析。')
+    } finally {
+      setExternalLinkLoading(false)
+      setLoading(false)
+    }
+  }
+
   function choosePoi(poi: PoiSearchResult) {
     const existingRestaurant = existingRestaurantsByPoiId.get(poi.amapPoiId)
     if (existingRestaurant) {
@@ -274,8 +339,9 @@ export function AddRestaurantModal({
 
   return (
     <ModalShell
+      backdropClassName="add-restaurant-modal-backdrop"
       title={selectedPoi ? '写下这家餐厅' : '添加餐厅'}
-      description={selectedPoi ? '这些内容只属于你，并保存在当前浏览器中。' : manualMode ? '为地图上搜不到的小摊或私房店标记位置。' : '从高德选择餐厅，或手动添加地图上搜不到的小店。'}
+      description={selectedPoi ? '记录这家餐厅，留住这次味觉记忆。' : manualMode ? '为地图上搜不到的小摊或私房店标记位置。' : '从高德选择餐厅，或手动添加地图上搜不到的小店。'}
       onClose={onClose}
       size="large"
     >
@@ -301,6 +367,9 @@ export function AddRestaurantModal({
           locationLabel={locationLabel}
           nearbyMessage={nearbyMessage}
           nearbyResults={nearbyResults}
+          externalLink={externalLink}
+          externalLinkLoading={externalLinkLoading}
+          externalLinkResult={externalLinkResult}
           onChoose={choosePoi}
           onCityChange={(value) => {
             cityEditedRef.current = true
@@ -316,6 +385,12 @@ export function AddRestaurantModal({
               setHasSearched(false)
             }
           }}
+          onExternalLinkChange={(value) => {
+            setExternalLink(value)
+            setExternalLinkResult(null)
+            setError('')
+          }}
+          onExternalLinkResolve={handleExternalLinkResolve}
           onManualAdd={() => setManualMode(true)}
           onRetryLocation={() => setLocationAttempt((attempt) => attempt + 1)}
           onRecordExisting={onRecordExisting}
@@ -323,32 +398,35 @@ export function AddRestaurantModal({
           results={results}
         />
       ) : (
-        <form className="personalize-form" onSubmit={handleAdd}>
+        <form className="sticky-action-form" data-record-flow="restaurant-record" onSubmit={handleAdd}>
+          <div className="personalize-form sticky-action-form__content">
           <button className="back-button" onClick={() => setSelectedPoi(null)} type="button"><ArrowLeft size={15} /> 返回搜索结果</button>
 
-          <section className="selected-restaurant-detail-header">
-            <div className="selected-restaurant-detail-hero">
-              {selectedPoi.merchantImageUrl ? <img alt={`${selectedPoi.name} 商家图片`} src={selectedPoi.merchantImageUrl} /> : <span><Store size={30} /></span>}
-              <small>商家图片</small>
-            </div>
-            <div className="selected-restaurant-detail-copy">
-              <p>{[selectedPoi.city, status === 'visited' ? '去过' : '想吃'].filter(Boolean).join(' · ')}</p>
-              <h2>{selectedPoi.name}</h2>
-              <label className="selected-poi-card__address"><MapPin size={14} /><input aria-label="餐厅地址" onChange={(event) => setAddress(event.target.value)} required value={address} /></label>
-              <div className="selected-poi-business-info">
-                <span><Phone size={13} /><small>电话</small><strong>{selectedPoi.phone || '暂无电话'}</strong></span>
-                <span><Clock3 size={13} /><small>营业时间</small><strong>{selectedPoi.openingHours || '暂无营业时间'}</strong></span>
-              </div>
-            </div>
-          </section>
+          <RestaurantSummarySection
+            actions={{
+              isInRoulette: isRouletteCandidate(selectedPoi),
+              onAddToWant: () => setStatus('wantToGo'),
+              onMarkVisited: () => setStatus('visited'),
+              onToggleRoulette: () => onToggleRoulette(selectedPoi),
+              visitedActive: status === 'visited',
+              wantActive: status === 'wantToGo',
+            }}
+            additionalUserPhotos={photos.map((source) => ({ source }))}
+            addressEditor={{ required: true, value: address, onChange: (event) => setAddress(event.target.value) }}
+            className="is-form-summary"
+            historyRestaurants={historyRestaurants}
+            personalRatingOverride={status === 'visited' ? { score: starToTenScore(rating), count: rating ? 1 : 0, label: '我的评分' } : undefined}
+            referencePrice={referencePrice}
+            restaurant={createPoiPreviewRestaurant(selectedPoi, status, price, partySize)}
+          />
 
-          <div className="collection-choice" aria-label="餐厅状态">
+          <div className="collection-choice" aria-label="餐厅状态" data-record-section="visit-mode-selector">
             <button className={status === 'visited' ? 'is-active' : ''} onClick={() => setStatus('visited')} type="button"><Check size={15} /> 我去过</button>
             <button className={status === 'wantToGo' ? 'is-active' : ''} onClick={() => setStatus('wantToGo')} type="button"><MapPin size={15} /> 我想去</button>
           </div>
 
           {status === 'visited' ? (
-            <div className="form-section">
+            <div className="form-section" data-record-section="visited-form">
               <h3>这次体验</h3>
               <label className="field">
                 <span>个人评价 <small>可选</small></span>
@@ -370,17 +448,17 @@ export function AddRestaurantModal({
                 <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
               </div>
               <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
-              <VisitPhotoPicker onChange={(nextPhotos) => setPhotos(nextPhotos)} photoIds={photos.map(() => null)} value={photos} />
+              <VisitPhotoPicker maxPhotos={maxPhotos} onChange={(nextPhotos) => setPhotos(nextPhotos)} photoIds={photos.map(() => null)} upgradeAvailable={photoUpgradeAvailable} value={photos} />
               <DishEditor onChange={setDishes} value={dishes} />
               <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
             </div>
-          ) : <div className="form-section want-to-go-details">
+          ) : <div className="form-section want-to-go-details" data-record-section="want-to-go-form">
             <h3><MapPin size={15} /> 想吃计划</h3>
-            <p>餐厅名称、详细地址、图片、电话和营业时间已统一显示在上方；这里只需要补充你想去前要记录的内容。</p>
+            <p>记录预计消费，方便下次决定去哪家。</p>
             <label className="field field-with-leading-icon"><span>预计人均价格（元）</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 180.00" step="0.01" type="number" value={price} /></div></label>
           </div>}
 
-          <div className="form-section">
+          <div className="form-section" data-record-section="restaurant-display-settings">
             <h3>整理与显示</h3>
             <MarkerStyleField
               markerEmoji={markerEmoji}
@@ -393,17 +471,59 @@ export function AddRestaurantModal({
             />
           </div>
 
-          {error ? <p className="form-error">{error}</p> : null}
-          <footer className="modal-actions sticky-modal-actions">
-            <button className="secondary-button" onClick={onClose} type="button">取消</button>
-            <button className="primary-button" disabled={saving || !address.trim()} type="submit">
-              {saving ? <LoaderCircle className="spin" size={17} /> : null} 保存到我的地图
-            </button>
-          </footer>
+          </div>
+          <StickyFormActionBar primaryDisabled={!address.trim()} primaryLabel="保存到我的地图" primaryLoading={saving} secondaryAction={onClose} statusMessage={error} statusTone="error" />
         </form>
       )}
     </ModalShell>
   )
+}
+
+function createPoiPreviewRestaurant(poi: PoiSearchResult, status: RestaurantStatus, price: string, partySize: string): RestaurantSummary {
+  const numericPrice = price ? Number(price) : null
+  const referencePrice = status === 'visited'
+    ? calculatePricePerPerson(numericPrice, Number(partySize))
+    : numericPrice
+  const now = new Date().toISOString()
+  return {
+    id: `preview-${poi.amapPoiId}`,
+    userId: CURRENT_USER_ID,
+    amapPoiId: poi.amapPoiId,
+    name: poi.name,
+    address: poi.address,
+    city: poi.city,
+    latitude: poi.latitude,
+    longitude: poi.longitude,
+    status,
+    preferenceLevel: 'normal',
+    overallRating: null,
+    foodRating: null,
+    environmentRating: null,
+    serviceRating: null,
+    valueRating: null,
+    tags: [],
+    longTermNote: '',
+    pricePerPerson: referencePrice,
+    phone: poi.phone ?? null,
+    openingHours: poi.openingHours ?? null,
+    markerType: poi.merchantImageUrl ? 'image' : 'emoji',
+    markerImageData: null,
+    markerPhotoId: null,
+    merchantImageUrl: poi.merchantImageUrl,
+    markerEmoji: '🍽️',
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    visitCount: 0,
+    averageRating: null,
+    scoreOutOfTen: null,
+    latestVisitDate: null,
+    latestVisit: null,
+    visits: [],
+    averagePricePerPerson: referencePrice,
+    averageQueueMinutes: null,
+    isRecommendation: status === 'wantToGo',
+  }
 }
 
 interface SearchStepProps {
@@ -418,9 +538,14 @@ interface SearchStepProps {
   locationLabel: string
   nearbyMessage: string
   nearbyResults: PoiSearchResult[]
+  externalLink: string
+  externalLinkLoading: boolean
+  externalLinkResult: ExternalLinkResolveResult | null
   results: PoiSearchResult[]
   onCityChange: (value: string) => void
   onKeywordChange: (value: string) => void
+  onExternalLinkChange: (value: string) => void
+  onExternalLinkResolve: (event: FormEvent) => void
   onManualAdd: () => void
   onRetryLocation: () => void
   onChoose: (poi: PoiSearchResult) => void
@@ -440,9 +565,14 @@ function SearchStep({
   locationLabel,
   nearbyMessage,
   nearbyResults,
+  externalLink,
+  externalLinkLoading,
+  externalLinkResult,
   results,
   onCityChange,
   onKeywordChange,
+  onExternalLinkChange,
+  onExternalLinkResolve,
   onManualAdd,
   onRetryLocation,
   onChoose,
@@ -459,6 +589,24 @@ function SearchStep({
         <label className="field field--city"><span>搜索城市 {locatingCity ? '· 正在精确定位' : ''}</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" value={city} />{locationLabel ? <small className="gps-location-detail"><LocateFixed size={12} /> 已定位：{locationLabel}</small> : null}</label>
         <button className="primary-button search-submit" disabled={!mapService.isConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
       </form>
+      <section className="external-link-import">
+        <header><Link2 size={16} /><div><strong>粘贴餐厅链接</strong><span>支持高德、Apple 地图和普通餐厅网页</span></div></header>
+        <form className="external-link-import__form" onSubmit={onExternalLinkResolve}>
+          <div className="input-with-icon"><Link2 size={16} /><input onChange={(event) => onExternalLinkChange(event.target.value)} placeholder="粘贴链接或分享文字" value={externalLink} /></div>
+          <button className="secondary-button" disabled={externalLinkLoading || !externalLink.trim()} type="submit">
+            {externalLinkLoading ? <LoaderCircle className="spin" size={16} /> : '识别'}
+          </button>
+        </form>
+        {externalLinkResult ? <div className={`external-link-import__result is-${externalLinkResult.confidence.toLowerCase()}`}>
+          <p><strong>{externalLinkResult.message}</strong><span>推荐来源建议：{externalLinkResult.sourceSuggestion}（保存前可修改）</span></p>
+          {externalLinkResult.candidates.length ? <PoiResultList
+            existingRestaurantsByPoiId={existingRestaurantsByPoiId}
+            onChoose={onChoose}
+            onRecordExisting={onRecordExisting}
+            results={externalLinkResult.candidates}
+          /> : null}
+        </div> : null}
+      </section>
       {error ? <p className="form-error">{error}</p> : null}
       {!hasSearched ? (
         <section className="nearby-restaurant-section">
@@ -498,9 +646,15 @@ function PoiResultList({
       <article className="poi-result" key={poi.amapPoiId}>
         {poi.merchantImageUrl ? <img className="poi-result__image" alt="" src={poi.merchantImageUrl} /> : <span className="poi-result__pin"><MapPin size={17} /></span>}
         <div className="poi-result__body"><strong>{poi.name}</strong><p>{poi.address}</p><span>{poi.city}{poi.district ? ` · ${poi.district}` : ''}</span></div>
-        <button className={existingRestaurant ? 'repeat-visit-button' : 'secondary-button'} onClick={() => existingRestaurant ? onRecordExisting(existingRestaurant) : onChoose(poi)} type="button">
-          {existingRestaurant ? <><Plus size={15} /> 再去一次</> : '选择'}
-        </button>
+        {existingRestaurant ? <PlusAction
+          actionType="ADD_VISIT"
+          aria-label={`再次记录到访 ${existingRestaurant.name}`}
+          className="repeat-visit-button"
+          context="restaurant"
+          label="再次记录到访"
+          onAction={() => onRecordExisting(existingRestaurant)}
+          showLabel
+        /> : <button className="secondary-button" onClick={() => onChoose(poi)} type="button">选择</button>}
       </article>
     )
   })
@@ -566,26 +720,28 @@ function ManualRestaurantStep({
   }
 
   return (
-    <form className="manual-restaurant-form" onSubmit={continueWithManualRestaurant}>
-      <button className="back-button" onClick={onBack} type="button"><ArrowLeft size={15} /> 返回餐厅搜索</button>
-      <div className="manual-restaurant-intro"><Store size={20} /><div><strong>手动添加小店</strong><p>只需名称和位置，其他记录下一步再补充。</p></div></div>
-      <div className="field-grid">
-        <label className="field"><span>小店 / 摊位名称</span><input autoFocus onChange={(event) => setName(event.target.value)} placeholder="例如：阿婆葱包桧小摊" required value={name} /></label>
-        <label className="field"><span>城市</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" required value={city} /></label>
-      </div>
-      <label className="field field-with-leading-icon"><span>地址或附近地标</span><div><MapPin size={16} /><input onChange={(event) => { setAddress(event.target.value); setLocation(null) }} placeholder="例如：武林路 32 号门口" required value={address} /></div></label>
-      <button className="location-helper-button" disabled={locating} onClick={useCurrentLocation} type="button">
-        {locating ? <LoaderCircle className="spin" size={16} /> : <LocateFixed size={16} />}
-        {locating ? '正在读取位置' : '使用我现在的位置'}
-      </button>
-      {location ? <p className="location-success"><Check size={14} /> 已定位到当前位置</p> : null}
-      {error ? <p className="form-error">{error}</p> : null}
-      <footer className="modal-actions sticky-modal-actions">
-        <button className="secondary-button" onClick={onBack} type="button">取消</button>
-        <button className="primary-button" disabled={resolving || !name.trim() || !address.trim() || !city.trim()} type="submit">
-          {resolving ? <LoaderCircle className="spin" size={17} /> : null} 确认位置并继续
+    <form className="sticky-action-form" onSubmit={continueWithManualRestaurant}>
+      <div className="manual-restaurant-form sticky-action-form__content">
+        <button className="back-button" onClick={onBack} type="button"><ArrowLeft size={15} /> 返回餐厅搜索</button>
+        <div className="manual-restaurant-intro"><Store size={20} /><div><strong>手动添加小店</strong><p>只需名称和位置，其他记录下一步再补充。</p></div></div>
+        <div className="field-grid">
+          <label className="field"><span>小店 / 摊位名称</span><input autoFocus onChange={(event) => setName(event.target.value)} placeholder="例如：阿婆葱包桧小摊" required value={name} /></label>
+          <label className="field"><span>城市</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" required value={city} /></label>
+        </div>
+        <label className="field field-with-leading-icon"><span>地址或附近地标</span><div><MapPin size={16} /><input onChange={(event) => { setAddress(event.target.value); setLocation(null) }} placeholder="例如：武林路 32 号门口" required value={address} /></div></label>
+        <button className="location-helper-button" disabled={locating} onClick={useCurrentLocation} type="button">
+          {locating ? <LoaderCircle className="spin" size={16} /> : <LocateFixed size={16} />}
+          {locating ? '正在读取位置' : '使用我现在的位置'}
         </button>
-      </footer>
+        {location ? <p className="location-success"><Check size={14} /> 已定位到当前位置</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+      </div>
+      <StickyFormActionBar
+        primaryDisabled={!name.trim() || !address.trim() || !city.trim()}
+        primaryLabel="确认位置并继续"
+        primaryLoading={resolving}
+        secondaryAction={onBack}
+      />
     </form>
   )
 }

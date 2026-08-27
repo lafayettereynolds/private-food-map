@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Crown, LoaderCircle, Search, ShieldCheck } from 'lucide-react'
+import { Crown, LoaderCircle, Search, ShieldCheck, Sparkles } from 'lucide-react'
 import type { MembershipAdminUser } from '../types/membership'
 import { MembershipService } from '../services/membershipService'
+import { openPremiumPaywall } from '../services/premiumPaywall'
 import { ModalShell } from './ModalShell'
 
 export function MembershipAdminEntry() {
@@ -10,8 +11,11 @@ export function MembershipAdminEntry() {
   useEffect(() => {
     void MembershipService.getEntitlement().then((result) => setIsAdmin(result.isAdmin)).catch(() => setIsAdmin(false))
   }, [])
-  if (!isAdmin) return null
-  return <><button className="account-setting-button" onClick={() => setOpen(true)} type="button"><span><strong>会员资格管理</strong><small>管理员赠送、修改与撤销</small></span><ShieldCheck size={17} /></button>{open ? <MembershipAdminModal onClose={() => setOpen(false)} /> : null}</>
+  return <>
+    <button className="account-setting-button" onClick={() => openPremiumPaywall('settings_entry')} type="button"><span><strong>会员与订阅</strong><small>查看会员状态、订阅方案与恢复购买</small></span><Sparkles size={17} /></button>
+    {isAdmin ? <button className="account-setting-button" onClick={() => setOpen(true)} type="button"><span><strong>会员资格管理</strong><small>管理员赠送、修改与撤销</small></span><ShieldCheck size={17} /></button> : null}
+    {open ? <MembershipAdminModal onClose={() => setOpen(false)} /> : null}
+  </>
 }
 
 function MembershipAdminModal({ onClose }: { onClose: () => void }) {

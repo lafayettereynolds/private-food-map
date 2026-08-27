@@ -12,9 +12,29 @@ export const APP_ENVIRONMENT: AppEnvironment = requestedEnvironment === 'product
 
 export const IS_DEVELOPMENT = APP_ENVIRONMENT === 'development'
 
-export const DATABASE_NAME = IS_DEVELOPMENT ? 'food-map-dev' : 'food-map-prod'
+export type LocalTestAccount = 'premium' | 'free'
+
+const requestedTestAccount = typeof window !== 'undefined'
+  ? new URLSearchParams(window.location.search).get('testAccount')
+  : null
+
+export const LOCAL_TEST_ACCOUNT: LocalTestAccount = IS_DEVELOPMENT && requestedTestAccount === 'free'
+  ? 'free'
+  : 'premium'
+
+export const LOCAL_TEST_VIEWER_ID = LOCAL_TEST_ACCOUNT === 'free' ? 'free-tester' : 'owner'
+
+// The free test account deliberately uses a different IndexedDB. This keeps the
+// owner's long-lived development data intact while allowing strict free-tier QA.
+export const DATABASE_NAME = IS_DEVELOPMENT
+  ? LOCAL_TEST_ACCOUNT === 'free' ? 'food-map-dev-free' : 'food-map-dev'
+  : 'food-map-prod'
 
 export const ENVIRONMENT_LABEL = IS_DEVELOPMENT ? '测试环境' : '正式环境'
+
+export function localTestHeaders(): Record<string, string> {
+  return IS_DEVELOPMENT ? { 'X-Taste-Map-Test-User': LOCAL_TEST_VIEWER_ID } : {}
+}
 
 export const BACKUP_FILE_PREFIX = IS_DEVELOPMENT
   ? 'food-map-dev-backup'
