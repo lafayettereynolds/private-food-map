@@ -36,6 +36,20 @@ enum SyncRecordMapper {
         ))
     }
 
+    static func visitDishPayload(
+        _ association: VisitDish,
+        restaurantRemoteID: String,
+        visitRemoteID: String,
+        dishRemoteID: String
+    ) throws -> Data {
+        try JSONEncoder().encode(try visitDishRecord(
+            association,
+            restaurantRemoteID: restaurantRemoteID,
+            visitRemoteID: visitRemoteID,
+            dishRemoteID: dishRemoteID
+        ))
+    }
+
     static func restaurantRecord(_ restaurant: Restaurant) throws -> RestaurantJSONContractV1 {
         let remoteID = restaurant.remoteID ?? restaurant.id.uuidString
         let previous = restaurant.remoteRecordData.flatMap {
@@ -131,6 +145,25 @@ enum SyncRecordMapper {
             createdAt: dateString(dish.createdAt),
             updatedAt: dateString(dish.updatedAt),
             deletedAt: dish.deletedAt.map(dateString)
+        )
+    }
+
+    static func visitDishRecord(
+        _ association: VisitDish,
+        restaurantRemoteID: String,
+        visitRemoteID: String,
+        dishRemoteID: String
+    ) throws -> VisitDishSyncContractV1 {
+        try VisitDishSyncContractV1(
+            id: association.remoteID ?? association.id.uuidString.lowercased(),
+            userId: "local",
+            restaurantId: restaurantRemoteID,
+            visitId: visitRemoteID,
+            dishId: dishRemoteID,
+            sortOrder: association.sortOrder,
+            createdAt: dateString(association.createdAt),
+            updatedAt: dateString(association.updatedAt),
+            deletedAt: association.deletedAt.map(dateString)
         )
     }
 

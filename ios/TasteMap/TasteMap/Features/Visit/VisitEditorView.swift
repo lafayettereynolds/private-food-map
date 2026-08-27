@@ -8,6 +8,8 @@ struct VisitEditorView: View {
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Query private var allRestaurants: [Restaurant]
     @Query private var allPhotos: [PhotoAsset]
+    @Query private var allDishes: [Dish]
+    @Query private var allVisitDishes: [VisitDish]
 
     private let restaurant: Restaurant?
     private let candidate: RestaurantCandidate?
@@ -26,6 +28,9 @@ struct VisitEditorView: View {
     @State private var photoError: String?
     @State private var didCommitPhotos = false
     @State private var photoDraftSessionID = UUID()
+    @State private var dishDrafts: [DishDraft] = []
+    @State private var isManagingDishes = false
+    @State private var didLoadDishes = false
 
     @MainActor
     init(
@@ -59,6 +64,7 @@ struct VisitEditorView: View {
             Form {
                 restaurantSection
                 photosSection
+                dishesSection
                 basicsSection
                 ratingSection
                 spendSection
@@ -110,6 +116,15 @@ struct VisitEditorView: View {
                 pickerItems = []
                 Task { await importPhotos(newItems) }
             }
+            .sheet(isPresented: $isManagingDishes) {
+                DishManagerSheet(
+                    drafts: $dishDrafts,
+                    existingDishes: existingRestaurantDishes,
+                    photos: visibleVisitPhotos,
+                    preparedPhotos: preparedPhotos
+                )
+            }
+            .onAppear { loadDishDraftsIfNeeded() }
             .onDisappear {
                 guard !didCommitPhotos else { return }
                 Task { await discardUncommittedPhotos() }
@@ -296,6 +311,42 @@ struct VisitEditorView: View {
         }
     }
 
+    private var dishesSection: some View {
+        Section {
+            if dishDrafts.isEmpty {
+                Label("还没有记录菜品", systemImage: "fork.knife.circle")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(dishDrafts) { dish in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(dish.name)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Text(dish.rating.map { String(format: "%.1f ★", $0) } ?? "未评分")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Button(dishDrafts.isEmpty ? "添加菜品" : "管理本次菜品", systemImage: "plus.circle.fill") {
+                isManagingDishes = true
+            }
+            .accessibilityIdentifier("visit-dish-manager")
+        } header: {
+            HStack {
+                Text("本次吃了什么")
+                Spacer()
+                if !dishDrafts.isEmpty {
+                    Text("\(dishDrafts.count) 道")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } footer: {
+            Text("可以选择这家店以前吃过的菜；菜品价格不会改变本次实际消费。")
+        }
+    }
+
     private var spendSection: some View {
         Section {
             TextField("例如 128.50", text: $spendText)
@@ -368,18 +419,38 @@ struct VisitEditorView: View {
             }
 
             if let photoCoordinator {
+                let dishMap = try LocalDishStore(context: modelContext).reconcile(
+                    restaurantID: restaurantID,
+                    visitID: savedVisit.id,
+                    drafts: dishDrafts
+                )
+                var savedPhotos = visibleVisitPhotos
                 for (offset, prepared) in preparedPhotos.enumerated() {
-                    _ = try photoCoordinator.attachPreparedPhoto(
+                    let photo = try photoCoordinator.attachPreparedPhoto(
                         prepared,
                         restaurantID: restaurantID,
                         visitID: savedVisit.id,
                         sortOrder: visibleVisitPhotos.count + offset,
                         queueForUpload: true
                     )
+                    savedPhotos.append(photo)
                 }
-                for photo in visibleVisitPhotos where photo.draftSessionID == photoDraftSessionID {
-                    try photoCoordinator.enqueue(photo)
+                for photo in savedPhotos where photo.visitId == savedVisit.id {
+                    let selectedDraft = dishDrafts.first { $0.photoID == photo.id }
+                    try photoCoordinator.setDishRelationship(
+                        photo,
+                        dish: selectedDraft.flatMap { dishMap[$0.id] }
+                    )
+                    if photo.draftSessionID == photoDraftSessionID {
+                        try photoCoordinator.enqueue(photo)
+                    }
                 }
+            } else {
+                _ = try LocalDishStore(context: modelContext).reconcile(
+                    restaurantID: restaurantID,
+                    visitID: savedVisit.id,
+                    drafts: dishDrafts
+                )
             }
 
             didCommitPhotos = true
@@ -395,7 +466,7 @@ struct VisitEditorView: View {
     private var visibleVisitPhotos: [PhotoAsset] {
         guard let visitID = visit?.id else { return [] }
         return allPhotos
-            .filter { $0.visitId == visitID && $0.deletedAt == nil && $0.kind == .visit }
+            .filter { $0.visitId == visitID && $0.deletedAt == nil && ($0.kind == .visit || $0.kind == .dish) }
             .sorted { left, right in
                 left.sortOrder == right.sortOrder
                     ? left.createdAt < right.createdAt
@@ -511,6 +582,32 @@ struct VisitEditorView: View {
             dismiss()
         } catch {
             saveError = "这条到访记录没有删除成功，请重试。"
+        }
+    }
+
+    private var existingRestaurantDishes: [Dish] {
+        let restaurantID = restaurant?.id
+        var seen = Set<String>()
+        return allDishes
+            .filter { $0.restaurantId == restaurantID && $0.deletedAt == nil }
+            .sorted { $0.createdAt == $1.createdAt ? ($0.remoteID ?? "") < ($1.remoteID ?? "") : $0.createdAt < $1.createdAt }
+            .filter { seen.insert(DishIdentity.normalizedName($0.name)).inserted }
+    }
+
+    private func loadDishDraftsIfNeeded() {
+        guard !didLoadDishes else { return }
+        didLoadDishes = true
+        guard let visit else { return }
+        try? LocalDishStore(context: modelContext).bootstrapLegacyAssociations()
+        let associations = ((try? modelContext.fetch(FetchDescriptor<VisitDish>())) ?? [])
+            .filter { $0.visitId == visit.id && $0.deletedAt == nil }
+            .sorted { $0.sortOrder < $1.sortOrder }
+        dishDrafts = associations.compactMap { association in
+            guard let dish = allDishes.first(where: { $0.id == association.dishId && $0.deletedAt == nil }) else { return nil }
+            let photoID = allPhotos.first(where: {
+                $0.visitId == visit.id && $0.dishId == dish.id && $0.deletedAt == nil
+            })?.id
+            return DishDraft(dish: dish, photoID: photoID)
         }
     }
 

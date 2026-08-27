@@ -215,7 +215,7 @@ struct P2ADishPhotoTests {
         try context.save()
         let api = RichRecordSyncAPI()
         try await SyncEngine(context: context, api: api).synchronize()
-        #expect(api.pushOrder == [.restaurant, .visit, .dish, .photo])
+        #expect(api.pushOrder == [.restaurant, .visit, .dish, .visitDish, .photo])
         #expect(try context.fetch(FetchDescriptor<SyncMutation>()).isEmpty)
         #expect(dish.serverVersion == 1)
         #expect(photo.serverVersion == 1)
@@ -225,10 +225,12 @@ struct P2ADishPhotoTests {
         let downloadedRestaurants = try destination.mainContext.fetch(FetchDescriptor<Restaurant>())
         let downloadedVisits = try destination.mainContext.fetch(FetchDescriptor<Visit>())
         let downloadedDishes = try destination.mainContext.fetch(FetchDescriptor<Dish>())
+        let downloadedVisitDishes = try destination.mainContext.fetch(FetchDescriptor<VisitDish>())
         let downloadedPhotos = try destination.mainContext.fetch(FetchDescriptor<PhotoAsset>())
         #expect(downloadedRestaurants.count == 1)
         #expect(downloadedVisits.count == 1)
         #expect(downloadedDishes.first?.name == "寿喜烧")
+        #expect(downloadedVisitDishes.count == 1)
         let downloadedPhoto = try #require(downloadedPhotos.first)
         #expect(downloadedPhoto.storageKey == "drive-file-id")
         #expect(downloadedPhoto.localFileRelativePath == nil)
@@ -300,6 +302,7 @@ private final class RichRecordSyncAPI: SyncAPI {
     private var restaurants: [String: RestaurantSyncRecordEnvelopeV1] = [:]
     private var visits: [String: VisitSyncRecordEnvelopeV1] = [:]
     private var dishes: [String: DishSyncRecordEnvelopeV1] = [:]
+    private var visitDishes: [String: VisitDishSyncRecordEnvelopeV1] = [:]
     private var photos: [String: PhotoSyncRecordEnvelopeV1] = [:]
     private var revision: Int64 = 0
 
@@ -317,6 +320,8 @@ private final class RichRecordSyncAPI: SyncAPI {
                     visits[mutation.entityId] = VisitSyncRecordEnvelopeV1(serverVersion: version, record: record)
                 case .dish(let record):
                     dishes[mutation.entityId] = DishSyncRecordEnvelopeV1(serverVersion: version, record: record)
+                case .visitDish(let record):
+                    visitDishes[mutation.entityId] = VisitDishSyncRecordEnvelopeV1(serverVersion: version, record: record)
                 case .photo(let record):
                     photos[mutation.entityId] = PhotoSyncRecordEnvelopeV1(serverVersion: version, record: record)
                 }
@@ -343,6 +348,7 @@ private final class RichRecordSyncAPI: SyncAPI {
             restaurants: includeRecords ? Array(restaurants.values) : [],
             visits: includeRecords ? Array(visits.values) : [],
             dishes: includeRecords ? Array(dishes.values) : [],
+            visitDishes: includeRecords ? Array(visitDishes.values) : [],
             photos: includeRecords ? Array(photos.values) : [],
             tombstones: [],
             nextCursor: String(revision),

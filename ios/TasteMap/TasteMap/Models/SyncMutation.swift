@@ -5,6 +5,7 @@ enum SyncEntityType: String, Codable, Sendable {
     case restaurant
     case visit
     case dish
+    case visitDish
     case photo
 
     var dependencyPriority: Int {
@@ -12,7 +13,8 @@ enum SyncEntityType: String, Codable, Sendable {
         case .restaurant: 0
         case .visit: 1
         case .dish: 2
-        case .photo: 3
+        case .visitDish: 3
+        case .photo: 4
         }
     }
 }

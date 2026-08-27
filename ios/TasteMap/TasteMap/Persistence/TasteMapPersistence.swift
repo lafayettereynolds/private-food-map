@@ -6,6 +6,7 @@ enum TasteMapPersistence {
         Restaurant.self,
         Visit.self,
         Dish.self,
+        VisitDish.self,
         PhotoAsset.self,
         SyncMutation.self,
         SyncCheckpoint.self,

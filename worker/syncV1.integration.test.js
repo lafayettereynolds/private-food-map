@@ -146,7 +146,7 @@ describe('Worker Sync API V1 integration', () => {
 
     expect(retry.acknowledgements[0]).toMatchObject({ status: 'applied', duplicate: true, serverVersion: 1 })
     expect(database.get('SELECT COUNT(*) AS count FROM restaurants').count).toBe(1)
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v2 WHERE mutation_id = 'response-lost'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v3 WHERE mutation_id = 'response-lost'").count).toBe(1)
   })
 
   it('increments server versions for valid Restaurant and Visit updates', async () => {
@@ -183,7 +183,7 @@ describe('Worker Sync API V1 integration', () => {
     const incremental = await pull(database, 'user-a', initial.nextCursor)
 
     expect(incremental.restaurants[0]).toMatchObject({ serverVersion: 2, record: { name: 'Web 更新名称' } })
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v2 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v3 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
   })
 
   it('prevents a stale device from resurrecting a server tombstone', async () => {
@@ -276,6 +276,60 @@ describe('Worker Sync API V1 integration', () => {
     expect((await push(database, 'user-a', mutation('p2-dish-resurrect', 'dish', dish.id, 2, dish))).acknowledgements[0])
       .toMatchObject({ status: 'conflict' })
   })
+
+  it('reuses one Restaurant Dish across Visits with idempotent associations and no resurrection', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('p2c-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const firstVisit = visitPayload('p2c-visit-1', appleFixture.id, 'forged-user')
+    const secondVisit = visitPayload('p2c-visit-2', appleFixture.id, 'forged-user')
+    await push(database, 'user-a', mutation('p2c-v1', 'visit', firstVisit.id, 0, firstVisit))
+    await push(database, 'user-a', mutation('p2c-v2', 'visit', secondVisit.id, 0, secondVisit))
+
+    const dish = dishPayload('p2c-dish', appleFixture.id, firstVisit.id, 'forged-user')
+    await push(database, 'user-a', mutation('p2c-dish-create', 'dish', dish.id, 0, dish))
+    const origin = visitDishPayload(
+      `legacy:${dish.id}:${firstVisit.id}`, appleFixture.id, firstVisit.id, dish.id, 'forged-user',
+    )
+    const originAcknowledgement = await push(
+      database, 'user-a', mutation('p2c-origin-explicit', 'visitDish', origin.id, 0, origin),
+    )
+    expect(originAcknowledgement.acknowledgements[0]).toMatchObject({
+      status: 'applied', duplicate: true, serverVersion: 1,
+    })
+
+    const second = visitDishPayload(
+      'p2c-association-2', appleFixture.id, secondVisit.id, dish.id, 'forged-user',
+    )
+    const create = mutation('p2c-association-create', 'visitDish', second.id, 0, second)
+    await push(database, 'user-a', create)
+    const retry = await push(database, 'user-a', create)
+    expect(retry.acknowledgements[0]).toMatchObject({ duplicate: true, serverVersion: 1 })
+    expect(database.get('SELECT COUNT(*) AS count FROM dishes WHERE id = ?', dish.id).count).toBe(1)
+    expect(database.get('SELECT COUNT(*) AS count FROM visit_dishes WHERE dish_id = ?', dish.id).count).toBe(2)
+    expect(JSON.parse(database.get('SELECT dishes_json FROM visits WHERE id = ?', secondVisit.id).dishes_json))
+      .toEqual([expect.objectContaining({ id: dish.id, name: '寿喜烧' })])
+
+    const clientB = await pull(database, 'user-a', '0')
+    expect(clientB.dishes.map((item) => item.record.id)).toContain(dish.id)
+    expect(clientB.visitDishes.map((item) => item.record.id)).toEqual(expect.arrayContaining([origin.id, second.id]))
+    expect((await pull(database, 'user-b', '0')).visitDishes).toEqual([])
+    await expect(push(database, 'user-b', mutation('p2c-takeover', 'visitDish', second.id, 1, second)))
+      .rejects.toMatchObject({ status: 403 })
+
+    const beforeDelete = clientB.nextCursor
+    await push(database, 'user-a', deletion('p2c-association-delete', 'visitDish', second.id, 1))
+    const deleted = await pull(database, 'user-a', beforeDelete)
+    expect(deleted.tombstones).toContainEqual(expect.objectContaining({
+      entityType: 'visitDish', entityId: second.id, serverVersion: 2,
+    }))
+    expect(database.get('SELECT deleted_at FROM dishes WHERE id = ?', dish.id).deleted_at).toBeNull()
+    expect(JSON.parse(database.get('SELECT dishes_json FROM visits WHERE id = ?', secondVisit.id).dishes_json)).toEqual([])
+
+    const stale = await push(database, 'user-a', mutation('p2c-stale-revive', 'visitDish', second.id, 1, second))
+    expect(stale.acknowledgements[0]).toMatchObject({
+      status: 'conflict', serverVersion: 2, conflictReason: 'server_version_mismatch',
+    })
+  })
 })
 
 function mutation(mutationId, entityType, entityId, baseVersion, payload) {
@@ -306,6 +360,14 @@ function dishPayload(id, restaurantId, visitId, claimedUser) {
     name: '寿喜烧', taste: '甜香', rating: 4.5, price: 88, photoId: null,
     sortOrder: 0, createdAt: '2026-08-27T06:10:00.000Z',
     updatedAt: '2026-08-27T06:10:00.000Z', deletedAt: null,
+  }
+}
+
+function visitDishPayload(id, restaurantId, visitId, dishId, claimedUser) {
+  return {
+    schemaVersion: 1, id, userId: claimedUser, restaurantId, visitId, dishId,
+    sortOrder: 0, createdAt: '2026-08-27T06:15:00.000Z',
+    updatedAt: '2026-08-27T06:15:00.000Z', deletedAt: null,
   }
 }
 
@@ -351,7 +413,7 @@ function migrationFiles() {
     '0012_recommendation_events.sql', '0013_restaurant_lists.sql',
     '0014_restaurant_contact_details.sql', '0015_restaurant_place_identities.sql',
     '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
-    '0019_dish_photo_sync.sql',
+    '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
   ]
 }
 

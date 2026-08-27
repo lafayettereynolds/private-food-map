@@ -6,6 +6,8 @@ struct RestaurantDetailView: View {
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Query private var allVisits: [Visit]
     @Query private var allPhotos: [PhotoAsset]
+    @Query private var allDishes: [Dish]
+    @Query private var allVisitDishes: [VisitDish]
 
     let restaurant: Restaurant
     private let navigator: any RestaurantNavigating
@@ -48,6 +50,7 @@ struct RestaurantDetailView: View {
                         onSelect: { selectedPhoto = $0 },
                         onRetry: retryPhoto
                     )
+                    RestaurantDishSection(summaries: dishSummaries)
                     RestaurantDetailStatsSection(presentation: presentation)
                     RestaurantVisitHistorySection(
                         visits: presentation.activeVisits,
@@ -163,5 +166,15 @@ struct RestaurantDetailView: View {
 
     private func retryPhoto(_ photo: PhotoAsset) {
         try? photoCoordinator?.retry(photo)
+    }
+
+    private var dishSummaries: [RestaurantDishSummary] {
+        RestaurantDishPresentation.summaries(
+            restaurantID: restaurant.id,
+            dishes: allDishes,
+            associations: allVisitDishes,
+            visits: allVisits,
+            photos: allPhotos
+        )
     }
 }

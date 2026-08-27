@@ -12,13 +12,13 @@ import {
   type VisitSyncContractV1,
 } from '../src/contracts/syncV1'
 import type { RestaurantJSONContractV1 } from '../src/contracts/restaurantContract'
-import type { DishJSONContractV1, PhotoJSONContractV1 } from '../src/contracts/dishPhotoContract'
+import type { DishJSONContractV1, VisitDishJSONContractV1, PhotoJSONContractV1 } from '../src/contracts/dishPhotoContract'
 import type { RestaurantPlaceIdentity } from '../src/types/restaurantIdentity'
 import { groupRestaurantPlaceIdentities, type RestaurantPlaceIdentityRow } from './restaurantIdentityMapping'
 
 const MAX_PULL_LIMIT = 200
-const CHANGE_LOG_TABLE = 'sync_change_log_v2'
-const RECEIPT_TABLE = 'sync_mutation_receipts_v2'
+const CHANGE_LOG_TABLE = 'sync_change_log_v3'
+const RECEIPT_TABLE = 'sync_mutation_receipts_v3'
 
 interface VersionedEntityRow {
   id: string
@@ -107,6 +107,15 @@ interface SyncDishRow extends VersionedEntityRow {
   updated_at: string
 }
 
+interface SyncVisitDishRow extends VersionedEntityRow {
+  restaurant_id: string
+  visit_id: string
+  dish_id: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 interface SyncPhotoRow extends VersionedEntityRow {
   restaurant_id: string | null
   visit_id: string | null
@@ -183,6 +192,7 @@ export async function handleSyncV1Pull(
   const restaurants = [] as SyncPullResponseV1['restaurants']
   const visits = [] as SyncPullResponseV1['visits']
   const dishes = [] as SyncPullResponseV1['dishes']
+  const visitDishes = [] as SyncPullResponseV1['visitDishes']
   const photos = [] as SyncPullResponseV1['photos']
   const tombstones = [] as SyncPullResponseV1['tombstones']
   for (const change of latestInPage.values()) {
@@ -214,6 +224,15 @@ export async function handleSyncV1Pull(
       } else {
         dishes.push({ serverVersion: row.server_version, record: rowToDish(row) })
       }
+    } else if (change.entity_type === 'visitDish') {
+      const row = await database.prepare('SELECT * FROM visit_dishes WHERE id = ? AND user_id = ?')
+        .bind(change.entity_id, viewerId).first<SyncVisitDishRow>()
+      if (!row || row.server_version !== change.server_version) continue
+      if (change.operation === 'delete' || row.deleted_at) {
+        tombstones.push(tombstone(change, row.deleted_at))
+      } else {
+        visitDishes.push({ serverVersion: row.server_version, record: rowToVisitDish(row) })
+      }
     } else {
       const row = await database.prepare('SELECT * FROM photos WHERE id = ? AND user_id = ?')
         .bind(change.entity_id, viewerId).first<SyncPhotoRow>()
@@ -236,7 +255,7 @@ export async function handleSyncV1Pull(
     includedRestaurantIDs.add(parent.id)
   }
   const includedVisitIDs = new Set(visits.map((item) => item.record.id))
-  for (const child of [...dishes, ...photos].filter((item) => item.record.visitId)) {
+  for (const child of [...dishes, ...visitDishes, ...photos].filter((item) => item.record.visitId)) {
     const visitId = child.record.visitId as string
     if (includedVisitIDs.has(visitId)) continue
     const parent = await database.prepare('SELECT * FROM visits WHERE id = ? AND user_id = ?')
@@ -255,11 +274,12 @@ export async function handleSyncV1Pull(
     }
   }
   const includedDishIDs = new Set(dishes.map((item) => item.record.id))
-  for (const photo of photos) {
-    if (!photo.record.dishId || includedDishIDs.has(photo.record.dishId)) continue
+  for (const child of [...visitDishes, ...photos]) {
+    const dishId = child.record.dishId
+    if (!dishId || includedDishIDs.has(dishId)) continue
     const parent = await database.prepare('SELECT * FROM dishes WHERE id = ? AND user_id = ?')
-      .bind(photo.record.dishId, viewerId).first<SyncDishRow>()
-    if (!parent) throw new SyncV1RequestError(`Photo ${photo.record.id} has no Dish.`, 500)
+      .bind(dishId, viewerId).first<SyncDishRow>()
+    if (!parent) throw new SyncV1RequestError(`Child ${child.record.id} has no Dish.`, 500)
     dishes.push({ serverVersion: parent.server_version, record: rowToDish(parent) })
     includedDishIDs.add(parent.id)
   }
@@ -281,6 +301,7 @@ export async function handleSyncV1Pull(
     restaurants,
     visits,
     dishes,
+    visitDishes,
     photos,
     tombstones,
     nextCursor: String(changes.at(-1)?.revision ?? cursor),
@@ -348,6 +369,14 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
     const dish = mutation.payload as DishJSONContractV1
     await assertOwnedDishParents(database, viewerId, dish)
   }
+  if (mutation.entityType === 'visitDish' && mutation.operation === 'upsert') {
+    const association = mutation.payload as VisitDishJSONContractV1
+    await assertOwnedVisitDishParents(database, viewerId, association)
+    if (current && mutation.baseVersion === 0 &&
+      await equivalentLegacyVisitDish(database, viewerId, association, current)) {
+      return recordEquivalentMutation(database, viewerId, mutation, fingerprint, current)
+    }
+  }
   if (mutation.entityType === 'photo' && mutation.operation === 'upsert') {
     const photo = mutation.payload as PhotoJSONContractV1
     await assertOwnedPhotoParents(database, viewerId, photo)
@@ -364,6 +393,7 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
       case 'restaurant': return restaurantMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
       case 'visit': return visitMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
       case 'dish': return dishMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
+      case 'visitDish': return visitDishMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
       case 'photo': return photoMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
     }
   })()
@@ -384,7 +414,7 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
 function conflictForMutation(current: VersionedEntityRow | null, mutation: SyncMutationV1) {
   if (!current) return mutation.operation === 'delete' ? 'missing_entity' : mutation.baseVersion === 0 ? null : 'server_version_mismatch'
   if (current.server_version !== mutation.baseVersion) return 'server_version_mismatch'
-  if (current.deleted_at) return 'entity_deleted'
+  if (current.deleted_at && !(mutation.entityType === 'visitDish' && mutation.operation === 'upsert')) return 'entity_deleted'
   return null
 }
 
@@ -543,8 +573,99 @@ function dishMutationStatements(
     )
   return finalMutationStatements(
     database, viewerId, mutation, fingerprint, nextVersion, processedAt,
-    entityStatement, [dishProjectionStatement(database, viewerId, mutation.entityId)],
+    entityStatement, [
+      ...legacyVisitDishStatements(database, viewerId, mutation, dish, processedAt),
+      dishProjectionStatement(database, viewerId, mutation.entityId),
+    ],
   )
+}
+
+function visitDishMutationStatements(
+  database: D1Database,
+  viewerId: string,
+  mutation: SyncMutationV1,
+  fingerprint: string,
+  nextVersion: number,
+  processedAt: string,
+) {
+  if (mutation.operation === 'delete') {
+    const entityStatement = database.prepare(`UPDATE visit_dishes
+      SET deleted_at = ?, updated_at = ?, server_version = ?, last_mutation_id = ?
+      WHERE id = ? AND user_id = ? AND server_version = ? AND deleted_at IS NULL`)
+      .bind(processedAt, processedAt, nextVersion, mutation.mutationId,
+        mutation.entityId, viewerId, mutation.baseVersion)
+    return finalMutationStatements(
+      database, viewerId, mutation, fingerprint, nextVersion, processedAt,
+      entityStatement, [visitDishProjectionStatement(database, viewerId, mutation.entityId)],
+    )
+  }
+  const association = mutation.payload as VisitDishJSONContractV1
+  const entityStatement = database.prepare(`INSERT INTO visit_dishes (
+    id, user_id, restaurant_id, visit_id, dish_id, sort_order,
+    created_at, updated_at, deleted_at, server_version, last_mutation_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    restaurant_id = excluded.restaurant_id, visit_id = excluded.visit_id,
+    dish_id = excluded.dish_id, sort_order = excluded.sort_order,
+    updated_at = excluded.updated_at, deleted_at = NULL,
+    server_version = excluded.server_version, last_mutation_id = excluded.last_mutation_id
+  WHERE visit_dishes.user_id = ? AND visit_dishes.server_version = ?`)
+    .bind(
+      mutation.entityId, viewerId, association.restaurantId, association.visitId,
+      association.dishId, association.sortOrder, association.createdAt,
+      association.updatedAt, nextVersion, mutation.mutationId,
+      viewerId, mutation.baseVersion,
+    )
+  return finalMutationStatements(
+    database, viewerId, mutation, fingerprint, nextVersion, processedAt,
+    entityStatement, [visitDishProjectionStatement(database, viewerId, mutation.entityId)],
+  )
+}
+
+function legacyVisitDishStatements(
+  database: D1Database,
+  viewerId: string,
+  mutation: SyncMutationV1,
+  dish: DishJSONContractV1,
+  processedAt: string,
+) {
+  const associationID = `legacy:${mutation.entityId}:${dish.visitId}`
+  const associationMutationID = `legacy-association:${mutation.mutationId}`
+  return [
+    database.prepare(`INSERT OR IGNORE INTO visit_dishes (
+      id, user_id, restaurant_id, visit_id, dish_id, sort_order,
+      created_at, updated_at, deleted_at, server_version, last_mutation_id
+    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?
+    WHERE EXISTS (SELECT 1 FROM dishes WHERE id = ? AND user_id = ? AND last_mutation_id = ?)`)
+      .bind(
+        associationID, viewerId, dish.restaurantId, dish.visitId, mutation.entityId,
+        dish.sortOrder, dish.createdAt, dish.updatedAt, associationMutationID,
+        mutation.entityId, viewerId, mutation.mutationId,
+      ),
+    database.prepare(`INSERT OR IGNORE INTO ${CHANGE_LOG_TABLE} (
+      user_id, entity_type, entity_id, operation, server_version, mutation_id, changed_at
+    ) SELECT ?, 'visitDish', id, 'upsert', server_version, ?, ?
+      FROM visit_dishes WHERE id = ? AND user_id = ? AND last_mutation_id = ?`)
+      .bind(viewerId, associationMutationID, processedAt, associationID, viewerId, associationMutationID),
+  ]
+}
+
+function visitDishProjectionStatement(database: D1Database, viewerId: string, associationID: string) {
+  return database.prepare(`UPDATE visits SET dishes_json = COALESCE((
+    SELECT json_group_array(json_object(
+      'id', d.id, 'name', d.name, 'taste', d.taste, 'rating', d.rating,
+      'price', d.price, 'photoId', d.photo_id
+    )) FROM (
+      SELECT d.id, d.name, d.taste, d.rating, d.price, d.photo_id, vd.sort_order, vd.created_at
+      FROM visit_dishes vd JOIN dishes d ON d.id = vd.dish_id AND d.user_id = vd.user_id
+      WHERE vd.user_id = ? AND vd.visit_id = visits.id
+        AND vd.deleted_at IS NULL AND d.deleted_at IS NULL
+      ORDER BY vd.sort_order ASC, vd.created_at ASC, vd.id ASC
+    ) d
+  ), '[]')
+  WHERE user_id = ? AND id = (
+    SELECT visit_id FROM visit_dishes WHERE id = ? AND user_id = ?
+  )`).bind(viewerId, viewerId, associationID, viewerId)
 }
 
 function photoMutationStatements(
@@ -607,12 +728,17 @@ function dishProjectionStatement(database: D1Database, viewerId: string, dishId:
       'id', id, 'name', name, 'taste', taste, 'rating', rating,
       'price', price, 'photoId', photo_id
     )) FROM (
-      SELECT id, name, taste, rating, price, photo_id FROM dishes
-      WHERE user_id = ? AND visit_id = visits.id AND deleted_at IS NULL
-      ORDER BY sort_order ASC, created_at ASC, id ASC
+      SELECT d.id, d.name, d.taste, d.rating, d.price, d.photo_id,
+        vd.sort_order, vd.created_at
+      FROM visit_dishes vd JOIN dishes d ON d.id = vd.dish_id AND d.user_id = vd.user_id
+      WHERE vd.user_id = ? AND vd.visit_id = visits.id
+        AND vd.deleted_at IS NULL AND d.deleted_at IS NULL
+      ORDER BY vd.sort_order ASC, vd.created_at ASC, vd.id ASC
     )
   ), '[]')
-  WHERE user_id = ? AND id = (SELECT visit_id FROM dishes WHERE id = ? AND user_id = ?)`)
+  WHERE user_id = ? AND id IN (
+    SELECT visit_id FROM visit_dishes WHERE dish_id = ? AND user_id = ?
+  )`)
     .bind(viewerId, viewerId, dishId, viewerId)
 }
 
@@ -646,15 +772,18 @@ function photoProjectionStatements(database: D1Database, viewerId: string, photo
         'id', id, 'name', name, 'taste', taste, 'rating', rating,
         'price', price, 'photoId', photo_id
       )) FROM (
-        SELECT id, name, taste, rating, price, photo_id FROM dishes
-        WHERE user_id = ? AND visit_id = visits.id AND deleted_at IS NULL
-        ORDER BY sort_order ASC, created_at ASC, id ASC
+        SELECT d.id, d.name, d.taste, d.rating, d.price, d.photo_id,
+          vd.sort_order, vd.created_at
+        FROM visit_dishes vd JOIN dishes d ON d.id = vd.dish_id AND d.user_id = vd.user_id
+        WHERE vd.user_id = ? AND vd.visit_id = visits.id
+          AND vd.deleted_at IS NULL AND d.deleted_at IS NULL
+        ORDER BY vd.sort_order ASC, vd.created_at ASC, vd.id ASC
       )
     ), '[]')
-    WHERE user_id = ? AND id = (
-      SELECT d.visit_id FROM dishes d JOIN photos p ON p.dish_id = d.id
-      WHERE p.id = ? AND p.user_id = ? LIMIT 1
-    )`).bind(viewerId, viewerId, photoId, viewerId),
+    WHERE user_id = ? AND id IN (
+      SELECT vd.visit_id FROM visit_dishes vd JOIN photos p ON p.dish_id = vd.dish_id
+      WHERE p.id = ? AND p.user_id = ? AND vd.user_id = ?
+    )`).bind(viewerId, viewerId, photoId, viewerId, viewerId),
   ]
 }
 
@@ -713,6 +842,49 @@ async function readReceipt(database: D1Database, viewerId: string, mutationId: s
     .bind(viewerId, mutationId).first<ReceiptRow>()
 }
 
+async function equivalentLegacyVisitDish(
+  database: D1Database,
+  viewerId: string,
+  association: VisitDishJSONContractV1,
+  current: VersionedEntityRow,
+) {
+  const legacyMutation = current.last_mutation_id?.startsWith('legacy-association:') ||
+    current.last_mutation_id?.startsWith('bootstrap:visitDish:')
+  if (current.deleted_at || current.server_version !== 1 || !legacyMutation) return false
+  const row = await database.prepare(`SELECT restaurant_id, visit_id, dish_id, sort_order
+    FROM visit_dishes WHERE id = ? AND user_id = ?`)
+    .bind(association.id, viewerId)
+    .first<{ restaurant_id: string; visit_id: string; dish_id: string; sort_order: number }>()
+  return row?.restaurant_id === association.restaurantId &&
+    row.visit_id === association.visitId && row.dish_id === association.dishId &&
+    row.sort_order === association.sortOrder
+}
+
+async function recordEquivalentMutation(
+  database: D1Database,
+  viewerId: string,
+  mutation: SyncMutationV1,
+  fingerprint: string,
+  current: VersionedEntityRow,
+) {
+  const processedAt = new Date().toISOString()
+  await database.prepare(`INSERT INTO ${RECEIPT_TABLE} (
+    user_id, mutation_id, request_fingerprint, entity_type, entity_id, operation,
+    status, server_version, revision, conflict_reason, processed_at
+  ) SELECT ?, ?, ?, ?, ?, 'upsert', 'applied', ?, revision, NULL, ?
+    FROM ${CHANGE_LOG_TABLE}
+    WHERE user_id = ? AND entity_type = ? AND entity_id = ?
+    ORDER BY revision DESC LIMIT 1`)
+    .bind(
+      viewerId, mutation.mutationId, fingerprint, mutation.entityType,
+      mutation.entityId, current.server_version, processedAt,
+      viewerId, mutation.entityType, mutation.entityId,
+    ).run()
+  const receipt = await readReceipt(database, viewerId, mutation.mutationId)
+  if (!receipt) throw new SyncV1RequestError('Unable to persist equivalent mutation receipt.', 500)
+  return acknowledgement(receipt, fingerprint, true)
+}
+
 async function readEntityVersion(database: D1Database, type: SyncEntityType, id: string) {
   const table = entityTable(type)
   return database.prepare(`SELECT id, user_id, server_version, deleted_at, last_mutation_id FROM ${table} WHERE id = ?`)
@@ -728,6 +900,26 @@ async function assertOwnedDishParents(database: D1Database, viewerId: string, di
     .first<{ id: string; restaurant_id: string }>()
   if (!row) {
     throw new SyncV1RequestError('Dish must reference an active Visit and Restaurant owned by the authenticated user.', 403)
+  }
+}
+
+async function assertOwnedVisitDishParents(
+  database: D1Database,
+  viewerId: string,
+  association: VisitDishJSONContractV1,
+) {
+  const row = await database.prepare(`SELECT v.id FROM visits v
+    JOIN restaurants r ON r.id = v.restaurant_id
+    JOIN dishes d ON d.id = ? AND d.restaurant_id = r.id
+    WHERE v.id = ? AND v.user_id = ? AND v.deleted_at IS NULL
+      AND r.id = ? AND r.user_id = ? AND r.deleted_at IS NULL
+      AND d.user_id = ? AND d.deleted_at IS NULL`)
+    .bind(
+      association.dishId, association.visitId, viewerId,
+      association.restaurantId, viewerId, viewerId,
+    ).first<{ id: string }>()
+  if (!row) {
+    throw new SyncV1RequestError('VisitDish must reference active owned Restaurant, Visit, and Dish records.', 403)
   }
 }
 
@@ -748,8 +940,14 @@ async function assertOwnedPhotoParents(database: D1Database, viewerId: string, p
   if (photo.dishId) {
     const dish = await database.prepare('SELECT id, user_id, restaurant_id, visit_id, deleted_at FROM dishes WHERE id = ?')
       .bind(photo.dishId).first<{ id: string; user_id: string; restaurant_id: string; visit_id: string; deleted_at: string | null }>()
+    const association = dish && photo.visitId
+      ? await database.prepare(`SELECT id FROM visit_dishes
+          WHERE user_id = ? AND visit_id = ? AND dish_id = ? AND deleted_at IS NULL`)
+        .bind(viewerId, photo.visitId, photo.dishId).first<{ id: string }>()
+      : null
     if (!dish || dish.user_id !== viewerId || dish.deleted_at ||
-      dish.restaurant_id !== photo.restaurantId || dish.visit_id !== photo.visitId) {
+      dish.restaurant_id !== photo.restaurantId ||
+      (dish.visit_id !== photo.visitId && !association)) {
       throw new SyncV1RequestError('Photo.dishId must reference an active owned Dish with matching parents.', 403)
     }
   }
@@ -760,6 +958,7 @@ function entityTable(type: SyncEntityType) {
     case 'restaurant': return 'restaurants'
     case 'visit': return 'visits'
     case 'dish': return 'dishes'
+    case 'visitDish': return 'visit_dishes'
     case 'photo': return 'photos'
   }
 }
@@ -853,6 +1052,21 @@ function rowToDish(row: SyncDishRow): DishJSONContractV1 {
     rating: row.rating as DishJSONContractV1['rating'],
     price: row.price,
     photoId: row.photo_id,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+  }
+}
+
+function rowToVisitDish(row: SyncVisitDishRow): VisitDishJSONContractV1 {
+  return {
+    schemaVersion: 1,
+    id: row.id,
+    userId: row.user_id,
+    restaurantId: row.restaurant_id,
+    visitId: row.visit_id,
+    dishId: row.dish_id,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

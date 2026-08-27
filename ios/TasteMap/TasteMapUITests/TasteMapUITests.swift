@@ -92,9 +92,11 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["visit-editor-date"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["visit-editor-dining-mode"].exists)
         XCTAssertTrue(app.textFields["visit-editor-party-size"].exists)
-        XCTAssertTrue(app.textFields["visit-editor-spend"].exists)
+        let spend = app.textFields["visit-editor-spend"]
+        scrollUntilVisible(spend, in: app)
+        XCTAssertTrue(spend.exists)
         let note = app.descendants(matching: .any)["visit-editor-note"]
-        if !note.exists { app.swipeUp() }
+        scrollUntilVisible(note, in: app)
         XCTAssertTrue(note.waitForExistence(timeout: 2))
 
         app.buttons["visit-editor-save"].tap()
@@ -247,6 +249,113 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP2CDishCreatePhotoReuseEditRemoveAndRestart() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P2B_UI_TEST": "1",
+        ]
+        app.launch()
+
+        openP1DDetail(in: app, tab: "想吃")
+        app.buttons["restaurant-detail-add-visit"].tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        app.buttons["visit-photo-ui-test-import"].tap()
+        XCTAssertTrue(app.staticTexts["本机"].waitForExistence(timeout: 5))
+        openDishManager(in: app)
+        app.buttons["visit-dish-add-new"].tap()
+        XCTAssertTrue(app.navigationBars["新菜品"].waitForExistence(timeout: 5))
+        app.textFields["dish-name"].tap()
+        app.textFields["dish-name"].typeText("招牌牛肉")
+        app.buttons["4.5 星"].tap()
+        app.textFields["dish-price"].tap()
+        app.textFields["dish-price"].typeText("88")
+        let photo = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'dish-photo-'")
+        ).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        photo.tap()
+        app.buttons["dish-save"].tap()
+        XCTAssertTrue(app.staticTexts["招牌牛肉"].waitForExistence(timeout: 5))
+        app.buttons["dish-manager-done"].tap()
+        app.buttons["visit-editor-save"].tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        scrollUntilVisible(app.staticTexts["招牌牛肉"], in: app)
+        XCTAssertTrue(app.staticTexts["招牌牛肉"].exists)
+        app.terminate()
+        app.launchArguments = ["-p1d-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P2B_UI_TEST": "1",
+        ]
+        app.launch()
+        let markers = app.otherElements.matching(
+            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+        )
+        XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
+        markers.element(boundBy: max(0, markers.count - 1)).tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        scrollUntilVisible(app.staticTexts["招牌牛肉"], in: app)
+        XCTAssertTrue(app.staticTexts["招牌牛肉"].exists)
+
+        app.buttons["restaurant-detail-add-visit"].tap()
+        openDishManager(in: app)
+        let existing = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'existing-dish-'")
+        ).firstMatch
+        XCTAssertTrue(existing.waitForExistence(timeout: 5))
+        existing.tap()
+        let edit = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'visit-dish-edit-'")
+        ).firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        let note = app.descendants(matching: .any)["dish-note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+        note.typeText("再次到访依然稳定")
+        app.buttons["dish-save"].tap()
+        app.buttons["dish-manager-done"].tap()
+        app.buttons["visit-editor-save"].tap()
+        let twice = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS '吃过 2 次'")
+        ).firstMatch
+        scrollUntilVisible(twice, in: app)
+        XCTAssertTrue(twice.exists)
+        let dishDetail = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'restaurant-dish-'")
+        ).firstMatch
+        XCTAssertTrue(dishDetail.waitForExistence(timeout: 5))
+        dishDetail.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS '再次到访依然稳定'")
+        ).firstMatch.waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
+
+        scrollUntilVisible(app.staticTexts["第 2 次"], in: app)
+        app.staticTexts["第 2 次"].tap()
+        openDishManager(in: app)
+        let remove = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'visit-dish-remove-'")
+        ).firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.tap()
+        app.buttons["dish-manager-done"].tap()
+        app.buttons["visit-editor-save"].tap()
+        let once = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS '吃过 1 次'")
+        ).firstMatch
+        scrollUntilVisible(once, in: app)
+        XCTAssertTrue(once.exists)
+        XCTAssertTrue(app.staticTexts["招牌牛肉"].exists)
+    }
+
+    @MainActor
     private func openP1DDetail(in app: XCUIApplication, tab: String) {
         app.segmentedControls.buttons[tab].tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
@@ -281,6 +390,20 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
         app.buttons["visit-editor-save"].tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func openDishManager(in app: XCUIApplication) {
+        let button = app.buttons["visit-dish-manager"]
+        scrollUntilVisible(button, in: app)
+        XCTAssertTrue(button.exists)
+        button.tap()
+        XCTAssertTrue(app.navigationBars["本次吃了什么"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func scrollUntilVisible(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 where !element.exists { app.swipeUp() }
     }
 
     @MainActor

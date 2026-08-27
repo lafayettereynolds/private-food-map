@@ -154,6 +154,7 @@ struct LocalTasteMapStore {
     }
 
     func delete(_ visit: Visit) throws {
+        try LocalDishStore(context: context).removeAssociations(for: visit.id)
         let queue = SwiftDataSyncQueue(context: context)
         guard let remoteID = visit.remoteID else {
             context.delete(visit)

@@ -265,6 +265,28 @@ struct LocalDishPhotoStore {
         try context.save()
     }
 
+    func setDishRelationship(_ photo: PhotoAsset, dish: Dish?) throws {
+        guard let restaurantId = photo.restaurantId, let visitId = photo.visitId else {
+            throw LocalDishPhotoStoreError.visitNotFound
+        }
+        if let dish {
+            try validatePhotoRelationship(
+                kind: .dish,
+                restaurantId: restaurantId,
+                visitId: visitId,
+                dishId: dish.id
+            )
+            photo.kind = .dish
+            photo.dishId = dish.id
+        } else {
+            photo.kind = .visit
+            photo.dishId = nil
+        }
+        photo.updatedAt = .now
+        if photo.uploadState == .uploaded { try enqueue(photo) }
+        try context.save()
+    }
+
     func cleanupLocalFiles(retainingTombstonesFor retention: TimeInterval = 7 * 24 * 60 * 60) async throws {
         let cutoff = Date().addingTimeInterval(-retention)
         let photos = try context.fetch(FetchDescriptor<PhotoAsset>())
@@ -355,8 +377,15 @@ struct LocalDishPhotoStore {
             guard let restaurantId, let visitId, let dishId else { throw LocalDishPhotoStoreError.dishNotFound }
             _ = try activeParents(restaurantId: restaurantId, visitId: visitId)
             guard try context.fetch(FetchDescriptor<Dish>()).contains(where: {
-                $0.id == dishId && $0.restaurantId == restaurantId && $0.visitId == visitId && $0.deletedAt == nil
+                $0.id == dishId && $0.restaurantId == restaurantId && $0.deletedAt == nil
             }) else { throw LocalDishPhotoStoreError.dishNotFound }
+            let isOriginVisit = try context.fetch(FetchDescriptor<Dish>()).contains(where: {
+                $0.id == dishId && $0.visitId == visitId
+            })
+            let isAssociatedVisit = try context.fetch(FetchDescriptor<VisitDish>()).contains(where: {
+                $0.dishId == dishId && $0.visitId == visitId && $0.deletedAt == nil
+            })
+            guard isOriginVisit || isAssociatedVisit else { throw LocalDishPhotoStoreError.relationshipMismatch }
         case .avatar:
             break
         }

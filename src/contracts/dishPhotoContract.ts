@@ -1,6 +1,7 @@
 import type { PhotoKind, StarRating, Visibility } from '../types/domain'
 
 export const DISH_CONTRACT_VERSION = 1 as const
+export const VISIT_DISH_CONTRACT_VERSION = 1 as const
 export const PHOTO_CONTRACT_VERSION = 1 as const
 
 export type PhotoStorageProviderContract = 'google-drive' | 'cloudkit' | 'r2' | 'oss' | 'cos'
@@ -16,6 +17,19 @@ export interface DishJSONContractV1 {
   rating: StarRating | null
   price: number | null
   photoId: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface VisitDishJSONContractV1 {
+  schemaVersion: typeof VISIT_DISH_CONTRACT_VERSION
+  id: string
+  userId: string
+  restaurantId: string
+  visitId: string
+  dishId: string
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -50,6 +64,10 @@ const dishKeys = new Set([
   'schemaVersion', 'id', 'userId', 'restaurantId', 'visitId', 'name', 'taste',
   'rating', 'price', 'photoId', 'sortOrder', 'createdAt', 'updatedAt', 'deletedAt',
 ])
+const visitDishKeys = new Set([
+  'schemaVersion', 'id', 'userId', 'restaurantId', 'visitId', 'dishId',
+  'sortOrder', 'createdAt', 'updatedAt', 'deletedAt',
+])
 const photoKeys = new Set([
   'schemaVersion', 'id', 'userId', 'restaurantId', 'visitId', 'dishId', 'kind',
   'storageProvider', 'storageKey', 'providerAccountId', 'thumbnailStorageKey',
@@ -79,6 +97,19 @@ export function decodeDishJSONContract(value: unknown): DishJSONContractV1 {
   assertSortOrder(value.sortOrder, 'Dish.sortOrder')
   assertDateFields(value, 'Dish')
   return value as unknown as DishJSONContractV1
+}
+
+export function decodeVisitDishJSONContract(value: unknown): VisitDishJSONContractV1 {
+  if (!isRecord(value) || value.schemaVersion !== VISIT_DISH_CONTRACT_VERSION) {
+    throw new DishPhotoContractError('VisitDish contract must be a schemaVersion=1 JSON object.')
+  }
+  assertAllowedKeys(value, visitDishKeys, 'VisitDish')
+  for (const key of ['id', 'userId', 'restaurantId', 'visitId', 'dishId'] as const) {
+    if (!isNonEmptyString(value[key])) throw new DishPhotoContractError(`VisitDish.${key} is required.`)
+  }
+  assertSortOrder(value.sortOrder, 'VisitDish.sortOrder')
+  assertDateFields(value, 'VisitDish')
+  return value as unknown as VisitDishJSONContractV1
 }
 
 export function decodePhotoJSONContract(value: unknown): PhotoJSONContractV1 {

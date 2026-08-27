@@ -78,6 +78,9 @@ enum TasteMapUITestFixtures {
             for photo in try context.fetch(FetchDescriptor<PhotoAsset>()) {
                 context.delete(photo)
             }
+            for association in try context.fetch(FetchDescriptor<VisitDish>()) {
+                context.delete(association)
+            }
             for dish in try context.fetch(FetchDescriptor<Dish>()) {
                 context.delete(dish)
             }

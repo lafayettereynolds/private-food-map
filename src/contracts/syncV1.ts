@@ -4,15 +4,17 @@ import {
 } from './restaurantContract'
 import {
   decodeDishJSONContract,
+  decodeVisitDishJSONContract,
   decodePhotoJSONContract,
   type DishJSONContractV1,
+  type VisitDishJSONContractV1,
   type PhotoJSONContractV1,
 } from './dishPhotoContract'
 
 export const SYNC_API_VERSION = 1 as const
 export const SYNC_SCHEMA_VERSION = 1 as const
 
-export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'photo'
+export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'visitDish' | 'photo'
 export type SyncMutationOperation = 'upsert' | 'delete'
 export type VisitDiningModeContract = 'dine_in' | 'takeout'
 
@@ -39,7 +41,7 @@ export interface SyncMutationV1 {
   operation: SyncMutationOperation
   baseVersion: number
   clientTimestamp: string
-  payload?: RestaurantJSONContractV1 | VisitSyncContractV1 | DishJSONContractV1 | PhotoJSONContractV1
+  payload?: RestaurantJSONContractV1 | VisitSyncContractV1 | DishJSONContractV1 | VisitDishJSONContractV1 | PhotoJSONContractV1
 }
 
 export interface SyncPushRequestV1 {
@@ -83,6 +85,7 @@ export interface SyncPullResponseV1 {
   restaurants: Array<SyncRecordEnvelopeV1<RestaurantJSONContractV1>>
   visits: Array<SyncRecordEnvelopeV1<VisitSyncContractV1>>
   dishes: Array<SyncRecordEnvelopeV1<DishJSONContractV1>>
+  visitDishes: Array<SyncRecordEnvelopeV1<VisitDishJSONContractV1>>
   photos: Array<SyncRecordEnvelopeV1<PhotoJSONContractV1>>
   tombstones: SyncTombstoneV1[]
   nextCursor: string
@@ -137,7 +140,7 @@ export function stableSyncMutationJSON(mutation: SyncMutationV1) {
 
 function decodeSyncMutation(value: unknown): SyncMutationV1 {
   if (!isRecord(value) || !isNonEmptyString(value.mutationId) ||
-    !['restaurant', 'visit', 'dish', 'photo'].includes(String(value.entityType)) ||
+    !['restaurant', 'visit', 'dish', 'visitDish', 'photo'].includes(String(value.entityType)) ||
     !isNonEmptyString(value.entityId) || !['upsert', 'delete'].includes(String(value.operation)) ||
     !Number.isInteger(value.baseVersion) || Number(value.baseVersion) < 0 ||
     !isNonEmptyString(value.clientTimestamp)) {
@@ -162,6 +165,7 @@ function decodeSyncMutation(value: unknown): SyncMutationV1 {
       case 'restaurant': return decodeRestaurantJSONContract(value.payload)
       case 'visit': return decodeVisitSyncContract(value.payload)
       case 'dish': return decodeDishJSONContract(value.payload)
+      case 'visitDish': return decodeVisitDishJSONContract(value.payload)
       case 'photo': return decodePhotoJSONContract(value.payload)
     }
   })()

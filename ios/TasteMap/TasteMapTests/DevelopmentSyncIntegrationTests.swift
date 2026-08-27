@@ -495,6 +495,141 @@ struct DevelopmentSyncIntegrationTests {
         #expect(remote.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurant.remoteID })
     }
 
+    @Test("P2-C iOS SwiftData Dish associations round-trip through Development Worker and D1")
+    func developmentVisitDishRoundTrip() async throws {
+#if !TASTEMAP_DEVELOPMENT_INTEGRATION
+        guard ProcessInfo.processInfo.environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+#endif
+        let runID = UUID().uuidString.lowercased()
+        let userID = "ios-p2c:\(runID)"
+        let client = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: userID)
+        )
+        let otherClient = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p2c-other:\(runID)")
+        )
+        let sourceContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receivingContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let sourceContext = sourceContainer.mainContext
+        let receivingContext = receivingContainer.mainContext
+        let visitStore = LocalTasteMapStore(context: sourceContext)
+        let dishStore = LocalDishStore(context: sourceContext)
+
+        let restaurant = try visitStore.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P2-C Development Dish Restaurant",
+                address: "Development D1 only",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p2c-\(runID)"
+            ),
+            among: []
+        )
+        let firstVisit = try visitStore.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(note: "P2-C first Visit")
+        )
+        let secondVisit = try visitStore.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(note: "P2-C second Visit")
+        )
+        let firstDraftID = UUID()
+        let mapping = try dishStore.reconcile(
+            restaurantID: restaurant.id,
+            visitID: firstVisit.id,
+            drafts: [DishDraft(
+                id: firstDraftID,
+                name: "  招牌牛肉  ",
+                taste: "值得再点",
+                rating: 4.5,
+                price: 88
+            )]
+        )
+        let dish = try #require(mapping[firstDraftID])
+        _ = try dishStore.reconcile(
+            restaurantID: restaurant.id,
+            visitID: secondVisit.id,
+            drafts: [DishDraft(dishID: dish.id, name: dish.name, taste: dish.taste, rating: dish.rating, price: dish.price)]
+        )
+
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(dish.serverVersion == 1)
+        #expect(try sourceContext.fetch(FetchDescriptor<VisitDish>()).filter { $0.deletedAt == nil }.count == 2)
+        #expect(try sourceContext.fetch(FetchDescriptor<SyncMutation>()).isEmpty)
+
+        try await SyncEngine(context: receivingContext, api: client).synchronize()
+        let receivedDish = try #require(receivingContext.fetch(FetchDescriptor<Dish>()).first)
+        let receivedAssociations = try receivingContext.fetch(FetchDescriptor<VisitDish>())
+            .filter { $0.deletedAt == nil }
+        #expect(receivedDish.remoteID == dish.remoteID)
+        #expect(receivedDish.name == "招牌牛肉")
+        #expect(receivedAssociations.count == 2)
+        #expect(Set(receivedAssociations.map(\.dishId)).count == 1)
+
+        let receivingVisit = try #require(receivingContext.fetch(FetchDescriptor<Visit>())
+            .first { $0.remoteID == firstVisit.remoteID })
+        _ = try LocalDishStore(context: receivingContext).reconcile(
+            restaurantID: try #require(receivingContext.fetch(FetchDescriptor<Restaurant>()).first).id,
+            visitID: receivingVisit.id,
+            drafts: [DishDraft(
+                dishID: receivedDish.id,
+                name: receivedDish.name,
+                taste: "第二台客户端更新",
+                rating: nil,
+                price: nil
+            )]
+        )
+        try await SyncEngine(context: receivingContext, api: client).synchronize()
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(dish.taste == "第二台客户端更新")
+        #expect(dish.rating == nil)
+        #expect(dish.price == nil)
+        #expect(dish.serverVersion == 2)
+
+        let isolated = try await otherClient.pull(cursor: "0", limit: 200)
+        #expect(!isolated.dishes.contains { $0.record.id == dish.remoteID })
+        #expect(!isolated.visitDishes.contains { $0.record.dishId == dish.remoteID })
+
+        _ = try dishStore.reconcile(
+            restaurantID: restaurant.id,
+            visitID: secondVisit.id,
+            drafts: []
+        )
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        try await SyncEngine(context: receivingContext, api: client).synchronize()
+        #expect(try sourceContext.fetch(FetchDescriptor<Dish>()).first?.deletedAt == nil)
+        #expect(try receivingContext.fetch(FetchDescriptor<VisitDish>()).filter { $0.deletedAt == nil }.count == 1)
+
+        _ = try dishStore.reconcile(
+            restaurantID: restaurant.id,
+            visitID: firstVisit.id,
+            drafts: []
+        )
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        let fileDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("taste-map-p2c-dev-\(runID)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fileDirectory) }
+        try LocalDishPhotoStore(
+            context: sourceContext,
+            photoFiles: LocalPhotoFileStore(rootURL: fileDirectory)
+        ).delete(dish)
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        try visitStore.delete(firstVisit)
+        try visitStore.delete(secondVisit)
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        try visitStore.delete(restaurant)
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+
+        let cleanup = try await client.pull(cursor: "0", limit: 200)
+        #expect(cleanup.tombstones.contains { $0.entityType == .dish && $0.entityId == dish.remoteID })
+        #expect(cleanup.tombstones.filter { $0.entityType == .visitDish }.count == 2)
+        #expect(cleanup.tombstones.contains { $0.entityType == .visit && $0.entityId == firstVisit.remoteID })
+        #expect(cleanup.tombstones.contains { $0.entityType == .visit && $0.entityId == secondVisit.remoteID })
+        #expect(cleanup.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurant.remoteID })
+    }
+
     @Test("P2-B iOS local photo uploads to private Development R2 and downloads on a fresh client")
     func developmentPhotoBinaryRoundTrip() async throws {
 #if !TASTEMAP_DEVELOPMENT_INTEGRATION

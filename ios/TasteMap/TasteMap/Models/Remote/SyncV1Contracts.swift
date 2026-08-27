@@ -73,6 +73,7 @@ extension VisitSyncContractV1 {
 
 enum RichRecordContractError: Error, Equatable {
     case invalidDish
+    case invalidVisitDish
     case invalidPhoto
 }
 
@@ -185,6 +186,92 @@ struct DishSyncContractV1: Codable, Equatable {
         try values.encode(rating, forKey: .rating)
         try values.encode(price, forKey: .price)
         try values.encode(photoId, forKey: .photoId)
+        try values.encode(sortOrder, forKey: .sortOrder)
+        try values.encode(createdAt, forKey: .createdAt)
+        try values.encode(updatedAt, forKey: .updatedAt)
+        try values.encode(deletedAt, forKey: .deletedAt)
+    }
+}
+
+struct VisitDishSyncContractV1: Codable, Equatable {
+    let schemaVersion: Int
+    let id: String
+    let userId: String
+    let restaurantId: String
+    let visitId: String
+    let dishId: String
+    let sortOrder: Int
+    let createdAt: String
+    let updatedAt: String
+    let deletedAt: String?
+
+    init(
+        schemaVersion: Int = SyncV1Contract.schemaVersion,
+        id: String,
+        userId: String,
+        restaurantId: String,
+        visitId: String,
+        dishId: String,
+        sortOrder: Int,
+        createdAt: String,
+        updatedAt: String,
+        deletedAt: String?
+    ) throws {
+        guard schemaVersion == SyncV1Contract.schemaVersion,
+              isRichRecordNonBlank(id), isRichRecordNonBlank(userId),
+              isRichRecordNonBlank(restaurantId), isRichRecordNonBlank(visitId),
+              isRichRecordNonBlank(dishId), sortOrder >= 0,
+              isRichRecordISODateTime(createdAt), isRichRecordISODateTime(updatedAt),
+              deletedAt.map(isRichRecordISODateTime) ?? true else {
+            throw RichRecordContractError.invalidVisitDish
+        }
+        self.schemaVersion = schemaVersion
+        self.id = id
+        self.userId = userId
+        self.restaurantId = restaurantId
+        self.visitId = visitId
+        self.dishId = dishId
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, userId, restaurantId, visitId, dishId
+        case sortOrder, createdAt, updatedAt, deletedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        try assertRichRecordKeys(
+            decoder,
+            allowed: ["schemaVersion", "id", "userId", "restaurantId", "visitId", "dishId",
+                      "sortOrder", "createdAt", "updatedAt", "deletedAt"],
+            error: .invalidVisitDish
+        )
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            schemaVersion: values.decode(Int.self, forKey: .schemaVersion),
+            id: values.decode(String.self, forKey: .id),
+            userId: values.decode(String.self, forKey: .userId),
+            restaurantId: values.decode(String.self, forKey: .restaurantId),
+            visitId: values.decode(String.self, forKey: .visitId),
+            dishId: values.decode(String.self, forKey: .dishId),
+            sortOrder: values.decode(Int.self, forKey: .sortOrder),
+            createdAt: values.decode(String.self, forKey: .createdAt),
+            updatedAt: values.decode(String.self, forKey: .updatedAt),
+            deletedAt: values.decode(String?.self, forKey: .deletedAt)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(schemaVersion, forKey: .schemaVersion)
+        try values.encode(id, forKey: .id)
+        try values.encode(userId, forKey: .userId)
+        try values.encode(restaurantId, forKey: .restaurantId)
+        try values.encode(visitId, forKey: .visitId)
+        try values.encode(dishId, forKey: .dishId)
         try values.encode(sortOrder, forKey: .sortOrder)
         try values.encode(createdAt, forKey: .createdAt)
         try values.encode(updatedAt, forKey: .updatedAt)
@@ -369,6 +456,7 @@ enum SyncMutationPayload: Encodable {
     case restaurant(RestaurantJSONContractV1)
     case visit(VisitSyncContractV1)
     case dish(DishSyncContractV1)
+    case visitDish(VisitDishSyncContractV1)
     case photo(PhotoSyncContractV1)
 
     func encode(to encoder: Encoder) throws {
@@ -377,6 +465,7 @@ enum SyncMutationPayload: Encodable {
         case .restaurant(let restaurant): try container.encode(restaurant)
         case .visit(let visit): try container.encode(visit)
         case .dish(let dish): try container.encode(dish)
+        case .visitDish(let visitDish): try container.encode(visitDish)
         case .photo(let photo): try container.encode(photo)
         }
     }
@@ -435,6 +524,11 @@ struct DishSyncRecordEnvelopeV1: Decodable {
     let record: DishSyncContractV1
 }
 
+struct VisitDishSyncRecordEnvelopeV1: Decodable {
+    let serverVersion: Int64
+    let record: VisitDishSyncContractV1
+}
+
 struct PhotoSyncRecordEnvelopeV1: Decodable {
     let serverVersion: Int64
     let record: PhotoSyncContractV1
@@ -453,6 +547,7 @@ struct SyncPullResponseV1: Decodable {
     let restaurants: [RestaurantSyncRecordEnvelopeV1]
     let visits: [VisitSyncRecordEnvelopeV1]
     let dishes: [DishSyncRecordEnvelopeV1]
+    let visitDishes: [VisitDishSyncRecordEnvelopeV1]
     let photos: [PhotoSyncRecordEnvelopeV1]
     let tombstones: [SyncTombstoneV1]
     let nextCursor: String
@@ -465,6 +560,7 @@ struct SyncPullResponseV1: Decodable {
         restaurants: [RestaurantSyncRecordEnvelopeV1],
         visits: [VisitSyncRecordEnvelopeV1],
         dishes: [DishSyncRecordEnvelopeV1] = [],
+        visitDishes: [VisitDishSyncRecordEnvelopeV1] = [],
         photos: [PhotoSyncRecordEnvelopeV1] = [],
         tombstones: [SyncTombstoneV1],
         nextCursor: String,
@@ -476,6 +572,7 @@ struct SyncPullResponseV1: Decodable {
         self.restaurants = restaurants
         self.visits = visits
         self.dishes = dishes
+        self.visitDishes = visitDishes
         self.photos = photos
         self.tombstones = tombstones
         self.nextCursor = nextCursor
@@ -484,7 +581,7 @@ struct SyncPullResponseV1: Decodable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case apiVersion, schemaVersion, restaurants, visits, dishes, photos
+        case apiVersion, schemaVersion, restaurants, visits, dishes, visitDishes, photos
         case tombstones, nextCursor, hasMore, serverTime
     }
 
@@ -495,6 +592,7 @@ struct SyncPullResponseV1: Decodable {
         restaurants = try values.decode([RestaurantSyncRecordEnvelopeV1].self, forKey: .restaurants)
         visits = try values.decode([VisitSyncRecordEnvelopeV1].self, forKey: .visits)
         dishes = try values.decodeIfPresent([DishSyncRecordEnvelopeV1].self, forKey: .dishes) ?? []
+        visitDishes = try values.decodeIfPresent([VisitDishSyncRecordEnvelopeV1].self, forKey: .visitDishes) ?? []
         photos = try values.decodeIfPresent([PhotoSyncRecordEnvelopeV1].self, forKey: .photos) ?? []
         tombstones = try values.decode([SyncTombstoneV1].self, forKey: .tombstones)
         nextCursor = try values.decode(String.self, forKey: .nextCursor)

@@ -97,6 +97,11 @@ final class PhotoTransferCoordinator {
         try enqueue(photo)
     }
 
+    func setDishRelationship(_ photo: PhotoAsset, dish: Dish?) throws {
+        try LocalDishPhotoStore(context: context, photoFiles: files)
+            .setDishRelationship(photo, dish: dish)
+    }
+
     func resumePendingTransfers() {
         scheduleProcessing()
     }

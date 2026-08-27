@@ -92,6 +92,30 @@ final class SyncEngine {
                 timestamp: dish.updatedAt
             )
         }
+        try LocalDishStore(context: context).bootstrapLegacyAssociations()
+        for association in try visitDishes() {
+            guard association.serverVersion == 0, association.deletedAt == nil,
+                  let remoteID = association.remoteID,
+                  try queue.activeMutation(entityType: .visitDish, entityID: remoteID) == nil,
+                  let restaurant = localRestaurants.first(where: { $0.id == association.restaurantId }),
+                  let visit = localVisits.first(where: { $0.id == association.visitId }),
+                  let dish = try dishes().first(where: { $0.id == association.dishId }),
+                  let restaurantRemoteID = restaurant.remoteID,
+                  let visitRemoteID = visit.remoteID,
+                  let dishRemoteID = dish.remoteID else { continue }
+            try queue.enqueueUpsert(
+                entityType: .visitDish,
+                entityID: remoteID,
+                baseVersion: 0,
+                payload: SyncRecordMapper.visitDishPayload(
+                    association,
+                    restaurantRemoteID: restaurantRemoteID,
+                    visitRemoteID: visitRemoteID,
+                    dishRemoteID: dishRemoteID
+                ),
+                timestamp: association.updatedAt
+            )
+        }
         for photo in try photos() {
             if photo.remoteID == nil { photo.remoteID = photo.id.uuidString.lowercased() }
             guard photo.serverVersion == 0, photo.deletedAt == nil,
@@ -168,6 +192,9 @@ final class SyncEngine {
         case (.upsert, .dish):
             guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
             payload = .dish(try JSONDecoder().decode(DishSyncContractV1.self, from: data))
+        case (.upsert, .visitDish):
+            guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
+            payload = .visitDish(try JSONDecoder().decode(VisitDishSyncContractV1.self, from: data))
         case (.upsert, .photo):
             guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
             payload = .photo(try JSONDecoder().decode(PhotoSyncContractV1.self, from: data))
@@ -234,6 +261,23 @@ final class SyncEngine {
                 restaurantRemoteID: restaurantRemoteID,
                 visitRemoteID: visitRemoteID
             )
+        case .visitDish:
+            guard let association = try visitDishes().first(where: { $0.remoteID == remoteID }),
+                  let restaurant = try restaurants().first(where: { $0.id == association.restaurantId }),
+                  let visit = try visits().first(where: { $0.id == association.visitId }),
+                  let dish = try dishes().first(where: { $0.id == association.dishId }),
+                  let restaurantRemoteID = restaurant.remoteID,
+                  let visitRemoteID = visit.remoteID,
+                  let dishRemoteID = dish.remoteID else {
+                payload = nil
+                break
+            }
+            payload = try SyncRecordMapper.visitDishPayload(
+                association,
+                restaurantRemoteID: restaurantRemoteID,
+                visitRemoteID: visitRemoteID,
+                dishRemoteID: dishRemoteID
+            )
         case .photo:
             guard let photo = try photos().first(where: { $0.remoteID == remoteID }) else {
                 payload = nil
@@ -259,6 +303,7 @@ final class SyncEngine {
             for envelope in response.restaurants { try applyRestaurant(envelope) }
             for envelope in response.visits { try applyVisit(envelope) }
             for envelope in response.dishes { try applyDish(envelope) }
+            for envelope in response.visitDishes { try applyVisitDish(envelope) }
             for envelope in response.photos { try applyPhoto(envelope) }
             for tombstone in response.tombstones { try applyTombstone(tombstone) }
             checkpoint.cursor = response.nextCursor
@@ -418,6 +463,68 @@ final class SyncEngine {
         ))
     }
 
+    private func applyVisitDish(_ envelope: VisitDishSyncRecordEnvelopeV1) throws {
+        let record = envelope.record
+        guard let restaurant = try restaurants().first(where: { $0.remoteID == record.restaurantId }),
+              let visit = try visits().first(where: { $0.remoteID == record.visitId }),
+              let dish = try dishes().first(where: { $0.remoteID == record.dishId }) else {
+            throw SyncEngineError.missingRestaurantMapping
+        }
+        let snapshot = try JSONEncoder().encode(record)
+        if let association = try visitDishes().first(where: { $0.remoteID == record.id }) {
+            if try queue.hasConflict(entityType: .visitDish, entityID: record.id) {
+                association.remoteRecordData = snapshot
+                return
+            }
+            if try queue.activeMutation(entityType: .visitDish, entityID: record.id) != nil {
+                if envelope.serverVersion > association.serverVersion {
+                    try queue.markConflicted(
+                        entityType: .visitDish,
+                        entityID: record.id,
+                        reason: "server_changed_while_local_mutation_pending"
+                    )
+                    update(
+                        association,
+                        from: record,
+                        restaurantID: restaurant.id,
+                        visitID: visit.id,
+                        dishID: dish.id,
+                        serverVersion: envelope.serverVersion,
+                        snapshot: snapshot
+                    )
+                    association.syncStatus = .failed
+                }
+                return
+            }
+            guard envelope.serverVersion >= association.serverVersion else { return }
+            update(
+                association,
+                from: record,
+                restaurantID: restaurant.id,
+                visitID: visit.id,
+                dishID: dish.id,
+                serverVersion: envelope.serverVersion,
+                snapshot: snapshot
+            )
+            return
+        }
+        context.insert(VisitDish(
+            id: UUID(uuidString: record.id) ?? UUID(),
+            restaurantId: restaurant.id,
+            visitId: visit.id,
+            dishId: dish.id,
+            sortOrder: record.sortOrder,
+            createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
+            updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
+            remoteID: record.id,
+            deletedAt: record.deletedAt.flatMap(SyncRecordMapper.date),
+            serverVersion: envelope.serverVersion,
+            lastSyncedAt: now(),
+            syncStatus: .synced,
+            remoteRecordData: snapshot
+        ))
+    }
+
     private func applyPhoto(_ envelope: PhotoSyncRecordEnvelopeV1) throws {
         let record = envelope.record
         let restaurantID = try record.restaurantId.map { remoteID in
@@ -511,6 +618,12 @@ final class SyncEngine {
             dish.serverVersion = tombstone.serverVersion
             dish.lastSyncedAt = now()
             dish.syncStatus = .synced
+        case .visitDish:
+            guard let association = try visitDishes().first(where: { $0.remoteID == tombstone.entityId }) else { return }
+            association.deletedAt = deletedAt
+            association.serverVersion = tombstone.serverVersion
+            association.lastSyncedAt = now()
+            association.syncStatus = .synced
         case .photo:
             guard let photo = try photos().first(where: { $0.remoteID == tombstone.entityId }) else { return }
             photo.deletedAt = deletedAt
@@ -631,6 +744,28 @@ final class SyncEngine {
         photo.remoteRecordData = snapshot
     }
 
+    private func update(
+        _ association: VisitDish,
+        from record: VisitDishSyncContractV1,
+        restaurantID: UUID,
+        visitID: UUID,
+        dishID: UUID,
+        serverVersion: Int64,
+        snapshot: Data
+    ) {
+        association.restaurantId = restaurantID
+        association.visitId = visitID
+        association.dishId = dishID
+        association.sortOrder = record.sortOrder
+        association.createdAt = SyncRecordMapper.date(record.createdAt) ?? association.createdAt
+        association.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? association.updatedAt
+        association.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)
+        association.serverVersion = serverVersion
+        association.lastSyncedAt = now()
+        association.syncStatus = .synced
+        association.remoteRecordData = snapshot
+    }
+
     private func markEntitySynced(type: SyncEntityType, remoteID: String, serverVersion: Int64) {
         let hasLaterMutation = (try? queue.activeMutation(entityType: type, entityID: remoteID)) != nil
         switch type {
@@ -649,6 +784,11 @@ final class SyncEngine {
             dish.serverVersion = serverVersion
             dish.lastSyncedAt = now()
             dish.syncStatus = hasLaterMutation ? .pending : .synced
+        case .visitDish:
+            guard let association = try? visitDishes().first(where: { $0.remoteID == remoteID }) else { return }
+            association.serverVersion = serverVersion
+            association.lastSyncedAt = now()
+            association.syncStatus = hasLaterMutation ? .pending : .synced
         case .photo:
             guard let photo = try? photos().first(where: { $0.remoteID == remoteID }) else { return }
             photo.serverVersion = serverVersion
@@ -670,6 +810,10 @@ final class SyncEngine {
         case .dish:
             if let dish = try? dishes().first(where: { $0.remoteID == remoteID }) {
                 dish.syncStatus = .failed
+            }
+        case .visitDish:
+            if let association = try? visitDishes().first(where: { $0.remoteID == remoteID }) {
+                association.syncStatus = .failed
             }
         case .photo:
             if let photo = try? photos().first(where: { $0.remoteID == remoteID }) {
@@ -695,6 +839,10 @@ final class SyncEngine {
 
     private func dishes() throws -> [Dish] {
         try context.fetch(FetchDescriptor<Dish>())
+    }
+
+    private func visitDishes() throws -> [VisitDish] {
+        try context.fetch(FetchDescriptor<VisitDish>())
     }
 
     private func photos() throws -> [PhotoAsset] {
