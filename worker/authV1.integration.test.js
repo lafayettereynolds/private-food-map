@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import appleRestaurant from '../contracts/fixtures/restaurant.v1.valid.json'
 import worker from './index'
 import {
@@ -16,6 +16,15 @@ const NOW = new Date('2026-08-27T10:00:00.000Z')
 const AUDIENCE = 'com.lafayette.tastemap'
 
 describe('Native Auth V1', () => {
+  beforeAll(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+  })
+
+  afterAll(() => {
+    vi.useRealTimers()
+  })
+
   it('verifies Apple signature, issuer, audience, expiration, and nonce', async () => {
     const signing = await appleSigningFixture()
     const valid = await signing.token()
