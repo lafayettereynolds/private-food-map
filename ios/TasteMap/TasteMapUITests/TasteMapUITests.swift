@@ -142,7 +142,7 @@ final class TasteMapUITests: XCTestCase {
         minimalVisit.tap()
         XCTAssertTrue(app.navigationBars["编辑到访"].waitForExistence(timeout: 5))
         let deleteButton = app.buttons["visit-editor-delete"]
-        if !deleteButton.exists { app.swipeUp() }
+        scrollUntilVisible(deleteButton, in: app)
         XCTAssertTrue(deleteButton.waitForExistence(timeout: 2))
         deleteButton.tap()
         XCTAssertTrue(app.buttons["删除到访记录"].waitForExistence(timeout: 2))
@@ -202,7 +202,9 @@ final class TasteMapUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH 'restaurant-photo-'")
         ).firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 5))
-        photo.tap()
+        // The horizontal gallery can be partially under the compact navigation bar
+        // after the preceding vertical swipe. Tap its visible lower area explicitly.
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
         XCTAssertTrue(app.navigationBars["1 / 4"].waitForExistence(timeout: 5))
         app.buttons["完成"].tap()
 
@@ -356,6 +358,86 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP2DPartialRatingsEditClearDetailAndRestart() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+        ]
+        app.launch()
+
+        openP1DDetail(in: app, tab: "想吃")
+        app.buttons["restaurant-detail-add-visit"].tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        let overallRating = app.buttons["4.5 星"]
+        scrollUntilVisible(overallRating, in: app)
+        XCTAssertTrue(overallRating.exists)
+        overallRating.tap()
+        let details = app.descendants(matching: .any)["visit-detailed-ratings"]
+        scrollUntilVisible(details, in: app)
+        XCTAssertTrue(details.exists)
+        details.tap()
+        let valueRating = app.buttons["性价比 5.0 星"]
+        scrollUntilVisible(valueRating, in: app)
+        XCTAssertTrue(valueRating.waitForExistence(timeout: 3))
+        valueRating.tap()
+        let serviceRating = app.buttons["服务 3.5 星"]
+        scrollUntilVisible(serviceRating, in: app)
+        XCTAssertTrue(serviceRating.exists)
+        serviceRating.tap()
+        app.buttons["visit-editor-save"].tap()
+
+        let valueSummary = app.descendants(matching: .any)["restaurant-detailed-rating-value"]
+        scrollUntilVisible(valueSummary, in: app)
+        XCTAssertTrue(valueSummary.waitForExistence(timeout: 3))
+        XCTAssertTrue(valueSummary.label.contains("5.0"))
+        let serviceSummary = app.descendants(matching: .any)["restaurant-detailed-rating-service"]
+        XCTAssertTrue(serviceSummary.exists)
+        XCTAssertTrue(serviceSummary.label.contains("3.5"))
+        XCTAssertFalse(app.descendants(matching: .any)["restaurant-detailed-rating-environment"].exists)
+
+        scrollUntilVisible(app.staticTexts["第 1 次"], in: app)
+        app.staticTexts["第 1 次"].tap()
+        XCTAssertTrue(app.navigationBars["编辑到访"].waitForExistence(timeout: 5))
+        let environmentRating = app.buttons["环境 4.0 星"]
+        scrollUntilVisible(environmentRating, in: app)
+        XCTAssertTrue(environmentRating.waitForExistence(timeout: 3))
+        environmentRating.tap()
+        let clearServiceRating = app.buttons["清除服务评分"]
+        scrollUntilVisible(clearServiceRating, in: app)
+        XCTAssertTrue(clearServiceRating.exists)
+        clearServiceRating.tap()
+        app.buttons["visit-editor-save"].tap()
+
+        let environmentSummary = app.descendants(matching: .any)["restaurant-detailed-rating-environment"]
+        scrollUntilVisible(environmentSummary, in: app)
+        XCTAssertTrue(environmentSummary.waitForExistence(timeout: 3))
+        XCTAssertTrue(environmentSummary.label.contains("4.0"))
+        XCTAssertFalse(app.descendants(matching: .any)["restaurant-detailed-rating-service"].exists)
+
+        app.terminate()
+        app.launchArguments = ["-p1d-persistent-offline-fixture"]
+        app.launchEnvironment = ["TASTEMAP_P1D_UI_TEST": "1"]
+        app.launch()
+        let markers = app.otherElements.matching(
+            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+        )
+        XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
+        markers.element(boundBy: max(0, markers.count - 1)).tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        let restoredValue = app.descendants(matching: .any)["restaurant-detailed-rating-value"]
+        scrollUntilVisible(restoredValue, in: app)
+        XCTAssertTrue(restoredValue.waitForExistence(timeout: 5))
+        XCTAssertTrue(restoredValue.label.contains("5.0"))
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-detailed-rating-environment"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["restaurant-detailed-rating-service"].exists)
+    }
+
+    @MainActor
     private func openP1DDetail(in app: XCUIApplication, tab: String) {
         app.segmentedControls.buttons[tab].tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
@@ -403,7 +485,7 @@ final class TasteMapUITests: XCTestCase {
 
     @MainActor
     private func scrollUntilVisible(_ element: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<6 where !element.exists { app.swipeUp() }
+        for _ in 0..<10 where !element.exists { app.swipeUp() }
     }
 
     @MainActor

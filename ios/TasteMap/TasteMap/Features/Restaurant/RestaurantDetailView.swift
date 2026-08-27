@@ -52,6 +52,7 @@ struct RestaurantDetailView: View {
                     )
                     RestaurantDishSection(summaries: dishSummaries)
                     RestaurantDetailStatsSection(presentation: presentation)
+                    RestaurantDetailedRatingsSection(summaries: detailedRatingSummaries)
                     RestaurantVisitHistorySection(
                         visits: presentation.activeVisits,
                         onEdit: { editingVisit = $0 },
@@ -176,5 +177,9 @@ struct RestaurantDetailView: View {
             visits: allVisits,
             photos: allPhotos
         )
+    }
+
+    private var detailedRatingSummaries: [RatingSummary] {
+        RatingStatistics.summaries(for: presentation.activeVisits)
     }
 }

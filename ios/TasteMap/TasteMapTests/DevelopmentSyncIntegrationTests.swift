@@ -113,6 +113,9 @@ struct DevelopmentSyncIntegrationTests {
             diningMode: .dineIn,
             partySize: nil,
             rating: nil,
+            valueRating: nil,
+            environmentRating: nil,
+            serviceRating: nil,
             note: "P0-B2-A real Development D1 test",
             myActualSpend: nil,
             createdAt: timestamp,
@@ -627,6 +630,77 @@ struct DevelopmentSyncIntegrationTests {
         #expect(cleanup.tombstones.filter { $0.entityType == .visitDish }.count == 2)
         #expect(cleanup.tombstones.contains { $0.entityType == .visit && $0.entityId == firstVisit.remoteID })
         #expect(cleanup.tombstones.contains { $0.entityType == .visit && $0.entityId == secondVisit.remoteID })
+        #expect(cleanup.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurant.remoteID })
+    }
+
+    @Test("P2-D multidimensional ratings round-trip through Development Worker and D1")
+    func developmentMultidimensionalRatingRoundTrip() async throws {
+#if !TASTEMAP_DEVELOPMENT_INTEGRATION
+        guard ProcessInfo.processInfo.environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+#endif
+        let runID = UUID().uuidString.lowercased()
+        let userID = "ios-p2d:\(runID)"
+        let client = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: userID)
+        )
+        let otherClient = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p2d-other:\(runID)")
+        )
+        let source = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receiving = try TasteMapPersistence.makeContainer(inMemory: true)
+        let store = LocalTasteMapStore(context: source.mainContext)
+        let restaurant = try store.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P2-D Development Rating Restaurant",
+                address: "Development D1 only",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p2d-\(runID)"
+            ),
+            among: []
+        )
+        let visit = try store.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(
+                rating: 4.5,
+                valueRating: 5,
+                environmentRating: nil,
+                serviceRating: 3.5,
+                note: "P2-D partial ratings"
+            )
+        )
+
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        #expect(visit.serverVersion == 1)
+        try await SyncEngine(context: receiving.mainContext, api: client).synchronize()
+        let pulled = try #require(receiving.mainContext.fetch(FetchDescriptor<Visit>()).first)
+        #expect(pulled.rating == 4.5)
+        #expect(pulled.valueRating == 5)
+        #expect(pulled.environmentRating == nil)
+        #expect(pulled.serviceRating == 3.5)
+
+        var edit = VisitDraft(visit: visit)
+        edit.valueRating = nil
+        edit.environmentRating = 4
+        try store.update(visit, draft: edit)
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        try await SyncEngine(context: receiving.mainContext, api: client).synchronize()
+        #expect(pulled.valueRating == nil)
+        #expect(pulled.environmentRating == 4)
+        #expect(pulled.serviceRating == 3.5)
+        #expect(pulled.serverVersion == 2)
+
+        let isolated = try await otherClient.pull(cursor: "0", limit: 200)
+        #expect(!isolated.visits.contains { $0.record.id == visit.remoteID })
+
+        try store.delete(visit)
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        try store.delete(restaurant)
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        let cleanup = try await client.pull(cursor: "0", limit: 200)
+        #expect(cleanup.tombstones.contains { $0.entityType == .visit && $0.entityId == visit.remoteID })
         #expect(cleanup.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurant.remoteID })
     }
 

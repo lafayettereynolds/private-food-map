@@ -13,6 +13,9 @@ struct SyncV1ContractTests {
         )
 
         #expect(object["rating"] is NSNull)
+        #expect(object["valueRating"] is NSNull)
+        #expect(object["environmentRating"] is NSNull)
+        #expect(object["serviceRating"] is NSNull)
         #expect(object["partySize"] is NSNull)
         #expect(object["note"] is NSNull)
         #expect(object["myActualSpend"] is NSNull)
@@ -49,6 +52,9 @@ struct SyncV1ContractTests {
         #expect(visit.diningMode == .takeout)
         #expect(visit.partySize == nil)
         #expect(visit.rating == nil)
+        #expect(visit.valueRating == nil)
+        #expect(visit.environmentRating == nil)
+        #expect(visit.serviceRating == nil)
         #expect(visit.myActualSpend == nil)
     }
 
@@ -61,6 +67,9 @@ struct SyncV1ContractTests {
 
         #expect(visit.diningMode == .dineIn)
         #expect(visit.partySize == nil)
+        #expect(visit.valueRating == nil)
+        #expect(visit.environmentRating == nil)
+        #expect(visit.serviceRating == nil)
     }
 
     @Test("Visit instant survives JSON and Date round-trip")
@@ -88,6 +97,9 @@ struct SyncV1ContractTests {
             diningMode: .takeout,
             partySize: nil,
             rating: nil,
+            valueRating: nil,
+            environmentRating: nil,
+            serviceRating: nil,
             note: nil,
             myActualSpend: nil,
             createdAt: "2026-08-27T00:00:00.000Z",

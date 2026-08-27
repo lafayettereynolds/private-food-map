@@ -14,6 +14,9 @@ struct VisitSyncContractV1: Codable, Equatable {
     let diningMode: DiningMode
     let partySize: Int?
     let rating: Double?
+    let valueRating: Double?
+    let environmentRating: Double?
+    let serviceRating: Double?
     let note: String?
     let myActualSpend: Double?
     let createdAt: String
@@ -24,7 +27,8 @@ struct VisitSyncContractV1: Codable, Equatable {
 private extension VisitSyncContractV1 {
     enum CodingKeys: String, CodingKey {
         case schemaVersion, id, userId, restaurantId, visitedAt, diningMode, partySize
-        case rating, note, myActualSpend, createdAt, updatedAt, deletedAt
+        case rating, valueRating, environmentRating, serviceRating
+        case note, myActualSpend, createdAt, updatedAt, deletedAt
     }
 }
 
@@ -46,6 +50,21 @@ extension VisitSyncContractV1 {
             )
         }
         rating = try container.decode(Double?.self, forKey: .rating)
+        valueRating = try container.decodeIfPresent(Double.self, forKey: .valueRating)
+        environmentRating = try container.decodeIfPresent(Double.self, forKey: .environmentRating)
+        serviceRating = try container.decodeIfPresent(Double.self, forKey: .serviceRating)
+        for (key, value) in [
+            (CodingKeys.rating, rating),
+            (CodingKeys.valueRating, valueRating),
+            (CodingKeys.environmentRating, environmentRating),
+            (CodingKeys.serviceRating, serviceRating),
+        ] where Visit.validatedRating(value) != value {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: container,
+                debugDescription: "Rating must be null or a half-step from 0.5 through 5.0."
+            )
+        }
         note = try container.decode(String?.self, forKey: .note)
         myActualSpend = try container.decode(Double?.self, forKey: .myActualSpend)
         createdAt = try container.decode(String.self, forKey: .createdAt)
@@ -63,6 +82,9 @@ extension VisitSyncContractV1 {
         try container.encode(diningMode, forKey: .diningMode)
         try container.encode(partySize, forKey: .partySize)
         try container.encode(rating, forKey: .rating)
+        try container.encode(valueRating, forKey: .valueRating)
+        try container.encode(environmentRating, forKey: .environmentRating)
+        try container.encode(serviceRating, forKey: .serviceRating)
         try container.encode(note, forKey: .note)
         try container.encode(myActualSpend, forKey: .myActualSpend)
         try container.encode(createdAt, forKey: .createdAt)

@@ -31,6 +31,7 @@ struct VisitEditorView: View {
     @State private var dishDrafts: [DishDraft] = []
     @State private var isManagingDishes = false
     @State private var didLoadDishes = false
+    @State private var showsDetailedRatings: Bool
 
     @MainActor
     init(
@@ -46,6 +47,9 @@ struct VisitEditorView: View {
         _draft = State(initialValue: initialDraft)
         _partySizeText = State(initialValue: Self.integerString(initialDraft.partySize))
         _spendText = State(initialValue: Self.spendString(initialDraft.myActualSpend))
+        _showsDetailedRatings = State(initialValue: RatingDimension.allCases.contains {
+            $0.value(in: initialDraft) != nil
+        })
     }
 
     @MainActor
@@ -57,6 +61,7 @@ struct VisitEditorView: View {
         _draft = State(initialValue: VisitDraft())
         _partySizeText = State(initialValue: "")
         _spendText = State(initialValue: "")
+        _showsDetailedRatings = State(initialValue: false)
     }
 
     var body: some View {
@@ -67,6 +72,7 @@ struct VisitEditorView: View {
                 dishesSection
                 basicsSection
                 ratingSection
+                detailedRatingSection
                 spendSection
                 noteSection
                 if visit != nil { deleteSection }
@@ -306,9 +312,52 @@ struct VisitEditorView: View {
     }
 
     private var ratingSection: some View {
-        Section("评价") {
-            HalfStarRatingPicker(rating: $draft.rating)
+        Section {
+            HalfStarRatingPicker(
+                rating: $draft.rating,
+                accessibilityName: nil,
+                accessibilityIdentifier: "visit-overall-rating"
+            )
+        } header: {
+            Text("总体评分")
+        } footer: {
+            Text("总体感受独立保存，不会由详细评分自动计算。")
         }
+    }
+
+    private var detailedRatingSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $showsDetailedRatings) {
+                ForEach(RatingDimension.allCases) { dimension in
+                    TasteMapRatingInput(
+                        dimension: dimension,
+                        rating: detailedRatingBinding(for: dimension)
+                    )
+                }
+            } label: {
+                HStack {
+                    Label("详细评分", systemImage: "slider.horizontal.3")
+                    Spacer()
+                    Text("\(detailedRatingCount)/\(RatingDimension.allCases.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityIdentifier("visit-detailed-ratings")
+        } footer: {
+            Text("性价比、环境和服务全部可选，可以只记录其中一项。")
+        }
+    }
+
+    private var detailedRatingCount: Int {
+        RatingDimension.allCases.filter { $0.value(in: draft) != nil }.count
+    }
+
+    private func detailedRatingBinding(for dimension: RatingDimension) -> Binding<Double?> {
+        Binding(
+            get: { dimension.value(in: draft) },
+            set: { dimension.setValue($0, in: &draft) }
+        )
     }
 
     private var dishesSection: some View {

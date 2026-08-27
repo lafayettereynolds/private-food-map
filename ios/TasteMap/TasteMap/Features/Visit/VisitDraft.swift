@@ -5,6 +5,9 @@ struct VisitDraft: Equatable {
     var diningMode: DiningMode
     var partySize: Int?
     var rating: Double?
+    var valueRating: Double?
+    var environmentRating: Double?
+    var serviceRating: Double?
     var myActualSpend: Decimal?
     var note: String
 
@@ -13,6 +16,9 @@ struct VisitDraft: Equatable {
         diningMode: DiningMode = .dineIn,
         partySize: Int? = nil,
         rating: Double? = nil,
+        valueRating: Double? = nil,
+        environmentRating: Double? = nil,
+        serviceRating: Double? = nil,
         myActualSpend: Decimal? = nil,
         note: String = ""
     ) {
@@ -20,6 +26,9 @@ struct VisitDraft: Equatable {
         self.diningMode = diningMode
         self.partySize = partySize
         self.rating = rating
+        self.valueRating = valueRating
+        self.environmentRating = environmentRating
+        self.serviceRating = serviceRating
         self.myActualSpend = myActualSpend
         self.note = note
     }
@@ -30,6 +39,9 @@ struct VisitDraft: Equatable {
             diningMode: visit.diningMode,
             partySize: visit.partySize,
             rating: visit.rating,
+            valueRating: visit.valueRating,
+            environmentRating: visit.environmentRating,
+            serviceRating: visit.serviceRating,
             myActualSpend: visit.myActualSpend,
             note: visit.note ?? ""
         )
@@ -41,6 +53,12 @@ struct VisitDraft: Equatable {
         }
         if let rating, Visit.validatedRating(rating) != rating {
             throw VisitDraftValidationError.invalidRating
+        }
+        for dimension in RatingDimension.allCases {
+            let value = dimension.value(in: self)
+            if let value, Visit.validatedRating(value) != value {
+                throw VisitDraftValidationError.invalidDetailedRating(dimension)
+            }
         }
         if let partySize, partySize < 1 {
             throw VisitDraftValidationError.invalidPartySize
@@ -78,6 +96,7 @@ struct VisitDraft: Equatable {
 enum VisitDraftValidationError: LocalizedError, Equatable {
     case invalidDate
     case invalidRating
+    case invalidDetailedRating(RatingDimension)
     case invalidPartySize
     case invalidSpend
     case negativeSpend
@@ -86,6 +105,7 @@ enum VisitDraftValidationError: LocalizedError, Equatable {
         switch self {
         case .invalidDate: "到访日期无效，请重新选择。"
         case .invalidRating: "评分必须是 0.5 到 5.0 之间的半星。"
+        case .invalidDetailedRating(let dimension): "\(dimension.title)评分必须是 0.5 到 5.0 之间的半星。"
         case .invalidPartySize: "用餐人数必须是大于 0 的整数，或留空。"
         case .invalidSpend: "请输入正确的消费金额，或留空。"
         case .negativeSpend: "消费金额不能为负数。"

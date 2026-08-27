@@ -400,6 +400,9 @@ final class SyncEngine {
             restaurantId: restaurant.id,
             visitedAt: SyncRecordMapper.date(record.visitedAt) ?? now(),
             rating: record.rating,
+            valueRating: record.valueRating,
+            environmentRating: record.environmentRating,
+            serviceRating: record.serviceRating,
             note: record.note,
             myActualSpend: record.myActualSpend.map { Decimal($0) },
             diningMode: record.diningMode,
@@ -665,6 +668,9 @@ final class SyncEngine {
         visit.restaurantId = restaurantID
         visit.visitedAt = SyncRecordMapper.date(record.visitedAt) ?? visit.visitedAt
         visit.rating = Visit.validatedRating(record.rating)
+        visit.valueRating = Visit.validatedRating(record.valueRating)
+        visit.environmentRating = Visit.validatedRating(record.environmentRating)
+        visit.serviceRating = Visit.validatedRating(record.serviceRating)
         visit.note = record.note
         visit.myActualSpend = record.myActualSpend.map { Decimal($0) }
         visit.diningMode = record.diningMode

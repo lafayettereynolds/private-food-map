@@ -46,7 +46,32 @@ describe('Sync API V1 contract', () => {
   })
 
   it('preserves nil Visit ratings', () => {
-    expect(decodeVisitSyncContract(validVisit).rating).toBeNull()
+    expect(decodeVisitSyncContract(validVisit)).toMatchObject({
+      rating: null,
+      valueRating: null,
+      environmentRating: null,
+      serviceRating: null,
+    })
+  })
+
+  it('decodes complete and partial multidimensional Visit ratings', () => {
+    expect(decodeVisitSyncContract({
+      ...validVisit,
+      rating: 4.5,
+      valueRating: 5,
+      environmentRating: null,
+      serviceRating: 0.5,
+    })).toMatchObject({ rating: 4.5, valueRating: 5, environmentRating: null, serviceRating: 0.5 })
+  })
+
+  it('rejects out-of-range and non-half-step multidimensional ratings', () => {
+    for (const [field, value] of [
+      ['valueRating', 0],
+      ['environmentRating', 5.5],
+      ['serviceRating', 4.2],
+    ] as const) {
+      expect(() => decodeVisitSyncContract({ ...validVisit, [field]: value })).toThrow(new RegExp(field))
+    }
   })
 
   it('decodes dining mode and nullable party size', () => {
@@ -54,7 +79,10 @@ describe('Sync API V1 contract', () => {
   })
 
   it('normalizes the P0 Visit payload without new fields', () => {
-    expect(decodeVisitSyncContract(legacyVisit)).toMatchObject({ diningMode: 'dine_in', partySize: null })
+    expect(decodeVisitSyncContract(legacyVisit)).toMatchObject({
+      diningMode: 'dine_in', partySize: null,
+      valueRating: null, environmentRating: null, serviceRating: null,
+    })
   })
 
   it('rejects invalid party size, dining mode, and negative spend', () => {

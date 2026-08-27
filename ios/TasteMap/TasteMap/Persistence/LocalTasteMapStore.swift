@@ -44,6 +44,9 @@ struct LocalTasteMapStore {
         restaurantId: UUID,
         visitedAt: Date = .now,
         rating: Double? = nil,
+        valueRating: Double? = nil,
+        environmentRating: Double? = nil,
+        serviceRating: Double? = nil,
         note: String? = nil,
         myActualSpend: Decimal? = nil,
         diningMode: DiningMode = .dineIn,
@@ -56,6 +59,9 @@ struct LocalTasteMapStore {
                 diningMode: diningMode,
                 partySize: partySize,
                 rating: rating,
+                valueRating: valueRating,
+                environmentRating: environmentRating,
+                serviceRating: serviceRating,
                 myActualSpend: myActualSpend,
                 note: note ?? ""
             )
@@ -84,6 +90,9 @@ struct LocalTasteMapStore {
                 restaurantId: restaurantId,
                 visitedAt: draft.visitedAt,
                 rating: draft.rating,
+                valueRating: draft.valueRating,
+                environmentRating: draft.environmentRating,
+                serviceRating: draft.serviceRating,
                 note: draft.note,
                 myActualSpend: draft.myActualSpend,
                 diningMode: draft.diningMode,
@@ -132,6 +141,9 @@ struct LocalTasteMapStore {
         try context.transaction {
             visit.visitedAt = draft.visitedAt
             visit.rating = Visit.validatedRating(draft.rating)
+            visit.valueRating = Visit.validatedRating(draft.valueRating)
+            visit.environmentRating = Visit.validatedRating(draft.environmentRating)
+            visit.serviceRating = Visit.validatedRating(draft.serviceRating)
             visit.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             visit.myActualSpend = draft.myActualSpend
             visit.diningMode = draft.diningMode

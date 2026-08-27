@@ -7,6 +7,9 @@ final class Visit {
     var restaurantId: UUID
     var visitedAt: Date
     var rating: Double?
+    var valueRating: Double?
+    var environmentRating: Double?
+    var serviceRating: Double?
     var note: String?
     var myActualSpend: Decimal?
     private var diningModeValue: String = DiningMode.dineIn.rawValue
@@ -34,6 +37,9 @@ final class Visit {
         restaurantId: UUID,
         visitedAt: Date = .now,
         rating: Double? = nil,
+        valueRating: Double? = nil,
+        environmentRating: Double? = nil,
+        serviceRating: Double? = nil,
         note: String? = nil,
         myActualSpend: Decimal? = nil,
         diningMode: DiningMode = .dineIn,
@@ -50,6 +56,9 @@ final class Visit {
         self.restaurantId = restaurantId
         self.visitedAt = visitedAt
         self.rating = Self.validatedRating(rating)
+        self.valueRating = Self.validatedRating(valueRating)
+        self.environmentRating = Self.validatedRating(environmentRating)
+        self.serviceRating = Self.validatedRating(serviceRating)
         self.note = note?.nilIfBlank
         self.myActualSpend = myActualSpend
         self.diningModeValue = diningMode.rawValue

@@ -128,6 +128,38 @@ describe('Worker Sync API V1 integration', () => {
     })
   })
 
+  it('round-trips partial multidimensional ratings and preserves unrelated Visit columns', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('rating-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = {
+      ...visitPayload('rating-v', appleFixture.id, 'forged-user'),
+      rating: 4.5, valueRating: 5, environmentRating: null, serviceRating: 3.5,
+    }
+    await database.prepare(`INSERT INTO visits (
+      id, user_id, restaurant_id, visited_at, rating, party_size, queue_duration,
+      companions_json, dishes_json, note, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(
+        visit.id, 'user-a', visit.restaurantId, visit.visitedAt, null, 1, 'under30',
+        '[]', '[]', '', visit.createdAt, visit.updatedAt,
+      ).run()
+    await push(database, 'user-a', mutation('rating-update', 'visit', visit.id, 0, visit))
+
+    const pulled = await pull(database, 'user-a', '0')
+    expect(pulled.visits[0].record).toMatchObject({
+      rating: 4.5, valueRating: 5, environmentRating: null, serviceRating: 3.5,
+    })
+    expect(database.get(`SELECT value_rating, environment_rating, service_rating, queue_duration
+      FROM visits WHERE id = ?`, visit.id)).toMatchObject({
+      value_rating: 5, environment_rating: null, service_rating: 3.5, queue_duration: 'under30',
+    })
+
+    const cleared = { ...visit, valueRating: null, updatedAt: '2026-08-27T08:00:00.000Z' }
+    await push(database, 'user-a', mutation('rating-clear', 'visit', visit.id, 1, cleared))
+    expect((await pull(database, 'user-a', pulled.nextCursor)).visits[0].record)
+      .toMatchObject({ valueRating: null, environmentRating: null, serviceRating: 3.5 })
+  })
+
   it('keeps a P0 Visit payload compatible with explicit native defaults', async () => {
     const database = makeDatabase()
     await push(database, 'user-a', mutation('legacy-v-r', 'restaurant', appleFixture.id, 0, appleFixture))
@@ -135,7 +167,10 @@ describe('Worker Sync API V1 integration', () => {
     await push(database, 'user-a', mutation('legacy-v-create', 'visit', legacy.id, 0, legacy))
 
     expect((await pull(database, 'user-a', '0')).visits[0].record)
-      .toMatchObject({ diningMode: 'dine_in', partySize: null })
+      .toMatchObject({
+        diningMode: 'dine_in', partySize: null,
+        valueRating: null, environmentRating: null, serviceRating: null,
+      })
   })
 
   it('uses mutation receipts when the first response is lost', async () => {
@@ -344,13 +379,18 @@ function visitPayload(id, restaurantId, claimedUser) {
   return {
     schemaVersion: 1, id, userId: claimedUser, restaurantId,
     visitedAt: '2026-08-27T06:00:00.000Z', diningMode: 'dine_in', partySize: null,
-    rating: null, note: null, myActualSpend: null,
+    rating: null, valueRating: null, environmentRating: null, serviceRating: null,
+    note: null, myActualSpend: null,
     createdAt: '2026-08-27T06:00:00.000Z', updatedAt: '2026-08-27T06:00:00.000Z', deletedAt: null,
   }
 }
 
 function legacyVisitPayload(id, restaurantId, claimedUser) {
-  const { diningMode: _, partySize: __, ...legacy } = visitPayload(id, restaurantId, claimedUser)
+  const {
+    diningMode: _, partySize: __,
+    valueRating: ___, environmentRating: ____, serviceRating: _____,
+    ...legacy
+  } = visitPayload(id, restaurantId, claimedUser)
   return legacy
 }
 

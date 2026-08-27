@@ -27,6 +27,9 @@ export interface VisitSyncContractV1 {
   diningMode: VisitDiningModeContract
   partySize: number | null
   rating: number | null
+  valueRating: number | null
+  environmentRating: number | null
+  serviceRating: number | null
   note: string | null
   myActualSpend: number | null
   createdAt: string
@@ -118,20 +121,36 @@ export function decodeVisitSyncContract(value: unknown): VisitSyncContractV1 {
   }
   const diningMode = 'diningMode' in value ? value.diningMode : 'dine_in'
   const partySize = 'partySize' in value ? value.partySize : null
+  const valueRating = 'valueRating' in value ? value.valueRating : null
+  const environmentRating = 'environmentRating' in value ? value.environmentRating : null
+  const serviceRating = 'serviceRating' in value ? value.serviceRating : null
   if (diningMode !== 'dine_in' && diningMode !== 'takeout') {
     throw new SyncContractError('Visit diningMode must be dine_in or takeout.')
   }
   if (partySize !== null && (!Number.isInteger(partySize) || Number(partySize) < 1)) {
     throw new SyncContractError('Visit partySize must be null or a positive integer.')
   }
-  const rating = value.rating
-  if (rating !== null && (typeof rating !== 'number' || !Number.isFinite(rating) || rating < 0.5 || rating > 5 || rating * 2 % 1 !== 0)) {
-    throw new SyncContractError('Visit rating must be null or a half-step from 0.5 through 5.0.')
-  }
+  validateVisitRating(value.rating, 'rating')
+  validateVisitRating(valueRating, 'valueRating')
+  validateVisitRating(environmentRating, 'environmentRating')
+  validateVisitRating(serviceRating, 'serviceRating')
   if (value.myActualSpend !== null && Number(value.myActualSpend) < 0) {
     throw new SyncContractError('Visit myActualSpend cannot be negative.')
   }
-  return { ...value, diningMode, partySize } as unknown as VisitSyncContractV1
+  return {
+    ...value,
+    diningMode,
+    partySize,
+    valueRating,
+    environmentRating,
+    serviceRating,
+  } as unknown as VisitSyncContractV1
+}
+
+function validateVisitRating(value: unknown, field: string) {
+  if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0.5 || value > 5 || value * 2 % 1 !== 0)) {
+    throw new SyncContractError(`Visit ${field} must be null or a half-step from 0.5 through 5.0.`)
+  }
 }
 
 export function stableSyncMutationJSON(mutation: SyncMutationV1) {
