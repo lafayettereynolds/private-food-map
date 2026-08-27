@@ -186,7 +186,7 @@ export interface UserProfile {
   membershipTier: MembershipTier
   mapSharingEnabled: boolean
   mapVisibility: Visibility
-  authProvider: 'cloudflare-access' | 'local'
+  authProvider: 'apple' | 'cloudflare-access' | 'local'
   authSubject: string | null
   createdAt: string
   updatedAt: string

@@ -13,6 +13,7 @@
     "test:p0a": "node scripts/test-restaurant-identity-migration.mjs",
     "test:p0b1": "node scripts/test-sync-v1-migration.mjs && vitest run src/contracts/syncV1.test.ts worker/syncV1.integration.test.js",
     "test:p0b2a:development": "node scripts/test-sync-v1-development.mjs",
+    "test:p0b2b": "vitest run worker/authV1.integration.test.js worker/syncV1.integration.test.js",
     "preview": "vite preview --config vite.config.ts",
     "cloudflare:dev": "pnpm run build && wrangler dev --local",
     "d1:migrate:local": "wrangler d1 migrations apply food-map-db --local",

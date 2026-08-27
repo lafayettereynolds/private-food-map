@@ -5,6 +5,27 @@ import Testing
 @Suite("Development Worker Sync", .serialized)
 @MainActor
 struct DevelopmentSyncIntegrationTests {
+    @Test("iOS auth client reaches the Development Apple verification boundary")
+    func developmentAuthBoundary() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let client = URLSessionAuthAPIClient(configuration: .current())
+        let challenge = try await client.challenge()
+
+        #expect(challenge.apiVersion == AuthV1Contract.apiVersion)
+        #expect(!challenge.state.isEmpty)
+        #expect(!challenge.nonce.isEmpty)
+        await #expect(throws: AuthClientError.self) {
+            _ = try await client.exchangeAppleToken(
+                identityToken: "not-a-jwt",
+                state: challenge.state,
+                nonce: challenge.nonce,
+                givenName: nil,
+                familyName: nil
+            )
+        }
+    }
+
     @Test("iOS API client round-trips through Development Worker and D1")
     func developmentRoundTrip() async throws {
         let environment = ProcessInfo.processInfo.environment

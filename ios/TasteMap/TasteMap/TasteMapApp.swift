@@ -11,8 +11,10 @@ import SwiftData
 @main
 struct TasteMapApp: App {
     private let modelContainer: ModelContainer
+    private let nativeAuthServices: NativeAuthServices
 
     init() {
+        nativeAuthServices = NativeAuthServices(configuration: .current())
         do {
             modelContainer = try TasteMapPersistence.makeContainer()
         } catch {

@@ -53,12 +53,18 @@ import {
   recordUnversionedSyncChanges,
   SyncV1RequestError,
 } from './syncV1'
+import {
+  authenticateAccessToken,
+  AuthV1RequestError,
+  handleAuthV1Request,
+} from './authV1'
 
 interface Env {
   DB: D1Database
   ASSETS: Fetcher
   APP_ENVIRONMENT?: 'development' | 'production'
   SYNC_AUTH_MODE?: 'cloudflare-access' | 'development-test'
+  APPLE_CLIENT_IDS?: string
   ADMIN_EMAILS?: string
 }
 
@@ -160,7 +166,7 @@ interface PhotoRow {
 
 interface UserRow {
   id: string
-  auth_provider: 'cloudflare-access' | 'local'
+  auth_provider: 'apple' | 'cloudflare-access' | 'local'
   auth_subject: string | null
   email: string | null
   nickname: string
@@ -529,6 +535,9 @@ export default {
     if (!isSameOriginRequest(request, url)) return json({ error: '不允许跨站访问同步 API。' }, 403)
 
     try {
+      if (url.pathname.startsWith('/api/v1/auth/')) {
+        return json(await handleAuthV1Request(request, env))
+      }
       const publicRestaurantMatch = url.pathname.match(/^\/api\/public\/restaurants\/([a-f0-9]{24})$/)
       if (publicRestaurantMatch && request.method === 'GET') {
         return json(await readPublicRestaurant(env.DB, publicRestaurantMatch[1]))
@@ -626,8 +635,9 @@ export default {
     } catch (error) {
       console.error('Taste Map sync error', error)
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError ? error.status : 500
-      return json({ error: message }, status)
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError ? error.status : 500
+      const code = error instanceof AuthV1RequestError ? error.code : undefined
+      return json({ error: message, ...(code ? { code } : {}) }, status)
     }
   },
 } satisfies ExportedHandler<Env>
@@ -1187,7 +1197,7 @@ async function readRestaurantList(database: D1Database, viewerId: string, listId
 interface ViewerIdentity {
   id: string
   email: string | null
-  authProvider: 'cloudflare-access' | 'local'
+  authProvider: 'apple' | 'cloudflare-access' | 'local'
   authSubject: string | null
   testMembership?: 'premium' | 'free'
 }
@@ -1226,6 +1236,10 @@ async function resolveViewer(request: Request, database: D1Database): Promise<Vi
 }
 
 async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIdentity> {
+  const authenticated = await authenticateAccessToken(request, env.DB)
+  if (authenticated) {
+    return { id: authenticated.id, email: authenticated.email, authProvider: 'apple', authSubject: null }
+  }
   const hostname = new URL(request.url).hostname
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     const requestedUser = request.headers.get('X-Taste-Map-Test-User')?.trim() || 'owner'

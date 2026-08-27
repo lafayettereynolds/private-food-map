@@ -6,8 +6,13 @@ protocol SyncAPI {
     func pull(cursor: String, limit: Int) async throws -> SyncPullResponseV1
 }
 
-protocol SyncAuthorizationProviding: Sendable {
+nonisolated protocol SyncAuthorizationProviding: Sendable {
     func headers() async throws -> [String: String]
+    func recoverUnauthorized(failedAuthorization: String?) async throws -> Bool
+}
+
+extension SyncAuthorizationProviding {
+    func recoverUnauthorized(failedAuthorization: String?) async throws -> Bool { false }
 }
 
 struct MissingSyncAuthorization: SyncAuthorizationProviding {
@@ -83,8 +88,17 @@ final class URLSessionSyncAPIClient: SyncAPI {
         return request
     }
 
-    private func send<Response: Decodable>(_ request: URLRequest, as type: Response.Type) async throws -> Response {
-        let (data, response) = try await session.data(for: request)
+    private func send<Response: Decodable>(_ originalRequest: URLRequest, as type: Response.Type) async throws -> Response {
+        var request = originalRequest
+        var (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse,
+           http.statusCode == 401,
+           try await authorization.recoverUnauthorized(failedAuthorization: request.value(forHTTPHeaderField: "Authorization")) {
+            for (name, value) in try await authorization.headers() {
+                request.setValue(value, forHTTPHeaderField: name)
+            }
+            (data, response) = try await session.data(for: request)
+        }
         guard let httpResponse = response as? HTTPURLResponse else { throw SyncAPIError.invalidResponse }
         guard (200..<300).contains(httpResponse.statusCode) else {
             let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
