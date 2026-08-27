@@ -52,6 +52,9 @@ struct TasteMapApp: App {
                     in: container,
                     reset: resetPersistentOfflineFixture
                 )
+                if TasteMapUITestFixtures.requestsPhotoFailureFixture {
+                    try TasteMapUITestFixtures.insertPhotoFailureFixture(into: container)
+                }
             }
             #endif
         } catch {

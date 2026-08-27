@@ -219,6 +219,34 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP2BUploadFailureShowsRetryWithoutNetworkAccess() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P2B_UPLOAD_FAILURE_UI_TEST": "1",
+        ]
+        app.launch()
+
+        let markers = app.otherElements.matching(
+            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+        )
+        XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
+        markers.element(boundBy: max(0, markers.count - 1)).tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["上传失败"].waitForExistence(timeout: 5))
+        let retry = app.buttons["重试"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        retry.tap()
+        XCTAssertTrue(app.staticTexts["等待上传"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     private func openP1DDetail(in app: XCUIApplication, tab: String) {
         app.segmentedControls.buttons[tab].tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]

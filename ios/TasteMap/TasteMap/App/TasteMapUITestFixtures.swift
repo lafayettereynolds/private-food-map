@@ -13,9 +13,14 @@ enum TasteMapUITestFixtures {
     static let persistentEnvironmentKey = "TASTEMAP_P1D_UI_TEST"
     static let resetEnvironmentKey = "TASTEMAP_P1D_RESET"
     static let photoEnvironmentKey = "TASTEMAP_P2B_UI_TEST"
+    static let photoFailureEnvironmentKey = "TASTEMAP_P2B_UPLOAD_FAILURE_UI_TEST"
 
     static var usesPhotoFixture: Bool {
         ProcessInfo.processInfo.environment[photoEnvironmentKey] == "1"
+    }
+
+    static var requestsPhotoFailureFixture: Bool {
+        ProcessInfo.processInfo.environment[photoFailureEnvironmentKey] == "1"
     }
 
     static func samplePhotoData() -> Data {
@@ -105,6 +110,31 @@ enum TasteMapUITestFixtures {
             status: .wantToGo,
             syncStatus: .synced
         ))
+        try context.save()
+    }
+
+    static func insertPhotoFailureFixture(into container: ModelContainer) throws {
+        let context = container.mainContext
+        let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
+            .first { $0.id == detailRestaurantID }
+        guard let restaurant else { return }
+        restaurant.status = .visited
+        let visit = Visit(restaurantId: restaurant.id, syncStatus: .pending)
+        let photo = PhotoAsset(
+            restaurantId: restaurant.id,
+            visitId: visit.id,
+            kind: .visit,
+            fileName: "upload-failure-ui-test.jpg",
+            mimeType: "image/jpeg",
+            byteSize: 128_000,
+            width: 1_200,
+            height: 900,
+            uploadState: .failed,
+            uploadLastError: "网络暂时不可用",
+            syncStatus: .pending
+        )
+        context.insert(visit)
+        context.insert(photo)
         try context.save()
     }
 }
