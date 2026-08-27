@@ -13,6 +13,13 @@ import SwiftUI
     P2BPhotoPreviewFactory.visitEditor(photoStates: [.uploaded, .uploading, .failed, .queued])
 }
 
+#Preview("P2-B · 10 张上限") {
+    P2BPhotoPreviewFactory.visitEditor(photoStates: [
+        .uploaded, .uploaded, .uploading, .queued, .failed,
+        .uploaded, .queued, .uploaded, .uploading, .failed,
+    ])
+}
+
 #Preview("P2-B · 餐厅图库深色", traits: .fixedLayout(width: 393, height: 852)) {
     P2BPhotoPreviewFactory.restaurantDetail(photoStates: [.uploaded, .uploaded, .failed])
         .preferredColorScheme(.dark)

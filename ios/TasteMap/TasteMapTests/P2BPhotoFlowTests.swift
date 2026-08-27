@@ -31,6 +31,24 @@ struct P2BPhotoFlowTests {
         #expect(prepared.displayContentHash.count == 64)
     }
 
+    @Test("PNG and HEIC originals are accepted while display variants stay optimized JPEG")
+    func supportedOriginalFormats() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = try LocalPhotoFileStore(rootURL: directory)
+
+        for (type, mimeType) in [(UTType.png, "image/png"), (UTType.heic, "image/heic")] {
+            let prepared = try await PhotoImportService(files: files).prepare(
+                data: try encodedImage(type: type),
+                suggestedContentType: mimeType
+            )
+            #expect(prepared.originalMimeType == mimeType)
+            #expect(prepared.displayMimeType == "image/jpeg")
+            #expect(await files.fileExists(relativePath: prepared.originalFileRelativePath))
+            #expect(await files.fileExists(relativePath: prepared.thumbnailFileRelativePath))
+        }
+    }
+
     @Test("Offline photo metadata and queue survive an app restart")
     func restartPersistence() async throws {
         let directory = temporaryDirectory()
@@ -221,6 +239,28 @@ struct P2BPhotoFlowTests {
             try #require(image.cgImage),
             [kCGImagePropertyOrientation: orientation] as CFDictionary
         )
+        #expect(CGImageDestinationFinalize(destination))
+        return output as Data
+    }
+
+    private func encodedImage(type: UTType) throws -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(
+            size: CGSize(width: 640, height: 480),
+            format: format
+        ).image { context in
+            UIColor.systemGreen.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+        }
+        let output = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(
+            output,
+            type.identifier as CFString,
+            1,
+            nil
+        ))
+        CGImageDestinationAddImage(destination, try #require(image.cgImage), nil)
         #expect(CGImageDestinationFinalize(destination))
         return output as Data
     }
