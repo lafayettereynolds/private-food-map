@@ -13,6 +13,41 @@ import {
 } from './syncV1'
 
 describe('Worker Sync API V1 integration', () => {
+  it('allows explicit test identities only in a configured Development deployment', async () => {
+    const database = makeDatabase()
+    const developmentResponse = await worker.fetch(new Request(
+      'https://development.example.test/api/v1/sync/pull?schemaVersion=1&cursor=0',
+      { headers: { 'X-Taste-Map-Test-User': 'ios-development-user' } },
+    ), {
+      DB: database,
+      ASSETS: { fetch: () => new Response('not used') },
+      APP_ENVIRONMENT: 'development',
+      SYNC_AUTH_MODE: 'development-test',
+    })
+    expect(developmentResponse.status).toBe(200)
+
+    const missingIdentity = await worker.fetch(new Request(
+      'https://development.example.test/api/v1/sync/pull?schemaVersion=1&cursor=0',
+    ), {
+      DB: database,
+      ASSETS: { fetch: () => new Response('not used') },
+      APP_ENVIRONMENT: 'development',
+      SYNC_AUTH_MODE: 'development-test',
+    })
+    expect(missingIdentity.status).toBe(401)
+
+    const productionMisconfiguration = await worker.fetch(new Request(
+      'https://api.example.test/api/v1/sync/pull?schemaVersion=1&cursor=0',
+      { headers: { 'X-Taste-Map-Test-User': 'forged-production-user' } },
+    ), {
+      DB: database,
+      ASSETS: { fetch: () => new Response('not used') },
+      APP_ENVIRONMENT: 'production',
+      SYNC_AUTH_MODE: 'development-test',
+    })
+    expect(productionMisconfiguration.status).toBe(503)
+  })
+
   it('does not fall back to owner when production sync auth is unconfigured', async () => {
     const response = await worker.fetch(new Request(
       'https://api.example.test/api/v1/sync/pull?schemaVersion=1&cursor=0',

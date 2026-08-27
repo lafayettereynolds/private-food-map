@@ -1,5 +1,14 @@
 # Taste Map 变更记录
 
+## 2026-08-27 — P0-B2-A Development Worker / D1 真实接通
+
+- 创建并隔离 `food-map-db-development`，在空库只读 preflight 后顺序应用 `0001`—`0016`；`0015`、`0016` 已登记且无待执行 migration，Production D1 未查询或修改。
+- 部署独立 Worker `private-food-map-development`，使用 `https://api-dev.tastemap.cn` 与 Development-only test identity；缺少身份返回 401，Production 配置不能启用测试身份。
+- iOS 通过打包的 `APIEnvironment.plist` 集中读取 Development URL；Production URL 仍为空，不修改 Bundle Identifier、Team、Signing 或 Capability。
+- 新增真实远程验收脚本与 iOS `URLSessionSyncAPIClient` 集成测试，验证 Restaurant、Visit、Apple Maps-only identity、增量 cursor、幂等、用户隔离和 tombstone。
+- 修复 Swift Visit JSON 编码：required-but-nullable 字段现在显式输出 `null`，解码时缺少这些键会失败，保持与 TypeScript 合同一致。
+- 验证：Web/Worker 30 个测试文件共 175 项、P0-A/P0-B1 migration、Web/Worker typecheck、Vite build、21 项 iOS 单元测试、Simulator build 和真实 iOS → Worker → D1 → iOS 往返全部通过。
+
 ## 2026-08-27 — P0-B1 Sync API 与 iOS 离线同步基础层
 
 - 新增 `/api/v1/sync/push`、`/api/v1/sync/pull` 和共享 Sync V1 contract；pull 使用服务端 revision cursor，push 使用 base version 和 mutation receipt。

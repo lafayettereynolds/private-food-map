@@ -19,6 +19,45 @@ struct VisitSyncContractV1: Codable, Equatable {
     let deletedAt: String?
 }
 
+private extension VisitSyncContractV1 {
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, userId, restaurantId, visitedAt
+        case rating, note, myActualSpend, createdAt, updatedAt, deletedAt
+    }
+}
+
+extension VisitSyncContractV1 {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        id = try container.decode(String.self, forKey: .id)
+        userId = try container.decode(String.self, forKey: .userId)
+        restaurantId = try container.decode(String.self, forKey: .restaurantId)
+        visitedAt = try container.decode(String.self, forKey: .visitedAt)
+        rating = try container.decode(Double?.self, forKey: .rating)
+        note = try container.decode(String?.self, forKey: .note)
+        myActualSpend = try container.decode(Double?.self, forKey: .myActualSpend)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        updatedAt = try container.decode(String.self, forKey: .updatedAt)
+        deletedAt = try container.decode(String?.self, forKey: .deletedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(id, forKey: .id)
+        try container.encode(userId, forKey: .userId)
+        try container.encode(restaurantId, forKey: .restaurantId)
+        try container.encode(visitedAt, forKey: .visitedAt)
+        try container.encode(rating, forKey: .rating)
+        try container.encode(note, forKey: .note)
+        try container.encode(myActualSpend, forKey: .myActualSpend)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(deletedAt, forKey: .deletedAt)
+    }
+}
+
 enum SyncMutationPayload: Encodable {
     case restaurant(RestaurantJSONContractV1)
     case visit(VisitSyncContractV1)

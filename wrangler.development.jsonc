@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "private-food-map-development",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-08-20",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "api-dev.tastemap.cn",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "food-map-db-development",
+      "database_id": "b1ddde34-c459-49bb-b9d1-7a41303ccb2d",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "APP_ENVIRONMENT": "development",
+    "SYNC_AUTH_MODE": "development-test"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

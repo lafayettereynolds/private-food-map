@@ -57,7 +57,8 @@ import {
 interface Env {
   DB: D1Database
   ASSETS: Fetcher
-  SYNC_AUTH_MODE?: 'cloudflare-access'
+  APP_ENVIRONMENT?: 'development' | 'production'
+  SYNC_AUTH_MODE?: 'cloudflare-access' | 'development-test'
   ADMIN_EMAILS?: string
 }
 
@@ -1228,6 +1229,17 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
   const hostname = new URL(request.url).hostname
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     const requestedUser = request.headers.get('X-Taste-Map-Test-User')?.trim() || 'owner'
+    if (!/^[a-zA-Z0-9:_-]{1,80}$/.test(requestedUser)) {
+      throw new SyncV1RequestError('Development sync identity is invalid.', 400)
+    }
+    return { id: requestedUser, email: null, authProvider: 'local', authSubject: null }
+  }
+  if (env.SYNC_AUTH_MODE === 'development-test') {
+    if (env.APP_ENVIRONMENT !== 'development') {
+      throw new SyncV1RequestError('Development sync authentication is not allowed in this environment.', 503)
+    }
+    const requestedUser = request.headers.get('X-Taste-Map-Test-User')?.trim()
+    if (!requestedUser) throw new SyncV1RequestError('Development sync identity is required.', 401)
     if (!/^[a-zA-Z0-9:_-]{1,80}$/.test(requestedUser)) {
       throw new SyncV1RequestError('Development sync identity is invalid.', 400)
     }

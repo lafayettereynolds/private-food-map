@@ -12,13 +12,17 @@
     "test": "vitest run",
     "test:p0a": "node scripts/test-restaurant-identity-migration.mjs",
     "test:p0b1": "node scripts/test-sync-v1-migration.mjs && vitest run src/contracts/syncV1.test.ts worker/syncV1.integration.test.js",
+    "test:p0b2a:development": "node scripts/test-sync-v1-development.mjs",
     "preview": "vite preview --config vite.config.ts",
     "cloudflare:dev": "pnpm run build && wrangler dev --local",
     "d1:migrate:local": "wrangler d1 migrations apply food-map-db --local",
     "d1:migrate:remote": "wrangler d1 migrations apply food-map-db --remote",
+    "d1:preflight:development": "wrangler d1 migrations list food-map-db-development --remote --config wrangler.development.jsonc",
+    "d1:migrate:development": "wrangler d1 migrations apply food-map-db-development --remote --config wrangler.development.jsonc",
     "seed:test-users": "wrangler d1 migrations apply food-map-db --local && node scripts/seed-test-users.mjs seed --environment development",
     "reset:test-users": "wrangler d1 migrations apply food-map-db --local && node scripts/seed-test-users.mjs reset --environment development",
-    "deploy": "pnpm run build && wrangler deploy"
+    "deploy": "pnpm run build && wrangler deploy",
+    "deploy:development": "pnpm run build && wrangler deploy --config wrangler.development.jsonc"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",

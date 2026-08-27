@@ -55,7 +55,11 @@ iOS `SyncMutation` 持久化 mutation ID、实体、动作、时间、base versi
 
 V1 route 始终从服务端认证上下文取得 viewer ID，并覆盖 payload 中的 `userId`。实体 ID 已属于其他用户时返回 403；Visit 只能引用当前 viewer 所有的未删除 Restaurant。
 
-本地 Worker 只在 loopback 接受 `X-Taste-Map-Test-User` Development identity。非本地环境默认禁用 V1 sync；只有服务端明确配置 `SYNC_AUTH_MODE=cloudflare-access` 且存在 Access headers 时才进入现有 viewer resolver。正式 token/session、JWT 验签和 iOS Keychain 集成属于 P0-B2。未配置时返回 503/401，不回退为 `owner`。
+本地 Worker 在 loopback 接受 `X-Taste-Map-Test-User` Development identity。隔离的远程 Development Worker 只有同时设置 `APP_ENVIRONMENT=development` 与 `SYNC_AUTH_MODE=development-test` 时才接受该 header，并且缺少 header 时返回 401；Production 或未明确配置的 Worker 不接受测试身份。正式 token/session、JWT 验签和 iOS Keychain 集成属于 P0-B2-B。未配置时返回 503/401，不回退为 `owner`。
+
+P0-B2-A 的远程测试身份仅用于隔离的 Development D1，开发 URL 不是正式认证边界。它不得配置到 Production Worker，也不得承载真实用户数据。
+
+隔离 Development Worker 使用 `https://api-dev.tastemap.cn`；iOS 通过随 App 打包的非敏感 `APIEnvironment.plist` 读取 Development 地址，Info.plist 与进程环境仍可覆盖它。配置文件不包含 Production URL，Production URL 缺失时继续明确失败。
 
 ## iOS 模型选择
 
@@ -69,12 +73,13 @@ V1 route 始终从服务端认证上下文取得 viewer ID，并覆盖 payload �
 
 ## 部署安全
 
-Production D1 尚未预检或修改。部署顺序固定为：
+P0-B2-A 已创建独立 `food-map-db-development` 与 `private-food-map-development`。新 Dev D1 的首次 preflight 只有 Cloudflare 内部表且无业务数据，因此顺序应用完整 `0001`—`0016` migration 链；postflight 显示无待执行项、无外键错误。真实 Worker/D1 和 iOS API client 往返已验证，验收产生的数据最终全部保持 tombstone，无 active Restaurant/Visit。
+
+Production D1 尚未预检或修改。后续 Production 部署顺序固定为：
 
 1. 运行 P0-A production preflight。
-2. 在隔离的 Development D1 应用 `0015`、`0016`。
-3. 运行版本、backfill、identity、pull/push 和权限测试。
-4. 确认生产 Worker URL及正式认证方式。
-5. 再评估 Production migration；migration 必须先于新 Worker 部署。
+2. 导出并验证可恢复备份与 migration 风险。
+3. 确认正式认证、Production Worker URL 与用户映射策略。
+4. 再评估 Production migration；migration 必须先于新 Worker 部署。
 
 客户端不包含 Cloudflare、D1、R2 或 Google Secret。

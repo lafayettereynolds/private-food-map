@@ -32,14 +32,27 @@ struct APIConfiguration: Equatable, Sendable {
         processInfo: ProcessInfo = .processInfo
     ) -> APIConfiguration {
         let keys = [developmentKey, productionKey, fallbackKey]
-        var values = keys.reduce(into: [String: String]()) { result, key in
+        var values = bundledValues(bundle: bundle, keys: keys)
+        keys.forEach { key in
             if let value = bundle.object(forInfoDictionaryKey: key) as? String {
-                result[key] = value
+                values[key] = value
             }
         }
         processInfo.environment.forEach { values[$0.key] = $0.value }
         return (try? resolve(environment: .current, values: values))
             ?? APIConfiguration(environment: .current, baseURL: nil)
+    }
+
+    private static func bundledValues(bundle: Bundle, keys: [String]) -> [String: String] {
+        guard let url = bundle.url(forResource: "APIEnvironment", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let object = try? PropertyListSerialization.propertyList(from: data, format: nil),
+              let dictionary = object as? [String: Any] else {
+            return [:]
+        }
+        return keys.reduce(into: [String: String]()) { result, key in
+            if let value = dictionary[key] as? String { result[key] = value }
+        }
     }
 
     static func resolve(
