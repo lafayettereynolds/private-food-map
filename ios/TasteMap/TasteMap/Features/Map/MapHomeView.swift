@@ -12,9 +12,6 @@ struct MapHomeView: View {
     @State private var selectedFilter: MapFilter = .visited
     @State private var selectedRestaurantID: UUID?
     @State private var detailDestination: RestaurantDestination?
-    @State private var isShowingSearch = false
-    @State private var pendingCandidate: RestaurantCandidate?
-    @State private var isShowingVisitEditor = false
 
     private var displayedRestaurants: [Restaurant] {
         guard selectedFilter == .visited else { return [] }
@@ -75,20 +72,6 @@ struct MapHomeView: View {
             }
             .navigationTitle("Taste Map")
             .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                Button {
-                    isShowingSearch = true
-                } label: {
-                    Label("搜索餐厅并记录", systemImage: "magnifyingglass")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
-            }
             .task {
                 locationPermission.requestWhenInUseAuthorizationIfNeeded()
             }
@@ -103,22 +86,6 @@ struct MapHomeView: View {
                     RestaurantDetailView(restaurant: restaurant)
                 } else {
                     ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
-                }
-            }
-            .sheet(isPresented: $isShowingSearch, onDismiss: {
-                if pendingCandidate != nil {
-                    isShowingVisitEditor = true
-                }
-            }) {
-                RestaurantSearchView { candidate in
-                    pendingCandidate = candidate
-                }
-            }
-            .sheet(isPresented: $isShowingVisitEditor, onDismiss: {
-                pendingCandidate = nil
-            }) {
-                if let pendingCandidate {
-                    VisitEditorView(candidate: pendingCandidate)
                 }
             }
         }

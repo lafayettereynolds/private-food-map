@@ -27,12 +27,30 @@ final class TasteMapUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        XCTAssertTrue(app.buttons["搜索餐厅并记录"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["地图"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["发现"].exists)
+        XCTAssertTrue(app.buttons["我的"].exists)
+        XCTAssertTrue(app.buttons["添加餐厅"].exists)
         XCTAssertTrue(app.segmentedControls.buttons["去过"].exists)
 
-        app.buttons["搜索餐厅并记录"].tap()
+        app.buttons["添加餐厅"].tap()
         XCTAssertTrue(app.navigationBars["搜索餐厅"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.searchFields["餐厅名称或地址"].exists)
+    }
+
+    @MainActor
+    func testBottomNavigationSwitchesBetweenThreeMainTabs() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        app.buttons["发现"].tap()
+        XCTAssertTrue(app.navigationBars["发现"].waitForExistence(timeout: 5))
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+
+        app.buttons["地图"].tap()
+        XCTAssertTrue(app.segmentedControls.buttons["去过"].waitForExistence(timeout: 5))
     }
 
     @MainActor
