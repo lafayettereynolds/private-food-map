@@ -5,6 +5,8 @@ enum TasteMapPersistence {
     static let schema = Schema([
         Restaurant.self,
         Visit.self,
+        Dish.self,
+        PhotoAsset.self,
         SyncMutation.self,
         SyncCheckpoint.self,
     ])

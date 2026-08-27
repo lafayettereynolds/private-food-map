@@ -2,11 +2,17 @@ import {
   decodeRestaurantJSONContract,
   type RestaurantJSONContractV1,
 } from './restaurantContract'
+import {
+  decodeDishJSONContract,
+  decodePhotoJSONContract,
+  type DishJSONContractV1,
+  type PhotoJSONContractV1,
+} from './dishPhotoContract'
 
 export const SYNC_API_VERSION = 1 as const
 export const SYNC_SCHEMA_VERSION = 1 as const
 
-export type SyncEntityType = 'restaurant' | 'visit'
+export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'photo'
 export type SyncMutationOperation = 'upsert' | 'delete'
 export type VisitDiningModeContract = 'dine_in' | 'takeout'
 
@@ -33,7 +39,7 @@ export interface SyncMutationV1 {
   operation: SyncMutationOperation
   baseVersion: number
   clientTimestamp: string
-  payload?: RestaurantJSONContractV1 | VisitSyncContractV1
+  payload?: RestaurantJSONContractV1 | VisitSyncContractV1 | DishJSONContractV1 | PhotoJSONContractV1
 }
 
 export interface SyncPushRequestV1 {
@@ -76,6 +82,8 @@ export interface SyncPullResponseV1 {
   schemaVersion: typeof SYNC_SCHEMA_VERSION
   restaurants: Array<SyncRecordEnvelopeV1<RestaurantJSONContractV1>>
   visits: Array<SyncRecordEnvelopeV1<VisitSyncContractV1>>
+  dishes: Array<SyncRecordEnvelopeV1<DishJSONContractV1>>
+  photos: Array<SyncRecordEnvelopeV1<PhotoJSONContractV1>>
   tombstones: SyncTombstoneV1[]
   nextCursor: string
   hasMore: boolean
@@ -129,7 +137,7 @@ export function stableSyncMutationJSON(mutation: SyncMutationV1) {
 
 function decodeSyncMutation(value: unknown): SyncMutationV1 {
   if (!isRecord(value) || !isNonEmptyString(value.mutationId) ||
-    !['restaurant', 'visit'].includes(String(value.entityType)) ||
+    !['restaurant', 'visit', 'dish', 'photo'].includes(String(value.entityType)) ||
     !isNonEmptyString(value.entityId) || !['upsert', 'delete'].includes(String(value.operation)) ||
     !Number.isInteger(value.baseVersion) || Number(value.baseVersion) < 0 ||
     !isNonEmptyString(value.clientTimestamp)) {
@@ -149,9 +157,14 @@ function decodeSyncMutation(value: unknown): SyncMutationV1 {
     }
     return mutation
   }
-  const payload = mutation.entityType === 'restaurant'
-    ? decodeRestaurantJSONContract(value.payload)
-    : decodeVisitSyncContract(value.payload)
+  const payload = (() => {
+    switch (mutation.entityType) {
+      case 'restaurant': return decodeRestaurantJSONContract(value.payload)
+      case 'visit': return decodeVisitSyncContract(value.payload)
+      case 'dish': return decodeDishJSONContract(value.payload)
+      case 'photo': return decodePhotoJSONContract(value.payload)
+    }
+  })()
   if (payload.id !== mutation.entityId) {
     throw new SyncContractError('Mutation entityId must match payload.id.')
   }

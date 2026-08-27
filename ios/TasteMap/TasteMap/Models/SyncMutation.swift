@@ -4,6 +4,17 @@ import SwiftData
 enum SyncEntityType: String, Codable, Sendable {
     case restaurant
     case visit
+    case dish
+    case photo
+
+    var dependencyPriority: Int {
+        switch self {
+        case .restaurant: 0
+        case .visit: 1
+        case .dish: 2
+        case .photo: 3
+        }
+    }
 }
 
 enum SyncMutationOperation: String, Codable, Sendable {

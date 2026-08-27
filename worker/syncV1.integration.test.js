@@ -146,7 +146,7 @@ describe('Worker Sync API V1 integration', () => {
 
     expect(retry.acknowledgements[0]).toMatchObject({ status: 'applied', duplicate: true, serverVersion: 1 })
     expect(database.get('SELECT COUNT(*) AS count FROM restaurants').count).toBe(1)
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log WHERE mutation_id = 'response-lost'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v2 WHERE mutation_id = 'response-lost'").count).toBe(1)
   })
 
   it('increments server versions for valid Restaurant and Visit updates', async () => {
@@ -183,7 +183,7 @@ describe('Worker Sync API V1 integration', () => {
     const incremental = await pull(database, 'user-a', initial.nextCursor)
 
     expect(incremental.restaurants[0]).toMatchObject({ serverVersion: 2, record: { name: 'Web 更新名称' } })
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v2 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
   })
 
   it('prevents a stale device from resurrecting a server tombstone', async () => {
@@ -232,6 +232,50 @@ describe('Worker Sync API V1 integration', () => {
     await expect(push(database, 'user-a', mutation('same-id', 'restaurant', appleFixture.id, 0, changed)))
       .rejects.toBeInstanceOf(SyncV1RequestError)
   })
+
+  it('syncs Dish and provider-neutral Photo metadata with idempotency, isolation, and tombstones', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('p2-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = visitPayload('p2-visit', appleFixture.id, 'forged-user')
+    await push(database, 'user-a', mutation('p2-v', 'visit', visit.id, 0, visit))
+    const dish = dishPayload('p2-dish', appleFixture.id, visit.id, 'forged-user')
+    const dishCreate = mutation('p2-dish-create', 'dish', dish.id, 0, dish)
+    await push(database, 'user-a', dishCreate)
+    const duplicate = await push(database, 'user-a', dishCreate)
+    expect(duplicate.acknowledgements[0]).toMatchObject({ duplicate: true, serverVersion: 1 })
+
+    const photo = photoPayload('p2-photo', appleFixture.id, visit.id, dish.id, 'forged-user')
+    await push(database, 'user-a', mutation('p2-photo-create', 'photo', photo.id, 0, photo))
+    const first = await pull(database, 'user-a', '0')
+    expect(first.dishes).toEqual([expect.objectContaining({ record: expect.objectContaining({ id: dish.id, visitId: visit.id }) })])
+    expect(first.photos).toEqual([expect.objectContaining({ record: expect.objectContaining({
+      id: photo.id, storageProvider: 'r2', storageKey: 'development/user-a/p2-photo',
+    }) })])
+    expect(database.get('SELECT user_id FROM dishes WHERE id = ?', dish.id).user_id).toBe('user-a')
+    expect(database.get('SELECT user_id FROM photos WHERE id = ?', photo.id).user_id).toBe('user-a')
+    expect(JSON.parse(database.get('SELECT dishes_json FROM visits WHERE id = ?', visit.id).dishes_json)[0])
+      .toMatchObject({ id: dish.id, photoId: photo.id })
+    expect((await pull(database, 'user-b', '0')).dishes).toEqual([])
+    expect((await pull(database, 'user-b', '0')).photos).toEqual([])
+    await expect(push(database, 'user-b', mutation('p2-dish-takeover', 'dish', dish.id, 1, dish)))
+      .rejects.toMatchObject({ status: 403 })
+
+    const updated = { ...dish, taste: '更浓郁', updatedAt: '2026-08-27T09:00:00.000Z' }
+    await push(database, 'user-a', mutation('p2-dish-update', 'dish', dish.id, 1, updated))
+    const stale = await push(database, 'user-a', mutation('p2-dish-stale', 'dish', dish.id, 1, dish))
+    expect(stale.acknowledgements[0]).toMatchObject({ status: 'conflict', serverVersion: 2 })
+
+    await push(database, 'user-a', deletion('p2-photo-delete', 'photo', photo.id, 1))
+    await push(database, 'user-a', deletion('p2-dish-delete', 'dish', dish.id, 2))
+    const deleted = await pull(database, 'user-a', first.nextCursor)
+    expect(deleted.tombstones).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entityType: 'photo', entityId: photo.id }),
+      expect.objectContaining({ entityType: 'dish', entityId: dish.id }),
+    ]))
+    expect(JSON.parse(database.get('SELECT dishes_json FROM visits WHERE id = ?', visit.id).dishes_json)).toEqual([])
+    expect((await push(database, 'user-a', mutation('p2-dish-resurrect', 'dish', dish.id, 2, dish))).acknowledgements[0])
+      .toMatchObject({ status: 'conflict' })
+  })
 })
 
 function mutation(mutationId, entityType, entityId, baseVersion, payload) {
@@ -254,6 +298,26 @@ function visitPayload(id, restaurantId, claimedUser) {
 function legacyVisitPayload(id, restaurantId, claimedUser) {
   const { diningMode: _, partySize: __, ...legacy } = visitPayload(id, restaurantId, claimedUser)
   return legacy
+}
+
+function dishPayload(id, restaurantId, visitId, claimedUser) {
+  return {
+    schemaVersion: 1, id, userId: claimedUser, restaurantId, visitId,
+    name: '寿喜烧', taste: '甜香', rating: 4.5, price: 88, photoId: null,
+    sortOrder: 0, createdAt: '2026-08-27T06:10:00.000Z',
+    updatedAt: '2026-08-27T06:10:00.000Z', deletedAt: null,
+  }
+}
+
+function photoPayload(id, restaurantId, visitId, dishId, claimedUser) {
+  return {
+    schemaVersion: 1, id, userId: claimedUser, restaurantId, visitId, dishId,
+    kind: 'dish', storageProvider: 'r2', storageKey: `development/user-a/${id}`,
+    providerAccountId: null, thumbnailStorageKey: null, fileName: `${id}.heic`,
+    mimeType: 'image/heic', byteSize: 1024, width: 1200, height: 900,
+    sortOrder: 0, visibility: 'private', createdAt: '2026-08-27T06:20:00.000Z',
+    updatedAt: '2026-08-27T06:20:00.000Z', deletedAt: null,
+  }
 }
 
 async function push(database, viewerId, ...mutations) {
@@ -287,6 +351,7 @@ function migrationFiles() {
     '0012_recommendation_events.sql', '0013_restaurant_lists.sql',
     '0014_restaurant_contact_details.sql', '0015_restaurant_place_identities.sql',
     '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
+    '0019_dish_photo_sync.sql',
   ]
 }
 

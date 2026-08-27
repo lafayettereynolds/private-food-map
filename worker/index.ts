@@ -441,6 +441,25 @@ const PHOTO_UPSERT = `
   WHERE excluded.updated_at > photos.updated_at
 `
 
+const LEGACY_DISH_UPSERT = `
+  INSERT INTO dishes (
+    id, user_id, restaurant_id, visit_id, name, taste, rating, price, photo_id,
+    sort_order, created_at, updated_at, deleted_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    restaurant_id = excluded.restaurant_id,
+    visit_id = excluded.visit_id,
+    name = excluded.name,
+    taste = excluded.taste,
+    rating = excluded.rating,
+    price = excluded.price,
+    photo_id = excluded.photo_id,
+    sort_order = excluded.sort_order,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at
+  WHERE dishes.user_id = excluded.user_id AND excluded.updated_at > dishes.updated_at
+`
+
 const USER_UPSERT = `
   INSERT INTO users (
     id, auth_provider, auth_subject, email, nickname, bio, city, avatar_image_data,
@@ -1001,6 +1020,45 @@ async function upsertVisits(database: D1Database, visits: CloudVisit[]) {
     updatedAt: visit.updatedAt,
     deletedAt: visit.deletedAt,
   })))
+  await upsertLegacyDishes(database, changed)
+}
+
+async function upsertLegacyDishes(database: D1Database, visits: CloudVisit[]) {
+  for (const visit of visits) {
+    const userId = visit.userId ?? 'owner'
+    const current = await database.prepare('SELECT id, updated_at, deleted_at FROM dishes WHERE user_id = ? AND visit_id = ?')
+      .bind(userId, visit.id).all<{ id: string; updated_at: string; deleted_at: string | null }>()
+    const incomingIDs = new Set(visit.dishes.map((dish) => dish.id))
+    const statements = visit.dishes.map((dish, index) => database.prepare(LEGACY_DISH_UPSERT).bind(
+      dish.id, userId, visit.restaurantId, visit.id, dish.name, dish.taste,
+      dish.rating, dish.price, dish.photoId, index, visit.createdAt, visit.updatedAt,
+      visit.deletedAt,
+    ))
+    const removed = current.results.filter((dish) => !incomingIDs.has(dish.id) && !dish.deleted_at)
+    statements.push(...removed.map((dish) => database.prepare(`UPDATE dishes
+      SET deleted_at = ?, updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
+      .bind(visit.updatedAt, visit.updatedAt, dish.id, userId)))
+    const results = await runInChunks(database, statements)
+    const changes = [
+      ...visit.dishes.map((dish, index) => ({
+        id: dish.id,
+        changed: Number(results[index]?.meta.changes ?? 0) > 0,
+        deletedAt: visit.deletedAt,
+      })),
+      ...removed.map((dish, index) => ({
+        id: dish.id,
+        changed: Number(results[visit.dishes.length + index]?.meta.changes ?? 0) > 0,
+        deletedAt: visit.updatedAt,
+      })),
+    ].filter((dish) => dish.changed)
+    await recordUnversionedSyncChanges(database, changes.map((dish) => ({
+      userId,
+      entityType: 'dish',
+      entityId: dish.id,
+      updatedAt: visit.updatedAt,
+      deletedAt: dish.deletedAt,
+    })))
+  }
 }
 
 async function upsertPhotos(database: D1Database, photos: CloudPhoto[]) {
@@ -1027,7 +1085,26 @@ async function upsertPhotos(database: D1Database, photos: CloudPhoto[]) {
     photo.updatedAt,
     photo.deletedAt,
   ))
-  await runInChunks(database, statements)
+  const results = await runInChunks(database, statements)
+  const changed = photos.filter((_, index) => Number(results[index]?.meta.changes ?? 0) > 0)
+  for (const photo of changed) {
+    const userId = photo.userId ?? 'owner'
+    await database.prepare(`UPDATE photos
+      SET dish_id = (
+        SELECT id FROM dishes
+        WHERE user_id = ? AND photo_id = ? AND deleted_at IS NULL
+        ORDER BY updated_at DESC LIMIT 1
+      )
+      WHERE id = ? AND user_id = ? AND kind = 'dish'`)
+      .bind(userId, photo.id, photo.id, userId).run()
+  }
+  await recordUnversionedSyncChanges(database, changed.map((photo) => ({
+    userId: photo.userId ?? 'owner',
+    entityType: 'photo',
+    entityId: photo.id,
+    updatedAt: photo.updatedAt,
+    deletedAt: photo.deletedAt,
+  })))
 }
 
 async function upsertUsers(database: D1Database, users: CloudUser[]) {

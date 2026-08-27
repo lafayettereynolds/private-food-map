@@ -4,7 +4,7 @@
 
 ## 边界
 
-P0-B1 只建立 `SwiftData ↔ SyncEngine ↔ Worker ↔ D1` 基础链路，不启用产品 UI，也不配置正式生产 URL、Apple Capability 或客户端 Secret。旧 Web `/api/sync` 保持兼容，但真正改变 Restaurant/Visit 时会写入同一 revision log，使原生增量 pull 可以看到 Web 更新。
+P0-B1 建立 `SwiftData ↔ SyncEngine ↔ Worker ↔ D1` 基础链路。P2-A 在不改变 API/schema version 的前提下增量加入 Dish/Photo metadata。旧 Web `/api/sync` 保持兼容，真正改变 Restaurant/Visit/Dish/Photo 时会写入同一 revision ledger，使原生增量 pull 可以看到 Web 更新。
 
 ## API
 
@@ -13,14 +13,14 @@ P0-B1 只建立 `SwiftData ↔ SyncEngine ↔ Worker ↔ D1` 基础链路，不�
 请求包含 `apiVersion = 1`、`schemaVersion = 1` 和最多 100 个 mutation。每个 mutation 包含：
 
 - `mutationId`
-- `entityType`: `restaurant | visit`
+- `entityType`: `restaurant | visit | dish | photo`
 - `entityId`
 - `operation`: `upsert | delete`
 - `baseVersion`
 - `clientTimestamp`
 - `payload`：upsert 必填，delete 禁止携带
 
-Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-only Restaurant 不需要 `amapPoiId`；D1 旧兼容列保存空字符串，正式 identity 只来自 `placeIdentities`。Visit V1 只包含原生闭环必需字段，不覆盖 Web 端尚未迁移的高级 Visit 字段。P1-C 增加 canonical `diningMode`（`dine_in | takeout`）和 required-but-nullable `partySize`；新客户端始终编码两项，P0 旧 Visit payload 缺少它们时服务端兼容归一化为 `dine_in` 与 `null`。
+Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-only Restaurant 不需要 `amapPoiId`；D1 旧兼容列保存空字符串，正式 identity 只来自 `placeIdentities`。Visit V1 只包含原生闭环必需字段，不覆盖 Web 端尚未迁移的高级 Visit 字段。P1-C 增加 canonical `diningMode`（`dine_in | takeout`）和 required-but-nullable `partySize`；新客户端始终编码两项，P0 旧 Visit payload 缺少它们时服务端兼容归一化为 `dine_in` 与 `null`。Dish/Photo 字段及 nullable 语义见 `P2_DISH_PHOTO_FOUNDATION.md`。
 
 响应逐项返回 `applied | conflict`、`duplicate`、`serverVersion`、`revision` 和可选冲突原因。
 
@@ -32,7 +32,7 @@ Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-on
 - `cursor`：上次服务端 revision，首次为 `0`
 - `limit`：1–200
 
-响应包含变化后的 `restaurants`、`visits`、独立 `tombstones`、`nextCursor` 和 `hasMore`。游标是服务端单调递增 revision 的不透明字符串，不使用设备时间；每次最多读取 200 条 change log。若同一实体在一页中变化多次，只返回该页最后版本；若数据库已经存在更晚版本，旧事件跳过并由后续 revision 返回。返回 Visit 时会附带本页尚未包含的父 Restaurant 依赖快照（即使父记录已 tombstone），确保新设备不会得到失去 Restaurant 映射的 Visit；这不是全库下载。
+响应包含变化后的 `restaurants`、`visits`、`dishes`、`photos`、独立 `tombstones`、`nextCursor` 和 `hasMore`。游标是服务端单调递增 revision 的不透明字符串，不使用设备时间；每次最多读取 200 条 change log。若同一实体在一页中变化多次，只返回该页最后版本；若数据库已经存在更晚版本，旧事件跳过并由后续 revision 返回。Worker 会按需附带 Restaurant→Visit→Dish 父依赖快照；这不是全库下载。
 
 ## Idempotency 与队列
 
@@ -53,7 +53,7 @@ iOS `SyncMutation` 持久化 mutation ID、实体、动作、时间、base versi
 
 ## 用户隔离与认证边界
 
-V1 route 始终从服务端认证上下文取得 viewer ID，并覆盖 payload 中的 `userId`。实体 ID 已属于其他用户时返回 403；Visit 只能引用当前 viewer 所有的未删除 Restaurant。
+V1 route 始终从服务端认证上下文取得 viewer ID，并覆盖 payload 中的 `userId`。实体 ID 已属于其他用户时返回 403；Visit、Dish、Photo 的父关系必须全部属于当前 viewer 且未删除。
 
 本地 Worker 在 loopback 接受 `X-Taste-Map-Test-User` Development identity。隔离的远程 Development Worker 只有同时设置 `APP_ENVIRONMENT=development` 与 `SYNC_AUTH_MODE=development-test` 时才接受该 header，并且缺少 header 时返回 401；Production 或未明确配置的 Worker 不接受测试身份。正式 token/session、JWT 验签和 iOS Keychain 集成属于 P0-B2-B。未配置时返回 503/401，不回退为 `owner`。
 

@@ -10,6 +10,32 @@ enum SyncRecordMapper {
         try JSONEncoder().encode(visitRecord(visit, restaurantRemoteID: restaurantRemoteID))
     }
 
+    static func dishPayload(
+        _ dish: Dish,
+        restaurantRemoteID: String,
+        visitRemoteID: String
+    ) throws -> Data {
+        try JSONEncoder().encode(try dishRecord(
+            dish,
+            restaurantRemoteID: restaurantRemoteID,
+            visitRemoteID: visitRemoteID
+        ))
+    }
+
+    static func photoPayload(
+        _ photo: PhotoAsset,
+        restaurantRemoteID: String?,
+        visitRemoteID: String?,
+        dishRemoteID: String?
+    ) throws -> Data {
+        try JSONEncoder().encode(try photoRecord(
+            photo,
+            restaurantRemoteID: restaurantRemoteID,
+            visitRemoteID: visitRemoteID,
+            dishRemoteID: dishRemoteID
+        ))
+    }
+
     static func restaurantRecord(_ restaurant: Restaurant) throws -> RestaurantJSONContractV1 {
         let remoteID = restaurant.remoteID ?? restaurant.id.uuidString
         let previous = restaurant.remoteRecordData.flatMap {
@@ -83,6 +109,62 @@ enum SyncRecordMapper {
             createdAt: dateString(visit.createdAt),
             updatedAt: dateString(visit.updatedAt),
             deletedAt: visit.deletedAt.map(dateString)
+        )
+    }
+
+    static func dishRecord(
+        _ dish: Dish,
+        restaurantRemoteID: String,
+        visitRemoteID: String
+    ) throws -> DishSyncContractV1 {
+        try DishSyncContractV1(
+            id: dish.remoteID ?? dish.id.uuidString.lowercased(),
+            userId: "local",
+            restaurantId: restaurantRemoteID,
+            visitId: visitRemoteID,
+            name: dish.name,
+            taste: dish.taste,
+            rating: dish.rating,
+            price: dish.price.map { NSDecimalNumber(decimal: $0).doubleValue },
+            photoId: dish.photoRemoteID,
+            sortOrder: dish.sortOrder,
+            createdAt: dateString(dish.createdAt),
+            updatedAt: dateString(dish.updatedAt),
+            deletedAt: dish.deletedAt.map(dateString)
+        )
+    }
+
+    static func photoRecord(
+        _ photo: PhotoAsset,
+        restaurantRemoteID: String?,
+        visitRemoteID: String?,
+        dishRemoteID: String?
+    ) throws -> PhotoSyncContractV1 {
+        guard let provider = photo.storageProvider,
+              let storageKey = photo.storageKey, !storageKey.isEmpty else {
+            throw RichRecordContractError.invalidPhoto
+        }
+        return try PhotoSyncContractV1(
+            id: photo.remoteID ?? photo.id.uuidString.lowercased(),
+            userId: "local",
+            restaurantId: restaurantRemoteID,
+            visitId: visitRemoteID,
+            dishId: dishRemoteID,
+            kind: photo.kind,
+            storageProvider: provider,
+            storageKey: storageKey,
+            providerAccountId: photo.providerAccountId,
+            thumbnailStorageKey: photo.thumbnailStorageKey,
+            fileName: photo.fileName,
+            mimeType: photo.mimeType,
+            byteSize: photo.byteSize,
+            width: photo.width,
+            height: photo.height,
+            sortOrder: photo.sortOrder,
+            visibility: photo.visibility,
+            createdAt: dateString(photo.createdAt),
+            updatedAt: dateString(photo.updatedAt),
+            deletedAt: photo.deletedAt.map(dateString)
         )
     }
 

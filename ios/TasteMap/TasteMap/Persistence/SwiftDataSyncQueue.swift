@@ -109,8 +109,10 @@ struct SwiftDataSyncQueue {
         try allMutations()
             .filter { $0.state == .queued && ($0.nextRetryAt == nil || $0.nextRetryAt! <= date) }
             .sorted {
+                if $0.entityType != $1.entityType {
+                    return $0.entityType.dependencyPriority < $1.entityType.dependencyPriority
+                }
                 if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
-                if $0.entityType != $1.entityType { return $0.entityType == .restaurant }
                 return $0.mutationID.uuidString < $1.mutationID.uuidString
             }
             .first

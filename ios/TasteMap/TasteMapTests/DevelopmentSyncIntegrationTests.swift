@@ -397,6 +397,103 @@ struct DevelopmentSyncIntegrationTests {
         #expect(!remote.restaurants.contains { $0.record.id == restaurantA.remoteID })
     }
 
+    @Test("P2-A Dish and Photo metadata round-trip through Development Worker and D1")
+    func developmentDishPhotoRoundTrip() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let runID = UUID().uuidString.lowercased()
+        let userID = "ios-p2a:\(runID)"
+        let client = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: userID)
+        )
+        let otherClient = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p2a-other:\(runID)")
+        )
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let p1Store = LocalTasteMapStore(context: context)
+        let restaurant = try p1Store.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P2-A Development Dish Photo Restaurant",
+                address: "Development D1 metadata test only",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p2a-\(runID)"
+            ),
+            among: []
+        )
+        let visit = try p1Store.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(rating: nil, note: "P2-A contract test")
+        )
+        let fileDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("taste-map-p2a-dev-\(runID)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fileDirectory) }
+        let photoFiles = try LocalPhotoFileStore(rootURL: fileDirectory)
+        let richStore = LocalDishPhotoStore(context: context, photoFiles: photoFiles)
+        let dish = try richStore.createDish(
+            restaurantId: restaurant.id,
+            visitId: visit.id,
+            name: "Development 寿喜烧",
+            taste: "甜香",
+            rating: 4.5,
+            price: 88
+        )
+        let photo = try await richStore.createLocalPhoto(
+            data: Data([0xFF, 0xD8, 0xFF]),
+            mimeType: "image/jpeg",
+            kind: .dish,
+            restaurantId: restaurant.id,
+            visitId: visit.id,
+            dishId: dish.id,
+            fileName: "p2a-contract-test.jpg",
+            width: 3,
+            height: 1
+        )
+        try richStore.markUploaded(photo, reference: StoredPhotoReference(
+            storageProvider: .googleDrive,
+            storageKey: "p2a-contract-test:\(runID)",
+            providerAccountId: "development-contract-test",
+            thumbnailStorageKey: nil,
+            metadata: PhotoMetadata(
+                contentType: "image/jpeg", pixelWidth: 3, pixelHeight: 1,
+                byteSize: 3, originalFileName: "p2a-contract-test.jpg", createdAt: .now
+            )
+        ))
+
+        try await SyncEngine(context: context, api: client).synchronize()
+        #expect(dish.serverVersion == 1)
+        #expect(photo.serverVersion == 1)
+        #expect(try context.fetch(FetchDescriptor<SyncMutation>()).isEmpty)
+
+        let freshContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        try await SyncEngine(context: freshContainer.mainContext, api: client).synchronize()
+        let pulledDish = try #require(freshContainer.mainContext.fetch(FetchDescriptor<Dish>()).first)
+        let pulledPhoto = try #require(freshContainer.mainContext.fetch(FetchDescriptor<PhotoAsset>()).first)
+        #expect(pulledDish.name == "Development 寿喜烧")
+        #expect(pulledPhoto.storageProvider == .googleDrive)
+        #expect(pulledPhoto.storageKey == "p2a-contract-test:\(runID)")
+        #expect(pulledPhoto.localFileRelativePath == nil)
+
+        let isolated = try await otherClient.pull(cursor: "0", limit: 200)
+        #expect(!isolated.dishes.contains { $0.record.id == dish.remoteID })
+        #expect(!isolated.photos.contains { $0.record.id == photo.remoteID })
+
+        try richStore.delete(photo)
+        try richStore.delete(dish)
+        try p1Store.delete(visit)
+        try await SyncEngine(context: context, api: client).synchronize()
+        try p1Store.delete(restaurant)
+        try await SyncEngine(context: context, api: client).synchronize()
+        let remote = try await client.pull(cursor: "0", limit: 200)
+        #expect(remote.tombstones.contains { $0.entityType == .photo && $0.entityId == photo.remoteID })
+        #expect(remote.tombstones.contains { $0.entityType == .dish && $0.entityId == dish.remoteID })
+        #expect(remote.tombstones.contains { $0.entityType == .visit && $0.entityId == visit.remoteID })
+        #expect(remote.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurant.remoteID })
+    }
+
     private func deletion(
         runID: String,
         suffix: String,
