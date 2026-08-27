@@ -1,4 +1,5 @@
 import { IS_DEVELOPMENT, SOCIAL_API_ENABLED, localTestHeaders } from '../config/appEnvironment'
+import { apiURL } from '../config/apiEnvironment'
 import type { CloudVisit } from '../types/cloudSync'
 import type { CompanionLinkRequest, CommunityVisit, DiningCompanion, Follow, Friendship, HistoricalMealFact, RestaurantListCollection, RestaurantListItem, RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { drivePhotoReference } from './cloudSyncData'
@@ -348,7 +349,7 @@ function testVisitPhotos(visitId: string) {
 }
 
 async function apiFetch<Result = unknown>(input: string, init: RequestInit = {}): Promise<Result> {
-  const response = await fetch(input, { ...init, credentials: 'same-origin', headers: { Accept: 'application/json', ...localTestHeaders(), ...init.headers } })
+  const response = await fetch(apiURL(input), { ...init, credentials: 'same-origin', headers: { Accept: 'application/json', ...localTestHeaders(), ...init.headers } })
   const payload: unknown = await response.json().catch(() => null)
   if (!response.ok) {
     const message = payload && typeof payload === 'object' && typeof (payload as Record<string, unknown>).error === 'string'

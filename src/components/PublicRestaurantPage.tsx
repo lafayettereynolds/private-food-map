@@ -1,5 +1,6 @@
 import { Clock3, ImageOff, MapPin, Phone, Star } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { apiURL } from '../config/apiEnvironment'
 
 interface PublicRestaurantPayload {
   publicRestaurantId: string
@@ -19,7 +20,7 @@ export function PublicRestaurantPage({ publicRestaurantId }: { publicRestaurantI
   const [error, setError] = useState('')
   useEffect(() => {
     let active = true
-    void fetch(`/api/public/restaurants/${encodeURIComponent(publicRestaurantId)}`)
+    void fetch(apiURL(`/api/public/restaurants/${encodeURIComponent(publicRestaurantId)}`))
       .then(async (response) => {
         const body = await response.json() as PublicRestaurantPayload & { error?: string }
         if (!response.ok) throw new Error(body.error || '暂时无法读取这家餐厅。')

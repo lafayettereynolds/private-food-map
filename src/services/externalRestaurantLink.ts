@@ -1,4 +1,5 @@
 import type { PoiSearchResult } from '../types/domain'
+import { apiURL } from '../config/apiEnvironment'
 
 export type ExternalLinkConfidence = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE'
 
@@ -23,7 +24,7 @@ export async function resolveExternalRestaurantLink(value: string, currentCity: 
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 10_000)
   try {
-    const response = await fetch('/api/external-place/resolve', {
+    const response = await fetch(apiURL('/api/external-place/resolve'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       credentials: 'same-origin',

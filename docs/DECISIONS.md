@@ -49,6 +49,7 @@
 - Web 仍是当前主要客户端，但数据模型、同步接口、认证与图片引用不得绑定到特定 Web UI，以便未来 iOS 复用。
 - 只有字段、数据库结构或同步协议变化时才检查 migration；纯 UI、布局、颜色和文案修改跳过数据链路检查。
 - Restaurant 的跨平台身份由 Global Restaurant ID / Provider 映射服务维护；地图 SDK 的 POI ID 只是来源标识，不能成为所有业务模型的唯一真值。
+- Restaurant 跨端传输固定使用版本化 JSON Contract；required、optional 与 required-but-nullable 由 JSON Schema 明确定义。旧 `amapPoiId` 仅作兼容字段，Apple Maps、高德和手工来源统一进入 `placeIdentities`，遇到重复 Provider 映射时不得静默选择或自动合并。
 - 同步采用 local-first：本地写入先成功，随后由幂等操作队列增量上云；图片只同步元数据和存储引用，不把二进制写入 D1。
 - 会员能力以服务端有效 Entitlement 为准；前端开关和本地字段不能直接授予会员权限，管理员变更必须留下审计记录。
 - Development 的当前测试账号固定授予终身会员能力，用于完整功能验收；另设本地身份 `free-tester` 对应的非会员测试账号。测试身份通过本地启动参数和仅限 localhost 的请求头传递，Worker 仍是会员真值来源；线上环境忽略这套本地测试身份。

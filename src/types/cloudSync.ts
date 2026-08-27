@@ -1,6 +1,7 @@
-import type { Friendship, Photo, Restaurant, RestaurantListCollection, RestaurantListItem, SharedMeal, SharedMealParticipant, UserProfile, Visit, VisitDish } from './domain'
+import type { Friendship, Photo, RestaurantListCollection, RestaurantListItem, SharedMeal, SharedMealParticipant, UserProfile, Visit, VisitDish } from './domain'
+import type { RestaurantJSONContractV1 } from '../contracts/restaurantContract'
 
-export type CloudRestaurant = Omit<Restaurant, 'markerImageData'>
+export type CloudRestaurant = RestaurantJSONContractV1 & { amapPoiId: string }
 export type CloudVisitDish = Omit<VisitDish, 'imageData'>
 export type CloudVisit = Omit<Visit, 'dishes' | 'photos'> & { dishes: CloudVisitDish[] }
 export type CloudPhoto = Omit<Photo, 'localState' | 'lastError'>

@@ -31,6 +31,8 @@ import type {
   TransportConvenience,
   Visibility,
 } from '../src/types/domain'
+import type { RestaurantPlaceIdentity, RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
+import { decodeRestaurantJSONContract, RestaurantContractError } from '../src/contracts/restaurantContract'
 import { readRestaurantSocialStats } from './restaurantStats'
 import { calculateTasteSimilarities } from './tasteSimilarity'
 import { rankFriendRecommendations } from './friendRecommendation'
@@ -40,6 +42,11 @@ import {
   resolveExternalRestaurantEvidence,
   type ExternalRestaurantResolveInput,
 } from './externalRestaurantLinkResolver'
+import {
+  contractProviderForEvidence,
+  groupRestaurantPlaceIdentities,
+  type RestaurantPlaceIdentityRow,
+} from './restaurantIdentityMapping'
 
 interface Env {
   DB: D1Database
@@ -309,6 +316,29 @@ const RESTAURANT_UPSERT = `
     updated_at = excluded.updated_at,
     deleted_at = excluded.deleted_at
   WHERE excluded.updated_at > restaurants.updated_at
+`
+
+const RESTAURANT_PLACE_IDENTITY_UPSERT = `
+  INSERT INTO restaurant_place_identities (
+    restaurant_id, user_id, provider, external_id, is_primary, created_at, updated_at
+  )
+  SELECT ?, ?, ?, ?, ?, ?, ?
+  WHERE EXISTS (
+    SELECT 1 FROM restaurants WHERE id = ? AND updated_at = ?
+  )
+  ON CONFLICT(restaurant_id, provider, external_id) DO UPDATE SET
+    user_id = excluded.user_id,
+    is_primary = excluded.is_primary,
+    updated_at = MAX(excluded.updated_at, restaurant_place_identities.updated_at)
+`
+
+const RESTAURANT_PLACE_IDENTITY_CLEAR_PRIMARY = `
+  UPDATE restaurant_place_identities
+  SET is_primary = 0, updated_at = MAX(updated_at, ?)
+  WHERE restaurant_id = ? AND is_primary = 1
+    AND EXISTS (
+      SELECT 1 FROM restaurants WHERE id = ? AND updated_at = ?
+    )
 `
 
 const VISIT_UPSERT = `
@@ -599,6 +629,11 @@ interface ExternalPlaceCandidate {
   matchScore: number
 }
 
+interface ExternalPlaceCandidateRow extends RestaurantRow {
+  matched_provider: RestaurantPlaceProvider | null
+  matched_external_id: string | null
+}
+
 async function resolveExternalPlaceRequest(database: D1Database, viewerId: string, request: Request) {
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   if (contentLength > 32_000) throw new RequestError('分享内容过大，无法解析。', 413)
@@ -683,23 +718,28 @@ async function findExternalPlaceCandidates(
   viewerId: string,
   evidence: Awaited<ReturnType<typeof resolveExternalRestaurantEvidence>>,
 ) {
+  const identityProvider = contractProviderForEvidence(evidence.provider) ?? ''
+  const identityExternalId = identityProvider ? evidence.externalId ?? '' : ''
   const result = await database.prepare(`
-    SELECT DISTINCT r.*
+    SELECT DISTINCT r.*, identity.provider AS matched_provider, identity.external_id AS matched_external_id
     FROM restaurants r
     LEFT JOIN visits v ON v.restaurant_id = r.id AND v.deleted_at IS NULL AND v.visibility = 'public'
+    LEFT JOIN restaurant_place_identities identity
+      ON identity.restaurant_id = r.id AND identity.provider = ? AND identity.external_id = ?
     WHERE r.deleted_at IS NULL
       AND (r.user_id = ? OR v.id IS NOT NULL)
       AND (
-        (? <> '' AND r.amap_poi_id = ?)
+        (? <> '' AND identity.restaurant_id IS NOT NULL)
         OR (? <> '' AND r.name LIKE ?)
         OR (? <> '' AND r.address LIKE ?)
       )
     ORDER BY r.updated_at DESC
     LIMIT 80
   `).bind(
+    identityProvider,
+    identityExternalId,
     viewerId,
-    evidence.provider === 'amap' ? evidence.externalId ?? '' : '',
-    evidence.provider === 'amap' ? evidence.externalId ?? '' : '',
+    identityExternalId,
     evidence.name,
     `%${escapeSqlLike(evidence.name)}%`,
     evidence.address,
@@ -707,9 +747,9 @@ async function findExternalPlaceCandidates(
   ).all()
   const seen = new Set<string>()
   const candidates: ExternalPlaceCandidate[] = []
-  for (const row of result.results as unknown as RestaurantRow[]) {
-    if (seen.has(row.amap_poi_id)) continue
-    seen.add(row.amap_poi_id)
+  for (const row of result.results as unknown as ExternalPlaceCandidateRow[]) {
+    if (seen.has(row.id)) continue
+    seen.add(row.id)
     const matchScore = scoreExternalPlaceCandidate(evidence, row)
     if (matchScore < 35) continue
     candidates.push({
@@ -731,10 +771,10 @@ async function findExternalPlaceCandidates(
 
 function scoreExternalPlaceCandidate(
   evidence: Awaited<ReturnType<typeof resolveExternalRestaurantEvidence>>,
-  row: RestaurantRow,
+  row: ExternalPlaceCandidateRow,
 ) {
   let score = 0
-  if (evidence.provider === 'amap' && evidence.externalId && row.amap_poi_id === evidence.externalId) score += 100
+  if (evidence.externalId && row.matched_external_id === evidence.externalId) score += 100
   const evidenceName = normalizeExternalIdentityText(evidence.name)
   const rowName = normalizeExternalIdentityText(row.name)
   if (evidenceName && rowName === evidenceName) score += 48
@@ -790,6 +830,13 @@ async function readPayload(request: Request): Promise<SyncPayload> {
   if (!isRecord(value) || !Array.isArray(value.restaurants) || !Array.isArray(value.visits)) {
     throw new RequestError('同步请求的数据格式不正确。', 400)
   }
+  let restaurants: CloudRestaurant[]
+  try {
+    restaurants = value.restaurants.map(normalizeCloudRestaurant)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Restaurant JSON contract 无法识别。'
+    throw new RequestError(message, 400)
+  }
   const photos = Array.isArray(value.photos) ? value.photos : []
   const users = Array.isArray(value.users) ? value.users : []
   const friendships = Array.isArray(value.friendships) ? value.friendships : []
@@ -797,13 +844,13 @@ async function readPayload(request: Request): Promise<SyncPayload> {
   const sharedMealParticipants = Array.isArray(value.sharedMealParticipants) ? value.sharedMealParticipants : []
   const restaurantLists = Array.isArray(value.restaurantLists) ? value.restaurantLists : []
   const restaurantListItems = Array.isArray(value.restaurantListItems) ? value.restaurantListItems : []
-  if (!value.restaurants.every(isCloudRestaurant) || !value.visits.every(isCloudVisit) || !photos.every(isCloudPhoto) ||
+  if (!value.visits.every(isCloudVisit) || !photos.every(isCloudPhoto) ||
     !users.every(isCloudUser) || !friendships.every(isCloudFriendship) || !sharedMeals.every(isCloudSharedMeal) ||
     !sharedMealParticipants.every(isCloudSharedMealParticipant) || !restaurantLists.every(isCloudRestaurantList) ||
     !restaurantListItems.every(isCloudRestaurantListItem)) {
     throw new RequestError('同步请求包含无法识别的餐厅或到访记录。', 400)
   }
-  return { restaurants: value.restaurants, visits: value.visits, photos, users, friendships, sharedMeals, sharedMealParticipants, restaurantLists, restaurantListItems }
+  return { restaurants, visits: value.visits, photos, users, friendships, sharedMeals, sharedMealParticipants, restaurantLists, restaurantListItems }
 }
 
 async function upsertRestaurants(database: D1Database, restaurants: CloudRestaurant[]) {
@@ -837,6 +884,32 @@ async function upsertRestaurants(database: D1Database, restaurants: CloudRestaur
     restaurant.deletedAt,
   ))
   await runInChunks(database, statements)
+  for (const restaurant of restaurants) {
+    const primaryIdentity = restaurant.placeIdentities.find((identity) => identity.isPrimary)
+    if (!primaryIdentity) throw new RestaurantContractError('Restaurant requires one primary provider identity.')
+    const identityStatements = restaurant.placeIdentities.map((identity) => (
+      database.prepare(RESTAURANT_PLACE_IDENTITY_UPSERT).bind(
+        restaurant.id,
+        restaurant.userId ?? 'owner',
+        identity.provider,
+        identity.externalId,
+        identity.isPrimary ? 1 : 0,
+        identity.createdAt,
+        identity.updatedAt,
+        restaurant.id,
+        restaurant.updatedAt,
+      )
+    ))
+    await database.batch([
+      database.prepare(RESTAURANT_PLACE_IDENTITY_CLEAR_PRIMARY).bind(
+        primaryIdentity.updatedAt,
+        restaurant.id,
+        restaurant.id,
+        restaurant.updatedAt,
+      ),
+      ...identityStatements,
+    ])
+  }
 }
 
 async function upsertVisits(database: D1Database, visits: CloudVisit[]) {
@@ -983,7 +1056,7 @@ async function runInChunks(database: D1Database, statements: D1PreparedStatement
 async function readSnapshot(database: D1Database, userId = 'owner', since: string | null = null): Promise<CloudSnapshot> {
   const updatedFilter = since ? ' AND updated_at > ?' : ''
   const bindSince = <T extends D1PreparedStatement>(statement: T) => since ? statement.bind(userId, since) : statement.bind(userId)
-  const [restaurantResult, visitResult, photoResult, userResult, friendshipResult, sharedMealResult, participantResult, restaurantListResult, restaurantListItemResult] = await database.batch([
+  const [restaurantResult, visitResult, photoResult, userResult, friendshipResult, sharedMealResult, participantResult, restaurantListResult, restaurantListItemResult, restaurantIdentityResult] = await database.batch([
     bindSince(database.prepare(`SELECT * FROM restaurants WHERE user_id = ?${updatedFilter} ORDER BY updated_at ASC`)),
     bindSince(database.prepare(`SELECT * FROM visits WHERE user_id = ?${updatedFilter} ORDER BY updated_at ASC`)),
     bindSince(database.prepare(`SELECT * FROM photos WHERE user_id = ?${updatedFilter} ORDER BY updated_at ASC`)),
@@ -1004,10 +1077,20 @@ async function readSnapshot(database: D1Database, userId = 'owner', since: strin
     bindSince(database.prepare(`SELECT * FROM restaurant_list_items WHERE list_id IN (
       SELECT id FROM restaurant_lists WHERE user_id = ?
     )${updatedFilter} ORDER BY updated_at ASC`)),
+    database.prepare(`SELECT i.* FROM restaurant_place_identities i
+      JOIN restaurants r ON r.id = i.restaurant_id
+      WHERE r.user_id = ?
+      ORDER BY i.restaurant_id ASC, i.is_primary DESC, i.updated_at ASC`).bind(userId),
   ])
+  const identitiesByRestaurant = groupRestaurantPlaceIdentities(
+    restaurantIdentityResult.results as unknown as RestaurantPlaceIdentityRow[],
+  )
   const clientUserId = (id: string) => id === userId ? 'owner' : id
   return {
-    restaurants: (restaurantResult.results as unknown as RestaurantRow[]).map((row) => ({ ...rowToRestaurant(row), userId: 'owner' })),
+    restaurants: (restaurantResult.results as unknown as RestaurantRow[]).map((row) => ({
+      ...rowToRestaurant(row, identitiesByRestaurant.get(row.id)),
+      userId: 'owner',
+    })),
     visits: (visitResult.results as unknown as VisitRow[]).map((row) => {
       const visit = rowToVisit(row)
       return { ...visit, userId: 'owner', recommendationSourceUserId: visit.recommendationSourceUserId ? clientUserId(visit.recommendationSourceUserId) : null }
@@ -1062,7 +1145,7 @@ async function readRestaurantList(database: D1Database, viewerId: string, listId
       id: row.id, listId: row.list_id, restaurantId: row.restaurant_id, position: row.position, note: row.note,
       createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at,
     })),
-    restaurants: (restaurantResult.results as unknown as RestaurantRow[]).map(rowToRestaurant),
+    restaurants: (restaurantResult.results as unknown as RestaurantRow[]).map((row) => rowToRestaurant(row)),
   }
 }
 
@@ -1876,7 +1959,9 @@ async function importCompanionHistory(database: D1Database, viewerId: string, re
     if (!restaurant) {
       const restaurantId = `history-restaurant:${viewerId}:${await shortHash(fact.restaurant.amapPoiId)}`
       const cloudRestaurant: CloudRestaurant = {
-        id: restaurantId, userId: viewerId, ...fact.restaurant, status: 'visited', preferenceLevel: 'normal', overallRating: null, foodRating: null, environmentRating: null, serviceRating: null, valueRating: null, tags: [], longTermNote: '', pricePerPerson: null, markerType: fact.restaurant.merchantImageUrl ? 'image' : 'emoji', markerPhotoId: null, markerEmoji: '🍽️', createdAt: now, updatedAt: now, deletedAt: null,
+        schemaVersion: 1, id: restaurantId, userId: viewerId,
+        placeIdentities: [{ provider: 'amap', externalId: fact.restaurant.amapPoiId, isPrimary: true, createdAt: now, updatedAt: now }],
+        ...fact.restaurant, status: 'visited', preferenceLevel: 'normal', overallRating: null, foodRating: null, environmentRating: null, serviceRating: null, valueRating: null, tags: [], longTermNote: '', pricePerPerson: null, phone: null, openingHours: null, markerType: fact.restaurant.merchantImageUrl ? 'image' : 'emoji', markerPhotoId: null, markerEmoji: '🍽️', createdAt: now, updatedAt: now, deletedAt: null,
       }
       await upsertRestaurants(database, [cloudRestaurant])
       restaurant = await database.prepare('SELECT * FROM restaurants WHERE id = ?').bind(restaurantId).first<RestaurantRow>()
@@ -1944,7 +2029,7 @@ async function readProfile(database: D1Database, viewerId: string, profileId: st
       const restaurant = restaurants.get(row.restaurant_id)
       return restaurant ? [{ visit: rowToVisit(row), restaurant }] : []
     }),
-    wantRestaurants: (wantRestaurantsResult.results as unknown as RestaurantRow[]).map(rowToRestaurant),
+    wantRestaurants: (wantRestaurantsResult.results as unknown as RestaurantRow[]).map((row) => rowToRestaurant(row)),
     followerCount: Number((followerResult.results[0] as { count?: number } | undefined)?.count ?? 0),
     followingCount: Number((followingResult.results[0] as { count?: number } | undefined)?.count ?? 0),
     followers: (followersResult.results as unknown as UserRow[]).map(publicUser),
@@ -2054,10 +2139,19 @@ function relationshipId(first: string, second: string) {
   return `friendship:${[first, second].sort().join(':')}`
 }
 
-function rowToRestaurant(row: RestaurantRow): CloudRestaurant {
+function rowToRestaurant(row: RestaurantRow, identities?: RestaurantPlaceIdentity[]): CloudRestaurant {
+  const placeIdentities = identities?.length ? identities : [{
+    provider: 'amap' as const,
+    externalId: row.amap_poi_id,
+    isPrimary: true,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }]
   return {
+    schemaVersion: 1,
     id: row.id,
     userId: row.user_id,
+    placeIdentities,
     amapPoiId: row.amap_poi_id,
     name: row.name,
     address: row.address,
@@ -2221,14 +2315,17 @@ function parseDishes(raw: string): CloudVisitDish[] {
   }
 }
 
-function isCloudRestaurant(value: unknown): value is CloudRestaurant {
-  if (!isRecord(value)) return false
-  return typeof value.id === 'string' && typeof value.amapPoiId === 'string' &&
-    typeof value.name === 'string' && typeof value.address === 'string' &&
-    typeof value.city === 'string' && typeof value.latitude === 'number' &&
-    typeof value.longitude === 'number' && typeof value.updatedAt === 'string' &&
-    typeof value.createdAt === 'string' && Array.isArray(value.tags) &&
-    !('markerImageData' in value)
+function normalizeCloudRestaurant(value: unknown): CloudRestaurant {
+  try {
+    const restaurant = decodeRestaurantJSONContract(value)
+    if (!restaurant.amapPoiId) {
+      throw new RestaurantContractError('旧版 /api/sync 暂时需要 amapPoiId；Apple Maps-only 写入将在 P0-B 接入。')
+    }
+    return { ...restaurant, amapPoiId: restaurant.amapPoiId }
+  } catch (error) {
+    if (error instanceof RestaurantContractError) throw error
+    throw new RestaurantContractError('Restaurant JSON contract 无法识别。')
+  }
 }
 
 function isCloudVisit(value: unknown): value is CloudVisit {

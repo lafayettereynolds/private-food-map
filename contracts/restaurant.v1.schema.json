@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tastemap:contract:restaurant:v1",
+  "title": "Taste Map Restaurant JSON Contract V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "id", "userId", "placeIdentities", "name", "address",
+    "city", "latitude", "longitude", "status", "preferenceLevel",
+    "overallRating", "foodRating", "environmentRating", "serviceRating",
+    "valueRating", "tags", "longTermNote", "pricePerPerson", "phone",
+    "openingHours", "markerType", "markerPhotoId", "merchantImageUrl",
+    "markerEmoji", "createdAt", "updatedAt", "deletedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "description": "Taste Map-owned stable Restaurant ID; never a provider POI ID." },
+    "userId": { "type": "string", "minLength": 1 },
+    "placeIdentities": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/placeIdentity" }
+    },
+    "amapPoiId": { "type": "string", "minLength": 1, "deprecated": true, "description": "Optional legacy Web compatibility field." },
+    "name": { "type": "string", "minLength": 1 },
+    "address": { "type": "string" },
+    "city": { "type": "string" },
+    "latitude": { "type": "number" },
+    "longitude": { "type": "number" },
+    "status": { "enum": ["visited", "wantToGo"] },
+    "preferenceLevel": { "enum": ["favorite", "like", "normal", "avoid"] },
+    "overallRating": { "type": ["number", "null"] },
+    "foodRating": { "type": ["number", "null"] },
+    "environmentRating": { "type": ["number", "null"] },
+    "serviceRating": { "type": ["number", "null"] },
+    "valueRating": { "type": ["number", "null"] },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "longTermNote": { "type": "string" },
+    "pricePerPerson": { "type": ["number", "null"] },
+    "phone": { "type": ["string", "null"] },
+    "openingHours": { "type": ["string", "null"] },
+    "markerType": { "enum": ["image", "emoji"] },
+    "markerPhotoId": { "type": ["string", "null"] },
+    "merchantImageUrl": { "type": ["string", "null"] },
+    "markerEmoji": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "deletedAt": { "type": ["string", "null"], "format": "date-time" },
+    "isTestData": { "type": "boolean" }
+  },
+  "$defs": {
+    "placeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "externalId", "isPrimary", "createdAt", "updatedAt"],
+      "properties": {
+        "provider": { "enum": ["amap", "apple_maps", "manual", "other"] },
+        "externalId": { "type": "string", "minLength": 1 },
+        "isPrimary": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

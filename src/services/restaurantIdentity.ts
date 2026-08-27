@@ -6,11 +6,17 @@ export function findMatchingRestaurant(
   place: PlaceResult,
   restaurants: RestaurantIdentityCandidate[],
 ): RestaurantIdentityCandidate | null {
-  const byExternalId = restaurants.find((restaurant) => (
+  const externalIdMatches = restaurants.filter((restaurant) => (
+    restaurant.placeIdentities?.some((identity) => (
+      identity.provider === place.provider && identity.externalId === place.externalId
+    ))
+    ||
     restaurant.externalPlaceIds?.[place.provider] === place.externalId
     || (place.provider === 'amap' && restaurant.amapPoiId === place.externalId)
   ))
-  if (byExternalId) return byExternalId
+  if (externalIdMatches.length === 1) return externalIdMatches[0]
+  // Existing duplicates must be surfaced for cleanup; never silently pick one.
+  if (externalIdMatches.length > 1) return null
 
   const normalizedName = normalizeIdentityText(place.name)
   const normalizedAddress = normalizeIdentityText(place.address)

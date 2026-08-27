@@ -1,6 +1,7 @@
 import type { Coordinates, Restaurant } from '../../types/domain'
+import type { RestaurantPlaceIdentity, RestaurantPlaceProvider } from '../../types/restaurantIdentity'
 
-export type MapProviderId = 'amap' | 'apple'
+export type MapProviderId = Extract<RestaurantPlaceProvider, 'amap' | 'apple_maps'>
 
 export interface PlaceResult {
   provider: MapProviderId
@@ -49,4 +50,5 @@ export interface MapProvider {
 
 export interface RestaurantIdentityCandidate extends Pick<Restaurant, 'id' | 'amapPoiId' | 'name' | 'address' | 'latitude' | 'longitude'> {
   externalPlaceIds?: Partial<Record<MapProviderId, string>>
+  placeIdentities?: RestaurantPlaceIdentity[]
 }

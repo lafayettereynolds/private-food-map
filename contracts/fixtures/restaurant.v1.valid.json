@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "rest_018f3f0a2a7b4a57b7df63f5d91b1e10",
+  "userId": "owner",
+  "placeIdentities": [
+    {
+      "provider": "apple_maps",
+      "externalId": "apple-place-2B34C5D6",
+      "isPrimary": true,
+      "createdAt": "2026-08-27T05:00:00.000Z",
+      "updatedAt": "2026-08-27T05:00:00.000Z"
+    }
+  ],
+  "name": "合同测试餐厅",
+  "address": "测试路 1 号",
+  "city": "杭州",
+  "latitude": 30.2741,
+  "longitude": 120.1551,
+  "status": "visited",
+  "preferenceLevel": "normal",
+  "overallRating": null,
+  "foodRating": null,
+  "environmentRating": null,
+  "serviceRating": null,
+  "valueRating": null,
+  "tags": [],
+  "longTermNote": "",
+  "pricePerPerson": null,
+  "phone": null,
+  "openingHours": null,
+  "markerType": "emoji",
+  "markerPhotoId": null,
+  "merchantImageUrl": null,
+  "markerEmoji": "🍽️",
+  "createdAt": "2026-08-27T05:00:00.000Z",
+  "updatedAt": "2026-08-27T05:00:00.000Z",
+  "deletedAt": null
+}

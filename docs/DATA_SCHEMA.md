@@ -1,6 +1,15 @@
 # Taste Map 数据结构
 
-更新时间：2026-08-24
+更新时间：2026-08-27
+
+## Restaurant JSON Contract V1
+
+- 唯一合同文件为 `contracts/restaurant.v1.schema.json`；Web/Worker 使用 `src/contracts/restaurantContract.ts`，iOS 使用 `RestaurantJSONContractV1` 解码同一组 fixture。
+- `id` 是 Taste Map 自己维护的稳定 Restaurant ID；`amap`、`apple_maps`、`manual`、`other` 仅作为 `placeIdentities` 中的 Provider identity。
+- V1 必填且不可为 `null`：`schemaVersion`、`id`、`userId`、`placeIdentities`、名称/地址/城市/坐标、状态、偏好、标签、长笔记、Marker 类型/emoji、创建和更新时间。
+- V1 必填但允许明确为 `null`：五项餐厅评分、参考人均、电话、营业时间、Marker Photo ID、商家图片 URL、删除时间。
+- V1 可选且不可为 `null`：仅为旧 Web 兼容保留的 `amapPoiId` 和测试标记 `isTestData`。新客户端不得从 `amapPoiId` 生成 Restaurant.id。
+- 缺少 `schemaVersion/placeIdentities` 的旧 Web payload 仍可读取；解码层会把非空 `amapPoiId` 映射为一条主 `amap` identity，再按 V1 输出。
 
 ## Visit 本轮相关字段
 
@@ -39,6 +48,7 @@
 - `RecommendationEvent`: 记录推荐类型、页面、餐厅、位置、得分、原因码和事件时间，不把事件统计写进 React 页面状态。
 - `RestaurantListCollection`: 用户命名的食单，包含简介、可见范围、普通/排名模式、自动/自定义封面及软删除时间。
 - `RestaurantListItem`: 食单与 Global Restaurant ID 的关联，包含位置和单项笔记；`[listId+restaurantId]` 唯一。
+- `RestaurantPlaceIdentity`: Restaurant 与地图/人工来源标识的映射，字段为 `restaurantId`、`userId`、`provider`、`externalId`、主标识状态及审计时间；Provider ID 不是业务主键，每个 Restaurant 最多只有一个主映射。
 
 ## 数据库版本与迁移
 
@@ -61,7 +71,8 @@
 - D1 `0012_recommendation_events.sql`：推荐曝光、点击和转化事件。
 - D1 `0013_restaurant_lists.sql`：食单与食单餐厅项。
 - D1 `0014_restaurant_contact_details.sql`：为餐厅增加电话与营业时间字段，供 Web、未来 iOS 与同步接口共同读取。
+- D1 `0015_restaurant_place_identities.sql`：新增 Provider-neutral 餐厅身份映射表和查询索引，从现有非空 `amap_poi_id` 一对一回填映射；不修改 Restaurant/Visit 主键、不自动合并重复 POI、不改写 Visit 外键。
 
-Development 与 Production D1 均已按顺序增量应用到 `0014`；没有删除、清空或重命名数据库，也没有重复执行已记录的 migration。
+Development 与 Production D1 的已知基线均已按顺序增量应用到 `0014`。`0015` 本轮只完成代码、fixture 和本地迁移验证，尚未远程应用；部署前必须使用 `scripts/sql/restaurant_identity_preflight.sql` 对目标 D1 做只读检查。没有删除、清空或重命名数据库。
 
 正式数据库不得通过删除、清空或改名解决 schema 问题；所有变更继续使用增量 migration。

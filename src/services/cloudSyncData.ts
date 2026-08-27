@@ -1,4 +1,5 @@
 import type { Friendship, Photo, Restaurant, RestaurantListCollection, RestaurantListItem, SharedMeal, SharedMealParticipant, UserProfile, Visit } from '../types/domain'
+import { restaurantToJSONContract } from '../contracts/restaurantContract'
 import type {
   CloudFriendship,
   CloudPhoto,
@@ -14,9 +15,7 @@ import type {
 } from '../types/cloudSync'
 
 export function toCloudRestaurant(restaurant: Restaurant): CloudRestaurant {
-  const { markerImageData, ...cloudRestaurant } = restaurant
-  void markerImageData
-  return cloudRestaurant
+  return restaurantToJSONContract(restaurant)
 }
 
 export function toCloudVisit(visit: Visit): CloudVisit {
@@ -121,10 +120,12 @@ function mergeRestaurant(
   cloud: CloudRestaurant,
 ): Restaurant {
   if (local && local.updatedAt >= cloud.updatedAt) return local
+  const { schemaVersion, ...cloudRestaurant } = cloud
+  void schemaVersion
   const localPendingImage = local?.markerPhotoId === null && local.markerImageData?.startsWith('data:image/')
   const matchingLocalImage = local?.markerPhotoId === cloud.markerPhotoId ? local.markerImageData : null
   return {
-    ...cloud,
+    ...cloudRestaurant,
     markerImageData: localPendingImage
       ? local.markerImageData
       : matchingLocalImage ?? (cloud.markerPhotoId ? drivePhotoReference(cloud.markerPhotoId) : null),

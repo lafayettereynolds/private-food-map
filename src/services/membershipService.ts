@@ -1,4 +1,5 @@
 import { SOCIAL_API_ENABLED, localTestHeaders } from '../config/appEnvironment'
+import { apiURL } from '../config/apiEnvironment'
 import type { MembershipAdminUser, MembershipSelfResponse } from '../types/membership'
 
 export const MEMBERSHIP_CHANGED_EVENT = 'taste-map:membership-changed'
@@ -8,7 +9,7 @@ export function notifyMembershipChanged() {
 }
 
 async function membershipFetch<Result>(input: string, init: RequestInit = {}): Promise<Result> {
-  const response = await fetch(input, {
+  const response = await fetch(apiURL(input), {
     ...init,
     headers: { 'content-type': 'application/json', ...localTestHeaders(), ...init.headers },
   })

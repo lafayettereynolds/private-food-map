@@ -27,10 +27,13 @@ export type QueueDuration =
   | 'under120'
   | 'over120'
 
+import type { RestaurantPlaceIdentity } from './restaurantIdentity'
+
 export interface Restaurant {
   id: string
   userId: string
   amapPoiId: string
+  placeIdentities?: RestaurantPlaceIdentity[]
   name: string
   address: string
   city: string

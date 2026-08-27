@@ -1,5 +1,14 @@
 # Taste Map 变更记录
 
+## 2026-08-27 — P0-A Restaurant 跨平台合同与 Provider Identity
+
+- 新增 Restaurant JSON Contract V1、共享 JSON Schema 和 Web/iOS 共用 fixtures，明确 required、optional 与 required-but-nullable 字段；旧 Web `amapPoiId` payload 会兼容升级为显式 `amap` identity。
+- 新增 Provider-neutral `placeIdentities`，支持 `amap / apple_maps / manual / other`；Taste Map `Restaurant.id` 保持独立，重复 Provider 映射不再静默选中。
+- Worker 同步读写映射元数据，外部链接识别改用 Provider 映射查找；现有 `/api/sync` 继续兼容旧 Web，Apple Maps-only 写入保留到 P0-B。
+- Web 与 iOS 新增集中式 Development/Production API Base URL 配置；仓库未可靠记录正式 Worker URL时保持未配置，不猜测、不在 Swift 文件散落硬编码。
+- Migration：新增 `0015_restaurant_place_identities.sql`，只创建映射表/索引并回填非空高德标识；不更改 Restaurant/Visit 主键、不修改 Visit 外键、不删除或合并现有行。远程 D1 尚未应用，部署前使用只读 preflight SQL 检查空 ID、重复映射与孤立 Visit。
+- 验证：Web/Worker 28 个测试文件共 158 项测试、真实 SQLite migration 测试、Web/Worker TypeScript 检查、Vite production build、iOS Simulator build 和 13 项 iOS 单元测试全部通过。
+
 ## 2026-08-26 — Premium 入口与会员状态页简化
 
 - 免费用户的本人资料只保留轻量“开通 Premium”；会员用户移除“管理会员”，改为点击用户名旁 Burger 进入同一 Premium 页面。设置继续稳定保留“会员与订阅”。

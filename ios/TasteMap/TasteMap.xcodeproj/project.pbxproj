@@ -45,6 +45,11 @@
 			path = TasteMapUITests;
 			sourceTree = "<group>";
 		};
+		A100001A303FE86A006C2B3B /* SharedContracts */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../../contracts;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,6 +83,7 @@
 				CEFC0762303FE869006C2B3B /* TasteMap */,
 				CEFC0770303FE86A006C2B3B /* TasteMapTests */,
 				CEFC077A303FE86A006C2B3B /* TasteMapUITests */,
+				A100001A303FE86A006C2B3B /* SharedContracts */,
 				CEFC0761303FE869006C2B3B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -132,6 +138,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				CEFC0770303FE86A006C2B3B /* TasteMapTests */,
+				A100001A303FE86A006C2B3B /* SharedContracts */,
 			);
 			name = TasteMapTests;
 			packageProductDependencies = (

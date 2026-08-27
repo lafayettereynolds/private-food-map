@@ -4,6 +4,9 @@ interface ImportMetaEnv {
   readonly VITE_APP_ENV?: 'development' | 'production'
   readonly VITE_CLOUD_SYNC_ENABLED?: 'true' | 'false'
   readonly VITE_SOCIAL_API_ENABLED?: 'true' | 'false'
+  readonly VITE_API_BASE_URL?: string
+  readonly VITE_API_DEV_BASE_URL?: string
+  readonly VITE_API_PROD_BASE_URL?: string
   readonly VITE_AMAP_KEY?: string
   readonly VITE_AMAP_SECURITY_CODE?: string
   readonly VITE_AMAP_SECURITY_KEY?: string

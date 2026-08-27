@@ -1,4 +1,5 @@
 import { SOCIAL_API_ENABLED } from '../config/appEnvironment'
+import { apiURL } from '../config/apiEnvironment'
 import type { RecommendationEvent, RecommendationEventName, RestaurantRecommendation } from '../types/recommendation'
 import type { CommunityVisit } from '../types/domain'
 
@@ -10,7 +11,7 @@ export function trackRecommendationEvent(eventName: RecommendationEventName, rec
     fitLevel: recommendation.fitLevel, confidence: recommendation.confidence, isExploration: recommendation.isExploration,
     createdAt: new Date().toISOString(),
   }
-  if (SOCIAL_API_ENABLED) void fetch('/api/recommendation-events', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) }).catch(() => undefined)
+  if (SOCIAL_API_ENABLED) void fetch(apiURL('/api/recommendation-events'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) }).catch(() => undefined)
   return event
 }
 
@@ -23,6 +24,6 @@ export function trackDiscoveryRecommendationEvent(eventName: RecommendationEvent
     fitLevel: item.recommendationFitLevel ?? undefined, confidence: item.recommendationConfidence ?? undefined,
     isExploration: item.isExploration ?? false, createdAt: new Date().toISOString(),
   }
-  if (SOCIAL_API_ENABLED) void fetch('/api/recommendation-events', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) }).catch(() => undefined)
+  if (SOCIAL_API_ENABLED) void fetch(apiURL('/api/recommendation-events'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) }).catch(() => undefined)
   return event
 }

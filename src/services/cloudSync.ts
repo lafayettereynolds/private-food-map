@@ -1,4 +1,5 @@
 import { CLOUD_SYNC_ENABLED } from '../config/appEnvironment'
+import { apiURL } from '../config/apiEnvironment'
 import { db } from '../db/appDb'
 import type {
   CloudSnapshot,
@@ -23,7 +24,7 @@ import {
 import { CLOUD_SYNC_REQUEST_EVENT } from './syncEvents'
 import { normalizedSyncOperation, retryDelayMilliseconds } from './syncQueue'
 
-const API_PATH = '/api/sync'
+const API_PATH = apiURL('/api/sync')
 const listeners = new Set<() => void>()
 let inFlightSync: Promise<CloudSyncResult> | null = null
 let scheduledSync: number | null = null
