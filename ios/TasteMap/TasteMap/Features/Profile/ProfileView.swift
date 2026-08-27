@@ -5,18 +5,21 @@ struct ProfileView: View {
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
 
+    private var activeRestaurants: [Restaurant] { restaurants.filter { $0.deletedAt == nil } }
+    private var activeVisits: [Visit] { visits.filter { $0.deletedAt == nil } }
+
     private var visitedRestaurantCount: Int {
-        Set(visits.map(\.restaurantId)).count
+        Set(activeVisits.map(\.restaurantId)).count
     }
 
     private var averageRating: Double? {
-        let ratings = visits.compactMap(\.rating)
+        let ratings = activeVisits.compactMap(\.rating)
         guard !ratings.isEmpty else { return nil }
         return ratings.reduce(0, +) / Double(ratings.count)
     }
 
     private var totalSpend: Decimal? {
-        let values = visits.compactMap(\.myActualSpend)
+        let values = activeVisits.compactMap(\.myActualSpend)
         guard !values.isEmpty else { return nil }
         return values.reduce(Decimal.zero, +)
     }
@@ -26,7 +29,7 @@ struct ProfileView: View {
             List {
                 Section("我的记录") {
                     LabeledContent("去过的餐厅", value: "\(visitedRestaurantCount)")
-                    LabeledContent("到访记录", value: "\(visits.count)")
+                    LabeledContent("到访记录", value: "\(activeVisits.count)")
                     LabeledContent(
                         "我的平均评分",
                         value: averageRating.map { String(format: "%.1f", $0) } ?? "未评分"
@@ -36,7 +39,7 @@ struct ProfileView: View {
                     }
                 }
 
-                if restaurants.isEmpty {
+                if activeRestaurants.isEmpty {
                     Section {
                         Text("保存第一次到访后，你的真实记录会显示在这里。")
                             .foregroundStyle(.secondary)

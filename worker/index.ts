@@ -47,10 +47,17 @@ import {
   groupRestaurantPlaceIdentities,
   type RestaurantPlaceIdentityRow,
 } from './restaurantIdentityMapping'
+import {
+  handleSyncV1Pull,
+  handleSyncV1Push,
+  recordUnversionedSyncChanges,
+  SyncV1RequestError,
+} from './syncV1'
 
 interface Env {
   DB: D1Database
   ASSETS: Fetcher
+  SYNC_AUTH_MODE?: 'cloudflare-access'
   ADMIN_EMAILS?: string
 }
 
@@ -525,6 +532,14 @@ export default {
       if (publicRestaurantMatch && request.method === 'GET') {
         return json(await readPublicRestaurant(env.DB, publicRestaurantMatch[1]))
       }
+      if (url.pathname === '/api/v1/sync/pull' && request.method === 'GET') {
+        const viewer = await resolveSyncViewer(request, env)
+        return json(await handleSyncV1Pull(env.DB, viewer.id, request))
+      }
+      if (url.pathname === '/api/v1/sync/push' && request.method === 'POST') {
+        const viewer = await resolveSyncViewer(request, env)
+        return json(await handleSyncV1Push(env.DB, viewer.id, request))
+      }
       const viewer = await resolveViewer(request, env.DB)
       if (url.pathname === '/api/external-place/resolve' && request.method === 'POST') {
         return json(await resolveExternalPlaceRequest(env.DB, viewer.id, request))
@@ -610,7 +625,8 @@ export default {
     } catch (error) {
       console.error('Taste Map sync error', error)
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      return json({ error: message }, error instanceof RequestError ? error.status : 500)
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError ? error.status : 500
+      return json({ error: message }, status)
     }
   },
 } satisfies ExportedHandler<Env>
@@ -883,7 +899,7 @@ async function upsertRestaurants(database: D1Database, restaurants: CloudRestaur
     restaurant.updatedAt,
     restaurant.deletedAt,
   ))
-  await runInChunks(database, statements)
+  const results = await runInChunks(database, statements)
   for (const restaurant of restaurants) {
     const primaryIdentity = restaurant.placeIdentities.find((identity) => identity.isPrimary)
     if (!primaryIdentity) throw new RestaurantContractError('Restaurant requires one primary provider identity.')
@@ -910,6 +926,14 @@ async function upsertRestaurants(database: D1Database, restaurants: CloudRestaur
       ...identityStatements,
     ])
   }
+  const changed = restaurants.filter((_, index) => Number(results[index]?.meta.changes ?? 0) > 0)
+  await recordUnversionedSyncChanges(database, changed.map((restaurant) => ({
+    userId: restaurant.userId ?? 'owner',
+    entityType: 'restaurant',
+    entityId: restaurant.id,
+    updatedAt: restaurant.updatedAt,
+    deletedAt: restaurant.deletedAt,
+  })))
 }
 
 async function upsertVisits(database: D1Database, visits: CloudVisit[]) {
@@ -954,7 +978,15 @@ async function upsertVisits(database: D1Database, visits: CloudVisit[]) {
     visit.updatedAt,
     visit.deletedAt,
   ))
-  await runInChunks(database, statements)
+  const results = await runInChunks(database, statements)
+  const changed = visits.filter((_, index) => Number(results[index]?.meta.changes ?? 0) > 0)
+  await recordUnversionedSyncChanges(database, changed.map((visit) => ({
+    userId: visit.userId ?? 'owner',
+    entityType: 'visit',
+    entityId: visit.id,
+    updatedAt: visit.updatedAt,
+    deletedAt: visit.deletedAt,
+  })))
 }
 
 async function upsertPhotos(database: D1Database, photos: CloudPhoto[]) {
@@ -1048,9 +1080,11 @@ async function upsertRestaurantListItems(database: D1Database, items: CloudResta
 }
 
 async function runInChunks(database: D1Database, statements: D1PreparedStatement[]) {
+  const results: D1Result[] = []
   for (let index = 0; index < statements.length; index += 50) {
-    await database.batch(statements.slice(index, index + 50))
+    results.push(...await database.batch(statements.slice(index, index + 50)))
   }
+  return results
 }
 
 async function readSnapshot(database: D1Database, userId = 'owner', since: string | null = null): Promise<CloudSnapshot> {
@@ -1188,6 +1222,24 @@ async function resolveViewer(request: Request, database: D1Database): Promise<Vi
   ) VALUES (?, 'cloudflare-access', ?, ?, ?, '', '', ?, ?)`)
     .bind(id, authSubject, accessEmail, accessEmail.split('@')[0], now, now).run()
   return { id, email: accessEmail, authProvider: 'cloudflare-access', authSubject }
+}
+
+async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIdentity> {
+  const hostname = new URL(request.url).hostname
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    const requestedUser = request.headers.get('X-Taste-Map-Test-User')?.trim() || 'owner'
+    if (!/^[a-zA-Z0-9:_-]{1,80}$/.test(requestedUser)) {
+      throw new SyncV1RequestError('Development sync identity is invalid.', 400)
+    }
+    return { id: requestedUser, email: null, authProvider: 'local', authSubject: null }
+  }
+  if (env.SYNC_AUTH_MODE !== 'cloudflare-access') {
+    throw new SyncV1RequestError('Production sync authentication is not configured.', 503)
+  }
+  if (!request.headers.get('Cf-Access-Authenticated-User-Email') || !request.headers.get('Cf-Access-Jwt-Assertion')) {
+    throw new SyncV1RequestError('Sync authentication is required.', 401)
+  }
+  return resolveViewer(request, env.DB)
 }
 
 function isMembershipAdmin(request: Request, env: Env, viewer: ViewerIdentity) {

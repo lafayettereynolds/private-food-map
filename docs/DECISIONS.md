@@ -49,6 +49,7 @@
 - Web 仍是当前主要客户端，但数据模型、同步接口、认证与图片引用不得绑定到特定 Web UI，以便未来 iOS 复用。
 - 只有字段、数据库结构或同步协议变化时才检查 migration；纯 UI、布局、颜色和文案修改跳过数据链路检查。
 - Restaurant 的跨平台身份由 Global Restaurant ID / Provider 映射服务维护；地图 SDK 的 POI ID 只是来源标识，不能成为所有业务模型的唯一真值。
+- Sync V1 使用服务端递增 revision 作为 pull cursor、`server_version + baseVersion` 作为 optimistic concurrency、认证用户与 mutation ID 的唯一 receipt 作为幂等依据；设备 `updatedAt` 不参与冲突胜负。自动冲突以服务器版本为准并保留本地 conflicted payload，tombstone 禁止旧设备静默复活数据。
 - Restaurant 跨端传输固定使用版本化 JSON Contract；required、optional 与 required-but-nullable 由 JSON Schema 明确定义。旧 `amapPoiId` 仅作兼容字段，Apple Maps、高德和手工来源统一进入 `placeIdentities`，遇到重复 Provider 映射时不得静默选择或自动合并。
 - 同步采用 local-first：本地写入先成功，随后由幂等操作队列增量上云；图片只同步元数据和存储引用，不把二进制写入 D1。
 - 会员能力以服务端有效 Entitlement 为准；前端开关和本地字段不能直接授予会员权限，管理员变更必须留下审计记录。

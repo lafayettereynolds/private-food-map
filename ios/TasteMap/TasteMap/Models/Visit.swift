@@ -11,7 +11,11 @@ final class Visit {
     var myActualSpend: Decimal?
     var createdAt: Date
     var updatedAt: Date
-    private var syncStatusValue: String
+    @Attribute(.unique) var remoteID: String?
+    var deletedAt: Date?
+    var serverVersion: Int64 = 0
+    var lastSyncedAt: Date?
+    private var syncStatusValue: String = SyncStatus.pending.rawValue
 
     var syncStatus: SyncStatus {
         get { SyncStatus(rawValue: syncStatusValue) ?? .pending }
@@ -27,6 +31,10 @@ final class Visit {
         myActualSpend: Decimal? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
+        remoteID: String? = nil,
+        deletedAt: Date? = nil,
+        serverVersion: Int64 = 0,
+        lastSyncedAt: Date? = nil,
         syncStatus: SyncStatus = .pending
     ) {
         self.id = id
@@ -37,6 +45,10 @@ final class Visit {
         self.myActualSpend = myActualSpend
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.remoteID = remoteID ?? id.uuidString
+        self.deletedAt = deletedAt
+        self.serverVersion = serverVersion
+        self.lastSyncedAt = lastSyncedAt
         self.syncStatusValue = syncStatus.rawValue
     }
 

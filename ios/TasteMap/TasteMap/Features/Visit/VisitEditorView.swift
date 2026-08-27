@@ -127,7 +127,7 @@ struct VisitEditorView: View {
                 if let restaurant {
                     resolvedRestaurant = restaurant
                 } else if let candidate {
-                    resolvedRestaurant = store.restaurant(for: candidate, among: allRestaurants)
+                    resolvedRestaurant = try store.restaurant(for: candidate, among: allRestaurants)
                 } else {
                     throw VisitEditorError.missingRestaurant
                 }

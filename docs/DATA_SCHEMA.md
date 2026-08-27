@@ -49,6 +49,9 @@
 - `RestaurantListCollection`: 用户命名的食单，包含简介、可见范围、普通/排名模式、自动/自定义封面及软删除时间。
 - `RestaurantListItem`: 食单与 Global Restaurant ID 的关联，包含位置和单项笔记；`[listId+restaurantId]` 唯一。
 - `RestaurantPlaceIdentity`: Restaurant 与地图/人工来源标识的映射，字段为 `restaurantId`、`userId`、`provider`、`externalId`、主标识状态及审计时间；Provider ID 不是业务主键，每个 Restaurant 最多只有一个主映射。
+- `SyncMutationReceipt`: 按认证用户和 mutation ID 唯一保存请求 fingerprint、处理状态、实体版本与 revision，保证响应丢失后的重试不会重复写入。
+- `SyncChangeLog`: Restaurant/Visit 每次有效变化对应一个递增 revision，作为 V1 增量 pull cursor；旧 Web 的真实写入也进入同一日志。
+- iOS `SyncMutation`: SwiftData 持久化离线 mutation、payload、base version、重试和 conflict 状态；`SyncCheckpoint` 持久化 V1 cursor。
 
 ## 数据库版本与迁移
 
@@ -72,7 +75,8 @@
 - D1 `0013_restaurant_lists.sql`：食单与食单餐厅项。
 - D1 `0014_restaurant_contact_details.sql`：为餐厅增加电话与营业时间字段，供 Web、未来 iOS 与同步接口共同读取。
 - D1 `0015_restaurant_place_identities.sql`：新增 Provider-neutral 餐厅身份映射表和查询索引，从现有非空 `amap_poi_id` 一对一回填映射；不修改 Restaurant/Visit 主键、不自动合并重复 POI、不改写 Visit 外键。
+- D1 `0016_sync_v1.sql`：为 Restaurant/Visit 增加服务端版本和最后 mutation，新增 change log 与 idempotency receipt，并为既有记录写入 version 1 bootstrap 事件；空 Provider 旧记录补一条 `manual/tastemap:<id>` identity，不改写原 ID 或 Visit 外键。
 
-Development 与 Production D1 的已知基线均已按顺序增量应用到 `0014`。`0015` 本轮只完成代码、fixture 和本地迁移验证，尚未远程应用；部署前必须使用 `scripts/sql/restaurant_identity_preflight.sql` 对目标 D1 做只读检查。没有删除、清空或重命名数据库。
+Development 与 Production D1 的已知基线均已按顺序增量应用到 `0014`。`0015`、`0016` 目前只完成代码和本地迁移验证，尚未远程应用；部署前必须使用 `scripts/sql/restaurant_identity_preflight.sql` 对目标 D1 做只读检查。没有删除、清空或重命名数据库。
 
 正式数据库不得通过删除、清空或改名解决 schema 问题；所有变更继续使用增量 migration。

@@ -29,7 +29,7 @@ struct RestaurantPlaceIdentityContract: Codable, Equatable, Sendable {
             throw RestaurantContractDecodingError.invalidIdentity
         }
         self.provider = provider
-        self.externalId = externalId
+        self.externalId = externalId.trimmingCharacters(in: .whitespacesAndNewlines)
         self.isPrimary = isPrimary
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -114,6 +114,70 @@ struct RestaurantJSONContractV1: Codable, Equatable, Sendable {
         case tags, longTermNote, pricePerPerson, phone, openingHours, markerType
         case markerPhotoId, merchantImageUrl, markerEmoji, createdAt, updatedAt
         case deletedAt, isTestData
+    }
+
+    init(
+        id: String,
+        userId: String,
+        placeIdentities: [RestaurantPlaceIdentityContract],
+        amapPoiId: String? = nil,
+        name: String,
+        address: String,
+        city: String,
+        latitude: Double,
+        longitude: Double,
+        status: RestaurantStatusContract,
+        preferenceLevel: RestaurantPreferenceContract,
+        overallRating: Double?,
+        foodRating: Double?,
+        environmentRating: Double?,
+        serviceRating: Double?,
+        valueRating: Double?,
+        tags: [String],
+        longTermNote: String,
+        pricePerPerson: Double?,
+        phone: String?,
+        openingHours: String?,
+        markerType: RestaurantMarkerTypeContract,
+        markerPhotoId: String?,
+        merchantImageUrl: String?,
+        markerEmoji: String,
+        createdAt: String,
+        updatedAt: String,
+        deletedAt: String?,
+        isTestData: Bool? = nil
+    ) throws {
+        try Self.validate(placeIdentities)
+        version = Self.schemaVersion
+        self.id = id
+        self.userId = userId
+        self.placeIdentities = placeIdentities
+        self.amapPoiId = amapPoiId
+        self.name = name
+        self.address = address
+        self.city = city
+        self.latitude = latitude
+        self.longitude = longitude
+        self.status = status
+        self.preferenceLevel = preferenceLevel
+        self.overallRating = overallRating
+        self.foodRating = foodRating
+        self.environmentRating = environmentRating
+        self.serviceRating = serviceRating
+        self.valueRating = valueRating
+        self.tags = tags
+        self.longTermNote = longTermNote
+        self.pricePerPerson = pricePerPerson
+        self.phone = phone
+        self.openingHours = openingHours
+        self.markerType = markerType
+        self.markerPhotoId = markerPhotoId
+        self.merchantImageUrl = merchantImageUrl
+        self.markerEmoji = markerEmoji
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+        self.isTestData = isTestData
     }
 
     init(from decoder: Decoder) throws {

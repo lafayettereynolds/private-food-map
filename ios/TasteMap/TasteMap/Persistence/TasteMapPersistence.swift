@@ -4,6 +4,8 @@ enum TasteMapPersistence {
     static let schema = Schema([
         Restaurant.self,
         Visit.self,
+        SyncMutation.self,
+        SyncCheckpoint.self,
     ])
 
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {

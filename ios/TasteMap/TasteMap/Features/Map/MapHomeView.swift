@@ -15,8 +15,8 @@ struct MapHomeView: View {
 
     private var displayedRestaurants: [Restaurant] {
         guard selectedFilter == .visited else { return [] }
-        let restaurantIDs = Set(visits.map(\.restaurantId))
-        return restaurants.filter { restaurantIDs.contains($0.id) }
+        let restaurantIDs = Set(visits.filter { $0.deletedAt == nil }.map(\.restaurantId))
+        return restaurants.filter { $0.deletedAt == nil && restaurantIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -82,7 +82,7 @@ struct MapHomeView: View {
             .sheet(item: $detailDestination, onDismiss: {
                 selectedRestaurantID = nil
             }) { destination in
-                if let restaurant = restaurants.first(where: { $0.id == destination.id }) {
+                if let restaurant = restaurants.first(where: { $0.id == destination.id && $0.deletedAt == nil }) {
                     RestaurantDetailView(restaurant: restaurant)
                 } else {
                     ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")

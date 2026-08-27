@@ -12,7 +12,7 @@ struct RestaurantDetailView: View {
     @State private var deleteError: String?
 
     private var visits: [Visit] {
-        allVisits.filter { $0.restaurantId == restaurant.id }
+        allVisits.filter { $0.restaurantId == restaurant.id && $0.deletedAt == nil }
     }
 
     private var ratedVisits: [Visit] {

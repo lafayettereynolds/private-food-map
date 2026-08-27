@@ -93,7 +93,7 @@ struct TasteMapTests {
             appleMapItemIdentifier: "apple-place-id"
         )
 
-        let resolved = LocalTasteMapStore(context: context).restaurant(
+        let resolved = try LocalTasteMapStore(context: context).restaurant(
             for: candidate,
             among: [existing]
         )

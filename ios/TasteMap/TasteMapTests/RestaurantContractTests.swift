@@ -3,6 +3,7 @@ import Testing
 @testable import TasteMap
 
 @Suite("Restaurant shared JSON contract")
+@MainActor
 struct RestaurantContractTests {
     @Test("Swift decodes the shared Apple Maps fixture")
     func decodesSharedV1Fixture() throws {

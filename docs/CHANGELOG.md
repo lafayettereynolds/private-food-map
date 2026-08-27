@@ -1,5 +1,15 @@
 # Taste Map 变更记录
 
+## 2026-08-27 — P0-B1 Sync API 与 iOS 离线同步基础层
+
+- 新增 `/api/v1/sync/push`、`/api/v1/sync/pull` 和共享 Sync V1 contract；pull 使用服务端 revision cursor，push 使用 base version 和 mutation receipt。
+- iOS Restaurant/Visit 增加 remote ID、soft delete、server version、last sync 与同步状态；新增持久化 `SyncMutation`、`SyncCheckpoint`、API client、queue 和 SyncEngine，所有本地写入先成功再异步上传。
+- Apple Maps-only Restaurant 使用 `placeIdentities` 完整同步，不要求 `amapPoiId`；旧 Web `/api/sync` 的实际 Restaurant/Visit 更新会桥接到同一 change log。
+- 新增 D1 `0016_sync_v1.sql`，只增量增加版本字段、change log、idempotency receipt 和既有记录 bootstrap；不重写 Restaurant/Visit ID 或外键。
+- V1 route 的认证用户覆盖客户端 `userId`；本地测试身份仅允许 loopback，生产未显式配置认证模式时关闭，不回退为 owner。
+- Production URL、Production D1 和 Apple Signing/Capability 均未修改。
+- 验证：Web/Worker 30 个测试文件共 174 项测试、P0-A/P0-B1 两套 SQLite migration、Web/Worker typecheck、Vite build、iOS Simulator build 与 18 项 iOS 单元测试通过。
+
 ## 2026-08-27 — P0-A Restaurant 跨平台合同与 Provider Identity
 
 - 新增 Restaurant JSON Contract V1、共享 JSON Schema 和 Web/iOS 共用 fixtures，明确 required、optional 与 required-but-nullable 字段；旧 Web `amapPoiId` payload 会兼容升级为显式 `amap` identity。
