@@ -29,6 +29,11 @@ vite.config.d.ts
 .DS_Store
 Thumbs.db
 
+# Xcode user state and generated build output
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
 # ChatGPT project mirror metadata (not application source)
 sources/
 AGENTS.md
