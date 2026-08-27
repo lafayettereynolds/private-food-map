@@ -11,6 +11,8 @@ struct VisitSyncContractV1: Codable, Equatable {
     let userId: String
     let restaurantId: String
     let visitedAt: String
+    let diningMode: DiningMode
+    let partySize: Int?
     let rating: Double?
     let note: String?
     let myActualSpend: Double?
@@ -21,7 +23,7 @@ struct VisitSyncContractV1: Codable, Equatable {
 
 private extension VisitSyncContractV1 {
     enum CodingKeys: String, CodingKey {
-        case schemaVersion, id, userId, restaurantId, visitedAt
+        case schemaVersion, id, userId, restaurantId, visitedAt, diningMode, partySize
         case rating, note, myActualSpend, createdAt, updatedAt, deletedAt
     }
 }
@@ -34,6 +36,15 @@ extension VisitSyncContractV1 {
         userId = try container.decode(String.self, forKey: .userId)
         restaurantId = try container.decode(String.self, forKey: .restaurantId)
         visitedAt = try container.decode(String.self, forKey: .visitedAt)
+        diningMode = try container.decodeIfPresent(DiningMode.self, forKey: .diningMode) ?? .dineIn
+        partySize = try container.decodeIfPresent(Int.self, forKey: .partySize)
+        if let partySize, partySize < 1 {
+            throw DecodingError.dataCorruptedError(
+                forKey: .partySize,
+                in: container,
+                debugDescription: "partySize must be null or a positive integer."
+            )
+        }
         rating = try container.decode(Double?.self, forKey: .rating)
         note = try container.decode(String?.self, forKey: .note)
         myActualSpend = try container.decode(Double?.self, forKey: .myActualSpend)
@@ -49,6 +60,8 @@ extension VisitSyncContractV1 {
         try container.encode(userId, forKey: .userId)
         try container.encode(restaurantId, forKey: .restaurantId)
         try container.encode(visitedAt, forKey: .visitedAt)
+        try container.encode(diningMode, forKey: .diningMode)
+        try container.encode(partySize, forKey: .partySize)
         try container.encode(rating, forKey: .rating)
         try container.encode(note, forKey: .note)
         try container.encode(myActualSpend, forKey: .myActualSpend)

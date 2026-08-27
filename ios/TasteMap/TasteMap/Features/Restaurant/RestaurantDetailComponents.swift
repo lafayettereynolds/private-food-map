@@ -239,6 +239,15 @@ private struct RestaurantVisitHistoryRow: View {
                             .foregroundStyle(visit.rating == nil ? Color.secondary : Color.orange)
                     }
 
+                    HStack(spacing: 14) {
+                        Label(visit.diningMode.title, systemImage: visit.diningMode.systemImage)
+                        if let partySize = visit.partySize {
+                            Label("\(partySize) 人", systemImage: "person.2.fill")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                     if let note = visit.note, !note.isEmpty {
                         Text(note)
                             .font(.subheadline)

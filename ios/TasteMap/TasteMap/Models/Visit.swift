@@ -9,6 +9,8 @@ final class Visit {
     var rating: Double?
     var note: String?
     var myActualSpend: Decimal?
+    private var diningModeValue: String = DiningMode.dineIn.rawValue
+    var partySize: Int?
     var createdAt: Date
     var updatedAt: Date
     @Attribute(.unique) var remoteID: String?
@@ -22,6 +24,11 @@ final class Visit {
         set { syncStatusValue = newValue.rawValue }
     }
 
+    var diningMode: DiningMode {
+        get { DiningMode(rawValue: diningModeValue) ?? .dineIn }
+        set { diningModeValue = newValue.rawValue }
+    }
+
     init(
         id: UUID = UUID(),
         restaurantId: UUID,
@@ -29,6 +36,8 @@ final class Visit {
         rating: Double? = nil,
         note: String? = nil,
         myActualSpend: Decimal? = nil,
+        diningMode: DiningMode = .dineIn,
+        partySize: Int? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         remoteID: String? = nil,
@@ -43,6 +52,8 @@ final class Visit {
         self.rating = Self.validatedRating(rating)
         self.note = note?.nilIfBlank
         self.myActualSpend = myActualSpend
+        self.diningModeValue = diningMode.rawValue
+        self.partySize = partySize.flatMap { $0 >= 1 ? $0 : nil }
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.remoteID = remoteID ?? id.uuidString

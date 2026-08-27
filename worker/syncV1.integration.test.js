@@ -102,6 +102,42 @@ describe('Worker Sync API V1 integration', () => {
     expect(incremental.visits.map((item) => item.record.id)).toEqual(['visit-2'])
   })
 
+  it('round-trips nullable party size, dining mode, and the original visit instant', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('core-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = {
+      ...visitPayload('core-v', appleFixture.id, 'forged-user'),
+      diningMode: 'takeout', partySize: null, rating: 4.5, myActualSpend: 36.5,
+    }
+    await push(database, 'user-a', mutation('core-v-create', 'visit', visit.id, 0, visit))
+
+    const first = await pull(database, 'user-a', '0')
+    expect(first.visits[0].record).toMatchObject({
+      diningMode: 'takeout', partySize: null, visitedAt: visit.visitedAt,
+      rating: 4.5, myActualSpend: 36.5,
+    })
+    expect(database.get('SELECT dining_mode, party_size, party_size_optional FROM visits WHERE id = ?', visit.id))
+      .toMatchObject({ dining_mode: 'takeout', party_size: 0, party_size_optional: null })
+
+    const updated = { ...visit, diningMode: 'dine_in', partySize: 3, updatedAt: '2026-08-27T07:30:00.000Z' }
+    await push(database, 'user-a', mutation('core-v-update', 'visit', visit.id, 1, updated))
+    const second = await pull(database, 'user-a', first.nextCursor)
+    expect(second.visits[0]).toMatchObject({
+      serverVersion: 2,
+      record: { diningMode: 'dine_in', partySize: 3, visitedAt: visit.visitedAt },
+    })
+  })
+
+  it('keeps a P0 Visit payload compatible with explicit native defaults', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('legacy-v-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const legacy = legacyVisitPayload('legacy-v', appleFixture.id, 'legacy-owner')
+    await push(database, 'user-a', mutation('legacy-v-create', 'visit', legacy.id, 0, legacy))
+
+    expect((await pull(database, 'user-a', '0')).visits[0].record)
+      .toMatchObject({ diningMode: 'dine_in', partySize: null })
+  })
+
   it('uses mutation receipts when the first response is lost', async () => {
     const database = makeDatabase()
     const request = mutation('response-lost', 'restaurant', appleFixture.id, 0, appleFixture)
@@ -209,9 +245,15 @@ function deletion(mutationId, entityType, entityId, baseVersion) {
 function visitPayload(id, restaurantId, claimedUser) {
   return {
     schemaVersion: 1, id, userId: claimedUser, restaurantId,
-    visitedAt: '2026-08-27T06:00:00.000Z', rating: null, note: null, myActualSpend: null,
+    visitedAt: '2026-08-27T06:00:00.000Z', diningMode: 'dine_in', partySize: null,
+    rating: null, note: null, myActualSpend: null,
     createdAt: '2026-08-27T06:00:00.000Z', updatedAt: '2026-08-27T06:00:00.000Z', deletedAt: null,
   }
+}
+
+function legacyVisitPayload(id, restaurantId, claimedUser) {
+  const { diningMode: _, partySize: __, ...legacy } = visitPayload(id, restaurantId, claimedUser)
+  return legacy
 }
 
 async function push(database, viewerId, ...mutations) {
@@ -244,7 +286,7 @@ function migrationFiles() {
     '0010_membership_entitlements.sql', '0011_photo_storage_metadata.sql',
     '0012_recommendation_events.sql', '0013_restaurant_lists.sql',
     '0014_restaurant_contact_details.sql', '0015_restaurant_place_identities.sql',
-    '0016_sync_v1.sql', '0017_native_auth.sql',
+    '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
   ]
 }
 

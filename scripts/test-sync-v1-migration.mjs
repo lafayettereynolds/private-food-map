@@ -32,15 +32,34 @@ database.exec(`
 `)
 
 database.exec(readFileSync(resolve('migrations', '0016_sync_v1.sql'), 'utf8'))
+database.exec(readFileSync(resolve('migrations', '0018_visit_core_fields.sql'), 'utf8'))
 
 assertEqual(database.prepare('SELECT COUNT(*) AS value FROM restaurants').get().value, 2, 'Restaurant count')
 assertEqual(database.prepare('SELECT COUNT(*) AS value FROM visits').get().value, 1, 'Visit count')
 assertEqual(database.prepare('SELECT COUNT(*) AS value FROM sync_change_log').get().value, 3, 'bootstrap change count')
 assertEqual(database.prepare("SELECT operation FROM sync_change_log WHERE entity_id = 'legacy-deleted'").get().operation, 'delete', 'deleted bootstrap event')
 assertEqual(database.prepare("SELECT provider FROM restaurant_place_identities WHERE restaurant_id = 'legacy-empty-provider'").get().provider, 'manual', 'manual fallback identity')
+assertEqual(database.prepare("SELECT party_size_optional AS value FROM visits WHERE id = 'legacy-visit'").get().value, 1, 'legacy party size backfill')
+
+database.exec(`
+  INSERT INTO visits (
+    id, user_id, restaurant_id, visited_at, party_size, created_at, updated_at
+  ) VALUES (
+    'rolling-worker-visit', 'owner', 'legacy-empty-provider', '2026-08-22T01:00:00.000Z', 4,
+    '2026-08-22T01:00:00.000Z', '2026-08-22T01:00:00.000Z'
+  );
+  INSERT INTO visits (
+    id, user_id, restaurant_id, visited_at, party_size, party_size_optional, created_at, updated_at
+  ) VALUES (
+    'native-null-visit', 'owner', 'legacy-empty-provider', '2026-08-23T01:00:00.000Z', 0, NULL,
+    '2026-08-23T01:00:00.000Z', '2026-08-23T01:00:00.000Z'
+  );
+`)
+assertEqual(database.prepare("SELECT party_size_optional AS value FROM visits WHERE id = 'rolling-worker-visit'").get().value, 4, 'rolling Worker trigger')
+assertEqual(database.prepare("SELECT party_size_optional AS value FROM visits WHERE id = 'native-null-visit'").get().value, null, 'native nullable party size')
 assertEqual(database.prepare('PRAGMA foreign_key_check').all().length, 0, 'foreign key integrity')
 
-console.log('P0-B1 Sync V1 migration test passed.')
+console.log('P0-B1/P1-C Sync V1 migration test passed.')
 
 function assertEqual(actual, expected, label) {
   if (actual !== expected) throw new Error(`${label}: expected ${String(expected)}, received ${String(actual)}`)

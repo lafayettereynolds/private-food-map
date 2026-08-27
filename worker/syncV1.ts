@@ -81,6 +81,9 @@ interface SyncRestaurantRow extends VersionedEntityRow {
 interface SyncVisitRow extends VersionedEntityRow {
   restaurant_id: string
   visited_at: string
+  dining_mode: VisitSyncContractV1['diningMode']
+  party_size: number
+  party_size_optional: number | null
   rating: number | null
   note: string
   my_actual_spend: number | null
@@ -360,19 +363,23 @@ function visitMutationStatements(
   }
   const visit = mutation.payload as VisitSyncContractV1
   const entityStatement = database.prepare(`INSERT INTO visits (
-    id, user_id, restaurant_id, visited_at, rating, my_actual_spend, note,
+    id, user_id, restaurant_id, visited_at, dining_mode, party_size, party_size_optional,
+    rating, my_actual_spend, note,
     created_at, updated_at, deleted_at, server_version, last_mutation_id
   )
-  SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?
+  SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?
   WHERE EXISTS (SELECT 1 FROM restaurants WHERE id = ? AND user_id = ? AND deleted_at IS NULL)
   ON CONFLICT(id) DO UPDATE SET
     restaurant_id = excluded.restaurant_id, visited_at = excluded.visited_at,
+    dining_mode = excluded.dining_mode, party_size = excluded.party_size,
+    party_size_optional = excluded.party_size_optional,
     rating = excluded.rating, my_actual_spend = excluded.my_actual_spend,
     note = excluded.note, updated_at = excluded.updated_at, deleted_at = NULL,
     server_version = excluded.server_version, last_mutation_id = excluded.last_mutation_id
   WHERE visits.user_id = ? AND visits.server_version = ? AND visits.deleted_at IS NULL`)
     .bind(
-      mutation.entityId, viewerId, visit.restaurantId, visit.visitedAt, visit.rating,
+      mutation.entityId, viewerId, visit.restaurantId, visit.visitedAt, visit.diningMode,
+      visit.partySize ?? 0, visit.partySize, visit.rating,
       visit.myActualSpend, visit.note ?? '', visit.createdAt, visit.updatedAt,
       nextVersion, mutation.mutationId, visit.restaurantId, viewerId, viewerId, mutation.baseVersion,
     )
@@ -506,6 +513,8 @@ function rowToVisit(row: SyncVisitRow): VisitSyncContractV1 {
     userId: row.user_id,
     restaurantId: row.restaurant_id,
     visitedAt: row.visited_at,
+    diningMode: row.dining_mode ?? 'dine_in',
+    partySize: row.party_size_optional ?? (row.party_size >= 1 ? row.party_size : null),
     rating: row.rating,
     note: row.note || null,
     myActualSpend: row.my_actual_spend,

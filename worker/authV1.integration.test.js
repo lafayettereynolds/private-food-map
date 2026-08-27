@@ -224,7 +224,7 @@ function migrationFiles() {
     '0010_membership_entitlements.sql', '0011_photo_storage_metadata.sql',
     '0012_recommendation_events.sql', '0013_restaurant_lists.sql',
     '0014_restaurant_contact_details.sql', '0015_restaurant_place_identities.sql',
-    '0016_sync_v1.sql', '0017_native_auth.sql',
+    '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
   ]
 }
 

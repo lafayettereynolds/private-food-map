@@ -45,42 +45,66 @@ struct LocalTasteMapStore {
         visitedAt: Date = .now,
         rating: Double? = nil,
         note: String? = nil,
-        myActualSpend: Decimal? = nil
+        myActualSpend: Decimal? = nil,
+        diningMode: DiningMode = .dineIn,
+        partySize: Int? = nil
     ) throws -> Visit {
-        guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
-            .first(where: { $0.id == restaurantId && $0.deletedAt == nil }) else {
-            throw LocalTasteMapStoreError.restaurantNotFound
-        }
-        let isTransitioningFromWantToGo = restaurant.status == .wantToGo
-        if isTransitioningFromWantToGo {
-            restaurant.status = .visited
-            restaurant.updatedAt = .now
-            restaurant.syncStatus = .pending
-        }
-        if isTransitioningFromWantToGo || restaurant.remoteID == nil || restaurant.serverVersion == 0 {
-            try enqueue(restaurant)
-        }
-        let visit = Visit(
+        try createVisit(
             restaurantId: restaurantId,
-            visitedAt: visitedAt,
-            rating: rating,
-            note: note,
-            myActualSpend: myActualSpend,
-            syncStatus: .pending
+            draft: VisitDraft(
+                visitedAt: visitedAt,
+                diningMode: diningMode,
+                partySize: partySize,
+                rating: rating,
+                myActualSpend: myActualSpend,
+                note: note ?? ""
+            )
         )
-        context.insert(visit)
-        guard let restaurantRemoteID = restaurant.remoteID else {
-            throw LocalTasteMapStoreError.restaurantRemoteIDMissing
+    }
+
+    @discardableResult
+    func createVisit(restaurantId: UUID, draft: VisitDraft) throws -> Visit {
+        let draft = try draft.validated()
+        var createdVisit: Visit?
+        try context.transaction {
+            guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
+                .first(where: { $0.id == restaurantId && $0.deletedAt == nil }) else {
+                throw LocalTasteMapStoreError.restaurantNotFound
+            }
+            let isTransitioningFromWantToGo = restaurant.status == .wantToGo
+            if isTransitioningFromWantToGo {
+                restaurant.status = .visited
+                restaurant.updatedAt = .now
+                restaurant.syncStatus = .pending
+            }
+            if isTransitioningFromWantToGo || restaurant.remoteID == nil || restaurant.serverVersion == 0 {
+                try enqueue(restaurant)
+            }
+            let visit = Visit(
+                restaurantId: restaurantId,
+                visitedAt: draft.visitedAt,
+                rating: draft.rating,
+                note: draft.note,
+                myActualSpend: draft.myActualSpend,
+                diningMode: draft.diningMode,
+                partySize: draft.partySize,
+                syncStatus: .pending
+            )
+            context.insert(visit)
+            guard let restaurantRemoteID = restaurant.remoteID else {
+                throw LocalTasteMapStoreError.restaurantRemoteIDMissing
+            }
+            try SwiftDataSyncQueue(context: context).enqueueUpsert(
+                entityType: .visit,
+                entityID: visit.remoteID ?? visit.id.uuidString,
+                baseVersion: visit.serverVersion,
+                payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
+                timestamp: visit.updatedAt
+            )
+            createdVisit = visit
         }
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
-            entityType: .visit,
-            entityID: visit.remoteID ?? visit.id.uuidString,
-            baseVersion: visit.serverVersion,
-            payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
-            timestamp: visit.updatedAt
-        )
-        try context.save()
-        return visit
+        guard let createdVisit else { throw LocalTasteMapStoreError.visitCreationFailed }
+        return createdVisit
     }
 
     func update(
@@ -90,25 +114,43 @@ struct LocalTasteMapStore {
         note: String?,
         myActualSpend: Decimal?
     ) throws {
-        visit.visitedAt = visitedAt
-        visit.rating = Visit.validatedRating(rating)
-        visit.note = note?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        visit.myActualSpend = myActualSpend
-        visit.updatedAt = .now
-        visit.syncStatus = .pending
-        guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
-            .first(where: { $0.id == visit.restaurantId }),
-              let restaurantRemoteID = restaurant.remoteID else {
-            throw LocalTasteMapStoreError.restaurantRemoteIDMissing
-        }
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
-            entityType: .visit,
-            entityID: visit.remoteID ?? visit.id.uuidString,
-            baseVersion: visit.serverVersion,
-            payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
-            timestamp: visit.updatedAt
+        try update(
+            visit,
+            draft: VisitDraft(
+                visitedAt: visitedAt,
+                diningMode: visit.diningMode,
+                partySize: visit.partySize,
+                rating: rating,
+                myActualSpend: myActualSpend,
+                note: note ?? ""
+            )
         )
-        try context.save()
+    }
+
+    func update(_ visit: Visit, draft: VisitDraft) throws {
+        let draft = try draft.validated()
+        try context.transaction {
+            visit.visitedAt = draft.visitedAt
+            visit.rating = Visit.validatedRating(draft.rating)
+            visit.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            visit.myActualSpend = draft.myActualSpend
+            visit.diningMode = draft.diningMode
+            visit.partySize = draft.partySize
+            visit.updatedAt = .now
+            visit.syncStatus = .pending
+            guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
+                .first(where: { $0.id == visit.restaurantId }),
+                  let restaurantRemoteID = restaurant.remoteID else {
+                throw LocalTasteMapStoreError.restaurantRemoteIDMissing
+            }
+            try SwiftDataSyncQueue(context: context).enqueueUpsert(
+                entityType: .visit,
+                entityID: visit.remoteID ?? visit.id.uuidString,
+                baseVersion: visit.serverVersion,
+                payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
+                timestamp: visit.updatedAt
+            )
+        }
     }
 
     func delete(_ visit: Visit) throws {
@@ -216,6 +258,7 @@ enum LocalTasteMapStoreError: Error {
     case restaurantRemoteIDMissing
     case restaurantHasVisits
     case restaurantNameRequired
+    case visitCreationFailed
 }
 
 enum RestaurantDeduplicator {

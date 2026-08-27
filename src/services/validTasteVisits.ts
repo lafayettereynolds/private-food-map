@@ -20,8 +20,9 @@ export function buildValidTasteVisits(restaurants: RestaurantSummary[], visits: 
 export function normalizedPerCapitaSpend(visit: Visit) {
   if (visit.paymentMode === 'separate') return null
   if (visit.totalPrice == null || !Number.isFinite(visit.totalPrice) || visit.totalPrice <= 0) return null
-  if (!Number.isFinite(visit.partySize) || visit.partySize < 1) return null
-  return visit.totalPrice / visit.partySize
+  const partySize = visit.partySize
+  if (partySize === null || !Number.isFinite(partySize) || partySize < 1) return null
+  return visit.totalPrice / partySize
 }
 
 export type ModuleConfidence = 'insufficient' | 'emerging' | 'established'

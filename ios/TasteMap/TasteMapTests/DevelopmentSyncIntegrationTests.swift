@@ -109,6 +109,8 @@ struct DevelopmentSyncIntegrationTests {
             userId: "forged-client-user",
             restaurantId: restaurantID,
             visitedAt: timestamp,
+            diningMode: .dineIn,
+            partySize: nil,
             rating: nil,
             note: "P0-B2-A real Development D1 test",
             myActualSpend: nil,
@@ -246,6 +248,82 @@ struct DevelopmentSyncIntegrationTests {
         try await SyncEngine(context: sourceContext, api: client).synchronize()
         #expect(restaurant.deletedAt != nil)
         #expect(restaurant.serverVersion == 3)
+    }
+
+    @Test("P1-C complete Visit fields round-trip through Development Worker and D1")
+    func developmentVisitCoreRoundTrip() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let runID = UUID().uuidString.lowercased()
+        let client = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p1c:\(runID)")
+        )
+        let sourceContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let sourceContext = sourceContainer.mainContext
+        let sourceStore = LocalTasteMapStore(context: sourceContext)
+        let restaurant = try sourceStore.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P1-C Development Visit Restaurant",
+                address: "Development D1 only",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p1c-\(runID)"
+            ),
+            among: []
+        )
+        let visitedAt = Date(timeIntervalSince1970: 1_787_592_000)
+        let visit = try sourceStore.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(
+                visitedAt: visitedAt,
+                diningMode: .takeout,
+                partySize: nil,
+                rating: nil,
+                myActualSpend: nil,
+                note: "P1-C nullable create"
+            )
+        )
+
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(restaurant.status == .visited)
+        #expect(visit.serverVersion == 1)
+
+        try sourceStore.update(
+            visit,
+            draft: VisitDraft(
+                visitedAt: visitedAt,
+                diningMode: .dineIn,
+                partySize: 3,
+                rating: 4.5,
+                myActualSpend: 156.5,
+                note: "P1-C complete update"
+            )
+        )
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(visit.serverVersion == 2)
+
+        let receivingContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receivingContext = receivingContainer.mainContext
+        try await SyncEngine(context: receivingContext, api: client).synchronize()
+        let pulledRestaurant = try #require(receivingContext.fetch(FetchDescriptor<Restaurant>()).first)
+        let pulledVisit = try #require(receivingContext.fetch(FetchDescriptor<Visit>()).first)
+        #expect(pulledVisit.restaurantId == pulledRestaurant.id)
+        #expect(pulledVisit.visitedAt == visitedAt)
+        #expect(pulledVisit.diningMode == .dineIn)
+        #expect(pulledVisit.partySize == 3)
+        #expect(pulledVisit.rating == 4.5)
+        #expect(pulledVisit.myActualSpend == Decimal(string: "156.5"))
+        #expect(pulledVisit.note == "P1-C complete update")
+        #expect(try receivingContext.fetch(FetchDescriptor<Visit>()).count == 1)
+
+        try sourceStore.delete(visit)
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(visit.deletedAt != nil)
+        #expect(visit.serverVersion == 3)
+        try sourceStore.delete(restaurant)
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(restaurant.deletedAt != nil)
     }
 
     private func deletion(

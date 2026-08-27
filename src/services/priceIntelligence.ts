@@ -28,8 +28,9 @@ export const RECOMMENDATION_BUDGET_OPTIONS: Array<{ value: RecommendationBudget;
 export function visitPriceSample(visit: Visit): number | null {
   if (visit.paymentMode === 'separate') return null
   if (visit.totalPrice == null || !Number.isFinite(visit.totalPrice) || visit.totalPrice <= 0) return null
-  if (!Number.isFinite(visit.partySize) || visit.partySize < 1) return null
-  return visit.totalPrice / visit.partySize
+  const partySize = visit.partySize
+  if (partySize === null || !Number.isFinite(partySize) || partySize < 1) return null
+  return visit.totalPrice / partySize
 }
 
 export function restaurantPriceInsight(restaurant: Restaurant, visits: Visit[]): RestaurantPriceInsight {

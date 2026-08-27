@@ -74,7 +74,7 @@ export interface Visit {
   myActualSpend: number | null
   paymentMode: PaymentMode | null
   pricePerPerson: number | null
-  partySize: number
+  partySize: number | null
   queueDuration: QueueDuration | null
   diningOccasions: DiningOccasion[]
   diningOccasion: DiningOccasion | null
@@ -325,8 +325,8 @@ export function formatAverageQueueDuration(minutes: number | null | undefined) {
   return `约 ${hours} 小时${remainingMinutes ? ` ${remainingMinutes} 分` : ''}`
 }
 
-export function calculatePricePerPerson(totalPrice: number | null, partySize: number) {
-  if (totalPrice === null || !Number.isFinite(totalPrice) || partySize < 1) return null
+export function calculatePricePerPerson(totalPrice: number | null, partySize: number | null) {
+  if (totalPrice === null || !Number.isFinite(totalPrice) || partySize === null || partySize < 1) return null
   return Math.round(totalPrice / partySize)
 }
 

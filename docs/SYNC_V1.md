@@ -20,7 +20,7 @@ P0-B1 只建立 `SwiftData ↔ SyncEngine ↔ Worker ↔ D1` 基础链路，不�
 - `clientTimestamp`
 - `payload`：upsert 必填，delete 禁止携带
 
-Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-only Restaurant 不需要 `amapPoiId`；D1 旧兼容列保存空字符串，正式 identity 只来自 `placeIdentities`。Visit V1 只包含原生闭环必需字段，不覆盖 Web 端尚未迁移的高级 Visit 字段。
+Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-only Restaurant 不需要 `amapPoiId`；D1 旧兼容列保存空字符串，正式 identity 只来自 `placeIdentities`。Visit V1 只包含原生闭环必需字段，不覆盖 Web 端尚未迁移的高级 Visit 字段。P1-C 增加 canonical `diningMode`（`dine_in | takeout`）和 required-but-nullable `partySize`；新客户端始终编码两项，P0 旧 Visit payload 缺少它们时服务端兼容归一化为 `dine_in` 与 `null`。
 
 响应逐项返回 `applied | conflict`、`duplicate`、`serverVersion`、`revision` 和可选冲突原因。
 
@@ -66,6 +66,7 @@ P0-B2-A 的远程测试身份仅用于隔离的 Development D1，开发 URL 不�
 - 本地 `UUID id` 保留，作为 SwiftData 稳定主键。
 - 增加可空 `remoteID`，因为既有 Web/D1 ID 不保证是 UUID；新 iOS 数据使用本地 UUID 字符串作为 remote ID。
 - Restaurant/Visit 增加 `deletedAt`、`serverVersion`、`lastSyncedAt`、同步状态；已有 `createdAt/updatedAt` 直接复用。
+- P1-C 为 Visit 增加带 `dine_in` 默认值的 `diningMode` 和可空 `partySize`，使用 SwiftData additive lightweight migration，不删除旧 Store。
 - Restaurant 保存 `remoteRecordData` 作为不透明 canonical snapshot，使原生编辑名称/地址时不会清空尚未迁移的 Web 字段；没有复制整套 Web 字段到 SwiftData。
 - `SyncCheckpoint` 保存 cursor；`SyncMutation` 保存离线队列。
 
@@ -73,7 +74,7 @@ P0-B2-A 的远程测试身份仅用于隔离的 Development D1，开发 URL 不�
 
 ## 部署安全
 
-P0-B2-A 已创建独立 `food-map-db-development` 与 `private-food-map-development`。新 Dev D1 的首次 preflight 只有 Cloudflare 内部表且无业务数据，因此顺序应用完整 `0001`—`0016` migration 链；postflight 显示无待执行项、无外键错误。真实 Worker/D1 和 iOS API client 往返已验证，验收产生的数据最终全部保持 tombstone，无 active Restaurant/Visit。
+P0-B2-A 已创建独立 `food-map-db-development` 与 `private-food-map-development`。新 Dev D1 的首次 preflight 只有 Cloudflare 内部表且无业务数据，因此顺序应用完整 migration 链；P1-C 的 `0018_visit_core_fields.sql` 保留 legacy `party_size`，增加 canonical nullable `party_size_optional` 和滚动部署兼容 trigger，不重建 `visits`。真实 Worker/D1 和 iOS API client 往返测试数据最终必须保持 tombstone。
 
 Production D1 尚未预检或修改。后续 Production 部署顺序固定为：
 

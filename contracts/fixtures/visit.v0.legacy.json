@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "visit-contract-legacy",
+  "userId": "legacy-owner",
+  "restaurantId": "restaurant-contract-legacy",
+  "visitedAt": "2026-08-26T11:00:00.000Z",
+  "rating": 4.5,
+  "note": null,
+  "myActualSpend": 88.5,
+  "createdAt": "2026-08-26T11:00:00.000Z",
+  "updatedAt": "2026-08-26T11:00:00.000Z",
+  "deletedAt": null
+}

@@ -111,6 +111,7 @@ interface VisitRow {
   payment_mode: PaymentMode | null
   price_per_person: number | null
   party_size: number
+  party_size_optional: number | null
   queue_duration: QueueDuration | null
   dining_occasion: DiningOccasion | null
   dining_occasion_text: string
@@ -358,14 +359,14 @@ const RESTAURANT_PLACE_IDENTITY_CLEAR_PRIMARY = `
 const VISIT_UPSERT = `
   INSERT INTO visits (
     id, user_id, restaurant_id, visited_at, rating, visibility, dining_mode,
-    total_price, my_actual_spend, payment_mode, price_per_person, party_size,
+    total_price, my_actual_spend, payment_mode, price_per_person, party_size, party_size_optional,
     queue_duration, dining_occasion, dining_occasion_text, dining_occasions_json, value_rating, environment_rating, service_rating,
     value_tags_json, environment_tags_json, service_tags_json,
     noise_level, dining_duration, portion_level, transport_convenience, special_notes,
     recommendation_source_type, recommendation_source_user_id, recommendation_source_text,
     shared_meal_id, companions_json, companion_ids_json, dishes_json, note, photo_ids_json,
     created_at, updated_at, deleted_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     user_id = excluded.user_id,
     restaurant_id = excluded.restaurant_id,
@@ -378,6 +379,7 @@ const VISIT_UPSERT = `
     payment_mode = excluded.payment_mode,
     price_per_person = excluded.price_per_person,
     party_size = excluded.party_size,
+    party_size_optional = excluded.party_size_optional,
     queue_duration = excluded.queue_duration,
     dining_occasion = excluded.dining_occasion,
     dining_occasion_text = excluded.dining_occasion_text,
@@ -960,6 +962,7 @@ async function upsertVisits(database: D1Database, visits: CloudVisit[]) {
     visit.myActualSpend ?? null,
     visit.paymentMode ?? null,
     visit.pricePerPerson,
+    visit.partySize ?? 0,
     visit.partySize,
     visit.queueDuration,
     visit.diningOccasion ?? visit.diningOccasions?.[0] ?? null,
@@ -2271,7 +2274,7 @@ function rowToVisit(row: VisitRow): CloudVisit {
     myActualSpend: row.my_actual_spend,
     paymentMode: row.payment_mode,
     pricePerPerson: row.price_per_person,
-    partySize: row.party_size,
+    partySize: row.party_size_optional ?? (row.party_size >= 1 ? row.party_size : null),
     queueDuration: row.queue_duration,
     diningOccasions: (() => {
       const occasions = parseStringArray(row.dining_occasions_json) as DiningOccasion[]

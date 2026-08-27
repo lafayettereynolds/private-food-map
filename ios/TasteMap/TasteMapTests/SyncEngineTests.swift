@@ -26,6 +26,46 @@ struct SyncEngineTests {
         #expect(api.visitRecords.first?.rating == nil)
     }
 
+    @Test("P1-C Visit fields survive push and pull without duplication")
+    func visitCoreFieldsRoundTrip() async throws {
+        let sourceContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let sourceContext = sourceContainer.mainContext
+        let store = LocalTasteMapStore(context: sourceContext)
+        let restaurant = try store.restaurant(for: appleCandidate(), among: [])
+        let visitedAt = Date(timeIntervalSince1970: 1_787_592_000)
+        let visit = try store.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(
+                visitedAt: visitedAt,
+                diningMode: .takeout,
+                partySize: 2,
+                rating: 4.5,
+                myActualSpend: 96.5,
+                note: "P1-C sync"
+            )
+        )
+        let api = EchoSyncAPI()
+        try await SyncEngine(context: sourceContext, api: api).synchronize()
+
+        #expect(api.visitRecords.first?.diningMode == .takeout)
+        #expect(api.visitRecords.first?.partySize == 2)
+        #expect(api.visitRecords.first?.visitedAt == SyncRecordMapper.dateString(visitedAt))
+        #expect(visit.serverVersion == 1)
+
+        let receivingContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receivingContext = receivingContainer.mainContext
+        try await SyncEngine(context: receivingContext, api: api).synchronize()
+        let pulled = try #require(receivingContext.fetch(FetchDescriptor<Visit>()).first)
+
+        #expect(pulled.diningMode == .takeout)
+        #expect(pulled.partySize == 2)
+        #expect(pulled.rating == 4.5)
+        #expect(pulled.myActualSpend == Decimal(string: "96.5"))
+        #expect(pulled.note == "P1-C sync")
+        #expect(pulled.visitedAt == visitedAt)
+        #expect(try receivingContext.fetch(FetchDescriptor<Visit>()).count == 1)
+    }
+
     @Test("Want-to-go Restaurant survives push and pull without creating a Visit")
     func wantToGoRoundTripPreservesStatus() async throws {
         let sourceContainer = try TasteMapPersistence.makeContainer(inMemory: true)

@@ -246,6 +246,8 @@ final class SyncEngine {
             rating: record.rating,
             note: record.note,
             myActualSpend: record.myActualSpend.map { Decimal($0) },
+            diningMode: record.diningMode,
+            partySize: record.partySize,
             createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
             updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
             remoteID: record.id,
@@ -308,6 +310,8 @@ final class SyncEngine {
         visit.rating = Visit.validatedRating(record.rating)
         visit.note = record.note
         visit.myActualSpend = record.myActualSpend.map { Decimal($0) }
+        visit.diningMode = record.diningMode
+        visit.partySize = record.partySize
         visit.createdAt = SyncRecordMapper.date(record.createdAt) ?? visit.createdAt
         visit.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? visit.updatedAt
         visit.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)

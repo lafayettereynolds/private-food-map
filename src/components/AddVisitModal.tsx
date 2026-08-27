@@ -40,7 +40,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
   const [rating, setRating] = useState<StarRatingValue | null>(initialVisit?.rating ?? null)
   const [price, setPrice] = useState((initialVisit?.paymentMode === 'separate' ? initialVisit.myActualSpend : initialVisit?.totalPrice)?.toString() ?? '')
   const [companions, setCompanions] = useState(initialVisit?.companions.join('、') ?? '')
-  const [partySize, setPartySize] = useState(initialVisit?.partySize.toString() ?? '1')
+  const [partySize, setPartySize] = useState(initialVisit?.partySize?.toString() ?? '1')
   const [queueDuration, setQueueDuration] = useState<QueueDuration>(initialVisit?.queueDuration ?? 'none')
   const [dishes, setDishes] = useState<VisitDish[]>(() => initialVisit?.dishes.map((dish) => ({ ...dish })) ?? [])
   const [feeling, setFeeling] = useState(initialVisit?.note ?? '')

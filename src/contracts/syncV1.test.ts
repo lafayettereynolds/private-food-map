@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import legacyRestaurant from '../../contracts/fixtures/restaurant.v0.legacy.json'
 import appleRestaurant from '../../contracts/fixtures/restaurant.v1.valid.json'
+import legacyVisit from '../../contracts/fixtures/visit.v0.legacy.json'
+import validVisit from '../../contracts/fixtures/visit.v1.valid.json'
 import { decodeSyncPushRequest, decodeVisitSyncContract, stableSyncMutationJSON } from './syncV1'
 
 describe('Sync API V1 contract', () => {
@@ -44,18 +46,24 @@ describe('Sync API V1 contract', () => {
   })
 
   it('preserves nil Visit ratings', () => {
-    expect(decodeVisitSyncContract(visit()).rating).toBeNull()
+    expect(decodeVisitSyncContract(validVisit).rating).toBeNull()
+  })
+
+  it('decodes dining mode and nullable party size', () => {
+    expect(decodeVisitSyncContract(validVisit)).toMatchObject({ diningMode: 'takeout', partySize: null })
+  })
+
+  it('normalizes the P0 Visit payload without new fields', () => {
+    expect(decodeVisitSyncContract(legacyVisit)).toMatchObject({ diningMode: 'dine_in', partySize: null })
+  })
+
+  it('rejects invalid party size, dining mode, and negative spend', () => {
+    expect(() => decodeVisitSyncContract({ ...validVisit, partySize: 0 })).toThrow(/partySize/)
+    expect(() => decodeVisitSyncContract({ ...validVisit, diningMode: 'delivery' })).toThrow(/diningMode/)
+    expect(() => decodeVisitSyncContract({ ...validVisit, myActualSpend: -1 })).toThrow(/negative/)
   })
 })
 
 function pushRequest(mutation: Record<string, unknown>) {
   return { apiVersion: 1, schemaVersion: 1, mutations: [mutation] }
-}
-
-function visit() {
-  return {
-    schemaVersion: 1, id: 'visit-1', userId: 'forged-user', restaurantId: 'restaurant-1',
-    visitedAt: '2026-08-27T06:00:00.000Z', rating: null, note: null, myActualSpend: null,
-    createdAt: '2026-08-27T06:00:00.000Z', updatedAt: '2026-08-27T06:00:00.000Z', deletedAt: null,
-  }
 }

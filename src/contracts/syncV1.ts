@@ -8,6 +8,7 @@ export const SYNC_SCHEMA_VERSION = 1 as const
 
 export type SyncEntityType = 'restaurant' | 'visit'
 export type SyncMutationOperation = 'upsert' | 'delete'
+export type VisitDiningModeContract = 'dine_in' | 'takeout'
 
 export interface VisitSyncContractV1 {
   schemaVersion: typeof SYNC_SCHEMA_VERSION
@@ -15,6 +16,8 @@ export interface VisitSyncContractV1 {
   userId: string
   restaurantId: string
   visitedAt: string
+  diningMode: VisitDiningModeContract
+  partySize: number | null
   rating: number | null
   note: string | null
   myActualSpend: number | null
@@ -96,17 +99,28 @@ export function decodeSyncPushRequest(value: unknown): SyncPushRequestV1 {
 export function decodeVisitSyncContract(value: unknown): VisitSyncContractV1 {
   if (!isRecord(value) || value.schemaVersion !== SYNC_SCHEMA_VERSION ||
     !isNonEmptyString(value.id) || !isNonEmptyString(value.userId) ||
-    !isNonEmptyString(value.restaurantId) || !isNonEmptyString(value.visitedAt) ||
-    !isNonEmptyString(value.createdAt) || !isNonEmptyString(value.updatedAt) ||
+    !isNonEmptyString(value.restaurantId) || !isISODateTime(value.visitedAt) ||
+    !isISODateTime(value.createdAt) || !isISODateTime(value.updatedAt) ||
     !hasNullableString(value, 'note') || !hasNullableString(value, 'deletedAt') ||
     !hasNullableNumber(value, 'myActualSpend') || !hasNullableNumber(value, 'rating')) {
     throw new SyncContractError('Visit sync contract is invalid.')
+  }
+  const diningMode = 'diningMode' in value ? value.diningMode : 'dine_in'
+  const partySize = 'partySize' in value ? value.partySize : null
+  if (diningMode !== 'dine_in' && diningMode !== 'takeout') {
+    throw new SyncContractError('Visit diningMode must be dine_in or takeout.')
+  }
+  if (partySize !== null && (!Number.isInteger(partySize) || Number(partySize) < 1)) {
+    throw new SyncContractError('Visit partySize must be null or a positive integer.')
   }
   const rating = value.rating
   if (rating !== null && (typeof rating !== 'number' || !Number.isFinite(rating) || rating < 0.5 || rating > 5 || rating * 2 % 1 !== 0)) {
     throw new SyncContractError('Visit rating must be null or a half-step from 0.5 through 5.0.')
   }
-  return value as unknown as VisitSyncContractV1
+  if (value.myActualSpend !== null && Number(value.myActualSpend) < 0) {
+    throw new SyncContractError('Visit myActualSpend cannot be negative.')
+  }
+  return { ...value, diningMode, partySize } as unknown as VisitSyncContractV1
 }
 
 export function stableSyncMutationJSON(mutation: SyncMutationV1) {
@@ -165,6 +179,10 @@ function hasNullableNumber(value: Record<string, unknown>, key: string) {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+function isISODateTime(value: unknown): value is string {
+  return isNonEmptyString(value) && Number.isFinite(Date.parse(value))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

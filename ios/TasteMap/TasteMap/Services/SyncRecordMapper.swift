@@ -75,6 +75,8 @@ enum SyncRecordMapper {
             userId: "local",
             restaurantId: restaurantRemoteID,
             visitedAt: dateString(visit.visitedAt),
+            diningMode: visit.diningMode,
+            partySize: visit.partySize,
             rating: visit.rating,
             note: visit.note,
             myActualSpend: visit.myActualSpend.map { NSDecimalNumber(decimal: $0).doubleValue },

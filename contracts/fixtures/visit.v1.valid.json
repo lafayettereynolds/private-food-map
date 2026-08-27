@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "visit-contract-v1",
+  "userId": "tm_contract_user",
+  "restaurantId": "restaurant-contract-v1",
+  "visitedAt": "2026-08-27T10:30:00.000Z",
+  "diningMode": "takeout",
+  "partySize": null,
+  "rating": null,
+  "note": "外卖核心合同测试",
+  "myActualSpend": null,
+  "createdAt": "2026-08-27T10:31:00.000Z",
+  "updatedAt": "2026-08-27T10:31:00.000Z",
+  "deletedAt": null
+}

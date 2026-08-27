@@ -75,6 +75,34 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP1CMinimalVisitUsesCompleteNativeEditor() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1b-restaurant-detail-fixture"]
+        app.launch()
+
+        app.segmentedControls.buttons["想吃"].tap()
+        let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        let addVisit = app.buttons["restaurant-detail-add-visit"]
+        XCTAssertTrue(addVisit.waitForExistence(timeout: 5))
+        addVisit.tap()
+
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["visit-editor-date"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["visit-editor-dining-mode"].exists)
+        XCTAssertTrue(app.textFields["visit-editor-party-size"].exists)
+        XCTAssertTrue(app.textFields["visit-editor-spend"].exists)
+        let note = app.descendants(matching: .any)["visit-editor-note"]
+        if !note.exists { app.swipeUp() }
+        XCTAssertTrue(note.waitForExistence(timeout: 2))
+
+        app.buttons["visit-editor-save"].tap()
+        XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["restaurant-detail-add-visit"].exists)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {
