@@ -16,7 +16,21 @@ struct TasteMapApp: App {
     init() {
         nativeAuthServices = NativeAuthServices(configuration: .current())
         do {
-            modelContainer = try TasteMapPersistence.makeContainer()
+            #if DEBUG
+            let useRestaurantDetailFixture = ProcessInfo.processInfo.arguments.contains(
+                TasteMapUITestFixtures.detailLaunchArgument
+            )
+            #else
+            let useRestaurantDetailFixture = false
+            #endif
+            modelContainer = try TasteMapPersistence.makeContainer(
+                inMemory: useRestaurantDetailFixture
+            )
+            #if DEBUG
+            if useRestaurantDetailFixture {
+                try TasteMapUITestFixtures.insertRestaurantDetailFixture(into: modelContainer)
+            }
+            #endif
         } catch {
             fatalError("Unable to initialize local Taste Map storage: \(error)")
         }

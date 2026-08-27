@@ -128,6 +128,7 @@ struct MapHomeView: View {
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("restaurant-card-\(restaurant.id.uuidString)")
                     }
                 }
                 .padding(.horizontal)

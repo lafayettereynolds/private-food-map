@@ -152,6 +152,24 @@ struct LocalTasteMapStore {
         try context.save()
     }
 
+    func updateBasics(
+        _ restaurant: Restaurant,
+        name: String,
+        city: String
+    ) throws {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw LocalTasteMapStoreError.restaurantNameRequired
+        }
+
+        restaurant.name = trimmedName
+        restaurant.city = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        restaurant.updatedAt = .now
+        restaurant.syncStatus = .pending
+        try enqueue(restaurant)
+        try context.save()
+    }
+
     func delete(_ restaurant: Restaurant) throws {
         let queue = SwiftDataSyncQueue(context: context)
         guard let remoteID = restaurant.remoteID else {
@@ -197,6 +215,7 @@ enum LocalTasteMapStoreError: Error {
     case restaurantNotFound
     case restaurantRemoteIDMissing
     case restaurantHasVisits
+    case restaurantNameRequired
 }
 
 enum RestaurantDeduplicator {

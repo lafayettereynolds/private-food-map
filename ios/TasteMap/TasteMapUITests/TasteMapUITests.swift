@@ -55,6 +55,26 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testWantToGoRestaurantOpensDetailInformationCenter() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1b-restaurant-detail-fixture"]
+        app.launch()
+
+        app.segmentedControls.buttons["想吃"].tap()
+        let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["restaurant-detail-header"].exists)
+        XCTAssertTrue(app.staticTexts["P1-B 想吃餐厅"].exists)
+        XCTAssertTrue(app.staticTexts["restaurant-status-wantToGo"].exists)
+        XCTAssertTrue(app.buttons["open-in-apple-maps"].exists)
+        XCTAssertTrue(app.buttons["restaurant-detail-add-visit"].exists)
+        XCTAssertTrue(app.buttons["编辑"].exists)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

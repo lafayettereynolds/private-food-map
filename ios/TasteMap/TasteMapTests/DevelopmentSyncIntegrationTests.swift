@@ -193,6 +193,61 @@ struct DevelopmentSyncIntegrationTests {
         #expect(restaurant.serverVersion == 2)
     }
 
+    @Test("P1-B Restaurant edit preserves identity through Development Worker and D1")
+    func developmentRestaurantDetailEditRoundTrip() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let runID = UUID().uuidString.lowercased()
+        let client = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p1b:\(runID)")
+        )
+        let sourceContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let sourceContext = sourceContainer.mainContext
+        let sourceStore = LocalTasteMapStore(context: sourceContext)
+        let restaurant = try sourceStore.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P1-B Development Detail Restaurant",
+                address: "Development D1 identity protection",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p1b-\(runID)"
+            ),
+            among: []
+        )
+
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(restaurant.serverVersion == 1)
+
+        try sourceStore.updateBasics(
+            restaurant,
+            name: "P1-B Edited Restaurant",
+            city: "Hangzhou"
+        )
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+
+        #expect(restaurant.serverVersion == 2)
+        #expect(restaurant.syncStatus == .synced)
+        #expect(restaurant.appleMapItemIdentifier == "apple-p1b-\(runID)")
+        #expect(try sourceContext.fetch(FetchDescriptor<Restaurant>()).count == 1)
+
+        let receivingContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receivingContext = receivingContainer.mainContext
+        try await SyncEngine(context: receivingContext, api: client).synchronize()
+        let pulled = try #require(receivingContext.fetch(FetchDescriptor<Restaurant>()).first)
+        #expect(pulled.remoteID == restaurant.remoteID)
+        #expect(pulled.name == "P1-B Edited Restaurant")
+        #expect(pulled.city == "Hangzhou")
+        #expect(pulled.appleMapItemIdentifier == "apple-p1b-\(runID)")
+        #expect(try receivingContext.fetch(FetchDescriptor<Restaurant>()).count == 1)
+        #expect(try receivingContext.fetch(FetchDescriptor<Visit>()).isEmpty)
+
+        try sourceStore.delete(restaurant)
+        try await SyncEngine(context: sourceContext, api: client).synchronize()
+        #expect(restaurant.deletedAt != nil)
+        #expect(restaurant.serverVersion == 3)
+    }
+
     private func deletion(
         runID: String,
         suffix: String,

@@ -3,105 +3,109 @@ import SwiftUI
 
 struct RestaurantDetailView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Visit.visitedAt, order: .reverse) private var allVisits: [Visit]
+    @Query private var allVisits: [Visit]
 
     let restaurant: Restaurant
+    private let navigator: any RestaurantNavigating
 
     @State private var isAddingVisit = false
+    @State private var isEditingRestaurant = false
     @State private var editingVisit: Visit?
+    @State private var visitPendingDeletion: Visit?
     @State private var deleteError: String?
+    @State private var navigationError: String?
 
-    private var visits: [Visit] {
-        allVisits.filter { $0.restaurantId == restaurant.id && $0.deletedAt == nil }
+    @MainActor
+    init(restaurant: Restaurant) {
+        self.restaurant = restaurant
+        navigator = AppleMapsRestaurantNavigator()
     }
 
-    private var ratedVisits: [Visit] {
-        visits.filter { $0.rating != nil }
+    @MainActor
+    init(restaurant: Restaurant, navigator: any RestaurantNavigating) {
+        self.restaurant = restaurant
+        self.navigator = navigator
     }
 
-    private var averageRating: Double? {
-        guard !ratedVisits.isEmpty else { return nil }
-        let total = ratedVisits.compactMap(\.rating).reduce(0, +)
-        return total / Double(ratedVisits.count)
-    }
-
-    private var totalSpend: Decimal? {
-        let values = visits.compactMap(\.myActualSpend)
-        guard !values.isEmpty else { return nil }
-        return values.reduce(Decimal.zero, +)
+    private var presentation: RestaurantDetailPresentation {
+        RestaurantDetailPresentation(restaurantID: restaurant.id, visits: allVisits)
     }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("餐厅信息") {
-                    Text(restaurant.name)
-                        .font(.title3.weight(.semibold))
-                    if !restaurant.address.isEmpty {
-                        Text(restaurant.address)
-                            .foregroundStyle(.secondary)
-                    }
-                    LabeledContent("状态") {
-                        Label(restaurant.status.title, systemImage: restaurant.status.systemImage)
-                            .foregroundStyle(restaurant.status == .wantToGo ? .blue : .primary)
-                    }
+            ScrollView {
+                LazyVStack(spacing: 18) {
+                    RestaurantDetailHeader(restaurant: restaurant)
+                    RestaurantLocationSection(
+                        restaurant: restaurant,
+                        onOpenAppleMaps: openAppleMaps
+                    )
+                    RestaurantDetailStatsSection(presentation: presentation)
+                    RestaurantVisitHistorySection(
+                        visits: presentation.activeVisits,
+                        onEdit: { editingVisit = $0 },
+                        onDelete: { visitPendingDeletion = $0 }
+                    )
                 }
-
-                Section("我的记录") {
-                    LabeledContent("到访次数", value: "\(visits.count)")
-                    LabeledContent("我的平均评分", value: averageRating.map {
-                        String(format: "%.1f", $0)
-                    } ?? "未评分")
-                    if let latestVisit = visits.first {
-                        LabeledContent("最近一次到访") {
-                            Text(latestVisit.visitedAt, format: .dateTime.year().month().day())
-                        }
-                    }
-                    if let totalSpend {
-                        LabeledContent("累计实际消费", value: Self.currencyString(totalSpend))
-                    }
-                }
-
-                Section("到访历史") {
-                    if visits.isEmpty {
-                        Text("还没有到访记录")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(visits) { visit in
-                            Button {
-                                editingVisit = visit
-                            } label: {
-                                VisitRow(visit: visit)
-                            }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing) {
-                                Button("删除", role: .destructive) {
-                                    delete(visit)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section {
-                    Button {
-                        isAddingVisit = true
-                    } label: {
-                        Label(
-                            restaurant.status == .wantToGo ? "记录去过" : "记录再次到访",
-                            systemImage: "plus.circle.fill"
-                        )
-                            .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("餐厅详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("编辑", systemImage: "square.and.pencil") {
+                        isEditingRestaurant = true
                     }
                 }
             }
-            .navigationTitle("餐厅详情")
-            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Button {
+                    isAddingVisit = true
+                } label: {
+                    Label(
+                        restaurant.status == .wantToGo ? "记录去过" : "再次记录",
+                        systemImage: "plus.circle.fill"
+                    )
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.bar)
+                .accessibilityIdentifier("restaurant-detail-add-visit")
+            }
             .sheet(isPresented: $isAddingVisit) {
                 VisitEditorView(restaurant: restaurant)
             }
             .sheet(item: $editingVisit) { visit in
                 VisitEditorView(restaurant: restaurant, visit: visit)
+            }
+            .sheet(isPresented: $isEditingRestaurant) {
+                RestaurantEditView(restaurant: restaurant)
+            }
+            .confirmationDialog(
+                "删除这次到访？",
+                isPresented: Binding(
+                    get: { visitPendingDeletion != nil },
+                    set: { if !$0 { visitPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("删除到访记录", role: .destructive) {
+                    if let visit = visitPendingDeletion {
+                        delete(visit)
+                    }
+                    visitPendingDeletion = nil
+                }
+                Button("取消", role: .cancel) { visitPendingDeletion = nil }
+            } message: {
+                Text("只会删除这一条到访，不会影响这家餐厅的其他历史记录。")
             }
             .alert("无法删除", isPresented: Binding(
                 get: { deleteError != nil },
@@ -111,6 +115,20 @@ struct RestaurantDetailView: View {
             } message: {
                 Text(deleteError ?? "请稍后重试。")
             }
+            .alert("无法打开 Apple Maps", isPresented: Binding(
+                get: { navigationError != nil },
+                set: { if !$0 { navigationError = nil } }
+            )) {
+                Button("好", role: .cancel) { navigationError = nil }
+            } message: {
+                Text(navigationError ?? "请稍后重试。")
+            }
+        }
+    }
+
+    private func openAppleMaps() {
+        if !navigator.openInAppleMaps(restaurant) {
+            navigationError = "系统没有成功打开这家餐厅的位置。"
         }
     }
 
@@ -120,42 +138,5 @@ struct RestaurantDetailView: View {
         } catch {
             deleteError = "这条到访记录没有删除成功。"
         }
-    }
-
-    private static func currencyString(_ value: Decimal) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.locale = .current
-        return formatter.string(from: NSDecimalNumber(decimal: value))
-            ?? NSDecimalNumber(decimal: value).stringValue
-    }
-}
-
-private struct VisitRow: View {
-    let visit: Visit
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(visit.visitedAt, format: .dateTime.year().month().day())
-                    .font(.headline)
-                Spacer()
-                Text(visit.rating.map { String(format: "%.1f ★", $0) } ?? "未评分")
-                    .foregroundStyle(visit.rating == nil ? Color.secondary : Color.orange)
-            }
-
-            if let note = visit.note, !note.isEmpty {
-                Text(note)
-                    .lineLimit(2)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let spend = visit.myActualSpend {
-                Text("实际消费：\(NSDecimalNumber(decimal: spend).stringValue)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(Rectangle())
     }
 }
