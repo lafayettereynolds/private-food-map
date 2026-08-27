@@ -78,11 +78,7 @@ properties:
 
 ## Apple setup gate
 
-Local Xcode settings currently show bundle identifier
-`com.lafayette.TasteMap`, Development Team `7G5J9MJX88`, and automatic signing.
-They do not prove the Apple Developer portal registration. Before adding the
-Sign in with Apple capability, manually confirm that Team `7G5J9MJX88` has an
-explicit App ID for exactly `com.lafayette.TasteMap`, then enable Sign in with
-Apple for that identifier and let Xcode refresh its provisioning profile. Also
-confirm the App Store Connect app record uses the same Bundle ID. P0-B2-B does
-not change signing, entitlements, capabilities, Team, or Bundle ID.
+Apple Developer has confirmed Team `7G5J9MJX88` owns the explicit Primary App
+ID `com.lafayette.tastemap` with Sign in with Apple enabled. P0-B2-C aligns the
+Xcode application target and Worker audience to that exact case, adds only the
+Sign in with Apple entitlement, and leaves Team and automatic signing intact.

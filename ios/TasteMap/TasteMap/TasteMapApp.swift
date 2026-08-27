@@ -25,6 +25,7 @@ struct TasteMapApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(nativeAuthServices)
         }
         .modelContainer(modelContainer)
     }

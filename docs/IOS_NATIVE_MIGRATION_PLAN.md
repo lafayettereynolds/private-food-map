@@ -62,17 +62,16 @@ P0 采用兼容式演进：
 
 ### 2.4 原生身份认证
 
-当前生产 Worker 主要依赖 Cloudflare Access 注入的 `Cf-Access-*` 头；iOS 不能自己伪造这些头，也不能内置 Cloudflare Service Token。当前 Worker 在生产请求缺少 Access 头时回退为 `owner`，在开放原生 API 前必须收紧，不能把它作为 iOS 登录方案。
+原生认证使用 `AuthenticationServices` 的 Sign in with Apple。iOS 获取带
+state/nonce 的 Apple identity token，Worker 验证 Apple JWT 的签名、issuer、
+audience、expiration 和 nonce，再映射到独立的 Taste Map User ID。Worker
+返回短时 access token 与可轮换 refresh token；iOS 只把凭证保存在
+Keychain。`/api/v1/sync` 只信任服务器解析出的 Taste Map User ID。
 
-推荐流程：
-
-1. iOS 使用 `ASWebAuthenticationSession` 打开服务端授权入口。
-2. 用户在受信任网页完成 Cloudflare Access/OAuth 登录。
-3. Worker 生成一次性、短时、仅可兑换一次的 authorization code，并通过注册的回调 URL 返回。
-4. iOS 将 code 兑换为短时 access token；refresh credential 只放 Keychain。
-5. Worker 校验 token、解析稳定 user ID，并对每个查询按 viewer 过滤。
-
-P0 需要先确定生产 Worker 基础 URL、回调 URL 和 token 生命周期。URL 和协议配置可以进入构建配置；任何 Secret 只能留在 Worker 环境变量或服务端 Secret Store。引入回调前还要确认最终 Bundle Identifier；当前工程文件中是 `com.lafayette.TasteMap`，与产品约束中的 `com.lafayette.tastemap` 大小写不一致。本方案不自行修改 Bundle Identifier、Team 或 Signing，需在实施认证前单独确认现有 App ID 的准确大小写。
+Apple Developer 已确认 Team `7G5J9MJX88` 的 Primary Explicit App ID 为
+`com.lafayette.tastemap`，且 Sign in with Apple 已启用。P0-B2-C 将 Xcode
+application target、Worker audience 与测试统一为这一准确值；任何 Secret
+仍只能留在 Worker 环境变量或服务端 Secret Store。
 
 ## 3. 跨平台身份与主键方案
 
@@ -346,9 +345,9 @@ P0 完成后必须同时通过：
 
 这些事项会改变接口或 Apple 侧配置，不能由代码自行猜测：
 
-1. **最终 Bundle Identifier 的准确大小写**：工程当前是 `com.lafayette.TasteMap`，先前产品约束写的是 `com.lafayette.tastemap`。认证回调和 Keychain Access Group 会受它影响；确认前不修改。
+1. **最终 Bundle Identifier 已确认**：Apple Developer Primary App ID 为 `com.lafayette.tastemap`，Team 为 `7G5J9MJX88`，Sign in with Apple 已启用。
 2. **生产 Worker 基础 URL**：URL 本身不是 Secret，可作为环境配置；不要提供 Cloudflare Secret。
-3. **原生登录方案**：推荐 `ASWebAuthenticationSession + 一次性 code + 短时 token`。若 Cloudflare 已有适合原生的认证网关，应先复用现有能力。
+3. **原生登录方案已确认**：`AuthenticationServices + Apple identity token + Worker token exchange + Taste Map session + Keychain`。
 4. **P2 图片 Provider 方向**：Web 当前默认 Google Drive；已有 R2 bucket 不等于已完成客户端授权上传。P0 保持 Provider 抽象，P2 再决定继续 Drive、迁 R2 或双读迁移。
 
 ## 11. 下一步

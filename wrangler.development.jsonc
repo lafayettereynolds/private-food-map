@@ -22,7 +22,7 @@
   "vars": {
     "APP_ENVIRONMENT": "development",
     "SYNC_AUTH_MODE": "development-test",
-    "APPLE_CLIENT_IDS": "com.lafayette.TasteMap"
+    "APPLE_CLIENT_IDS": "com.lafayette.tastemap"
   },
   "observability": {
     "enabled": true

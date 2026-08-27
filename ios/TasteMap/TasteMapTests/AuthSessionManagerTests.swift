@@ -6,7 +6,7 @@ import Testing
 struct AuthSessionManagerTests {
     @Test("Keychain session survives a new store instance")
     func keychainRestoresAfterRelaunch() throws {
-        let service = "com.lafayette.TasteMap.tests.\(UUID().uuidString)"
+        let service = "com.lafayette.tastemap.tests.\(UUID().uuidString)"
         let firstStore = KeychainCredentialStore(service: service)
         defer { try? firstStore.delete() }
         let credential = sampleCredential(accessToken: "tm_access_restart")

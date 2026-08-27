@@ -1,5 +1,7 @@
 import Foundation
+import Observation
 
+@Observable
 @MainActor
 final class NativeAuthServices {
     let authAPI: URLSessionAuthAPIClient

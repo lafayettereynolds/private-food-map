@@ -45,6 +45,10 @@ actor AuthSessionManager: SyncAuthorizationProviding {
         return credential.user
     }
 
+    func forceRefresh() async throws -> AuthenticatedUserV1 {
+        try await refreshCredential().user
+    }
+
     func logout() async throws {
         let previous = credential
         credential = nil

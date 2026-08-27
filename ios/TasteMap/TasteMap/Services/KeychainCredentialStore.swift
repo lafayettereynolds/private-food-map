@@ -13,7 +13,7 @@ nonisolated enum KeychainCredentialStoreError: Error, Equatable {
 }
 
 nonisolated struct KeychainCredentialStore: AuthCredentialStoring, Sendable {
-    static let defaultService = "com.lafayette.TasteMap.auth"
+    static let defaultService = "com.lafayette.tastemap.auth"
     static let defaultAccount = "native-session-v1"
 
     let service: String

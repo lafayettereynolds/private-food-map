@@ -13,7 +13,7 @@ import {
 } from './authV1'
 
 const NOW = new Date('2026-08-27T10:00:00.000Z')
-const AUDIENCE = 'com.lafayette.TasteMap'
+const AUDIENCE = 'com.lafayette.tastemap'
 
 describe('Native Auth V1', () => {
   it('verifies Apple signature, issuer, audience, expiration, and nonce', async () => {
