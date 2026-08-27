@@ -15,6 +15,7 @@ enum SyncMutationState: String, Codable, Sendable {
     case queued
     case uploading
     case conflicted
+    case failed
 }
 
 @Model

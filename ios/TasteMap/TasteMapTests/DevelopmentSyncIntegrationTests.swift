@@ -326,6 +326,77 @@ struct DevelopmentSyncIntegrationTests {
         #expect(restaurant.deletedAt != nil)
     }
 
+    @Test("P1-D two clients preserve offline conflicts and converge on Development D1 tombstones")
+    func developmentTwoClientOfflineConflictRoundTrip() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let runID = UUID().uuidString.lowercased()
+        let client = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p1d:\(runID)")
+        )
+        let containerA = try TasteMapPersistence.makeContainer(inMemory: true)
+        let containerB = try TasteMapPersistence.makeContainer(inMemory: true)
+        let contextA = containerA.mainContext
+        let contextB = containerB.mainContext
+        let storeA = LocalTasteMapStore(context: contextA)
+        let restaurantA = try storeA.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P1-D Development Two Client Restaurant",
+                address: "Development D1 only",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p1d-\(runID)"
+            ),
+            among: []
+        )
+
+        try await SyncEngine(context: contextA, api: client).synchronize()
+        try await SyncEngine(context: contextB, api: client).synchronize()
+        let restaurantB = try #require(contextB.fetch(FetchDescriptor<Restaurant>()).first)
+        #expect(restaurantB.status == .wantToGo)
+        #expect(restaurantB.appleMapItemIdentifier == "apple-p1d-\(runID)")
+
+        let visitA = try storeA.createVisit(
+            restaurantId: restaurantA.id,
+            draft: VisitDraft(rating: nil, note: "P1-D first visit")
+        )
+        try await SyncEngine(context: contextA, api: client).synchronize()
+        try await SyncEngine(context: contextB, api: client).synchronize()
+        let visitB = try #require(contextB.fetch(FetchDescriptor<Visit>()).first)
+        #expect(restaurantB.status == .visited)
+        #expect(visitB.restaurantId == restaurantB.id)
+
+        try storeA.update(visitA, draft: VisitDraft(rating: 4.5, note: "P1-D server edit"))
+        try await SyncEngine(context: contextA, api: client).synchronize()
+        try LocalTasteMapStore(context: contextB).update(
+            visitB,
+            draft: VisitDraft(diningMode: .takeout, rating: 5, note: "P1-D offline edit")
+        )
+        try await SyncEngine(context: contextB, api: client).synchronize()
+
+        #expect(try contextB.fetch(FetchDescriptor<SyncMutation>()).first?.state == .conflicted)
+        #expect(visitB.note == "P1-D offline edit")
+        #expect(visitB.rating == 5)
+
+        try storeA.delete(visitA)
+        try await SyncEngine(context: contextA, api: client).synchronize()
+        try await SyncEngine(context: contextB, api: client).synchronize()
+        #expect(visitB.deletedAt != nil)
+        #expect(visitB.serverVersion == 3)
+
+        try storeA.delete(restaurantA)
+        try await SyncEngine(context: contextA, api: client).synchronize()
+        try await SyncEngine(context: contextB, api: client).synchronize()
+        #expect(restaurantB.deletedAt != nil)
+
+        let remote = try await client.pull(cursor: "0", limit: 200)
+        #expect(remote.tombstones.contains { $0.entityType == .visit && $0.entityId == visitA.remoteID })
+        #expect(remote.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurantA.remoteID })
+        #expect(!remote.visits.contains { $0.record.id == visitA.remoteID })
+        #expect(!remote.restaurants.contains { $0.record.id == restaurantA.remoteID })
+    }
+
     private func deletion(
         runID: String,
         suffix: String,

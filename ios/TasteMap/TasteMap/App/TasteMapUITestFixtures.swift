@@ -6,6 +6,26 @@ import SwiftData
 enum TasteMapUITestFixtures {
     static let detailRestaurantID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
     static let detailLaunchArgument = "-p1b-restaurant-detail-fixture"
+    static let persistentLaunchArgument = "-p1d-persistent-offline-fixture"
+    static let resetPersistentLaunchArgument = "-p1d-reset-persistent-offline-fixture"
+    static let persistentConfigurationName = "TasteMapP1DUITests"
+    static let persistentEnvironmentKey = "TASTEMAP_P1D_UI_TEST"
+    static let resetEnvironmentKey = "TASTEMAP_P1D_RESET"
+
+    static var usesPersistentFixture: Bool {
+        ProcessInfo.processInfo.environment[persistentEnvironmentKey] == "1"
+            || ProcessInfo.processInfo.arguments.contains(persistentLaunchArgument)
+    }
+
+    static var requestsPersistentFixtureReset: Bool {
+        ProcessInfo.processInfo.environment[resetEnvironmentKey] == "1"
+            || ProcessInfo.processInfo.arguments.contains(resetPersistentLaunchArgument)
+    }
+
+    static var persistentStoreURL: URL {
+        URL.applicationSupportDirectory
+            .appending(path: "TasteMapP1DUITests.store")
+    }
 
     static func insertRestaurantDetailFixture(into container: ModelContainer) throws {
         let restaurant = Restaurant(
@@ -21,6 +41,44 @@ enum TasteMapUITestFixtures {
         )
         container.mainContext.insert(restaurant)
         try container.mainContext.save()
+    }
+
+    static func preparePersistentOfflineFixture(
+        in container: ModelContainer,
+        reset: Bool
+    ) throws {
+        let context = container.mainContext
+        if reset {
+            for mutation in try context.fetch(FetchDescriptor<SyncMutation>()) {
+                context.delete(mutation)
+            }
+            for checkpoint in try context.fetch(FetchDescriptor<SyncCheckpoint>()) {
+                context.delete(checkpoint)
+            }
+            for visit in try context.fetch(FetchDescriptor<Visit>()) {
+                context.delete(visit)
+            }
+            for restaurant in try context.fetch(FetchDescriptor<Restaurant>()) {
+                context.delete(restaurant)
+            }
+            try context.save()
+        }
+
+        let existing = try context.fetch(FetchDescriptor<Restaurant>())
+            .first { $0.id == detailRestaurantID }
+        guard existing == nil else { return }
+        context.insert(Restaurant(
+            id: detailRestaurantID,
+            name: "P1-D 离线验收餐厅",
+            address: "杭州市上城区湖滨路 18 号",
+            latitude: 30.259,
+            longitude: 120.168,
+            appleMapItemIdentifier: "apple-ui-test-p1d",
+            city: "杭州",
+            status: .wantToGo,
+            syncStatus: .synced
+        ))
+        try context.save()
     }
 }
 #endif

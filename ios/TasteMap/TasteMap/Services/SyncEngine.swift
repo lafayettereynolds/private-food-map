@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SwiftData
 
 enum SyncEngineError: Error, Equatable {
@@ -14,24 +15,29 @@ final class SyncEngine {
     private let api: any SyncAPI
     private let queue: SwiftDataSyncQueue
     private let now: @MainActor () -> Date
+    private let retryBaseDelay: TimeInterval
 
     init(
         context: ModelContext,
         api: any SyncAPI,
-        now: @escaping @MainActor () -> Date = { .now }
+        now: @escaping @MainActor () -> Date = { .now },
+        retryBaseDelay: TimeInterval = 5
     ) {
         self.context = context
         self.api = api
         self.queue = SwiftDataSyncQueue(context: context)
         self.now = now
+        self.retryBaseDelay = retryBaseDelay
     }
 
     func synchronize() async throws {
+        engineDebug("Sync pass started")
         try prepareLocalState()
         try queue.resetInterruptedUploads()
         try context.save()
         try await pushPendingMutations()
         try await pullChanges()
+        engineDebug("Sync pass completed")
     }
 
     private func prepareLocalState() throws {
@@ -70,6 +76,7 @@ final class SyncEngine {
         while let mutation = try queue.nextReadyMutation(at: now()) {
             mutation.state = .uploading
             try context.save()
+            engineDebug("Push started: \(mutation.entityType.rawValue) mutation=\(mutation.mutationID.uuidString.prefix(8))")
             do {
                 let response = try await api.push(SyncPushRequestV1(mutations: [try request(for: mutation)]))
                 guard let acknowledgement = response.acknowledgements.first,
@@ -78,11 +85,27 @@ final class SyncEngine {
                 }
                 try apply(acknowledgement, for: mutation)
                 try context.save()
+                engineDebug("Push completed: \(mutation.entityType.rawValue)")
             } catch {
-                mutation.state = .queued
-                mutation.retryCount += 1
-                mutation.lastError = String(describing: error)
-                mutation.nextRetryAt = retryDate(retryCount: mutation.retryCount)
+                let disposition = SyncErrorClassifier.disposition(for: error)
+                mutation.lastError = SyncErrorClassifier.storedReason(for: error, disposition: disposition)
+                switch disposition {
+                case .retryable:
+                    mutation.state = .queued
+                    mutation.retryCount += 1
+                    mutation.nextRetryAt = retryDate(retryCount: mutation.retryCount)
+                    engineDebug("Push queued for retry: \(mutation.entityType.rawValue) attempt=\(mutation.retryCount)")
+                case .authentication, .permanent:
+                    mutation.state = .failed
+                    mutation.retryCount += 1
+                    mutation.nextRetryAt = nil
+                    markEntityFailed(type: mutation.entityType, remoteID: mutation.entityID)
+                    engineDebug("Push stopped: \(disposition.rawValue) \(mutation.entityType.rawValue)")
+                case .cancelled:
+                    mutation.state = .queued
+                    mutation.nextRetryAt = nil
+                    engineDebug("Push cancelled and returned to queue")
+                }
                 try context.save()
                 throw error
             }
@@ -117,6 +140,7 @@ final class SyncEngine {
             mutation.state = .conflicted
             mutation.lastError = acknowledgement.conflictReason ?? "server_conflict"
             markEntityFailed(type: mutation.entityType, remoteID: mutation.entityID)
+            engineDebug("Conflict retained locally: \(mutation.entityType.rawValue)")
             return
         }
         context.delete(mutation)
@@ -156,6 +180,7 @@ final class SyncEngine {
         let checkpoint = try checkpoint()
         repeat {
             let previousCursor = checkpoint.cursor
+            engineDebug("Pull started cursor=\(previousCursor)")
             let response = try await api.pull(cursor: previousCursor, limit: 200)
             for envelope in response.restaurants { try applyRestaurant(envelope) }
             for envelope in response.visits { try applyVisit(envelope) }
@@ -163,6 +188,7 @@ final class SyncEngine {
             checkpoint.cursor = response.nextCursor
             checkpoint.lastSyncedAt = now()
             try context.save()
+            engineDebug("Pull completed nextCursor=\(response.nextCursor) hasMore=\(response.hasMore)")
             if !response.hasMore { break }
             if response.nextCursor == previousCursor { throw SyncEngineError.cursorDidNotAdvance }
         } while true
@@ -172,6 +198,11 @@ final class SyncEngine {
         let record = envelope.record
         let snapshot = try JSONEncoder().encode(record)
         if let restaurant = try restaurants().first(where: { $0.remoteID == record.id }) {
+            if try queue.hasConflict(entityType: .restaurant, entityID: record.id) {
+                restaurant.remoteRecordData = snapshot
+                engineDebug("Preserved conflicted local Restaurant while recording server snapshot")
+                return
+            }
             if try queue.activeMutation(entityType: .restaurant, entityID: record.id) != nil {
                 if envelope.serverVersion > restaurant.serverVersion {
                     try queue.markConflicted(
@@ -223,6 +254,10 @@ final class SyncEngine {
             throw SyncEngineError.missingRestaurantMapping
         }
         if let visit = try visits().first(where: { $0.remoteID == record.id }) {
+            if try queue.hasConflict(entityType: .visit, entityID: record.id) {
+                engineDebug("Preserved conflicted local Visit during pull")
+                return
+            }
             if try queue.activeMutation(entityType: .visit, entityID: record.id) != nil {
                 if envelope.serverVersion > visit.serverVersion {
                     try queue.markConflicted(
@@ -365,7 +400,10 @@ final class SyncEngine {
     }
 
     private func retryDate(retryCount: Int) -> Date {
-        let seconds = min(pow(2, Double(max(0, retryCount - 1))) * 5, 60 * 60)
+        let seconds = min(
+            pow(2, Double(max(0, retryCount - 1))) * retryBaseDelay,
+            60 * 60
+        )
         return now().addingTimeInterval(seconds)
     }
 
@@ -379,4 +417,11 @@ final class SyncEngine {
         case .wantToGo: .wantToGo
         }
     }
+}
+
+nonisolated private func engineDebug(_ message: String) {
+#if DEBUG
+    Logger(subsystem: "com.lafayette.tastemap", category: "SyncEngine")
+        .debug("\(message, privacy: .public)")
+#endif
 }

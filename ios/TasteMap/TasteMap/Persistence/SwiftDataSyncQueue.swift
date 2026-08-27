@@ -1,6 +1,10 @@
 import Foundation
 import SwiftData
 
+extension Notification.Name {
+    static let tasteMapSyncMutationQueued = Notification.Name("TasteMapSyncMutationQueued")
+}
+
 @MainActor
 struct SwiftDataSyncQueue {
     let context: ModelContext
@@ -19,6 +23,7 @@ struct SwiftDataSyncQueue {
             pending.timestamp = timestamp
             pending.nextRetryAt = nil
             pending.lastError = nil
+            notifyMutationQueued()
             return pending
         }
         let mutation = SyncMutation(
@@ -30,6 +35,7 @@ struct SwiftDataSyncQueue {
             baseVersion: baseVersion
         )
         context.insert(mutation)
+        notifyMutationQueued()
         return mutation
     }
 
@@ -46,6 +52,7 @@ struct SwiftDataSyncQueue {
             pending.timestamp = timestamp
             pending.nextRetryAt = nil
             pending.lastError = nil
+            notifyMutationQueued()
             return pending
         }
         let mutation = SyncMutation(
@@ -57,6 +64,7 @@ struct SwiftDataSyncQueue {
             baseVersion: baseVersion
         )
         context.insert(mutation)
+        notifyMutationQueued()
         return mutation
     }
 
@@ -64,6 +72,36 @@ struct SwiftDataSyncQueue {
         for mutation in try allMutations() where mutation.state == .uploading {
             mutation.state = .queued
             mutation.nextRetryAt = nil
+        }
+    }
+
+    func prepareManualRetry() throws {
+        for mutation in try allMutations() where mutation.state == .queued || mutation.state == .failed {
+            mutation.state = .queued
+            mutation.nextRetryAt = nil
+            mutation.lastError = nil
+        }
+    }
+
+    func resetAuthenticationFailures() throws {
+        for mutation in try allMutations()
+        where mutation.state == .failed && mutation.lastError?.hasPrefix("authentication:") == true {
+            mutation.state = .queued
+            mutation.nextRetryAt = nil
+            mutation.lastError = nil
+        }
+    }
+
+    func earliestRetryDate() throws -> Date? {
+        try allMutations()
+            .filter { $0.state == .queued }
+            .compactMap(\.nextRetryAt)
+            .min()
+    }
+
+    func hasConflict(entityType: SyncEntityType, entityID: String) throws -> Bool {
+        try allMutations().contains {
+            $0.entityType == entityType && $0.entityID == entityID && $0.state == .conflicted
         }
     }
 
@@ -117,5 +155,9 @@ struct SwiftDataSyncQueue {
         try allMutations().first {
             $0.entityType == entityType && $0.entityID == entityID && $0.state == .queued
         }
+    }
+
+    private func notifyMutationQueued() {
+        NotificationCenter.default.post(name: .tasteMapSyncMutationQueued, object: nil)
     }
 }

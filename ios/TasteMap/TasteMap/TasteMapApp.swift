@@ -12,34 +12,65 @@ import SwiftData
 struct TasteMapApp: App {
     private let modelContainer: ModelContainer
     private let nativeAuthServices: NativeAuthServices
+    private let syncCoordinator: SyncCoordinator
 
     init() {
-        nativeAuthServices = NativeAuthServices(configuration: .current())
+        let authServices = NativeAuthServices(configuration: .current())
+        let container: ModelContainer
         do {
             #if DEBUG
             let useRestaurantDetailFixture = ProcessInfo.processInfo.arguments.contains(
                 TasteMapUITestFixtures.detailLaunchArgument
             )
+            let usePersistentOfflineFixture = TasteMapUITestFixtures.usesPersistentFixture
+            let resetPersistentOfflineFixture = TasteMapUITestFixtures.requestsPersistentFixtureReset
+            let persistenceConfigurationName = usePersistentOfflineFixture
+                ? TasteMapUITestFixtures.persistentConfigurationName
+                : "TasteMap"
+            let persistenceStorageURL = usePersistentOfflineFixture
+                ? TasteMapUITestFixtures.persistentStoreURL
+                : nil
             #else
             let useRestaurantDetailFixture = false
+            let usePersistentOfflineFixture = false
+            let resetPersistentOfflineFixture = false
+            let persistenceConfigurationName = "TasteMap"
+            let persistenceStorageURL: URL? = nil
             #endif
-            modelContainer = try TasteMapPersistence.makeContainer(
-                inMemory: useRestaurantDetailFixture
+            container = try TasteMapPersistence.makeContainer(
+                inMemory: useRestaurantDetailFixture,
+                configurationName: persistenceConfigurationName,
+                storageURL: persistenceStorageURL
             )
             #if DEBUG
             if useRestaurantDetailFixture {
-                try TasteMapUITestFixtures.insertRestaurantDetailFixture(into: modelContainer)
+                try TasteMapUITestFixtures.insertRestaurantDetailFixture(into: container)
+            }
+            if usePersistentOfflineFixture {
+                try TasteMapUITestFixtures.preparePersistentOfflineFixture(
+                    in: container,
+                    reset: resetPersistentOfflineFixture
+                )
             }
             #endif
         } catch {
             fatalError("Unable to initialize local Taste Map storage: \(error)")
         }
+        nativeAuthServices = authServices
+        modelContainer = container
+        syncCoordinator = SyncCoordinator(
+            context: container.mainContext,
+            api: authServices.syncAPI,
+            sessionManager: authServices.sessionManager,
+            networkObserver: NetworkPathObserver()
+        )
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(nativeAuthServices)
+                .environment(syncCoordinator)
         }
         .modelContainer(modelContainer)
     }

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 actor AuthSessionManager: SyncAuthorizationProviding {
     private let api: any AuthAPI
@@ -84,6 +85,7 @@ actor AuthSessionManager: SyncAuthorizationProviding {
             throw AuthSessionError.sessionExpired
         }
         let api = self.api
+        authDebug("Access token refresh started")
         let task = Task<AuthCredential, Error> {
             try AuthCredential(response: try await api.refresh(refreshToken: current.refreshToken))
         }
@@ -93,9 +95,11 @@ actor AuthSessionManager: SyncAuthorizationProviding {
             try credentialStore.save(refreshed)
             credential = refreshed
             refreshTask = nil
+            authDebug("Access token refresh completed")
             return refreshed
         } catch {
             refreshTask = nil
+            authDebug("Access token refresh failed: \(String(describing: type(of: error)))")
             if case AuthClientError.server(let status, _, _) = error, status == 401 {
                 try credentialStore.delete()
                 credential = nil
@@ -103,6 +107,13 @@ actor AuthSessionManager: SyncAuthorizationProviding {
             throw error
         }
     }
+}
+
+nonisolated private func authDebug(_ message: String) {
+#if DEBUG
+    Logger(subsystem: "com.lafayette.tastemap", category: "AuthSession")
+        .debug("\(message, privacy: .public)")
+#endif
 }
 
 enum AuthSessionError: Error, Equatable {

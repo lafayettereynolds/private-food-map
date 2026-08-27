@@ -5,7 +5,7 @@ import UIKit
 
 struct ProfileView: View {
     @Environment(NativeAuthServices.self) private var authServices
-    @Environment(\.modelContext) private var modelContext
+    @Environment(SyncCoordinator.self) private var syncCoordinator
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @State private var authenticatedUser: AuthenticatedUserV1?
@@ -48,9 +48,18 @@ struct ProfileView: View {
                         if let email = authenticatedUser.email {
                             LabeledContent("Apple 邮箱", value: email)
                         }
-                        Button("立即同步") {
-                            Task { await synchronize() }
+                        SyncStatusView(presentation: syncCoordinator.presentation)
+                        Button(syncCoordinator.presentation.allowsRetry ? "重试同步" : "立即同步") {
+                            Task {
+                                if syncCoordinator.presentation.allowsRetry {
+                                    await syncCoordinator.retryNow()
+                                } else {
+                                    await syncCoordinator.synchronizeNow()
+                                }
+                            }
                         }
+                        .disabled(syncCoordinator.presentation.phase == .syncing)
+                        .accessibilityIdentifier("profile-sync-button")
 #if DEBUG
                         Button("验证 Token 刷新") {
                             Task { await forceRefresh() }
@@ -101,7 +110,7 @@ struct ProfileView: View {
             .task {
                 authenticatedUser = await authServices.sessionManager.restoredUser()
                 if authenticatedUser != nil {
-                    await synchronize(showProgress: false)
+                    await syncCoordinator.sessionDidBecomeAvailable()
                 }
             }
         }
@@ -115,16 +124,8 @@ struct ProfileView: View {
         }
         await performAuthOperation {
             authenticatedUser = try await authServices.appleSignIn.signIn(presentationAnchor: anchor)
-            try await SyncEngine(context: modelContext, api: authServices.syncAPI).synchronize()
+            await syncCoordinator.sessionDidBecomeAvailable()
             return "Apple 登录和同步成功。"
-        }
-    }
-
-    @MainActor
-    private func synchronize(showProgress: Bool = true) async {
-        await performAuthOperation(showProgress: showProgress) {
-            try await SyncEngine(context: modelContext, api: authServices.syncAPI).synchronize()
-            return "同步成功。"
         }
     }
 
@@ -132,17 +133,23 @@ struct ProfileView: View {
     private func forceRefresh() async {
         await performAuthOperation {
             authenticatedUser = try await authServices.sessionManager.forceRefresh()
+            await syncCoordinator.sessionDidBecomeAvailable()
             return "Access/refresh token 已安全轮换。"
         }
     }
 
     @MainActor
     private func logout() async {
-        await performAuthOperation {
+        isRunningAuthOperation = true
+        defer { isRunningAuthOperation = false }
+        do {
             try await authServices.sessionManager.logout()
-            authenticatedUser = nil
-            return "已退出并清理 Keychain session。"
+            authMessage = "已退出并清理 Keychain session。"
+        } catch {
+            authMessage = "已从此设备退出；服务端会话撤销暂时未确认。"
         }
+        authenticatedUser = nil
+        syncCoordinator.sessionDidEnd()
     }
 
     @MainActor
@@ -155,7 +162,7 @@ struct ProfileView: View {
         do {
             authMessage = try await operation()
         } catch {
-            authMessage = "失败：\(error.localizedDescription)"
+            authMessage = "失败：操作未完成，请稍后重试。"
         }
     }
 

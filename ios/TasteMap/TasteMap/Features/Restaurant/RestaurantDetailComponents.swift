@@ -254,6 +254,7 @@ private struct RestaurantVisitHistoryRow: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
+                            .accessibilityIdentifier("visit-history-note")
                     }
 
                     if let spend = visit.myActualSpend {
@@ -269,6 +270,7 @@ private struct RestaurantVisitHistoryRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("visit-history-edit-\(visit.id.uuidString)")
 
             Menu {
                 Button("编辑", systemImage: "square.and.pencil", action: onEdit)
