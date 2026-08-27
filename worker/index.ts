@@ -58,10 +58,15 @@ import {
   AuthV1RequestError,
   handleAuthV1Request,
 } from './authV1'
+import {
+  handlePhotoBinaryV1,
+  PhotoBinaryV1Error,
+} from './photoBinaryV1'
 
 interface Env {
   DB: D1Database
   ASSETS: Fetcher
+  PHOTO_STORAGE?: R2Bucket
   APP_ENVIRONMENT?: 'development' | 'production'
   SYNC_AUTH_MODE?: 'cloudflare-access' | 'development-test'
   APPLE_CLIENT_IDS?: string
@@ -571,6 +576,11 @@ export default {
         const viewer = await resolveSyncViewer(request, env)
         return json(await handleSyncV1Push(env.DB, viewer.id, request))
       }
+      const photoContentMatch = url.pathname.match(/^\/api\/v1\/photos\/([0-9a-f-]+)\/content$/i)
+      if (photoContentMatch) {
+        const viewer = await resolveSyncViewer(request, env)
+        return handlePhotoBinaryV1(request, env, viewer.id, photoContentMatch[1])
+      }
       const viewer = await resolveViewer(request, env.DB)
       if (url.pathname === '/api/external-place/resolve' && request.method === 'POST') {
         return json(await resolveExternalPlaceRequest(env.DB, viewer.id, request))
@@ -656,7 +666,7 @@ export default {
     } catch (error) {
       console.error('Taste Map sync error', error)
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError ? error.status : 500
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error ? error.status : 500
       const code = error instanceof AuthV1RequestError ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }

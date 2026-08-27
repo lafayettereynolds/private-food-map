@@ -1,6 +1,6 @@
 import Foundation
 
-enum TasteMapAppEnvironment: String, Codable, Sendable {
+nonisolated enum TasteMapAppEnvironment: String, Codable, Sendable {
     case development
     case production
 
@@ -13,13 +13,13 @@ enum TasteMapAppEnvironment: String, Codable, Sendable {
     }
 }
 
-enum APIConfigurationError: Error, Equatable {
+nonisolated enum APIConfigurationError: Error, Equatable {
     case invalidBaseURL
     case missingBaseURL(TasteMapAppEnvironment)
     case invalidPath
 }
 
-struct APIConfiguration: Equatable, Sendable {
+nonisolated struct APIConfiguration: Equatable, Sendable {
     static let developmentKey = "TASTEMAP_API_DEV_BASE_URL"
     static let productionKey = "TASTEMAP_API_PROD_BASE_URL"
     static let fallbackKey = "TASTEMAP_API_BASE_URL"

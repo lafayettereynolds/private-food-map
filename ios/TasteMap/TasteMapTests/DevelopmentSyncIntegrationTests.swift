@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Testing
+import UIKit
 @testable import TasteMap
 
 @Suite("Development Worker Sync", .serialized)
@@ -492,6 +493,119 @@ struct DevelopmentSyncIntegrationTests {
         #expect(remote.tombstones.contains { $0.entityType == .dish && $0.entityId == dish.remoteID })
         #expect(remote.tombstones.contains { $0.entityType == .visit && $0.entityId == visit.remoteID })
         #expect(remote.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurant.remoteID })
+    }
+
+    @Test("P2-B iOS local photo uploads to private Development R2 and downloads on a fresh client")
+    func developmentPhotoBinaryRoundTrip() async throws {
+#if !TASTEMAP_DEVELOPMENT_INTEGRATION
+        guard ProcessInfo.processInfo.environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+#endif
+        let runID = UUID().uuidString.lowercased()
+        let userID = "ios-p2b:\(runID)"
+        let authorization = DevelopmentSyncAuthorization(testUserID: userID)
+        let configuration = APIConfiguration.current()
+        let syncAPI = URLSessionSyncAPIClient(
+            configuration: configuration,
+            authorization: authorization
+        )
+        let binaryAPI = URLSessionPhotoBinaryAPIClient(
+            configuration: configuration,
+            authorization: authorization
+        )
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let localStore = LocalTasteMapStore(context: context)
+        let restaurant = try localStore.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P2-B Development Private Photo Restaurant",
+                address: "Development D1/R2 only",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p2b-\(runID)"
+            ),
+            among: []
+        )
+        let visit = try localStore.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(note: "P2-B native binary test")
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("taste-map-p2b-dev-\(runID)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = try LocalPhotoFileStore(rootURL: directory)
+        let coordinator = PhotoTransferCoordinator(
+            context: context,
+            api: binaryAPI,
+            files: files,
+            hasAuthenticatedSession: { true },
+            synchronizeMetadata: {
+                try? await SyncEngine(context: context, api: syncAPI).synchronize()
+            }
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(
+            size: CGSize(width: 1_600, height: 1_200),
+            format: format
+        ).image { render in
+            UIColor.systemTeal.setFill()
+            render.fill(CGRect(x: 0, y: 0, width: 1_600, height: 1_200))
+        }
+        let prepared = try await coordinator.preparePhoto(
+            data: try #require(image.jpegData(compressionQuality: 0.9)),
+            suggestedContentType: "image/jpeg",
+            originalFileName: "ios-development-photo.jpg"
+        )
+        let photo = try coordinator.attachPreparedPhoto(
+            prepared,
+            restaurantID: restaurant.id,
+            visitID: visit.id,
+            sortOrder: 0,
+            queueForUpload: true
+        )
+
+        await coordinator.processNowForTesting()
+        #expect(photo.uploadState == .uploaded)
+        #expect(photo.storageProvider == .r2)
+        #expect(photo.serverVersion == 1)
+        #expect(photo.storageKey?.contains(photo.id.uuidString.lowercased()) == true)
+        #expect(photo.thumbnailStorageKey != nil)
+
+        let receivingContainer = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receivingContext = receivingContainer.mainContext
+        try await SyncEngine(context: receivingContext, api: syncAPI).synchronize()
+        let pulledPhoto = try #require(receivingContext.fetch(FetchDescriptor<PhotoAsset>()).first)
+        let receivingFiles = try LocalPhotoFileStore(
+            rootURL: directory.appendingPathComponent("receiving", isDirectory: true)
+        )
+        let receivingCoordinator = PhotoTransferCoordinator(
+            context: receivingContext,
+            api: binaryAPI,
+            files: receivingFiles,
+            hasAuthenticatedSession: { true }
+        )
+        let downloaded = try await receivingCoordinator.imageData(for: pulledPhoto, variant: .display)
+        #expect(!downloaded.isEmpty)
+        #expect(pulledPhoto.displayFileRelativePath != nil)
+
+        let otherAPI = URLSessionPhotoBinaryAPIClient(
+            configuration: configuration,
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p2b-other:\(runID)")
+        )
+        await #expect(throws: PhotoBinaryAPIError.self) {
+            _ = try await otherAPI.download(photoID: photo.id, variant: .display)
+        }
+
+        try await coordinator.delete(photo)
+        #expect(photo.deletedAt != nil)
+        #expect(photo.binaryDeletedAt != nil)
+        await #expect(throws: PhotoBinaryAPIError.self) {
+            _ = try await binaryAPI.download(photoID: photo.id, variant: .display)
+        }
+        try localStore.delete(visit)
+        try await SyncEngine(context: context, api: syncAPI).synchronize()
+        try localStore.delete(restaurant)
+        try await SyncEngine(context: context, api: syncAPI).synchronize()
     }
 
     private func deletion(

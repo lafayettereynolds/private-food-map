@@ -42,9 +42,19 @@ final class PhotoAsset {
     var sortOrder: Int
     private var visibilityValue: String
     var localFileRelativePath: String?
+    var displayFileRelativePath: String?
+    var thumbnailFileRelativePath: String?
+    var displayContentHash: String?
+    var thumbnailContentHash: String?
+    var cachedStorageKey: String?
+    var cachedThumbnailStorageKey: String?
     private var uploadStateValue: String
     var uploadRetryCount: Int
     var uploadLastError: String?
+    var uploadRetryAfter: Date?
+    var uploadMutationID: UUID?
+    var binaryDeletedAt: Date?
+    var draftSessionID: UUID?
     var createdAt: Date
     var updatedAt: Date
     @Attribute(.unique) var remoteID: String?
@@ -97,9 +107,19 @@ final class PhotoAsset {
         sortOrder: Int = 0,
         visibility: PhotoVisibility = .private,
         localFileRelativePath: String? = nil,
+        displayFileRelativePath: String? = nil,
+        thumbnailFileRelativePath: String? = nil,
+        displayContentHash: String? = nil,
+        thumbnailContentHash: String? = nil,
+        cachedStorageKey: String? = nil,
+        cachedThumbnailStorageKey: String? = nil,
         uploadState: PhotoUploadState = .localOnly,
         uploadRetryCount: Int = 0,
         uploadLastError: String? = nil,
+        uploadRetryAfter: Date? = nil,
+        uploadMutationID: UUID? = nil,
+        binaryDeletedAt: Date? = nil,
+        draftSessionID: UUID? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         remoteID: String? = nil,
@@ -126,9 +146,19 @@ final class PhotoAsset {
         self.sortOrder = max(0, sortOrder)
         self.visibilityValue = visibility.rawValue
         self.localFileRelativePath = localFileRelativePath
+        self.displayFileRelativePath = displayFileRelativePath
+        self.thumbnailFileRelativePath = thumbnailFileRelativePath
+        self.displayContentHash = displayContentHash
+        self.thumbnailContentHash = thumbnailContentHash
+        self.cachedStorageKey = cachedStorageKey
+        self.cachedThumbnailStorageKey = cachedThumbnailStorageKey
         self.uploadStateValue = uploadState.rawValue
         self.uploadRetryCount = max(0, uploadRetryCount)
         self.uploadLastError = uploadLastError
+        self.uploadRetryAfter = uploadRetryAfter
+        self.uploadMutationID = uploadMutationID
+        self.binaryDeletedAt = binaryDeletedAt
+        self.draftSessionID = draftSessionID
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.remoteID = remoteID ?? id.uuidString.lowercased()

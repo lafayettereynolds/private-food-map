@@ -53,6 +53,64 @@ struct RestaurantStatusBadge: View {
     }
 }
 
+struct RestaurantPhotoGallerySection: View {
+    let photos: [PhotoAsset]
+    let onSelect: (PhotoAsset) -> Void
+    let onRetry: (PhotoAsset) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("照片")
+                    .font(.title3.bold())
+                Spacer()
+                Text(photos.isEmpty ? "尚未添加" : "\(photos.count) 张")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if photos.isEmpty {
+                Label("在到访记录中加入照片后，会立即显示在这里。", systemImage: "photo.on.rectangle.angled")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(photos) { photo in
+                            Button { onSelect(photo) } label: {
+                                PhotoAssetImageView(photo: photo)
+                                    .frame(width: 132, height: 104)
+                                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                                    .overlay(alignment: .bottomLeading) {
+                                        PhotoUploadStatusBadge(photo: photo)
+                                            .padding(6)
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("restaurant-photo-\(photo.id.uuidString)")
+                            .overlay(alignment: .bottomTrailing) {
+                                if photo.uploadState == .failed {
+                                    Button("重试") { onRetry(photo) }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.mini)
+                                        .padding(5)
+                                }
+                            }
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .accessibilityIdentifier("restaurant-photo-gallery")
+    }
+}
+
 struct RestaurantLocationSection: View {
     let restaurant: Restaurant
     let onOpenAppleMaps: () -> Void

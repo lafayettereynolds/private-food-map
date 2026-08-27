@@ -170,6 +170,7 @@ final class SyncCoordinator {
 
     func sessionDidBecomeAvailable() async {
         isAuthenticated = true
+        NotificationCenter.default.post(name: .tasteMapAuthSessionAvailable, object: nil)
         do {
             let queue = SwiftDataSyncQueue(context: context)
             try queue.resetAuthenticationFailures()

@@ -15,6 +15,8 @@
     "test:p0b2a:development": "node scripts/test-sync-v1-development.mjs",
     "test:p0b2b": "vitest run worker/authV1.integration.test.js worker/syncV1.integration.test.js",
     "test:p2a": "node scripts/test-dish-photo-migration.mjs && vitest run src/contracts/dishPhotoContract.test.ts worker/syncV1.integration.test.js",
+    "test:p2b": "vitest run worker/photoBinaryV1.test.ts worker/syncV1.integration.test.js",
+    "test:p2b:development": "node scripts/test-photo-binary-development.mjs",
     "preview": "vite preview --config vite.config.ts",
     "cloudflare:dev": "pnpm run build && wrangler dev --local",
     "d1:migrate:local": "wrangler d1 migrations apply food-map-db --local",

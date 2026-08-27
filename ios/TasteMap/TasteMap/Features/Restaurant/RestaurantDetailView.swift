@@ -3,7 +3,9 @@ import SwiftUI
 
 struct RestaurantDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Query private var allVisits: [Visit]
+    @Query private var allPhotos: [PhotoAsset]
 
     let restaurant: Restaurant
     private let navigator: any RestaurantNavigating
@@ -14,6 +16,7 @@ struct RestaurantDetailView: View {
     @State private var visitPendingDeletion: Visit?
     @State private var deleteError: String?
     @State private var navigationError: String?
+    @State private var selectedPhoto: PhotoAsset?
 
     @MainActor
     init(restaurant: Restaurant) {
@@ -39,6 +42,11 @@ struct RestaurantDetailView: View {
                     RestaurantLocationSection(
                         restaurant: restaurant,
                         onOpenAppleMaps: openAppleMaps
+                    )
+                    RestaurantPhotoGallerySection(
+                        photos: activePhotos,
+                        onSelect: { selectedPhoto = $0 },
+                        onRetry: retryPhoto
                     )
                     RestaurantDetailStatsSection(presentation: presentation)
                     RestaurantVisitHistorySection(
@@ -89,6 +97,9 @@ struct RestaurantDetailView: View {
             .sheet(isPresented: $isEditingRestaurant) {
                 RestaurantEditView(restaurant: restaurant)
             }
+            .fullScreenCover(item: $selectedPhoto) { photo in
+                PhotoGalleryViewer(photos: activePhotos, selectedID: photo.id)
+            }
             .confirmationDialog(
                 "删除这次到访？",
                 isPresented: Binding(
@@ -138,5 +149,19 @@ struct RestaurantDetailView: View {
         } catch {
             deleteError = "这条到访记录没有删除成功。"
         }
+    }
+
+    private var activePhotos: [PhotoAsset] {
+        allPhotos
+            .filter { $0.restaurantId == restaurant.id && $0.deletedAt == nil }
+            .sorted { left, right in
+                left.createdAt == right.createdAt
+                    ? left.sortOrder < right.sortOrder
+                    : left.createdAt > right.createdAt
+            }
+    }
+
+    private func retryPhoto(_ photo: PhotoAsset) {
+        try? photoCoordinator?.retry(photo)
     }
 }

@@ -598,6 +598,14 @@ final class SyncEngine {
         serverVersion: Int64,
         snapshot: Data
     ) {
+        if photo.storageKey != record.storageKey {
+            photo.displayFileRelativePath = nil
+            photo.cachedStorageKey = nil
+        }
+        if photo.thumbnailStorageKey != record.thumbnailStorageKey {
+            photo.thumbnailFileRelativePath = nil
+            photo.cachedThumbnailStorageKey = nil
+        }
         photo.restaurantId = restaurantID
         photo.visitId = visitID
         photo.dishId = dishID

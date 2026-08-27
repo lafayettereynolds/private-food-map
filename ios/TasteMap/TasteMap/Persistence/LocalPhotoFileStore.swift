@@ -6,11 +6,19 @@ enum LocalPhotoFileStoreError: Error, Equatable {
     case fileMissing
 }
 
+enum LocalPhotoFileVariant: String, Sendable {
+    case original = "originals"
+    case display = "display"
+    case thumbnail = "thumbnails"
+}
+
 protocol LocalPhotoFileStoring: Sendable {
     func save(_ data: Data, photoID: UUID, mimeType: String) async throws -> String
+    func save(_ data: Data, photoID: UUID, mimeType: String, variant: LocalPhotoFileVariant) async throws -> String
     func load(relativePath: String) async throws -> Data
     func delete(relativePath: String) async throws
     func fileExists(relativePath: String) async -> Bool
+    func cleanupOrphans(retaining relativePaths: Set<String>) async throws
 }
 
 actor LocalPhotoFileStore: LocalPhotoFileStoring {
@@ -35,8 +43,17 @@ actor LocalPhotoFileStore: LocalPhotoFileStoring {
     }
 
     func save(_ data: Data, photoID: UUID, mimeType: String) throws -> String {
+        try save(data, photoID: photoID, mimeType: mimeType, variant: .original)
+    }
+
+    func save(
+        _ data: Data,
+        photoID: UUID,
+        mimeType: String,
+        variant: LocalPhotoFileVariant
+    ) throws -> String {
         let fileManager = FileManager.default
-        let path = "originals/\(photoID.uuidString.lowercased()).\(try fileExtension(for: mimeType))"
+        let path = "\(variant.rawValue)/\(photoID.uuidString.lowercased()).\(try fileExtension(for: mimeType))"
         let destination = try resolvedURL(relativePath: path)
         try fileManager.createDirectory(
             at: destination.deletingLastPathComponent(),
@@ -66,12 +83,37 @@ actor LocalPhotoFileStore: LocalPhotoFileStoring {
         return fileManager.fileExists(atPath: url.path)
     }
 
+    func cleanupOrphans(retaining relativePaths: Set<String>) throws {
+        let fileManager = FileManager.default
+        for variant in [LocalPhotoFileVariant.original, .display, .thumbnail] {
+            let directory = rootURL.appendingPathComponent(variant.rawValue, isDirectory: true)
+            guard let files = try? fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for file in files {
+                let relativePath = "\(variant.rawValue)/\(file.lastPathComponent)"
+                if !relativePaths.contains(relativePath) {
+                    try fileManager.removeItem(at: file)
+                }
+            }
+        }
+    }
+
     private func fileExtension(for mimeType: String) throws -> String {
         switch mimeType.lowercased() {
         case "image/jpeg", "image/jpg": "jpg"
         case "image/heic", "image/heif": "heic"
         case "image/png": "png"
         default: throw LocalPhotoFileStoreError.unsupportedFileType
+        }
+    }
+
+    nonisolated static func supports(mimeType: String) -> Bool {
+        switch mimeType.lowercased() {
+        case "image/jpeg", "image/jpg", "image/heic", "image/heif", "image/png": true
+        default: false
         }
     }
 

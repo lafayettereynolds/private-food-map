@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import SwiftData
+import UIKit
 
 @MainActor
 enum TasteMapUITestFixtures {
@@ -11,6 +12,26 @@ enum TasteMapUITestFixtures {
     static let persistentConfigurationName = "TasteMapP1DUITests"
     static let persistentEnvironmentKey = "TASTEMAP_P1D_UI_TEST"
     static let resetEnvironmentKey = "TASTEMAP_P1D_RESET"
+    static let photoEnvironmentKey = "TASTEMAP_P2B_UI_TEST"
+
+    static var usesPhotoFixture: Bool {
+        ProcessInfo.processInfo.environment[photoEnvironmentKey] == "1"
+    }
+
+    static func samplePhotoData() -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(
+            size: CGSize(width: 1_200, height: 900),
+            format: format
+        ).image { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1_200, height: 900))
+            UIColor.systemOrange.setFill()
+            context.fill(CGRect(x: 180, y: 150, width: 840, height: 600))
+        }
+        return image.jpegData(compressionQuality: 0.9) ?? Data()
+    }
 
     static var usesPersistentFixture: Bool {
         ProcessInfo.processInfo.environment[persistentEnvironmentKey] == "1"
@@ -49,6 +70,12 @@ enum TasteMapUITestFixtures {
     ) throws {
         let context = container.mainContext
         if reset {
+            for photo in try context.fetch(FetchDescriptor<PhotoAsset>()) {
+                context.delete(photo)
+            }
+            for dish in try context.fetch(FetchDescriptor<Dish>()) {
+                context.delete(dish)
+            }
             for mutation in try context.fetch(FetchDescriptor<SyncMutation>()) {
                 context.delete(mutation)
             }

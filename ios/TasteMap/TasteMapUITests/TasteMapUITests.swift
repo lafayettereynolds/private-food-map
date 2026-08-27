@@ -152,6 +152,73 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP2BVisitPhotoAppearsLocallyAndCanBeDeleted() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P2B_UI_TEST": "1",
+        ]
+        app.launch()
+
+        app.segmentedControls.buttons["想吃"].tap()
+        let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        app.buttons["restaurant-detail-add-visit"].tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["visit-photo-picker"].exists)
+        let importButton = app.buttons["visit-photo-ui-test-import"]
+        XCTAssertTrue(importButton.waitForExistence(timeout: 3))
+        for _ in 0..<4 {
+            importButton.tap()
+            XCTAssertTrue(app.staticTexts["本机"].waitForExistence(timeout: 5))
+        }
+        XCTAssertTrue(app.staticTexts["4/10"].waitForExistence(timeout: 5))
+        app.buttons["visit-editor-save"].tap()
+
+        app.terminate()
+        app.launchArguments = ["-p1d-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P2B_UI_TEST": "1",
+        ]
+        app.launch()
+        let markers = app.otherElements.matching(
+            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+        )
+        XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
+        markers.element(boundBy: max(0, markers.count - 1)).tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["4 张"].waitForExistence(timeout: 5))
+        let photo = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'restaurant-photo-'")
+        ).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        photo.tap()
+        XCTAssertTrue(app.navigationBars["1 / 4"].waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
+
+        app.swipeUp()
+        let firstVisit = app.staticTexts["第 1 次"]
+        XCTAssertTrue(firstVisit.waitForExistence(timeout: 5))
+        firstVisit.tap()
+        XCTAssertTrue(app.navigationBars["编辑到访"].waitForExistence(timeout: 5))
+        for _ in 0..<4 {
+            let deletePhoto = app.buttons["删除照片"].firstMatch
+            XCTAssertTrue(deletePhoto.waitForExistence(timeout: 5))
+            deletePhoto.tap()
+        }
+        app.buttons["visit-editor-save"].tap()
+        XCTAssertTrue(app.staticTexts["尚未添加"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     private func openP1DDetail(in app: XCUIApplication, tab: String) {
         app.segmentedControls.buttons[tab].tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]

@@ -13,6 +13,7 @@ struct TasteMapApp: App {
     private let modelContainer: ModelContainer
     private let nativeAuthServices: NativeAuthServices
     private let syncCoordinator: SyncCoordinator
+    private let photoTransferCoordinator: PhotoTransferCoordinator
 
     init() {
         let authServices = NativeAuthServices(configuration: .current())
@@ -58,10 +59,25 @@ struct TasteMapApp: App {
         }
         nativeAuthServices = authServices
         modelContainer = container
-        syncCoordinator = SyncCoordinator(
+        let coordinator = SyncCoordinator(
             context: container.mainContext,
             api: authServices.syncAPI,
             sessionManager: authServices.sessionManager,
+            networkObserver: NetworkPathObserver()
+        )
+        let photoFiles: LocalPhotoFileStore
+        do {
+            photoFiles = try LocalPhotoFileStore()
+        } catch {
+            fatalError("Unable to initialize local photo storage: \(error)")
+        }
+        syncCoordinator = coordinator
+        photoTransferCoordinator = PhotoTransferCoordinator(
+            context: container.mainContext,
+            api: authServices.photoAPI,
+            files: photoFiles,
+            sessionManager: authServices.sessionManager,
+            syncCoordinator: coordinator,
             networkObserver: NetworkPathObserver()
         )
     }
@@ -71,6 +87,7 @@ struct TasteMapApp: App {
             ContentView()
                 .environment(nativeAuthServices)
                 .environment(syncCoordinator)
+                .environment(\.photoTransferCoordinator, photoTransferCoordinator)
         }
         .modelContainer(modelContainer)
     }

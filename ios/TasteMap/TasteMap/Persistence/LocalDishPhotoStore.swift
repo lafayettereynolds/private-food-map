@@ -134,18 +134,76 @@ struct LocalDishPhotoStore {
         }
     }
 
+    @discardableResult
+    func createLocalPhoto(
+        prepared: PreparedLocalPhoto,
+        kind: PhotoAssetKind,
+        restaurantId: UUID? = nil,
+        visitId: UUID? = nil,
+        dishId: UUID? = nil,
+        sortOrder: Int = 0,
+        visibility: PhotoVisibility = .private,
+        queueForUpload: Bool = false,
+        draftSessionID: UUID? = nil
+    ) throws -> PhotoAsset {
+        try validatePhotoRelationship(
+            kind: kind,
+            restaurantId: restaurantId,
+            visitId: visitId,
+            dishId: dishId
+        )
+        let photo = PhotoAsset(
+            id: prepared.id,
+            restaurantId: restaurantId,
+            visitId: visitId,
+            dishId: dishId,
+            kind: kind,
+            fileName: prepared.originalFileName,
+            mimeType: prepared.displayMimeType,
+            byteSize: prepared.displayByteSize,
+            width: prepared.width,
+            height: prepared.height,
+            sortOrder: sortOrder,
+            visibility: visibility,
+            localFileRelativePath: prepared.originalFileRelativePath,
+            displayFileRelativePath: prepared.displayFileRelativePath,
+            thumbnailFileRelativePath: prepared.thumbnailFileRelativePath,
+            displayContentHash: prepared.displayContentHash,
+            thumbnailContentHash: prepared.thumbnailContentHash,
+            uploadState: queueForUpload ? .queued : .localOnly,
+            uploadMutationID: UUID(),
+            draftSessionID: draftSessionID,
+            syncStatus: .pending
+        )
+        context.insert(photo)
+        try context.save()
+        return photo
+    }
+
     func queueUpload(_ photo: PhotoAsset) throws {
         guard photo.deletedAt == nil else { return }
         photo.uploadState = .queued
+        photo.uploadLastError = nil
+        photo.uploadRetryAfter = nil
+        photo.uploadMutationID = photo.uploadMutationID ?? UUID()
+        photo.draftSessionID = nil
+        photo.updatedAt = .now
+        try context.save()
+    }
+
+    func markUploading(_ photo: PhotoAsset) throws {
+        guard photo.deletedAt == nil else { return }
+        photo.uploadState = .uploading
         photo.uploadLastError = nil
         photo.updatedAt = .now
         try context.save()
     }
 
-    func markUploadFailed(_ photo: PhotoAsset, reason: String) throws {
+    func markUploadFailed(_ photo: PhotoAsset, reason: String, retryAfter: Date? = nil) throws {
         photo.uploadState = .failed
         photo.uploadRetryCount += 1
         photo.uploadLastError = String(reason.prefix(300))
+        photo.uploadRetryAfter = retryAfter
         photo.updatedAt = .now
         try context.save()
     }
@@ -164,9 +222,27 @@ struct LocalDishPhotoStore {
         photo.uploadState = .uploaded
         photo.uploadRetryCount = 0
         photo.uploadLastError = nil
+        photo.uploadRetryAfter = nil
+        photo.cachedStorageKey = reference.storageKey
+        photo.cachedThumbnailStorageKey = reference.thumbnailStorageKey
         photo.updatedAt = .now
         try enqueue(photo)
         try context.save()
+    }
+
+    func discardLocalPhoto(_ photo: PhotoAsset) async throws {
+        guard photo.serverVersion == 0, photo.storageKey == nil else {
+            try delete(photo)
+            return
+        }
+        let paths = localPaths(photo)
+        try SwiftDataSyncQueue(context: context).removeMutations(
+            entityType: .photo,
+            entityID: photo.remoteID ?? photo.id.uuidString.lowercased()
+        )
+        context.delete(photo)
+        try context.save()
+        for path in paths { try? await photoFiles.delete(relativePath: path) }
     }
 
     func delete(_ photo: PhotoAsset) throws {
@@ -193,11 +269,18 @@ struct LocalDishPhotoStore {
         let cutoff = Date().addingTimeInterval(-retention)
         let photos = try context.fetch(FetchDescriptor<PhotoAsset>())
         for photo in photos where photo.deletedAt.map({ $0 <= cutoff }) == true {
-            guard let relativePath = photo.localFileRelativePath else { continue }
-            try await photoFiles.delete(relativePath: relativePath)
+            for relativePath in localPaths(photo) {
+                try await photoFiles.delete(relativePath: relativePath)
+            }
             photo.localFileRelativePath = nil
+            photo.displayFileRelativePath = nil
+            photo.thumbnailFileRelativePath = nil
         }
         try context.save()
+    }
+
+    func referencedLocalPaths() throws -> Set<String> {
+        Set(try context.fetch(FetchDescriptor<PhotoAsset>()).flatMap(localPaths))
     }
 
     private func enqueue(_ dish: Dish, restaurant: Restaurant, visit: Visit) throws {
@@ -293,5 +376,13 @@ struct LocalDishPhotoStore {
         if photo.visitId != nil && visit == nil { throw LocalDishPhotoStoreError.missingRemoteMapping }
         if photo.dishId != nil && dish == nil { throw LocalDishPhotoStoreError.missingRemoteMapping }
         return (restaurant, visit, dish)
+    }
+
+    private func localPaths(_ photo: PhotoAsset) -> [String] {
+        [
+            photo.localFileRelativePath,
+            photo.displayFileRelativePath,
+            photo.thumbnailFileRelativePath,
+        ].compactMap { $0 }
     }
 }
