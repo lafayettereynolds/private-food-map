@@ -136,11 +136,11 @@ describe('Worker Sync API V1 integration', () => {
       rating: 4.5, valueRating: 5, environmentRating: null, serviceRating: 3.5,
     }
     await database.prepare(`INSERT INTO visits (
-      id, user_id, restaurant_id, visited_at, rating, party_size, queue_duration,
+      id, user_id, restaurant_id, visited_at, rating, party_size, recommendation_source_text,
       companions_json, dishes_json, note, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(
-        visit.id, 'user-a', visit.restaurantId, visit.visitedAt, null, 1, 'under30',
+        visit.id, 'user-a', visit.restaurantId, visit.visitedAt, null, 1, 'legacy-source',
         '[]', '[]', '', visit.createdAt, visit.updatedAt,
       ).run()
     await push(database, 'user-a', mutation('rating-update', 'visit', visit.id, 0, visit))
@@ -149,15 +149,68 @@ describe('Worker Sync API V1 integration', () => {
     expect(pulled.visits[0].record).toMatchObject({
       rating: 4.5, valueRating: 5, environmentRating: null, serviceRating: 3.5,
     })
-    expect(database.get(`SELECT value_rating, environment_rating, service_rating, queue_duration
+    expect(database.get(`SELECT value_rating, environment_rating, service_rating, recommendation_source_text
       FROM visits WHERE id = ?`, visit.id)).toMatchObject({
-      value_rating: 5, environment_rating: null, service_rating: 3.5, queue_duration: 'under30',
+      value_rating: 5, environment_rating: null, service_rating: 3.5, recommendation_source_text: 'legacy-source',
     })
 
     const cleared = { ...visit, valueRating: null, updatedAt: '2026-08-27T08:00:00.000Z' }
     await push(database, 'user-a', mutation('rating-clear', 'visit', visit.id, 1, cleared))
     expect((await pull(database, 'user-a', pulled.nextCursor)).visits[0].record)
       .toMatchObject({ valueRating: null, environmentRating: null, serviceRating: 3.5 })
+  })
+
+  it('round-trips P2-E dining context, clears nullable fields, and preserves P2-F legacy data', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('p2e-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = {
+      ...visitPayload('p2e-v', appleFixture.id, 'forged-user'),
+      visibility: 'friends', partySize: 3, totalPrice: 360, myActualSpend: 120,
+      paymentMode: 'aa', pricePerPerson: 120, queueDuration: 'none',
+      diningOccasions: ['friends', 'other'], diningOccasionText: '工作简餐',
+      valueTags: ['合理'], environmentTags: ['舒适'], serviceTags: ['周到'],
+      noiseLevel: 'normal', diningDuration: 'under30', portionLevel: 'generous',
+      transportConvenience: 'very_convenient', specialNotes: '现场取号',
+      rating: 4.5, valueRating: 4, environmentRating: 4.5, serviceRating: 5,
+    }
+    await push(database, 'user-a', mutation('p2e-create', 'visit', visit.id, 0, visit))
+    await database.prepare(`UPDATE visits SET recommendation_source_text = ?, companions_json = ?
+      WHERE id = ?`).bind('保留到 P2-F', '["小王"]', visit.id).run()
+
+    const first = await pull(database, 'user-a', '0')
+    expect(first.visits[0].record).toMatchObject({
+      visibility: 'friends', totalPrice: 360, myActualSpend: 120, paymentMode: 'aa',
+      pricePerPerson: 120, queueDuration: 'none', diningOccasions: ['friends', 'other'],
+      diningOccasionText: '工作简餐', valueTags: ['合理'], environmentTags: ['舒适'],
+      serviceTags: ['周到'], noiseLevel: 'normal', diningDuration: 'under30',
+      portionLevel: 'generous', transportConvenience: 'very_convenient', specialNotes: '现场取号',
+    })
+    expect(database.get(`SELECT visibility, total_price, payment_mode, queue_duration,
+      dining_occasion, dining_occasions_json, noise_level, special_notes
+      FROM visits WHERE id = ?`, visit.id)).toMatchObject({
+      visibility: 'friends', total_price: 360, payment_mode: 'aa', queue_duration: 'none',
+      dining_occasion: 'friends', dining_occasions_json: '["friends","other"]',
+      noise_level: 'normal', special_notes: '现场取号',
+    })
+
+    const cleared = {
+      ...visit, visibility: 'private', totalPrice: null, paymentMode: null,
+      pricePerPerson: null, queueDuration: null, diningOccasions: [], diningOccasionText: null,
+      valueTags: [], environmentTags: [], serviceTags: [], noiseLevel: null,
+      diningDuration: null, portionLevel: null, transportConvenience: null, specialNotes: null,
+      updatedAt: '2026-08-27T09:00:00.000Z',
+    }
+    await push(database, 'user-a', mutation('p2e-clear', 'visit', visit.id, 1, cleared))
+    const second = await pull(database, 'user-a', first.nextCursor)
+    expect(second.visits[0].record).toMatchObject({
+      visibility: 'private', totalPrice: null, paymentMode: null, queueDuration: null,
+      diningOccasions: [], diningOccasionText: null, valueTags: [], specialNotes: null,
+    })
+    expect(database.get(`SELECT recommendation_source_text, companions_json FROM visits WHERE id = ?`, visit.id))
+      .toMatchObject({ recommendation_source_text: '保留到 P2-F', companions_json: '["小王"]' })
+    expect(database.get(`SELECT COUNT(*) AS count FROM visits
+      WHERE id = ? AND visibility = 'public'`, visit.id).count).toBe(0)
+    expect((await pull(database, 'user-b', '0')).visits).toEqual([])
   })
 
   it('keeps a P0 Visit payload compatible with explicit native defaults', async () => {
@@ -168,7 +221,9 @@ describe('Worker Sync API V1 integration', () => {
 
     expect((await pull(database, 'user-a', '0')).visits[0].record)
       .toMatchObject({
-        diningMode: 'dine_in', partySize: null,
+        diningMode: 'dine_in', visibility: 'private', partySize: null,
+        totalPrice: null, paymentMode: null, queueDuration: null,
+        diningOccasions: [], valueTags: [], environmentTags: [], serviceTags: [],
         valueRating: null, environmentRating: null, serviceRating: null,
       })
   })
@@ -378,8 +433,12 @@ function deletion(mutationId, entityType, entityId, baseVersion) {
 function visitPayload(id, restaurantId, claimedUser) {
   return {
     schemaVersion: 1, id, userId: claimedUser, restaurantId,
-    visitedAt: '2026-08-27T06:00:00.000Z', diningMode: 'dine_in', partySize: null,
+    visitedAt: '2026-08-27T06:00:00.000Z', diningMode: 'dine_in', visibility: 'private', partySize: null,
+    totalPrice: null, paymentMode: null, pricePerPerson: null, queueDuration: null,
+    diningOccasions: [], diningOccasionText: null,
     rating: null, valueRating: null, environmentRating: null, serviceRating: null,
+    valueTags: [], environmentTags: [], serviceTags: [], noiseLevel: null,
+    diningDuration: null, portionLevel: null, transportConvenience: null, specialNotes: null,
     note: null, myActualSpend: null,
     createdAt: '2026-08-27T06:00:00.000Z', updatedAt: '2026-08-27T06:00:00.000Z', deletedAt: null,
   }
@@ -387,8 +446,13 @@ function visitPayload(id, restaurantId, claimedUser) {
 
 function legacyVisitPayload(id, restaurantId, claimedUser) {
   const {
-    diningMode: _, partySize: __,
-    valueRating: ___, environmentRating: ____, serviceRating: _____,
+    diningMode: _, visibility: __, partySize: ___,
+    totalPrice: ____, paymentMode: _____, pricePerPerson: ______,
+    queueDuration: _______, diningOccasions: ________, diningOccasionText: _________,
+    valueRating: __________, environmentRating: ___________, serviceRating: ____________,
+    valueTags: _____________, environmentTags: ______________, serviceTags: _______________,
+    noiseLevel: ________________, diningDuration: _________________, portionLevel: __________________,
+    transportConvenience: ___________________, specialNotes: ____________________,
     ...legacy
   } = visitPayload(id, restaurantId, claimedUser)
   return legacy

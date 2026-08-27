@@ -12,11 +12,26 @@ struct VisitSyncContractV1: Codable, Equatable {
     let restaurantId: String
     let visitedAt: String
     let diningMode: DiningMode
+    let visibility: VisitVisibility
     let partySize: Int?
+    let totalPrice: Double?
+    let paymentMode: String?
+    let pricePerPerson: Double?
+    let queueDuration: String?
+    let diningOccasions: [String]
+    let diningOccasionText: String?
     let rating: Double?
     let valueRating: Double?
     let environmentRating: Double?
     let serviceRating: Double?
+    let valueTags: [String]
+    let environmentTags: [String]
+    let serviceTags: [String]
+    let noiseLevel: String?
+    let diningDuration: String?
+    let portionLevel: String?
+    let transportConvenience: String?
+    let specialNotes: String?
     let note: String?
     let myActualSpend: Double?
     let createdAt: String
@@ -26,8 +41,11 @@ struct VisitSyncContractV1: Codable, Equatable {
 
 private extension VisitSyncContractV1 {
     enum CodingKeys: String, CodingKey {
-        case schemaVersion, id, userId, restaurantId, visitedAt, diningMode, partySize
+        case schemaVersion, id, userId, restaurantId, visitedAt, diningMode, visibility, partySize
+        case totalPrice, paymentMode, pricePerPerson, queueDuration, diningOccasions, diningOccasionText
         case rating, valueRating, environmentRating, serviceRating
+        case valueTags, environmentTags, serviceTags, noiseLevel, diningDuration
+        case portionLevel, transportConvenience, specialNotes
         case note, myActualSpend, createdAt, updatedAt, deletedAt
     }
 }
@@ -41,6 +59,7 @@ extension VisitSyncContractV1 {
         restaurantId = try container.decode(String.self, forKey: .restaurantId)
         visitedAt = try container.decode(String.self, forKey: .visitedAt)
         diningMode = try container.decodeIfPresent(DiningMode.self, forKey: .diningMode) ?? .dineIn
+        visibility = try container.decodeIfPresent(VisitVisibility.self, forKey: .visibility) ?? .private
         partySize = try container.decodeIfPresent(Int.self, forKey: .partySize)
         if let partySize, partySize < 1 {
             throw DecodingError.dataCorruptedError(
@@ -49,6 +68,16 @@ extension VisitSyncContractV1 {
                 debugDescription: "partySize must be null or a positive integer."
             )
         }
+        totalPrice = try container.decodeIfPresent(Double.self, forKey: .totalPrice)
+        paymentMode = Self.normalizedOptionalString(try container.decodeIfPresent(String.self, forKey: .paymentMode))
+        pricePerPerson = try container.decodeIfPresent(Double.self, forKey: .pricePerPerson)
+        queueDuration = Self.normalizedOptionalString(try container.decodeIfPresent(String.self, forKey: .queueDuration))
+        diningOccasions = VisitStringArrayStorage.normalized(
+            try container.decodeIfPresent([String].self, forKey: .diningOccasions) ?? []
+        )
+        diningOccasionText = Self.normalizedOptionalString(
+            try container.decodeIfPresent(String.self, forKey: .diningOccasionText)
+        )
         rating = try container.decode(Double?.self, forKey: .rating)
         valueRating = try container.decodeIfPresent(Double.self, forKey: .valueRating)
         environmentRating = try container.decodeIfPresent(Double.self, forKey: .environmentRating)
@@ -65,8 +94,35 @@ extension VisitSyncContractV1 {
                 debugDescription: "Rating must be null or a half-step from 0.5 through 5.0."
             )
         }
+        valueTags = VisitStringArrayStorage.normalized(
+            try container.decodeIfPresent([String].self, forKey: .valueTags) ?? []
+        )
+        environmentTags = VisitStringArrayStorage.normalized(
+            try container.decodeIfPresent([String].self, forKey: .environmentTags) ?? []
+        )
+        serviceTags = VisitStringArrayStorage.normalized(
+            try container.decodeIfPresent([String].self, forKey: .serviceTags) ?? []
+        )
+        noiseLevel = Self.normalizedOptionalString(try container.decodeIfPresent(String.self, forKey: .noiseLevel))
+        diningDuration = Self.normalizedOptionalString(try container.decodeIfPresent(String.self, forKey: .diningDuration))
+        portionLevel = Self.normalizedOptionalString(try container.decodeIfPresent(String.self, forKey: .portionLevel))
+        transportConvenience = Self.normalizedOptionalString(
+            try container.decodeIfPresent(String.self, forKey: .transportConvenience)
+        )
+        specialNotes = Self.normalizedOptionalString(try container.decodeIfPresent(String.self, forKey: .specialNotes))
         note = try container.decode(String?.self, forKey: .note)
         myActualSpend = try container.decode(Double?.self, forKey: .myActualSpend)
+        for (key, value) in [
+            (CodingKeys.totalPrice, totalPrice),
+            (CodingKeys.pricePerPerson, pricePerPerson),
+            (CodingKeys.myActualSpend, myActualSpend),
+        ] where value.map({ !$0.isFinite || $0 < 0 }) ?? false {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: container,
+                debugDescription: "Visit money fields must be null or non-negative finite numbers."
+            )
+        }
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         deletedAt = try container.decode(String?.self, forKey: .deletedAt)
@@ -80,16 +136,37 @@ extension VisitSyncContractV1 {
         try container.encode(restaurantId, forKey: .restaurantId)
         try container.encode(visitedAt, forKey: .visitedAt)
         try container.encode(diningMode, forKey: .diningMode)
+        try container.encode(visibility, forKey: .visibility)
         try container.encode(partySize, forKey: .partySize)
+        try container.encode(totalPrice, forKey: .totalPrice)
+        try container.encode(paymentMode, forKey: .paymentMode)
+        try container.encode(pricePerPerson, forKey: .pricePerPerson)
+        try container.encode(queueDuration, forKey: .queueDuration)
+        try container.encode(diningOccasions, forKey: .diningOccasions)
+        try container.encode(diningOccasionText, forKey: .diningOccasionText)
         try container.encode(rating, forKey: .rating)
         try container.encode(valueRating, forKey: .valueRating)
         try container.encode(environmentRating, forKey: .environmentRating)
         try container.encode(serviceRating, forKey: .serviceRating)
+        try container.encode(valueTags, forKey: .valueTags)
+        try container.encode(environmentTags, forKey: .environmentTags)
+        try container.encode(serviceTags, forKey: .serviceTags)
+        try container.encode(noiseLevel, forKey: .noiseLevel)
+        try container.encode(diningDuration, forKey: .diningDuration)
+        try container.encode(portionLevel, forKey: .portionLevel)
+        try container.encode(transportConvenience, forKey: .transportConvenience)
+        try container.encode(specialNotes, forKey: .specialNotes)
         try container.encode(note, forKey: .note)
         try container.encode(myActualSpend, forKey: .myActualSpend)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(deletedAt, forKey: .deletedAt)
+    }
+
+    private static func normalizedOptionalString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

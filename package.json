@@ -20,6 +20,7 @@
     "test:p2c": "node scripts/test-visit-dish-migration.mjs && vitest run src/contracts/dishPhotoContract.test.ts src/contracts/syncV1.test.ts worker/syncV1.integration.test.js",
     "test:p2c:development": "node scripts/test-visit-dish-development.mjs",
     "test:p2d": "vitest run src/contracts/syncV1.test.ts worker/syncV1.integration.test.js",
+    "test:p2e": "vitest run src/contracts/syncV1.test.ts worker/syncV1.integration.test.js",
     "preview": "vite preview --config vite.config.ts",
     "cloudflare:dev": "pnpm run build && wrangler dev --local",
     "d1:migrate:local": "wrangler d1 migrations apply food-map-db --local",

@@ -80,7 +80,10 @@ describe('Sync API V1 contract', () => {
 
   it('normalizes the P0 Visit payload without new fields', () => {
     expect(decodeVisitSyncContract(legacyVisit)).toMatchObject({
-      diningMode: 'dine_in', partySize: null,
+      diningMode: 'dine_in', visibility: 'private', partySize: null,
+      totalPrice: null, paymentMode: null, pricePerPerson: null, queueDuration: null,
+      diningOccasions: [], diningOccasionText: null,
+      valueTags: [], environmentTags: [], serviceTags: [], specialNotes: null,
       valueRating: null, environmentRating: null, serviceRating: null,
     })
   })
@@ -89,6 +92,50 @@ describe('Sync API V1 contract', () => {
     expect(() => decodeVisitSyncContract({ ...validVisit, partySize: 0 })).toThrow(/partySize/)
     expect(() => decodeVisitSyncContract({ ...validVisit, diningMode: 'delivery' })).toThrow(/diningMode/)
     expect(() => decodeVisitSyncContract({ ...validVisit, myActualSpend: -1 })).toThrow(/negative/)
+  })
+
+  it('round-trips complete, partial, and explicitly empty P2-E context', () => {
+    const complete = decodeVisitSyncContract({
+      ...validVisit,
+      visibility: 'friends', totalPrice: 360, paymentMode: 'aa', pricePerPerson: 120,
+      queueDuration: 'none', diningOccasions: ['friends', 'other'], diningOccasionText: '工作简餐',
+      valueTags: ['合理'], environmentTags: ['舒适'], serviceTags: ['周到'],
+      noiseLevel: 'normal', diningDuration: 'under30', portionLevel: 'generous',
+      transportConvenience: 'very_convenient', specialNotes: '现场取号',
+    })
+    expect(complete).toMatchObject({
+      visibility: 'friends', totalPrice: 360, queueDuration: 'none',
+      diningOccasions: ['friends', 'other'], specialNotes: '现场取号',
+    })
+    expect(decodeVisitSyncContract({ ...complete, queueDuration: null, paymentMode: null }))
+      .toMatchObject({ queueDuration: null, paymentMode: null })
+  })
+
+  it('keeps wait=nil distinct from explicit no wait and rejects invalid money', () => {
+    expect(decodeVisitSyncContract({ ...validVisit, queueDuration: null }).queueDuration).toBeNull()
+    expect(decodeVisitSyncContract({ ...validVisit, queueDuration: 'none' }).queueDuration).toBe('none')
+    expect(() => decodeVisitSyncContract({ ...validVisit, queueDuration: -1 })).toThrow(/queueDuration/)
+    expect(() => decodeVisitSyncContract({ ...validVisit, totalPrice: -1 })).toThrow(/totalPrice/)
+    expect(() => decodeVisitSyncContract({ ...validVisit, pricePerPerson: Number.POSITIVE_INFINITY })).toThrow(/pricePerPerson/)
+  })
+
+  it('handles unknown legacy enum values without crashing or losing their raw value', () => {
+    expect(decodeVisitSyncContract({
+      ...validVisit,
+      paymentMode: 'legacy_split', queueDuration: 'legacy_wait_bucket',
+      diningOccasions: ['friends', 'legacy_scene'], noiseLevel: 'legacy_noise',
+    })).toMatchObject({
+      paymentMode: 'legacy_split', queueDuration: 'legacy_wait_bucket',
+      diningOccasions: ['friends', 'legacy_scene'], noiseLevel: 'legacy_noise',
+    })
+    expect(() => decodeVisitSyncContract({ ...validVisit, visibility: 'unknown' })).toThrow(/visibility/)
+  })
+
+  it('normalizes duplicate tags and supports nullable clear semantics', () => {
+    expect(decodeVisitSyncContract({
+      ...validVisit,
+      valueTags: ['合理', ' 合理 ', '超值'], diningOccasionText: '', specialNotes: '',
+    })).toMatchObject({ valueTags: ['合理', '超值'], diningOccasionText: null, specialNotes: null })
   })
 })
 

@@ -90,7 +90,7 @@ struct P1DTwoClientSyncTests {
 }
 
 @MainActor
-private final class VersionedMemorySyncAPI: SyncAPI {
+final class VersionedMemorySyncAPI: SyncAPI {
     private struct RestaurantState {
         var record: RestaurantJSONContractV1
         var version: Int64

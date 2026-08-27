@@ -206,7 +206,11 @@ private struct DishFormSheet: View {
                         .accessibilityIdentifier("dish-note")
                 }
                 Section("评分") {
-                    HalfStarRatingPicker(rating: $draft.rating)
+                    HalfStarRatingPicker(
+                        rating: $draft.rating,
+                        accessibilityName: "菜品",
+                        accessibilityIdentifier: "dish-rating"
+                    )
                 }
                 Section {
                     TextField("未记录", text: $priceText)

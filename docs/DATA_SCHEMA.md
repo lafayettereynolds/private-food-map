@@ -1,6 +1,6 @@
 # Taste Map 数据结构
 
-更新时间：2026-08-27
+更新时间：2026-08-28
 
 ## Restaurant JSON Contract V1
 
@@ -14,14 +14,22 @@
 ## Visit 本轮相关字段
 
 - `diningMode`: `dine_in | takeout`，描述单次到访的到店/外卖方式。
-- `paymentMode`: `aa | host | guest | separate | other | null`。
-- `totalPrice`: 总消费；“各付各的”时为 `null`。
-- `myActualSpend`: 个人消费；仅“各付各的”使用。
+- `visibility`: `private | friends | public`；原生默认 `private`，公开接口仍需通过 Worker 权限过滤。
+- `paymentMode`: `aa | my_treat | treated | separate | other | null`。
+- `totalPrice`: 整桌账单，可空；不从 Dish price 推导。
+- `myActualSpend`: 用户本人实际消费，可空；不由 paymentMode 推断。
+- `pricePerPerson`: `totalPrice / partySize` 的四舍五入同步投影，可空且不直接编辑。
+- `queueDuration`: `none | under15 | under30 | under60 | under90 | under120 | over120 | null`；`none` 表示明确 0 等位，`null` 表示未记录。
 - `diningOccasions`: 适合场景数组，支持多选；自定义场景时包含 `other`。
 - `diningOccasion`: 兼容旧客户端的首项镜像字段；新逻辑以 `diningOccasions` 为准。
 - `diningOccasionText`: 自定义适合场景文字，旧记录迁移为空字符串。
 - `valueTags`、`serviceTags`、`environmentTags`: 可多选并允许自定义的体验标签数组。
 - `diningDuration`: 上餐时长，可选 `under15`、`under30`、`under45`、`under60`、`under90`、`under120`、`over120`。
+- `noiseLevel`: `quiet | normal | loud | very_loud | null`。
+- `portionLevel`: `small | normal | generous | null`。
+- `transportConvenience`: `very_convenient | convenient | normal | inconvenient | null`。
+- `specialNotes`: 最低消费、现场规则等可选文字；与一般 `note` 分开。
+- P2-E 的完整 Web→iOS 字段矩阵、nullable 合同与 legacy 保真策略见 `P2_E_DINING_CONTEXT.md`。
 
 ## UserProfile 本轮相关字段
 

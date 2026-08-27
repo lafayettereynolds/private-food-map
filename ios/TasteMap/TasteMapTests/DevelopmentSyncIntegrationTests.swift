@@ -111,11 +111,26 @@ struct DevelopmentSyncIntegrationTests {
             restaurantId: restaurantID,
             visitedAt: timestamp,
             diningMode: .dineIn,
+            visibility: .private,
             partySize: nil,
+            totalPrice: nil,
+            paymentMode: nil,
+            pricePerPerson: nil,
+            queueDuration: nil,
+            diningOccasions: [],
+            diningOccasionText: nil,
             rating: nil,
             valueRating: nil,
             environmentRating: nil,
             serviceRating: nil,
+            valueTags: [],
+            environmentTags: [],
+            serviceTags: [],
+            noiseLevel: nil,
+            diningDuration: nil,
+            portionLevel: nil,
+            transportConvenience: nil,
+            specialNotes: nil,
             note: "P0-B2-A real Development D1 test",
             myActualSpend: nil,
             createdAt: timestamp,
@@ -693,6 +708,127 @@ struct DevelopmentSyncIntegrationTests {
         #expect(pulled.serverVersion == 2)
 
         let isolated = try await otherClient.pull(cursor: "0", limit: 200)
+        #expect(!isolated.visits.contains { $0.record.id == visit.remoteID })
+
+        try store.delete(visit)
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        try store.delete(restaurant)
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        let cleanup = try await client.pull(cursor: "0", limit: 200)
+        #expect(cleanup.tombstones.contains { $0.entityType == .visit && $0.entityId == visit.remoteID })
+        #expect(cleanup.tombstones.contains { $0.entityType == .restaurant && $0.entityId == restaurant.remoteID })
+    }
+
+    @Test("P2-E dining context round-trips through Development Worker and D1")
+    func developmentDiningContextRoundTrip() async throws {
+#if !TASTEMAP_DEVELOPMENT_INTEGRATION
+        guard ProcessInfo.processInfo.environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+#endif
+        let runID = UUID().uuidString.lowercased()
+        let userID = "ios-p2e:\(runID)"
+        let client = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: userID)
+        )
+        let otherClient = URLSessionSyncAPIClient(
+            configuration: .current(),
+            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p2e-other:\(runID)")
+        )
+        let source = try TasteMapPersistence.makeContainer(inMemory: true)
+        let receiving = try TasteMapPersistence.makeContainer(inMemory: true)
+        let store = LocalTasteMapStore(context: source.mainContext)
+        let restaurant = try store.addToWantToGo(
+            candidate: RestaurantCandidate(
+                name: "P2-E Development Context Restaurant",
+                address: "Development D1 only",
+                latitude: 30.259,
+                longitude: 120.168,
+                appleMapItemIdentifier: "apple-p2e-\(runID)"
+            ),
+            among: []
+        )
+        let visit = try store.createVisit(
+            restaurantId: restaurant.id,
+            draft: VisitDraft(
+                diningMode: .dineIn,
+                partySize: 3,
+                rating: 4.5,
+                valueRating: 5,
+                environmentRating: 4,
+                serviceRating: 3.5,
+                myActualSpend: 120,
+                totalPrice: 360,
+                visibility: .friends,
+                paymentMode: .aa,
+                queueDuration: .noWait,
+                diningOccasions: [.friends, .other],
+                diningOccasionText: "工作简餐",
+                valueTags: ["合理"],
+                environmentTags: ["舒适"],
+                serviceTags: ["周到"],
+                noiseLevel: .normal,
+                diningDuration: .under30,
+                portionLevel: .generous,
+                transportConvenience: .veryConvenient,
+                specialNotes: "现场取号",
+                note: "P2-E Development round-trip"
+            )
+        )
+
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        #expect(visit.serverVersion == 1)
+        #expect(visit.syncStatus == .synced)
+        try await SyncEngine(context: receiving.mainContext, api: client).synchronize()
+        let pulled = try #require(receiving.mainContext.fetch(FetchDescriptor<Visit>()).first)
+        #expect(pulled.visibility == .friends)
+        #expect(pulled.totalPrice == 360)
+        #expect(pulled.myActualSpend == 120)
+        #expect(pulled.pricePerPerson == 120)
+        #expect(pulled.paymentMode == .aa)
+        #expect(pulled.queueDuration == .noWait)
+        #expect(pulled.diningOccasions == [.friends, .other])
+        #expect(pulled.diningOccasionText == "工作简餐")
+        #expect(pulled.valueTags == ["合理"])
+        #expect(pulled.environmentTags == ["舒适"])
+        #expect(pulled.serviceTags == ["周到"])
+        #expect(pulled.noiseLevel == .normal)
+        #expect(pulled.diningDuration == .under30)
+        #expect(pulled.portionLevel == .generous)
+        #expect(pulled.transportConvenience == .veryConvenient)
+        #expect(pulled.specialNotes == "现场取号")
+
+        var clear = VisitDraft(visit: visit)
+        clear.visibility = .private
+        clear.totalPrice = nil
+        clear.paymentMode = nil
+        clear.queueDuration = nil
+        clear.diningOccasions = []
+        clear.diningOccasionText = ""
+        clear.valueTags = []
+        clear.environmentTags = []
+        clear.serviceTags = []
+        clear.noiseLevel = nil
+        clear.diningDuration = nil
+        clear.portionLevel = nil
+        clear.transportConvenience = nil
+        clear.specialNotes = ""
+        try store.update(visit, draft: clear)
+        try await SyncEngine(context: source.mainContext, api: client).synchronize()
+        try await SyncEngine(context: receiving.mainContext, api: client).synchronize()
+        #expect(pulled.serverVersion == 2)
+        #expect(pulled.visibility == .private)
+        #expect(pulled.totalPrice == nil && pulled.pricePerPerson == nil)
+        #expect(pulled.paymentMode == nil && pulled.queueDuration == nil)
+        #expect(pulled.diningOccasions.isEmpty && pulled.diningOccasionText == nil)
+        #expect(pulled.valueTags.isEmpty && pulled.environmentTags.isEmpty && pulled.serviceTags.isEmpty)
+        #expect(pulled.noiseLevel == nil && pulled.diningDuration == nil)
+        #expect(pulled.portionLevel == nil && pulled.transportConvenience == nil)
+        #expect(pulled.specialNotes == nil)
+        #expect(pulled.rating == 4.5)
+        #expect(pulled.valueRating == 5 && pulled.environmentRating == 4 && pulled.serviceRating == 3.5)
+
+        let isolated = try await otherClient.pull(cursor: "0", limit: 200)
+        #expect(!isolated.restaurants.contains { $0.record.id == restaurant.remoteID })
         #expect(!isolated.visits.contains { $0.record.id == visit.remoteID })
 
         try store.delete(visit)

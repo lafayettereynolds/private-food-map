@@ -222,6 +222,7 @@ private struct RestaurantDetailMetric: View {
                 Text(title)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
                 Text(value)
                     .font(.subheadline.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
@@ -306,6 +307,18 @@ private struct RestaurantVisitHistoryRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                    if !visit.compactContextSummary.isEmpty {
+                        Label(
+                            visit.compactContextSummary.joined(separator: " · "),
+                            systemImage: "clock.badge.checkmark"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("visit-history-context")
+                    }
+
                     if let note = visit.note, !note.isEmpty {
                         Text(note)
                             .font(.subheadline)
@@ -322,6 +335,12 @@ private struct RestaurantVisitHistoryRow: View {
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    }
+
+                    if let paymentMode = visit.paymentMode {
+                        Label(paymentMode.title, systemImage: "creditcard.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

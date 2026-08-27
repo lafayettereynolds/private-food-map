@@ -85,12 +85,28 @@ interface SyncVisitRow extends VersionedEntityRow {
   restaurant_id: string
   visited_at: string
   dining_mode: VisitSyncContractV1['diningMode']
+  visibility: VisitSyncContractV1['visibility']
   party_size: number
   party_size_optional: number | null
+  total_price: number | null
+  payment_mode: string | null
+  price_per_person: number | null
+  queue_duration: string | null
+  dining_occasion: string | null
+  dining_occasion_text: string
+  dining_occasions_json: string
   rating: number | null
   value_rating: number | null
   environment_rating: number | null
   service_rating: number | null
+  value_tags_json: string
+  environment_tags_json: string
+  service_tags_json: string
+  noise_level: string | null
+  dining_duration: string | null
+  portion_level: string | null
+  transport_convenience: string | null
+  special_notes: string
   note: string
   my_actual_spend: number | null
   created_at: string
@@ -507,27 +523,50 @@ function visitMutationStatements(
   }
   const visit = mutation.payload as VisitSyncContractV1
   const entityStatement = database.prepare(`INSERT INTO visits (
-    id, user_id, restaurant_id, visited_at, dining_mode, party_size, party_size_optional,
-    rating, value_rating, environment_rating, service_rating, my_actual_spend, note,
+    id, user_id, restaurant_id, visited_at, dining_mode, visibility,
+    total_price, my_actual_spend, payment_mode, price_per_person,
+    party_size, party_size_optional, queue_duration,
+    dining_occasion, dining_occasion_text, dining_occasions_json,
+    rating, value_rating, environment_rating, service_rating,
+    value_tags_json, environment_tags_json, service_tags_json,
+    noise_level, dining_duration, portion_level, transport_convenience, special_notes, note,
     created_at, updated_at, deleted_at, server_version, last_mutation_id
   )
-  SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?
+  SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?
   WHERE EXISTS (SELECT 1 FROM restaurants WHERE id = ? AND user_id = ? AND deleted_at IS NULL)
   ON CONFLICT(id) DO UPDATE SET
     restaurant_id = excluded.restaurant_id, visited_at = excluded.visited_at,
-    dining_mode = excluded.dining_mode, party_size = excluded.party_size,
+    dining_mode = excluded.dining_mode, visibility = excluded.visibility,
+    total_price = excluded.total_price, my_actual_spend = excluded.my_actual_spend,
+    payment_mode = excluded.payment_mode, price_per_person = excluded.price_per_person,
+    party_size = excluded.party_size,
     party_size_optional = excluded.party_size_optional,
+    queue_duration = excluded.queue_duration,
+    dining_occasion = excluded.dining_occasion,
+    dining_occasion_text = excluded.dining_occasion_text,
+    dining_occasions_json = excluded.dining_occasions_json,
     rating = excluded.rating, value_rating = excluded.value_rating,
     environment_rating = excluded.environment_rating, service_rating = excluded.service_rating,
-    my_actual_spend = excluded.my_actual_spend,
+    value_tags_json = excluded.value_tags_json,
+    environment_tags_json = excluded.environment_tags_json,
+    service_tags_json = excluded.service_tags_json,
+    noise_level = excluded.noise_level, dining_duration = excluded.dining_duration,
+    portion_level = excluded.portion_level,
+    transport_convenience = excluded.transport_convenience,
+    special_notes = excluded.special_notes,
     note = excluded.note, updated_at = excluded.updated_at, deleted_at = NULL,
     server_version = excluded.server_version, last_mutation_id = excluded.last_mutation_id
   WHERE visits.user_id = ? AND visits.server_version = ? AND visits.deleted_at IS NULL`)
     .bind(
       mutation.entityId, viewerId, visit.restaurantId, visit.visitedAt, visit.diningMode,
-      visit.partySize ?? 0, visit.partySize, visit.rating,
+      visit.visibility, visit.totalPrice, visit.myActualSpend, visit.paymentMode, visit.pricePerPerson,
+      visit.partySize ?? 0, visit.partySize, visit.queueDuration,
+      visit.diningOccasions[0] ?? null, visit.diningOccasionText ?? '', JSON.stringify(visit.diningOccasions),
+      visit.rating,
       visit.valueRating, visit.environmentRating, visit.serviceRating,
-      visit.myActualSpend, visit.note ?? '', visit.createdAt, visit.updatedAt,
+      JSON.stringify(visit.valueTags), JSON.stringify(visit.environmentTags), JSON.stringify(visit.serviceTags),
+      visit.noiseLevel, visit.diningDuration, visit.portionLevel, visit.transportConvenience,
+      visit.specialNotes ?? '', visit.note ?? '', visit.createdAt, visit.updatedAt,
       nextVersion, mutation.mutationId, visit.restaurantId, viewerId, viewerId, mutation.baseVersion,
     )
   return finalMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt, entityStatement)
@@ -1029,6 +1068,8 @@ function rowToRestaurant(row: SyncRestaurantRow, identities: RestaurantPlaceIden
 }
 
 function rowToVisit(row: SyncVisitRow): VisitSyncContractV1 {
+  const diningOccasions = parseStringArray(row.dining_occasions_json)
+  if (!diningOccasions.length && row.dining_occasion) diningOccasions.push(row.dining_occasion)
   return {
     schemaVersion: 1,
     id: row.id,
@@ -1036,11 +1077,26 @@ function rowToVisit(row: SyncVisitRow): VisitSyncContractV1 {
     restaurantId: row.restaurant_id,
     visitedAt: row.visited_at,
     diningMode: row.dining_mode ?? 'dine_in',
+    visibility: row.visibility === 'friends' || row.visibility === 'public' ? row.visibility : 'private',
     partySize: row.party_size_optional ?? (row.party_size >= 1 ? row.party_size : null),
+    totalPrice: row.total_price,
+    paymentMode: row.payment_mode || null,
+    pricePerPerson: row.price_per_person,
+    queueDuration: row.queue_duration || null,
+    diningOccasions,
+    diningOccasionText: row.dining_occasion_text || null,
     rating: row.rating,
     valueRating: row.value_rating,
     environmentRating: row.environment_rating,
     serviceRating: row.service_rating,
+    valueTags: parseStringArray(row.value_tags_json),
+    environmentTags: parseStringArray(row.environment_tags_json),
+    serviceTags: parseStringArray(row.service_tags_json),
+    noiseLevel: row.noise_level || null,
+    diningDuration: row.dining_duration || null,
+    portionLevel: row.portion_level || null,
+    transportConvenience: row.transport_convenience || null,
+    specialNotes: row.special_notes || null,
     note: row.note || null,
     myActualSpend: row.my_actual_spend,
     createdAt: row.created_at,

@@ -17,6 +17,7 @@ export const SYNC_SCHEMA_VERSION = 1 as const
 export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'visitDish' | 'photo'
 export type SyncMutationOperation = 'upsert' | 'delete'
 export type VisitDiningModeContract = 'dine_in' | 'takeout'
+export type VisitVisibilityContract = 'private' | 'friends' | 'public'
 
 export interface VisitSyncContractV1 {
   schemaVersion: typeof SYNC_SCHEMA_VERSION
@@ -25,11 +26,26 @@ export interface VisitSyncContractV1 {
   restaurantId: string
   visitedAt: string
   diningMode: VisitDiningModeContract
+  visibility: VisitVisibilityContract
   partySize: number | null
+  totalPrice: number | null
+  paymentMode: string | null
+  pricePerPerson: number | null
+  queueDuration: string | null
+  diningOccasions: string[]
+  diningOccasionText: string | null
   rating: number | null
   valueRating: number | null
   environmentRating: number | null
   serviceRating: number | null
+  valueTags: string[]
+  environmentTags: string[]
+  serviceTags: string[]
+  noiseLevel: string | null
+  diningDuration: string | null
+  portionLevel: string | null
+  transportConvenience: string | null
+  specialNotes: string | null
   note: string | null
   myActualSpend: number | null
   createdAt: string
@@ -120,12 +136,22 @@ export function decodeVisitSyncContract(value: unknown): VisitSyncContractV1 {
     throw new SyncContractError('Visit sync contract is invalid.')
   }
   const diningMode = 'diningMode' in value ? value.diningMode : 'dine_in'
+  const visibility = 'visibility' in value ? value.visibility : 'private'
   const partySize = 'partySize' in value ? value.partySize : null
+  const totalPrice = 'totalPrice' in value ? value.totalPrice : null
+  const paymentMode = legacyNullableString(value, 'paymentMode')
+  const pricePerPerson = 'pricePerPerson' in value ? value.pricePerPerson : null
+  const queueDuration = legacyNullableString(value, 'queueDuration')
+  const diningOccasions = legacyStringArray(value, 'diningOccasions')
+  const diningOccasionText = legacyNullableString(value, 'diningOccasionText')
   const valueRating = 'valueRating' in value ? value.valueRating : null
   const environmentRating = 'environmentRating' in value ? value.environmentRating : null
   const serviceRating = 'serviceRating' in value ? value.serviceRating : null
   if (diningMode !== 'dine_in' && diningMode !== 'takeout') {
     throw new SyncContractError('Visit diningMode must be dine_in or takeout.')
+  }
+  if (visibility !== 'private' && visibility !== 'friends' && visibility !== 'public') {
+    throw new SyncContractError('Visit visibility must be private, friends, or public.')
   }
   if (partySize !== null && (!Number.isInteger(partySize) || Number(partySize) < 1)) {
     throw new SyncContractError('Visit partySize must be null or a positive integer.')
@@ -137,13 +163,41 @@ export function decodeVisitSyncContract(value: unknown): VisitSyncContractV1 {
   if (value.myActualSpend !== null && Number(value.myActualSpend) < 0) {
     throw new SyncContractError('Visit myActualSpend cannot be negative.')
   }
+  for (const [field, amount] of [['totalPrice', totalPrice], ['pricePerPerson', pricePerPerson]] as const) {
+    if (amount !== null && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0)) {
+      throw new SyncContractError(`Visit ${field} must be null or a non-negative finite number.`)
+    }
+  }
+  const valueTags = legacyStringArray(value, 'valueTags')
+  const environmentTags = legacyStringArray(value, 'environmentTags')
+  const serviceTags = legacyStringArray(value, 'serviceTags')
+  const noiseLevel = legacyNullableString(value, 'noiseLevel')
+  const diningDuration = legacyNullableString(value, 'diningDuration')
+  const portionLevel = legacyNullableString(value, 'portionLevel')
+  const transportConvenience = legacyNullableString(value, 'transportConvenience')
+  const specialNotes = legacyNullableString(value, 'specialNotes')
   return {
     ...value,
     diningMode,
+    visibility,
     partySize,
+    totalPrice,
+    paymentMode,
+    pricePerPerson,
+    queueDuration,
+    diningOccasions,
+    diningOccasionText,
     valueRating,
     environmentRating,
     serviceRating,
+    valueTags,
+    environmentTags,
+    serviceTags,
+    noiseLevel,
+    diningDuration,
+    portionLevel,
+    transportConvenience,
+    specialNotes,
   } as unknown as VisitSyncContractV1
 }
 
@@ -211,6 +265,24 @@ function hasNullableString(value: Record<string, unknown>, key: string) {
 
 function hasNullableNumber(value: Record<string, unknown>, key: string) {
   return key in value && (value[key] === null || (typeof value[key] === 'number' && Number.isFinite(value[key])))
+}
+
+function legacyNullableString(value: Record<string, unknown>, key: string) {
+  if (!(key in value) || value[key] === null || value[key] === '') return null
+  if (typeof value[key] !== 'string' || value[key].trim().length > 1000) {
+    throw new SyncContractError(`Visit ${key} must be null or a bounded string.`)
+  }
+  return value[key].trim()
+}
+
+function legacyStringArray(value: Record<string, unknown>, key: string) {
+  if (!(key in value)) return []
+  const raw = value[key]
+  if (!Array.isArray(raw) || raw.length > 40 ||
+    !raw.every((item) => typeof item === 'string' && item.trim().length > 0 && item.trim().length <= 100)) {
+    throw new SyncContractError(`Visit ${key} must be an array of bounded non-empty strings.`)
+  }
+  return [...new Set(raw.map((item) => (item as string).trim()))]
 }
 
 function isNonEmptyString(value: unknown): value is string {

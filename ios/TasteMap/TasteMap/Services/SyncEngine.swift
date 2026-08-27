@@ -405,7 +405,22 @@ final class SyncEngine {
             serviceRating: record.serviceRating,
             note: record.note,
             myActualSpend: record.myActualSpend.map { Decimal($0) },
+            totalPrice: record.totalPrice.map { Decimal($0) },
+            pricePerPerson: record.pricePerPerson.map { Decimal($0) },
             diningMode: record.diningMode,
+            visibility: record.visibility,
+            paymentMode: record.paymentMode.flatMap(VisitPaymentMode.init(rawValue:)),
+            queueDuration: record.queueDuration.flatMap(VisitQueueDuration.init(rawValue:)),
+            diningOccasions: record.diningOccasions.compactMap(VisitDiningOccasion.init(rawValue:)),
+            diningOccasionText: record.diningOccasionText,
+            valueTags: record.valueTags,
+            environmentTags: record.environmentTags,
+            serviceTags: record.serviceTags,
+            noiseLevel: record.noiseLevel.flatMap(VisitNoiseLevel.init(rawValue:)),
+            diningDuration: record.diningDuration.flatMap(VisitDiningDuration.init(rawValue:)),
+            portionLevel: record.portionLevel.flatMap(VisitPortionLevel.init(rawValue:)),
+            transportConvenience: record.transportConvenience.flatMap(VisitTransportConvenience.init(rawValue:)),
+            specialNotes: record.specialNotes,
             partySize: record.partySize,
             createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
             updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
@@ -414,6 +429,13 @@ final class SyncEngine {
             lastSyncedAt: now(),
             syncStatus: .synced
         )
+        visit.paymentModeRawValue = record.paymentMode
+        visit.queueDurationRawValue = record.queueDuration
+        visit.diningOccasionRawValues = record.diningOccasions
+        visit.noiseLevelRawValue = record.noiseLevel
+        visit.diningDurationRawValue = record.diningDuration
+        visit.portionLevelRawValue = record.portionLevel
+        visit.transportConvenienceRawValue = record.transportConvenience
         context.insert(visit)
     }
 
@@ -673,7 +695,22 @@ final class SyncEngine {
         visit.serviceRating = Visit.validatedRating(record.serviceRating)
         visit.note = record.note
         visit.myActualSpend = record.myActualSpend.map { Decimal($0) }
+        visit.totalPrice = record.totalPrice.map { Decimal($0) }
+        visit.pricePerPerson = record.pricePerPerson.map { Decimal($0) }
         visit.diningMode = record.diningMode
+        visit.visibility = record.visibility
+        visit.paymentModeRawValue = record.paymentMode
+        visit.queueDurationRawValue = record.queueDuration
+        visit.diningOccasionRawValues = record.diningOccasions
+        visit.diningOccasionText = record.diningOccasionText
+        visit.valueTags = record.valueTags
+        visit.environmentTags = record.environmentTags
+        visit.serviceTags = record.serviceTags
+        visit.noiseLevelRawValue = record.noiseLevel
+        visit.diningDurationRawValue = record.diningDuration
+        visit.portionLevelRawValue = record.portionLevel
+        visit.transportConvenienceRawValue = record.transportConvenience
+        visit.specialNotes = record.specialNotes
         visit.partySize = record.partySize
         visit.createdAt = SyncRecordMapper.date(record.createdAt) ?? visit.createdAt
         visit.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? visit.updatedAt

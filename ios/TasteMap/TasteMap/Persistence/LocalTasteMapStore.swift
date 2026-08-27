@@ -95,10 +95,32 @@ struct LocalTasteMapStore {
                 serviceRating: draft.serviceRating,
                 note: draft.note,
                 myActualSpend: draft.myActualSpend,
+                totalPrice: draft.totalPrice,
+                pricePerPerson: draft.calculatedPricePerPerson,
                 diningMode: draft.diningMode,
+                visibility: draft.visibility,
+                paymentMode: draft.paymentMode,
+                queueDuration: draft.queueDuration,
+                diningOccasions: draft.diningOccasions,
+                diningOccasionText: draft.diningOccasionText,
+                valueTags: draft.valueTags,
+                environmentTags: draft.environmentTags,
+                serviceTags: draft.serviceTags,
+                noiseLevel: draft.noiseLevel,
+                diningDuration: draft.diningDuration,
+                portionLevel: draft.portionLevel,
+                transportConvenience: draft.transportConvenience,
+                specialNotes: draft.specialNotes,
                 partySize: draft.partySize,
                 syncStatus: .pending
             )
+            visit.paymentModeRawValue = draft.paymentModeRawValue
+            visit.queueDurationRawValue = draft.queueDurationRawValue
+            visit.diningOccasionRawValues = draft.diningOccasionRawValues
+            visit.noiseLevelRawValue = draft.noiseLevelRawValue
+            visit.diningDurationRawValue = draft.diningDurationRawValue
+            visit.portionLevelRawValue = draft.portionLevelRawValue
+            visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
             context.insert(visit)
             guard let restaurantRemoteID = restaurant.remoteID else {
                 throw LocalTasteMapStoreError.restaurantRemoteIDMissing
@@ -146,7 +168,24 @@ struct LocalTasteMapStore {
             visit.serviceRating = Visit.validatedRating(draft.serviceRating)
             visit.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             visit.myActualSpend = draft.myActualSpend
+            visit.totalPrice = draft.totalPrice
+            visit.pricePerPerson = draft.calculatedPricePerPerson
             visit.diningMode = draft.diningMode
+            visit.visibility = draft.visibility
+            visit.paymentModeRawValue = draft.paymentModeRawValue
+            visit.queueDurationRawValue = draft.queueDurationRawValue
+            visit.diningOccasionRawValues = draft.diningOccasionRawValues
+            visit.diningOccasionText = draft.diningOccasionText
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            visit.valueTags = draft.valueTags
+            visit.environmentTags = draft.environmentTags
+            visit.serviceTags = draft.serviceTags
+            visit.noiseLevelRawValue = draft.noiseLevelRawValue
+            visit.diningDurationRawValue = draft.diningDurationRawValue
+            visit.portionLevelRawValue = draft.portionLevelRawValue
+            visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
+            visit.specialNotes = draft.specialNotes
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             visit.partySize = draft.partySize
             visit.updatedAt = .now
             visit.syncStatus = .pending
