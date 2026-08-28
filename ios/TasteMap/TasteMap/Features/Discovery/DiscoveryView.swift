@@ -67,6 +67,7 @@ struct DiscoveryView: View {
                         api: authServices.socialAPI,
                         communityAPI: authServices.communityAPI,
                         photoAPI: authServices.photoAPI,
+                        restaurantListAPI: authServices.restaurantListAPI,
                         onChange: { result in
                             if result.friendshipState != .friends {
                                 cards.removeAll {
@@ -382,10 +383,16 @@ struct DiscoveryRestaurantImage: View {
 struct DiscoveryRestaurantDestination: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query private var profiles: [UserProfile]
     let card: DiscoveryCardV1
     let restaurants: [Restaurant]
     let onWantToGo: () -> Void
     let photoAPI: (any PhotoBinaryAPI)?
+    @State private var addingToList = false
+
+    private var currentUserID: String? {
+        profiles.first { $0.deletedAt == nil }?.tasteMapUserID
+    }
 
     var body: some View {
         if let local = LocalDiscoveryStore(context: modelContext)
@@ -406,11 +413,23 @@ struct DiscoveryRestaurantDestination: View {
                     }.padding(18)
                 }
                 .navigationTitle("餐厅详情").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                    if currentUserID != nil {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("加入榜单", systemImage: "list.number") { addingToList = true }
+                        }
+                    }
+                }
                 .safeAreaInset(edge: .bottom) {
                     if card.viewerState == .none {
                         Button(action: onWantToGo) { Label("加入想吃", systemImage: "bookmark.fill").frame(maxWidth: .infinity) }
                             .buttonStyle(.borderedProminent).controlSize(.large).padding().background(.bar)
+                    }
+                }
+                .sheet(isPresented: $addingToList) {
+                    if let currentUserID {
+                        AddPlaceToListsSheet(place: card.restaurant, currentUserID: currentUserID)
                     }
                 }
             }

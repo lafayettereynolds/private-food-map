@@ -15,6 +15,7 @@ struct SocialHubView: View {
     let api: any SocialAPI
     let communityAPI: (any CommunityAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
+    let restaurantListAPI: (any RestaurantListAPI)?
     @State private var section: SocialHubSection = .search
     @State private var query = ""
     @State private var items: [SocialUserResultV1] = []
@@ -45,6 +46,7 @@ struct SocialHubView: View {
                 SocialPublicProfileView(
                     initial: user, currentUserID: currentUserID, api: api,
                     communityAPI: communityAPI, photoAPI: photoAPI,
+                    restaurantListAPI: restaurantListAPI,
                     onChange: { changed in
                         replace(changed)
                         selectedUser = changed
@@ -58,12 +60,14 @@ struct SocialHubView: View {
         currentUserID: String,
         api: any SocialAPI,
         communityAPI: (any CommunityAPI)? = nil,
-        photoAPI: (any PhotoBinaryAPI)? = nil
+        photoAPI: (any PhotoBinaryAPI)? = nil,
+        restaurantListAPI: (any RestaurantListAPI)? = nil
     ) {
         self.currentUserID = currentUserID
         self.api = api
         self.communityAPI = communityAPI
         self.photoAPI = photoAPI
+        self.restaurantListAPI = restaurantListAPI
     }
 
     private var searchContent: some View {
@@ -393,6 +397,7 @@ struct SocialPublicProfileView: View {
     let api: any SocialAPI
     let communityAPI: (any CommunityAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
+    let restaurantListAPI: (any RestaurantListAPI)?
     let onChange: (SocialUserResultV1) -> Void
 
     init(
@@ -401,6 +406,7 @@ struct SocialPublicProfileView: View {
         api: any SocialAPI,
         communityAPI: (any CommunityAPI)? = nil,
         photoAPI: (any PhotoBinaryAPI)? = nil,
+        restaurantListAPI: (any RestaurantListAPI)? = nil,
         onChange: @escaping (SocialUserResultV1) -> Void
     ) {
         _item = State(initialValue: initial)
@@ -408,6 +414,7 @@ struct SocialPublicProfileView: View {
         self.api = api
         self.communityAPI = communityAPI
         self.photoAPI = photoAPI
+        self.restaurantListAPI = restaurantListAPI
         self.onChange = onChange
     }
 
@@ -434,6 +441,14 @@ struct SocialPublicProfileView: View {
                         }
                         .pickerStyle(.segmented)
                         publicContent
+                    }
+                    if let restaurantListAPI {
+                        PublicRestaurantListsSection(
+                            ownerUserID: item.profile.userId,
+                            currentUserID: currentUserID,
+                            api: restaurantListAPI,
+                            photoAPI: photoAPI
+                        )
                     }
                     if processing { ProgressView("处理中…") }
                     if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
@@ -577,6 +592,8 @@ struct SocialPublicProfileView: View {
                 contentItems.removeAll { $0.cacheScope == .friends }
                 try? LocalCommunityStore(context: modelContext)
                     .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
+                LocalRestaurantListStore(context: modelContext)
+                    .invalidate(ownerUserID: item.profile.userId, viewerUserID: currentUserID)
             }
             await loadContext()
         } catch { message = "关系已变化，请刷新后重试。" }

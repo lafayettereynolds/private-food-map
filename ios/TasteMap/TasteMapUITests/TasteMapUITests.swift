@@ -1309,6 +1309,137 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4FOwnRestaurantListCreateAddReorderEditRemovePublicAndRestart() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1d-persistent-offline-fixture", "-p1d-reset-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1", "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P4F_LISTS_UI_TEST": "1",
+        ]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        let entry = app.buttons["profile-restaurant-lists-entry"]
+        scrollUntilVisible(entry, in: app)
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["我的榜单"].waitForExistence(timeout: 5))
+        app.buttons["新建"].tap()
+        let title = app.textFields["restaurant-list-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.tap()
+        title.typeText("P4-F 周末会再去")
+        let description = app.textFields["restaurant-list-description"]
+        description.tap()
+        description.typeText("真实餐厅榜单 UI E2E")
+        app.buttons["restaurant-list-save"].tap()
+        XCTAssertTrue(app.staticTexts["P4-F 周末会再去"].waitForExistence(timeout: 5))
+        app.staticTexts["P4-F 周末会再去"].tap()
+
+        let add = app.buttons["restaurant-list-add-restaurants"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
+        let restaurantIDs = [
+            "11111111-2222-3333-4444-555555555555",
+            "00000000-0000-0000-0000-000000008001",
+            "00000000-0000-0000-0000-000000008002",
+            "00000000-0000-0000-0000-000000008003",
+            "00000000-0000-0000-0000-000000008004",
+        ]
+        for id in restaurantIDs {
+            let button = app.buttons["restaurant-list-add-\(id)"]
+            scrollUntilVisible(button, in: app)
+            XCTAssertTrue(button.waitForExistence(timeout: 3))
+            button.tap()
+        }
+        app.navigationBars["添加餐厅"].buttons["完成"].tap()
+        XCTAssertTrue(app.staticTexts["P4-F 小满食堂"].waitForExistence(timeout: 5))
+
+        app.buttons["restaurant-list-edit-mode"].tap()
+        let first = app.buttons["restaurant-list-item-apple_maps:apple-ui-test-p1d"]
+        let last = app.buttons["restaurant-list-item-apple_maps:apple-p4f-ui-4"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        scrollUntilVisible(last, in: app)
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.5))
+            .press(forDuration: 0.9, thenDragTo: last.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.75)))
+        app.buttons["restaurant-list-edit-mode"].tap()
+
+        app.buttons["restaurant-list-settings"].tap()
+        let editedTitle = app.textFields["restaurant-list-title"]
+        editedTitle.tap()
+        editedTitle.clearAndType("P4-F 杭州周末 Top 4")
+        let visibility = app.buttons["restaurant-list-visibility"]
+        XCTAssertTrue(visibility.waitForExistence(timeout: 3))
+        visibility.tap()
+        app.buttons["公开"].tap()
+        app.buttons["restaurant-list-save"].tap()
+        let updatedTitle = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "P4-F 杭州周末 Top 4")
+        ).firstMatch
+        XCTAssertTrue(updatedTitle.waitForExistence(timeout: 5))
+
+        let remove = app.buttons["restaurant-list-item-apple_maps:apple-p4f-ui-2"]
+        scrollUntilVisible(remove, in: app)
+        remove.swipeLeft()
+        XCTAssertTrue(app.buttons["移除"].waitForExistence(timeout: 3))
+        app.buttons["移除"].tap()
+        XCTAssertTrue(remove.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["分享榜单"].exists)
+        keepScreenshot(named: "P4-F Own Public Ranking", of: app)
+
+        app.terminate()
+        app.launchArguments = ["-p1d-persistent-offline-fixture"]
+        app.launchEnvironment = ["TASTEMAP_P1D_UI_TEST": "1", "TASTEMAP_P4F_LISTS_UI_TEST": "1"]
+        app.launch()
+        app.buttons["我的"].tap()
+        let reopenedEntry = app.buttons["profile-restaurant-lists-entry"]
+        scrollUntilVisible(reopenedEntry, in: app)
+        reopenedEntry.tap()
+        XCTAssertTrue(app.staticTexts["P4-F 杭州周末 Top 4"].waitForExistence(timeout: 5))
+        app.staticTexts["P4-F 杭州周末 Top 4"].tap()
+        XCTAssertFalse(app.staticTexts["P4-F 雨巷火锅"].exists)
+        XCTAssertTrue(app.staticTexts["P4-F 小满食堂"].exists)
+    }
+
+    @MainActor
+    func testP4FPublicProfileListRestaurantWantToGoAndVisibilityRevocation() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = [
+            "TASTEMAP_P3D_COMMUNITY_UI_TEST": "1", "TASTEMAP_P4F_LISTS_UI_TEST": "1",
+        ]
+        app.launch()
+        app.buttons["发现"].tap()
+        app.segmentedControls.buttons["社区动态"].tap()
+        XCTAssertTrue(app.staticTexts["常去小馆的阿岚"].firstMatch.waitForExistence(timeout: 5))
+        app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
+        let publicList = app.buttons["public-restaurant-list-p4f-public-ui-list"]
+        scrollUntilVisible(publicList, in: app)
+        XCTAssertTrue(publicList.waitForExistence(timeout: 5))
+        publicList.tap()
+        XCTAssertTrue(app.navigationBars["P4-F 阿岚的杭州小馆"].waitForExistence(timeout: 5))
+        let restaurant = app.buttons["public-list-restaurant-apple_maps:p4f-public-1"]
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
+        restaurant.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["加入想吃"].waitForExistence(timeout: 5))
+        app.buttons["加入想吃"].tap()
+        keepScreenshot(named: "P4-F Public List To Want To Go", of: app)
+
+        app.terminate()
+        app.launchEnvironment = [
+            "TASTEMAP_P3D_COMMUNITY_UI_TEST": "1", "TASTEMAP_P4F_LISTS_PRIVATE_UI_TEST": "1",
+        ]
+        app.launch()
+        app.buttons["发现"].tap()
+        app.segmentedControls.buttons["社区动态"].tap()
+        app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
+        let revoked = app.staticTexts["这些榜单已经不可查看。"]
+        scrollUntilVisible(revoked, in: app)
+        XCTAssertTrue(revoked.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["public-restaurant-list-p4f-public-ui-list"].exists)
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,

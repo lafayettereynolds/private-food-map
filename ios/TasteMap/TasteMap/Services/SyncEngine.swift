@@ -171,6 +171,32 @@ final class SyncEngine {
                   ) == nil else { continue }
             try LocalUserProfileStore(context: context).enqueueIfReady(profile)
         }
+        for list in try restaurantLists() {
+            if list.remoteID == nil { list.remoteID = list.id.uuidString.lowercased() }
+            guard list.serverVersion == 0, list.deletedAt == nil,
+                  let remoteID = list.remoteID,
+                  try queue.activeMutation(entityType: .restaurantList, entityID: remoteID) == nil else { continue }
+            try queue.enqueueUpsert(
+                entityType: .restaurantList,
+                entityID: remoteID,
+                baseVersion: 0,
+                payload: SyncRecordMapper.restaurantListPayload(list),
+                timestamp: list.updatedAt
+            )
+        }
+        for item in try restaurantListItems() {
+            if item.remoteID == nil { item.remoteID = item.id.uuidString.lowercased() }
+            guard item.serverVersion == 0, item.deletedAt == nil,
+                  let remoteID = item.remoteID,
+                  try queue.activeMutation(entityType: .restaurantListItem, entityID: remoteID) == nil else { continue }
+            try queue.enqueueUpsert(
+                entityType: .restaurantListItem,
+                entityID: remoteID,
+                baseVersion: 0,
+                payload: SyncRecordMapper.restaurantListItemPayload(item),
+                timestamp: item.updatedAt
+            )
+        }
     }
 
     private func pushPendingMutations() async throws {
@@ -242,6 +268,12 @@ final class SyncEngine {
         case (.upsert, .profile):
             guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
             payload = .profile(try JSONDecoder().decode(OwnProfileSyncContractV1.self, from: data))
+        case (.upsert, .restaurantList):
+            guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
+            payload = .restaurantList(try JSONDecoder().decode(RestaurantListSyncContractV1.self, from: data))
+        case (.upsert, .restaurantListItem):
+            guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
+            payload = .restaurantListItem(try JSONDecoder().decode(RestaurantListItemSyncContractV1.self, from: data))
         }
         return SyncMutationRequestV1(
             mutationId: mutation.mutationID.uuidString.lowercased(),
@@ -343,6 +375,12 @@ final class SyncEngine {
         case .profile:
             payload = try profiles().first(where: { $0.tasteMapUserID == remoteID })
                 .map(SyncRecordMapper.profilePayload)
+        case .restaurantList:
+            payload = try restaurantLists().first(where: { $0.remoteID == remoteID })
+                .map(SyncRecordMapper.restaurantListPayload)
+        case .restaurantListItem:
+            payload = try restaurantListItems().first(where: { $0.remoteID == remoteID })
+                .map(SyncRecordMapper.restaurantListItemPayload)
         }
         try queue.rebaseActiveMutation(entityType: type, entityID: remoteID, serverVersion: serverVersion, payload: payload)
     }
@@ -361,6 +399,8 @@ final class SyncEngine {
             for envelope in response.visitDishes { try applyVisitDish(envelope) }
             for envelope in response.photos { try applyPhoto(envelope) }
             for envelope in response.profiles { try applyProfile(envelope) }
+            for envelope in response.restaurantLists { try applyRestaurantList(envelope) }
+            for envelope in response.restaurantListItems { try applyRestaurantListItem(envelope) }
             for tombstone in response.tombstones { try applyTombstone(tombstone) }
             checkpoint.cursor = response.nextCursor
             checkpoint.lastSyncedAt = now()
@@ -845,6 +885,128 @@ final class SyncEngine {
         ))
     }
 
+    private func applyRestaurantList(_ envelope: RestaurantListSyncRecordEnvelopeV1) throws {
+        let record = envelope.record
+        let snapshot = try JSONEncoder().encode(record)
+        if let list = try restaurantLists().first(where: { $0.remoteID == record.id }) {
+            if try queue.hasConflict(entityType: .restaurantList, entityID: record.id) {
+                list.remoteRecordData = snapshot
+                return
+            }
+            if try queue.activeMutation(entityType: .restaurantList, entityID: record.id) != nil {
+                if envelope.serverVersion > list.serverVersion {
+                    try queue.markConflicted(
+                        entityType: .restaurantList,
+                        entityID: record.id,
+                        reason: "server_changed_while_local_mutation_pending"
+                    )
+                    list.remoteRecordData = snapshot
+                    list.syncStatus = .failed
+                } else if envelope.serverVersion == list.serverVersion {
+                    list.remoteRecordData = snapshot
+                    try queue.rebaseActiveMutation(
+                        entityType: .restaurantList,
+                        entityID: record.id,
+                        serverVersion: envelope.serverVersion,
+                        payload: try SyncRecordMapper.restaurantListPayload(list)
+                    )
+                }
+                return
+            }
+            guard envelope.serverVersion >= list.serverVersion else { return }
+            update(list, from: record, serverVersion: envelope.serverVersion, snapshot: snapshot)
+            return
+        }
+        context.insert(RestaurantList(
+            id: UUID(uuidString: record.id) ?? UUID(),
+            remoteID: record.id,
+            ownerUserID: record.userId,
+            title: record.title,
+            listDescription: record.description,
+            visibility: record.visibility,
+            isRanked: record.isRanked,
+            coverMode: record.coverMode,
+            customCoverPhotoID: record.customCoverPhotoId,
+            createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
+            updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
+            deletedAt: record.deletedAt.flatMap(SyncRecordMapper.date),
+            serverVersion: envelope.serverVersion,
+            lastSyncedAt: now(),
+            syncStatus: .synced,
+            remoteRecordData: snapshot
+        ))
+    }
+
+    private func applyRestaurantListItem(_ envelope: RestaurantListItemSyncRecordEnvelopeV1) throws {
+        let record = envelope.record
+        guard let list = try restaurantLists().first(where: { $0.remoteID == record.listId }) else {
+            throw SyncEngineError.missingRestaurantMapping
+        }
+        let snapshot = try JSONEncoder().encode(record)
+        let placeData = try JSONEncoder().encode(record.restaurant)
+        let localRestaurantID = LocalDiscoveryStore(context: context).localRestaurant(
+            for: record.restaurant.discoveryProjection,
+            among: try restaurants()
+        )?.id
+        if let item = try restaurantListItems().first(where: { $0.remoteID == record.id }) {
+            if try queue.hasConflict(entityType: .restaurantListItem, entityID: record.id) {
+                item.remoteRecordData = snapshot
+                return
+            }
+            if try queue.activeMutation(entityType: .restaurantListItem, entityID: record.id) != nil {
+                if envelope.serverVersion > item.serverVersion {
+                    try queue.markConflicted(
+                        entityType: .restaurantListItem,
+                        entityID: record.id,
+                        reason: "server_changed_while_local_mutation_pending"
+                    )
+                    item.remoteRecordData = snapshot
+                    item.syncStatus = .failed
+                }
+                return
+            }
+            guard envelope.serverVersion >= item.serverVersion else { return }
+            item.ownerUserID = record.userId
+            item.listID = list.id
+            item.listRemoteID = record.listId
+            item.restaurantReferenceID = record.restaurantId
+            item.localRestaurantID = localRestaurantID
+            item.restaurantGlobalKey = record.restaurantGlobalKey
+            item.restaurantSnapshotData = placeData
+            item.position = record.position
+            item.note = record.note
+            item.createdAt = SyncRecordMapper.date(record.createdAt) ?? item.createdAt
+            item.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? item.updatedAt
+            item.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)
+            item.serverVersion = envelope.serverVersion
+            item.lastSyncedAt = now()
+            item.syncStatus = .synced
+            item.remoteRecordData = snapshot
+        } else {
+            context.insert(try RestaurantListItem(
+                id: UUID(uuidString: record.id) ?? UUID(),
+                remoteID: record.id,
+                ownerUserID: record.userId,
+                listID: list.id,
+                listRemoteID: record.listId,
+                restaurantReferenceID: record.restaurantId,
+                localRestaurantID: localRestaurantID,
+                restaurantGlobalKey: record.restaurantGlobalKey,
+                restaurantSnapshot: record.restaurant,
+                position: record.position,
+                note: record.note,
+                createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
+                updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
+                deletedAt: record.deletedAt.flatMap(SyncRecordMapper.date),
+                serverVersion: envelope.serverVersion,
+                lastSyncedAt: now(),
+                syncStatus: .synced,
+                remoteRecordData: snapshot
+            ))
+        }
+        try refreshListSummary(list)
+    }
+
     private func applyTombstone(_ tombstone: SyncTombstoneV1) throws {
         let deletedAt = SyncRecordMapper.date(tombstone.deletedAt) ?? now()
         try queue.markConflicted(entityType: tombstone.entityType, entityID: tombstone.entityId, reason: "server_tombstone")
@@ -900,6 +1062,33 @@ final class SyncEngine {
             profile.serverVersion = tombstone.serverVersion
             profile.lastSyncedAt = now()
             profile.syncStatus = .synced
+        case .restaurantList:
+            guard let list = try restaurantLists().first(where: { $0.remoteID == tombstone.entityId }) else { return }
+            list.deletedAt = deletedAt
+            list.serverVersion = tombstone.serverVersion
+            list.lastSyncedAt = now()
+            list.syncStatus = .synced
+            list.activeItemCount = 0
+            list.previewRestaurantIDs = []
+            list.previewRestaurants = []
+            for item in try restaurantListItems() where item.listID == list.id && item.deletedAt == nil {
+                item.deletedAt = deletedAt
+                item.syncStatus = .synced
+                try queue.markConflicted(
+                    entityType: .restaurantListItem,
+                    entityID: item.remoteID ?? item.id.uuidString.lowercased(),
+                    reason: "parent_list_tombstone"
+                )
+            }
+        case .restaurantListItem:
+            guard let item = try restaurantListItems().first(where: { $0.remoteID == tombstone.entityId }) else { return }
+            item.deletedAt = deletedAt
+            item.serverVersion = tombstone.serverVersion
+            item.lastSyncedAt = now()
+            item.syncStatus = .synced
+            if let list = try restaurantLists().first(where: { $0.id == item.listID }) {
+                try refreshListSummary(list)
+            }
         }
     }
 
@@ -1121,6 +1310,37 @@ final class SyncEngine {
         association.remoteRecordData = snapshot
     }
 
+    private func update(
+        _ list: RestaurantList,
+        from record: RestaurantListSyncContractV1,
+        serverVersion: Int64,
+        snapshot: Data
+    ) {
+        list.ownerUserID = record.userId
+        list.title = record.title
+        list.listDescription = record.description
+        list.visibility = record.visibility
+        list.isRanked = record.isRanked
+        list.coverMode = record.coverMode
+        list.customCoverPhotoID = record.customCoverPhotoId
+        list.createdAt = SyncRecordMapper.date(record.createdAt) ?? list.createdAt
+        list.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? list.updatedAt
+        list.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)
+        list.serverVersion = serverVersion
+        list.lastSyncedAt = now()
+        list.syncStatus = .synced
+        list.remoteRecordData = snapshot
+    }
+
+    private func refreshListSummary(_ list: RestaurantList) throws {
+        let active = try restaurantListItems()
+            .filter { $0.listID == list.id && $0.deletedAt == nil }
+            .sorted { $0.position < $1.position }
+        list.activeItemCount = active.count
+        list.previewRestaurantIDs = active.prefix(4).map(\.restaurantGlobalKey)
+        list.previewRestaurants = active.prefix(4).compactMap(\.restaurantSnapshot)
+    }
+
     private func markEntitySynced(type: SyncEntityType, remoteID: String, serverVersion: Int64) {
         let hasLaterMutation = (try? queue.activeMutation(entityType: type, entityID: remoteID)) != nil
         switch type {
@@ -1166,6 +1386,16 @@ final class SyncEngine {
             profile.serverVersion = serverVersion
             profile.lastSyncedAt = now()
             profile.syncStatus = hasLaterMutation ? .pending : .synced
+        case .restaurantList:
+            guard let list = try? restaurantLists().first(where: { $0.remoteID == remoteID }) else { return }
+            list.serverVersion = serverVersion
+            list.lastSyncedAt = now()
+            list.syncStatus = hasLaterMutation ? .pending : .synced
+        case .restaurantListItem:
+            guard let item = try? restaurantListItems().first(where: { $0.remoteID == remoteID }) else { return }
+            item.serverVersion = serverVersion
+            item.lastSyncedAt = now()
+            item.syncStatus = hasLaterMutation ? .pending : .synced
         }
     }
 
@@ -1204,6 +1434,14 @@ final class SyncEngine {
                 $0.tasteMapUserID == remoteID
             }) {
                 profile.syncStatus = .failed
+            }
+        case .restaurantList:
+            if let list = try? restaurantLists().first(where: { $0.remoteID == remoteID }) {
+                list.syncStatus = .failed
+            }
+        case .restaurantListItem:
+            if let item = try? restaurantListItems().first(where: { $0.remoteID == remoteID }) {
+                item.syncStatus = .failed
             }
         }
     }
@@ -1245,6 +1483,14 @@ final class SyncEngine {
 
     private func profiles() throws -> [UserProfile] {
         try context.fetch(FetchDescriptor<UserProfile>())
+    }
+
+    private func restaurantLists() throws -> [RestaurantList] {
+        try context.fetch(FetchDescriptor<RestaurantList>())
+    }
+
+    private func restaurantListItems() throws -> [RestaurantListItem] {
+        try context.fetch(FetchDescriptor<RestaurantListItem>())
     }
 
     private func parentRemoteIDs(for photo: PhotoAsset) throws -> (restaurant: String?, visit: String?, dish: String?) {

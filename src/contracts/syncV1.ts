@@ -22,11 +22,17 @@ import {
   decodeOwnProfileSyncContract,
   type OwnProfileSyncContractV1,
 } from './profileContract'
+import {
+  decodeRestaurantListItemSyncContract,
+  decodeRestaurantListSyncContract,
+  type RestaurantListItemSyncContractV1,
+  type RestaurantListSyncContractV1,
+} from './restaurantListContract'
 
 export const SYNC_API_VERSION = 1 as const
 export const SYNC_SCHEMA_VERSION = 1 as const
 
-export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'visitDish' | 'photo' | 'companion' | 'recommendationSource' | 'profile'
+export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'visitDish' | 'photo' | 'companion' | 'recommendationSource' | 'profile' | 'restaurantList' | 'restaurantListItem'
 export type SyncMutationOperation = 'upsert' | 'delete'
 export type VisitDiningModeContract = 'dine_in' | 'takeout'
 export type VisitVisibilityContract = 'private' | 'friends' | 'public'
@@ -79,7 +85,7 @@ export interface SyncMutationV1 {
   operation: SyncMutationOperation
   baseVersion: number
   clientTimestamp: string
-  payload?: RestaurantJSONContractV1 | VisitSyncContractV1 | DishJSONContractV1 | VisitDishJSONContractV1 | PhotoJSONContractV1 | DiningCompanionSyncContractV1 | RecommendationSourceSyncContractV1 | OwnProfileSyncContractV1
+  payload?: RestaurantJSONContractV1 | VisitSyncContractV1 | DishJSONContractV1 | VisitDishJSONContractV1 | PhotoJSONContractV1 | DiningCompanionSyncContractV1 | RecommendationSourceSyncContractV1 | OwnProfileSyncContractV1 | RestaurantListSyncContractV1 | RestaurantListItemSyncContractV1
 }
 
 export interface SyncPushRequestV1 {
@@ -128,6 +134,8 @@ export interface SyncPullResponseV1 {
   companions: Array<SyncRecordEnvelopeV1<DiningCompanionSyncContractV1>>
   recommendationSources: Array<SyncRecordEnvelopeV1<RecommendationSourceSyncContractV1>>
   profiles: Array<SyncRecordEnvelopeV1<OwnProfileSyncContractV1>>
+  restaurantLists: Array<SyncRecordEnvelopeV1<RestaurantListSyncContractV1>>
+  restaurantListItems: Array<SyncRecordEnvelopeV1<RestaurantListItemSyncContractV1>>
   tombstones: SyncTombstoneV1[]
   nextCursor: string
   hasMore: boolean
@@ -256,7 +264,7 @@ export function stableSyncMutationJSON(mutation: SyncMutationV1) {
 
 function decodeSyncMutation(value: unknown): SyncMutationV1 {
   if (!isRecord(value) || !isNonEmptyString(value.mutationId) ||
-    !['restaurant', 'visit', 'dish', 'visitDish', 'photo', 'companion', 'recommendationSource', 'profile'].includes(String(value.entityType)) ||
+    !['restaurant', 'visit', 'dish', 'visitDish', 'photo', 'companion', 'recommendationSource', 'profile', 'restaurantList', 'restaurantListItem'].includes(String(value.entityType)) ||
     !isNonEmptyString(value.entityId) || !['upsert', 'delete'].includes(String(value.operation)) ||
     !Number.isInteger(value.baseVersion) || Number(value.baseVersion) < 0 ||
     !isNonEmptyString(value.clientTimestamp)) {
@@ -286,6 +294,8 @@ function decodeSyncMutation(value: unknown): SyncMutationV1 {
       case 'companion': return decodeDiningCompanionSyncContract(value.payload)
       case 'recommendationSource': return decodeRecommendationSourceSyncContract(value.payload)
       case 'profile': return decodeOwnProfileSyncContract(value.payload)
+      case 'restaurantList': return decodeRestaurantListSyncContract(value.payload)
+      case 'restaurantListItem': return decodeRestaurantListItemSyncContract(value.payload)
     }
   })()
   const payloadEntityId = mutation.entityType === 'profile'

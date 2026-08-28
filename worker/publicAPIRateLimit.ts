@@ -6,6 +6,7 @@ export type PublicAPIRateBucket =
   | 'social-read'
   | 'social-mutation'
   | 'community-read'
+  | 'restaurant-list-read'
   | 'legacy-social-search'
   | 'legacy-community-read'
   | 'legacy-profile-read'

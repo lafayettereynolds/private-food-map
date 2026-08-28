@@ -1,5 +1,15 @@
 # Taste Map 变更记录
 
+## 2026-08-29 — P4-F 原生餐厅榜单、公开榜单与同步
+
+- 审计并迁移 Web 正式食单语义，在原生 iOS 增加我的榜单、新建/编辑/删除、普通/排名、描述、单项备注、自动/既有照片封面、Restaurant Detail 多榜单加入、显式拖拽排序和 App 重启恢复；未新增协作、投票、官方/AI 榜单、榜单广场或海报。
+- 榜单项目使用 Global Restaurant identity 和公开安全 place snapshot；Apple Maps-only 餐厅可完整同步。同一榜单防重复，不同榜单可复用；加入/移除榜单不会创建或改变 WantToGo、Visit、Dish、Photo 或私人社交数据。
+- 扩展 Sync V1 为 `restaurantList` / `restaurantListItem`，保留现有 API/schema version、mutation idempotency、revision cursor、serverVersion 冲突和 soft-delete/tombstone；增加列表父子 mutation 依赖顺序和删除防复活。
+- 增加 Public Profile summary 与 Public List detail 两个分页 query API，服务端执行 owner/friends/public 权限并返回 allowlist DTO；公开榜单缓存按 viewer 隔离，logout、可见性撤回和授权失败会清除。
+- Migration：新增且只在 `food-map-db-development` 增量应用 `0028_restaurant_lists_v1.sql`，原地升级 Web 既有表并复制 V5 ledger/receipts 到 V6；未重建数据库、未改写 Restaurant/Visit identity、未访问或修改 Production。
+- 验证：合同/Worker/Sync 集成、真实 SQLite migration、原生 domain/持久化/队列/性能、两条 Simulator UI E2E 和真实 Development A/B Worker→D1 E2E 通过；测试数据最终 tombstone，Development 无活跃 P4-F 标记数据。
+- 关键文件：`src/contracts/restaurantListContract.ts`、`src/contracts/restaurantListPublicContract.ts`、`worker/restaurantListsV1.ts`、`worker/syncV1.ts`、`migrations/0028_restaurant_lists_v1.sql`、`ios/TasteMap/TasteMap/Models/RestaurantList.swift`、`ios/TasteMap/TasteMap/Persistence/LocalRestaurantListStore.swift`、`ios/TasteMap/TasteMap/Features/Lists/*`、`docs/P4_F_RESTAURANT_LISTS.md`。
+
 ## 2026-08-27 — P0-B2-A Development Worker / D1 真实接通
 
 - 创建并隔离 `food-map-db-development`，在空库只读 preflight 后顺序应用 `0001`—`0016`；`0015`、`0016` 已登记且无待执行 migration，Production D1 未查询或修改。

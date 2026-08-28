@@ -12,6 +12,7 @@ final class NativeAuthServices {
     let socialAPI: URLSessionSocialAPIClient
     let discoveryAPI: URLSessionDiscoveryAPIClient
     let communityAPI: URLSessionCommunityAPIClient
+    let restaurantListAPI: URLSessionRestaurantListAPIClient
     let appleSignIn: AppleSignInService
 
     init(
@@ -49,6 +50,11 @@ final class NativeAuthServices {
             session: session
         )
         communityAPI = URLSessionCommunityAPIClient(
+            configuration: configuration,
+            authorization: sessionManager,
+            session: session
+        )
+        restaurantListAPI = URLSessionRestaurantListAPIClient(
             configuration: configuration,
             authorization: sessionManager,
             session: session

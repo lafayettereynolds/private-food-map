@@ -25,6 +25,17 @@ enum TasteMapUITestFixtures {
     static let recommendationSourceAnalysisEnvironmentKey = "TASTEMAP_P4C_SOURCE_UI_TEST"
     static let monthlyRecapEnvironmentKey = "TASTEMAP_P4D_MONTHLY_UI_TEST"
     static let annualRecapEnvironmentKey = "TASTEMAP_P4E_ANNUAL_UI_TEST"
+    static let restaurantListsEnvironmentKey = "TASTEMAP_P4F_LISTS_UI_TEST"
+    static let restaurantListsPrivateEnvironmentKey = "TASTEMAP_P4F_LISTS_PRIVATE_UI_TEST"
+
+    static var usesRestaurantListsFixture: Bool {
+        ProcessInfo.processInfo.environment[restaurantListsEnvironmentKey] == "1"
+            || ProcessInfo.processInfo.environment[restaurantListsPrivateEnvironmentKey] == "1"
+    }
+
+    static var restaurantListsFixtureIsPrivate: Bool {
+        ProcessInfo.processInfo.environment[restaurantListsPrivateEnvironmentKey] == "1"
+    }
 
     static var usesAnalysisFixture: Bool {
         ProcessInfo.processInfo.environment[analysisEnvironmentKey] == "1"
@@ -70,6 +81,7 @@ enum TasteMapUITestFixtures {
     static var usesProfileFixture: Bool {
         ProcessInfo.processInfo.environment[profileEnvironmentKey] == "1"
             || usesAnalysisFixture
+            || usesRestaurantListsFixture
     }
 
     static var usesPhotoFixture: Bool {
@@ -132,6 +144,18 @@ enum TasteMapUITestFixtures {
     ) throws {
         let context = container.mainContext
         if reset {
+            for item in try context.fetch(FetchDescriptor<CachedPublicRestaurantListItem>()) {
+                context.delete(item)
+            }
+            for list in try context.fetch(FetchDescriptor<CachedPublicRestaurantList>()) {
+                context.delete(list)
+            }
+            for item in try context.fetch(FetchDescriptor<RestaurantListItem>()) {
+                context.delete(item)
+            }
+            for list in try context.fetch(FetchDescriptor<RestaurantList>()) {
+                context.delete(list)
+            }
             for source in try context.fetch(FetchDescriptor<RecommendationSource>()) {
                 context.delete(source)
             }
@@ -179,7 +203,74 @@ enum TasteMapUITestFixtures {
             status: .wantToGo,
             syncStatus: .synced
         ))
+        if usesRestaurantListsFixture {
+            for index in 1..<5 {
+                context.insert(Restaurant(
+                    id: uuid(8_000 + index),
+                    name: ["P4-F 青岚寿司", "P4-F 雨巷火锅", "P4-F 野火烧鸟", "P4-F 小满食堂"][index - 1],
+                    address: "杭州市西湖区榜单路 \(index) 号",
+                    latitude: 30.25 + Double(index) * 0.001,
+                    longitude: 120.16 + Double(index) * 0.001,
+                    appleMapItemIdentifier: "apple-p4f-ui-\(index)",
+                    city: "杭州", status: index.isMultiple(of: 2) ? .wantToGo : .visited,
+                    syncStatus: .synced
+                ))
+            }
+        }
         try context.save()
+    }
+
+    static func restaurantListPublicSummary(ownerUserID: String = "tm_p3d_friend") -> PublicListSummaryDTO {
+        PublicListSummaryDTO(
+            id: "p4f-public-ui-list", title: "P4-F 阿岚的杭州小馆",
+            description: "适合慢慢吃，也愿意带朋友再来的店。",
+            visibility: .public, isRanked: true, coverMode: .automatic,
+            customCoverPhotoId: nil, restaurantCount: 3,
+            previewRestaurants: [
+                .init(globalKey: "apple_maps:p4f-public-1", name: "云边小馆", photoId: nil, merchantImageUrl: nil, markerEmoji: "🍲"),
+                .init(globalKey: "apple_maps:p4f-public-2", name: "野火烧鸟", photoId: nil, merchantImageUrl: nil, markerEmoji: "🍢"),
+                .init(globalKey: "apple_maps:p4f-public-3", name: "青岚寿司", photoId: nil, merchantImageUrl: nil, markerEmoji: "🍣"),
+            ],
+            owner: .init(
+                userId: ownerUserID, displayName: "常去小馆的阿岚",
+                avatarPhotoId: nil, avatarPresetId: .otter
+            ),
+            updatedAt: "2026-08-28T12:00:00.000Z"
+        )
+    }
+
+    static func restaurantListPublicPage(ownerUserID: String) throws -> PublicListSummaryPageDTO {
+        if restaurantListsFixtureIsPrivate {
+            throw SyncAPIError.server(status: 403, message: "List is private")
+        }
+        let summary = restaurantListPublicSummary(ownerUserID: ownerUserID)
+        return .init(apiVersion: 1, items: [summary], nextCursor: nil, generatedAt: summary.updatedAt)
+    }
+
+    static func restaurantListPublicDetail() throws -> PublicListDetailDTO {
+        if restaurantListsFixtureIsPrivate {
+            throw SyncAPIError.server(status: 403, message: "List is private")
+        }
+        let summary = restaurantListPublicSummary()
+        let items = try (0..<3).map { index in
+            let globalKey = "apple_maps:p4f-public-\(index + 1)"
+            return PublicListItemDTO(
+                id: "p4f-public-ui-item-\(index)", position: index,
+                note: index == 0 ? "招牌菜值得专程来。" : "",
+                restaurant: try RestaurantListPlaceContractV1(
+                    globalKey: globalKey, restaurantId: "p4f-public-restaurant-\(index)",
+                    placeIdentities: [.init(
+                        provider: .appleMaps, externalId: "p4f-public-\(index + 1)", isPrimary: true
+                    )],
+                    name: ["云边小馆", "野火烧鸟", "青岚寿司"][index],
+                    address: "杭州市西湖区公开路 \(index + 1) 号", city: "杭州",
+                    latitude: 30.25, longitude: 120.16,
+                    markerPhotoId: nil, merchantImageUrl: nil,
+                    markerEmoji: ["🍲", "🍢", "🍣"][index]
+                )
+            )
+        }
+        return .init(apiVersion: 1, list: summary, items: items, nextCursor: nil, generatedAt: summary.updatedAt)
     }
 
     static func insertProfileFixture(into container: ModelContainer) throws {

@@ -466,7 +466,8 @@ private final class P2CDishSyncAPI: SyncAPI {
                     visitDishes[mutation.entityId] = .init(serverVersion: version, record: record)
                 case .photo:
                     break
-                case .companion, .recommendationSource, .profile:
+                case .companion, .recommendationSource, .profile,
+                     .restaurantList, .restaurantListItem:
                     break
                 }
                 tombstones.removeValue(forKey: mutation.entityId)
@@ -477,7 +478,8 @@ private final class P2CDishSyncAPI: SyncAPI {
                 case .dish: dishes.removeValue(forKey: mutation.entityId)
                 case .visitDish: visitDishes.removeValue(forKey: mutation.entityId)
                 case .photo: break
-                case .companion, .recommendationSource, .profile: break
+                case .companion, .recommendationSource, .profile,
+                     .restaurantList, .restaurantListItem: break
                 }
                 tombstones[mutation.entityId] = SyncTombstoneV1(
                     entityType: mutation.entityType, entityId: mutation.entityId,

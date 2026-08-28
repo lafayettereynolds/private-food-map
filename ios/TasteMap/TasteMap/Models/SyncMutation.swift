@@ -10,16 +10,22 @@ enum SyncEntityType: String, Codable, Sendable {
     case companion
     case recommendationSource
     case profile
+    case restaurantList
+    case restaurantListItem
 
     var dependencyPriority: Int {
         switch self {
-        case .restaurant, .companion, .recommendationSource: 0
-        case .visit: 1
+        case .restaurant, .companion, .recommendationSource, .restaurantList: 0
+        case .visit, .restaurantListItem: 1
         case .dish: 2
         case .visitDish: 3
         case .photo: 4
         case .profile: 5
         }
+    }
+
+    func dependencyPriority(for operation: SyncMutationOperation) -> Int {
+        operation == .delete ? 10 - dependencyPriority : dependencyPriority
     }
 }
 

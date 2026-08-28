@@ -71,6 +71,10 @@ import { handleSocialV1, SocialV1RequestError } from './socialV1'
 import { handleDiscoveryV1, DiscoveryV1RequestError } from './discoveryV1'
 import { handleCommunityV1, CommunityV1RequestError } from './communityV1'
 import {
+  handleRestaurantListsV1,
+  RestaurantListsV1RequestError,
+} from './restaurantListsV1'
+import {
   consumePublicAPIQuota,
   PublicAPIRateLimitError,
 } from './publicAPIRateLimit'
@@ -612,6 +616,11 @@ export default {
         await ensureUserProfile(env.DB, viewer.id)
         return json(await handleCommunityV1(request, env.DB, viewer.id))
       }
+      if (url.pathname.startsWith('/api/v1/lists/')) {
+        const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
+        return json(await handleRestaurantListsV1(request, env.DB, viewer.id))
+      }
       const photoContentMatch = url.pathname.match(/^\/api\/v1\/photos\/([0-9a-f-]+)\/content$/i)
       if (photoContentMatch) {
         const viewer = await resolveSyncViewer(request, env)
@@ -652,7 +661,7 @@ export default {
           userId: mapUserId(item.userId) as string,
         })).filter((item) => item.userId === viewer.id || sharedMeals.some((meal) => meal.id === item.sharedMealId)))
         await upsertRestaurantLists(env.DB, payload.restaurantLists.map((item) => ({ ...item, userId: viewer.id })))
-        await upsertRestaurantListItems(env.DB, payload.restaurantListItems)
+        await upsertRestaurantListItems(env.DB, payload.restaurantListItems, viewer.id)
         return json(await readSnapshot(env.DB, viewer.id))
       }
       if (url.pathname === '/api/community' && request.method === 'GET') {
@@ -720,7 +729,7 @@ export default {
         status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
       })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof PublicAPIRateLimitError ? error.status : 500
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError ? error.status : 500
       const code = error instanceof AuthV1RequestError ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
@@ -1246,18 +1255,65 @@ async function upsertSharedMealParticipants(database: D1Database, participants: 
 }
 
 async function upsertRestaurantLists(database: D1Database, lists: CloudRestaurantList[]) {
+  for (const item of lists) {
+    const existing = await database.prepare('SELECT user_id FROM restaurant_lists WHERE id = ? LIMIT 1')
+      .bind(item.id).first<{ user_id: string }>()
+    if (existing && existing.user_id !== item.userId) {
+      throw new RequestError('不能修改其他用户的榜单。', 403)
+    }
+  }
   const statements = lists.map((item) => database.prepare(RESTAURANT_LIST_UPSERT).bind(
     item.id, item.userId, item.title, item.description, item.visibility, item.isRanked ? 1 : 0,
     item.coverMode, item.customCoverPhotoId, item.createdAt, item.updatedAt, item.deletedAt,
   ))
   await runInChunks(database, statements)
+  await recordUnversionedSyncChanges(database, lists.map((item) => ({
+    userId: item.userId,
+    entityType: 'restaurantList' as const,
+    entityId: item.id,
+    updatedAt: item.updatedAt,
+    deletedAt: item.deletedAt,
+  })))
 }
 
-async function upsertRestaurantListItems(database: D1Database, items: CloudRestaurantListItem[]) {
+async function upsertRestaurantListItems(database: D1Database, items: CloudRestaurantListItem[], viewerId: string) {
+  for (const item of items) {
+    const [parent, restaurant, existing] = await Promise.all([
+      database.prepare('SELECT user_id FROM restaurant_lists WHERE id = ? LIMIT 1')
+        .bind(item.listId).first<{ user_id: string }>(),
+      database.prepare('SELECT user_id FROM restaurants WHERE id = ? LIMIT 1')
+        .bind(item.restaurantId).first<{ user_id: string }>(),
+      database.prepare('SELECT user_id FROM restaurant_list_items WHERE id = ? LIMIT 1')
+        .bind(item.id).first<{ user_id: string | null }>(),
+    ])
+    if (!parent || parent.user_id !== viewerId || !restaurant || restaurant.user_id !== viewerId ||
+      (existing?.user_id && existing.user_id !== viewerId)) {
+      throw new RequestError('不能修改其他用户的榜单餐厅。', 403)
+    }
+  }
   const statements = items.map((item) => database.prepare(RESTAURANT_LIST_ITEM_UPSERT).bind(
     item.id, item.listId, item.restaurantId, item.position, item.note, item.createdAt, item.updatedAt, item.deletedAt,
   ))
   await runInChunks(database, statements)
+  const identityStatements = items.map((item) => database.prepare(`UPDATE restaurant_list_items
+    SET user_id = ?,
+        restaurant_global_key = COALESCE((
+          SELECT provider || ':' || external_id
+          FROM restaurant_place_identities
+          WHERE restaurant_id = ? AND user_id = ?
+          ORDER BY is_primary DESC, updated_at ASC
+          LIMIT 1
+        ), 'manual:tastemap:' || restaurant_id)
+    WHERE id = ? AND list_id IN (SELECT id FROM restaurant_lists WHERE user_id = ?)`)
+    .bind(viewerId, item.restaurantId, viewerId, item.id, viewerId))
+  await runInChunks(database, identityStatements)
+  await recordUnversionedSyncChanges(database, items.map((item) => ({
+    userId: viewerId,
+    entityType: 'restaurantListItem' as const,
+    entityId: item.id,
+    updatedAt: item.updatedAt,
+    deletedAt: item.deletedAt,
+  })))
 }
 
 async function runInChunks(database: D1Database, statements: D1PreparedStatement[]) {

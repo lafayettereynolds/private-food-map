@@ -1,8 +1,11 @@
 # Taste Map 项目状态
 
-更新时间：2026-08-26
+更新时间：2026-08-29
 
 ## 已完成
+
+- 原生 iOS 已完成 P4-F 餐厅榜单闭环：我的榜单、新建/编辑/删除、普通/排名模式、显式拖拽排序、单项备注、自动/既有照片封面、Restaurant Detail 多榜单加入、公开/好友/私密权限、Public Profile 入口、公开详情、系统分享元数据及公开榜单餐厅加入自己的想吃。榜单引用 Global Restaurant identity，与 WantToGo 和 Visit 独立；Apple Maps-only 餐厅无需 `amapPoiId`。
+- 榜单采用 SwiftData local-first + Sync V1 `restaurantList` / `restaurantListItem`，App 重启保留队列和顺序；公开列表使用 viewer-scoped query cache。Development D1 已增量应用 `0028`，真实隔离 A/B Worker E2E、10 项原生 domain 测试和两条 Simulator UI E2E 通过，Production 未访问。完整边界见 `P4_F_RESTAURANT_LISTS.md`。
 
 - 已建立完整口味档案、饭搭子分析、推荐来源分析、本月回味、年度回味和那年今日六类统一分析分享系统；分析页与分享海报共用 `AnalysisShareData`，但使用独立的编辑式海报布局，不再直接截图页面。海报固定为 1080 × 1440，优先使用到访实拍和对应餐厅封面，支持稳定选图、真实候选内换图、保存 PNG 和系统分享，并在生成前统一过滤私人标识、精确位置和未授权消费等内容。
 - 首页以地图为默认视图；桌面端与手机端均可在完整地图和完整列表间切换，地图模式保留“去过 / 想吃 / 推荐”分类栏及“查看列表”入口。

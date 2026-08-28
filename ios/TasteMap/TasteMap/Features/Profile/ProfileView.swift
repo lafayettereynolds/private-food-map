@@ -51,6 +51,34 @@ struct ProfileView: View {
                         visitedCount: statistics.visitedRestaurantCount,
                         wantToGoCount: statistics.wantToGoRestaurantCount
                     )
+                    if let userID = authenticatedUser?.id {
+                        NavigationLink {
+                            RestaurantListsOverviewView(
+                                currentUserID: userID,
+                                photoAPI: authServices.photoAPI
+                            )
+                        } label: {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(Color.accentColor.opacity(0.12))
+                                    Text("📋").font(.title3)
+                                }
+                                .frame(width: 48, height: 48)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("我的榜单").font(.headline).foregroundStyle(.primary)
+                                    Text("整理、排名并分享你的餐厅主题清单")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .background(.background, in: RoundedRectangle(cornerRadius: 20))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("profile-restaurant-lists-entry")
+                    }
                     NavigationLink {
                         TasteProfileAnalysisScreen()
                     } label: {
@@ -207,7 +235,8 @@ struct ProfileView: View {
                             SocialHubView(
                                 currentUserID: userID, api: authServices.socialAPI,
                                 communityAPI: authServices.communityAPI,
-                                photoAPI: authServices.photoAPI
+                                photoAPI: authServices.photoAPI,
+                                restaurantListAPI: authServices.restaurantListAPI
                             )
                         }
                     }
@@ -347,6 +376,7 @@ struct ProfileView: View {
             authMessage = "已从此设备退出；服务端会话撤销暂时未确认。"
         }
         try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
+        try? LocalRestaurantListStore(context: modelContext).purgePublicCache()
         authenticatedUser = nil
         syncCoordinator.sessionDidEnd()
     }

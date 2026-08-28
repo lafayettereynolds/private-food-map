@@ -10,6 +10,7 @@ struct RestaurantDetailView: View {
     @Query private var allVisitDishes: [VisitDish]
     @Query private var allCompanions: [DiningCompanion]
     @Query private var allRecommendationSources: [RecommendationSource]
+    @Query private var profiles: [UserProfile]
 
     let restaurant: Restaurant
     private let navigator: any RestaurantNavigating
@@ -21,6 +22,7 @@ struct RestaurantDetailView: View {
     @State private var deleteError: String?
     @State private var navigationError: String?
     @State private var selectedPhoto: PhotoAsset?
+    @State private var isAddingToList = false
 
     @MainActor
     init(restaurant: Restaurant) {
@@ -43,6 +45,24 @@ struct RestaurantDetailView: View {
             ScrollView {
                 LazyVStack(spacing: 18) {
                     RestaurantDetailHeader(restaurant: restaurant)
+                    if currentUserID != nil {
+                        Button { isAddingToList = true } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "text.badge.plus")
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("加入榜单").font(.headline).foregroundStyle(.primary)
+                                    Text("可同时整理到不同主题，不会改变想吃状态")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer(); Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                            .padding(15)
+                            .background(.background, in: RoundedRectangle(cornerRadius: 18))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("restaurant-detail-add-to-list")
+                    }
                     RestaurantLocationSection(
                         restaurant: restaurant,
                         onOpenAppleMaps: openAppleMaps
@@ -104,6 +124,14 @@ struct RestaurantDetailView: View {
             }
             .sheet(isPresented: $isEditingRestaurant) {
                 RestaurantEditView(restaurant: restaurant)
+            }
+            .sheet(isPresented: $isAddingToList) {
+                if let currentUserID {
+                    AddRestaurantToListsSheet(
+                        restaurant: restaurant,
+                        currentUserID: currentUserID
+                    )
+                }
             }
             .fullScreenCover(item: $selectedPhoto) { photo in
                 PhotoGalleryViewer(photos: activePhotos, selectedID: photo.id)
@@ -199,5 +227,9 @@ struct RestaurantDetailView: View {
             guard source.deletedAt == nil, let remoteID = source.remoteID else { return nil }
             return (remoteID, source.displayName)
         })
+    }
+
+    private var currentUserID: String? {
+        profiles.first { $0.deletedAt == nil }?.tasteMapUserID
     }
 }

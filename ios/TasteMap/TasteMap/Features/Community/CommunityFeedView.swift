@@ -87,6 +87,7 @@ struct CommunityFeedView: View {
                         initial: user.socialResult, currentUserID: currentUserID,
                         api: authServices.socialAPI, communityAPI: authServices.communityAPI,
                         photoAPI: authServices.photoAPI,
+                        restaurantListAPI: authServices.restaurantListAPI,
                         onChange: { result in
                             if result.friendshipState != .friends {
                                 items.removeAll { $0.cacheScope == .friends && $0.user.userId == result.profile.userId }

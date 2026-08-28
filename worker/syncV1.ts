@@ -22,11 +22,17 @@ import {
 import {
   type OwnProfileSyncContractV1,
 } from '../src/contracts/profileContract'
+import {
+  decodeRestaurantListPlace,
+  type RestaurantListItemSyncContractV1,
+  type RestaurantListPlaceContractV1,
+  type RestaurantListSyncContractV1,
+} from '../src/contracts/restaurantListContract'
 import { groupRestaurantPlaceIdentities, type RestaurantPlaceIdentityRow } from './restaurantIdentityMapping'
 
 const MAX_PULL_LIMIT = 200
-const CHANGE_LOG_TABLE = 'sync_change_log_v5'
-const RECEIPT_TABLE = 'sync_mutation_receipts_v5'
+const CHANGE_LOG_TABLE = 'sync_change_log_v6'
+const RECEIPT_TABLE = 'sync_mutation_receipts_v6'
 
 interface VersionedEntityRow {
   id: string
@@ -204,6 +210,29 @@ interface SyncPhotoRow extends VersionedEntityRow {
   updated_at: string
 }
 
+interface SyncRestaurantListRow extends VersionedEntityRow {
+  title: string
+  description: string
+  visibility: RestaurantListSyncContractV1['visibility']
+  is_ranked: number
+  cover_mode: RestaurantListSyncContractV1['coverMode']
+  custom_cover_photo_id: string | null
+  active_item_count: number
+  created_at: string
+  updated_at: string
+}
+
+interface SyncRestaurantListItemRow extends VersionedEntityRow {
+  list_id: string
+  restaurant_id: string
+  restaurant_global_key: string
+  restaurant_snapshot_json: string | null
+  position: number
+  note: string
+  created_at: string
+  updated_at: string
+}
+
 export class SyncV1RequestError extends Error {
   constructor(message: string, readonly status: number) {
     super(message)
@@ -264,6 +293,8 @@ export async function handleSyncV1Pull(
   const companions = [] as SyncPullResponseV1['companions']
   const recommendationSources = [] as SyncPullResponseV1['recommendationSources']
   const profiles = [] as SyncPullResponseV1['profiles']
+  const restaurantLists = [] as SyncPullResponseV1['restaurantLists']
+  const restaurantListItems = [] as SyncPullResponseV1['restaurantListItems']
   const tombstones = [] as SyncPullResponseV1['tombstones']
   for (const change of latestInPage.values()) {
     if (change.entity_type === 'restaurant') {
@@ -330,7 +361,7 @@ export async function handleSyncV1Pull(
       } else {
         recommendationSources.push({ serverVersion: row.server_version, record: rowToRecommendationSource(row) })
       }
-    } else {
+    } else if (change.entity_type === 'profile') {
       const row = await database.prepare('SELECT * FROM user_profiles WHERE user_id = ?')
         .bind(viewerId).first<SyncProfileRow>()
       if (!row || row.server_version !== change.server_version) continue
@@ -338,6 +369,27 @@ export async function handleSyncV1Pull(
         tombstones.push(tombstone(change, row.deleted_at))
       } else {
         profiles.push({ serverVersion: row.server_version, record: rowToProfile(row) })
+      }
+    } else if (change.entity_type === 'restaurantList') {
+      const row = await database.prepare('SELECT * FROM restaurant_lists WHERE id = ? AND user_id = ?')
+        .bind(change.entity_id, viewerId).first<SyncRestaurantListRow>()
+      if (!row || row.server_version !== change.server_version) continue
+      if (change.operation === 'delete' || row.deleted_at) {
+        tombstones.push(tombstone(change, row.deleted_at))
+      } else {
+        restaurantLists.push({ serverVersion: row.server_version, record: rowToRestaurantList(row) })
+      }
+    } else if (change.entity_type === 'restaurantListItem') {
+      const row = await database.prepare('SELECT * FROM restaurant_list_items WHERE id = ? AND user_id = ?')
+        .bind(change.entity_id, viewerId).first<SyncRestaurantListItemRow>()
+      if (!row || row.server_version !== change.server_version) continue
+      if (change.operation === 'delete' || row.deleted_at) {
+        tombstones.push(tombstone(change, row.deleted_at))
+      } else {
+        restaurantListItems.push({
+          serverVersion: row.server_version,
+          record: await rowToRestaurantListItem(database, viewerId, row),
+        })
       }
     }
   }
@@ -403,6 +455,8 @@ export async function handleSyncV1Pull(
     companions,
     recommendationSources,
     profiles,
+    restaurantLists,
+    restaurantListItems,
     tombstones,
     nextCursor: String(changes.at(-1)?.revision ?? cursor),
     hasMore: changes.length === limit,
@@ -547,6 +601,32 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
     const photo = mutation.payload as PhotoJSONContractV1
     await assertOwnedPhotoParents(database, viewerId, photo)
   }
+  if (mutation.entityType === 'restaurantList' && mutation.operation === 'upsert') {
+    const list = mutation.payload as RestaurantListSyncContractV1
+    if (list.customCoverPhotoId) {
+      const photo = await database.prepare(`SELECT id FROM photos
+        WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1`)
+        .bind(list.customCoverPhotoId, viewerId).first<{ id: string }>()
+      if (!photo) throw new SyncV1RequestError('RestaurantList cover must reference an active owned Photo.', 403)
+    }
+  }
+  if (mutation.entityType === 'restaurantListItem' && mutation.operation === 'upsert') {
+    const item = mutation.payload as RestaurantListItemSyncContractV1
+    const parent = await database.prepare(`SELECT id FROM restaurant_lists
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1`)
+      .bind(item.listId, viewerId).first<{ id: string }>()
+    if (!parent) {
+      throw new SyncV1RequestError('RestaurantListItem.listId must reference an active owned RestaurantList.', 403)
+    }
+    const duplicate = await database.prepare(`SELECT id, server_version FROM restaurant_list_items
+      WHERE list_id = ? AND restaurant_global_key = ? AND deleted_at IS NULL AND id <> ? LIMIT 1`)
+      .bind(item.listId, item.restaurantGlobalKey, mutation.entityId)
+      .first<{ id: string; server_version: number }>()
+    if (duplicate) {
+      return recordConflict(database, viewerId, mutation, fingerprint, duplicate.server_version,
+        `duplicate_restaurant:${duplicate.id}`)
+    }
+  }
   // Authentication bootstraps an empty server Profile before the first sync request.
   // An offline-first client can independently create its local Profile at base version 0.
   // Adopt that local record only while the server row is still the untouched bootstrap;
@@ -571,6 +651,8 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
       case 'companion': return companionMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
       case 'recommendationSource': return recommendationSourceMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
       case 'profile': return profileMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'restaurantList': return restaurantListMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'restaurantListItem': return restaurantListItemMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
     }
   })()
   try {
@@ -590,7 +672,10 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
 function conflictForMutation(current: VersionedEntityRow | null, mutation: SyncMutationV1) {
   if (!current) return mutation.operation === 'delete' ? 'missing_entity' : mutation.baseVersion === 0 ? null : 'server_version_mismatch'
   if (current.server_version !== mutation.baseVersion) return 'server_version_mismatch'
-  if (current.deleted_at && !(mutation.entityType === 'visitDish' && mutation.operation === 'upsert')) return 'entity_deleted'
+  if (current.deleted_at && !(
+    (mutation.entityType === 'visitDish' || mutation.entityType === 'restaurantListItem') &&
+    mutation.operation === 'upsert'
+  )) return 'entity_deleted'
   return null
 }
 
@@ -872,6 +957,117 @@ function profileMutationStatements(
   return finalMutationStatements(
     database, viewerId, mutation, fingerprint, nextVersion, processedAt,
     statement, [legacyProjection],
+  )
+}
+
+function restaurantListMutationStatements(
+  database: D1Database,
+  viewerId: string,
+  mutation: SyncMutationV1,
+  fingerprint: string,
+  nextVersion: number,
+  processedAt: string,
+) {
+  if (mutation.operation === 'delete') {
+    const deleteList = database.prepare(`UPDATE restaurant_lists
+        SET deleted_at = ?, updated_at = ?, server_version = ?, last_mutation_id = ?
+        WHERE id = ? AND user_id = ? AND server_version = ? AND deleted_at IS NULL`)
+        .bind(processedAt, processedAt, nextVersion, mutation.mutationId,
+          mutation.entityId, viewerId, mutation.baseVersion)
+    const cascadeItems = database.prepare(`UPDATE restaurant_list_items
+      SET deleted_at = ?, updated_at = ?, server_version = server_version + 1,
+          last_mutation_id = 'cascade:' || ? || ':' || id
+      WHERE list_id = ? AND user_id = ? AND deleted_at IS NULL`)
+      .bind(processedAt, processedAt, mutation.mutationId, mutation.entityId, viewerId)
+    const logCascades = database.prepare(`INSERT OR IGNORE INTO ${CHANGE_LOG_TABLE} (
+        user_id, entity_type, entity_id, operation, server_version, mutation_id, changed_at
+      ) SELECT user_id, 'restaurantListItem', id, 'delete', server_version,
+        last_mutation_id, ? FROM restaurant_list_items
+      WHERE list_id = ? AND user_id = ? AND deleted_at = ?
+        AND last_mutation_id = 'cascade:' || ? || ':' || id`)
+      .bind(processedAt, mutation.entityId, viewerId, processedAt, mutation.mutationId)
+    return finalMutationStatements(
+      database, viewerId, mutation, fingerprint, nextVersion, processedAt,
+      deleteList, [cascadeItems, logCascades],
+    )
+  }
+  const list = mutation.payload as RestaurantListSyncContractV1
+  const statement = database.prepare(`INSERT INTO restaurant_lists (
+    id, user_id, title, description, visibility, is_ranked, cover_mode,
+    custom_cover_photo_id, created_at, updated_at, deleted_at,
+    server_version, last_mutation_id, active_item_count
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0)
+  ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title, description = excluded.description,
+    visibility = excluded.visibility, is_ranked = excluded.is_ranked,
+    cover_mode = excluded.cover_mode,
+    custom_cover_photo_id = excluded.custom_cover_photo_id,
+    updated_at = excluded.updated_at, deleted_at = NULL,
+    server_version = excluded.server_version,
+    last_mutation_id = excluded.last_mutation_id
+  WHERE restaurant_lists.user_id = ? AND restaurant_lists.server_version = ?
+    AND restaurant_lists.deleted_at IS NULL`)
+    .bind(
+      mutation.entityId, viewerId, list.title, list.description, list.visibility,
+      list.isRanked ? 1 : 0, list.coverMode, list.customCoverPhotoId,
+      list.createdAt, list.updatedAt, nextVersion, mutation.mutationId,
+      viewerId, mutation.baseVersion,
+    )
+  return finalMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt, statement)
+}
+
+function restaurantListItemMutationStatements(
+  database: D1Database,
+  viewerId: string,
+  mutation: SyncMutationV1,
+  fingerprint: string,
+  nextVersion: number,
+  processedAt: string,
+) {
+  const countStatement = database.prepare(`UPDATE restaurant_lists SET active_item_count = (
+      SELECT COUNT(*) FROM restaurant_list_items rli
+      WHERE rli.list_id = restaurant_lists.id AND rli.deleted_at IS NULL
+    ) WHERE id = (SELECT list_id FROM restaurant_list_items WHERE id = ? AND user_id = ?)
+      AND user_id = ?`)
+    .bind(mutation.entityId, viewerId, viewerId)
+  if (mutation.operation === 'delete') {
+    const statement = database.prepare(`UPDATE restaurant_list_items
+      SET deleted_at = ?, updated_at = ?, server_version = ?, last_mutation_id = ?
+      WHERE id = ? AND user_id = ? AND server_version = ? AND deleted_at IS NULL`)
+      .bind(processedAt, processedAt, nextVersion, mutation.mutationId,
+        mutation.entityId, viewerId, mutation.baseVersion)
+    return finalMutationStatements(
+      database, viewerId, mutation, fingerprint, nextVersion, processedAt,
+      statement, [countStatement],
+    )
+  }
+  const item = mutation.payload as RestaurantListItemSyncContractV1
+  const statement = database.prepare(`INSERT INTO restaurant_list_items (
+    id, user_id, list_id, restaurant_id, restaurant_global_key,
+    restaurant_snapshot_json, position, note, created_at, updated_at,
+    deleted_at, server_version, last_mutation_id
+  ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?
+  WHERE EXISTS (
+    SELECT 1 FROM restaurant_lists WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+  )
+  ON CONFLICT(id) DO UPDATE SET
+    list_id = excluded.list_id, restaurant_id = excluded.restaurant_id,
+    restaurant_global_key = excluded.restaurant_global_key,
+    restaurant_snapshot_json = excluded.restaurant_snapshot_json,
+    position = excluded.position, note = excluded.note,
+    updated_at = excluded.updated_at, deleted_at = NULL,
+    server_version = excluded.server_version,
+    last_mutation_id = excluded.last_mutation_id
+  WHERE restaurant_list_items.user_id = ? AND restaurant_list_items.server_version = ?`)
+    .bind(
+      mutation.entityId, viewerId, item.listId, item.restaurantId,
+      item.restaurantGlobalKey, JSON.stringify(item.restaurant), item.position,
+      item.note, item.createdAt, item.updatedAt, nextVersion, mutation.mutationId,
+      item.listId, viewerId, viewerId, mutation.baseVersion,
+    )
+  return finalMutationStatements(
+    database, viewerId, mutation, fingerprint, nextVersion, processedAt,
+    statement, [countStatement],
   )
 }
 
@@ -1334,6 +1530,8 @@ function entityTable(type: SyncEntityType) {
     case 'companion': return 'dining_companions'
     case 'recommendationSource': return 'recommendation_sources'
     case 'profile': return 'user_profiles'
+    case 'restaurantList': return 'restaurant_lists'
+    case 'restaurantListItem': return 'restaurant_list_items'
   }
 }
 
@@ -1489,6 +1687,79 @@ function rowToProfile(row: SyncProfileRow): OwnProfileSyncContractV1 {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: null,
+  }
+}
+
+function rowToRestaurantList(row: SyncRestaurantListRow): RestaurantListSyncContractV1 {
+  return {
+    schemaVersion: 1,
+    id: row.id,
+    userId: row.user_id,
+    title: row.title,
+    description: row.description,
+    visibility: row.visibility,
+    isRanked: Boolean(row.is_ranked),
+    coverMode: row.cover_mode,
+    customCoverPhotoId: row.custom_cover_photo_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+  }
+}
+
+async function rowToRestaurantListItem(
+  database: D1Database,
+  viewerId: string,
+  row: SyncRestaurantListItemRow,
+): Promise<RestaurantListItemSyncContractV1> {
+  let place: RestaurantListPlaceContractV1 | null = null
+  if (row.restaurant_snapshot_json) {
+    try { place = decodeRestaurantListPlace(JSON.parse(row.restaurant_snapshot_json)) } catch { place = null }
+  }
+  if (!place) {
+    const restaurant = await database.prepare(`SELECT * FROM restaurants
+      WHERE id = ? AND user_id = ? LIMIT 1`)
+      .bind(row.restaurant_id, viewerId).first<SyncRestaurantRow>()
+    if (!restaurant) throw new SyncV1RequestError(`RestaurantListItem ${row.id} has no place projection.`, 500)
+    const identities = await readPlaceIdentities(database, viewerId, restaurant.id)
+    const safeIdentities = identities.length ? identities : [{
+      provider: 'manual' as const,
+      externalId: `tastemap:${restaurant.id}`,
+      isPrimary: true,
+      createdAt: restaurant.created_at,
+      updatedAt: restaurant.updated_at,
+    }]
+    place = {
+      globalKey: row.restaurant_global_key || `${safeIdentities[0].provider}:${safeIdentities[0].externalId}`,
+      restaurantId: restaurant.id,
+      placeIdentities: safeIdentities.map((identity) => ({
+        provider: identity.provider,
+        externalId: identity.externalId,
+        isPrimary: identity.isPrimary,
+      })),
+      name: restaurant.name,
+      address: restaurant.address,
+      city: restaurant.city,
+      latitude: restaurant.latitude,
+      longitude: restaurant.longitude,
+      markerPhotoId: restaurant.marker_photo_id,
+      merchantImageUrl: restaurant.merchant_image_url,
+      markerEmoji: restaurant.marker_emoji,
+    }
+  }
+  return {
+    schemaVersion: 1,
+    id: row.id,
+    userId: row.user_id,
+    listId: row.list_id,
+    restaurantId: row.restaurant_id,
+    restaurantGlobalKey: row.restaurant_global_key || place.globalKey,
+    position: row.position,
+    note: row.note,
+    restaurant: place,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
   }
 }
 

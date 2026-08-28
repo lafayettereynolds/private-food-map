@@ -7,6 +7,7 @@ struct RestaurantSearchView: View {
     @State private var actionError: String?
 
     let onAction: (RestaurantCandidate, RestaurantSearchAction) throws -> Void
+    private let selectionTitle: String?
 
     init(
         searchService: any RestaurantSearching = MapKitRestaurantSearchService(),
@@ -18,6 +19,21 @@ struct RestaurantSearchView: View {
         )
         _query = State(initialValue: initialQuery)
         self.onAction = onAction
+        selectionTitle = nil
+    }
+
+    init(
+        searchService: any RestaurantSearching = MapKitRestaurantSearchService(),
+        initialQuery: String = "",
+        selectionTitle: String,
+        onSelect: @escaping (RestaurantCandidate) throws -> Void
+    ) {
+        _viewModel = StateObject(
+            wrappedValue: RestaurantSearchViewModel(searchService: searchService)
+        )
+        _query = State(initialValue: initialQuery)
+        self.selectionTitle = selectionTitle
+        onAction = { candidate, _ in try onSelect(candidate) }
     }
 
     var body: some View {
@@ -56,7 +72,15 @@ struct RestaurantSearchView: View {
                                 }
                             }
 
-                            HStack(spacing: 10) {
+                            if let selectionTitle {
+                                Button {
+                                    perform(.wantToGo, candidate: candidate)
+                                } label: {
+                                    Label(selectionTitle, systemImage: "text.badge.plus")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                            } else { HStack(spacing: 10) {
                                 Button {
                                     perform(.wantToGo, candidate: candidate)
                                 } label: {
@@ -72,7 +96,7 @@ struct RestaurantSearchView: View {
                                         .frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(.borderedProminent)
-                            }
+                            } }
                         }
                         .padding(.vertical, 5)
                     }

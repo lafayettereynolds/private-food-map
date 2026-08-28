@@ -112,7 +112,8 @@ struct SwiftDataSyncQueue {
             .filter { $0.state == .queued && ($0.nextRetryAt == nil || $0.nextRetryAt! <= date) }
             .sorted {
                 if $0.entityType != $1.entityType {
-                    return $0.entityType.dependencyPriority < $1.entityType.dependencyPriority
+                    return $0.entityType.dependencyPriority(for: $0.operation) <
+                        $1.entityType.dependencyPriority(for: $1.operation)
                 }
                 if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
                 return $0.mutationID.uuidString < $1.mutationID.uuidString

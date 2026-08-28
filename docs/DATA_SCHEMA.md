@@ -1,6 +1,6 @@
 # Taste Map 数据结构
 
-更新时间：2026-08-28
+更新时间：2026-08-29
 
 ## Restaurant JSON Contract V1
 
@@ -62,6 +62,14 @@
 - `SyncChangeLog`: Restaurant/Visit 每次有效变化对应一个递增 revision，作为 V1 增量 pull cursor；旧 Web 的真实写入也进入同一日志。
 - iOS `SyncMutation`: SwiftData 持久化离线 mutation、payload、base version、重试和 conflict 状态；`SyncCheckpoint` 持久化 V1 cursor。
 
+## P4-F 原生餐厅榜单实体
+
+- iOS `RestaurantList`：独立本地 UUID/远端 ID、owner、标题、简介、`private | friends | public`、排名模式、自动/自定义封面、最多四个预览投影、活跃项计数、软删除、serverVersion 与同步状态。榜单标题允许 Unicode/Emoji 和同名，trim 后为 1–60 字符；简介最多 240 字符。
+- iOS `RestaurantListItem`：独立 ID、父榜单 ID、owner、可选本地 Restaurant 引用、稳定 `restaurantGlobalKey`、公开安全 Restaurant snapshot、显式 position、最多 160 字符的榜单备注、软删除与同步元数据。同一榜单同一 Global Restaurant 不重复，不同榜单可以复用。
+- `CachedPublicRestaurantList` / `CachedPublicRestaurantListItem`：以 `viewerUserID` 分区的公开查询缓存，不进入个人 Sync cursor；logout、权限拒绝或可见性变化时清除。
+- 榜单关系与 `WantToGo`、Visit、Dish、Photo、饭搭子和推荐来源完全独立。加入/移除榜单不会改变或删除这些实体。
+- 正式跨平台合同见 `src/contracts/restaurantListContract.ts`，公开 allowlist DTO 见 `src/contracts/restaurantListPublicContract.ts`，完整设计见 `P4_F_RESTAURANT_LISTS.md`。
+
 ## 数据库版本与迁移
 
 - Dexie v12：补齐到访体验标签数组与用户地图可见性。
@@ -85,7 +93,9 @@
 - D1 `0014_restaurant_contact_details.sql`：为餐厅增加电话与营业时间字段，供 Web、未来 iOS 与同步接口共同读取。
 - D1 `0015_restaurant_place_identities.sql`：新增 Provider-neutral 餐厅身份映射表和查询索引，从现有非空 `amap_poi_id` 一对一回填映射；不修改 Restaurant/Visit 主键、不自动合并重复 POI、不改写 Visit 外键。
 - D1 `0016_sync_v1.sql`：为 Restaurant/Visit 增加服务端版本和最后 mutation，新增 change log 与 idempotency receipt，并为既有记录写入 version 1 bootstrap 事件；空 Provider 旧记录补一条 `manual/tastemap:<id>` identity，不改写原 ID 或 Visit 外键。
+- D1 `0017`—`0027`：依次加入原生认证、Visit 核心字段、Dish/Photo、VisitDish、饭搭子/推荐来源、Profile、社交关系、旧写入兼容、发现/社区索引与社交安全硬化；均保留为不可修改的既有增量 migration。
+- D1 `0028_restaurant_lists_v1.sql`：原地升级既有 Web 食单表，增加 owner/global identity/snapshot/version/summary 字段和索引；复制 V5 revision/receipt 到支持榜单实体的 V6 ledger，并为旧榜单/项目写入 bootstrap 事件。不改写 Restaurant/Visit ID 或关联。
 
-Development 与 Production D1 的已知基线均已按顺序增量应用到 `0014`。`0015`、`0016` 目前只完成代码和本地迁移验证，尚未远程应用；部署前必须使用 `scripts/sql/restaurant_identity_preflight.sql` 对目标 D1 做只读检查。没有删除、清空或重命名数据库。
+Development D1 `food-map-db-development` 已按顺序增量应用到 `0028`，并完成隔离 A/B 用户真实 Worker E2E；测试榜单最终 tombstone，读回检查没有活跃 P4-F 测试行。P4-F 未查询、写入或迁移 Production，因此本文不推断 Production 当前 migration 状态。任何 Production 变更仍必须先做只读 preflight、可恢复备份和逐项增量评审。
 
 正式数据库不得通过删除、清空或改名解决 schema 问题；所有变更继续使用增量 migration。

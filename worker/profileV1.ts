@@ -4,7 +4,7 @@ import type {
   ProfileVisibilityContract,
 } from '../src/contracts/profileContract'
 
-const PROFILE_CHANGE_LOG_TABLE = 'sync_change_log_v5'
+const PROFILE_CHANGE_LOG_TABLE = 'sync_change_log_v6'
 
 interface ProfileRow {
   user_id: string

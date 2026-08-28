@@ -251,7 +251,7 @@ describe('Worker Sync API V1 integration', () => {
 
     expect(retry.acknowledgements[0]).toMatchObject({ status: 'applied', duplicate: true, serverVersion: 1 })
     expect(database.get('SELECT COUNT(*) AS count FROM restaurants').count).toBe(1)
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v5 WHERE mutation_id = 'response-lost'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v6 WHERE mutation_id = 'response-lost'").count).toBe(1)
   })
 
   it('increments server versions for valid Restaurant and Visit updates', async () => {
@@ -288,7 +288,7 @@ describe('Worker Sync API V1 integration', () => {
     const incremental = await pull(database, 'user-a', initial.nextCursor)
 
     expect(incremental.restaurants[0]).toMatchObject({ serverVersion: 2, record: { name: 'Web 更新名称' } })
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v5 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v6 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
   })
 
   it('prevents a stale device from resurrecting a server tombstone', async () => {
@@ -757,6 +757,8 @@ function migrationFiles() {
     '0021_companions_recommendation_sources_sync.sql',
     '0022_user_profiles_sync.sql', '0023_social_relationships_v1.sql',
     '0024_social_legacy_write_compat.sql', '0025_discovery_v1_indexes.sql',
+    '0026_public_community_v1_indexes.sql', '0027_social_hardening.sql',
+    '0028_restaurant_lists_v1.sql',
   ]
 }
 

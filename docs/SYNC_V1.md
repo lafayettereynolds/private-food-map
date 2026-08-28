@@ -1,6 +1,6 @@
 # Taste Map Sync API V1
 
-更新时间：2026-08-28
+更新时间：2026-08-29
 
 ## 边界
 
@@ -13,7 +13,7 @@ P0-B1 建立 `SwiftData ↔ SyncEngine ↔ Worker ↔ D1` 基础链路。P2-A �
 请求包含 `apiVersion = 1`、`schemaVersion = 1` 和最多 100 个 mutation。每个 mutation 包含：
 
 - `mutationId`
-- `entityType`: `restaurant | visit | dish | photo`
+- `entityType`: 包含既有实体，以及 P4-F 新增的 `restaurantList | restaurantListItem`
 - `entityId`
 - `operation`: `upsert | delete`
 - `baseVersion`
@@ -32,7 +32,7 @@ Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-on
 - `cursor`：上次服务端 revision，首次为 `0`
 - `limit`：1–200
 
-响应包含变化后的 `restaurants`、`visits`、`dishes`、`photos`、独立 `tombstones`、`nextCursor` 和 `hasMore`。游标是服务端单调递增 revision 的不透明字符串，不使用设备时间；每次最多读取 200 条 change log。若同一实体在一页中变化多次，只返回该页最后版本；若数据库已经存在更晚版本，旧事件跳过并由后续 revision 返回。Worker 会按需附带 Restaurant→Visit→Dish 父依赖快照；这不是全库下载。
+响应包含变化后的既有实体、P4-F 的 `restaurantLists` / `restaurantListItems`、独立 `tombstones`、`nextCursor` 和 `hasMore`。游标是服务端单调递增 revision 的不透明字符串，不使用设备时间；每次最多读取 200 条 change log。若同一实体在一页中变化多次，只返回该页最后版本；若数据库已经存在更晚版本，旧事件跳过并由后续 revision 返回。Worker 会按需附带父依赖快照；这不是全库下载。
 
 ## Idempotency 与队列
 
@@ -42,6 +42,8 @@ iOS `SyncMutation` 持久化 mutation ID、实体、动作、时间、base versi
 
 网络/API 失败只更新队列重试信息，不回滚 Restaurant/Visit 的本地保存。
 
+P4-F 的列表写入同样先完成 SwiftData 事务再进入队列。依赖调度保证 `RestaurantList` upsert 早于 `RestaurantListItem`，删除时 item tombstone 早于 parent tombstone。拖拽完成后才统一生成发生变化的 item mutation，不按手指移动持续联网。公开榜单浏览走独立 query API，不进入 viewer 的个人 Sync cursor。
+
 ## 删除与冲突
 
 - 服务端删除只写 `deleted_at` tombstone，并增加 `server_version`。
@@ -49,7 +51,10 @@ iOS `SyncMutation` 持久化 mutation ID、实体、动作、时间、base versi
 - 自动冲突策略是 server-version optimistic concurrency：mutation 的 `baseVersion` 必须等于 D1 当前版本。
 - `updatedAt` 和设备时间仅为领域/展示信息，不决定胜负。
 - tombstoned entity 不接受普通 upsert；旧设备的 stale update 返回 conflict，pull 后应用服务器 tombstone。
+- 删除 `RestaurantList` 会在同一服务端逻辑中软删除活跃 items 并为每个实体写 change log；精确 cascade mutation ID 保证重复删除和响应丢失不会制造额外变化。
 - P0-B1 自动 reconciliation 以服务器版本为准，同时把冲突 mutation/payload 保留为 `conflicted`，供 P0-B2 诊断或未来人工恢复，不自动覆盖服务器。
+
+榜单 metadata 与 ListItem 分别 version。rename 与不同 item 的调整可以并行；同一实体的旧 `baseVersion` 被拒绝。排序使用 item position 的版本冲突及 `(position, createdAt, id)` 确定性读取顺序，不依赖设备时间，也不引入协作 CRDT。
 
 ## 用户隔离与认证边界
 
@@ -71,6 +76,16 @@ P0-B2-A 的远程测试身份仅用于隔离的 Development D1，开发 URL 不�
 - P2-F 新增 SwiftData `DiningCompanion` / `RecommendationSource` 私有目录、持久 mutation queue 与 Visit 的多饭搭子/单推荐来源关联；目录 mutation 的队列优先级早于 Visit。
 - Restaurant 保存 `remoteRecordData` 作为不透明 canonical snapshot，使原生编辑名称/地址时不会清空尚未迁移的 Web 字段；没有复制整套 Web 字段到 SwiftData。
 - `SyncCheckpoint` 保存 cursor；`SyncMutation` 保存离线队列。
+- P4-F 新增 `RestaurantList` / `RestaurantListItem` 正式同步实体，以及 viewer-scoped 的 `CachedPublicRestaurantList` / `CachedPublicRestaurantListItem` query cache。缓存实体不进入 Sync V1，logout 与授权失败会清除。
+- ListItem 保存 Global Restaurant identity 和公开安全 snapshot；加入榜单不要求创建 user Restaurant state，也不会推断 WantToGo。
+
+## P4-F Public List query
+
+- `GET /api/v1/lists/users/:userId`：分页返回 Public Profile 可见榜单 summary。
+- `GET /api/v1/lists/:listId`：分页返回有序榜单详情。
+- Worker 以认证 viewer、owner/friend 关系和服务端 visibility 判权。客户端 owner/userId 字段没有授权意义。
+- DTO 是显式 allowlist，不返回 Visit note/private rating/spend/Companion/RecommendationSource、sync raw record、auth 或存储 Secret。
+- 公开转私密、好友关系解除、删除或 403/404 refresh 会立即移除 viewer cache。离线缓存只作为最近一次合法 viewer scope 的展示，恢复网络后服务端重新确认权限。
 
 新增属性均为可空或带默认值，新实体通过 SwiftData 当前 schema 自动增量创建；本轮没有启用 CloudKit。
 
@@ -78,7 +93,7 @@ P0-B2-A 的远程测试身份仅用于隔离的 Development D1，开发 URL 不�
 
 P0-B2-A 已创建独立 `food-map-db-development` 与 `private-food-map-development`。新 Dev D1 的首次 preflight 只有 Cloudflare 内部表且无业务数据，因此顺序应用完整 migration 链；P1-C 的 `0018_visit_core_fields.sql` 保留 legacy `party_size`，增加 canonical nullable `party_size_optional` 和滚动部署兼容 trigger，不重建 `visits`。真实 Worker/D1 和 iOS API client 往返测试数据最终必须保持 tombstone。
 
-Production D1 尚未预检或修改。后续 Production 部署顺序固定为：
+P4-F 已在隔离 Development D1 增量应用 `0028` 并通过真实 A/B E2E。P4-F 未访问、预检、写入、迁移或部署 Production。后续 Production 部署顺序仍固定为：
 
 1. 运行 P0-A production preflight。
 2. 导出并验证可恢复备份与 migration 风险。

@@ -18,6 +18,10 @@ enum TasteMapPersistence {
         CachedDiscoveryRestaurant.self,
         CachedDiscoveryPlacement.self,
         CachedCommunityContent.self,
+        RestaurantList.self,
+        RestaurantListItem.self,
+        CachedPublicRestaurantList.self,
+        CachedPublicRestaurantListItem.self,
         SyncMutation.self,
         SyncCheckpoint.self,
     ])

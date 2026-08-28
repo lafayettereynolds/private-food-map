@@ -14,6 +14,51 @@ enum SyncRecordMapper {
         try JSONEncoder().encode(profileRecord(profile))
     }
 
+    static func restaurantListPayload(_ list: RestaurantList) throws -> Data {
+        try JSONEncoder().encode(try restaurantListRecord(list))
+    }
+
+    static func restaurantListItemPayload(_ item: RestaurantListItem) throws -> Data {
+        try JSONEncoder().encode(try restaurantListItemRecord(item))
+    }
+
+    static func restaurantListRecord(_ list: RestaurantList) throws -> RestaurantListSyncContractV1 {
+        try RestaurantListSyncContractV1(
+            id: list.remoteID ?? list.id.uuidString.lowercased(),
+            userId: list.ownerUserID,
+            title: list.title,
+            description: list.listDescription,
+            visibility: list.visibility,
+            isRanked: list.isRanked,
+            coverMode: list.coverMode,
+            customCoverPhotoId: list.customCoverPhotoID,
+            createdAt: dateString(list.createdAt),
+            updatedAt: dateString(list.updatedAt),
+            deletedAt: list.deletedAt.map(dateString)
+        )
+    }
+
+    static func restaurantListItemRecord(
+        _ item: RestaurantListItem
+    ) throws -> RestaurantListItemSyncContractV1 {
+        guard let snapshot = item.restaurantSnapshot else {
+            throw RestaurantListContractError.invalidPlace
+        }
+        return try RestaurantListItemSyncContractV1(
+            id: item.remoteID ?? item.id.uuidString.lowercased(),
+            userId: item.ownerUserID,
+            listId: item.listRemoteID,
+            restaurantId: item.restaurantReferenceID,
+            restaurantGlobalKey: item.restaurantGlobalKey,
+            position: item.position,
+            note: item.note,
+            restaurant: snapshot,
+            createdAt: dateString(item.createdAt),
+            updatedAt: dateString(item.updatedAt),
+            deletedAt: item.deletedAt.map(dateString)
+        )
+    }
+
     static func profileRecord(_ profile: UserProfile) -> OwnProfileSyncContractV1 {
         OwnProfileSyncContractV1(
             schemaVersion: SyncV1Contract.schemaVersion,
