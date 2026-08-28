@@ -1059,6 +1059,93 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4CRecommendationSourceAnalysisEvidencePosterAndRefresh() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P4C_SOURCE_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let entry = app.buttons["profile-recommendation-source-analysis-entry"]
+        scrollUntilVisible(entry, in: app)
+        XCTAssertTrue(entry.isHittable)
+        entry.tap()
+
+        XCTAssertTrue(app.navigationBars["推荐来源分析"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["recommendation-source-analysis-overview"].exists)
+        XCTAssertTrue(app.staticTexts["最常使用来源"].waitForExistence(timeout: 5))
+        let bestLabel = app.staticTexts["最靠谱推荐来源"]
+        scrollUntilVisible(bestLabel, in: app)
+        XCTAssertTrue(bestLabel.exists)
+        let worstLabel = app.staticTexts["最坑推荐来源"]
+        scrollUntilVisible(worstLabel, in: app)
+        XCTAssertTrue(worstLabel.exists)
+        XCTAssertTrue(app.staticTexts["小林的私藏清单"].exists)
+        XCTAssertTrue(app.staticTexts["深夜刷到的收藏夹"].exists)
+        keepScreenshot(named: "P4-C Recommendation Source Overview", of: app)
+
+        let sourceCard = app.descendants(matching: .any)[
+            "recommendation-source-card-00000000-0000-0000-0000-000000004700"
+        ]
+        scrollUntilVisible(sourceCard, in: app)
+        XCTAssertTrue(sourceCard.waitForExistence(timeout: 5))
+        sourceCard.tap()
+
+        XCTAssertTrue(app.navigationBars["小林的私藏清单"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["评分表现"].waitForExistence(timeout: 5))
+        let restaurant = app.descendants(matching: .any)[
+            "recommendation-source-restaurant-00000000-0000-0000-0000-000000004801"
+        ]
+        scrollUntilVisible(restaurant, in: app)
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
+        restaurant.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        let closeRestaurant = app.buttons["recommendation-source-restaurant-detail-close"]
+        XCTAssertTrue(closeRestaurant.waitForExistence(timeout: 5))
+        closeRestaurant.tap()
+        XCTAssertTrue(closeRestaurant.waitForNonExistence(timeout: 8))
+
+        app.navigationBars["小林的私藏清单"].buttons["推荐来源分析"].tap()
+        XCTAssertTrue(app.navigationBars["推荐来源分析"].waitForExistence(timeout: 8))
+        let share = app.buttons["recommendation-source-share-toolbar"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.images["analysis-poster-preview"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["analysis-poster-save"].exists)
+        let systemShare = app.buttons["analysis-poster-system-share"]
+        XCTAssertTrue(systemShare.exists)
+        keepScreenshot(named: "P4-C 9x16 Poster", of: app)
+        systemShare.tap()
+        let activityList = app.otherElements["ActivityListView"]
+        XCTAssertTrue(activityList.waitForExistence(timeout: 8))
+        let closeSystemShare = activityList.buttons["关闭"]
+        XCTAssertTrue(closeSystemShare.waitForExistence(timeout: 5))
+        closeSystemShare.tap()
+        XCTAssertTrue(activityList.waitForNonExistence(timeout: 8))
+        let posterClose = app.navigationBars["分享海报"].buttons["关闭"]
+        XCTAssertTrue(posterClose.waitForExistence(timeout: 8))
+        posterClose.tap()
+
+        scrollUntilVisible(sourceCard, in: app)
+        sourceCard.tap()
+        XCTAssertTrue(app.navigationBars["小林的私藏清单"].waitForExistence(timeout: 8))
+        let mutate = app.buttons["recommendation-source-fixture-change-rating"]
+        XCTAssertTrue(mutate.waitForExistence(timeout: 5))
+        mutate.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["recommendation-source-fixture-result"]
+                .waitForExistence(timeout: 8)
+        )
+        app.navigationBars["小林的私藏清单"].buttons["推荐来源分析"].tap()
+        XCTAssertTrue(app.navigationBars["推荐来源分析"].waitForExistence(timeout: 8))
+        scrollUntilVisible(sourceCard, in: app)
+        sourceCard.tap()
+        XCTAssertTrue(app.navigationBars["小林的私藏清单"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["4.3 / 5"].waitForExistence(timeout: 8))
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,

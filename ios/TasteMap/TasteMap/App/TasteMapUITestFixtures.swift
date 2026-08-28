@@ -22,14 +22,20 @@ enum TasteMapUITestFixtures {
     static let communityOfflineEnvironmentKey = "TASTEMAP_P3D_COMMUNITY_OFFLINE_UI_TEST"
     static let analysisEnvironmentKey = "TASTEMAP_P4A_ANALYSIS_UI_TEST"
     static let companionAnalysisEnvironmentKey = "TASTEMAP_P4B_COMPANION_UI_TEST"
+    static let recommendationSourceAnalysisEnvironmentKey = "TASTEMAP_P4C_SOURCE_UI_TEST"
 
     static var usesAnalysisFixture: Bool {
         ProcessInfo.processInfo.environment[analysisEnvironmentKey] == "1"
             || usesCompanionAnalysisFixture
+            || usesRecommendationSourceAnalysisFixture
     }
 
     static var usesCompanionAnalysisFixture: Bool {
         ProcessInfo.processInfo.environment[companionAnalysisEnvironmentKey] == "1"
+    }
+
+    static var usesRecommendationSourceAnalysisFixture: Bool {
+        ProcessInfo.processInfo.environment[recommendationSourceAnalysisEnvironmentKey] == "1"
     }
 
     static var usesCommunityFixture: Bool {
@@ -399,7 +405,68 @@ enum TasteMapUITestFixtures {
                 state: .friends
             ))
         }
+        if usesRecommendationSourceAnalysisFixture {
+            try insertRecommendationSourceFixture(into: context)
+        }
         try context.save()
+    }
+
+    private static func insertRecommendationSourceFixture(into context: ModelContext) throws {
+        let plans: [(Int, String, RecommendationSourceType, [Double], Int)] = [
+            (4_700, "小林的私藏清单", .friend, [4.5, 5, 4.5, 4, 4.5, 5, 4], 2),
+            (4_701, "城市胃口研究所", .blogger, [4, 3.5, 4, 3.5, 4, 3.5, 4], 3),
+            (4_702, "深夜刷到的收藏夹", .other, [2, 2.5, 3, 2, 2.5, 3, 2], 0),
+        ]
+        var item = 0
+        for (sourceIndex, plan) in plans.enumerated() {
+            let source = RecommendationSource(
+                id: uuid(plan.0), ownerUserId: profileUserID, displayName: plan.1,
+                sourceType: plan.2, remoteID: "p4c-source-\(sourceIndex)", syncStatus: .synced
+            )
+            context.insert(source)
+            for (ratingIndex, rating) in plan.3.enumerated() {
+                item += 1
+                let restaurantID = uuid(4_800 + item)
+                let date = Calendar.current.date(
+                    byAdding: .day, value: -(sourceIndex * 35 + ratingIndex * 7 + 2), to: .now
+                ) ?? .now
+                let restaurant = Restaurant(
+                    id: restaurantID,
+                    name: ["野火烧鸟", "青梅小馆", "雨巷火锅", "白露面包房", "木心寿司", "南山牛排", "小满食堂"][ratingIndex]
+                        + " · \(sourceIndex + 1)",
+                    address: "杭州市西湖区来源路 \(item) 号",
+                    latitude: 30.20 + Double(item) * 0.001,
+                    longitude: 120.10 + Double(item) * 0.001,
+                    appleMapItemIdentifier: "apple-p4c-ui-\(item)",
+                    city: "杭州", status: .visited,
+                    createdAt: date, updatedAt: date, syncStatus: .synced
+                )
+                context.insert(restaurant)
+                let visit = Visit(
+                    id: uuid(5_000 + item * 3), restaurantId: restaurantID,
+                    visitedAt: date, rating: rating,
+                    valueRating: max(0.5, rating - 0.5),
+                    environmentRating: rating,
+                    serviceRating: min(5, rating + 0.5),
+                    recommendationSourceID: source.remoteID,
+                    recommendationSourceType: source.sourceType,
+                    recommendationSourceText: source.displayName,
+                    createdAt: date, updatedAt: date, syncStatus: .synced
+                )
+                context.insert(visit)
+                if plan.4 > 0 && ratingIndex.isMultiple(of: plan.4) {
+                    let repeatDate = Calendar.current.date(byAdding: .day, value: 10, to: date) ?? date
+                    context.insert(Visit(
+                        id: uuid(5_001 + item * 3), restaurantId: restaurantID,
+                        visitedAt: repeatDate, rating: rating,
+                        recommendationSourceID: source.remoteID,
+                        recommendationSourceType: source.sourceType,
+                        recommendationSourceText: source.displayName,
+                        createdAt: repeatDate, updatedAt: repeatDate, syncStatus: .synced
+                    ))
+                }
+            }
+        }
     }
 
     private static func restaurantContractData(

@@ -107,6 +107,34 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-companion-analysis-entry")
+                    NavigationLink {
+                        RecommendationSourceAnalysisScreen()
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(TasteMapAnalysisTheme.caramelSoft)
+                                Text("🧾")
+                                    .font(.title3)
+                            }
+                            .frame(width: 48, height: 48)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("推荐来源分析")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                Text("看看谁最常安利、谁最靠谱，以及最坑推荐来源")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-recommendation-source-analysis-entry")
                     if let userID = authenticatedUser?.id {
                         Button { isShowingSocialHub = true } label: {
                             HStack(spacing: 12) {
