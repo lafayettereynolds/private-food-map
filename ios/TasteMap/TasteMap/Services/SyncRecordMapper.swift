@@ -10,6 +10,26 @@ enum SyncRecordMapper {
         try JSONEncoder().encode(visitRecord(visit, restaurantRemoteID: restaurantRemoteID))
     }
 
+    static func profilePayload(_ profile: UserProfile) throws -> Data {
+        try JSONEncoder().encode(profileRecord(profile))
+    }
+
+    static func profileRecord(_ profile: UserProfile) -> OwnProfileSyncContractV1 {
+        OwnProfileSyncContractV1(
+            schemaVersion: SyncV1Contract.schemaVersion,
+            userId: profile.tasteMapUserID,
+            displayName: profile.displayName,
+            bio: profile.bio,
+            city: profile.city,
+            avatarPhotoId: profile.avatarPhotoID,
+            avatarPresetId: profile.avatarPreset,
+            visibility: profile.visibility,
+            createdAt: dateString(profile.createdAt),
+            updatedAt: dateString(profile.updatedAt),
+            deletedAt: nil
+        )
+    }
+
     static func dishPayload(
         _ dish: Dish,
         restaurantRemoteID: String,

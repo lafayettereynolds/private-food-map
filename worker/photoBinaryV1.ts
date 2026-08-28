@@ -106,11 +106,11 @@ async function downloadPhotoVariant(
   photoId: string,
 ): Promise<Response> {
   const variant = readVariant(request)
-  const photo = await ownedPhoto(database, viewerId, photoId)
+  const photo = await readablePhoto(database, viewerId, photoId)
   if (!photo || photo.deleted_at) throw new PhotoBinaryV1Error('Photo was not found.', 404)
   if (photo.storage_provider !== 'r2') throw new PhotoBinaryV1Error('This photo uses a different storage provider.', 409)
   const key = variant === 'thumbnail' ? photo.thumbnail_storage_key : photo.storage_key
-  if (!key || !isOwnedObjectKey(key, viewerId, photoId, variant)) {
+  if (!key || !isOwnedObjectKey(key, photo.user_id, photoId, variant)) {
     throw new PhotoBinaryV1Error('Photo storage metadata is unavailable.', 404)
   }
   const object = await bucket.get(key)
@@ -171,6 +171,30 @@ async function ownedPhoto(database: D1Database, viewerId: string, photoId: strin
   return database.prepare(`SELECT id, user_id, storage_provider, storage_key, thumbnail_storage_key, deleted_at
     FROM photos WHERE id = ? AND user_id = ? LIMIT 1`)
     .bind(photoId, viewerId).first<OwnedPhotoRow>()
+}
+
+async function readablePhoto(database: D1Database, viewerId: string, photoId: string) {
+  return database.prepare(`SELECT p.id, p.user_id, p.storage_provider, p.storage_key,
+      p.thumbnail_storage_key, p.deleted_at
+    FROM photos p
+    WHERE p.id = ? AND p.deleted_at IS NULL AND (
+      p.user_id = ? OR EXISTS (
+        SELECT 1 FROM user_profiles up
+        WHERE up.user_id = p.user_id AND up.avatar_photo_id = p.id
+          AND up.deleted_at IS NULL AND (
+            up.visibility = 'public' OR (
+              up.visibility = 'friends' AND EXISTS (
+                SELECT 1 FROM friendships f
+                WHERE f.status = 'accepted' AND (
+                  (f.requester_id = ? AND f.addressee_id = up.user_id) OR
+                  (f.requester_id = up.user_id AND f.addressee_id = ?)
+                )
+              )
+            )
+          )
+      )
+    ) LIMIT 1`)
+    .bind(photoId, viewerId, viewerId, viewerId).first<OwnedPhotoRow>()
 }
 
 function uploadResponse(

@@ -714,6 +714,7 @@ enum SyncMutationPayload: Encodable {
     case photo(PhotoSyncContractV1)
     case companion(DiningCompanionSyncContractV1)
     case recommendationSource(RecommendationSourceSyncContractV1)
+    case profile(OwnProfileSyncContractV1)
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -725,6 +726,7 @@ enum SyncMutationPayload: Encodable {
         case .photo(let photo): try container.encode(photo)
         case .companion(let companion): try container.encode(companion)
         case .recommendationSource(let source): try container.encode(source)
+        case .profile(let profile): try container.encode(profile)
         }
     }
 }
@@ -802,6 +804,11 @@ struct RecommendationSourceSyncRecordEnvelopeV1: Decodable {
     let record: RecommendationSourceSyncContractV1
 }
 
+struct ProfileSyncRecordEnvelopeV1: Decodable {
+    let serverVersion: Int64
+    let record: OwnProfileSyncContractV1
+}
+
 struct SyncTombstoneV1: Codable, Equatable {
     let entityType: SyncEntityType
     let entityId: String
@@ -819,6 +826,7 @@ struct SyncPullResponseV1: Decodable {
     let photos: [PhotoSyncRecordEnvelopeV1]
     let companions: [DiningCompanionSyncRecordEnvelopeV1]
     let recommendationSources: [RecommendationSourceSyncRecordEnvelopeV1]
+    let profiles: [ProfileSyncRecordEnvelopeV1]
     let tombstones: [SyncTombstoneV1]
     let nextCursor: String
     let hasMore: Bool
@@ -834,6 +842,7 @@ struct SyncPullResponseV1: Decodable {
         photos: [PhotoSyncRecordEnvelopeV1] = [],
         companions: [DiningCompanionSyncRecordEnvelopeV1] = [],
         recommendationSources: [RecommendationSourceSyncRecordEnvelopeV1] = [],
+        profiles: [ProfileSyncRecordEnvelopeV1] = [],
         tombstones: [SyncTombstoneV1],
         nextCursor: String,
         hasMore: Bool,
@@ -848,6 +857,7 @@ struct SyncPullResponseV1: Decodable {
         self.photos = photos
         self.companions = companions
         self.recommendationSources = recommendationSources
+        self.profiles = profiles
         self.tombstones = tombstones
         self.nextCursor = nextCursor
         self.hasMore = hasMore
@@ -856,7 +866,7 @@ struct SyncPullResponseV1: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case apiVersion, schemaVersion, restaurants, visits, dishes, visitDishes, photos
-        case companions, recommendationSources
+        case companions, recommendationSources, profiles
         case tombstones, nextCursor, hasMore, serverTime
     }
 
@@ -874,6 +884,7 @@ struct SyncPullResponseV1: Decodable {
             [RecommendationSourceSyncRecordEnvelopeV1].self,
             forKey: .recommendationSources
         ) ?? []
+        profiles = try values.decodeIfPresent([ProfileSyncRecordEnvelopeV1].self, forKey: .profiles) ?? []
         tombstones = try values.decode([SyncTombstoneV1].self, forKey: .tombstones)
         nextCursor = try values.decode(String.self, forKey: .nextCursor)
         hasMore = try values.decode(Bool.self, forKey: .hasMore)

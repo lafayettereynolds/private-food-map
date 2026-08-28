@@ -162,6 +162,15 @@ final class SyncEngine {
                 timestamp: photo.updatedAt
             )
         }
+        for profile in try profiles() {
+            guard profile.deletedAt == nil,
+                  profile.syncStatus == .pending,
+                  try queue.activeMutation(
+                    entityType: .profile,
+                    entityID: profile.tasteMapUserID
+                  ) == nil else { continue }
+            try LocalUserProfileStore(context: context).enqueueIfReady(profile)
+        }
     }
 
     private func pushPendingMutations() async throws {
@@ -230,6 +239,9 @@ final class SyncEngine {
         case (.upsert, .recommendationSource):
             guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
             payload = .recommendationSource(try JSONDecoder().decode(RecommendationSourceSyncContractV1.self, from: data))
+        case (.upsert, .profile):
+            guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
+            payload = .profile(try JSONDecoder().decode(OwnProfileSyncContractV1.self, from: data))
         }
         return SyncMutationRequestV1(
             mutationId: mutation.mutationID.uuidString.lowercased(),
@@ -328,6 +340,9 @@ final class SyncEngine {
         case .recommendationSource:
             payload = try recommendationSources().first(where: { $0.remoteID == remoteID })
                 .map(SyncRecordMapper.recommendationSourcePayload)
+        case .profile:
+            payload = try profiles().first(where: { $0.tasteMapUserID == remoteID })
+                .map(SyncRecordMapper.profilePayload)
         }
         try queue.rebaseActiveMutation(entityType: type, entityID: remoteID, serverVersion: serverVersion, payload: payload)
     }
@@ -345,6 +360,7 @@ final class SyncEngine {
             for envelope in response.dishes { try applyDish(envelope) }
             for envelope in response.visitDishes { try applyVisitDish(envelope) }
             for envelope in response.photos { try applyPhoto(envelope) }
+            for envelope in response.profiles { try applyProfile(envelope) }
             for tombstone in response.tombstones { try applyTombstone(tombstone) }
             checkpoint.cursor = response.nextCursor
             checkpoint.lastSyncedAt = now()
@@ -776,6 +792,59 @@ final class SyncEngine {
         ))
     }
 
+    private func applyProfile(_ envelope: ProfileSyncRecordEnvelopeV1) throws {
+        let record = envelope.record
+        let snapshot = try JSONEncoder().encode(record)
+        if let profile = try profiles().first(where: { $0.tasteMapUserID == record.userId }) {
+            if try queue.hasConflict(entityType: .profile, entityID: record.userId) {
+                profile.remoteRecordData = snapshot
+                return
+            }
+            if try queue.activeMutation(entityType: .profile, entityID: record.userId) != nil {
+                if envelope.serverVersion > profile.serverVersion {
+                    try queue.markConflicted(
+                        entityType: .profile,
+                        entityID: record.userId,
+                        reason: "server_changed_while_local_mutation_pending"
+                    )
+                    // Keep the user's offline edit visible and recoverable. The
+                    // server projection is retained separately for an explicit
+                    // future conflict choice; device time never silently wins.
+                    profile.remoteRecordData = snapshot
+                    profile.syncStatus = .failed
+                } else if envelope.serverVersion == profile.serverVersion {
+                    profile.remoteRecordData = snapshot
+                    try queue.rebaseActiveMutation(
+                        entityType: .profile,
+                        entityID: record.userId,
+                        serverVersion: envelope.serverVersion,
+                        payload: try SyncRecordMapper.profilePayload(profile)
+                    )
+                }
+                return
+            }
+            guard envelope.serverVersion >= profile.serverVersion else { return }
+            update(profile, from: record, serverVersion: envelope.serverVersion, snapshot: snapshot)
+            return
+        }
+        context.insert(UserProfile(
+            tasteMapUserID: record.userId,
+            displayName: record.displayName,
+            bio: record.bio,
+            city: record.city,
+            avatarPhotoID: record.avatarPhotoId,
+            avatarPreset: record.avatarPresetId,
+            visibility: record.visibility,
+            createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
+            updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
+            deletedAt: record.deletedAt.flatMap(SyncRecordMapper.date),
+            serverVersion: envelope.serverVersion,
+            lastSyncedAt: now(),
+            syncStatus: .synced,
+            remoteRecordData: snapshot
+        ))
+    }
+
     private func applyTombstone(_ tombstone: SyncTombstoneV1) throws {
         let deletedAt = SyncRecordMapper.date(tombstone.deletedAt) ?? now()
         try queue.markConflicted(entityType: tombstone.entityType, entityID: tombstone.entityId, reason: "server_tombstone")
@@ -823,7 +892,36 @@ final class SyncEngine {
             source.serverVersion = tombstone.serverVersion
             source.lastSyncedAt = now()
             source.syncStatus = .synced
+        case .profile:
+            guard let profile = try profiles().first(where: {
+                $0.tasteMapUserID == tombstone.entityId
+            }) else { return }
+            profile.deletedAt = deletedAt
+            profile.serverVersion = tombstone.serverVersion
+            profile.lastSyncedAt = now()
+            profile.syncStatus = .synced
         }
+    }
+
+    private func update(
+        _ profile: UserProfile,
+        from record: OwnProfileSyncContractV1,
+        serverVersion: Int64,
+        snapshot: Data
+    ) {
+        profile.displayName = record.displayName
+        profile.bio = record.bio
+        profile.city = record.city
+        profile.avatarPhotoID = record.avatarPhotoId
+        profile.avatarPreset = record.avatarPresetId
+        profile.visibility = record.visibility
+        profile.createdAt = SyncRecordMapper.date(record.createdAt) ?? profile.createdAt
+        profile.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? profile.updatedAt
+        profile.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)
+        profile.serverVersion = serverVersion
+        profile.lastSyncedAt = now()
+        profile.syncStatus = .synced
+        profile.remoteRecordData = snapshot
     }
 
     private func update(
@@ -1061,6 +1159,13 @@ final class SyncEngine {
             source.serverVersion = serverVersion
             source.lastSyncedAt = now()
             source.syncStatus = hasLaterMutation ? .pending : .synced
+        case .profile:
+            guard let profile = try? profiles().first(where: {
+                $0.tasteMapUserID == remoteID
+            }) else { return }
+            profile.serverVersion = serverVersion
+            profile.lastSyncedAt = now()
+            profile.syncStatus = hasLaterMutation ? .pending : .synced
         }
     }
 
@@ -1093,6 +1198,12 @@ final class SyncEngine {
         case .recommendationSource:
             if let source = try? recommendationSources().first(where: { $0.remoteID == remoteID }) {
                 source.syncStatus = .failed
+            }
+        case .profile:
+            if let profile = try? profiles().first(where: {
+                $0.tasteMapUserID == remoteID
+            }) {
+                profile.syncStatus = .failed
             }
         }
     }
@@ -1130,6 +1241,10 @@ final class SyncEngine {
 
     private func recommendationSources() throws -> [RecommendationSource] {
         try context.fetch(FetchDescriptor<RecommendationSource>())
+    }
+
+    private func profiles() throws -> [UserProfile] {
+        try context.fetch(FetchDescriptor<UserProfile>())
     }
 
     private func parentRemoteIDs(for photo: PhotoAsset) throws -> (restaurant: String?, visit: String?, dish: String?) {

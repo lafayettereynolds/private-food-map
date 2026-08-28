@@ -14,6 +14,12 @@ enum TasteMapUITestFixtures {
     static let resetEnvironmentKey = "TASTEMAP_P1D_RESET"
     static let photoEnvironmentKey = "TASTEMAP_P2B_UI_TEST"
     static let photoFailureEnvironmentKey = "TASTEMAP_P2B_UPLOAD_FAILURE_UI_TEST"
+    static let profileEnvironmentKey = "TASTEMAP_P3A_PROFILE_UI_TEST"
+    static let profileUserID = "tm_p3a_ui_fixture"
+
+    static var usesProfileFixture: Bool {
+        ProcessInfo.processInfo.environment[profileEnvironmentKey] == "1"
+    }
 
     static var usesPhotoFixture: Bool {
         ProcessInfo.processInfo.environment[photoEnvironmentKey] == "1"
@@ -93,6 +99,9 @@ enum TasteMapUITestFixtures {
             for mutation in try context.fetch(FetchDescriptor<SyncMutation>()) {
                 context.delete(mutation)
             }
+            for profile in try context.fetch(FetchDescriptor<UserProfile>()) {
+                context.delete(profile)
+            }
             for checkpoint in try context.fetch(FetchDescriptor<SyncCheckpoint>()) {
                 context.delete(checkpoint)
             }
@@ -117,6 +126,24 @@ enum TasteMapUITestFixtures {
             appleMapItemIdentifier: "apple-ui-test-p1d",
             city: "杭州",
             status: .wantToGo,
+            syncStatus: .synced
+        ))
+        try context.save()
+    }
+
+    static func insertProfileFixture(into container: ModelContainer) throws {
+        guard usesProfileFixture else { return }
+        let context = container.mainContext
+        if try context.fetch(FetchDescriptor<UserProfile>())
+            .contains(where: { $0.tasteMapUserID == profileUserID }) { return }
+        context.insert(UserProfile(
+            tasteMapUserID: profileUserID,
+            displayName: "P3-A 初始用户",
+            bio: "正在建立自己的美食身份。",
+            city: "杭州",
+            avatarPreset: .polarBear,
+            visibility: .private,
+            serverVersion: 1,
             syncStatus: .synced
         ))
         try context.save()

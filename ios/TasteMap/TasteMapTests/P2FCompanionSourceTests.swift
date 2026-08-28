@@ -373,7 +373,7 @@ private final class P2FMemorySyncAPI: SyncAPI {
                 case .visit(let record): visits[mutation.entityId] = .init(serverVersion: version, record: record)
                 case .companion(let record): companions[mutation.entityId] = .init(serverVersion: version, record: record)
                 case .recommendationSource(let record): sources[mutation.entityId] = .init(serverVersion: version, record: record)
-                case .dish, .visitDish, .photo: break
+                case .dish, .visitDish, .photo, .profile: break
                 }
                 tombstones.removeValue(forKey: "\(mutation.entityType.rawValue):\(mutation.entityId)")
             } else {
@@ -382,7 +382,7 @@ private final class P2FMemorySyncAPI: SyncAPI {
                 case .visit: visits.removeValue(forKey: mutation.entityId)
                 case .companion: companions.removeValue(forKey: mutation.entityId)
                 case .recommendationSource: sources.removeValue(forKey: mutation.entityId)
-                case .dish, .visitDish, .photo: break
+                case .dish, .visitDish, .photo, .profile: break
                 }
                 let key = "\(mutation.entityType.rawValue):\(mutation.entityId)"
                 tombstones[key] = .init(

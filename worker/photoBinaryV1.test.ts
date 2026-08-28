@@ -59,6 +59,29 @@ describe('Photo Binary API V1', () => {
     )).status).toBe(404)
   })
 
+  it('allows only the current public avatar while keeping other private Photos closed', async () => {
+    const data = new TextEncoder().encode('profile-avatar')
+    const response = await upload(bucket, database, USER_A, data, await sha256(data))
+    const body = await response.json() as { storageKey: string }
+    database.photo = {
+      id: PHOTO_ID, user_id: USER_A, storage_provider: 'r2',
+      storage_key: body.storageKey, thumbnail_storage_key: null, deleted_at: null,
+    }
+    database.publicAvatarReadable = true
+    const publicAvatar = await handlePhotoBinaryV1(
+      new Request(`https://dev.test/api/v1/photos/${PHOTO_ID}/content?variant=display`),
+      environment(database, bucket), USER_B, PHOTO_ID,
+    )
+    expect(publicAvatar.status).toBe(200)
+    expect(await publicAvatar.text()).toBe('profile-avatar')
+
+    database.publicAvatarReadable = false
+    expect((await handlePhotoBinaryV1(
+      new Request(`https://dev.test/api/v1/photos/${PHOTO_ID}/content?variant=display`),
+      environment(database, bucket), USER_B, PHOTO_ID,
+    )).status).toBe(404)
+  })
+
   it('requires a metadata tombstone before idempotent binary cleanup', async () => {
     const data = new TextEncoder().encode('delete-me')
     const response = await upload(bucket, database, USER_A, data, await sha256(data))
@@ -134,13 +157,16 @@ interface PhotoRow {
 
 class PhotoDatabase {
   photo: PhotoRow | null = null
-  prepare() {
+  publicAvatarReadable = false
+  prepare(sql: string) {
     const database = this
     return {
       bind(photoID: string, userID: string) {
         return {
           async first() {
-            return database.photo?.id === photoID && database.photo.user_id === userID
+            const publicAvatar = sql.includes('FROM user_profiles') && database.publicAvatarReadable
+            return database.photo?.id === photoID &&
+              (database.photo.user_id === userID || publicAvatar)
               ? database.photo
               : null
           },

@@ -227,6 +227,7 @@ function migrationFiles() {
     '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
     '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
     '0021_companions_recommendation_sources_sync.sql',
+    '0022_user_profiles_sync.sql',
   ]
 }
 

@@ -10,6 +10,7 @@ enum TasteMapPersistence {
         PhotoAsset.self,
         DiningCompanion.self,
         RecommendationSource.self,
+        UserProfile.self,
         SyncMutation.self,
         SyncCheckpoint.self,
     ])

@@ -152,6 +152,19 @@ final class PhotoTransferCoordinator {
         )
     }
 
+    @discardableResult
+    func attachPreparedAvatar(
+        _ prepared: PreparedLocalPhoto,
+        queueForUpload: Bool = true
+    ) throws -> PhotoAsset {
+        try LocalDishPhotoStore(context: context, photoFiles: files).createLocalPhoto(
+            prepared: prepared,
+            kind: .avatar,
+            visibility: .private,
+            queueForUpload: queueForUpload
+        )
+    }
+
     func delete(_ photo: PhotoAsset) async throws {
         try LocalDishPhotoStore(context: context, photoFiles: files).delete(photo)
         await synchronizeMetadata()

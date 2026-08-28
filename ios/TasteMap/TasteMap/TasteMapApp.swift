@@ -55,6 +55,7 @@ struct TasteMapApp: App {
                 if TasteMapUITestFixtures.requestsPhotoFailureFixture {
                     try TasteMapUITestFixtures.insertPhotoFailureFixture(into: container)
                 }
+                try TasteMapUITestFixtures.insertProfileFixture(into: container)
             }
             #endif
         } catch {

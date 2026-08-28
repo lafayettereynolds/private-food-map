@@ -11,6 +11,7 @@ import {
   recordUnversionedSyncChanges,
   SyncV1RequestError,
 } from './syncV1'
+import { ensureUserProfile, readPublicProfile } from './profileV1'
 
 describe('Worker Sync API V1 integration', () => {
   it('allows explicit test identities only in a configured Development deployment', async () => {
@@ -250,7 +251,7 @@ describe('Worker Sync API V1 integration', () => {
 
     expect(retry.acknowledgements[0]).toMatchObject({ status: 'applied', duplicate: true, serverVersion: 1 })
     expect(database.get('SELECT COUNT(*) AS count FROM restaurants').count).toBe(1)
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v4 WHERE mutation_id = 'response-lost'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v5 WHERE mutation_id = 'response-lost'").count).toBe(1)
   })
 
   it('increments server versions for valid Restaurant and Visit updates', async () => {
@@ -287,7 +288,7 @@ describe('Worker Sync API V1 integration', () => {
     const incremental = await pull(database, 'user-a', initial.nextCursor)
 
     expect(incremental.restaurants[0]).toMatchObject({ serverVersion: 2, record: { name: 'Web 更新名称' } })
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v4 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v5 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
   })
 
   it('prevents a stale device from resurrecting a server tombstone', async () => {
@@ -512,6 +513,117 @@ describe('Worker Sync API V1 integration', () => {
     expect((await push(database, 'user-a', mutation('alex-lower', 'companion', lower.id, 0, lower))).acknowledgements[0])
       .toMatchObject({ status: 'applied' })
   })
+
+  it('initializes one Profile, syncs it incrementally, and rejects cross-user takeover', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'user-a')
+    await ensureUser(database, 'user-b')
+    await ensureUserProfile(database, 'user-a')
+    await ensureUserProfile(database, 'user-a')
+    await ensureUserProfile(database, 'user-b')
+    expect(database.get("SELECT COUNT(*) AS count FROM user_profiles WHERE user_id = 'user-a'").count).toBe(1)
+
+    const initial = await pull(database, 'user-a', '0')
+    expect(initial.profiles).toHaveLength(1)
+    expect(initial.profiles[0].record).toMatchObject({
+      userId: 'user-a', avatarPresetId: 'polar-bear', visibility: 'private',
+    })
+    const profile = {
+      ...initial.profiles[0].record,
+      displayName: '小林 🍜', bio: '周末一起吃饭。', city: '杭州',
+      avatarPresetId: 'otter', visibility: 'public',
+      updatedAt: '2026-08-28T10:00:00.000Z',
+    }
+    const update = mutation('profile-update', 'profile', 'user-a', 1, profile)
+    const firstAck = (await push(database, 'user-a', update)).acknowledgements[0]
+    expect(firstAck).toMatchObject({ status: 'applied', duplicate: false, serverVersion: 2 })
+    expect((await push(database, 'user-a', update)).acknowledgements[0])
+      .toMatchObject({ status: 'applied', duplicate: true, serverVersion: 2 })
+    const incremental = await pull(database, 'user-a', initial.nextCursor)
+    expect(incremental.profiles[0]).toMatchObject({
+      serverVersion: 2,
+      record: { displayName: '小林 🍜', bio: '周末一起吃饭。', avatarPresetId: 'otter' },
+    })
+    expect(database.get("SELECT nickname, email FROM users WHERE id = 'user-a'")).toMatchObject({
+      nickname: '小林 🍜', email: null,
+    })
+
+    const stale = { ...profile, displayName: '过期修改', updatedAt: '2026-08-28T10:01:00.000Z' }
+    expect((await push(database, 'user-a', mutation('profile-stale', 'profile', 'user-a', 1, stale))).acknowledgements[0])
+      .toMatchObject({ status: 'conflict', serverVersion: 2 })
+    await expect(push(database, 'user-b', mutation('profile-takeover', 'profile', 'user-a', 2, profile)))
+      .rejects.toMatchObject({ status: 403 })
+    await expect(push(database, 'user-a', deletion('profile-delete', 'profile', 'user-a', 2)))
+      .rejects.toMatchObject({ status: 405 })
+  })
+
+  it('adopts an offline-first Profile only while its server bootstrap is untouched', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'offline-user')
+    await ensureUserProfile(database, 'offline-user')
+    const offlineProfile = {
+      schemaVersion: 1, userId: 'offline-user', displayName: '离线用户',
+      bio: '离线创建，联网后同步。', city: '成都', avatarPhotoId: null,
+      avatarPresetId: 'otter', visibility: 'private',
+      createdAt: '2026-08-28T09:00:00.000Z', updatedAt: '2026-08-28T09:00:00.000Z',
+      deletedAt: null,
+    }
+    const offlineMutation = mutation(
+      'offline-profile-create', 'profile', 'offline-user', 0, offlineProfile,
+    )
+
+    expect((await push(database, 'offline-user', offlineMutation)).acknowledgements[0])
+      .toMatchObject({ status: 'applied', duplicate: false, serverVersion: 2 })
+    expect((await push(database, 'offline-user', offlineMutation)).acknowledgements[0])
+      .toMatchObject({ status: 'applied', duplicate: true, serverVersion: 2 })
+    expect(database.get("SELECT COUNT(*) AS count FROM user_profiles WHERE user_id = 'offline-user'").count)
+      .toBe(1)
+
+    const secondBaseZero = mutation(
+      'offline-profile-stale', 'profile', 'offline-user', 0,
+      { ...offlineProfile, displayName: '不能覆盖', updatedAt: '2026-08-28T09:05:00.000Z' },
+    )
+    expect((await push(database, 'offline-user', secondBaseZero)).acknowledgements[0])
+      .toMatchObject({ status: 'conflict', serverVersion: 2 })
+  })
+
+  it('returns only the Public Profile allowlist and counts only public Visit data', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'user-a')
+    await ensureUser(database, 'user-b')
+    await ensureUserProfile(database, 'user-a')
+    await ensureUserProfile(database, 'user-b')
+    const initial = await pull(database, 'user-a', '0')
+    const profile = {
+      ...initial.profiles[0].record,
+      displayName: '公开用户', bio: '公开简介', city: '上海', visibility: 'public',
+      updatedAt: '2026-08-28T11:00:00.000Z',
+    }
+    await push(database, 'user-a', mutation('public-profile', 'profile', 'user-a', 1, profile))
+    await push(database, 'user-a', mutation('profile-public-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const publicVisit = { ...visitPayload('profile-public-v', appleFixture.id, 'forged'), visibility: 'public' }
+    const privateVisit = { ...visitPayload('profile-private-v', appleFixture.id, 'forged'), visibility: 'private' }
+    await push(database, 'user-a', mutation('profile-public-v', 'visit', publicVisit.id, 0, publicVisit))
+    await push(database, 'user-a', mutation('profile-private-v', 'visit', privateVisit.id, 0, privateVisit))
+
+    const publicDTO = await readPublicProfile(database, 'user-b', 'user-a')
+    expect(publicDTO).toEqual({
+      apiVersion: 1, userId: 'user-a', displayName: '公开用户', bio: '公开简介', city: '上海',
+      avatarPhotoId: null, avatarPresetId: 'polar-bear', joinedAt: expect.any(String),
+      statistics: { publicRestaurantCount: 1, publicVisitCount: 1 },
+    })
+    const serialized = JSON.stringify(publicDTO)
+    for (const privateKey of [
+      'email', 'authSubject', 'providerSubject', 'session', 'refreshToken',
+      'restaurants', 'visits', 'companions', 'recommendationSources', 'storageKey',
+    ]) expect(serialized).not.toContain(privateKey)
+
+    const privateB = { ...initial.profiles[0].record, userId: 'user-b', visibility: 'private' }
+    // User B already has an independently bootstrapped Profile; private access stays non-enumerable.
+    expect(privateB.visibility).toBe('private')
+    await expect(readPublicProfile(database, 'user-a', 'user-b'))
+      .rejects.toMatchObject({ status: 404 })
+  })
 })
 
 function mutation(mutationId, entityType, entityId, baseVersion, payload) {
@@ -643,6 +755,7 @@ function migrationFiles() {
     '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
     '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
     '0021_companions_recommendation_sources_sync.sql',
+    '0022_user_profiles_sync.sql',
   ]
 }
 

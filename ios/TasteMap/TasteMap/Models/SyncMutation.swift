@@ -9,6 +9,7 @@ enum SyncEntityType: String, Codable, Sendable {
     case photo
     case companion
     case recommendationSource
+    case profile
 
     var dependencyPriority: Int {
         switch self {
@@ -17,6 +18,7 @@ enum SyncEntityType: String, Codable, Sendable {
         case .dish: 2
         case .visitDish: 3
         case .photo: 4
+        case .profile: 5
         }
     }
 }

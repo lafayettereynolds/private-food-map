@@ -19,11 +19,14 @@ import {
   type DiningCompanionSyncContractV1,
   type RecommendationSourceSyncContractV1,
 } from '../src/contracts/companionSourceContract'
+import {
+  type OwnProfileSyncContractV1,
+} from '../src/contracts/profileContract'
 import { groupRestaurantPlaceIdentities, type RestaurantPlaceIdentityRow } from './restaurantIdentityMapping'
 
 const MAX_PULL_LIMIT = 200
-const CHANGE_LOG_TABLE = 'sync_change_log_v4'
-const RECEIPT_TABLE = 'sync_mutation_receipts_v4'
+const CHANGE_LOG_TABLE = 'sync_change_log_v5'
+const RECEIPT_TABLE = 'sync_mutation_receipts_v5'
 
 interface VersionedEntityRow {
   id: string
@@ -147,6 +150,17 @@ interface SyncRecommendationSourceRow extends VersionedEntityRow {
   updated_at: string
 }
 
+interface SyncProfileRow extends VersionedEntityRow {
+  display_name: string
+  bio: string
+  city: string
+  avatar_photo_id: string | null
+  avatar_preset_id: OwnProfileSyncContractV1['avatarPresetId']
+  visibility: OwnProfileSyncContractV1['visibility']
+  created_at: string
+  updated_at: string
+}
+
 interface SyncDishRow extends VersionedEntityRow {
   restaurant_id: string
   visit_id: string
@@ -249,6 +263,7 @@ export async function handleSyncV1Pull(
   const photos = [] as SyncPullResponseV1['photos']
   const companions = [] as SyncPullResponseV1['companions']
   const recommendationSources = [] as SyncPullResponseV1['recommendationSources']
+  const profiles = [] as SyncPullResponseV1['profiles']
   const tombstones = [] as SyncPullResponseV1['tombstones']
   for (const change of latestInPage.values()) {
     if (change.entity_type === 'restaurant') {
@@ -306,7 +321,7 @@ export async function handleSyncV1Pull(
       } else {
         companions.push({ serverVersion: row.server_version, record: rowToCompanion(row) })
       }
-    } else {
+    } else if (change.entity_type === 'recommendationSource') {
       const row = await database.prepare('SELECT * FROM recommendation_sources WHERE id = ? AND user_id = ?')
         .bind(change.entity_id, viewerId).first<SyncRecommendationSourceRow>()
       if (!row || row.server_version !== change.server_version) continue
@@ -314,6 +329,15 @@ export async function handleSyncV1Pull(
         tombstones.push(tombstone(change, row.deleted_at))
       } else {
         recommendationSources.push({ serverVersion: row.server_version, record: rowToRecommendationSource(row) })
+      }
+    } else {
+      const row = await database.prepare('SELECT * FROM user_profiles WHERE user_id = ?')
+        .bind(viewerId).first<SyncProfileRow>()
+      if (!row || row.server_version !== change.server_version) continue
+      if (change.operation === 'delete' || row.deleted_at) {
+        tombstones.push(tombstone(change, row.deleted_at))
+      } else {
+        profiles.push({ serverVersion: row.server_version, record: rowToProfile(row) })
       }
     }
   }
@@ -378,6 +402,7 @@ export async function handleSyncV1Pull(
     photos,
     companions,
     recommendationSources,
+    profiles,
     tombstones,
     nextCursor: String(changes.at(-1)?.revision ?? cursor),
     hasMore: changes.length === limit,
@@ -401,12 +426,13 @@ export async function recordUnversionedSyncChanges(
     ].join(':'))}`
     const table = entityTable(change.entityType)
     const ownerColumn = entityOwnerColumn(change.entityType)
+    const idColumn = entityIDColumn(change.entityType)
     const operation = change.deletedAt ? 'delete' : 'upsert'
     const changedAt = new Date().toISOString()
     await database.batch([
       database.prepare(`UPDATE ${table}
         SET server_version = MAX(server_version, 0) + 1, last_mutation_id = ?
-        WHERE id = ? AND ${ownerColumn} = ? AND updated_at = ?
+        WHERE ${idColumn} = ? AND ${ownerColumn} = ? AND updated_at = ?
           AND NOT EXISTS (
             SELECT 1 FROM ${CHANGE_LOG_TABLE} WHERE user_id = ? AND mutation_id = ?
           )`)
@@ -415,7 +441,7 @@ export async function recordUnversionedSyncChanges(
         user_id, entity_type, entity_id, operation, server_version, mutation_id, changed_at
       )
       SELECT ?, ?, ?, ?, server_version, ?, ? FROM ${table}
-      WHERE id = ? AND ${ownerColumn} = ? AND last_mutation_id = ?
+      WHERE ${idColumn} = ? AND ${ownerColumn} = ? AND last_mutation_id = ?
         AND NOT EXISTS (
           SELECT 1 FROM ${CHANGE_LOG_TABLE} WHERE user_id = ? AND mutation_id = ?
         )`)
@@ -433,6 +459,34 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
   const current = await readEntityVersion(database, mutation.entityType, mutation.entityId)
   if (current && current.user_id !== viewerId) {
     throw new SyncV1RequestError('The authenticated user does not own this entity.', 403)
+  }
+  if (mutation.entityType === 'profile') {
+    if (mutation.entityId !== viewerId) {
+      throw new SyncV1RequestError('A Profile entity must belong to the authenticated Taste Map user.', 403)
+    }
+    if (mutation.operation === 'delete') {
+      throw new SyncV1RequestError('Profile deletion is not available through Sync V1.', 405)
+    }
+    const profile = mutation.payload as OwnProfileSyncContractV1
+    if ([...profile.displayName].length > 30) {
+      const legacy = await database.prepare(`SELECT display_name FROM user_profiles
+        WHERE user_id = ? AND deleted_at IS NULL LIMIT 1`)
+        .bind(viewerId).first<{ display_name: string }>()
+      if (legacy?.display_name !== profile.displayName) {
+        throw new SyncV1RequestError(
+          'New Profile display names are limited to 30 Unicode code points.',
+          400,
+        )
+      }
+    }
+    if (profile.avatarPhotoId) {
+      const avatar = await database.prepare(`SELECT id FROM photos
+        WHERE id = ? AND user_id = ? AND kind = 'avatar' AND deleted_at IS NULL LIMIT 1`)
+        .bind(profile.avatarPhotoId, viewerId).first<{ id: string }>()
+      if (!avatar) {
+        throw new SyncV1RequestError('Profile.avatarPhotoId must reference an active owned avatar Photo.', 403)
+      }
+    }
   }
   if (mutation.operation === 'upsert' &&
     (mutation.entityType === 'companion' || mutation.entityType === 'recommendationSource')) {
@@ -473,7 +527,14 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
     const photo = mutation.payload as PhotoJSONContractV1
     await assertOwnedPhotoParents(database, viewerId, photo)
   }
-  const conflictReason = conflictForMutation(current, mutation)
+  // Authentication bootstraps an empty server Profile before the first sync request.
+  // An offline-first client can independently create its local Profile at base version 0.
+  // Adopt that local record only while the server row is still the untouched bootstrap;
+  // once either side has edited it, normal optimistic concurrency remains authoritative.
+  const applicableMutation = canAdoptUntouchedBootstrapProfile(current, viewerId, mutation)
+    ? { ...mutation, baseVersion: current!.server_version }
+    : mutation
+  const conflictReason = conflictForMutation(current, applicableMutation)
   if (conflictReason) {
     return recordConflict(database, viewerId, mutation, fingerprint, current?.server_version ?? 0, conflictReason)
   }
@@ -481,14 +542,15 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
   const nextVersion = (current?.server_version ?? 0) + 1
   const processedAt = new Date().toISOString()
   const statements = (() => {
-    switch (mutation.entityType) {
-      case 'restaurant': return restaurantMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
-      case 'visit': return visitMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
-      case 'dish': return dishMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
-      case 'visitDish': return visitDishMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
-      case 'photo': return photoMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
-      case 'companion': return companionMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
-      case 'recommendationSource': return recommendationSourceMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt)
+    switch (applicableMutation.entityType) {
+      case 'restaurant': return restaurantMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'visit': return visitMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'dish': return dishMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'visitDish': return visitDishMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'photo': return photoMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'companion': return companionMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'recommendationSource': return recommendationSourceMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'profile': return profileMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
     }
   })()
   try {
@@ -510,6 +572,21 @@ function conflictForMutation(current: VersionedEntityRow | null, mutation: SyncM
   if (current.server_version !== mutation.baseVersion) return 'server_version_mismatch'
   if (current.deleted_at && !(mutation.entityType === 'visitDish' && mutation.operation === 'upsert')) return 'entity_deleted'
   return null
+}
+
+function canAdoptUntouchedBootstrapProfile(
+  current: VersionedEntityRow | null,
+  viewerId: string,
+  mutation: SyncMutationV1,
+) {
+  return mutation.entityType === 'profile' &&
+    mutation.operation === 'upsert' &&
+    mutation.entityId === viewerId &&
+    mutation.baseVersion === 0 &&
+    current?.user_id === viewerId &&
+    current.server_version === 1 &&
+    current.deleted_at === null &&
+    current.last_mutation_id === `bootstrap:profile:${viewerId}`
 }
 
 function restaurantMutationStatements(
@@ -733,6 +810,49 @@ function recommendationSourceMutationStatements(
       nextVersion, mutation.mutationId, viewerId, mutation.baseVersion,
     )
   return finalMutationStatements(database, viewerId, mutation, fingerprint, nextVersion, processedAt, statement)
+}
+
+function profileMutationStatements(
+  database: D1Database,
+  viewerId: string,
+  mutation: SyncMutationV1,
+  fingerprint: string,
+  nextVersion: number,
+  processedAt: string,
+) {
+  const profile = mutation.payload as OwnProfileSyncContractV1
+  const statement = database.prepare(`INSERT INTO user_profiles (
+    user_id, display_name, bio, city, avatar_photo_id, avatar_preset_id,
+    visibility, created_at, updated_at, deleted_at, server_version,
+    last_mutation_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+  ON CONFLICT(user_id) DO UPDATE SET
+    display_name = excluded.display_name, bio = excluded.bio, city = excluded.city,
+    avatar_photo_id = excluded.avatar_photo_id,
+    avatar_preset_id = excluded.avatar_preset_id,
+    visibility = excluded.visibility, updated_at = excluded.updated_at,
+    deleted_at = NULL, server_version = excluded.server_version,
+    last_mutation_id = excluded.last_mutation_id
+  WHERE user_profiles.server_version = ? AND user_profiles.deleted_at IS NULL`)
+    .bind(
+      viewerId, profile.displayName, profile.bio, profile.city,
+      profile.avatarPhotoId, profile.avatarPresetId, profile.visibility,
+      profile.createdAt, profile.updatedAt, nextVersion, mutation.mutationId,
+      mutation.baseVersion,
+    )
+  const legacyProjection = database.prepare(`UPDATE users SET
+    nickname = ?, bio = ?, city = ?, avatar_photo_id = ?, avatar_preset_id = ?,
+    map_sharing_enabled = ?, map_visibility = ?, updated_at = ?
+    WHERE id = ?`)
+    .bind(
+      profile.displayName, profile.bio, profile.city, profile.avatarPhotoId,
+      profile.avatarPresetId, profile.visibility === 'private' ? 0 : 1,
+      profile.visibility, profile.updatedAt, viewerId,
+    )
+  return finalMutationStatements(
+    database, viewerId, mutation, fingerprint, nextVersion, processedAt,
+    statement, [legacyProjection],
+  )
 }
 
 function dishMutationStatements(
@@ -1007,12 +1127,13 @@ function finalMutationStatements(
 ) {
   const table = entityTable(mutation.entityType)
   const ownerColumn = entityOwnerColumn(mutation.entityType)
+  const idColumn = entityIDColumn(mutation.entityType)
   const operation = mutation.operation === 'delete' ? 'delete' : 'upsert'
   const logStatement = database.prepare(`INSERT INTO ${CHANGE_LOG_TABLE} (
     user_id, entity_type, entity_id, operation, server_version, mutation_id, changed_at
   )
   SELECT ?, ?, ?, ?, server_version, ?, ? FROM ${table}
-  WHERE id = ? AND ${ownerColumn} = ? AND last_mutation_id = ?`)
+  WHERE ${idColumn} = ? AND ${ownerColumn} = ? AND last_mutation_id = ?`)
     .bind(viewerId, mutation.entityType, mutation.entityId, operation, mutation.mutationId,
       processedAt, mutation.entityId, viewerId, mutation.mutationId)
   const receiptStatement = database.prepare(`INSERT INTO ${RECEIPT_TABLE} (
@@ -1097,7 +1218,8 @@ async function recordEquivalentMutation(
 async function readEntityVersion(database: D1Database, type: SyncEntityType, id: string) {
   const table = entityTable(type)
   const ownerColumn = entityOwnerColumn(type)
-  return database.prepare(`SELECT id, ${ownerColumn} AS user_id, server_version, deleted_at, last_mutation_id FROM ${table} WHERE id = ?`)
+  const idColumn = entityIDColumn(type)
+  return database.prepare(`SELECT ${idColumn} AS id, ${ownerColumn} AS user_id, server_version, deleted_at, last_mutation_id FROM ${table} WHERE ${idColumn} = ?`)
     .bind(id).first<VersionedEntityRow>()
 }
 
@@ -1191,11 +1313,16 @@ function entityTable(type: SyncEntityType) {
     case 'photo': return 'photos'
     case 'companion': return 'dining_companions'
     case 'recommendationSource': return 'recommendation_sources'
+    case 'profile': return 'user_profiles'
   }
 }
 
 function entityOwnerColumn(type: SyncEntityType) {
   return type === 'companion' ? 'owner_user_id' : 'user_id'
+}
+
+function entityIDColumn(type: SyncEntityType) {
+  return type === 'profile' ? 'user_id' : 'id'
 }
 
 function acknowledgement(receipt: ReceiptRow, fingerprint: string, duplicate: boolean): SyncMutationAcknowledgementV1 {
@@ -1326,6 +1453,22 @@ function rowToRecommendationSource(row: SyncRecommendationSourceRow): Recommenda
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
+  }
+}
+
+function rowToProfile(row: SyncProfileRow): OwnProfileSyncContractV1 {
+  return {
+    schemaVersion: 1,
+    userId: row.user_id,
+    displayName: row.display_name,
+    bio: row.bio,
+    city: row.city,
+    avatarPhotoId: row.avatar_photo_id,
+    avatarPresetId: row.avatar_preset_id,
+    visibility: row.visibility,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: null,
   }
 }
 

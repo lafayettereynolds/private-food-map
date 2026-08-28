@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tastemap.cn/contracts/profile.v1.schema.json",
+  "title": "Taste Map Profile V1",
+  "$defs": {
+    "avatarPresetId": {
+      "type": "string",
+      "enum": [
+        "polar-bear", "penguin", "cat", "dog",
+        "parrot", "dinosaur", "shiba", "panda",
+        "otter", "hedgehog", "rabbit", "koala",
+        "fox", "raccoon", "deer", "whale"
+      ]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["private", "friends", "public"]
+    },
+    "ownProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "userId", "displayName", "bio", "city",
+        "avatarPhotoId", "avatarPresetId", "visibility",
+        "createdAt", "updatedAt", "deletedAt"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "userId": { "type": "string", "minLength": 1 },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Legacy-compatible wire ceiling; new edits are limited to 30 Unicode code points."
+        },
+        "bio": { "type": "string", "maxLength": 160 },
+        "city": { "type": "string", "maxLength": 30 },
+        "avatarPhotoId": { "type": ["string", "null"] },
+        "avatarPresetId": { "$ref": "#/$defs/avatarPresetId" },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "deletedAt": { "type": "null" }
+      }
+    },
+    "publicProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apiVersion", "userId", "displayName", "bio", "city",
+        "avatarPhotoId", "avatarPresetId", "joinedAt", "statistics"
+      ],
+      "properties": {
+        "apiVersion": { "const": 1 },
+        "userId": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 },
+        "bio": { "type": ["string", "null"] },
+        "city": { "type": ["string", "null"] },
+        "avatarPhotoId": { "type": ["string", "null"] },
+        "avatarPresetId": { "$ref": "#/$defs/avatarPresetId" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "statistics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["publicRestaurantCount", "publicVisitCount"],
+          "properties": {
+            "publicRestaurantCount": { "type": "integer", "minimum": 0 },
+            "publicVisitCount": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}

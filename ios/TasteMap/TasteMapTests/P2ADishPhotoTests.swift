@@ -324,7 +324,7 @@ private final class RichRecordSyncAPI: SyncAPI {
                     visitDishes[mutation.entityId] = VisitDishSyncRecordEnvelopeV1(serverVersion: version, record: record)
                 case .photo(let record):
                     photos[mutation.entityId] = PhotoSyncRecordEnvelopeV1(serverVersion: version, record: record)
-                case .companion, .recommendationSource:
+                case .companion, .recommendationSource, .profile:
                     break
                 }
             }

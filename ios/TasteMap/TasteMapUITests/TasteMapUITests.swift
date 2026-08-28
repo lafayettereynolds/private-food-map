@@ -56,6 +56,61 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP3AProfileEditAndRestartPersistence() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P3A_PROFILE_UI_TEST": "1",
+        ]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["P3-A 初始用户"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["profile-edit-button"].exists)
+        app.buttons["profile-edit-button"].tap()
+        XCTAssertTrue(app.navigationBars["编辑资料"].waitForExistence(timeout: 5))
+
+        let name = app.textFields["profile-display-name"]
+        name.tap()
+        name.clearAndType("离线美食家 🍜")
+        let city = app.textFields["profile-city"]
+        city.tap()
+        city.clearAndType("上海")
+        let bio = app.textFields["profile-bio"]
+        bio.tap()
+        bio.clearAndType("每一顿都值得认真记录")
+        let otter = app.buttons["profile-avatar-preset-otter"]
+        scrollUntilVisible(otter, in: app)
+        otter.tap()
+        app.buttons["profile-save-button"].tap()
+
+        XCTAssertTrue(app.staticTexts["离线美食家 🍜"].waitForExistence(timeout: 5))
+        let savedBio = app.staticTexts["profile-bio-text"]
+        XCTAssertTrue(savedBio.waitForExistence(timeout: 5))
+        XCTAssertEqual(savedBio.label, "每一顿都值得认真记录")
+        XCTAssertEqual(app.staticTexts["profile-city-text"].label, "上海")
+
+        app.terminate()
+        app.launchArguments = ["-p1d-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P3A_PROFILE_UI_TEST": "1",
+        ]
+        app.launch()
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.staticTexts["离线美食家 🍜"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["profile-bio-text"].label, "每一顿都值得认真记录")
+        XCTAssertEqual(app.staticTexts["profile-city-text"].label, "上海")
+        XCTAssertTrue(app.buttons["profile-edit-button"].exists)
+    }
+
+    @MainActor
     func testWantToGoRestaurantOpensDetailInformationCenter() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-p1b-restaurant-detail-fixture"]
@@ -889,5 +944,13 @@ final class TasteMapUITests: XCTestCase {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
+    }
+}
+
+private extension XCUIElement {
+    func clearAndType(_ text: String) {
+        typeKey("a", modifierFlags: .command)
+        typeKey(.delete, modifierFlags: [])
+        typeText(text)
     }
 }

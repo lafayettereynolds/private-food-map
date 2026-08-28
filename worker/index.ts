@@ -62,6 +62,11 @@ import {
   handlePhotoBinaryV1,
   PhotoBinaryV1Error,
 } from './photoBinaryV1'
+import {
+  ensureUserProfile,
+  ProfileV1RequestError,
+  readPublicProfile as readPublicProfileV1,
+} from './profileV1'
 
 interface Env {
   DB: D1Database
@@ -570,15 +575,24 @@ export default {
       }
       if (url.pathname === '/api/v1/sync/pull' && request.method === 'GET') {
         const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
         return json(await handleSyncV1Pull(env.DB, viewer.id, request))
       }
       if (url.pathname === '/api/v1/sync/push' && request.method === 'POST') {
         const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
         return json(await handleSyncV1Push(env.DB, viewer.id, request))
+      }
+      if (url.pathname.startsWith('/api/v1/public/profiles/') && request.method === 'GET') {
+        const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
+        const profileId = decodeURIComponent(url.pathname.slice('/api/v1/public/profiles/'.length))
+        return json(await readPublicProfileV1(env.DB, viewer.id, profileId))
       }
       const photoContentMatch = url.pathname.match(/^\/api\/v1\/photos\/([0-9a-f-]+)\/content$/i)
       if (photoContentMatch) {
         const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
         return handlePhotoBinaryV1(request, env, viewer.id, photoContentMatch[1])
       }
       const viewer = await resolveViewer(request, env.DB)
@@ -666,7 +680,7 @@ export default {
     } catch (error) {
       console.error('Taste Map sync error', error)
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error ? error.status : 500
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError ? error.status : 500
       const code = error instanceof AuthV1RequestError ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
@@ -1141,6 +1155,32 @@ async function upsertUsers(database: D1Database, users: CloudUser[]) {
     )
   }))
   await runInChunks(database, statements)
+  const profileStatements = users.map((user) => database.prepare(`INSERT INTO user_profiles (
+    user_id, display_name, bio, city, avatar_photo_id, avatar_preset_id,
+    visibility, created_at, updated_at, deleted_at, server_version,
+    last_mutation_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
+  ON CONFLICT(user_id) DO UPDATE SET
+    display_name = excluded.display_name, bio = excluded.bio, city = excluded.city,
+    avatar_photo_id = excluded.avatar_photo_id,
+    avatar_preset_id = excluded.avatar_preset_id,
+    visibility = excluded.visibility, updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at
+  WHERE excluded.updated_at > user_profiles.updated_at`)
+    .bind(
+      user.id, user.nickname.trim() || 'Taste Map 用户', user.bio.trim(), user.city.trim(),
+      user.avatarPhotoId, user.avatarPresetId ?? 'polar-bear',
+      user.mapSharingEnabled ? (user.mapVisibility ?? 'private') : 'private',
+      user.createdAt, user.updatedAt, user.deletedAt,
+    ))
+  await runInChunks(database, profileStatements)
+  await recordUnversionedSyncChanges(database, users.map((user) => ({
+    userId: user.id,
+    entityType: 'profile' as const,
+    entityId: user.id,
+    updatedAt: user.updatedAt,
+    deletedAt: user.deletedAt,
+  })))
 }
 
 async function upsertFriendships(database: D1Database, friendships: CloudFriendship[]) {

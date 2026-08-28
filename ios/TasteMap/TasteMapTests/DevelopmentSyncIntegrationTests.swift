@@ -7,6 +7,106 @@ import UIKit
 @Suite("Development Worker Sync", .serialized)
 @MainActor
 struct DevelopmentSyncIntegrationTests {
+    @Test("P3-A iOS Profile round-trips through Development Worker and fresh SwiftData client")
+    func developmentProfileRoundTrip() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let runID = UUID().uuidString.lowercased()
+        let userID = "ios-p3a:\(runID)"
+        let otherUserID = "ios-p3a:\(runID):viewer"
+        let configuration = APIConfiguration.current()
+        #expect(configuration.environment == .development)
+        #expect(configuration.baseURL?.absoluteString == "https://api-dev.tastemap.cn")
+        let api = URLSessionSyncAPIClient(
+            configuration: configuration,
+            authorization: DevelopmentSyncAuthorization(testUserID: userID)
+        )
+
+        let source = try TasteMapPersistence.makeContainer(inMemory: true)
+        try await SyncEngine(context: source.mainContext, api: api).synchronize()
+        let profile = try #require(source.mainContext.fetch(FetchDescriptor<UserProfile>()).first)
+        #expect(profile.tasteMapUserID == userID)
+        #expect(profile.serverVersion == 1)
+        try LocalUserProfileStore(context: source.mainContext).update(
+            profile,
+            displayName: "iOS P3-A 用户",
+            bio: "真实 Development D1",
+            city: "杭州",
+            avatarPhotoID: nil,
+            avatarPreset: .otter,
+            visibility: .public
+        )
+        try await SyncEngine(context: source.mainContext, api: api).synchronize()
+        #expect(profile.serverVersion == 2)
+        #expect(profile.syncStatus == .synced)
+
+        let fresh = try TasteMapPersistence.makeContainer(inMemory: true)
+        try await SyncEngine(context: fresh.mainContext, api: api).synchronize()
+        let pulled = try #require(fresh.mainContext.fetch(FetchDescriptor<UserProfile>()).first)
+        #expect(pulled.tasteMapUserID == userID)
+        #expect(pulled.displayName == "iOS P3-A 用户")
+        #expect(pulled.bio == "真实 Development D1")
+        #expect(pulled.avatarPreset == .otter)
+        #expect(pulled.visibility == .public)
+        #expect(pulled.serverVersion == 2)
+
+        let publicAPI = URLSessionProfileAPIClient(
+            configuration: configuration,
+            authorization: DevelopmentSyncAuthorization(testUserID: otherUserID)
+        )
+        let publicProfile = try await publicAPI.publicProfile(userID: userID)
+        #expect(publicProfile.userId == userID)
+        #expect(publicProfile.displayName == "iOS P3-A 用户")
+        #expect(publicProfile.bio == "真实 Development D1")
+        #expect(publicProfile.statistics.publicVisitCount == 0)
+
+        let attacker = URLSessionSyncAPIClient(
+            configuration: configuration,
+            authorization: DevelopmentSyncAuthorization(testUserID: otherUserID)
+        )
+        let forged = OwnProfileSyncContractV1(
+            schemaVersion: 1,
+            userId: userID,
+            displayName: "takeover",
+            bio: "",
+            city: "",
+            avatarPhotoId: nil,
+            avatarPresetId: .cat,
+            visibility: .public,
+            createdAt: SyncRecordMapper.dateString(profile.createdAt),
+            updatedAt: SyncRecordMapper.dateString(.now),
+            deletedAt: nil
+        )
+        await #expect(throws: SyncAPIError.self) {
+            _ = try await attacker.push(SyncPushRequestV1(mutations: [
+                SyncMutationRequestV1(
+                    mutationId: UUID().uuidString.lowercased(),
+                    entityType: .profile,
+                    entityId: userID,
+                    operation: .upsert,
+                    baseVersion: 2,
+                    clientTimestamp: forged.updatedAt,
+                    payload: .profile(forged)
+                ),
+            ]))
+        }
+
+        try LocalUserProfileStore(context: source.mainContext).update(
+            profile,
+            displayName: "iOS P3-A 用户",
+            bio: "",
+            city: "",
+            avatarPhotoID: nil,
+            avatarPreset: .otter,
+            visibility: .private
+        )
+        try await SyncEngine(context: source.mainContext, api: api).synchronize()
+        #expect(profile.serverVersion == 3)
+        await #expect(throws: SyncAPIError.self) {
+            _ = try await publicAPI.publicProfile(userID: userID)
+        }
+    }
+
     @Test("iOS auth client reaches the Development Apple verification boundary")
     func developmentAuthBoundary() async throws {
         let environment = ProcessInfo.processInfo.environment
