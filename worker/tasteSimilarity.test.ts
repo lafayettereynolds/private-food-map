@@ -24,4 +24,21 @@ describe('TasteSimilarityService', () => {
   it('only returns users that clear the shared-signal threshold', () => {
     expect([...findSimilarTasteUserIds(signals, 'owner')]).toEqual(['similar'])
   })
+
+  it('does not claim similarity from one shared restaurant plus several tags', () => {
+    const sparse: TasteRatingSignal[] = [
+      { userId: 'owner', poiId: 'one-place', ratingOutOfTen: 9, tags: ['日料', '寿司', '海鲜'] },
+      { userId: 'candidate', poiId: 'one-place', ratingOutOfTen: 9, tags: ['日料', '寿司', '海鲜'] },
+    ]
+    expect(calculateTasteSimilarities(sparse, 'owner')).toEqual([])
+  })
+
+  it('uses the user id as a stable tie-breaker', () => {
+    const tied = signals.filter((signal) => signal.userId !== 'different').flatMap((signal) => [
+      signal,
+      ...(signal.userId === 'similar' ? [{ ...signal, userId: 'similar-z' }] : []),
+    ])
+    expect(calculateTasteSimilarities(tied, 'owner').map((item) => item.userId))
+      .toEqual(['similar', 'similar-z'])
+  })
 })

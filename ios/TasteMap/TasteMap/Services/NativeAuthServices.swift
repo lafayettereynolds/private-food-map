@@ -10,6 +10,7 @@ final class NativeAuthServices {
     let photoAPI: URLSessionPhotoBinaryAPIClient
     let profileAPI: URLSessionProfileAPIClient
     let socialAPI: URLSessionSocialAPIClient
+    let discoveryAPI: URLSessionDiscoveryAPIClient
     let appleSignIn: AppleSignInService
 
     init(
@@ -37,6 +38,11 @@ final class NativeAuthServices {
             session: session
         )
         socialAPI = URLSessionSocialAPIClient(
+            configuration: configuration,
+            authorization: sessionManager,
+            session: session
+        )
+        discoveryAPI = URLSessionDiscoveryAPIClient(
             configuration: configuration,
             authorization: sessionManager,
             session: session

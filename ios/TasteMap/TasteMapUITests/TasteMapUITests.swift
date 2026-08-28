@@ -56,6 +56,60 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP3CDiscoveryNativeFlowRestaurantWantSimilarProfileTrendingAndRefresh() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P3C_DISCOVERY_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["发现"].tap()
+        XCTAssertTrue(app.navigationBars["发现"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls.buttons["适合你"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["同味"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["趋势"].exists)
+        let restaurant = app.staticTexts["P3-C 发现寿司店"]
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
+        restaurant.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "只有你明确加入想吃")).firstMatch.exists)
+        app.buttons["完成"].tap()
+
+        let want = app.buttons["discovery-want-place:p3c-ui-0"]
+        XCTAssertTrue(want.waitForExistence(timeout: 5))
+        want.tap()
+        XCTAssertTrue(app.staticTexts["已想吃"].waitForExistence(timeout: 5))
+
+        app.segmentedControls.buttons["同味"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "基于 5 家共同评分餐厅")).firstMatch.waitForExistence(timeout: 5))
+        app.staticTexts["同味小林"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["公开主页"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["同味小林"].exists)
+        app.buttons["完成"].tap()
+
+        app.segmentedControls.buttons["趋势"].tap()
+        XCTAssertTrue(app.segmentedControls.buttons["近 7 天"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["近 30 天"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "近 30 天有 8 位用户到访")).firstMatch.waitForExistence(timeout: 5))
+        app.swipeDown()
+        XCTAssertTrue(app.staticTexts["P3-C 发现寿司店"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testP3CDiscoveryOfflineCacheStillAllowsWantToGo() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = [
+            "TASTEMAP_P3C_DISCOVERY_UI_TEST": "1",
+            "TASTEMAP_P3C_DISCOVERY_OFFLINE_UI_TEST": "1",
+        ]
+        app.launch()
+        app.buttons["发现"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "离线内容")).firstMatch.waitForExistence(timeout: 5))
+        let want = app.buttons["discovery-want-place:p3c-ui-0"]
+        XCTAssertTrue(want.waitForExistence(timeout: 5))
+        want.tap()
+        XCTAssertTrue(app.staticTexts["已想吃"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testP3AProfileEditAndRestartPersistence() throws {
         let app = XCUIApplication()
         app.launchArguments = [

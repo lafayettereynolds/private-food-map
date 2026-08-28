@@ -16,6 +16,16 @@ enum TasteMapUITestFixtures {
     static let photoFailureEnvironmentKey = "TASTEMAP_P2B_UPLOAD_FAILURE_UI_TEST"
     static let profileEnvironmentKey = "TASTEMAP_P3A_PROFILE_UI_TEST"
     static let profileUserID = "tm_p3a_ui_fixture"
+    static let discoveryEnvironmentKey = "TASTEMAP_P3C_DISCOVERY_UI_TEST"
+    static let discoveryOfflineEnvironmentKey = "TASTEMAP_P3C_DISCOVERY_OFFLINE_UI_TEST"
+
+    static var usesDiscoveryFixture: Bool {
+        ProcessInfo.processInfo.environment[discoveryEnvironmentKey] == "1"
+    }
+
+    static var usesDiscoveryOfflineFixture: Bool {
+        ProcessInfo.processInfo.environment[discoveryOfflineEnvironmentKey] == "1"
+    }
 
     static var usesProfileFixture: Bool {
         ProcessInfo.processInfo.environment[profileEnvironmentKey] == "1"
@@ -132,7 +142,7 @@ enum TasteMapUITestFixtures {
     }
 
     static func insertProfileFixture(into container: ModelContainer) throws {
-        guard usesProfileFixture else { return }
+        guard usesProfileFixture || usesDiscoveryFixture else { return }
         let context = container.mainContext
         if try context.fetch(FetchDescriptor<UserProfile>())
             .contains(where: { $0.tasteMapUserID == profileUserID }) { return }
@@ -147,6 +157,46 @@ enum TasteMapUITestFixtures {
             syncStatus: .synced
         ))
         try context.save()
+    }
+
+    static func discoveryPage(mode: DiscoveryModeV1, window: Int) -> DiscoveryPageV1 {
+        let source = DiscoveryPublicUserProjectionV1(
+            userId: "tm_p3c_source", displayName: "同味小林", bio: "公开探店记录",
+            city: "杭州", avatarPhotoId: nil, avatarPresetId: .penguin,
+            friendshipId: nil, friendshipState: .none, isFollowing: false
+        )
+        let items = (0..<4).map { index -> DiscoveryCardV1 in
+            let projection = DiscoveryRestaurantProjectionV1(
+                globalKey: "place:p3c-ui-\(index)",
+                placeIdentities: [.init(provider: .appleMaps, externalId: "apple-p3c-ui-\(index)", isPrimary: true)],
+                name: index == 0 ? "P3-C 发现寿司店" : "P3-C 真实餐厅 \(index + 1)",
+                address: "西湖区发现路 \(index + 1) 号", city: "杭州",
+                latitude: 30.25, longitude: 120.16, tags: ["日料"], pricePerPerson: 128,
+                merchantImageUrl: nil, markerEmoji: index == 0 ? "🍣" : "🍲", photo: nil
+            )
+            let reason: DiscoveryReasonV1
+            switch mode {
+            case .forYou: reason = .init(code: "TASTE_TAG_MATCH", text: "符合你常给高分的日料口味")
+            case .similarTaste: reason = .init(code: "SIMILAR_USERS", text: "基于 5 家共同评分餐厅，同味用户给过高分")
+            case .trending: reason = .init(code: "TRENDING_UNIQUE_USERS", text: "近 \(window) 天有 8 位用户到访")
+            }
+            return DiscoveryCardV1(
+                id: "\(mode.rawValue):\(projection.globalKey)", mode: mode,
+                restaurant: projection, viewerState: .none,
+                ratings: .init(mine: .init(value: nil, sampleCount: 0),
+                               community: .init(value: 4.6, sampleCount: 8),
+                               friends: .init(value: 4.8, sampleCount: 2),
+                               similarTaste: .init(value: 4.7, sampleCount: 3)),
+                reasons: [reason], sourceUser: mode == .trending ? nil : source,
+                similarity: mode == .similarTaste ? .init(percent: 91, sharedRestaurantCount: 5) : nil,
+                trend: mode == .trending ? .init(windowDays: window, uniqueVisitorCount: 8, wantToGoCount: 3) : nil,
+                cacheScope: .public, rank: index + 1, score: Double(100 - index)
+            )
+        }
+        return DiscoveryPageV1(
+            apiVersion: 1, mode: mode, city: "杭州", personalizationConfidence: .high,
+            generatedAt: ISO8601DateFormatter().string(from: .now), items: items, nextCursor: nil
+        )
     }
 
     static func insertPhotoFailureFixture(into container: ModelContainer) throws {

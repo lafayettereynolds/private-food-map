@@ -15,6 +15,8 @@ enum TasteMapPersistence {
         CachedFriendship.self,
         CachedFollow.self,
         SocialMutation.self,
+        CachedDiscoveryRestaurant.self,
+        CachedDiscoveryPlacement.self,
         SyncMutation.self,
         SyncCheckpoint.self,
     ])

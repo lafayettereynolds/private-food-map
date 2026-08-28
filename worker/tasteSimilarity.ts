@@ -16,23 +16,32 @@ interface TasteProfile {
 }
 
 const MIN_SIGNAL_COUNT = 3
-const MIN_SIMILARITY = 0.85
+const MIN_SHARED_RESTAURANT_COUNT = 3
+export const MIN_TASTE_SIMILARITY = 0.85
 
 export function findSimilarTasteUserIds(signals: TasteRatingSignal[], viewerId: string) {
-  return new Set(calculateTasteSimilarities(signals, viewerId).filter((item) => item.similarity >= MIN_SIMILARITY).map((item) => item.userId))
+  return new Set(calculateTasteSimilarities(signals, viewerId).filter((item) => item.similarity >= MIN_TASTE_SIMILARITY).map((item) => item.userId))
 }
 
 export function calculateTasteSimilarities(signals: TasteRatingSignal[], viewerId: string) {
   const profiles = buildProfiles(signals)
   const viewer = profiles.get(viewerId)
   if (!viewer) return []
-  const similarities: Array<{ userId: string; similarity: number; signalCount: number }> = []
+  const similarities: Array<{
+    userId: string
+    similarity: number
+    signalCount: number
+    sharedRestaurantCount: number
+  }> = []
   profiles.forEach((profile, userId) => {
     if (userId === viewerId) return
     const comparison = compareProfiles(viewer, profile)
-    if (comparison.signalCount >= MIN_SIGNAL_COUNT) similarities.push({ userId, ...comparison })
+    if (
+      comparison.signalCount >= MIN_SIGNAL_COUNT &&
+      comparison.sharedRestaurantCount >= MIN_SHARED_RESTAURANT_COUNT
+    ) similarities.push({ userId, ...comparison })
   })
-  return similarities.sort((a, b) => b.similarity - a.similarity)
+  return similarities.sort((a, b) => b.similarity - a.similarity || a.userId.localeCompare(b.userId))
 }
 
 function buildProfiles(signals: TasteRatingSignal[]) {
@@ -53,9 +62,11 @@ function buildProfiles(signals: TasteRatingSignal[]) {
 
 function compareProfiles(left: TasteProfile, right: TasteProfile) {
   const differences: number[] = []
+  let sharedRestaurantCount = 0
   left.pois.forEach((leftValue, key) => {
     const rightValue = right.pois.get(key)
     if (!rightValue) return
+    sharedRestaurantCount += 1
     const difference = Math.min(1, Math.abs(average(leftValue) - average(rightValue)) / 5)
     differences.push(difference, difference)
   })
@@ -64,9 +75,10 @@ function compareProfiles(left: TasteProfile, right: TasteProfile) {
     if (!rightValue) return
     differences.push(Math.min(1, Math.abs(average(leftValue) - average(rightValue)) / 5))
   })
-  if (!differences.length) return { signalCount: 0, similarity: 0 }
+  if (!differences.length) return { signalCount: 0, sharedRestaurantCount: 0, similarity: 0 }
   return {
     signalCount: differences.length,
+    sharedRestaurantCount,
     similarity: 1 - differences.reduce((sum, value) => sum + value, 0) / differences.length,
   }
 }
