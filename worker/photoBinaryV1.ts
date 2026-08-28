@@ -195,10 +195,18 @@ async function readablePhoto(database: D1Database, viewerId: string, photoId: st
       )
       OR EXISTS (
         SELECT 1 FROM visits v
+        JOIN user_profiles vp ON vp.user_id = v.user_id
         WHERE v.id = p.visit_id AND v.user_id = p.user_id
-          AND v.deleted_at IS NULL AND (
-            (p.visibility = 'public' AND v.visibility = 'public') OR (
-              p.visibility = 'friends' AND v.visibility = 'friends' AND EXISTS (
+          AND v.deleted_at IS NULL AND vp.deleted_at IS NULL AND (
+            (
+              vp.visibility = 'public'
+              AND p.visibility = 'public'
+              AND v.visibility = 'public'
+            ) OR (
+              vp.visibility IN ('public', 'friends')
+              AND p.visibility IN ('public', 'friends')
+              AND v.visibility IN ('public', 'friends')
+              AND EXISTS (
                 SELECT 1 FROM friendships vf
                 WHERE vf.status = 'accepted' AND vf.deleted_at IS NULL AND (
                   (vf.requester_id = ? AND vf.addressee_id = p.user_id) OR

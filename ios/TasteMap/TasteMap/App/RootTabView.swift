@@ -52,9 +52,33 @@ struct RootTabView: View {
         case .map:
             MapHomeView()
         case .discover:
-            DiscoveryView()
+            DiscoverHubView()
         case .profile:
             ProfileView()
+        }
+    }
+}
+
+private enum DiscoverHubSection: String, CaseIterable, Identifiable {
+    case discovery = "发现餐厅"
+    case community = "社区动态"
+    var id: Self { self }
+}
+
+struct DiscoverHubView: View {
+    @State private var section: DiscoverHubSection = .discovery
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("发现与社区", selection: $section) {
+                ForEach(DiscoverHubSection.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.bar)
+            if section == .discovery { DiscoveryView() }
+            else { CommunityFeedView() }
         }
     }
 }

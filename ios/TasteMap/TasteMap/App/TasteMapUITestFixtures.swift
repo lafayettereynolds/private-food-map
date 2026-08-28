@@ -18,6 +18,17 @@ enum TasteMapUITestFixtures {
     static let profileUserID = "tm_p3a_ui_fixture"
     static let discoveryEnvironmentKey = "TASTEMAP_P3C_DISCOVERY_UI_TEST"
     static let discoveryOfflineEnvironmentKey = "TASTEMAP_P3C_DISCOVERY_OFFLINE_UI_TEST"
+    static let communityEnvironmentKey = "TASTEMAP_P3D_COMMUNITY_UI_TEST"
+    static let communityOfflineEnvironmentKey = "TASTEMAP_P3D_COMMUNITY_OFFLINE_UI_TEST"
+
+    static var usesCommunityFixture: Bool {
+        ProcessInfo.processInfo.environment[communityEnvironmentKey] == "1"
+            || usesCommunityOfflineFixture
+    }
+
+    static var usesCommunityOfflineFixture: Bool {
+        ProcessInfo.processInfo.environment[communityOfflineEnvironmentKey] == "1"
+    }
 
     static var usesDiscoveryFixture: Bool {
         ProcessInfo.processInfo.environment[discoveryEnvironmentKey] == "1"
@@ -142,7 +153,7 @@ enum TasteMapUITestFixtures {
     }
 
     static func insertProfileFixture(into container: ModelContainer) throws {
-        guard usesProfileFixture || usesDiscoveryFixture else { return }
+        guard usesProfileFixture || usesDiscoveryFixture || usesCommunityFixture else { return }
         let context = container.mainContext
         if try context.fetch(FetchDescriptor<UserProfile>())
             .contains(where: { $0.tasteMapUserID == profileUserID }) { return }
@@ -196,6 +207,57 @@ enum TasteMapUITestFixtures {
         return DiscoveryPageV1(
             apiVersion: 1, mode: mode, city: "杭州", personalizationConfidence: .high,
             generatedAt: ISO8601DateFormatter().string(from: .now), items: items, nextCursor: nil
+        )
+    }
+
+    static func communityPage(scope: CommunityFeedScopeV1) -> CommunityFeedPageV1 {
+        let users = [
+            PublicContentUserV1(
+                userId: "tm_p3d_friend", displayName: "常去小馆的阿岚", bio: "把每次好好吃饭都记下来。",
+                city: "杭州", avatarPhotoId: nil, avatarPresetId: .otter,
+                friendshipId: "friendship:tm_p3a_ui_fixture:tm_p3d_friend",
+                friendshipState: .friends, isFollowing: true
+            ),
+            PublicContentUserV1(
+                userId: "tm_p3d_public", displayName: "一个名字很长很长的公开探店用户",
+                bio: "寻找真正值得再去一次的小店。", city: "上海", avatarPhotoId: nil,
+                avatarPresetId: .penguin, friendshipId: nil, friendshipState: .none,
+                isFollowing: scope == .following
+            )
+        ]
+        let formatter = ISO8601DateFormatter()
+        let items = (0..<4).map { index -> PublicContentItemV1 in
+            let user = users[index % users.count]
+            let eventAt = formatter.string(from: Date(timeIntervalSince1970: 1_777_500_000 - Double(index * 3_600)))
+            let restaurant = PublicContentRestaurantV1(
+                globalKey: "place:p3d-ui-\(index)",
+                placeIdentities: [.init(provider: .appleMaps, externalId: "apple-p3d-ui-\(index)", isPrimary: true)],
+                name: index == 0 ? "云边小馆·湖滨店" : "社区真实餐厅 \(index + 1)",
+                address: "湖滨路 \(index + 18) 号", city: index.isMultiple(of: 2) ? "杭州" : "上海",
+                latitude: 30.25, longitude: 120.16, tags: ["本帮菜", "适合朋友聚餐"],
+                pricePerPerson: 136, merchantImageUrl: nil,
+                markerEmoji: index.isMultiple(of: 2) ? "🍲" : "🍣", photo: nil
+            )
+            let visit = PublicVisitV1(
+                id: "visit-p3d-ui-\(index)", ownerUserId: user.userId,
+                restaurantGlobalKey: restaurant.globalKey, visitedAt: eventAt,
+                rating: index == 1 ? nil : 4.5,
+                note: index == 2
+                    ? "这是一段用于验证较长内容的真实到访备注。菜的火候很稳，朋友们都愿意下次再来；即使文字变长，卡片也应该保持清楚、自然，并且不能泄露消费、饭搭子或推荐来源。"
+                    : "热气腾腾，味道很稳，适合和朋友慢慢吃。",
+                visibility: user.friendshipState == .friends ? .friends : .public,
+                photos: [], updatedAt: eventAt
+            )
+            return PublicContentItemV1(
+                id: "visit:\(visit.id)", kind: .visit, eventAt: eventAt, updatedAt: eventAt,
+                user: user, restaurant: restaurant, visit: visit,
+                viewerState: index == 3 ? .visited : .none,
+                cacheScope: user.friendshipState == .friends ? .friends : .public
+            )
+        }
+        return CommunityFeedPageV1(
+            apiVersion: 1, scope: scope, generatedAt: formatter.string(from: .now),
+            items: items, nextCursor: nil
         )
     }
 

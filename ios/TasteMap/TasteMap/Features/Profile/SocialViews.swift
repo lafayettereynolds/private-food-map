@@ -13,6 +13,8 @@ struct SocialHubView: View {
     @Environment(\.modelContext) private var modelContext
     let currentUserID: String
     let api: any SocialAPI
+    let communityAPI: (any CommunityAPI)?
+    let photoAPI: (any PhotoBinaryAPI)?
     @State private var section: SocialHubSection = .search
     @State private var query = ""
     @State private var items: [SocialUserResultV1] = []
@@ -41,6 +43,7 @@ struct SocialHubView: View {
             .sheet(item: $selectedUser) { user in
                 SocialPublicProfileView(
                     initial: user, currentUserID: currentUserID, api: api,
+                    communityAPI: communityAPI, photoAPI: photoAPI,
                     onChange: { changed in
                         replace(changed)
                         selectedUser = changed
@@ -48,6 +51,18 @@ struct SocialHubView: View {
                 )
             }
         }
+    }
+
+    init(
+        currentUserID: String,
+        api: any SocialAPI,
+        communityAPI: (any CommunityAPI)? = nil,
+        photoAPI: (any PhotoBinaryAPI)? = nil
+    ) {
+        self.currentUserID = currentUserID
+        self.api = api
+        self.communityAPI = communityAPI
+        self.photoAPI = photoAPI
     }
 
     private var searchContent: some View {
@@ -284,18 +299,38 @@ struct SocialHubView: View {
 struct SocialPublicProfileView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query private var restaurants: [Restaurant]
     @State private var item: SocialUserResultV1
     @State private var context: SocialProfileContextV1?
     @State private var processing = false
     @State private var message: String?
+    @State private var contentSection: PublicContentSectionV1 = .visits
+    @State private var contentItems: [PublicContentItemV1] = []
+    @State private var contentStatistics: PublicContentStatisticsV1?
+    @State private var contentNextCursor: String?
+    @State private var loadingContent = false
+    @State private var contentMessage: String?
+    @State private var showingContentCache = false
+    @State private var selectedContent: PublicContentItemV1?
     let currentUserID: String
     let api: any SocialAPI
+    let communityAPI: (any CommunityAPI)?
+    let photoAPI: (any PhotoBinaryAPI)?
     let onChange: (SocialUserResultV1) -> Void
 
-    init(initial: SocialUserResultV1, currentUserID: String, api: any SocialAPI, onChange: @escaping (SocialUserResultV1) -> Void) {
+    init(
+        initial: SocialUserResultV1,
+        currentUserID: String,
+        api: any SocialAPI,
+        communityAPI: (any CommunityAPI)? = nil,
+        photoAPI: (any PhotoBinaryAPI)? = nil,
+        onChange: @escaping (SocialUserResultV1) -> Void
+    ) {
         _item = State(initialValue: initial)
         self.currentUserID = currentUserID
         self.api = api
+        self.communityAPI = communityAPI
+        self.photoAPI = photoAPI
         self.onChange = onChange
     }
 
@@ -315,6 +350,14 @@ struct SocialPublicProfileView: View {
                             statistic("可见到访", statistics.publicVisitCount)
                         }
                     }
+                    if communityAPI != nil {
+                        Picker("公开内容", selection: $contentSection) {
+                            Text("公开记录").tag(PublicContentSectionV1.visits)
+                            Text("想吃餐厅").tag(PublicContentSectionV1.wantToGo)
+                        }
+                        .pickerStyle(.segmented)
+                        publicContent
+                    }
                     if processing { ProgressView("处理中…") }
                     if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
                 }
@@ -324,6 +367,51 @@ struct SocialPublicProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
             .task { await loadContext() }
+            .onChange(of: contentSection) { _, _ in Task { await loadContent(reset: true, preferCache: true) } }
+            .sheet(item: $selectedContent) { content in
+                DiscoveryRestaurantDestination(
+                    card: content.discoveryCard, restaurants: restaurants,
+                    onWantToGo: { addToWantToGo(content) }, photoAPI: photoAPI
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var publicContent: some View {
+        if loadingContent && contentItems.isEmpty {
+            ProgressView("正在加载公开内容…").padding(.vertical, 36)
+        } else if contentItems.isEmpty {
+            ContentUnavailableView(
+                contentSection == .visits ? "TA 还没有公开记录" : "TA 还没有公开想吃",
+                systemImage: contentSection == .visits ? "fork.knife.circle" : "bookmark",
+                description: Text(contentMessage ?? "只有用户主动允许展示的内容才会出现在这里。")
+            )
+            .frame(minHeight: 220)
+        } else {
+            LazyVStack(spacing: 14) {
+                if showingContentCache {
+                    Label("离线显示最近缓存的公开内容", systemImage: "wifi.slash")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if let contentStatistics {
+                    Text("当前可见：\(contentStatistics.visibleRestaurantCount) 家餐厅 · \(contentStatistics.visibleVisitCount) 次到访")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                ForEach(contentItems) { content in
+                    PublicContentCard(
+                        item: content, photoAPI: photoAPI,
+                        onOpenRestaurant: { selectedContent = content },
+                        onOpenUser: {}, onWantToGo: { addToWantToGo(content) }
+                    )
+                    .onAppear {
+                        if content.id == contentItems.last?.id { Task { await loadMoreContent() } }
+                    }
+                }
+                if loadingContent { ProgressView().padding() }
+                if let contentMessage { Text(contentMessage).font(.footnote).foregroundStyle(.secondary) }
+            }
         }
     }
 
@@ -359,6 +447,7 @@ struct SocialPublicProfileView: View {
             if let relationship = context?.relationship {
                 update(state: relationship.friendshipState, id: relationship.friendshipId, following: relationship.isFollowing)
             }
+            await loadContent(reset: true, preferCache: true)
         } catch { message = "公开资料暂时无法刷新，当前显示缓存。" }
     }
 
@@ -385,6 +474,12 @@ struct SocialPublicProfileView: View {
             try LocalSocialStore(context: modelContext).upsertFriendship(response.friendship, currentUserID: currentUserID)
             let next: FriendshipPerspectiveState = action == .accept ? .friends : .none
             update(state: next, id: next == .none ? nil : id, following: item.isFollowing)
+            if next != .friends {
+                contentItems.removeAll { $0.cacheScope == .friends }
+                try? LocalCommunityStore(context: modelContext)
+                    .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
+            }
+            await loadContent(reset: true, preferCache: false)
         } catch { message = "关系已变化，请刷新后重试。" }
     }
 
@@ -406,6 +501,70 @@ struct SocialPublicProfileView: View {
     private func update(state: FriendshipPerspectiveState, id: String?, following: Bool) {
         item = .init(profile: item.profile, friendshipId: id, friendshipState: state, isFollowing: following)
         onChange(item)
+    }
+
+    @MainActor
+    private func loadContent(reset: Bool, preferCache: Bool) async {
+        guard let communityAPI, !loadingContent else { return }
+        let route = LocalCommunityStore.profileRoute(userID: item.profile.userId, section: contentSection)
+        if reset && preferCache, let cached = try? LocalCommunityStore(context: modelContext)
+            .cached(currentUserID: currentUserID, routeKey: route) {
+            contentItems = cached.items
+            showingContentCache = true
+        }
+        loadingContent = true; defer { loadingContent = false }
+        do {
+            let page = try await communityAPI.publicContent(
+                userID: item.profile.userId, section: contentSection, cursor: nil, limit: 20
+            )
+            contentItems = page.items
+            contentStatistics = page.statistics
+            contentNextCursor = page.nextCursor
+            contentMessage = nil
+            showingContentCache = false
+            try LocalCommunityStore(context: modelContext).replace(
+                items: page.items, currentUserID: currentUserID, routeKey: route,
+                fetchedAt: CachedCommunityContent.date(page.generatedAt) ?? .now
+            )
+        } catch {
+            if contentItems.isEmpty, let cached = try? LocalCommunityStore(context: modelContext)
+                .cached(currentUserID: currentUserID, routeKey: route) {
+                contentItems = cached.items; showingContentCache = true
+            }
+            contentMessage = contentItems.isEmpty ? "公开内容暂时无法加载。" : "刷新失败，继续显示已有缓存。"
+        }
+    }
+
+    @MainActor
+    private func loadMoreContent() async {
+        guard let communityAPI, let cursor = contentNextCursor, !loadingContent else { return }
+        loadingContent = true; defer { loadingContent = false }
+        do {
+            let page = try await communityAPI.publicContent(
+                userID: item.profile.userId, section: contentSection, cursor: cursor, limit: 20
+            )
+            var seen = Set(contentItems.map(\.id))
+            contentItems.append(contentsOf: page.items.filter { seen.insert($0.id).inserted })
+            contentNextCursor = page.nextCursor
+            try LocalCommunityStore(context: modelContext).append(
+                items: page.items, currentUserID: currentUserID,
+                routeKey: LocalCommunityStore.profileRoute(userID: item.profile.userId, section: contentSection),
+                fetchedAt: CachedCommunityContent.date(page.generatedAt) ?? .now
+            )
+        } catch { contentMessage = "加载更多失败，请稍后重试。" }
+    }
+
+    @MainActor
+    private func addToWantToGo(_ content: PublicContentItemV1) {
+        guard content.viewerState == .none else { return }
+        do {
+            _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+                projection: content.restaurant.discoveryProjection, among: restaurants
+            )
+            for index in contentItems.indices where contentItems[index].restaurant.globalKey == content.restaurant.globalKey {
+                contentItems[index].viewerState = .wantToGo
+            }
+        } catch { contentMessage = "暂时无法加入想吃，请稍后重试。" }
     }
 }
 

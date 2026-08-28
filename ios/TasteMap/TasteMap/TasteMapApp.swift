@@ -24,6 +24,7 @@ struct TasteMapApp: App {
                 TasteMapUITestFixtures.detailLaunchArgument
             )
             let useDiscoveryFixture = TasteMapUITestFixtures.usesDiscoveryFixture
+            let useCommunityFixture = TasteMapUITestFixtures.usesCommunityFixture
             let usePersistentOfflineFixture = TasteMapUITestFixtures.usesPersistentFixture
             let resetPersistentOfflineFixture = TasteMapUITestFixtures.requestsPersistentFixtureReset
             let persistenceConfigurationName = usePersistentOfflineFixture
@@ -35,13 +36,14 @@ struct TasteMapApp: App {
             #else
             let useRestaurantDetailFixture = false
             let useDiscoveryFixture = false
+            let useCommunityFixture = false
             let usePersistentOfflineFixture = false
             let resetPersistentOfflineFixture = false
             let persistenceConfigurationName = "TasteMap"
             let persistenceStorageURL: URL? = nil
             #endif
             container = try TasteMapPersistence.makeContainer(
-                inMemory: useRestaurantDetailFixture || useDiscoveryFixture,
+                inMemory: useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture,
                 configurationName: persistenceConfigurationName,
                 storageURL: persistenceStorageURL
             )
@@ -60,6 +62,9 @@ struct TasteMapApp: App {
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)
             }
             if useDiscoveryFixture {
+                try TasteMapUITestFixtures.insertProfileFixture(into: container)
+            }
+            if useCommunityFixture {
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)
             }
             #endif

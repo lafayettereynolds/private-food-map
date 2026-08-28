@@ -1,0 +1,363 @@
+import SwiftData
+import SwiftUI
+import UIKit
+
+struct CommunityFeedView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(NativeAuthServices.self) private var authServices
+    @Query private var restaurants: [Restaurant]
+    @State private var scope: CommunityFeedScopeV1 = .following
+    @State private var currentUserID: String?
+    @State private var items: [PublicContentItemV1] = []
+    @State private var nextCursor: String?
+    @State private var loading = false
+    @State private var loadingMore = false
+    @State private var message: String?
+    @State private var showingCache = false
+    @State private var selectedItem: PublicContentItemV1?
+    @State private var selectedUser: PublicContentUserV1?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loading && items.isEmpty {
+                    ProgressView("正在加载社区动态…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if items.isEmpty {
+                    ContentUnavailableView {
+                        Label(scope == .following ? "还没有关注动态" : "还没有公开动态",
+                              systemImage: scope == .following ? "person.2" : "clock")
+                    } description: {
+                        Text(message ?? (scope == .following
+                            ? "关注用户或添加好友后，他们允许你查看的新记录会出现在这里。"
+                            : "有新的公开到访记录后会显示在这里。"))
+                    } actions: {
+                        Button("重试") { Task { await load(reset: true, preferCache: false) } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 16) {
+                            if showingCache {
+                                Label("离线或网络不可用，当前显示最近缓存的公开内容。", systemImage: "wifi.slash")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if let message {
+                                Text(message).font(.footnote).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            ForEach(items) { item in
+                                PublicContentCard(
+                                    item: item,
+                                    photoAPI: authServices.photoAPI,
+                                    onOpenRestaurant: { selectedItem = item },
+                                    onOpenUser: { selectedUser = item.user },
+                                    onWantToGo: { addToWantToGo(item) }
+                                )
+                                .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
+                            }
+                            if loadingMore { ProgressView().padding() }
+                        }
+                        .padding(.horizontal, 16).padding(.bottom, 120)
+                    }
+                }
+            }
+            .navigationTitle("社区")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("社区内容", selection: $scope) {
+                        ForEach(CommunityFeedScopeV1.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }.pickerStyle(.segmented).frame(width: 190)
+                }
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .refreshable { await load(reset: true, preferCache: false) }
+            .task { await restoreAndLoad() }
+            .onChange(of: scope) { _, _ in Task { await load(reset: true, preferCache: true) } }
+            .sheet(item: $selectedItem) { item in
+                DiscoveryRestaurantDestination(
+                    card: item.discoveryCard, restaurants: restaurants,
+                    onWantToGo: { addToWantToGo(item) }, photoAPI: authServices.photoAPI
+                )
+            }
+            .sheet(item: $selectedUser) { user in
+                if let currentUserID {
+                    SocialPublicProfileView(
+                        initial: user.socialResult, currentUserID: currentUserID,
+                        api: authServices.socialAPI, communityAPI: authServices.communityAPI,
+                        photoAPI: authServices.photoAPI,
+                        onChange: { result in
+                            if result.friendshipState != .friends {
+                                items.removeAll { $0.cacheScope == .friends && $0.user.userId == result.profile.userId }
+                                try? LocalCommunityStore(context: modelContext)
+                                    .invalidateOwner(result.profile.userId, currentUserID: currentUserID)
+                            }
+                            Task { await load(reset: true, preferCache: false) }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func restoreAndLoad() async {
+#if DEBUG
+        if TasteMapUITestFixtures.usesCommunityFixture {
+            currentUserID = TasteMapUITestFixtures.profileUserID
+            let fixture = TasteMapUITestFixtures.communityPage(scope: scope)
+            items = fixture.items
+            nextCursor = fixture.nextCursor
+            showingCache = TasteMapUITestFixtures.usesCommunityOfflineFixture
+            return
+        }
+#endif
+        currentUserID = await authServices.sessionManager.restoredUser()?.id
+        await load(reset: true, preferCache: true)
+    }
+
+    @MainActor
+    private func load(reset: Bool, preferCache: Bool) async {
+        guard let currentUserID, !loading else { return }
+        let route = LocalCommunityStore.feedRoute(scope)
+        if reset && preferCache, let cached = try? LocalCommunityStore(context: modelContext)
+            .cached(currentUserID: currentUserID, routeKey: route) {
+            items = cached.items
+            showingCache = true
+        }
+        loading = true; defer { loading = false }
+        do {
+            let page = try await authServices.communityAPI.feed(scope: scope, cursor: nil, limit: 20)
+            items = page.items
+            nextCursor = page.nextCursor
+            showingCache = false
+            message = nil
+            try LocalCommunityStore(context: modelContext).replace(
+                items: page.items, currentUserID: currentUserID, routeKey: route,
+                fetchedAt: CachedCommunityContent.date(page.generatedAt) ?? .now
+            )
+        } catch {
+            if items.isEmpty, let cached = try? LocalCommunityStore(context: modelContext)
+                .cached(currentUserID: currentUserID, routeKey: route) {
+                items = cached.items; showingCache = true
+            }
+            message = items.isEmpty ? "社区内容暂时无法加载，请稍后重试。" : "刷新失败，继续显示已有缓存。"
+        }
+    }
+
+    @MainActor
+    private func loadMore() async {
+        guard let currentUserID, let cursor = nextCursor, !loadingMore else { return }
+        loadingMore = true; defer { loadingMore = false }
+        do {
+            let page = try await authServices.communityAPI.feed(scope: scope, cursor: cursor, limit: 20)
+            items = deduplicated(items + page.items)
+            nextCursor = page.nextCursor
+            try LocalCommunityStore(context: modelContext).append(
+                items: page.items, currentUserID: currentUserID,
+                routeKey: LocalCommunityStore.feedRoute(scope),
+                fetchedAt: CachedCommunityContent.date(page.generatedAt) ?? .now
+            )
+        } catch { message = "加载更多失败，请稍后重试。" }
+    }
+
+    @MainActor
+    private func addToWantToGo(_ item: PublicContentItemV1) {
+        guard item.viewerState == .none else { return }
+        do {
+            _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+                projection: item.restaurant.discoveryProjection, among: restaurants
+            )
+            for index in items.indices where items[index].restaurant.globalKey == item.restaurant.globalKey {
+                items[index].viewerState = .wantToGo
+            }
+        } catch { message = "暂时无法加入想吃，请稍后重试。" }
+    }
+
+    private func deduplicated(_ values: [PublicContentItemV1]) -> [PublicContentItemV1] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0.id).inserted }
+    }
+}
+
+struct PublicContentCard: View {
+    let item: PublicContentItemV1
+    let photoAPI: (any PhotoBinaryAPI)?
+    let onOpenRestaurant: () -> Void
+    let onOpenUser: () -> Void
+    let onWantToGo: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: onOpenUser) {
+                HStack(spacing: 10) {
+                    PresetProfileAvatarView(preset: item.user.avatarPresetId)
+                        .frame(width: 42, height: 42).clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.user.displayName).font(.headline).foregroundStyle(.primary).lineLimit(2)
+                        Text(eventText).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if item.cacheScope == .friends {
+                        Label("好友可见", systemImage: "person.2.fill")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }.buttonStyle(.plain)
+
+            Button(action: onOpenRestaurant) {
+                VStack(alignment: .leading, spacing: 10) {
+                    PublicContentMedia(item: item, photoAPI: photoAPI)
+                        .frame(height: (item.visit?.photos.count ?? 0) > 1 ? 220 : 176)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.restaurant.name).font(.title3.bold()).foregroundStyle(.primary)
+                            Text([item.restaurant.city, item.restaurant.address].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        Spacer()
+                        if let rating = item.visit?.rating {
+                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                .font(.subheadline.bold()).foregroundStyle(.orange)
+                        }
+                    }
+                    if let note = item.visit?.note {
+                        Text("“\(note)”").font(.body).foregroundStyle(.primary).lineLimit(5)
+                    }
+                }
+            }.buttonStyle(.plain)
+
+            HStack {
+                ShareLink(item: shareText) { Label("分享", systemImage: "square.and.arrow.up") }
+                    .font(.subheadline)
+                Spacer()
+                switch item.viewerState {
+                case .none:
+                    Button(action: onWantToGo) { Label("想吃", systemImage: "bookmark") }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                case .wantToGo:
+                    Label("已想吃", systemImage: "bookmark.fill").font(.caption.weight(.semibold)).foregroundStyle(.blue)
+                case .visited:
+                    Label("去过", systemImage: "checkmark.circle.fill").font(.caption.weight(.semibold)).foregroundStyle(.green)
+                }
+            }
+        }
+        .padding(14)
+        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .accessibilityIdentifier("community-item-\(item.id)")
+    }
+
+    private var eventText: String {
+        let date = CachedCommunityContent.date(item.eventAt)
+        let formatted = date?.formatted(date: .abbreviated, time: .shortened) ?? item.eventAt
+        return item.kind == .visit ? "公开了一次到访 · \(formatted)" : "加入了想吃 · \(formatted)"
+    }
+
+    private var shareText: String {
+        "\(item.user.displayName) 在 Taste Map 记录了 \(item.restaurant.name)"
+    }
+}
+
+struct PublicContentMedia: View {
+    let item: PublicContentItemV1
+    let photoAPI: (any PhotoBinaryAPI)?
+
+    var body: some View {
+        let photos = Array((item.visit?.photos ?? []).prefix(3))
+        if photos.count > 1 {
+            HStack(spacing: 3) {
+                PublicContentPhotoTile(
+                    photo: photos[0], restaurant: item.restaurant, photoAPI: photoAPI
+                )
+                VStack(spacing: 3) {
+                    ForEach(Array(photos.dropFirst().enumerated()), id: \.offset) { _, photo in
+                        PublicContentPhotoTile(
+                            photo: photo, restaurant: item.restaurant, photoAPI: photoAPI
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        } else {
+            PublicContentThumbnail(restaurant: item.restaurant, photoAPI: photoAPI)
+        }
+    }
+}
+
+private struct PublicContentPhotoTile: View {
+    let photo: PublicContentPhotoV1
+    let restaurant: PublicContentRestaurantV1
+    let photoAPI: (any PhotoBinaryAPI)?
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else {
+                LinearGradient(
+                    colors: [Color.accentColor.opacity(0.15), .orange.opacity(0.12)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ).overlay(Text(restaurant.markerEmoji).font(.system(size: 42)))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .task(id: photo.photoId) {
+            guard let id = UUID(uuidString: photo.photoId), let photoAPI else { return }
+            if let data = try? await photoAPI.download(photoID: id, variant: .thumbnail) {
+                image = UIImage(data: data)
+            }
+        }
+    }
+}
+
+struct PublicContentThumbnail: View {
+    let restaurant: PublicContentRestaurantV1
+    let photoAPI: (any PhotoBinaryAPI)?
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else if let value = restaurant.merchantImageUrl, let url = URL(string: value) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image { image.resizable().scaledToFill() } else { placeholder }
+                }
+            } else { placeholder }
+        }
+        .clipped()
+        .task(id: restaurant.photo?.photoId) {
+            guard let photo = restaurant.photo, let id = UUID(uuidString: photo.photoId), let photoAPI else { return }
+            if let data = try? await photoAPI.download(photoID: id, variant: .thumbnail) {
+                image = UIImage(data: data)
+            }
+        }
+    }
+
+    private var placeholder: some View {
+        LinearGradient(
+            colors: [Color.accentColor.opacity(0.15), .orange.opacity(0.12)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
+        ).overlay(Text(restaurant.markerEmoji).font(.system(size: 54)))
+    }
+}
+
+extension PublicContentItemV1 {
+    var discoveryCard: DiscoveryCardV1 {
+        .init(
+            id: id, mode: .forYou, restaurant: restaurant.discoveryProjection,
+            viewerState: viewerState,
+            ratings: .init(
+                mine: .init(value: nil, sampleCount: 0),
+                community: .init(value: visit?.rating, sampleCount: visit?.rating == nil ? 0 : 1),
+                friends: .init(value: nil, sampleCount: 0),
+                similarTaste: .init(value: nil, sampleCount: 0)
+            ),
+            reasons: [], sourceUser: nil, similarity: nil, trend: nil,
+            cacheScope: cacheScope == .friends ? .friends : .public,
+            rank: 0, score: 0
+        )
+    }
+}

@@ -70,7 +70,11 @@ struct ProfileView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("profile-social-entry")
                         .sheet(isPresented: $isShowingSocialHub) {
-                            SocialHubView(currentUserID: userID, api: authServices.socialAPI)
+                            SocialHubView(
+                                currentUserID: userID, api: authServices.socialAPI,
+                                communityAPI: authServices.communityAPI,
+                                photoAPI: authServices.photoAPI
+                            )
                         }
                     }
                     accountAndSyncCard

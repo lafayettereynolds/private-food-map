@@ -64,7 +64,10 @@ struct DiscoveryView: View {
                 if let currentUserID = authenticatedUser?.id {
                     SocialPublicProfileView(
                         initial: user.socialResult, currentUserID: currentUserID,
-                        api: authServices.socialAPI, onChange: { result in
+                        api: authServices.socialAPI,
+                        communityAPI: authServices.communityAPI,
+                        photoAPI: authServices.photoAPI,
+                        onChange: { result in
                             if result.friendshipState != .friends {
                                 cards.removeAll {
                                     $0.cacheScope == .friends &&
@@ -348,7 +351,7 @@ private struct DiscoveryRestaurantCard: View {
     }
 }
 
-private struct DiscoveryRestaurantImage: View {
+struct DiscoveryRestaurantImage: View {
     let restaurant: DiscoveryRestaurantProjectionV1
     let photoAPI: (any PhotoBinaryAPI)?
     @State private var image: UIImage?
@@ -376,7 +379,7 @@ private struct DiscoveryRestaurantImage: View {
     }
 }
 
-private struct DiscoveryRestaurantDestination: View {
+struct DiscoveryRestaurantDestination: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     let card: DiscoveryCardV1

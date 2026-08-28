@@ -110,6 +110,52 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP3DCommunityFeedOpensPublicProfileRestaurantAndSupportsExplicitWantToGo() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P3D_COMMUNITY_UI_TEST": "1"]
+        app.launch()
+        app.buttons["发现"].tap()
+        XCTAssertTrue(app.segmentedControls.buttons["社区动态"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["社区动态"].tap()
+        XCTAssertTrue(app.navigationBars["社区"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls.buttons["关注"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["最新"].exists)
+        XCTAssertTrue(app.staticTexts["云边小馆·湖滨店"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "P3-D Community Feed", of: app)
+
+        app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["公开主页"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["常去小馆的阿岚"].exists)
+        app.buttons["完成"].tap()
+
+        app.staticTexts["云边小馆·湖滨店"].tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
+
+        let want = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "想吃")).firstMatch
+        XCTAssertTrue(want.waitForExistence(timeout: 5))
+        want.tap()
+        XCTAssertTrue(app.staticTexts["已想吃"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testP3DCommunityOfflineFixtureShowsCacheAndStillAllowsLocalWantToGo() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = [
+            "TASTEMAP_P3D_COMMUNITY_UI_TEST": "1",
+            "TASTEMAP_P3D_COMMUNITY_OFFLINE_UI_TEST": "1",
+        ]
+        app.launch()
+        app.buttons["发现"].tap()
+        app.segmentedControls.buttons["社区动态"].tap()
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "当前显示最近缓存")
+        ).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["云边小馆·湖滨店"].exists)
+        keepScreenshot(named: "P3-D Community Offline Cache", of: app)
+    }
+
+    @MainActor
     func testP3AProfileEditAndRestartPersistence() throws {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -1021,6 +1067,14 @@ final class TasteMapUITests: XCTestCase {
         let choice = scopedChoice.waitForExistence(timeout: 1) ? scopedChoice : app.buttons[option]
         XCTAssertTrue(choice.waitForExistence(timeout: 3))
         choice.tap()
+    }
+
+    @MainActor
+    private func keepScreenshot(named name: String, of app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @MainActor

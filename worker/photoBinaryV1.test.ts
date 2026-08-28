@@ -102,6 +102,21 @@ describe('Photo Binary API V1', () => {
     )).status).toBe(404)
   })
 
+  it('does not authorize a guessed Visit Photo ID when profile visibility denies the viewer', async () => {
+    const data = new TextEncoder().encode('profile-private-visit-photo')
+    const response = await upload(bucket, database, USER_A, data, await sha256(data))
+    const body = await response.json() as { storageKey: string }
+    database.photo = {
+      id: PHOTO_ID, user_id: USER_A, storage_provider: 'r2',
+      storage_key: body.storageKey, thumbnail_storage_key: null, deleted_at: null,
+    }
+    database.friendVisitReadable = false
+    expect((await handlePhotoBinaryV1(
+      new Request(`https://dev.test/api/v1/photos/${PHOTO_ID}/content?variant=display`),
+      environment(database, bucket), USER_B, PHOTO_ID,
+    )).status).toBe(404)
+  })
+
   it('requires a metadata tombstone before idempotent binary cleanup', async () => {
     const data = new TextEncoder().encode('delete-me')
     const response = await upload(bucket, database, USER_A, data, await sha256(data))
