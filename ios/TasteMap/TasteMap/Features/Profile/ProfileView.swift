@@ -51,6 +51,34 @@ struct ProfileView: View {
                         visitedCount: statistics.visitedRestaurantCount,
                         wantToGoCount: statistics.wantToGoRestaurantCount
                     )
+                    NavigationLink {
+                        TasteProfileAnalysisScreen()
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(TasteMapAnalysisTheme.ingredientRedSoft)
+                                Text("🍽️")
+                                    .font(.title3)
+                            }
+                            .frame(width: 48, height: 48)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("我的口味档案")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                Text("把真实到访整理成味觉地图与分享海报")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-taste-analysis-entry")
                     if let userID = authenticatedUser?.id {
                         Button { isShowingSocialHub = true } label: {
                             HStack(spacing: 12) {

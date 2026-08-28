@@ -962,6 +962,37 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4ATasteProfilePageAndIndependentPoster() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P4A_ANALYSIS_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let entry = app.buttons["profile-taste-analysis-entry"]
+        scrollUntilVisible(entry, in: app)
+        XCTAssertTrue(entry.isHittable)
+        entry.tap()
+
+        XCTAssertTrue(app.navigationBars["口味档案"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["你真正喜欢什么"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "P4-A Taste Profile", of: app)
+
+        let restaurantStories = app.staticTexts["代表你的几家店"]
+        scrollUntilVisible(restaurantStories, in: app)
+        XCTAssertTrue(restaurantStories.exists)
+
+        let share = app.buttons["taste-profile-share-toolbar"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.images["analysis-poster-preview"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["analysis-poster-save"].exists)
+        XCTAssertTrue(app.buttons["analysis-poster-system-share"].exists)
+        keepScreenshot(named: "P4-A 9x16 Poster", of: app)
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,

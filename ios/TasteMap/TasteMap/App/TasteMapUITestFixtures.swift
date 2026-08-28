@@ -20,6 +20,11 @@ enum TasteMapUITestFixtures {
     static let discoveryOfflineEnvironmentKey = "TASTEMAP_P3C_DISCOVERY_OFFLINE_UI_TEST"
     static let communityEnvironmentKey = "TASTEMAP_P3D_COMMUNITY_UI_TEST"
     static let communityOfflineEnvironmentKey = "TASTEMAP_P3D_COMMUNITY_OFFLINE_UI_TEST"
+    static let analysisEnvironmentKey = "TASTEMAP_P4A_ANALYSIS_UI_TEST"
+
+    static var usesAnalysisFixture: Bool {
+        ProcessInfo.processInfo.environment[analysisEnvironmentKey] == "1"
+    }
 
     static var usesCommunityFixture: Bool {
         ProcessInfo.processInfo.environment[communityEnvironmentKey] == "1"
@@ -40,6 +45,7 @@ enum TasteMapUITestFixtures {
 
     static var usesProfileFixture: Bool {
         ProcessInfo.processInfo.environment[profileEnvironmentKey] == "1"
+            || usesAnalysisFixture
     }
 
     static var usesPhotoFixture: Bool {
@@ -153,7 +159,7 @@ enum TasteMapUITestFixtures {
     }
 
     static func insertProfileFixture(into container: ModelContainer) throws {
-        guard usesProfileFixture || usesDiscoveryFixture || usesCommunityFixture else { return }
+        guard usesProfileFixture || usesDiscoveryFixture || usesCommunityFixture || usesAnalysisFixture else { return }
         let context = container.mainContext
         if try context.fetch(FetchDescriptor<UserProfile>())
             .contains(where: { $0.tasteMapUserID == profileUserID }) { return }
@@ -284,6 +290,114 @@ enum TasteMapUITestFixtures {
         context.insert(visit)
         context.insert(photo)
         try context.save()
+    }
+
+    static func insertTasteProfileAnalysisFixture(into container: ModelContainer) throws {
+        guard usesAnalysisFixture else { return }
+        let context = container.mainContext
+        let companion = DiningCompanion(
+            id: uuid(4_001), ownerUserId: profileUserID, displayName: "小林", syncStatus: .synced
+        )
+        let source = RecommendationSource(
+            id: uuid(4_002), ownerUserId: profileUserID, displayName: "朋友推荐",
+            sourceType: .friend, syncStatus: .synced
+        )
+        context.insert(companion)
+        context.insert(source)
+
+        let definitions: [(UUID, String, [String])] = [
+            (uuid(4_101), "山葵小料理", ["日料", "居酒屋", "安静"]),
+            (uuid(4_102), "红炉火锅", ["火锅", "川菜", "朋友聚餐"]),
+            (uuid(4_103), "树影咖啡", ["咖啡", "甜点", "早午餐"]),
+            (uuid(4_104), "河岸牛排馆", ["西餐", "牛排", "约会"]),
+        ]
+        var restaurants: [Restaurant] = []
+        for (index, definition) in definitions.enumerated() {
+            let restaurant = Restaurant(
+                id: definition.0, name: definition.1,
+                address: "杭州市西湖区真实路 \(index + 1) 号",
+                latitude: 30.25 + Double(index) * 0.001,
+                longitude: 120.16 + Double(index) * 0.001,
+                appleMapItemIdentifier: "apple-p4a-ui-\(index)", city: "杭州",
+                status: .visited, syncStatus: .synced,
+                remoteRecordData: try restaurantContractData(
+                    id: definition.0, name: definition.1, tags: definition.2, index: index
+                )
+            )
+            context.insert(restaurant)
+            restaurants.append(restaurant)
+        }
+
+        var firstVisitByRestaurant: [UUID: UUID] = [:]
+        let sequence = [0, 0, 1, 0, 2, 1, 3, 0, 2, 1, 0, 3, 1, 2]
+        for (index, restaurantIndex) in sequence.enumerated() {
+            let restaurant = restaurants[restaurantIndex]
+            let date = Calendar.current.date(byAdding: .day, value: -index * 9, to: .now) ?? .now
+            let visit = Visit(
+                id: uuid(4_200 + index), restaurantId: restaurant.id, visitedAt: date,
+                rating: index % 5 == 3 ? nil : [4.0, 4.5, 5.0][index % 3],
+                valueRating: index.isMultiple(of: 2) ? 4 : nil,
+                environmentRating: index.isMultiple(of: 3) ? 4.5 : nil,
+                serviceRating: index.isMultiple(of: 4) ? 4 : nil,
+                note: "P4-A 真实结构视觉验收记录",
+                myActualSpend: [Decimal(188), 236, 128, 68, 398][index % 5],
+                diningOccasions: [index.isMultiple(of: 3) ? .friends : .solo],
+                valueTags: ["值得再去"], environmentTags: [index.isMultiple(of: 2) ? "舒服" : "热闹"],
+                serviceTags: ["细心"], noiseLevel: .normal,
+                companionIDs: [companion.remoteID ?? companion.id.uuidString.lowercased()],
+                companionNames: [companion.displayName],
+                recommendationSourceID: source.remoteID,
+                recommendationSourceType: .friend,
+                createdAt: date, updatedAt: date, syncStatus: .synced
+            )
+            context.insert(visit)
+            firstVisitByRestaurant[restaurant.id] = firstVisitByRestaurant[restaurant.id] ?? visit.id
+        }
+        if let originVisit = firstVisitByRestaurant[restaurants[0].id] {
+            let dish = Dish(
+                id: uuid(4_501), restaurantId: restaurants[0].id, visitId: originVisit,
+                name: "炭烤鸡腿葱串", taste: "咸鲜炭香", rating: 4.5, syncStatus: .synced
+            )
+            context.insert(dish)
+            for visitID in try context.fetch(FetchDescriptor<Visit>())
+                .filter({ $0.restaurantId == restaurants[0].id }).map(\.id) {
+                context.insert(VisitDish(
+                    restaurantId: restaurants[0].id, visitId: visitID,
+                    dishId: dish.id, syncStatus: .synced
+                ))
+            }
+        }
+        try context.save()
+    }
+
+    private static func restaurantContractData(
+        id: UUID,
+        name: String,
+        tags: [String],
+        index: Int
+    ) throws -> Data {
+        let timestamp = "2026-08-28T00:00:00.000Z"
+        let identity = try RestaurantPlaceIdentityContract(
+            provider: .appleMaps, externalId: "apple-p4a-ui-\(index)", isPrimary: true,
+            createdAt: timestamp, updatedAt: timestamp
+        )
+        let contract = try RestaurantJSONContractV1(
+            id: id.uuidString.lowercased(), userId: profileUserID,
+            placeIdentities: [identity], name: name,
+            address: "杭州市西湖区真实路 \(index + 1) 号", city: "杭州",
+            latitude: 30.25, longitude: 120.16, status: .visited,
+            preferenceLevel: .like, overallRating: nil, foodRating: nil,
+            environmentRating: nil, serviceRating: nil, valueRating: nil,
+            tags: tags, longTermNote: "", pricePerPerson: nil, phone: nil,
+            openingHours: nil, markerType: .emoji, markerPhotoId: nil,
+            merchantImageUrl: nil, markerEmoji: "🍽️", createdAt: timestamp,
+            updatedAt: timestamp, deletedAt: nil, isTestData: true
+        )
+        return try JSONEncoder().encode(contract)
+    }
+
+    private static func uuid(_ value: Int) -> UUID {
+        UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value))!
     }
 }
 #endif

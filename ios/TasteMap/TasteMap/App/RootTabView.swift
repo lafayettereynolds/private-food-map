@@ -8,14 +8,20 @@ struct RootTabView: View {
     @State private var isShowingSearch = false
     @State private var pendingCandidate: RestaurantCandidate?
     @State private var isShowingVisitEditor = false
+    @State private var isBottomNavigationHidden = false
 
     var body: some View {
         activeView
+            .onPreferenceChange(TasteMapBottomNavigationHiddenPreferenceKey.self) {
+                isBottomNavigationHidden = $0
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                TasteMapBottomNavigation(
-                    selection: $selectedTab,
-                    onAddRestaurant: { isShowingSearch = true }
-                )
+                if !isBottomNavigationHidden {
+                    TasteMapBottomNavigation(
+                        selection: $selectedTab,
+                        onAddRestaurant: { isShowingSearch = true }
+                    )
+                }
             }
             .sheet(isPresented: $isShowingSearch, onDismiss: {
                 if pendingCandidate != nil {
@@ -56,6 +62,20 @@ struct RootTabView: View {
         case .profile:
             ProfileView()
         }
+    }
+}
+
+private struct TasteMapBottomNavigationHiddenPreferenceKey: PreferenceKey {
+    static let defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+extension View {
+    func tasteMapBottomNavigationHidden(_ hidden: Bool = true) -> some View {
+        preference(key: TasteMapBottomNavigationHiddenPreferenceKey.self, value: hidden)
     }
 }
 
