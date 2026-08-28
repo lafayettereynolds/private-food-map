@@ -87,10 +87,15 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["上海 · 外滩餐厅"].waitForExistence(timeout: 5))
         dismissSearchKeyboard(in: app)
 
-        let visit = app.buttons["candidate-visit-AC000002-0000-0000-0000-000000000002"]
-        scrollUntilVisible(visit, in: app)
-        XCTAssertTrue(visit.isHittable)
-        visit.tap()
+        let want = app.buttons["candidate-want-AC000002-0000-0000-0000-000000000002"]
+        scrollUntilVisible(want, in: app)
+        XCTAssertTrue(want.isHittable)
+        want.tap()
+        app.segmentedControls.buttons["想吃"].tap()
+        XCTAssertTrue(app.staticTexts["上海 · 外滩餐厅"].waitForExistence(timeout: 5))
+        openWantToGoDetail(named: "上海 · 外滩餐厅", in: app)
+
+        app.buttons["restaurant-detail-add-visit"].tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
         app.navigationBars["新增到访"].buttons["取消"].tap()
     }
