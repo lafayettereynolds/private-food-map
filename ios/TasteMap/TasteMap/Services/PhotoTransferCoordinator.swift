@@ -20,6 +20,7 @@ final class PhotoTransferCoordinator {
     @ObservationIgnored private var processingTask: Task<Void, Never>?
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var authObserver: NSObjectProtocol?
+    @ObservationIgnored private var manualRetryObserver: NSObjectProtocol?
     @ObservationIgnored private var imageLoads: [String: Task<Data, Error>] = [:]
     @ObservationIgnored private var rerunAfterProcessing = false
 
@@ -64,7 +65,20 @@ final class PhotoTransferCoordinator {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.scheduleProcessing() }
+            Task { @MainActor [weak self] in
+                self?.prepareAuthenticationRetry()
+                self?.scheduleProcessing()
+            }
+        }
+        manualRetryObserver = NotificationCenter.default.addObserver(
+            forName: .tasteMapManualSyncRetryRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.prepareManualRetry()
+                self?.scheduleProcessing()
+            }
         }
         networkObserver?.start { [weak self] available in
             Task { @MainActor [weak self] in
@@ -216,6 +230,7 @@ final class PhotoTransferCoordinator {
             .filter {
                 $0.deletedAt == nil &&
                 ($0.uploadState == .queued || $0.uploadState == .failed) &&
+                automaticRetryAllowed($0) &&
                 ($0.uploadRetryAfter == nil || $0.uploadRetryAfter! <= now)
             }
             .sorted { $0.createdAt < $1.createdAt }
@@ -226,11 +241,15 @@ final class PhotoTransferCoordinator {
                 try await upload(photo)
                 uploadedAny = true
             } catch {
-                let delay = min(pow(2, Double(photo.uploadRetryCount)) * 5, 300)
+                let disposition = SyncErrorClassifier.disposition(for: error)
+                if disposition == .cancelled { continue }
+                let retryAfter = disposition == .retryable
+                    ? Date().addingTimeInterval(min(pow(2, Double(photo.uploadRetryCount)) * 5, 300))
+                    : nil
                 try? LocalDishPhotoStore(context: context, photoFiles: files).markUploadFailed(
                     photo,
-                    reason: friendlyMessage(error),
-                    retryAfter: Date().addingTimeInterval(delay)
+                    reason: "\(disposition.rawValue):\(friendlyMessage(error))",
+                    retryAfter: retryAfter
                 )
             }
         }
@@ -333,7 +352,9 @@ final class PhotoTransferCoordinator {
         retryTask?.cancel()
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         guard let date = photos.compactMap({ photo in
-            photo.deletedAt == nil && photo.uploadState == .failed ? photo.uploadRetryAfter : nil
+            photo.deletedAt == nil && photo.uploadState == .failed && automaticRetryAllowed(photo)
+                ? photo.uploadRetryAfter
+                : nil
         }).min() else { return }
         let delay = max(0, date.timeIntervalSinceNow)
         retryTask = Task { @MainActor [weak self] in
@@ -348,6 +369,30 @@ final class PhotoTransferCoordinator {
         }
         if error is URLError { return "网络暂时不可用，照片会在联网后自动继续上传。" }
         return "照片暂时没有上传成功，稍后会自动重试。"
+    }
+
+    private func automaticRetryAllowed(_ photo: PhotoAsset) -> Bool {
+        guard photo.uploadState == .failed else { return true }
+        return photo.uploadLastError?.hasPrefix("permanent:") != true
+            && photo.uploadLastError?.hasPrefix("authentication:") != true
+    }
+
+    private func prepareAuthenticationRetry() {
+        let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
+        let store = LocalDishPhotoStore(context: context, photoFiles: files)
+        for photo in photos where photo.deletedAt == nil
+            && photo.uploadState == .failed
+            && photo.uploadLastError?.hasPrefix("authentication:") == true {
+            try? store.queueUpload(photo)
+        }
+    }
+
+    private func prepareManualRetry() {
+        let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
+        let store = LocalDishPhotoStore(context: context, photoFiles: files)
+        for photo in photos where photo.deletedAt == nil && photo.uploadState == .failed {
+            try? store.queueUpload(photo)
+        }
     }
 }
 

@@ -16,6 +16,40 @@ struct SyncCoordinatorTests {
             for: SyncAPIError.server(status: 422, message: "do-not-store-this-body"),
             disposition: .permanent
         ) == "permanent:http_422")
+        #expect(SyncErrorClassifier.disposition(
+            for: PhotoBinaryAPIError.server(status: 503, message: "secret")
+        ) == .retryable)
+        #expect(SyncErrorClassifier.disposition(
+            for: PhotoBinaryAPIError.server(status: 401, message: "secret")
+        ) == .authentication)
+        #expect(SyncErrorClassifier.disposition(
+            for: PhotoBinaryAPIError.server(status: 422, message: "secret")
+        ) == .permanent)
+        #expect(SyncErrorClassifier.disposition(for: PhotoImportError.invalidImage) == .permanent)
+    }
+
+    @Test("Photo binary failures participate in the unified sync status")
+    func photoFailureParticipatesInSyncStatus() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        context.insert(PhotoAsset(
+            kind: .visit,
+            mimeType: "image/jpeg",
+            byteSize: 10,
+            uploadState: .failed,
+            uploadLastError: "permanent:照片合同无效"
+        ))
+        try context.save()
+        let coordinator = coordinator(context: context, api: ControlledSyncAPI())
+
+        await coordinator.sessionDidBecomeAvailable()
+
+        #expect(coordinator.presentation.phase == .failed)
+        #expect(coordinator.presentation.pendingCount == 0)
+        #expect(coordinator.presentation.pendingPhotoCount == 1)
+        #expect(coordinator.presentation.failedPhotoCount == 1)
+        #expect(coordinator.presentation.message.contains("1 张照片"))
+        #expect(coordinator.presentation.allowsRetry)
     }
 
     @Test("Network recovery automatically drains the persistent queue")

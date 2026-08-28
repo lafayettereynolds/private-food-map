@@ -43,6 +43,21 @@ enum SyncErrorClassifier {
             }
         }
 
+        if let apiError = error as? PhotoBinaryAPIError {
+            switch apiError {
+            case .invalidResponse, .unsupportedVersion:
+                return .permanent
+            case .server(let status, _):
+                if status == 401 { return .authentication }
+                if status == 408 || status == 425 || status == 429 || (500...599).contains(status) {
+                    return .retryable
+                }
+                return .permanent
+            }
+        }
+
+        if error is PhotoImportError { return .permanent }
+
         if let authError = error as? AuthSessionError {
             switch authError {
             case .notAuthenticated, .sessionExpired:
@@ -82,6 +97,14 @@ enum SyncErrorClassifier {
             code = "invalid_response"
         case SyncAPIError.unsupportedVersion:
             code = "unsupported_version"
+        case let PhotoBinaryAPIError.server(status, _):
+            code = "photo_http_\(status)"
+        case PhotoBinaryAPIError.invalidResponse:
+            code = "photo_invalid_response"
+        case PhotoBinaryAPIError.unsupportedVersion:
+            code = "photo_unsupported_version"
+        case is PhotoImportError:
+            code = "photo_import"
         case AuthSessionError.notAuthenticated:
             code = "not_authenticated"
         case AuthSessionError.sessionExpired:

@@ -293,7 +293,7 @@ struct VisitEditorView: View {
 
     private var diningContextSummary: String {
         let count = draft.diningOccasions.count
-        if count > 0 { return "(count) 个场景" }
+        if count > 0 { return "\(count) 个场景" }
         if let queue = draft.queueDuration { return queue.title }
         return "可选"
     }

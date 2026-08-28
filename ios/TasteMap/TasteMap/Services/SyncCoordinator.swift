@@ -17,12 +17,16 @@ enum SyncPresentationPhase: String, Equatable, Sendable {
 struct SyncPresentation: Equatable, Sendable {
     var phase: SyncPresentationPhase
     var pendingCount: Int
+    var pendingPhotoCount: Int
+    var failedPhotoCount: Int
     var conflictCount: Int
     var lastSyncedAt: Date?
 
     static let signedOut = SyncPresentation(
         phase: .signedOut,
         pendingCount: 0,
+        pendingPhotoCount: 0,
+        failedPhotoCount: 0,
         conflictCount: 0,
         lastSyncedAt: nil
     )
@@ -47,13 +51,17 @@ struct SyncPresentation: Equatable, Sendable {
             lastSyncedAt.map { "最近同步：\($0.formatted(date: .abbreviated, time: .shortened))" }
                 ?? "本地与云端记录已保持一致。"
         case .pending:
-            "有 \(pendingCount) 项本地修改等待上传。"
+            pendingSummary(suffix: "等待上传。")
         case .waitingForNetwork:
-            "有 \(pendingCount) 项修改安全保存在本机，联网后会自动重试。"
+            pendingSummary(suffix: "安全保存在本机，联网后会自动重试。")
         case .syncing:
-            pendingCount > 0 ? "正在处理 \(pendingCount) 项本地修改。" : "正在检查云端更新。"
+            pendingCount > 0 || pendingPhotoCount > 0
+                ? pendingSummary(suffix: "正在处理。")
+                : "正在检查云端更新。"
         case .failed:
-            "记录仍安全保存在本机。你可以稍后重试同步。"
+            failedPhotoCount > 0
+                ? "有 \(failedPhotoCount) 张照片尚未上传，记录仍安全保存在本机。你可以稍后重试同步。"
+                : "记录仍安全保存在本机。你可以稍后重试同步。"
         case .conflicted:
             "有 \(conflictCount) 项记录在其他设备发生了变化，本地修改没有被覆盖。"
         }
@@ -74,6 +82,13 @@ struct SyncPresentation: Equatable, Sendable {
     var allowsRetry: Bool {
         phase == .failed || phase == .pending || phase == .waitingForNetwork
     }
+
+    private func pendingSummary(suffix: String) -> String {
+        var parts: [String] = []
+        if pendingCount > 0 { parts.append("\(pendingCount) 项记录") }
+        if pendingPhotoCount > 0 { parts.append("\(pendingPhotoCount) 张照片") }
+        return "有 \(parts.isEmpty ? "本地修改" : parts.joined(separator: "、"))\(suffix)"
+    }
 }
 
 @MainActor
@@ -90,6 +105,7 @@ final class SyncCoordinator {
     @ObservationIgnored private let networkRecoveryDelay: Duration
     @ObservationIgnored private let retryBaseDelay: TimeInterval
     @ObservationIgnored private var mutationObserver: NSObjectProtocol?
+    @ObservationIgnored private var photoTransferObserver: NSObjectProtocol?
     @ObservationIgnored private var syncTask: Task<Void, Never>?
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var networkDebounceTask: Task<Void, Never>?
@@ -151,6 +167,13 @@ final class SyncCoordinator {
                 await self?.requestSync(trigger: .localMutation)
             }
         }
+        photoTransferObserver = NotificationCenter.default.addObserver(
+            forName: .tasteMapPhotoTransferStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshPresentation() }
+        }
         networkObserver?.start { [weak self] isAvailable in
             Task { @MainActor [weak self] in
                 self?.networkAvailabilityChanged(isAvailable)
@@ -192,6 +215,7 @@ final class SyncCoordinator {
     }
 
     func retryNow() async {
+        NotificationCenter.default.post(name: .tasteMapManualSyncRetryRequested, object: nil)
         await requestSync(trigger: .manual, forceRetry: true)
     }
 
@@ -225,6 +249,7 @@ final class SyncCoordinator {
         let pendingCount = mutations.filter {
             $0.state == .queued || $0.state == .uploading || $0.state == .failed
         }.count
+        let photoCounts = photoTransferCounts()
 
         let phase: SyncPresentationPhase
         if conflictCount > 0 {
@@ -233,11 +258,11 @@ final class SyncCoordinator {
             phase = .syncing
         } else if !isAuthenticated {
             phase = .signedOut
-        } else if pendingCount > 0 && !isNetworkAvailable {
+        } else if (pendingCount > 0 || photoCounts.pending > 0) && !isNetworkAvailable {
             phase = .waitingForNetwork
-        } else if failedCount > 0 || lastFailureDisposition != nil {
+        } else if failedCount > 0 || photoCounts.failed > 0 || lastFailureDisposition != nil {
             phase = .failed
-        } else if pendingCount > 0 {
+        } else if pendingCount > 0 || photoCounts.pending > 0 {
             phase = .pending
         } else {
             phase = .synced
@@ -245,6 +270,8 @@ final class SyncCoordinator {
         presentation = queuePresentation(
             phase: phase,
             pendingCount: pendingCount,
+            pendingPhotoCount: photoCounts.pending,
+            failedPhotoCount: photoCounts.failed,
             conflictCount: conflictCount
         )
     }
@@ -393,18 +420,43 @@ final class SyncCoordinator {
     private func queuePresentation(
         phase: SyncPresentationPhase,
         pendingCount: Int? = nil,
+        pendingPhotoCount: Int? = nil,
+        failedPhotoCount: Int? = nil,
         conflictCount: Int? = nil
     ) -> SyncPresentation {
         let mutations = (try? SwiftDataSyncQueue(context: context).allMutations()) ?? []
+        let photoCounts = photoTransferCounts()
         let checkpoint = try? context.fetch(FetchDescriptor<SyncCheckpoint>()).first
         return SyncPresentation(
             phase: phase,
             pendingCount: pendingCount ?? mutations.filter {
                 $0.state == .queued || $0.state == .uploading || $0.state == .failed
             }.count,
+            pendingPhotoCount: pendingPhotoCount ?? photoCounts.pending,
+            failedPhotoCount: failedPhotoCount ?? photoCounts.failed,
             conflictCount: conflictCount ?? mutations.filter { $0.state == .conflicted }.count,
             lastSyncedAt: checkpoint?.lastSyncedAt
         )
+    }
+
+    private func photoTransferCounts() -> (pending: Int, failed: Int) {
+        let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
+        var pending = 0
+        var failed = 0
+        for photo in photos where photo.draftSessionID == nil {
+            if photo.deletedAt != nil {
+                guard photo.storageKey != nil, photo.binaryDeletedAt == nil else { continue }
+                pending += 1
+                if photo.uploadLastError != nil { failed += 1 }
+                continue
+            }
+            guard photo.uploadState == .queued || photo.uploadState == .uploading || photo.uploadState == .failed else {
+                continue
+            }
+            pending += 1
+            if photo.uploadState == .failed { failed += 1 }
+        }
+        return (pending, failed)
     }
 }
 

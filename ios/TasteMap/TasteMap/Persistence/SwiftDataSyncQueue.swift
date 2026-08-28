@@ -3,6 +3,8 @@ import SwiftData
 
 extension Notification.Name {
     static let tasteMapSyncMutationQueued = Notification.Name("TasteMapSyncMutationQueued")
+    static let tasteMapPhotoTransferStateChanged = Notification.Name("TasteMapPhotoTransferStateChanged")
+    static let tasteMapManualSyncRetryRequested = Notification.Name("TasteMapManualSyncRetryRequested")
 }
 
 @MainActor

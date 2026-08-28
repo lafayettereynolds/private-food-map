@@ -155,17 +155,12 @@ struct LocalTasteMapStore {
         note: String?,
         myActualSpend: Decimal?
     ) throws {
-        try update(
-            visit,
-            draft: VisitDraft(
-                visitedAt: visitedAt,
-                diningMode: visit.diningMode,
-                partySize: visit.partySize,
-                rating: rating,
-                myActualSpend: myActualSpend,
-                note: note ?? ""
-            )
-        )
+        var draft = VisitDraft(visit: visit)
+        draft.visitedAt = visitedAt
+        draft.rating = rating
+        draft.myActualSpend = myActualSpend
+        draft.note = note ?? ""
+        try update(visit, draft: draft)
     }
 
     func update(_ visit: Visit, draft: VisitDraft) throws {

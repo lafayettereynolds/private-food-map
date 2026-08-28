@@ -126,6 +126,7 @@ struct LocalDishPhotoStore {
         do {
             context.insert(photo)
             try context.save()
+            notifyPhotoTransferStateChanged()
             return photo
         } catch {
             context.delete(photo)
@@ -177,6 +178,7 @@ struct LocalDishPhotoStore {
         )
         context.insert(photo)
         try context.save()
+        notifyPhotoTransferStateChanged()
         return photo
     }
 
@@ -189,6 +191,7 @@ struct LocalDishPhotoStore {
         photo.draftSessionID = nil
         photo.updatedAt = .now
         try context.save()
+        notifyPhotoTransferStateChanged()
     }
 
     func markUploading(_ photo: PhotoAsset) throws {
@@ -197,6 +200,7 @@ struct LocalDishPhotoStore {
         photo.uploadLastError = nil
         photo.updatedAt = .now
         try context.save()
+        notifyPhotoTransferStateChanged()
     }
 
     func markUploadFailed(_ photo: PhotoAsset, reason: String, retryAfter: Date? = nil) throws {
@@ -206,6 +210,7 @@ struct LocalDishPhotoStore {
         photo.uploadRetryAfter = retryAfter
         photo.updatedAt = .now
         try context.save()
+        notifyPhotoTransferStateChanged()
     }
 
     func markUploaded(_ photo: PhotoAsset, reference: StoredPhotoReference) throws {
@@ -228,6 +233,7 @@ struct LocalDishPhotoStore {
         photo.updatedAt = .now
         try enqueue(photo)
         try context.save()
+        notifyPhotoTransferStateChanged()
     }
 
     func discardLocalPhoto(_ photo: PhotoAsset) async throws {
@@ -242,6 +248,7 @@ struct LocalDishPhotoStore {
         )
         context.delete(photo)
         try context.save()
+        notifyPhotoTransferStateChanged()
         for path in paths { try? await photoFiles.delete(relativePath: path) }
     }
 
@@ -263,6 +270,11 @@ struct LocalDishPhotoStore {
             )
         }
         try context.save()
+        notifyPhotoTransferStateChanged()
+    }
+
+    private func notifyPhotoTransferStateChanged() {
+        NotificationCenter.default.post(name: .tasteMapPhotoTransferStateChanged, object: nil)
     }
 
     func setDishRelationship(_ photo: PhotoAsset, dish: Dish?) throws {

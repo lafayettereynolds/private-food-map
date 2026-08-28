@@ -177,8 +177,12 @@ describe('Worker Sync API V1 integration', () => {
       rating: 4.5, valueRating: 4, environmentRating: 4.5, serviceRating: 5,
     }
     await push(database, 'user-a', mutation('p2e-create', 'visit', visit.id, 0, visit))
-    await database.prepare(`UPDATE visits SET recommendation_source_text = ?, companions_json = ?
-      WHERE id = ?`).bind('保留到 P2-F', '["小王"]', visit.id).run()
+    await database.prepare(`UPDATE visits SET recommendation_source_text = ?, companions_json = ?,
+      dishes_json = ?, photo_ids_json = ? WHERE id = ?`).bind(
+      '保留到 P2-F', '["小王"]',
+      '[{"id":"legacy-web-dish","name":"旧版菜品","taste":"保留原文"}]',
+      '["legacy-web-photo"]', visit.id,
+    ).run()
 
     const first = await pull(database, 'user-a', '0')
     expect(first.visits[0].record).toMatchObject({
@@ -211,8 +215,13 @@ describe('Worker Sync API V1 integration', () => {
       visibility: 'private', totalPrice: null, paymentMode: null, queueDuration: null,
       diningOccasions: [], diningOccasionText: null, valueTags: [], specialNotes: null,
     })
-    expect(database.get(`SELECT recommendation_source_text, companions_json FROM visits WHERE id = ?`, visit.id))
-      .toMatchObject({ recommendation_source_text: '保留到 P2-F', companions_json: '["小王"]' })
+    expect(database.get(`SELECT recommendation_source_text, companions_json, dishes_json, photo_ids_json
+      FROM visits WHERE id = ?`, visit.id)).toMatchObject({
+      recommendation_source_text: '保留到 P2-F',
+      companions_json: '["小王"]',
+      dishes_json: '[{"id":"legacy-web-dish","name":"旧版菜品","taste":"保留原文"}]',
+      photo_ids_json: '["legacy-web-photo"]',
+    })
     expect(database.get(`SELECT COUNT(*) AS count FROM visits
       WHERE id = ? AND visibility = 'public'`, visit.id).count).toBe(0)
     expect((await pull(database, 'user-b', '0')).visits).toEqual([])

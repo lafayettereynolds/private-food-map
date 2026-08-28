@@ -113,6 +113,44 @@ struct P2BPhotoFlowTests {
         #expect(try context.fetch(FetchDescriptor<SyncMutation>()).contains { $0.entityType == .photo })
     }
 
+    @Test("Permanent photo 4xx does not loop automatically and remains manually retryable")
+    func permanentFailureDoesNotLoop() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let parents = insertParents(context)
+        let files = try LocalPhotoFileStore(rootURL: directory)
+        let api = PermanentlyRejectingPhotoBinaryAPI()
+        let coordinator = PhotoTransferCoordinator(
+            context: context,
+            api: api,
+            files: files,
+            hasAuthenticatedSession: { true }
+        )
+        let prepared = try await coordinator.preparePhoto(data: sampleJPEG())
+        let photo = try coordinator.attachPreparedPhoto(
+            prepared,
+            restaurantID: parents.restaurant.id,
+            visitID: parents.visit.id,
+            sortOrder: 0,
+            queueForUpload: true
+        )
+
+        await coordinator.processNowForTesting()
+        #expect(photo.uploadState == .failed)
+        #expect(photo.uploadLastError?.hasPrefix("permanent:") == true)
+        #expect(photo.uploadRetryAfter == nil)
+        #expect(await api.uploadCallCount() == 1)
+
+        await coordinator.processNowForTesting()
+        #expect(await api.uploadCallCount() == 1)
+
+        try coordinator.retry(photo)
+        await coordinator.processNowForTesting()
+        #expect(await api.uploadCallCount() == 2)
+    }
+
     @Test("Authorized download uses the local cache after the first request")
     func downloadCache() async throws {
         let directory = temporaryDirectory()
@@ -327,4 +365,28 @@ private actor MockPhotoBinaryAPI: PhotoBinaryAPI {
     func uploadCallCount() -> Int { uploads }
     func downloadCallCount() -> Int { downloads }
     func deleteCallCount() -> Int { deletes }
+}
+
+private actor PermanentlyRejectingPhotoBinaryAPI: PhotoBinaryAPI {
+    private var uploads = 0
+
+    func upload(
+        photoID: UUID,
+        mutationID: UUID,
+        variant: PhotoBinaryVariant,
+        data: Data,
+        contentType: String,
+        checksum: String
+    ) async throws -> PhotoBinaryUploadResponse {
+        uploads += 1
+        throw PhotoBinaryAPIError.server(status: 422, message: "invalid photo contract")
+    }
+
+    func download(photoID: UUID, variant: PhotoBinaryVariant) async throws -> Data {
+        throw PhotoBinaryAPIError.server(status: 404, message: "not found")
+    }
+
+    func delete(photoID: UUID) async throws {}
+
+    func uploadCallCount() -> Int { uploads }
 }
