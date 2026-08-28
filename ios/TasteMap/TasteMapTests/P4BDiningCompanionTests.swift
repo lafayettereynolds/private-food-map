@@ -173,6 +173,61 @@ struct P4BDiningCompanionTests {
         #expect(analyze(input(sharedVisitCount: 2)).analyses[0].keywords.isEmpty)
     }
 
+    @Test("Latest Visit, dining context and a renamed companion keep factual stable identity")
+    func factualFieldsAndRenameIdentity() {
+        let source = input(companionCount: 1, sharedVisitCount: 8)
+        let original = analyze(source).analyses[0]
+        #expect(original.latestVisit == source.visits.map(\.visitedAt).max())
+        #expect(original.diningContexts.contains { $0.label == "朋友聚餐" })
+        #expect(original.diningContexts.contains { $0.label == "日常吃饭" })
+
+        let companion = source.companions[0]
+        let renamed = DiningCompanionInput.CompanionRecord(
+            id: companion.id,
+            identifiers: companion.identifiers,
+            displayName: "用户后来改写的名字",
+            linkedTasteMapUserID: companion.linkedTasteMapUserID,
+            permittedLinkedAvatarPreset: companion.permittedLinkedAvatarPreset,
+            updatedAt: companion.updatedAt.addingTimeInterval(1),
+            deletedAt: nil
+        )
+        let afterRename = analyze(copy(source, companions: [renamed])).analyses[0]
+        #expect(afterRename.companionID == original.companionID)
+        #expect(afterRename.companionDisplayName == "用户后来改写的名字")
+        #expect(afterRename.sharedVisitCount == original.sharedVisitCount)
+        #expect(afterRename.restaurantCount == original.restaurantCount)
+    }
+
+    @Test("Exploration, cuisine, weekend and high-rating keywords come only from evidence")
+    func keywordEvidencePatterns() {
+        let familiar = DiningCompanionPreviewFixtures.repeatedRestaurant.analyses[0]
+        #expect(familiar.keywords.contains("常去熟店"))
+        #expect(familiar.keywords.contains { $0.hasSuffix("搭子") })
+
+        let source = input(companionCount: 1, sharedVisitCount: 4, includeDishes: false)
+        let calendar = Calendar(identifier: .gregorian)
+        let visits = source.visits.enumerated().map { index, visit in
+            let saturday = calendar.date(from: DateComponents(
+                timeZone: TimeZone(secondsFromGMT: 0),
+                year: 2026,
+                month: 8,
+                day: 29 - (index * 7),
+                hour: 12
+            ))!
+            return copy(
+                visit,
+                restaurantID: source.restaurants[index].id,
+                visitedAt: saturday,
+                rating: .some(4.8)
+            )
+        }
+        let exploration = analyze(copy(source, visits: visits)).analyses[0]
+        #expect(exploration.keywords.contains("探店型"))
+        #expect(exploration.keywords.contains("周末饭友"))
+        #expect(exploration.keywords.contains("高分组合"))
+        #expect(exploration.keywords.count <= 4)
+    }
+
     @Test("Representative restaurants have distinct roles and never copy a private note")
     func representativeRestaurantsAndPrivacy() {
         let report = DiningCompanionPreviewFixtures.rich.analyses[0]
@@ -258,6 +313,66 @@ struct P4BDiningCompanionTests {
         #expect(report.recommendations.allSatisfy { !candidateIDs.contains($0.localRestaurantID!) })
     }
 
+    @Test("Low-rated, cross-city and non-familiar shared Restaurants do not leak into recommendations")
+    func recommendationBoundaries() {
+        let source = input(companionCount: 1, sharedVisitCount: 4, includeDishes: false)
+        let lowRatedID = source.restaurants[4].id
+        let crossCityID = source.restaurants[5].id
+        let lowRatedEvidence = copy(
+            source.visits[0],
+            restaurantID: lowRatedID,
+            rating: .some(2.5),
+            companionIDs: [],
+            companionNames: []
+        )
+        let restaurants = source.restaurants.map { restaurant in
+            guard restaurant.id == crossCityID else { return restaurant }
+            return DiningCompanionInput.RestaurantRecord(
+                id: restaurant.id,
+                name: restaurant.name,
+                address: restaurant.address,
+                city: "北京",
+                status: restaurant.status,
+                preference: restaurant.preference,
+                tags: restaurant.tags,
+                updatedAt: restaurant.updatedAt,
+                deletedAt: nil,
+                isAccessible: true
+            )
+        }
+        let report = analyze(copy(
+            source,
+            restaurants: restaurants,
+            visits: source.visits + [lowRatedEvidence]
+        )).analyses[0]
+        #expect(!report.recommendations.contains { $0.localRestaurantID == lowRatedID })
+        #expect(!report.recommendations.contains { $0.localRestaurantID == crossCityID })
+        let sharedIDs = Set(source.visits.map(\.restaurantID))
+        #expect(report.recommendations.allSatisfy { !sharedIDs.contains($0.localRestaurantID!) })
+    }
+
+    @Test("An established familiar-restaurant pattern can recommend a trusted shared Restaurant")
+    func familiarRestaurantRecommendation() {
+        let source = DiningCompanionPreviewFixtures.input(
+            companionCount: 1,
+            sharedVisitCount: 10,
+            includeDishes: false,
+            includePhotos: false,
+            onlyFirstRestaurant: true
+        )
+        let visits = source.visits.enumerated().map { index, visit in
+            copy(
+                visit,
+                visitedAt: DiningCompanionPreviewFixtures.now.addingTimeInterval(Double(-30 - index) * 86_400),
+                rating: .some(4.8)
+            )
+        }
+        let report = analyze(copy(source, visits: visits)).analyses[0]
+        #expect(report.repeatRestaurantRate == 1)
+        #expect(report.recommendations.contains { $0.localRestaurantID == source.restaurants[0].id })
+        #expect(report.recommendations.first?.localRestaurantID == source.restaurants[4].id)
+    }
+
     @Test("Analyzer does not make network calls and is deterministic offline")
     func offlineDeterminism() {
         let source = input(companionCount: 3, sharedVisitCount: 14)
@@ -315,6 +430,32 @@ struct P4BDiningCompanionTests {
             #expect(image.cgImage?.height == 1_920)
             #expect(image.pngData()?.isEmpty == false)
         }
+    }
+
+    @Test("Poster payload contains shareable facts and excludes private/internal fields")
+    func posterPayload() {
+        let rich = DiningCompanionPreviewFixtures.rich.analyses[0]
+        #expect(rich.companionDisplayName == "小林")
+        #expect(rich.sharedVisitCount == 14)
+        #expect(rich.restaurantCount == 4)
+        #expect(rich.topRestaurants.first != nil)
+        #expect(rich.topFoods.first != nil)
+        #expect(!rich.keywords.isEmpty)
+        #expect(rich.representativeRestaurants.contains { item in
+            if case .photo = item.imageReference { return true }
+            return false
+        })
+
+        let sparse = DiningCompanionPreviewFixtures.singleVisit.analyses[0]
+        let noPhoto = DiningCompanionPreviewFixtures.noPhotos.analyses[0]
+        #expect(sparse.sufficiency == .insufficient)
+        #expect(noPhoto.representativeRestaurants.allSatisfy { $0.imageReference == .none })
+        let exportText = ([rich.summary, rich.behavioralPortrait, rich.dataNote]
+            + rich.keywords
+            + rich.representativeRestaurants.flatMap { [$0.name, $0.role, $0.detail] })
+            .joined(separator: " ")
+        #expect(!exportText.contains("tm_linked_friend"))
+        #expect(!exportText.contains("P4-B 私人备注原文"))
     }
 
     @Test("P4-B poster shares through the reused temporary PNG lifecycle")
@@ -376,6 +517,8 @@ struct P4BDiningCompanionTests {
 
     private func copy(
         _ source: DiningCompanionInput.VisitRecord,
+        restaurantID: UUID? = nil,
+        visitedAt: Date? = nil,
         rating: Double?? = nil,
         myActualSpend: Decimal?? = nil,
         companionIDs: [String]? = nil,
@@ -383,7 +526,9 @@ struct P4BDiningCompanionTests {
         deletedAt: Date?? = nil
     ) -> DiningCompanionInput.VisitRecord {
         .init(
-            id: source.id, restaurantID: source.restaurantID, visitedAt: source.visitedAt,
+            id: source.id,
+            restaurantID: restaurantID ?? source.restaurantID,
+            visitedAt: visitedAt ?? source.visitedAt,
             rating: rating ?? source.rating, valueRating: source.valueRating,
             environmentRating: source.environmentRating, serviceRating: source.serviceRating,
             myActualSpend: myActualSpend ?? source.myActualSpend, diningMode: source.diningMode,
