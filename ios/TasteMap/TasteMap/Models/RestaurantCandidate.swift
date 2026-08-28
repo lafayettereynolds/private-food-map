@@ -1,26 +1,127 @@
 import Foundation
 
+struct RestaurantCoordinate: Hashable, Sendable {
+    let latitude: Double
+    let longitude: Double
+
+    var isValid: Bool {
+        (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
+}
+
+struct RestaurantCandidatePlaceIdentity: Hashable, Sendable {
+    let provider: RestaurantPlaceProvider
+    let externalID: String
+    let isPrimary: Bool
+
+    init(provider: RestaurantPlaceProvider, externalID: String, isPrimary: Bool = false) {
+        self.provider = provider
+        self.externalID = externalID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isPrimary = isPrimary
+    }
+}
+
 struct RestaurantCandidate: Identifiable, Hashable, Sendable {
     let id: UUID
     let name: String
     let address: String
+    let city: String
+    let district: String
     let latitude: Double
     let longitude: Double
     let appleMapItemIdentifier: String?
+    let placeIdentities: [RestaurantCandidatePlaceIdentity]
+    let distanceMeters: Double?
+    let photoURL: URL?
+
+    var coordinate: RestaurantCoordinate {
+        RestaurantCoordinate(latitude: latitude, longitude: longitude)
+    }
 
     init(
         id: UUID = UUID(),
         name: String,
         address: String,
+        city: String = "",
+        district: String = "",
         latitude: Double,
         longitude: Double,
-        appleMapItemIdentifier: String? = nil
+        appleMapItemIdentifier: String? = nil,
+        placeIdentities: [RestaurantCandidatePlaceIdentity] = [],
+        distanceMeters: Double? = nil,
+        photoURL: URL? = nil
     ) {
         self.id = id
-        self.name = name
-        self.address = address
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.city = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.district = district.trimmingCharacters(in: .whitespacesAndNewlines)
         self.latitude = latitude
         self.longitude = longitude
-        self.appleMapItemIdentifier = appleMapItemIdentifier
+        let appleID = appleMapItemIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.appleMapItemIdentifier = appleID?.isEmpty == false ? appleID : nil
+        self.placeIdentities = Self.normalizedIdentities(
+            placeIdentities,
+            appleMapItemIdentifier: self.appleMapItemIdentifier
+        )
+        self.distanceMeters = distanceMeters
+        self.photoURL = photoURL
+    }
+
+    static func manual(
+        id: UUID = UUID(),
+        name: String,
+        city: String,
+        address: String,
+        coordinate: RestaurantCoordinate
+    ) -> RestaurantCandidate {
+        RestaurantCandidate(
+            id: id,
+            name: name,
+            address: address,
+            city: city,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude,
+            placeIdentities: [
+                RestaurantCandidatePlaceIdentity(
+                    provider: .manual,
+                    externalID: "tastemap:\(id.uuidString.lowercased())",
+                    isPrimary: true
+                )
+            ]
+        )
+    }
+
+    private static func normalizedIdentities(
+        _ values: [RestaurantCandidatePlaceIdentity],
+        appleMapItemIdentifier: String?
+    ) -> [RestaurantCandidatePlaceIdentity] {
+        var source = values.filter { !$0.externalID.isEmpty }
+        if let appleMapItemIdentifier,
+           !source.contains(where: { $0.provider == .appleMaps && $0.externalID == appleMapItemIdentifier }) {
+            source.append(RestaurantCandidatePlaceIdentity(
+                provider: .appleMaps,
+                externalID: appleMapItemIdentifier,
+                isPrimary: source.isEmpty
+            ))
+        }
+
+        var seen = Set<String>()
+        var result: [RestaurantCandidatePlaceIdentity] = []
+        for value in source {
+            let key = "\(value.provider.rawValue):\(value.externalID)"
+            guard seen.insert(key).inserted else { continue }
+            result.append(value)
+        }
+        guard !result.isEmpty else { return [] }
+
+        let primaryIndex = result.firstIndex(where: \.isPrimary) ?? result.startIndex
+        return result.enumerated().map { index, value in
+            RestaurantCandidatePlaceIdentity(
+                provider: value.provider,
+                externalID: value.externalID,
+                isPrimary: index == primaryIndex
+            )
+        }
     }
 }

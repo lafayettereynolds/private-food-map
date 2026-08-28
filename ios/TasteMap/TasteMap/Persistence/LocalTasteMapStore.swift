@@ -11,6 +11,10 @@ struct LocalTasteMapStore {
         status: RestaurantStatus = .visited
     ) throws -> Restaurant {
         if let existing = RestaurantDeduplicator.match(for: candidate, in: restaurants) {
+            if try merge(candidate: candidate, into: existing) {
+                existing.updatedAt = .now
+                try enqueue(existing)
+            }
             return existing
         }
 
@@ -20,8 +24,21 @@ struct LocalTasteMapStore {
             latitude: candidate.latitude,
             longitude: candidate.longitude,
             appleMapItemIdentifier: candidate.appleMapItemIdentifier,
+            city: candidate.city,
             status: status
         )
+        // Preserve the legacy extension point used by Discovery: a candidate
+        // without provider evidence is intentionally left unassigned so the
+        // calling module can supply its authoritative identity contract before
+        // the transaction is saved. Explicit manual and provider-backed
+        // candidates always carry an identity and are persisted immediately.
+        if !candidate.placeIdentities.isEmpty {
+            restaurant.remoteRecordData = try recordData(
+                for: restaurant,
+                candidateIdentities: candidate.placeIdentities,
+                replacingGeneratedIdentity: true
+            )
+        }
         context.insert(restaurant)
         if restaurant.remoteID == nil || restaurant.serverVersion == 0 {
             try enqueue(restaurant)
@@ -318,6 +335,103 @@ struct LocalTasteMapStore {
             timestamp: restaurant.updatedAt
         )
     }
+
+    private func merge(candidate: RestaurantCandidate, into restaurant: Restaurant) throws -> Bool {
+        var changed = false
+        if restaurant.city.isEmpty, !candidate.city.isEmpty {
+            restaurant.city = candidate.city
+            changed = true
+        }
+        if restaurant.appleMapItemIdentifier == nil, let appleID = candidate.appleMapItemIdentifier {
+            restaurant.appleMapItemIdentifier = appleID
+            changed = true
+        }
+        guard !candidate.placeIdentities.isEmpty else { return changed }
+
+        let before = try SyncRecordMapper.restaurantRecord(restaurant)
+        let beforeKeys = Set(before.placeIdentities.map(Self.identityKey))
+        let added = candidate.placeIdentities.contains { !beforeKeys.contains(Self.identityKey($0)) }
+        guard added else { return changed }
+        restaurant.remoteRecordData = try recordData(
+            for: restaurant,
+            candidateIdentities: candidate.placeIdentities,
+            replacingGeneratedIdentity: false
+        )
+        return true
+    }
+
+    private func recordData(
+        for restaurant: Restaurant,
+        candidateIdentities: [RestaurantCandidatePlaceIdentity],
+        replacingGeneratedIdentity: Bool
+    ) throws -> Data {
+        let base = try SyncRecordMapper.restaurantRecord(restaurant)
+        let timestamp = SyncRecordMapper.dateString(restaurant.updatedAt)
+        var identities = replacingGeneratedIdentity ? [] : base.placeIdentities
+        var keys = Set(identities.map(Self.identityKey))
+        for candidateIdentity in candidateIdentities where !candidateIdentity.externalID.isEmpty {
+            let key = Self.identityKey(candidateIdentity)
+            guard keys.insert(key).inserted else { continue }
+            identities.append(try RestaurantPlaceIdentityContract(
+                provider: candidateIdentity.provider,
+                externalId: candidateIdentity.externalID,
+                isPrimary: identities.isEmpty && candidateIdentity.isPrimary,
+                createdAt: timestamp,
+                updatedAt: timestamp
+            ))
+        }
+        if identities.isEmpty { identities = base.placeIdentities }
+        if !identities.contains(where: \.isPrimary), let first = identities.first {
+            identities[0] = try RestaurantPlaceIdentityContract(
+                provider: first.provider,
+                externalId: first.externalId,
+                isPrimary: true,
+                createdAt: first.createdAt,
+                updatedAt: first.updatedAt
+            )
+        }
+        let amapID = identities.first(where: { $0.provider == .amap })?.externalId
+        let value = try RestaurantJSONContractV1(
+            id: base.id,
+            userId: base.userId,
+            placeIdentities: identities,
+            amapPoiId: amapID,
+            name: restaurant.name,
+            address: restaurant.address,
+            city: restaurant.city,
+            latitude: restaurant.latitude,
+            longitude: restaurant.longitude,
+            status: restaurant.status == .wantToGo ? .wantToGo : .visited,
+            preferenceLevel: base.preferenceLevel,
+            overallRating: base.overallRating,
+            foodRating: base.foodRating,
+            environmentRating: base.environmentRating,
+            serviceRating: base.serviceRating,
+            valueRating: base.valueRating,
+            tags: base.tags,
+            longTermNote: base.longTermNote,
+            pricePerPerson: base.pricePerPerson,
+            phone: base.phone,
+            openingHours: base.openingHours,
+            markerType: base.markerType,
+            markerPhotoId: base.markerPhotoId,
+            merchantImageUrl: base.merchantImageUrl,
+            markerEmoji: base.markerEmoji,
+            createdAt: base.createdAt,
+            updatedAt: timestamp,
+            deletedAt: base.deletedAt,
+            isTestData: base.isTestData
+        )
+        return try JSONEncoder().encode(value)
+    }
+
+    private static func identityKey(_ identity: RestaurantPlaceIdentityContract) -> String {
+        "\(identity.provider.rawValue):\(identity.externalId)"
+    }
+
+    nonisolated private static func identityKey(_ identity: RestaurantCandidatePlaceIdentity) -> String {
+        "\(identity.provider.rawValue):\(identity.externalID)"
+    }
 }
 
 enum LocalTasteMapStoreError: Error {
@@ -330,18 +444,27 @@ enum LocalTasteMapStoreError: Error {
 
 enum RestaurantDeduplicator {
     static func match(for candidate: RestaurantCandidate, in restaurants: [Restaurant]) -> Restaurant? {
-        if let externalID = candidate.appleMapItemIdentifier,
-           let match = restaurants.first(where: { $0.deletedAt == nil && $0.appleMapItemIdentifier == externalID }) {
+        let candidateIdentityKeys = Set(candidate.placeIdentities.map(identityKey))
+        if !candidateIdentityKeys.isEmpty,
+           let match = restaurants.first(where: {
+               $0.deletedAt == nil && !candidateIdentityKeys.isDisjoint(with: identityKeys(for: $0))
+           }) {
             return match
         }
 
         let candidateName = normalized(candidate.name)
         let candidateAddress = normalized(candidate.address)
         return restaurants.first { restaurant in
-            restaurant.deletedAt == nil
-                && normalized(restaurant.name) == candidateName
-                && normalized(restaurant.address) == candidateAddress
-                && distanceInMeters(
+            guard restaurant.deletedAt == nil,
+                  normalized(restaurant.name) == candidateName else { return false }
+            let restaurantAddress = normalized(restaurant.address)
+            let addressesCompatible = candidateAddress.isEmpty
+                || restaurantAddress.isEmpty
+                || restaurantAddress == candidateAddress
+            let citiesCompatible = candidate.city.isEmpty
+                || restaurant.city.isEmpty
+                || normalizedCity(restaurant.city) == normalizedCity(candidate.city)
+            return addressesCompatible && citiesCompatible && distanceInMeters(
                     latitudeA: restaurant.latitude,
                     longitudeA: restaurant.longitude,
                     latitudeB: candidate.latitude,
@@ -350,9 +473,34 @@ enum RestaurantDeduplicator {
         }
     }
 
+    private static func identityKeys(for restaurant: Restaurant) -> Set<String> {
+        var values = Set<String>()
+        if let appleID = restaurant.appleMapItemIdentifier, !appleID.isEmpty {
+            values.insert("\(RestaurantPlaceProvider.appleMaps.rawValue):\(appleID)")
+        }
+        if let data = restaurant.remoteRecordData,
+           let record = try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: data) {
+            values.formUnion(record.placeIdentities.map(identityKey))
+        }
+        return values
+    }
+
+    nonisolated private static func identityKey(_ identity: RestaurantCandidatePlaceIdentity) -> String {
+        "\(identity.provider.rawValue):\(identity.externalID)"
+    }
+
+    nonisolated private static func identityKey(_ identity: RestaurantPlaceIdentityContract) -> String {
+        "\(identity.provider.rawValue):\(identity.externalId)"
+    }
+
     private static func normalized(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
             .filter { !$0.isWhitespace && !$0.isPunctuation }
+    }
+
+    private static func normalizedCity(_ value: String) -> String {
+        let value = normalized(value)
+        return value.hasSuffix("市") ? String(value.dropLast()) : value
     }
 
     private static func distanceInMeters(

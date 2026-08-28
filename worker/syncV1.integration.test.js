@@ -62,6 +62,47 @@ describe('Worker Sync API V1 integration', () => {
     await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('not configured') })
   })
 
+  it('exposes the versioned external-place resolver only to an authenticated viewer and isolates private candidates', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('external-place-a', 'restaurant', appleFixture.id, 0, appleFixture))
+    const input = {
+      text: 'https://maps.apple.com/?q=%E5%90%88%E5%90%8C%E6%B5%8B%E8%AF%95%E9%A4%90%E5%8E%85&address=%E6%B5%8B%E8%AF%95%E8%B7%AF%201%20%E5%8F%B7&ll=30.2741,120.1551&place-id=apple-place-2B34C5D6',
+      currentCity: '杭州',
+    }
+    const request = (user) => new Request('https://development.example.test/api/v1/external-place/resolve', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(user ? { 'X-Taste-Map-Test-User': user } : {}),
+      },
+      body: JSON.stringify(input),
+    })
+    const env = {
+      DB: database,
+      ASSETS: { fetch: () => new Response('not used') },
+      APP_ENVIRONMENT: 'development',
+      SYNC_AUTH_MODE: 'development-test',
+    }
+
+    const responseA = await worker.fetch(request('user-a'), env)
+    expect(responseA.status).toBe(200)
+    await expect(responseA.json()).resolves.toMatchObject({
+      apiVersion: 1,
+      sourceType: 'apple_maps',
+      candidates: [expect.objectContaining({
+        restaurantId: appleFixture.id,
+        placeIdentities: [expect.objectContaining({
+          provider: 'apple_maps', externalId: 'apple-place-2B34C5D6',
+        })],
+      })],
+    })
+
+    const responseB = await worker.fetch(request('user-b'), env)
+    expect(responseB.status).toBe(200)
+    expect((await responseB.json()).candidates).toEqual([])
+    expect((await worker.fetch(request(''), env)).status).toBe(401)
+  })
+
   it('keeps the legacy Web /api/sync payload operational', async () => {
     const database = makeDatabase()
     const response = await worker.fetch(new Request('http://localhost/api/sync', {

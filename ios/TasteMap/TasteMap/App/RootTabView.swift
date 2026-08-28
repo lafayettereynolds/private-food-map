@@ -3,11 +3,12 @@ import SwiftUI
 
 struct RootTabView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(NativeAuthServices.self) private var authServices
     @Query private var restaurants: [Restaurant]
     @State private var selectedTab: AppTab = .map
     @State private var isShowingSearch = false
-    @State private var pendingCandidate: RestaurantCandidate?
-    @State private var isShowingVisitEditor = false
+    @State private var requestedVisitCandidate: RestaurantCandidate?
+    @State private var visitCandidate: RestaurantCandidate?
     @State private var isBottomNavigationHidden = false
 
     var body: some View {
@@ -24,11 +25,21 @@ struct RootTabView: View {
                 }
             }
             .sheet(isPresented: $isShowingSearch, onDismiss: {
-                if pendingCandidate != nil {
-                    isShowingVisitEditor = true
+                if let requestedVisitCandidate {
+                    // Let the acquisition sheet finish its dismissal before presenting
+                    // VisitEditor. Presenting both in the same transaction is ignored on
+                    // some iOS versions and leaves the user back on the map.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(200))
+                        guard self.requestedVisitCandidate?.id == requestedVisitCandidate.id else { return }
+                        self.requestedVisitCandidate = nil
+                        visitCandidate = requestedVisitCandidate
+                    }
                 }
             }) {
-                RestaurantSearchView { candidate, action in
+                AddRestaurantView(
+                    dependencies: acquisitionDependencies
+                ) { candidate, action in
                     switch action {
                     case .wantToGo:
                         _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
@@ -37,19 +48,24 @@ struct RootTabView: View {
                         )
                         selectedTab = .map
                     case .recordVisit:
-                        pendingCandidate = candidate
+                        requestedVisitCandidate = candidate
                     }
                 }
             }
-            .sheet(isPresented: $isShowingVisitEditor, onDismiss: {
-                pendingCandidate = nil
-            }) {
-                if let pendingCandidate {
-                    VisitEditorView(candidate: pendingCandidate) { _ in
-                        selectedTab = .map
-                    }
+            .sheet(item: $visitCandidate) { candidate in
+                VisitEditorView(candidate: candidate) { _ in
+                    selectedTab = .map
                 }
             }
+    }
+
+    private var acquisitionDependencies: RestaurantAcquisitionDependencies {
+#if DEBUG
+        if TasteMapUITestFixtures.usesRestaurantAcquisitionFixture {
+            return TasteMapUITestFixtures.restaurantAcquisitionDependencies
+        }
+#endif
+        return .live(linkResolver: authServices.externalRestaurantLinkAPI)
     }
 
     @ViewBuilder

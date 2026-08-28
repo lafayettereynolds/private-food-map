@@ -36,8 +36,128 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.segmentedControls.buttons["想吃"].exists)
 
         app.buttons["添加餐厅"].tap()
-        XCTAssertTrue(app.navigationBars["搜索餐厅"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.searchFields["餐厅名称或地址"].exists)
+        XCTAssertTrue(app.navigationBars["添加餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["restaurant-city-field"].exists)
+        XCTAssertTrue(app.textFields["restaurant-query-field"].exists)
+    }
+
+    @MainActor
+    func testRestaurantAcquisitionNearbyRequiresExplicitWantToGoAction() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["添加餐厅"].tap()
+        XCTAssertTrue(app.navigationBars["添加餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["V1 附近小馆"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["146 米"].exists)
+        keepScreenshot(named: "Restaurant Acquisition Nearby", of: app)
+
+        let want = app.buttons["candidate-want-AC000001-0000-0000-0000-000000000001"]
+        XCTAssertTrue(want.waitForExistence(timeout: 3))
+        want.tap()
+        XCTAssertFalse(app.navigationBars["添加餐厅"].waitForExistence(timeout: 3))
+        app.segmentedControls.buttons["想吃"].tap()
+        XCTAssertTrue(app.staticTexts["V1 附近小馆"].waitForExistence(timeout: 5))
+        openWantToGoDetail(named: "V1 附近小馆", in: app)
+    }
+
+    @MainActor
+    func testRestaurantAcquisitionCitySearchNoResultAndVisitEntry() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST": "1"]
+        app.launch()
+        app.buttons["添加餐厅"].tap()
+        XCTAssertTrue(app.navigationBars["添加餐厅"].waitForExistence(timeout: 5))
+
+        let city = app.textFields["restaurant-city-field"]
+        scrollUntilVisible(city, in: app)
+        XCTAssertTrue(city.waitForExistence(timeout: 5))
+        city.tap()
+        city.clearAndType("上海")
+        let query = app.textFields["restaurant-query-field"]
+        query.tap()
+        query.typeText("没有结果")
+        app.buttons["restaurant-search-submit"].tap()
+        XCTAssertTrue(app.staticTexts["没有找到匹配的餐厅，请换一个名称、地址或城市。"].waitForExistence(timeout: 5))
+
+        query.tap()
+        query.clearAndType("外滩餐厅")
+        app.buttons["restaurant-search-submit"].tap()
+        XCTAssertTrue(app.staticTexts["上海 · 外滩餐厅"].waitForExistence(timeout: 5))
+        dismissSearchKeyboard(in: app)
+
+        let visit = app.buttons["candidate-visit-AC000002-0000-0000-0000-000000000002"]
+        scrollUntilVisible(visit, in: app)
+        XCTAssertTrue(visit.isHittable)
+        visit.tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        app.navigationBars["新增到访"].buttons["取消"].tap()
+    }
+
+    @MainActor
+    func testRestaurantAcquisitionLinkImportIsConfirmedBeforeCreation() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST": "1"]
+        app.launch()
+        app.buttons["添加餐厅"].tap()
+
+        let entry = app.buttons["open-restaurant-link-import"]
+        scrollUntilVisible(entry, in: app)
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["粘贴餐厅链接"].waitForExistence(timeout: 5))
+        let field = app.textViews["restaurant-link-field"]
+        field.tap()
+        field.typeText("https://example.com/restaurants/apple")
+        app.buttons["resolve-restaurant-link"].tap()
+        XCTAssertTrue(app.staticTexts["V1 Apple 链接餐厅"].waitForExistence(timeout: 5))
+
+        let want = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "加入想吃")).firstMatch
+        XCTAssertTrue(want.waitForExistence(timeout: 3))
+        want.tap()
+        app.segmentedControls.buttons["想吃"].tap()
+        XCTAssertTrue(app.staticTexts["V1 Apple 链接餐厅"].waitForExistence(timeout: 5))
+        openWantToGoDetail(named: "V1 Apple 链接餐厅", in: app)
+    }
+
+    @MainActor
+    func testRestaurantAcquisitionDeniedLocationStillAllowsManualRestaurant() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST": "1"]
+        app.launch()
+        app.buttons["添加餐厅"].tap()
+
+        XCTAssertTrue(app.staticTexts["没有定位权限也可以添加"].waitForExistence(timeout: 5))
+        let query = app.textFields["restaurant-query-field"]
+        scrollUntilVisible(query, in: app)
+        XCTAssertTrue(query.exists)
+        let entry = app.buttons["open-manual-restaurant"]
+        scrollUntilVisible(entry, in: app)
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["手动添加餐厅"].waitForExistence(timeout: 5))
+
+        app.textFields["manual-restaurant-name"].tap()
+        app.textFields["manual-restaurant-name"].typeText("地图外的小摊")
+        app.textFields["manual-restaurant-city"].tap()
+        app.textFields["manual-restaurant-city"].typeText("杭州")
+        app.textFields["manual-restaurant-address"].tap()
+        app.textFields["manual-restaurant-address"].typeText("武林路 8 号")
+        app.buttons["manual-locate-address"].tap()
+        let want = app.buttons["manual-add-want-to-go"]
+        scrollUntilVisible(want, in: app)
+        XCTAssertTrue(want.waitForExistence(timeout: 5))
+        want.tap()
+
+        app.segmentedControls.buttons["想吃"].tap()
+        XCTAssertTrue(app.staticTexts["地图外的小摊"].waitForExistence(timeout: 5))
+        openWantToGoDetail(named: "地图外的小摊", in: app)
+    }
+
+    private func openWantToGoDetail(named name: String, in app: XCUIApplication) {
+        let card = app.buttons.containing(.staticText, identifier: name).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
     }
 
     @MainActor

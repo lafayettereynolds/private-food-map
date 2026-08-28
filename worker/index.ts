@@ -645,6 +645,11 @@ export default {
         await ensureUserProfile(env.DB, viewer.id)
         return handlePhotoBinaryV1(request, env, viewer.id, photoContentMatch[1])
       }
+      if (url.pathname === '/api/v1/external-place/resolve' && request.method === 'POST') {
+        const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
+        return json(await resolveExternalPlaceRequest(env.DB, viewer.id, request))
+      }
       const viewer = await resolveViewer(request, env.DB)
       if (url.pathname === '/api/external-place/resolve' && request.method === 'POST') {
         return json(await resolveExternalPlaceRequest(env.DB, viewer.id, request))
@@ -765,6 +770,7 @@ interface ExternalPlaceCandidate {
   merchantImageUrl: string | null
   phone: string | null
   openingHours: string | null
+  placeIdentities: Array<{ provider: RestaurantPlaceProvider; externalId: string; isPrimary: boolean }>
   matchScore: number
 }
 
@@ -809,6 +815,7 @@ async function resolveExternalPlaceRequest(database: D1Database, viewerId: strin
         merchantImageUrl: null,
         phone: null,
         openingHours: null,
+        placeIdentities: [{ provider: 'amap', externalId: evidence.externalId, isPrimary: true }],
         matchScore: 100,
       })
     }
@@ -826,6 +833,7 @@ async function resolveExternalPlaceRequest(database: D1Database, viewerId: strin
   const matchType = confidence === 'HIGH' ? 'single' : confidence === 'MEDIUM' ? 'multiple' : 'search_fallback'
 
   return {
+    apiVersion: 1,
     sourceType: evidence.sourceType,
     sourceHost: evidence.sourceUrl ? new URL(evidence.sourceUrl).hostname : null,
     confidence,
@@ -902,10 +910,21 @@ async function findExternalPlaceCandidates(
       merchantImageUrl: row.merchant_image_url,
       phone: row.phone,
       openingHours: row.opening_hours,
+      placeIdentities: externalCandidateIdentities(row),
       matchScore,
     })
   }
   return candidates
+}
+
+function externalCandidateIdentities(row: ExternalPlaceCandidateRow) {
+  if (row.matched_provider && row.matched_external_id) {
+    return [{ provider: row.matched_provider, externalId: row.matched_external_id, isPrimary: true }]
+  }
+  if (row.amap_poi_id) {
+    return [{ provider: 'amap' as const, externalId: row.amap_poi_id, isPrimary: true }]
+  }
+  return [{ provider: 'manual' as const, externalId: `tastemap:${row.id}`, isPrimary: true }]
 }
 
 function scoreExternalPlaceCandidate(

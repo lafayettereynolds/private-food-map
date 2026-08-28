@@ -1,4 +1,5 @@
 #if DEBUG
+import CoreLocation
 import Foundation
 import SwiftData
 import UIKit
@@ -32,6 +33,23 @@ enum TasteMapUITestFixtures {
     static let restaurantRouletteSingleEnvironmentKey = "TASTEMAP_P4G_ROULETTE_SINGLE_UI_TEST"
     static let restaurantRouletteLargeEnvironmentKey = "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST"
     static let premiumEnvironmentKey = "TASTEMAP_P4H_PREMIUM_UI_TEST"
+    static let restaurantAcquisitionEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST"
+    static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
+
+    static var usesRestaurantAcquisitionFixture: Bool {
+        ProcessInfo.processInfo.environment[restaurantAcquisitionEnvironmentKey] == "1"
+            || ProcessInfo.processInfo.environment[restaurantAcquisitionDeniedEnvironmentKey] == "1"
+    }
+
+    static var restaurantAcquisitionDependencies: RestaurantAcquisitionDependencies {
+        RestaurantAcquisitionDependencies(
+            searchService: RestaurantAcquisitionFixtureSearch(),
+            linkResolver: RestaurantAcquisitionFixtureLinkResolver(),
+            locationProvider: RestaurantAcquisitionFixtureLocation(
+                denied: ProcessInfo.processInfo.environment[restaurantAcquisitionDeniedEnvironmentKey] == "1"
+            )
+        )
+    }
 
     static var premiumOverride: DevelopmentPremiumOverride? {
         let value = ProcessInfo.processInfo.environment[premiumEnvironmentKey]
@@ -929,6 +947,100 @@ enum TasteMapUITestFixtures {
 
     private static func uuid(_ value: Int) -> UUID {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value))!
+    }
+}
+
+private struct RestaurantAcquisitionFixtureSearch: RestaurantSearching {
+    func search(query: String) async throws -> [RestaurantCandidate] {
+        try await search(query: query, scope: RestaurantSearchScope())
+    }
+
+    func search(query: String, scope: RestaurantSearchScope) async throws -> [RestaurantCandidate] {
+        guard !query.localizedCaseInsensitiveContains("没有结果") else { return [] }
+        let city = scope.city.isEmpty ? "杭州" : scope.city
+        return [RestaurantCandidate(
+            id: UUID(uuidString: "ac000002-0000-0000-0000-000000000002")!,
+            name: "\(city) · \(query)",
+            address: "\(city)测试路 28 号",
+            city: city,
+            district: "测试区",
+            latitude: city == "上海" ? 31.2304 : 30.2741,
+            longitude: city == "上海" ? 121.4737 : 120.1551,
+            appleMapItemIdentifier: "apple-acquisition-search-\(city)"
+        )]
+    }
+
+    func nearby(center: RestaurantCoordinate, radiusMeters: Double) async throws -> [RestaurantCandidate] {
+        [RestaurantCandidate(
+            id: UUID(uuidString: "ac000001-0000-0000-0000-000000000001")!,
+            name: "V1 附近小馆",
+            address: "杭州市西湖区附近路 3 号",
+            city: "杭州",
+            district: "西湖区",
+            latitude: center.latitude + 0.001,
+            longitude: center.longitude + 0.001,
+            appleMapItemIdentifier: "apple-acquisition-nearby",
+            distanceMeters: 146
+        )]
+    }
+
+    func locationContext(for coordinate: RestaurantCoordinate) async throws -> RestaurantLocationContext {
+        RestaurantLocationContext(city: "杭州", district: "西湖区", address: "杭州 · 西湖区 · 测试位置")
+    }
+
+    func coordinate(for address: String, city: String) async throws -> RestaurantCoordinate {
+        RestaurantCoordinate(latitude: 30.281, longitude: 120.139)
+    }
+}
+
+@MainActor
+private struct RestaurantAcquisitionFixtureLinkResolver: ExternalRestaurantLinkResolving {
+    func resolve(text: String, currentCity: String) async throws -> ExternalRestaurantLinkResponseV1 {
+        let isAmap = text.localizedCaseInsensitiveContains("amap")
+        let provider: RestaurantPlaceProvider = isAmap ? .amap : .appleMaps
+        return ExternalRestaurantLinkResponseV1(
+            apiVersion: 1,
+            sourceType: isAmap ? .amap : .appleMaps,
+            sourceHost: isAmap ? "uri.amap.com" : "maps.apple.com",
+            confidence: .high,
+            matchType: "single",
+            candidates: [ExternalRestaurantCandidateV1(
+                restaurantId: nil,
+                amapPoiId: isAmap ? "B0ACQUISITION" : nil,
+                name: isAmap ? "V1 高德链接餐厅" : "V1 Apple 链接餐厅",
+                address: "杭州市上城区链接路 8 号",
+                city: currentCity.isEmpty ? "杭州" : currentCity,
+                latitude: 30.262,
+                longitude: 120.171,
+                merchantImageUrl: nil,
+                phone: nil,
+                openingHours: nil,
+                placeIdentities: [.init(
+                    provider: provider,
+                    externalId: isAmap ? "B0ACQUISITION" : "apple-acquisition-link",
+                    isPrimary: true
+                )]
+            )],
+            searchFallback: nil,
+            sourceSuggestion: isAmap ? "高德地图" : "Apple 地图",
+            message: "已识别餐厅，请确认后继续。"
+        )
+    }
+}
+
+@MainActor
+private final class RestaurantAcquisitionFixtureLocation: RestaurantLocationProviding {
+    let authorizationStatus: CLAuthorizationStatus
+    private let denied: Bool
+
+    init(denied: Bool) {
+        self.denied = denied
+        authorizationStatus = denied ? .denied : .authorizedWhenInUse
+    }
+
+    func requestCurrentLocation() async throws -> CLLocation {
+        if denied { throw RestaurantLocationError.permissionDenied }
+        return CLLocation(latitude: 30.2741, longitude: 120.1551)
     }
 }
 #endif
