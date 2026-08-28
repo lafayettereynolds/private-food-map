@@ -88,6 +88,26 @@ describe('Social API V1 integration', () => {
     expect((await jsonAPI(database, 'tm_a', '/api/v1/social/follows/tm_b', 'DELETE')).follow.deletedAt).not.toBeNull()
   })
 
+  it('keeps legacy Web Follow reads and writes compatible with V1 tombstones', async () => {
+    const legacyAdd = await jsonAPI(database, 'tm_a', '/api/follows', 'POST', { action: 'add', userId: 'tm_b' })
+    expect(legacyAdd).toMatchObject({ id: 'follow:owner:tm_b' })
+    expect(database.get("SELECT follower_id, followed_user_id, deleted_at FROM follows WHERE id = 'follow:owner:tm_b'"))
+      .toMatchObject({ follower_id: 'owner', followed_user_id: 'tm_b', deleted_at: null })
+    expect((await jsonAPI(database, 'owner', '/api/v1/social/follows?scope=following')).items)
+      .toHaveLength(1)
+
+    await jsonAPI(database, 'owner', '/api/v1/social/follows/tm_b', 'DELETE')
+    expect((await jsonAPI(database, 'tm_a', '/api/follows')).follows).toEqual([])
+
+    await jsonAPI(database, 'tm_a', '/api/follows', 'POST', { action: 'add', userId: 'tm_b' })
+    expect((await jsonAPI(database, 'owner', '/api/v1/social/follows?scope=following')).items)
+      .toHaveLength(1)
+
+    await jsonAPI(database, 'tm_a', '/api/follows', 'POST', { action: 'remove', userId: 'tm_b' })
+    expect((await jsonAPI(database, 'owner', '/api/v1/social/follows?scope=following')).items)
+      .toEqual([])
+  })
+
   it('gates friends-only Profile statistics immediately when friendship is removed', async () => {
     database.prepare("UPDATE user_profiles SET visibility = 'friends' WHERE user_id = 'tm_b'").run()
     await createVisit(database, 'tm_b', 'friends')

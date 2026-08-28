@@ -1683,7 +1683,7 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
     database.prepare(`SELECT * FROM users WHERE deleted_at IS NULL AND id IN (
       SELECT user_id FROM visits WHERE deleted_at IS NULL
     )`),
-    database.prepare(`SELECT * FROM follows WHERE follower_id = ?`).bind(viewerId),
+    database.prepare(`SELECT * FROM follows WHERE follower_id = ? AND deleted_at IS NULL`).bind(viewerId),
     database.prepare(`SELECT restaurant_id, created_at FROM want_to_go WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 3000`),
   ])
   const restaurantRows = restaurantsResult.results as unknown as RestaurantRow[]
@@ -1948,7 +1948,9 @@ async function createRecommendationEvent(database: D1Database, viewerId: string,
 }
 
 async function readFollows(database: D1Database, viewerId: string) {
-  const result = await database.prepare('SELECT * FROM follows WHERE follower_id = ? OR followed_user_id = ? ORDER BY created_at DESC').bind(viewerId, viewerId).all<FollowRow>()
+  const result = await database.prepare(`SELECT * FROM follows
+    WHERE (follower_id = ? OR followed_user_id = ?) AND deleted_at IS NULL
+    ORDER BY created_at DESC`).bind(viewerId, viewerId).all<FollowRow>()
   const clientUserId = (id: string) => id === viewerId ? 'owner' : id
   return { follows: result.results.map((row) => ({ id: row.id, followerId: clientUserId(row.follower_id), followedUserId: clientUserId(row.followed_user_id), createdAt: row.created_at })) }
 }
@@ -1958,11 +1960,21 @@ async function mutateFollow(database: D1Database, viewerId: string, request: Req
   if (typeof body.userId !== 'string' || body.userId === viewerId) throw new RequestError('关注用户无效。', 400)
   const id = `follow:${viewerId}:${body.userId}`
   if (body.action === 'remove') {
-    await database.prepare('DELETE FROM follows WHERE follower_id = ? AND followed_user_id = ?').bind(viewerId, body.userId).run()
+    const now = new Date().toISOString()
+    await database.prepare(`UPDATE follows SET deleted_at = ?, updated_at = ?,
+      server_version = server_version + 1
+      WHERE follower_id = ? AND followed_user_id = ? AND deleted_at IS NULL`)
+      .bind(now, now, viewerId, body.userId).run()
     return { removed: true }
   }
   if (body.action !== 'add') throw new RequestError('关注操作无效。', 400)
-  await database.prepare('INSERT OR IGNORE INTO follows (id, follower_id, followed_user_id, created_at) VALUES (?, ?, ?, ?)').bind(id, viewerId, body.userId, new Date().toISOString()).run()
+  const now = new Date().toISOString()
+  await database.prepare(`INSERT INTO follows (
+    id, follower_id, followed_user_id, created_at, updated_at, deleted_at, server_version
+  ) VALUES (?, ?, ?, ?, ?, NULL, 1)
+  ON CONFLICT(id) DO UPDATE SET deleted_at = NULL, updated_at = excluded.updated_at,
+    server_version = follows.server_version + 1`)
+    .bind(id, viewerId, body.userId, now, now).run()
   return { id, followerId: viewerId, followedUserId: body.userId }
 }
 
@@ -2231,15 +2243,15 @@ async function readProfile(database: D1Database, viewerId: string, profileId: st
       WHERE user_id = ? AND status = 'wantToGo' AND deleted_at IS NULL
       AND ${canViewRestaurantCollection ? '1 = 1' : '1 = 0'}
       ORDER BY updated_at DESC`).bind(profileId),
-    database.prepare('SELECT COUNT(*) AS count FROM follows WHERE followed_user_id = ?').bind(profileId),
-    database.prepare('SELECT COUNT(*) AS count FROM follows WHERE follower_id = ?').bind(profileId),
+    database.prepare('SELECT COUNT(*) AS count FROM follows WHERE followed_user_id = ? AND deleted_at IS NULL').bind(profileId),
+    database.prepare('SELECT COUNT(*) AS count FROM follows WHERE follower_id = ? AND deleted_at IS NULL').bind(profileId),
     database.prepare(`SELECT u.* FROM follows f
       JOIN users u ON u.id = f.follower_id
-      WHERE f.followed_user_id = ? AND u.deleted_at IS NULL
+      WHERE f.followed_user_id = ? AND f.deleted_at IS NULL AND u.deleted_at IS NULL
       ORDER BY f.created_at DESC`).bind(profileId),
     database.prepare(`SELECT u.* FROM follows f
       JOIN users u ON u.id = f.followed_user_id
-      WHERE f.follower_id = ? AND u.deleted_at IS NULL
+      WHERE f.follower_id = ? AND f.deleted_at IS NULL AND u.deleted_at IS NULL
       ORDER BY f.created_at DESC`).bind(profileId),
   ])
   const restaurants = new Map((restaurantsResult.results as unknown as RestaurantRow[]).map((row) => [row.id, {
