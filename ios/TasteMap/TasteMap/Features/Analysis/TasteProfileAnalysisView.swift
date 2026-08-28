@@ -339,7 +339,7 @@ private struct AnalysisHeroMap: View {
     }
 }
 
-private struct AnalysisCalloutCard: View {
+struct AnalysisCalloutCard: View {
     let callout: AnalysisCallout
 
     var body: some View {
@@ -372,7 +372,7 @@ private struct AnalysisCalloutCard: View {
     }
 }
 
-private struct AnalysisInsightStoryCard: View {
+struct AnalysisInsightStoryCard: View {
     let insight: AnalysisInsight
 
     var body: some View {
@@ -400,7 +400,7 @@ private struct AnalysisInsightStoryCard: View {
     }
 }
 
-private struct AnalysisGrowthPrompt: View {
+struct AnalysisGrowthPrompt: View {
     let symbol: String
     let title: String
     let detail: String
@@ -484,7 +484,7 @@ private struct SpendReceiptCard: View {
     }
 }
 
-private struct RestaurantStoryCard: View {
+struct RestaurantStoryCard: View {
     let restaurant: RepresentativeRestaurant
     let photosByID: [UUID: PhotoAsset]
 

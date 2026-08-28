@@ -993,6 +993,72 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4BDiningCompanionAnalysisRefreshAndPoster() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P4B_COMPANION_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let entry = app.buttons["profile-companion-analysis-entry"]
+        scrollUntilVisible(entry, in: app)
+        XCTAssertTrue(entry.isHittable)
+        entry.tap()
+
+        XCTAssertTrue(app.navigationBars["饭搭子分析"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["companion-analysis-overview"].exists)
+        let lead = app.buttons["companion-analysis-lead"]
+        XCTAssertTrue(lead.waitForExistence(timeout: 5))
+        lead.tap()
+
+        XCTAssertTrue(app.navigationBars["你和 小林"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["14 次"].waitForExistence(timeout: 5))
+        let foods = app.staticTexts["最常一起吃什么"]
+        scrollUntilVisible(foods, in: app)
+        XCTAssertTrue(foods.exists)
+        let restaurants = app.staticTexts["最常去的餐厅"]
+        scrollUntilVisible(restaurants, in: app)
+        XCTAssertTrue(restaurants.exists)
+        keepScreenshot(named: "P4-B Companion Detail", of: app)
+
+        let restaurant = app.staticTexts["山葵小料理"].firstMatch
+        scrollUntilVisible(restaurant, in: app)
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
+        restaurant.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        let closeDetail = app.buttons["companion-restaurant-detail-close"]
+        XCTAssertTrue(closeDetail.waitForExistence(timeout: 5))
+        closeDetail.tap()
+        XCTAssertTrue(closeDetail.waitForNonExistence(timeout: 8))
+
+        XCTAssertTrue(app.navigationBars["你和 小林"].waitForExistence(timeout: 8))
+        let fixtureMutation = app.buttons["companion-analysis-fixture-add-visit"]
+        XCTAssertTrue(fixtureMutation.waitForExistence(timeout: 5))
+        fixtureMutation.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["companion-analysis-fixture-mutation-result"]
+                .waitForExistence(timeout: 8)
+        )
+        app.navigationBars["你和 小林"].buttons["饭搭子分析"].tap()
+        XCTAssertTrue(app.navigationBars["饭搭子分析"].waitForExistence(timeout: 8))
+        XCTAssertTrue(lead.waitForExistence(timeout: 8))
+        lead.tap()
+        XCTAssertTrue(app.navigationBars["你和 小林"].waitForExistence(timeout: 8))
+        let updated = app.staticTexts["15 次"]
+        scrollUntilVisible(updated, in: app)
+        XCTAssertTrue(updated.waitForExistence(timeout: 8))
+
+        let share = app.buttons["companion-analysis-share-toolbar"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.images["analysis-poster-preview"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["analysis-poster-save"].exists)
+        XCTAssertTrue(app.buttons["analysis-poster-system-share"].exists)
+        keepScreenshot(named: "P4-B 9x16 Poster", of: app)
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,

@@ -21,9 +21,15 @@ enum TasteMapUITestFixtures {
     static let communityEnvironmentKey = "TASTEMAP_P3D_COMMUNITY_UI_TEST"
     static let communityOfflineEnvironmentKey = "TASTEMAP_P3D_COMMUNITY_OFFLINE_UI_TEST"
     static let analysisEnvironmentKey = "TASTEMAP_P4A_ANALYSIS_UI_TEST"
+    static let companionAnalysisEnvironmentKey = "TASTEMAP_P4B_COMPANION_UI_TEST"
 
     static var usesAnalysisFixture: Bool {
         ProcessInfo.processInfo.environment[analysisEnvironmentKey] == "1"
+            || usesCompanionAnalysisFixture
+    }
+
+    static var usesCompanionAnalysisFixture: Bool {
+        ProcessInfo.processInfo.environment[companionAnalysisEnvironmentKey] == "1"
     }
 
     static var usesCommunityFixture: Bool {
@@ -298,18 +304,24 @@ enum TasteMapUITestFixtures {
         let companion = DiningCompanion(
             id: uuid(4_001), ownerUserId: profileUserID, displayName: "小林", syncStatus: .synced
         )
+        let secondCompanion = DiningCompanion(
+            id: uuid(4_003), ownerUserId: profileUserID, displayName: "妈妈", syncStatus: .synced
+        )
         let source = RecommendationSource(
             id: uuid(4_002), ownerUserId: profileUserID, displayName: "朋友推荐",
             sourceType: .friend, syncStatus: .synced
         )
         context.insert(companion)
+        context.insert(secondCompanion)
         context.insert(source)
 
-        let definitions: [(UUID, String, [String])] = [
-            (uuid(4_101), "山葵小料理", ["日料", "居酒屋", "安静"]),
-            (uuid(4_102), "红炉火锅", ["火锅", "川菜", "朋友聚餐"]),
-            (uuid(4_103), "树影咖啡", ["咖啡", "甜点", "早午餐"]),
-            (uuid(4_104), "河岸牛排馆", ["西餐", "牛排", "约会"]),
+        let definitions: [(UUID, String, [String], RestaurantStatus)] = [
+            (uuid(4_101), "山葵小料理", ["日料", "居酒屋", "安静"], .visited),
+            (uuid(4_102), "红炉火锅", ["火锅", "川菜", "朋友聚餐"], .visited),
+            (uuid(4_103), "树影咖啡", ["咖啡", "甜点", "早午餐"], .visited),
+            (uuid(4_104), "河岸牛排馆", ["西餐", "牛排", "约会"], .visited),
+            (uuid(4_105), "云朵寿喜烧", ["日料", "寿喜烧", "朋友聚餐"], .wantToGo),
+            (uuid(4_106), "巷口炉端烧", ["烧烤", "日料", "朋友聚餐"], .wantToGo),
         ]
         var restaurants: [Restaurant] = []
         for (index, definition) in definitions.enumerated() {
@@ -319,9 +331,10 @@ enum TasteMapUITestFixtures {
                 latitude: 30.25 + Double(index) * 0.001,
                 longitude: 120.16 + Double(index) * 0.001,
                 appleMapItemIdentifier: "apple-p4a-ui-\(index)", city: "杭州",
-                status: .visited, syncStatus: .synced,
+                status: definition.3, syncStatus: .synced,
                 remoteRecordData: try restaurantContractData(
-                    id: definition.0, name: definition.1, tags: definition.2, index: index
+                    id: definition.0, name: definition.1, tags: definition.2,
+                    status: definition.3, index: index
                 )
             )
             context.insert(restaurant)
@@ -344,8 +357,10 @@ enum TasteMapUITestFixtures {
                 diningOccasions: [index.isMultiple(of: 3) ? .friends : .solo],
                 valueTags: ["值得再去"], environmentTags: [index.isMultiple(of: 2) ? "舒服" : "热闹"],
                 serviceTags: ["细心"], noiseLevel: .normal,
-                companionIDs: [companion.remoteID ?? companion.id.uuidString.lowercased()],
-                companionNames: [companion.displayName],
+                companionIDs: [companion.remoteID ?? companion.id.uuidString.lowercased()]
+                    + (index.isMultiple(of: 3) ? [secondCompanion.remoteID ?? secondCompanion.id.uuidString.lowercased()] : []),
+                companionNames: [companion.displayName]
+                    + (index.isMultiple(of: 3) ? [secondCompanion.displayName] : []),
                 recommendationSourceID: source.remoteID,
                 recommendationSourceType: .friend,
                 createdAt: date, updatedAt: date, syncStatus: .synced
@@ -367,6 +382,23 @@ enum TasteMapUITestFixtures {
                 ))
             }
         }
+        if usesCompanionAnalysisFixture {
+            let linkedUserID = "tm_p4b_linked_friend"
+            companion.linkedTasteMapUserId = linkedUserID
+            context.insert(CachedSocialProfile(
+                tasteMapUserID: linkedUserID,
+                displayName: "小林的公开资料名",
+                city: "杭州",
+                avatarPreset: .otter
+            ))
+            context.insert(CachedFriendship(
+                relationshipID: "friendship:p4b-ui",
+                currentUserID: profileUserID,
+                requesterUserID: profileUserID,
+                addresseeUserID: linkedUserID,
+                state: .friends
+            ))
+        }
         try context.save()
     }
 
@@ -374,6 +406,7 @@ enum TasteMapUITestFixtures {
         id: UUID,
         name: String,
         tags: [String],
+        status: RestaurantStatus = .visited,
         index: Int
     ) throws -> Data {
         let timestamp = "2026-08-28T00:00:00.000Z"
@@ -385,7 +418,8 @@ enum TasteMapUITestFixtures {
             id: id.uuidString.lowercased(), userId: profileUserID,
             placeIdentities: [identity], name: name,
             address: "杭州市西湖区真实路 \(index + 1) 号", city: "杭州",
-            latitude: 30.25, longitude: 120.16, status: .visited,
+            latitude: 30.25, longitude: 120.16,
+            status: status == .wantToGo ? .wantToGo : .visited,
             preferenceLevel: .like, overallRating: nil, foodRating: nil,
             environmentRating: nil, serviceRating: nil, valueRating: nil,
             tags: tags, longTermNote: "", pricePerPerson: nil, phone: nil,

@@ -79,6 +79,34 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-taste-analysis-entry")
+                    NavigationLink {
+                        DiningCompanionAnalysisScreen()
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(TasteMapAnalysisTheme.leafGreenSoft)
+                                Text("🥢")
+                                    .font(.title3)
+                            }
+                            .frame(width: 48, height: 48)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("饭搭子分析")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                Text("看看你和 TA 常吃什么、常去哪与下次吃什么")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-companion-analysis-entry")
                     if let userID = authenticatedUser?.id {
                         Button { isShowingSocialHub = true } label: {
                             HStack(spacing: 12) {

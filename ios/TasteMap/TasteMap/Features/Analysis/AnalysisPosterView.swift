@@ -253,7 +253,7 @@ struct AnalysisPosterView: View {
     }
 }
 
-private struct PosterHeroMedia: View {
+struct PosterHeroMedia: View {
     let hero: FoodHeroPresentation
     let resolvedImages: [UUID: UIImage]
     let size: CGFloat
@@ -301,7 +301,7 @@ private struct PosterHeroMedia: View {
     }
 }
 
-private struct PosterCalloutCard: View {
+struct PosterCalloutCard: View {
     let callout: AnalysisCallout
 
     var body: some View {
@@ -333,7 +333,7 @@ private struct PosterCalloutCard: View {
     }
 }
 
-private struct PosterRestaurantCard: View {
+struct PosterRestaurantCard: View {
     let restaurant: RepresentativeRestaurant
     let image: UIImage?
 

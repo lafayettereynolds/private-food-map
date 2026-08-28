@@ -16,30 +16,37 @@ enum AnalysisPosterRenderError: LocalizedError, Equatable {
 
 @MainActor
 enum AnalysisPosterRenderer {
-    static func render(
-        report: TasteProfileAnalysis,
-        resolvedImages: [UUID: UIImage] = [:]
+    static func render<Content: View>(
+        content: Content,
+        canvasSize: CGSize
     ) throws -> UIImage {
-        let renderer = ImageRenderer(
-            content: AnalysisPosterView(report: report, resolvedImages: resolvedImages)
-        )
-        renderer.proposedSize = ProposedViewSize(AnalysisPosterView.canvasSize)
+        let renderer = ImageRenderer(content: content)
+        renderer.proposedSize = ProposedViewSize(canvasSize)
         renderer.scale = 1
         renderer.isOpaque = true
         guard let image = renderer.uiImage else { throw AnalysisPosterRenderError.imageUnavailable }
         return image
+    }
+
+    static func render(
+        report: TasteProfileAnalysis,
+        resolvedImages: [UUID: UIImage] = [:]
+    ) throws -> UIImage {
+        try render(
+            content: AnalysisPosterView(report: report, resolvedImages: resolvedImages),
+            canvasSize: AnalysisPosterView.canvasSize
+        )
     }
 }
 
 @MainActor
 enum AnalysisPosterImageResolver {
     static func resolve(
-        report: TasteProfileAnalysis,
+        references: [AnalysisImageReference],
         photosByID: [UUID: PhotoAsset],
         coordinator: PhotoTransferCoordinator?
     ) async -> [UUID: UIImage] {
         guard let coordinator else { return [:] }
-        let references = report.hero.imageReferences + report.restaurants.map(\.imageReference)
         var seen = Set<UUID>()
         let ids = references.compactMap { reference -> UUID? in
             guard case .photo(let id) = reference, seen.insert(id).inserted else { return nil }
@@ -54,6 +61,15 @@ enum AnalysisPosterImageResolver {
             }
         }
         return result
+    }
+
+    static func resolve(
+        report: TasteProfileAnalysis,
+        photosByID: [UUID: PhotoAsset],
+        coordinator: PhotoTransferCoordinator?
+    ) async -> [UUID: UIImage] {
+        let references = report.hero.imageReferences + report.restaurants.map(\.imageReference)
+        return await resolve(references: references, photosByID: photosByID, coordinator: coordinator)
     }
 }
 
@@ -135,6 +151,28 @@ struct AnalysisPosterSheet: View {
     let report: TasteProfileAnalysis
     let photosByID: [UUID: PhotoAsset]
 
+    var body: some View {
+        AnalysisPosterExportSheet(
+            posterID: report.id,
+            progressMessage: "正在把味觉地图排成海报…",
+            references: report.hero.imageReferences + report.restaurants.map(\.imageReference),
+            photosByID: photosByID,
+            render: { images in
+                try AnalysisPosterRenderer.render(report: report, resolvedImages: images)
+            }
+        )
+    }
+}
+
+/// Reusable P4 export surface. Analysis modules supply only presentation references and
+/// a renderer closure; Photos authorization, temporary files and system share stay unified.
+struct AnalysisPosterExportSheet: View {
+    let posterID: String
+    let progressMessage: String
+    let references: [AnalysisImageReference]
+    let photosByID: [UUID: PhotoAsset]
+    let render: @MainActor ([UUID: UIImage]) throws -> UIImage
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
     @State private var posterImage: UIImage?
@@ -158,7 +196,7 @@ struct AnalysisPosterSheet: View {
                     Button("关闭") { dismiss() }
                 }
             }
-            .task(id: report.id) { await generatePoster() }
+            .task(id: posterID) { await generatePoster() }
             .sheet(item: $shareFile) { file in
                 SystemActivityView(items: [file.url]) {
                     temporaryFiles.remove(file.url)
@@ -226,7 +264,7 @@ struct AnalysisPosterSheet: View {
         } else {
             VStack(spacing: 14) {
                 ProgressView().controlSize(.large).tint(TasteMapAnalysisTheme.brand)
-                Text("正在把味觉地图排成海报…")
+                Text(progressMessage)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
             }
@@ -238,12 +276,12 @@ struct AnalysisPosterSheet: View {
         posterImage = nil
         errorMessage = nil
         let images = await AnalysisPosterImageResolver.resolve(
-            report: report,
+            references: references,
             photosByID: photosByID,
             coordinator: photoTransferCoordinator
         )
         do {
-            posterImage = try AnalysisPosterRenderer.render(report: report, resolvedImages: images)
+            posterImage = try render(images)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -263,7 +301,7 @@ struct AnalysisPosterSheet: View {
 
     private func share(_ image: UIImage) {
         do {
-            shareFile = ShareFile(url: try temporaryFiles.write(image, id: report.id))
+            shareFile = ShareFile(url: try temporaryFiles.write(image, id: posterID))
         } catch {
             statusMessage = error.localizedDescription
         }

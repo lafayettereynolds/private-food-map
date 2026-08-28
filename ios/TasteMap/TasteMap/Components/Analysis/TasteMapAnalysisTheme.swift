@@ -315,3 +315,119 @@ struct RestaurantEvidenceImage: View {
         }
     }
 }
+
+struct DiningCompanionAvatarView: View {
+    let presentation: DiningCompanionAvatarPresentation
+    let displayName: String
+    var size: CGFloat = 64
+
+    var body: some View {
+        Group {
+            switch presentation {
+            case .initial(let initial, let tone):
+                Text(initial)
+                    .font(.system(size: size * 0.4, weight: .heavy, design: .rounded))
+                    .foregroundStyle(TasteMapAnalysisTheme.color(for: tone))
+                    .frame(width: size, height: size)
+                    .background(TasteMapAnalysisTheme.softColor(for: tone), in: Circle())
+            case .preset(let preset):
+                PresetProfileAvatarView(preset: preset)
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            }
+        }
+        .overlay { Circle().stroke(.white, lineWidth: max(2, size * 0.045)) }
+        .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.12), radius: size * 0.12, y: size * 0.06)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(displayName)的饭搭子标识")
+    }
+}
+
+/// P4-B's food-first visual center: two place settings around one shared table.
+struct SharedDiningTableHero: View {
+    let userDisplayName: String
+    let companionDisplayName: String
+    let companionAvatar: DiningCompanionAvatarPresentation
+    let hero: FoodHeroPresentation
+    let photosByID: [UUID: PhotoAsset]
+    var height: CGFloat = 390
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            ZStack {
+                RoundedRectangle(cornerRadius: 38, style: .continuous)
+                    .fill(
+                        RadialGradient(
+                            colors: [.white, TasteMapAnalysisTheme.creamSoft.opacity(0.86)],
+                            center: .center,
+                            startRadius: 40,
+                            endRadius: 280
+                        )
+                    )
+                    .overlay { RoundedRectangle(cornerRadius: 38).stroke(.white, lineWidth: 2) }
+                    .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.09), radius: 20, y: 12)
+
+                Capsule()
+                    .fill(TasteMapAnalysisTheme.caramelSoft.opacity(0.72))
+                    .frame(width: width * 0.74, height: 170)
+                    .overlay { Capsule().stroke(TasteMapAnalysisTheme.caramel.opacity(0.08)) }
+                    .offset(y: 28)
+
+                AnalysisHeroMedia(hero: hero, photosByID: photosByID, size: min(218, width * 0.56))
+                    .offset(y: 20)
+
+                placeSetting(symbol: "🥢", label: shortName(userDisplayName), tone: .brand)
+                    .position(x: width * 0.19, y: 94)
+
+                VStack(spacing: 7) {
+                    DiningCompanionAvatarView(
+                        presentation: companionAvatar,
+                        displayName: companionDisplayName,
+                        size: 68
+                    )
+                    Text(shortName(companionDisplayName))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(TasteMapAnalysisTheme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                .position(x: width * 0.81, y: 94)
+
+                HStack(spacing: 8) {
+                    Text("两套餐具")
+                    Circle().fill(TasteMapAnalysisTheme.ingredientRed).frame(width: 5, height: 5)
+                    Text(hero.primaryTheme)
+                }
+                .font(.caption.weight(.bold))
+                .foregroundStyle(TasteMapAnalysisTheme.brandDeep)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.white.opacity(0.92), in: Capsule())
+                .position(x: width / 2, y: height - 38)
+            }
+        }
+        .frame(height: height)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(userDisplayName)和\(companionDisplayName)的共同餐桌")
+    }
+
+    private func placeSetting(symbol: String, label: String, tone: AnalysisTone) -> some View {
+        VStack(spacing: 7) {
+            Text(symbol)
+                .font(.system(size: 30))
+                .frame(width: 68, height: 68)
+                .background(TasteMapAnalysisTheme.softColor(for: tone), in: Circle())
+                .overlay { Circle().stroke(.white, lineWidth: 3) }
+            Text(label)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(TasteMapAnalysisTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+    }
+
+    private func shortName(_ value: String) -> String {
+        value.count > 10 ? String(value.prefix(10)) + "…" : value
+    }
+}
