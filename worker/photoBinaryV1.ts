@@ -185,7 +185,7 @@ async function readablePhoto(database: D1Database, viewerId: string, photoId: st
             up.visibility = 'public' OR (
               up.visibility = 'friends' AND EXISTS (
                 SELECT 1 FROM friendships f
-                WHERE f.status = 'accepted' AND (
+                WHERE f.status = 'accepted' AND f.deleted_at IS NULL AND (
                   (f.requester_id = ? AND f.addressee_id = up.user_id) OR
                   (f.requester_id = up.user_id AND f.addressee_id = ?)
                 )

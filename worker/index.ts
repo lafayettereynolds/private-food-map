@@ -70,6 +70,10 @@ import {
 import { handleSocialV1, SocialV1RequestError } from './socialV1'
 import { handleDiscoveryV1, DiscoveryV1RequestError } from './discoveryV1'
 import { handleCommunityV1, CommunityV1RequestError } from './communityV1'
+import {
+  consumePublicAPIQuota,
+  PublicAPIRateLimitError,
+} from './publicAPIRateLimit'
 
 interface Env {
   DB: D1Database
@@ -589,6 +593,7 @@ export default {
       if (url.pathname.startsWith('/api/v1/public/profiles/') && request.method === 'GET') {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
+        await consumePublicAPIQuota(env.DB, viewer.id, 'public-profile-read', 180)
         const profileId = decodeURIComponent(url.pathname.slice('/api/v1/public/profiles/'.length))
         return json(await readPublicProfileV1(env.DB, viewer.id, profileId))
       }
@@ -651,6 +656,7 @@ export default {
         return json(await readSnapshot(env.DB, viewer.id))
       }
       if (url.pathname === '/api/community' && request.method === 'GET') {
+        await consumePublicAPIQuota(env.DB, viewer.id, 'legacy-community-read', 120)
         const membership = await readViewerMembership(env.DB, viewer)
         return json(await readCommunity(env.DB, viewer.id, url.searchParams.get('mode') ?? 'for_you', url.searchParams.get('city') ?? '', url.searchParams.get('window') === '30' ? 30 : 7, membership.isPremium))
       }
@@ -669,7 +675,10 @@ export default {
         return json(await mutateMembership(env.DB, viewer.id, request))
       }
       if (url.pathname === '/api/follows' && request.method === 'GET') return json(await readFollows(env.DB, viewer.id))
-      if (url.pathname === '/api/follows' && request.method === 'POST') return json(await mutateFollow(env.DB, viewer.id, request))
+      if (url.pathname === '/api/follows' && request.method === 'POST') {
+        await consumePublicAPIQuota(env.DB, viewer.id, 'legacy-social-mutation', 60)
+        return json(await mutateFollow(env.DB, viewer.id, request))
+      }
       if (url.pathname === '/api/friend-recommendations' && request.method === 'GET') {
         return json(await readFriendRecommendations(env.DB, viewer.id, Boolean(request.headers.get('X-Taste-Map-Test-User'))))
       }
@@ -682,23 +691,36 @@ export default {
         return json(await readRestaurantList(env.DB, viewer.id, decodeURIComponent(restaurantListMatch[1])))
       }
       if (url.pathname.startsWith('/api/profiles/') && request.method === 'GET') {
+        await consumePublicAPIQuota(env.DB, viewer.id, 'legacy-profile-read', 180)
         const profileId = decodeURIComponent(url.pathname.slice('/api/profiles/'.length))
         return json(await readProfile(env.DB, viewer.id, profileId))
       }
-      if (url.pathname === '/api/users/search' && request.method === 'GET') return json(await searchUsers(env.DB, viewer.id, url.searchParams.get('q') ?? ''))
+      if (url.pathname === '/api/users/search' && request.method === 'GET') {
+        await consumePublicAPIQuota(env.DB, viewer.id, 'legacy-social-search', 60)
+        return json(await searchUsers(env.DB, viewer.id, url.searchParams.get('q') ?? ''))
+      }
       if (url.pathname === '/api/companion-links' && request.method === 'GET') return json(await readCompanionLinks(env.DB, viewer.id))
-      if (url.pathname === '/api/companion-links' && request.method === 'POST') return json(await mutateCompanionLink(env.DB, viewer.id, request))
+      if (url.pathname === '/api/companion-links' && request.method === 'POST') {
+        await consumePublicAPIQuota(env.DB, viewer.id, 'legacy-social-mutation', 60)
+        return json(await mutateCompanionLink(env.DB, viewer.id, request))
+      }
       const companionHistoryMatch = url.pathname.match(/^\/api\/companion-links\/([^/]+)\/history$/)
       if (companionHistoryMatch && request.method === 'GET') return json(await readCompanionHistory(env.DB, viewer.id, decodeURIComponent(companionHistoryMatch[1])))
       if (url.pathname === '/api/friendships' && request.method === 'GET') return json(await readFriendships(env.DB, viewer.id))
-      if (url.pathname === '/api/friendships' && request.method === 'POST') return json(await mutateFriendship(env.DB, viewer.id, request))
+      if (url.pathname === '/api/friendships' && request.method === 'POST') {
+        await consumePublicAPIQuota(env.DB, viewer.id, 'legacy-social-mutation', 60)
+        return json(await mutateFriendship(env.DB, viewer.id, request))
+      }
       if (url.pathname === '/api/shared-meals' && request.method === 'GET') return json(await readSharedMeals(env.DB, viewer.id))
       if (url.pathname === '/api/shared-meals' && request.method === 'POST') return json(await createSharedMeal(env.DB, viewer.id, request), 201)
       return json({ error: '没有找到这个 API。' }, 404)
     } catch (error) {
-      console.error('Taste Map sync error', error)
+      console.error('Taste Map request failed', {
+        type: error instanceof Error ? error.name : 'UnknownError',
+        status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
+      })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError ? error.status : 500
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof PublicAPIRateLimitError ? error.status : 500
       const code = error instanceof AuthV1RequestError ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
@@ -1623,7 +1645,13 @@ const PUBLIC_RESTAURANT_CUISINES = new Set([
 ])
 
 async function readPublicRestaurant(database: D1Database, publicRestaurantId: string) {
-  const result = await database.prepare('SELECT * FROM restaurants WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 5000').all()
+  // A stable share identifier is not authorization by itself. Only restaurants
+  // backed by a currently public Visit on a public Profile are eligible.
+  const result = await database.prepare(`SELECT DISTINCT r.* FROM restaurants r
+    JOIN visits v ON v.restaurant_id = r.id AND v.deleted_at IS NULL AND v.visibility = 'public'
+    JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
+      AND up.visibility = 'public'
+    WHERE r.deleted_at IS NULL ORDER BY r.updated_at DESC LIMIT 5000`).all()
   const rows = result.results as unknown as RestaurantRow[]
   const matchingRows: RestaurantRow[] = []
   for (const row of rows) {
@@ -1634,12 +1662,14 @@ async function readPublicRestaurant(database: D1Database, publicRestaurantId: st
   const canonical = [...matchingRows].sort((left, right) => publicRestaurantCompleteness(right) - publicRestaurantCompleteness(left))[0]
   const placeholders = matchingRows.map(() => '?').join(', ')
   const visits = await database.prepare(`
-    SELECT user_id, rating
-    FROM visits
-    WHERE deleted_at IS NULL
-      AND visibility = 'public'
-      AND rating IS NOT NULL
-      AND restaurant_id IN (${placeholders})
+    SELECT v.user_id, v.rating
+    FROM visits v
+    JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
+      AND up.visibility = 'public'
+    WHERE v.deleted_at IS NULL
+      AND v.visibility = 'public'
+      AND v.rating IS NOT NULL
+      AND v.restaurant_id IN (${placeholders})
   `).bind(...matchingRows.map((row) => row.id)).all()
   const ratingsByUser = new Map<string, number[]>()
   for (const visit of visits.results as unknown as Array<{ user_id: string; rating: number }>) {
@@ -1680,6 +1710,10 @@ function normalizePublicIdentity(value: string) {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, '')
 }
 
+function escapeSQLLike(value: string) {
+  return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')
+}
+
 function publicRestaurantCompleteness(row: RestaurantRow) {
   return Number(Boolean(row.merchant_image_url)) * 8 + Number(Boolean(row.phone)) * 4 + Number(Boolean(row.opening_hours)) * 4 +
     Number(Boolean(row.address)) * 2 + Number(Boolean(row.price_per_person)) + parseStringArray(row.tags_json).length
@@ -1688,7 +1722,13 @@ function publicRestaurantCompleteness(row: RestaurantRow) {
 async function readCommunity(database: D1Database, viewerId: string, requestedMode: string, requestedCity: string, trendWindow: 7 | 30, isPremium = false) {
   const mode = ['following', 'for_you', 'similar', 'latest', 'trending'].includes(requestedMode) ? requestedMode : 'for_you'
   const [visitsResult, restaurantsResult, usersResult, followsResult, wantsResult] = await database.batch([
-    database.prepare(`SELECT * FROM visits WHERE deleted_at IS NULL AND (user_id = ? OR visibility = 'public') ORDER BY visited_at DESC LIMIT 5000`).bind(viewerId),
+    database.prepare(`SELECT v.* FROM visits v
+      JOIN users u ON u.id = v.user_id AND u.deleted_at IS NULL
+      WHERE v.deleted_at IS NULL AND (
+        v.user_id = ? OR (
+          v.visibility = 'public' AND u.map_sharing_enabled = 1 AND u.map_visibility = 'public'
+        )
+      ) ORDER BY v.visited_at DESC LIMIT 5000`).bind(viewerId),
     database.prepare(`SELECT * FROM restaurants WHERE deleted_at IS NULL AND id IN (
       SELECT restaurant_id FROM visits WHERE deleted_at IS NULL
     )`),
@@ -1696,7 +1736,10 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
       SELECT user_id FROM visits WHERE deleted_at IS NULL
     )`),
     database.prepare(`SELECT * FROM follows WHERE follower_id = ? AND deleted_at IS NULL`).bind(viewerId),
-    database.prepare(`SELECT restaurant_id, created_at FROM want_to_go WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 3000`),
+    database.prepare(`SELECT w.restaurant_id, w.created_at FROM want_to_go w
+      JOIN users u ON u.id = w.user_id AND u.deleted_at IS NULL
+      WHERE w.deleted_at IS NULL AND u.map_sharing_enabled = 1 AND u.map_visibility = 'public'
+      ORDER BY w.created_at DESC LIMIT 3000`),
   ])
   const restaurantRows = restaurantsResult.results as unknown as RestaurantRow[]
   const restaurants = new Map(restaurantRows.map((row) => [row.id, row]))
@@ -1992,16 +2035,34 @@ async function mutateFollow(database: D1Database, viewerId: string, request: Req
 
 async function searchUsers(database: D1Database, viewerId: string, query: string) {
   const keyword = query.trim()
-  if (!keyword) {
-    const suggestions = await database.prepare(`SELECT * FROM users
-      WHERE id != ? AND deleted_at IS NULL
-      ORDER BY is_test_user DESC, nickname LIMIT 100`).bind(viewerId).all<UserRow>()
-    return { users: suggestions.results.map(publicUser) }
-  }
-  const result = await database.prepare(`SELECT * FROM users
-    WHERE id != ? AND deleted_at IS NULL AND (id LIKE ? OR nickname LIKE ? OR city LIKE ?)
-    ORDER BY nickname LIMIT 20`).bind(viewerId, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`).all<UserRow>()
-  return { users: result.results.map(publicUser) }
+  if ([...keyword].length < 2) return { users: [] }
+  const like = `%${escapeSQLLike(keyword.toLocaleLowerCase())}%`
+  const result = await database.prepare(`SELECT u.*,
+      p.display_name AS public_display_name, p.bio AS public_bio,
+      p.city AS public_city, p.avatar_photo_id AS public_avatar_photo_id,
+      p.avatar_preset_id AS public_avatar_preset_id, p.created_at AS public_created_at
+    FROM users u JOIN user_profiles p ON p.user_id = u.id
+    WHERE u.id != ? AND u.deleted_at IS NULL AND p.deleted_at IS NULL
+      AND p.visibility = 'public'
+      AND (LOWER(p.display_name) LIKE ? ESCAPE '\\' OR LOWER(p.city) LIKE ? ESCAPE '\\')
+    ORDER BY LOWER(p.display_name), u.id LIMIT 20`)
+    .bind(viewerId, like, like).all<UserRow & {
+      public_display_name: string
+      public_bio: string
+      public_city: string
+      public_avatar_photo_id: string | null
+      public_avatar_preset_id: AvatarPresetId
+      public_created_at: string
+    }>()
+  return { users: result.results.map((row) => publicUser({
+    ...row,
+    nickname: row.public_display_name,
+    bio: row.public_bio,
+    city: row.public_city,
+    avatar_photo_id: row.public_avatar_photo_id,
+    avatar_preset_id: row.public_avatar_preset_id,
+    created_at: row.public_created_at,
+  })) }
 }
 
 interface FriendRecommendationVisitRow {
@@ -2025,8 +2086,11 @@ async function readFriendRecommendations(database: D1Database, viewerId: string,
       WHERE owner_user_id = ? AND linked_user_id IS NOT NULL AND deleted_at IS NULL`).bind(viewerId).all<{ linked_user_id: string }>(),
     database.prepare(`SELECT v.user_id, v.rating, r.amap_poi_id, r.tags_json
       FROM visits v JOIN restaurants r ON r.id = v.restaurant_id
+      JOIN users u ON u.id = v.user_id AND u.deleted_at IS NULL
       WHERE v.deleted_at IS NULL AND r.deleted_at IS NULL AND v.rating IS NOT NULL
-        AND (v.user_id = ? OR v.visibility = 'public')`).bind(viewerId).all<FriendRecommendationVisitRow>(),
+        AND (v.user_id = ? OR (
+          v.visibility = 'public' AND u.map_sharing_enabled = 1 AND u.map_visibility = 'public'
+        ))`).bind(viewerId).all<FriendRecommendationVisitRow>(),
   ])
   if (!viewer) return { recommendations: [] }
 

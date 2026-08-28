@@ -30,7 +30,7 @@ export function CompanionLinkManager({ currentUserId, onImported }: { currentUse
   useEffect(() => { void ensureDiningCompanions(visits.flatMap((visit) => visit.companions)) }, [visits])
   useEffect(() => { void refresh() }, [])
   useEffect(() => {
-    if (!query.trim()) { setSearchResults([]); return }
+    if ([...query.trim()].length < 2) { setSearchResults([]); return }
     let active = true
     const timer = window.setTimeout(() => void searchCloudUsers(query).then((result) => { if (active) setSearchResults(result) }).catch(() => { if (active) setSearchResults([]) }), 280)
     return () => { active = false; window.clearTimeout(timer) }

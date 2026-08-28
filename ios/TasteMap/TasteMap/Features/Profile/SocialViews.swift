@@ -20,6 +20,7 @@ struct SocialHubView: View {
     @State private var items: [SocialUserResultV1] = []
     @State private var secondaryItems: [SocialUserResultV1] = []
     @State private var nextCursor: String?
+    @State private var secondaryNextCursor: String?
     @State private var selectedUser: SocialUserResultV1?
     @State private var loading = false
     @State private var message: String?
@@ -98,13 +99,25 @@ struct SocialHubView: View {
         Group {
             if section == .requests {
                 List {
-                    socialSection("收到的请求", values: items, empty: "还没有收到好友请求")
-                    socialSection("已发送", values: secondaryItems, empty: "还没有等待中的请求")
+                    socialSection(
+                        "收到的请求", values: items, empty: "还没有收到好友请求",
+                        hasMore: nextCursor != nil, primary: true
+                    )
+                    socialSection(
+                        "已发送", values: secondaryItems, empty: "还没有等待中的请求",
+                        hasMore: secondaryNextCursor != nil, primary: false
+                    )
                 }
             } else if section == .follows {
                 List {
-                    socialSection("我关注的", values: items, empty: "还没有关注其他用户")
-                    socialSection("关注我的", values: secondaryItems, empty: "还没有人关注你")
+                    socialSection(
+                        "我关注的", values: items, empty: "还没有关注其他用户",
+                        hasMore: nextCursor != nil, primary: true
+                    )
+                    socialSection(
+                        "关注我的", values: secondaryItems, empty: "还没有人关注你",
+                        hasMore: secondaryNextCursor != nil, primary: false
+                    )
                 }
             } else {
                 resultList(emptyTitle: "还没有好友")
@@ -136,10 +149,20 @@ struct SocialHubView: View {
     }
 
     @ViewBuilder
-    private func socialSection(_ title: String, values: [SocialUserResultV1], empty: String) -> some View {
+    private func socialSection(
+        _ title: String,
+        values: [SocialUserResultV1],
+        empty: String,
+        hasMore: Bool,
+        primary: Bool
+    ) -> some View {
         Section(title) {
             if values.isEmpty { Text(empty).foregroundStyle(.secondary) }
             else { ForEach(values) { item in row(item) } }
+            if hasMore {
+                Button("加载更多") { Task { await loadMore(primary: primary) } }
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 
@@ -170,6 +193,7 @@ struct SocialHubView: View {
         items = []
         secondaryItems = []
         nextCursor = nil
+        secondaryNextCursor = nil
         message = nil
         guard section != .search else { return }
         loading = true
@@ -180,20 +204,34 @@ struct SocialHubView: View {
             switch section {
             case .friends:
                 let page = try await api.friendships(scope: .friends, cursor: nil, limit: 20)
-                try store.cache(page, currentUserID: currentUserID)
+                try store.reconcileCompleteFriendshipPage(
+                    page, scope: .friends, currentUserID: currentUserID
+                )
                 items = page.items; nextCursor = page.nextCursor
             case .requests:
                 let incoming = try await api.friendships(scope: .incoming, cursor: nil, limit: 20)
                 let outgoing = try await api.friendships(scope: .outgoing, cursor: nil, limit: 20)
-                try store.cache(incoming, currentUserID: currentUserID)
-                try store.cache(outgoing, currentUserID: currentUserID)
+                try store.reconcileCompleteFriendshipPage(
+                    incoming, scope: .incoming, currentUserID: currentUserID
+                )
+                try store.reconcileCompleteFriendshipPage(
+                    outgoing, scope: .outgoing, currentUserID: currentUserID
+                )
                 items = incoming.items; secondaryItems = outgoing.items
+                nextCursor = incoming.nextCursor
+                secondaryNextCursor = outgoing.nextCursor
             case .follows:
                 let following = try await api.follows(scope: .following, cursor: nil, limit: 20)
                 let followers = try await api.follows(scope: .followers, cursor: nil, limit: 20)
-                try store.cache(following, currentUserID: currentUserID)
-                try store.cache(followers, currentUserID: currentUserID)
+                try store.cacheFollowPage(
+                    following, scope: .following, currentUserID: currentUserID
+                )
+                try store.cacheFollowPage(
+                    followers, scope: .followers, currentUserID: currentUserID
+                )
                 items = following.items; secondaryItems = followers.items
+                nextCursor = following.nextCursor
+                secondaryNextCursor = followers.nextCursor
             case .search: break
             }
         } catch {
@@ -226,14 +264,53 @@ struct SocialHubView: View {
         }
     }
 
-    private func loadMore() async {
+    private func loadMore(primary: Bool = true) async {
         if section == .search { await search(reset: false); return }
-        guard section == .friends, let nextCursor else { return }
+        let cursor = primary ? nextCursor : secondaryNextCursor
+        guard let cursor else { return }
+        let store = LocalSocialStore(context: modelContext)
         do {
-            let page = try await api.friendships(scope: .friends, cursor: nextCursor, limit: 20)
-            try LocalSocialStore(context: modelContext).cache(page, currentUserID: currentUserID)
-            items = deduplicated(items + page.items)
-            self.nextCursor = page.nextCursor
+            switch section {
+            case .friends:
+                let page = try await api.friendships(scope: .friends, cursor: cursor, limit: 20)
+                try store.cache(page, currentUserID: currentUserID)
+                items = deduplicated(items + page.items)
+                if page.nextCursor == nil {
+                    try store.reconcileFriendshipResults(
+                        items, scope: .friends, currentUserID: currentUserID
+                    )
+                }
+                nextCursor = page.nextCursor
+            case .requests:
+                let scope: FriendshipListScope = primary ? .incoming : .outgoing
+                let page = try await api.friendships(scope: scope, cursor: cursor, limit: 20)
+                try store.cache(page, currentUserID: currentUserID)
+                let combined = deduplicated((primary ? items : secondaryItems) + page.items)
+                if page.nextCursor == nil {
+                    try store.reconcileFriendshipResults(
+                        combined, scope: scope, currentUserID: currentUserID
+                    )
+                }
+                if primary { items = combined; nextCursor = page.nextCursor }
+                else { secondaryItems = combined; secondaryNextCursor = page.nextCursor }
+            case .follows:
+                let scope: FollowListScope = primary ? .following : .followers
+                let page = try await api.follows(scope: scope, cursor: cursor, limit: 20)
+                let combined = deduplicated((primary ? items : secondaryItems) + page.items)
+                if page.nextCursor == nil {
+                    try store.cache(page, currentUserID: currentUserID)
+                    try store.reconcileFollowResults(
+                        combined, scope: scope, currentUserID: currentUserID
+                    )
+                } else {
+                    try store.cacheFollowPage(
+                        page, scope: scope, currentUserID: currentUserID
+                    )
+                }
+                if primary { items = combined; nextCursor = page.nextCursor }
+                else { secondaryItems = combined; secondaryNextCursor = page.nextCursor }
+            case .search: break
+            }
         } catch { message = "加载更多失败，请稍后重试。" }
     }
 
@@ -445,9 +522,31 @@ struct SocialPublicProfileView: View {
         do {
             context = try await api.profileContext(userID: item.profile.userId)
             if let relationship = context?.relationship {
-                update(state: relationship.friendshipState, id: relationship.friendshipId, following: relationship.isFollowing)
+                let profile = context!.profile
+                let refreshed = SocialUserResultV1(
+                    profile: .init(
+                        userId: profile.userId, displayName: profile.displayName,
+                        bio: profile.bio, city: profile.city,
+                        avatarPhotoId: profile.avatarPhotoId,
+                        avatarPresetId: profile.avatarPresetId
+                    ),
+                    friendshipId: relationship.friendshipId,
+                    friendshipState: relationship.friendshipState,
+                    isFollowing: relationship.isFollowing
+                )
+                try LocalSocialStore(context: modelContext).cache(
+                    refreshed, currentUserID: currentUserID
+                )
+                item = refreshed
+                onChange(refreshed)
             }
             await loadContent(reset: true, preferCache: true)
+        } catch SyncAPIError.server(let status, _) where status == 403 || status == 404 {
+            contentItems.removeAll()
+            try? LocalCommunityStore(context: modelContext)
+                .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
+            try? LocalSocialStore(context: modelContext).invalidateProfile(item.profile.userId)
+            dismiss()
         } catch { message = "公开资料暂时无法刷新，当前显示缓存。" }
     }
 
@@ -479,7 +578,7 @@ struct SocialPublicProfileView: View {
                 try? LocalCommunityStore(context: modelContext)
                     .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
             }
-            await loadContent(reset: true, preferCache: false)
+            await loadContext()
         } catch { message = "关系已变化，请刷新后重试。" }
     }
 

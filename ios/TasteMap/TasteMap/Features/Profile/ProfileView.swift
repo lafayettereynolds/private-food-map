@@ -212,6 +212,7 @@ struct ProfileView: View {
         } catch {
             authMessage = "已从此设备退出；服务端会话撤销暂时未确认。"
         }
+        try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
         authenticatedUser = nil
         syncCoordinator.sessionDidEnd()
     }

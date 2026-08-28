@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -44,6 +45,24 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     const wants = await jsonAPI(database, 'tm_a', '/api/v1/community/users/tm_b/content?section=want_to_go')
     expect(wants.items).toHaveLength(1)
     expect(wants.items[0]).toMatchObject({ kind: 'want_to_go', visit: null, cacheScope: 'public' })
+  })
+
+  it('counts only records visible to the current viewer and never reveals total private activity', async () => {
+    for (let index = 0; index < 4; index += 1) {
+      await seedVisit(database, { user: 'tm_b', slug: `public-stat-${index}`, visibility: 'public', minutesAgo: 30 + index })
+    }
+    for (let index = 0; index < 2; index += 1) {
+      await seedVisit(database, { user: 'tm_b', slug: `friend-stat-${index}`, visibility: 'friends', minutesAgo: 40 + index })
+    }
+    for (let index = 0; index < 11; index += 1) {
+      await seedVisit(database, { user: 'tm_b', slug: `private-stat-${index}`, visibility: 'private', minutesAgo: 50 + index })
+    }
+    const stranger = await jsonAPI(database, 'tm_a', '/api/v1/community/users/tm_b/content?section=visits&limit=50')
+    expect(stranger.statistics.visibleVisitCount).toBe(5)
+    await acceptFriendship(database, 'tm_a', 'tm_b')
+    const friend = await jsonAPI(database, 'tm_a', '/api/v1/community/users/tm_b/content?section=visits&limit=50')
+    expect(friend.statistics.visibleVisitCount).toBe(8)
+    expect(friend.statistics.visibleVisitCount).not.toBe(20)
   })
 
   it('enforces public, friends and private profile/Visit visibility and revokes access immediately', async () => {
@@ -110,6 +129,14 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('public-new')
   })
 
+  it('does not treat a stable public Restaurant hash as authorization', async () => {
+    const identity = 'restaurant:public-new|杭州|public-new路1号'
+    const publicID = createHash('sha256').update(`taste-map-public:${identity}`).digest('hex').slice(0, 24)
+    expect((await api(database, 'tm_a', `/api/public/restaurants/${publicID}`)).status).toBe(200)
+    database.prepare("UPDATE user_profiles SET visibility = 'private' WHERE user_id = 'tm_b'").run()
+    expect((await api(database, 'tm_a', `/api/public/restaurants/${publicID}`)).status).toBe(404)
+  })
+
   it('returns only authorized photo identifiers, never R2 keys, and no private Visit photos', async () => {
     await seedPhoto(database, 'visit-tm_b-public-new', 'public')
     await seedPhoto(database, 'visit-tm_b-private-old', 'private')
@@ -127,6 +154,19 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     expect(forged.items).toEqual(normal.items)
     expect((await api(database, '', '/api/v1/community/feed?scope=latest')).status).toBe(401)
     expect((await api(database, 'tm_a', '/api/v1/community/feed', 'POST')).status).toBe(405)
+  })
+
+  it('hydrates 30 Community cards with a bounded number of D1 statements', async () => {
+    for (let index = 0; index < 30; index += 1) {
+      await seedVisit(database, {
+        user: 'tm_b', slug: `scale-${String(index).padStart(2, '0')}`,
+        visibility: 'public', minutesAgo: 100 + index,
+      })
+    }
+    database.resetStatementCount()
+    const page = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&limit=30')
+    expect(page.items).toHaveLength(30)
+    expect(database.statementCount).toBeLessThanOrEqual(12)
   })
 })
 
@@ -222,13 +262,15 @@ function makeDatabase() {
     '0021_companions_recommendation_sources_sync.sql', '0022_user_profiles_sync.sql',
     '0023_social_relationships_v1.sql', '0024_social_legacy_write_compat.sql',
     '0025_discovery_v1_indexes.sql', '0026_public_community_v1_indexes.sql',
+    '0027_social_hardening.sql',
   ]) sqlite.exec(readFileSync(resolve('migrations', file), 'utf8'))
   return new SQLiteD1Database(sqlite)
 }
 
 class SQLiteD1Database {
-  constructor(sqlite) { this.sqlite = sqlite }
-  prepare(sql) { return new SQLiteD1Statement(this.sqlite, sql) }
+  constructor(sqlite) { this.sqlite = sqlite; this.statementCount = 0 }
+  prepare(sql) { this.statementCount += 1; return new SQLiteD1Statement(this.sqlite, sql) }
+  resetStatementCount() { this.statementCount = 0 }
   async batch(statements) {
     this.sqlite.exec('BEGIN IMMEDIATE')
     try {

@@ -230,8 +230,9 @@ async function readDiscoveryData(
   city: string,
   now: number,
 ): Promise<DiscoveryData> {
-  const visibleClause = `(v.visibility = 'public' OR (
-    v.visibility = 'friends' AND EXISTS (
+  const visibleClause = `(
+    (v.visibility = 'public' AND up.visibility = 'public') OR (
+    v.visibility IN ('public', 'friends') AND up.visibility IN ('public', 'friends') AND EXISTS (
       SELECT 1 FROM friendships vf WHERE vf.status = 'accepted' AND vf.deleted_at IS NULL AND (
         (vf.requester_id = ? AND vf.addressee_id = v.user_id) OR
         (vf.requester_id = v.user_id AND vf.addressee_id = ?)
@@ -249,7 +250,7 @@ async function readDiscoveryData(
   const statements = [
     database.prepare(`SELECT ${visitProjection}
       FROM visits v JOIN restaurants r ON r.id = v.restaurant_id
-      LEFT JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
+      JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
       WHERE v.user_id <> ? AND v.deleted_at IS NULL AND r.deleted_at IS NULL
         AND r.city = ? AND ${visibleClause}
       ORDER BY v.visited_at DESC, v.id ASC LIMIT ?`)
@@ -275,20 +276,26 @@ async function readDiscoveryData(
         r.tags_json, r.price_per_person, r.merchant_image_url, r.marker_emoji
       FROM want_to_go w
       JOIN restaurants r ON r.id = w.restaurant_id
+      JOIN user_profiles up ON up.user_id = w.user_id AND up.deleted_at IS NULL
       WHERE w.deleted_at IS NULL AND r.deleted_at IS NULL AND r.city = ?
+        AND (up.visibility = 'public' OR w.user_id = ?)
       UNION ALL
       SELECT r.user_id, r.id, r.created_at, r.name, r.address, r.city,
         r.latitude, r.longitude, r.tags_json, r.price_per_person,
         r.merchant_image_url, r.marker_emoji FROM restaurants r
-      WHERE r.deleted_at IS NULL AND r.city = ? AND r.status = 'wantToGo'`)
-      .bind(city, city),
+      JOIN user_profiles up ON up.user_id = r.user_id AND up.deleted_at IS NULL
+      WHERE r.deleted_at IS NULL AND r.city = ? AND r.status = 'wantToGo'
+        AND (up.visibility = 'public' OR r.user_id = ?)`)
+      .bind(city, viewerId, city, viewerId),
     database.prepare(`SELECT p.id, p.visit_id FROM photos p
       JOIN visits v ON v.id = p.visit_id AND v.user_id = p.user_id
       JOIN restaurants r ON r.id = v.restaurant_id
+      JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
       WHERE p.deleted_at IS NULL AND v.deleted_at IS NULL AND r.deleted_at IS NULL
         AND r.city = ? AND p.storage_provider = 'r2' AND (
-          (p.visibility = 'public' AND v.visibility = 'public') OR (
-            p.visibility = 'friends' AND v.visibility = 'friends' AND EXISTS (
+          (p.visibility = 'public' AND v.visibility = 'public' AND up.visibility = 'public') OR (
+            p.visibility IN ('public', 'friends') AND v.visibility IN ('public', 'friends')
+            AND up.visibility IN ('public', 'friends') AND EXISTS (
               SELECT 1 FROM friendships pf WHERE pf.status = 'accepted'
                 AND pf.deleted_at IS NULL AND (
                   (pf.requester_id = ? AND pf.addressee_id = p.user_id) OR
@@ -419,7 +426,7 @@ function trendingCards(
   const wantPlaceKeys = new Map<string, Set<string>>()
   const restaurantToPlace = new Map<string, string>()
   groups.forEach((group) => group.restaurantIDs.forEach((restaurantID) => restaurantToPlace.set(restaurantID, group.globalKey)))
-  data.wants.forEach((want) => {
+  data.wants.filter((want) => want.user_id !== data.viewerId).forEach((want) => {
     const key = restaurantToPlace.get(want.restaurant_id)
     if (!key || data.now - Date.parse(want.created_at) > 30 * DAY) return
     wantPlaceKeys.set(key, new Set([...(wantPlaceKeys.get(key) ?? []), want.user_id]))

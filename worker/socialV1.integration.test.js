@@ -47,6 +47,17 @@ describe('Social API V1 integration', () => {
     expect(second.items[0].profile.userId).not.toBe(first.items[0].profile.userId)
   })
 
+  it('hardens the legacy Web search without ID enumeration or private fields', async () => {
+    expect((await jsonAPI(database, 'tm_a', '/api/users/search?q=')).users).toEqual([])
+    expect((await jsonAPI(database, 'tm_a', '/api/users/search?q=B')).users).toEqual([])
+    expect((await jsonAPI(database, 'tm_a', '/api/users/search?q=tm_b')).users).toEqual([])
+    const result = await jsonAPI(database, 'tm_a', '/api/users/search?q=Beta')
+    expect(result.users.map((item) => item.id)).toEqual(['tm_b'])
+    expect(JSON.stringify(result)).not.toContain('apple-secret@icloud.com')
+    expect(JSON.stringify(result)).not.toContain('secret-apple-sub')
+    expect((await jsonAPI(database, 'tm_a', '/api/users/search?q=Private')).users).toEqual([])
+  })
+
   it('enforces the request state machine, duplicate/self protection, cross-request acceptance, and canonical pair', async () => {
     expect((await api(database, 'tm_a', '/api/v1/social/friendships', 'POST', { targetUserId: 'tm_a' })).status).toBe(400)
     const first = await jsonAPI(database, 'tm_a', '/api/v1/social/friendships', 'POST', { targetUserId: 'tm_b' })
@@ -86,6 +97,38 @@ describe('Social API V1 integration', () => {
     expect(context.relationship).toEqual({ friendshipId: null, friendshipState: 'none', isFollowing: true })
     expect((await jsonAPI(database, 'tm_b', '/api/v1/social/follows?scope=followers')).items[0].profile.userId).toBe('tm_a')
     expect((await jsonAPI(database, 'tm_a', '/api/v1/social/follows/tm_b', 'DELETE')).follow.deletedAt).not.toBeNull()
+  })
+
+  it('hydrates Follow list relationship state in the list query and rate limits mutations', async () => {
+    const sent = await jsonAPI(database, 'tm_a', '/api/v1/social/friendships', 'POST', { targetUserId: 'tm_b' })
+    await jsonAPI(database, 'tm_b', `/api/v1/social/friendships/${encodeURIComponent(sent.friendship.id)}`, 'POST', { action: 'accept' })
+    await jsonAPI(database, 'tm_a', '/api/v1/social/follows/tm_b', 'PUT')
+    const following = await jsonAPI(database, 'tm_a', '/api/v1/social/follows?scope=following')
+    expect(following.items[0]).toMatchObject({
+      profile: { userId: 'tm_b' }, friendshipState: 'friends', isFollowing: true,
+    })
+
+    const window = new Date().toISOString().slice(0, 16)
+    database.prepare(`INSERT OR REPLACE INTO public_api_rate_limits
+      (actor_key, bucket, window_started_at, request_count) VALUES (?, ?, ?, 60)`)
+      .bind('user:tm_a', 'social-mutation', window).run()
+    expect((await api(database, 'tm_a', '/api/v1/social/follows/tm_c', 'PUT')).status).toBe(429)
+  })
+
+  it('hydrates a 20-user Follow page with a bounded number of D1 statements', async () => {
+    for (let index = 0; index < 20; index += 1) {
+      const userID = `tm_scale_${String(index).padStart(2, '0')}`
+      await seedUser(database, userID, `Scale User ${index}`, '杭州', 'public')
+      database.prepare(`INSERT INTO follows (
+        id, follower_id, followed_user_id, created_at, updated_at, deleted_at, server_version
+      ) VALUES (?, 'tm_a', ?, ?, ?, NULL, 1)`)
+        .bind(`follow:tm_a:${userID}`, userID, NOW, NOW).run()
+    }
+
+    database.resetStatementCount()
+    const page = await jsonAPI(database, 'tm_a', '/api/v1/social/follows?scope=following&limit=30')
+    expect(page.items).toHaveLength(20)
+    expect(database.statementCount).toBeLessThanOrEqual(6)
   })
 
   it('keeps legacy Web Follow reads and writes compatible with V1 tombstones', async () => {
@@ -163,6 +206,9 @@ async function seedUser(database, id, name, city, visibility) {
   await api(database, id, '/api/v1/sync/pull?schemaVersion=1&cursor=0')
   await database.prepare(`UPDATE user_profiles SET display_name = ?, bio = ?, city = ?, visibility = ?
     WHERE user_id = ?`).bind(name, `${name} 的公开简介`, city, visibility, id).run()
+  await database.prepare(`UPDATE users SET nickname = ?, bio = ?, city = ?,
+    map_sharing_enabled = ?, map_visibility = ? WHERE id = ?`)
+    .bind(name, `${name} 的公开简介`, city, visibility === 'private' ? 0 : 1, visibility, id).run()
 }
 
 async function createVisit(database, userId, visibility) {
@@ -230,14 +276,16 @@ function makeDatabase() {
     '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
     '0021_companions_recommendation_sources_sync.sql', '0022_user_profiles_sync.sql',
     '0023_social_relationships_v1.sql', '0024_social_legacy_write_compat.sql',
-    '0025_discovery_v1_indexes.sql',
+    '0025_discovery_v1_indexes.sql', '0026_public_community_v1_indexes.sql',
+    '0027_social_hardening.sql',
   ]) sqlite.exec(readFileSync(resolve('migrations', file), 'utf8'))
   return new SQLiteD1Database(sqlite)
 }
 
 class SQLiteD1Database {
-  constructor(sqlite) { this.sqlite = sqlite }
-  prepare(sql) { return new SQLiteD1Statement(this.sqlite, sql) }
+  constructor(sqlite) { this.sqlite = sqlite; this.statementCount = 0 }
+  prepare(sql) { this.statementCount += 1; return new SQLiteD1Statement(this.sqlite, sql) }
+  resetStatementCount() { this.statementCount = 0 }
   async batch(statements) {
     this.sqlite.exec('BEGIN IMMEDIATE')
     try {

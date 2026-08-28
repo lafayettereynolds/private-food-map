@@ -26,6 +26,7 @@ describe('Discovery API V1 integration', () => {
     await seedVisit(database, { user: 'tm_b', slug: 'bob-pick', rating: 5, identity: 'apple-bob-pick', tags: ['日料'] })
     await seedVisit(database, { user: 'tm_c', slug: 'carol-pick', rating: 4.5, identity: 'apple-carol-pick', tags: ['咖啡'] })
     await seedVisit(database, { user: 'tm_private', slug: 'secret-pick', rating: 5, visibility: 'private' })
+    await seedVisit(database, { user: 'tm_private', slug: 'hidden-profile-public', rating: 5, visibility: 'public' })
     await seedVisit(database, { user: 'tm_b', slug: 'friend-pick', rating: 5, visibility: 'friends' })
   })
 
@@ -36,6 +37,7 @@ describe('Discovery API V1 integration', () => {
     expect(page.personalizationConfidence).toBe('medium')
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('shared-0')
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('secret-pick')
+    expect(page.items.map((item) => item.restaurant.name)).not.toContain('hidden-profile-public')
     expect(page.items[0].ratings).toEqual(expect.objectContaining({
       mine: expect.objectContaining({ value: null }),
       community: expect.objectContaining({ sampleCount: expect.any(Number) }),
@@ -93,6 +95,7 @@ describe('Discovery API V1 integration', () => {
     expect(month.items.map((item) => item.restaurant.name)).toContain('old-20')
     expect(month.items.map((item) => item.restaurant.name)).not.toContain('old-40')
     expect(week.items.map((item) => item.restaurant.name)).not.toContain('secret-pick')
+    expect(week.items.map((item) => item.restaurant.name)).not.toContain('hidden-profile-public')
     const keys = week.items.map((item) => item.restaurant.globalKey)
     expect(keys).toEqual([...new Set(keys)])
   })
@@ -167,6 +170,20 @@ describe('Discovery API V1 integration', () => {
     expect(page.items.find((item) => item.restaurant.name === 'Wanted Place')?.trend.wantToGoCount).toBe(2)
     database.prepare("UPDATE discovery_rate_limits SET request_count = 120 WHERE user_id = 'tm_a'").run()
     expect((await api(database, 'tm_a', '/api/v1/discovery/trending?city=杭州')).status).toBe(429)
+  })
+
+  it('projects 30 Discovery cards without item-by-item D1 queries', async () => {
+    for (let index = 0; index < 30; index += 1) {
+      await seedVisit(database, {
+        user: index % 2 === 0 ? 'tm_b' : 'tm_c',
+        slug: `scale-${String(index).padStart(2, '0')}`,
+        identity: `apple-scale-${index}`, rating: 4.5, minutesAgo: 100 + index,
+      })
+    }
+    database.resetStatementCount()
+    const page = await jsonAPI(database, 'tm_a', '/api/v1/discovery/trending?city=杭州&limit=30')
+    expect(page.items).toHaveLength(30)
+    expect(database.statementCount).toBeLessThanOrEqual(20)
   })
 })
 
@@ -259,14 +276,16 @@ function makeDatabase() {
     '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
     '0021_companions_recommendation_sources_sync.sql', '0022_user_profiles_sync.sql',
     '0023_social_relationships_v1.sql', '0024_social_legacy_write_compat.sql',
-    '0025_discovery_v1_indexes.sql',
+    '0025_discovery_v1_indexes.sql', '0026_public_community_v1_indexes.sql',
+    '0027_social_hardening.sql',
   ]) sqlite.exec(readFileSync(resolve('migrations', file), 'utf8'))
   return new SQLiteD1Database(sqlite)
 }
 
 class SQLiteD1Database {
-  constructor(sqlite) { this.sqlite = sqlite }
-  prepare(sql) { return new SQLiteD1Statement(this.sqlite, sql) }
+  constructor(sqlite) { this.sqlite = sqlite; this.statementCount = 0 }
+  prepare(sql) { this.statementCount += 1; return new SQLiteD1Statement(this.sqlite, sql) }
+  resetStatementCount() { this.statementCount = 0 }
   async batch(statements) {
     this.sqlite.exec('BEGIN IMMEDIATE')
     try {

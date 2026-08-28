@@ -32,6 +32,8 @@
     "test:p3c:development": "node scripts/test-discovery-development.mjs",
     "test:p3d": "node scripts/test-community-migration.mjs && vitest run worker/communityV1.integration.test.js worker/photoBinaryV1.test.ts worker/socialV1.integration.test.js worker/syncV1.integration.test.js",
     "test:p3d:development": "node scripts/test-community-development.mjs",
+    "test:p3e": "node scripts/test-p3e-migration.mjs && vitest run worker/communityV1.integration.test.js worker/discoveryV1.integration.test.js worker/socialV1.integration.test.js worker/photoBinaryV1.test.ts worker/syncV1.integration.test.js worker/authV1.integration.test.js",
+    "test:p3e:development": "node scripts/test-p3e-development.mjs",
     "preview": "vite preview --config vite.config.ts",
     "cloudflare:dev": "pnpm run build && wrangler dev --local",
     "d1:migrate:local": "wrangler d1 migrations apply food-map-db --local",

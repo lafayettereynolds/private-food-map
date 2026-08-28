@@ -38,6 +38,7 @@ export function FriendsPage({
   const [query, setQuery] = useState('')
   const [cloudUsers, setCloudUsers] = useState<UserProfile[]>([])
   useEffect(() => {
+    if ([...query.trim()].length < 2) { setCloudUsers([]); return }
     let active = true
     const timeout = window.setTimeout(() => {
       void searchCloudUsers(query).then((items) => {
@@ -103,7 +104,7 @@ export function FriendsPage({
     })}</div> : <p className="inline-empty">还没有关注其他用户。</p>}</section>
   </>
 
-  const discoveryContent = <section className="social-section people-discovery"><h2>搜索用户</h2><p>按昵称、用户名或城市找到其他 Taste Map 用户。</p><label className="people-search"><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="搜索昵称 / 用户名 / 城市" value={query} /></label>{!embedded || query.trim() ? <div className="friend-list">{results.length ? results.map((user) => {
+  const discoveryContent = <section className="social-section people-discovery"><h2>搜索用户</h2><p>按显示名称或城市找到其他 Taste Map 用户。</p><label className="people-search"><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="至少输入 2 个字符" value={query} /></label>{!embedded || query.trim() ? <div className="friend-list">{results.length ? results.map((user) => {
     const existing = friendshipByUser.get(user.id)
     return <FriendRow actions={existing && existing.status !== 'removed' && existing.status !== 'rejected' ? <span className="relationship-status">{existing.status === 'accepted' ? '互相关注' : existing.requesterId === currentUserId ? '已关注' : '关注你'}</span> : <button aria-label={`关注 ${user.nickname}`} onClick={() => requestFriend(user.id)} title="关注" type="button"><UserPlus size={15} /></button>} key={user.id} onViewProfile={onViewProfile} user={user} />
   }) : <p className="inline-empty">没有找到这个用户。</p>}</div> : <p className="people-discovery__hint">输入关键词后显示搜索结果。</p>}</section>

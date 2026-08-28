@@ -65,7 +65,7 @@ import { mapService } from './services/mapService'
 import { initializeCloudSync } from './services/cloudSync'
 import { useCloudSync } from './services/useCloudSync'
 import { initializePhotoSync } from './services/photoSync'
-import { fetchFollows, fetchFriendRecommendations, fetchUserProfile, publicUserToProfile, searchCloudUsers, sendFriendRequest, setFollow, type DiscoveryMode, type FriendRecommendation } from './services/socialApi'
+import { fetchFollows, fetchFriendRecommendations, fetchUserProfile, sendFriendRequest, setFollow, type DiscoveryMode, type FriendRecommendation } from './services/socialApi'
 import {
   queueDurationApproximateMinutes,
   scoreBandFromScore,
@@ -151,7 +151,6 @@ export default function App() {
   const [cloudFollows, setCloudFollows] = useState<Follow[]>([])
   const [followPending, setFollowPending] = useState(false)
   const [friendPending, setFriendPending] = useState(false)
-  const [cloudUsers, setCloudUsers] = useState<UserProfile[]>([])
   const [friendRecommendations, setFriendRecommendations] = useState<FriendRecommendation[]>([])
   const [recommendationPendingIds, setRecommendationPendingIds] = useState<Set<string>>(() => new Set())
   const [dismissedRecommendationIds, setDismissedRecommendationIds] = useState<Set<string>>(() => {
@@ -163,11 +162,7 @@ export default function App() {
 
   const allRestaurants = useMemo(() => restaurants ?? [], [restaurants])
   const allVisits = useMemo(() => visits ?? [], [visits])
-  const allUsers = useMemo(() => {
-    const merged = new Map(cloudUsers.map((user) => [user.id, user]))
-    ;(users ?? []).forEach((user) => merged.set(user.id, user))
-    return [...merged.values()]
-  }, [cloudUsers, users])
+  const allUsers = useMemo(() => users ?? [], [users])
   const allFriendships = useMemo(() => friendships ?? [], [friendships])
   const currentUser = allUsers.find((user) => user.id === CURRENT_USER_ID)
   const friendOptions = useMemo(() => {
@@ -465,10 +460,9 @@ export default function App() {
 
   useEffect(() => {
     let active = true
-    void Promise.all([fetchFollows(), searchCloudUsers(''), fetchFriendRecommendations()]).then(([follows, people, friendSuggestions]) => {
+    void Promise.all([fetchFollows(), fetchFriendRecommendations()]).then(([follows, friendSuggestions]) => {
       if (!active) return
       setCloudFollows(follows)
-      setCloudUsers(people.map(publicUserToProfile))
       setFriendRecommendations(friendSuggestions)
     }).catch(() => undefined)
     return () => { active = false }

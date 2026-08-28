@@ -17,6 +17,7 @@ import {
 } from '../src/contracts/communityContract'
 import type { ProfileAvatarPresetContract, ProfileVisibilityContract } from '../src/contracts/profileContract'
 import type { RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
+import { consumePublicAPIQuota } from './publicAPIRateLimit'
 
 const MAX_NOTE_LENGTH = 1_200
 
@@ -104,6 +105,7 @@ export async function handleCommunityV1(
   viewerId: string,
 ): Promise<CommunityFeedPageV1 | PublicProfileContentPageV1> {
   if (request.method !== 'GET') throw new CommunityV1RequestError('Community method is not supported.', 405)
+  await consumePublicAPIQuota(database, viewerId, 'community-read', 180)
   const url = new URL(request.url)
   if (url.pathname === '/api/v1/community/feed') return readFeed(database, viewerId, url)
   const contentMatch = url.pathname.match(/^\/api\/v1\/community\/users\/([^/]+)\/content$/)

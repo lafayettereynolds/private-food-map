@@ -7,6 +7,7 @@ import type {
 } from '../src/contracts/socialContract'
 import type { ProfileAvatarPresetContract } from '../src/contracts/profileContract'
 import { readPublicProfile } from './profileV1'
+import { consumePublicAPIQuota } from './publicAPIRateLimit'
 
 const API_VERSION = 1
 const DEFAULT_LIMIT = 20
@@ -66,6 +67,12 @@ export async function handleSocialV1(
   if (url.pathname === '/api/v1/social/users/search' && request.method === 'GET') {
     return searchUsers(database, viewerId, url)
   }
+  await consumePublicAPIQuota(
+    database,
+    viewerId,
+    request.method === 'GET' ? 'social-read' : 'social-mutation',
+    request.method === 'GET' ? 180 : 60,
+  )
   if (url.pathname === '/api/v1/social/friendships' && request.method === 'GET') {
     return readFriendships(database, viewerId, url)
   }
@@ -273,25 +280,29 @@ async function readFollows(database: D1Database, viewerId: string, url: URL) {
   const actorColumn = scope === 'following' ? 'f.follower_id' : 'f.followed_user_id'
   const otherColumn = scope === 'following' ? 'f.followed_user_id' : 'f.follower_id'
   const rows = await database.prepare(`SELECT p.*,
-      NULL AS friendship_id, NULL AS friendship_requester_id,
-      NULL AS friendship_addressee_id, NULL AS friendship_status,
+      friendship.id AS friendship_id,
+      friendship.requester_id AS friendship_requester_id,
+      friendship.addressee_id AS friendship_addressee_id,
+      friendship.status AS friendship_status,
       CASE WHEN mine.id IS NULL THEN 0 ELSE 1 END AS is_following,
       f.updated_at AS relationship_updated_at, f.id AS follow_id
     FROM follows f JOIN user_profiles p ON p.user_id = ${otherColumn}
+    LEFT JOIN friendships friendship
+      ON friendship.pair_user_a = CASE WHEN p.user_id < ? THEN p.user_id ELSE ? END
+      AND friendship.pair_user_b = CASE WHEN p.user_id < ? THEN ? ELSE p.user_id END
+      AND friendship.deleted_at IS NULL AND friendship.status IN ('pending', 'accepted')
     LEFT JOIN follows mine ON mine.follower_id = ? AND mine.followed_user_id = p.user_id
       AND mine.deleted_at IS NULL
     WHERE ${actorColumn} = ? AND f.deleted_at IS NULL AND p.deleted_at IS NULL
       AND (f.updated_at < ? OR (f.updated_at = ? AND f.id > ?))
     ORDER BY f.updated_at DESC, f.id ASC LIMIT ?`).bind(
+      viewerId, viewerId, viewerId, viewerId,
       viewerId, viewerId, cursor.primary, cursor.primary, cursor.secondary, limit + 1,
     ).all<SocialUserRow & { relationship_updated_at: string; follow_id: string }>()
   const visible = rows.results.slice(0, limit)
   return {
     apiVersion: API_VERSION,
-    items: await Promise.all(visible.map(async (row) => {
-      const context = await relationshipContext(database, viewerId, row.user_id)
-      return { ...resultFromRow(row, viewerId), ...context }
-    })),
+    items: visible.map((row) => resultFromRow(row, viewerId)),
     nextCursor: rows.results.length > limit && visible.length
       ? encodeCursor(visible.at(-1)!.relationship_updated_at, visible.at(-1)!.follow_id)
       : null,
@@ -366,6 +377,11 @@ async function requireTarget(database: D1Database, viewerId: string, targetUserI
 
 async function consumeSearchQuota(database: D1Database, viewerId: string) {
   const window = new Date().toISOString().slice(0, 16)
+  await database.prepare(`DELETE FROM social_search_rate_limits
+    WHERE user_id = ? AND window_started_at < ?`).bind(
+    viewerId,
+    new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString().slice(0, 16),
+  ).run()
   await database.prepare(`INSERT INTO social_search_rate_limits (
     user_id, window_started_at, request_count
   ) VALUES (?, ?, 1) ON CONFLICT(user_id, window_started_at)
