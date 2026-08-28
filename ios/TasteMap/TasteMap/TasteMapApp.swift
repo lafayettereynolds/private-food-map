@@ -62,6 +62,7 @@ struct TasteMapApp: App {
                     try TasteMapUITestFixtures.insertPhotoFailureFixture(into: container)
                 }
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)
+                try TasteMapUITestFixtures.insertRestaurantRouletteFixture(into: container)
             }
             if useDiscoveryFixture {
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)

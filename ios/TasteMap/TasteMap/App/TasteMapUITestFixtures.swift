@@ -27,6 +27,30 @@ enum TasteMapUITestFixtures {
     static let annualRecapEnvironmentKey = "TASTEMAP_P4E_ANNUAL_UI_TEST"
     static let restaurantListsEnvironmentKey = "TASTEMAP_P4F_LISTS_UI_TEST"
     static let restaurantListsPrivateEnvironmentKey = "TASTEMAP_P4F_LISTS_PRIVATE_UI_TEST"
+    static let restaurantRouletteEnvironmentKey = "TASTEMAP_P4G_ROULETTE_UI_TEST"
+    static let restaurantRouletteEmptyEnvironmentKey = "TASTEMAP_P4G_ROULETTE_EMPTY_UI_TEST"
+    static let restaurantRouletteSingleEnvironmentKey = "TASTEMAP_P4G_ROULETTE_SINGLE_UI_TEST"
+    static let restaurantRouletteLargeEnvironmentKey = "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST"
+
+    private enum RestaurantRouletteFixtureMode {
+        case standard
+        case empty
+        case single
+        case large
+    }
+
+    static var usesRestaurantRouletteFixture: Bool {
+        restaurantRouletteFixtureMode != nil
+    }
+
+    private static var restaurantRouletteFixtureMode: RestaurantRouletteFixtureMode? {
+        let environment = ProcessInfo.processInfo.environment
+        if environment[restaurantRouletteEmptyEnvironmentKey] == "1" { return .empty }
+        if environment[restaurantRouletteSingleEnvironmentKey] == "1" { return .single }
+        if environment[restaurantRouletteLargeEnvironmentKey] == "1" { return .large }
+        if environment[restaurantRouletteEnvironmentKey] == "1" { return .standard }
+        return nil
+    }
 
     static var usesRestaurantListsFixture: Bool {
         ProcessInfo.processInfo.environment[restaurantListsEnvironmentKey] == "1"
@@ -82,6 +106,7 @@ enum TasteMapUITestFixtures {
         ProcessInfo.processInfo.environment[profileEnvironmentKey] == "1"
             || usesAnalysisFixture
             || usesRestaurantListsFixture
+            || usesRestaurantRouletteFixture
     }
 
     static var usesPhotoFixture: Bool {
@@ -189,6 +214,10 @@ enum TasteMapUITestFixtures {
             try context.save()
         }
 
+        // P4-G owns its isolated Restaurant/Visit set. Avoid inserting the
+        // generic P1-D restaurant again when the same offline store relaunches.
+        if usesRestaurantRouletteFixture { return }
+
         let existing = try context.fetch(FetchDescriptor<Restaurant>())
             .first { $0.id == detailRestaurantID }
         guard existing == nil else { return }
@@ -288,6 +317,84 @@ enum TasteMapUITestFixtures {
             serverVersion: 1,
             syncStatus: .synced
         ))
+        try context.save()
+    }
+
+    static func insertRestaurantRouletteFixture(into container: ModelContainer) throws {
+        guard let mode = restaurantRouletteFixtureMode else { return }
+        let context = container.mainContext
+
+        let fixtureIDs = Set((9_000...9_130).map(uuid))
+        if mode != .empty,
+           try context.fetch(FetchDescriptor<Restaurant>()).contains(where: {
+               fixtureIDs.contains($0.id)
+           }) {
+            return
+        }
+
+        for visit in try context.fetch(FetchDescriptor<Visit>()) {
+            context.delete(visit)
+        }
+        for photo in try context.fetch(FetchDescriptor<PhotoAsset>()) {
+            context.delete(photo)
+        }
+        for restaurant in try context.fetch(FetchDescriptor<Restaurant>()) {
+            context.delete(restaurant)
+        }
+        try context.save()
+
+        let count: Int
+        switch mode {
+        case .empty: count = 0
+        case .single: count = 1
+        case .standard: count = 8
+        case .large: count = 120
+        }
+
+        let names = [
+            "青岚寿司", "雨巷火锅", "野火烧鸟", "小满食堂",
+            "云边面馆", "桂雨咖啡", "春日泰味", "湖畔西餐",
+        ]
+        for index in 0..<count {
+            let id = uuid(9_000 + index)
+            let status: RestaurantStatus = index.isMultiple(of: 2) ? .wantToGo : .visited
+            let name = count > names.count
+                ? "候选餐厅 \(index + 1)"
+                : names[index % names.count]
+            let restaurant = Restaurant(
+                id: id,
+                name: name,
+                address: "杭州市西湖区转盘路 \(index + 1) 号",
+                latitude: 30.20 + Double(index % 50) * 0.001,
+                longitude: 120.10 + Double(index % 50) * 0.001,
+                appleMapItemIdentifier: "apple-p4g-ui-\(index)",
+                city: "杭州",
+                status: status,
+                createdAt: Date(timeIntervalSince1970: 1_777_500_000 + Double(index)),
+                updatedAt: Date(timeIntervalSince1970: 1_777_500_000 + Double(index)),
+                syncStatus: .synced,
+                remoteRecordData: try restaurantContractData(
+                    id: id,
+                    name: name,
+                    tags: index.isMultiple(of: 3) ? ["日料", "朋友聚餐"] : ["本地小馆"],
+                    status: status,
+                    index: 200 + index
+                )
+            )
+            context.insert(restaurant)
+            if status == .visited {
+                context.insert(Visit(
+                    id: uuid(9_500 + index),
+                    restaurantId: id,
+                    visitedAt: Date(timeIntervalSince1970: 1_777_600_000 + Double(index)),
+                    rating: 3.5 + Double(index % 4) * 0.5,
+                    note: "P4-G 本地轮盘验收记录",
+                    createdAt: Date(timeIntervalSince1970: 1_777_600_000 + Double(index)),
+                    updatedAt: Date(timeIntervalSince1970: 1_777_600_000 + Double(index)),
+                    syncStatus: .synced
+                ))
+            }
+        }
         try context.save()
     }
 

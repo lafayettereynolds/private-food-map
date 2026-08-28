@@ -1440,6 +1440,87 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4GRouletteFilterSpinResultDetailRerollAndOfflineRestart() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1d-persistent-offline-fixture", "-p1d-reset-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1", "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P4G_ROULETTE_UI_TEST": "1",
+        ]
+        app.launch()
+
+        openP4GRoulette(in: app)
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("8"))
+        XCTAssertTrue(app.staticTexts["roulette-offline-note"].exists)
+
+        app.buttons["roulette-filter-open"].tap()
+        XCTAssertTrue(app.navigationBars["候选条件"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["想吃"].tap()
+        app.navigationBars["候选条件"].buttons["完成"].tap()
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("4"))
+
+        let spin = app.buttons["roulette-spin"]
+        XCTAssertTrue(spin.waitForExistence(timeout: 5))
+        spin.tap()
+        let firstResult = app.staticTexts["roulette-result-name"]
+        XCTAssertTrue(firstResult.waitForExistence(timeout: 8))
+        let firstName = firstResult.label
+        XCTAssertFalse(firstName.isEmpty)
+        keepScreenshot(named: "P4-G Roulette Result", of: app)
+
+        app.buttons["roulette-open-restaurant"].tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[firstName].exists)
+        app.navigationBars["餐厅详情"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["今天吃什么"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["roulette-result-name"].label, firstName)
+
+        app.buttons["roulette-reroll"].tap()
+        XCTAssertTrue(app.staticTexts["roulette-result-name"].waitForExistence(timeout: 8))
+        XCTAssertNotEqual(app.staticTexts["roulette-result-name"].label, firstName)
+
+        app.terminate()
+        app.launchArguments = ["-p1d-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P4G_ROULETTE_UI_TEST": "1",
+        ]
+        app.launch()
+        openP4GRoulette(in: app)
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("8"))
+        XCTAssertTrue(app.buttons["roulette-spin"].isHittable)
+    }
+
+    @MainActor
+    func testP4GRouletteEmptyState() throws {
+        let app = launchP4GRouletteFixture(environmentKey: "TASTEMAP_P4G_ROULETTE_EMPTY_UI_TEST")
+        openP4GRoulette(in: app)
+        XCTAssertTrue(app.staticTexts["还没有候选餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["搜索餐厅"].exists)
+        XCTAssertFalse(app.buttons["roulette-spin"].exists)
+    }
+
+    @MainActor
+    func testP4GRouletteSingleCandidateSkipsFakeSpin() throws {
+        let app = launchP4GRouletteFixture(environmentKey: "TASTEMAP_P4G_ROULETTE_SINGLE_UI_TEST")
+        openP4GRoulette(in: app)
+        XCTAssertTrue(app.otherElements["roulette-single-state"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["roulette-result-name"].exists)
+        XCTAssertFalse(app.buttons["roulette-spin"].exists)
+    }
+
+    @MainActor
+    func testP4GRouletteLargePoolKeepsAllCandidatesEligible() throws {
+        let app = launchP4GRouletteFixture(environmentKey: "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST")
+        openP4GRoulette(in: app)
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("120"))
+        XCTAssertTrue(app.buttons["roulette-spin"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["完整候选池参与随机，轮盘仅做简化展示"].exists)
+        keepScreenshot(named: "P4-G Large Candidate Pool", of: app)
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,
@@ -1451,6 +1532,28 @@ final class TasteMapUITests: XCTestCase {
         textField.tap()
         textField.typeText(name)
         app.buttons[button].tap()
+    }
+
+    @MainActor
+    private func launchP4GRouletteFixture(environmentKey: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1d-persistent-offline-fixture", "-p1d-reset-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1", "TASTEMAP_P1D_RESET": "1",
+            environmentKey: "1",
+        ]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func openP4GRoulette(in app: XCUIApplication) {
+        app.buttons["我的"].tap()
+        let entry = app.buttons["profile-restaurant-roulette-entry"]
+        scrollUntilVisible(entry, in: app)
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["今天吃什么"].waitForExistence(timeout: 5))
     }
 
     @MainActor

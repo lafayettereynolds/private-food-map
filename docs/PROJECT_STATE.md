@@ -4,6 +4,9 @@
 
 ## 已完成
 
+- 原生 iOS 已完成 P4-G“今天吃什么”：在“我的”提供单一入口，从当前城市的真实本地 Restaurant 生成去重候选，支持全部/想吃/去过、临时候选管理、原生多圈轮盘、结果卡、再次抽取、Restaurant Detail、空/单候选和 120+ 大候选池。抽取为不按评分加权的均匀随机，只避免连续一次重复；结果不会自动改变 WantToGo、Visit、评分或榜单。
+- P4-G 完全读取现有 SwiftData Restaurant/Visit/Photo，Global Restaurant identity 去重且支持 Apple Maps-only；不新增持久化模型、Sync entity、Worker API、D1 migration 或 Secret。十八个 Preview、可注入 RNG/角度几何单元测试和四组 Simulator UI E2E 覆盖主要状态，Production 未访问。完整边界见 `P4_G_RESTAURANT_ROULETTE.md`。
+
 - 原生 iOS 已完成 P4-F 餐厅榜单闭环：我的榜单、新建/编辑/删除、普通/排名模式、显式拖拽排序、单项备注、自动/既有照片封面、Restaurant Detail 多榜单加入、公开/好友/私密权限、Public Profile 入口、公开详情、系统分享元数据及公开榜单餐厅加入自己的想吃。榜单引用 Global Restaurant identity，与 WantToGo 和 Visit 独立；Apple Maps-only 餐厅无需 `amapPoiId`。
 - 榜单采用 SwiftData local-first + Sync V1 `restaurantList` / `restaurantListItem`，App 重启保留队列和顺序；公开列表使用 viewer-scoped query cache。Development D1 已增量应用 `0028`，真实隔离 A/B Worker E2E、10 项原生 domain 测试和两条 Simulator UI E2E 通过，Production 未访问。完整边界见 `P4_F_RESTAURANT_LISTS.md`。
 

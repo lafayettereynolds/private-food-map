@@ -51,6 +51,45 @@ struct ProfileView: View {
                         visitedCount: statistics.visitedRestaurantCount,
                         wantToGoCount: statistics.wantToGoRestaurantCount
                     )
+                    NavigationLink {
+                        RestaurantRouletteScreen(preferredCity: activeProfile?.city)
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [RouletteTheme.brandSoft, RouletteTheme.cream],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(RouletteTheme.brand)
+                            }
+                            .frame(width: 52, height: 52)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("今天吃什么")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                Text("从我的真实餐厅里，轻松转出今天这一家")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(RouletteTheme.brand)
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(RouletteTheme.brand.opacity(0.12))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-restaurant-roulette-entry")
                     if let userID = authenticatedUser?.id {
                         NavigationLink {
                             RestaurantListsOverviewView(

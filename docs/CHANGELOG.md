@@ -1,5 +1,13 @@
 # Taste Map 变更记录
 
+## 2026-08-29 — P4-G 原生“今天吃什么”轮盘
+
+- 审计 Web `RestaurantRoulette.tsx` 后，在原生 iOS“我的”增加单一“今天吃什么”入口；默认使用当前城市全部真实本地 Restaurant，可切换全部/想吃/去过并临时管理候选，不新增榜单轮盘、分类/评分/价位筛选、AI 推荐或权重。
+- 新增纯本地 `RestaurantRouletteEngine` 和 `RouletteCandidate` projection：排除 tombstone、无效坐标/名称，按 provider-neutral Global Restaurant identity 去重，支持 Apple Maps-only 和稳定 manual fallback；抽取均匀且可注入 RNG，只避免立即重复一次。
+- 使用 SwiftUI 实现多圈低饱和轮盘、固定指针、3 秒减速、Reduce Motion 降级和轻量 haptic；结果展示真实 Photo/占位、状态和有依据的 Visit 汇总，可进入既有 Restaurant Detail，返回后保留当前结果。0/1/30/120+ 候选均有明确策略，完整大池参与随机而视觉最多简化为 12 段。
+- Migration / Worker：无。P4-G 只读既有 SwiftData Restaurant/Visit/Photo，不新增同步实体、API、D1 表或 Secret；Development/Production 均未访问。
+- 验证：18 个 Preview、10 组 Swift Testing engine/random/geometry/result 测试和 4 组 Simulator UI E2E 覆盖筛选、抽取、详情、重抽、离线重启、空/单/大候选池；完整边界见 `P4_G_RESTAURANT_ROULETTE.md`。
+
 ## 2026-08-29 — P4-F 原生餐厅榜单、公开榜单与同步
 
 - 审计并迁移 Web 正式食单语义，在原生 iOS 增加我的榜单、新建/编辑/删除、普通/排名、描述、单项备注、自动/既有照片封面、Restaurant Detail 多榜单加入、显式拖拽排序和 App 重启恢复；未新增协作、投票、官方/AI 榜单、榜单广场或海报。
