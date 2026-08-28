@@ -59,7 +59,8 @@ nonisolated struct RecommendationSourceInput: Sendable {
         photos: [PhotoAsset],
         profile: UserProfile?
     ) -> RecommendationSourceInput {
-        RecommendationSourceInput(
+        let identity = AnalysisRestaurantIdentity.projection(for: restaurants)
+        return RecommendationSourceInput(
             userDisplayName: profile?.displayName.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
                 ?? "Taste Map 用户",
             sources: sources.map {
@@ -73,7 +74,9 @@ nonisolated struct RecommendationSourceInput: Sendable {
                     deletedAt: $0.deletedAt
                 )
             },
-            restaurants: restaurants.map {
+            restaurants: restaurants.filter { restaurant in
+                restaurant.deletedAt != nil || identity.representativeIDs.contains(restaurant.id)
+            }.map {
                 RestaurantRecord(
                     id: $0.id,
                     name: $0.name,
@@ -86,7 +89,7 @@ nonisolated struct RecommendationSourceInput: Sendable {
             visits: visits.map {
                 VisitRecord(
                     id: $0.id,
-                    restaurantID: $0.restaurantId,
+                    restaurantID: identity.canonicalID(for: $0.restaurantId),
                     visitedAt: $0.visitedAt,
                     rating: $0.rating,
                     valueRating: $0.valueRating,
@@ -102,7 +105,7 @@ nonisolated struct RecommendationSourceInput: Sendable {
             photos: photos.map {
                 PhotoRecord(
                     id: $0.id,
-                    restaurantID: $0.restaurantId,
+                    restaurantID: identity.canonicalID(for: $0.restaurantId),
                     visitID: $0.visitId,
                     dishID: $0.dishId,
                     kind: $0.kind,

@@ -18,13 +18,16 @@ struct TasteProfileAnalysisScreen: View {
     }
 
     private var dataRevision: String {
-        let latest = [
-            restaurants.map(\.updatedAt).max(), visits.map(\.updatedAt).max(),
-            dishes.map(\.updatedAt).max(), visitDishes.map(\.updatedAt).max(),
-            photos.map(\.updatedAt).max(), companions.map(\.updatedAt).max(),
-            recommendationSources.map(\.updatedAt).max(), profiles.map(\.updatedAt).max(),
-        ].compactMap { $0 }.max()?.timeIntervalSince1970 ?? 0
-        return "\(restaurants.count):\(visits.count):\(dishes.count):\(visitDishes.count):\(photos.count):\(companions.count):\(recommendationSources.count):\(latest)"
+        let dates = restaurants.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+            + visits.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+            + dishes.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+            + visitDishes.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+            + photos.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+            + companions.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+            + recommendationSources.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+            + profiles.map { max($0.updatedAt, $0.deletedAt ?? .distantPast) }
+        let latest = dates.max()?.timeIntervalSince1970 ?? 0
+        return "\(restaurants.count):\(visits.count):\(dishes.count):\(visitDishes.count):\(photos.count):\(companions.count):\(recommendationSources.count):\(profiles.count):\(latest)"
     }
 
     var body: some View {

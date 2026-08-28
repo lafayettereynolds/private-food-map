@@ -3,9 +3,9 @@ import Foundation
 enum RecommendationSourceAnalyzer {
     nonisolated static let highRatingThreshold = 4.0
     nonisolated static let lowRatingThreshold = 2.5
-    nonisolated static let minimumRatedRestaurantsForRanking = 6
-    nonisolated static let stableRatedRestaurantCount = 10
-    nonisolated static let minimumRatedRestaurantsForAverage = 2
+    nonisolated static let minimumRatedRestaurantsForRanking = AnalysisSufficiencyThresholds.recommendationSourceRankingRatedRestaurants
+    nonisolated static let stableRatedRestaurantCount = AnalysisSufficiencyThresholds.recommendationSourceStableRatedRestaurants
+    nonisolated static let minimumRatedRestaurantsForAverage = AnalysisSufficiencyThresholds.recommendationSourceAverageRatedRestaurants
 
     private nonisolated struct AcquiredRestaurant {
         let restaurant: RecommendationSourceInput.RestaurantRecord

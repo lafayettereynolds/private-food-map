@@ -136,7 +136,11 @@ nonisolated enum AnnualRecapAnalyzer {
             tasteJourney: journey, monthlySnapshots: snapshots,
             monthlyHighlights: highlights, keywords: keywords,
             representativeRestaurants: representatives,
-            sufficiency: AnalysisSufficiencyPolicy.level(sampleCount: annualVisits.count, emergingAt: 4, establishedAt: 16),
+            sufficiency: AnalysisSufficiencyPolicy.level(
+                sampleCount: annualVisits.count,
+                emergingAt: AnalysisSufficiencyThresholds.annual.emerging,
+                establishedAt: AnalysisSufficiencyThresholds.annual.established
+            ),
             dataNote: "只分析你自己的本地有效记录。nil 消费不会按 ¥0 计算；私人备注、精确位置、内部身份、storage key 与未选择的关系不会进入年度海报。",
             generatedAt: now
         )
@@ -177,8 +181,14 @@ nonisolated enum AnnualRecapAnalyzer {
     private static func spendSummary(
         visits: [MonthlyRecapInput.VisitRecord], period: AnnualPeriod
     ) -> AnnualSpendSummary {
-        let values = visits.compactMap(validSpend).sorted()
-        let coverage = ratio(values.count, visits.count)
+        let values = AnalysisStatisticsDefinitions.recordedSpendValues(
+            in: visits,
+            spend: \.myActualSpend
+        ).sorted()
+        let coverage = AnalysisStatisticsDefinitions.coverage(
+            recordedCount: values.count,
+            totalCount: visits.count
+        )
         let state: AnnualSpendDisplayState
         if values.isEmpty { state = .none }
         else if coverage < AnnualRecapSufficiencyPolicy.minimumSpendCoverageForProminence { state = .lowCoverage }
@@ -194,7 +204,7 @@ nonisolated enum AnnualRecapAnalyzer {
             )
         }
         return AnnualSpendSummary(
-            recordedTotal: values.isEmpty ? nil : values.reduce(0, +), median: median(values),
+            recordedTotal: values.isEmpty ? nil : values.reduce(0, +), median: AnalysisStatisticsDefinitions.median(values),
             recordedVisitCount: values.count, visitCount: visits.count, coverage: coverage,
             displayState: state, monthlyDistribution: monthly,
             sufficiency: AnalysisSufficiencyPolicy.level(sampleCount: values.count, emergingAt: 3, establishedAt: 12)

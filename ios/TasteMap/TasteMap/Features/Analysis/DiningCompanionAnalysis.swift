@@ -115,6 +115,7 @@ nonisolated struct DiningCompanionInput: Sendable {
         let socialProfileByID = Dictionary(
             uniqueKeysWithValues: socialProfiles.map { ($0.tasteMapUserID, $0) }
         )
+        let identity = AnalysisRestaurantIdentity.projection(for: restaurants)
 
         return DiningCompanionInput(
             userDisplayName: profile?.displayName.trimmedForAnalysis.nilIfEmpty ?? "Taste Map 用户",
@@ -135,7 +136,9 @@ nonisolated struct DiningCompanionInput: Sendable {
                     deletedAt: companion.deletedAt
                 )
             },
-            restaurants: restaurants.map { restaurant in
+            restaurants: restaurants.filter { restaurant in
+                restaurant.deletedAt != nil || identity.representativeIDs.contains(restaurant.id)
+            }.map { restaurant in
                 let contract = restaurant.remoteRecordData.flatMap {
                     try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
                 }
@@ -155,7 +158,7 @@ nonisolated struct DiningCompanionInput: Sendable {
             visits: visits.map { visit in
                 VisitRecord(
                     id: visit.id,
-                    restaurantID: visit.restaurantId,
+                    restaurantID: identity.canonicalID(for: visit.restaurantId),
                     visitedAt: visit.visitedAt,
                     rating: visit.rating,
                     valueRating: visit.valueRating,
@@ -176,7 +179,7 @@ nonisolated struct DiningCompanionInput: Sendable {
             dishes: dishes.map {
                 DishRecord(
                     id: $0.id,
-                    restaurantID: $0.restaurantId,
+                    restaurantID: identity.canonicalID(for: $0.restaurantId),
                     originVisitID: $0.visitId,
                     name: $0.name,
                     taste: $0.taste,
@@ -191,7 +194,7 @@ nonisolated struct DiningCompanionInput: Sendable {
             photos: photos.map {
                 PhotoRecord(
                     id: $0.id,
-                    restaurantID: $0.restaurantId,
+                    restaurantID: identity.canonicalID(for: $0.restaurantId),
                     visitID: $0.visitId,
                     dishID: $0.dishId,
                     kind: $0.kind,

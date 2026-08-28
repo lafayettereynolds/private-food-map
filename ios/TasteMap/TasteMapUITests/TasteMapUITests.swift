@@ -367,12 +367,15 @@ final class TasteMapUITests: XCTestCase {
         let importButton = app.buttons["visit-photo-ui-test-import"]
         scrollUntilVisible(importButton, in: app)
         XCTAssertTrue(importButton.waitForExistence(timeout: 3))
-        for _ in 0..<10 {
+        // P4-H intentionally limits Free visits to three new photos. Keep this
+        // P2-B flow on the Free contract while still covering multi-photo
+        // persistence and independent deletion.
+        for _ in 0..<3 {
             scrollUntilVisible(importButton, in: app)
             importButton.tap()
             XCTAssertTrue(app.staticTexts["本机"].waitForExistence(timeout: 5))
         }
-        XCTAssertTrue(app.staticTexts["10/10"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["3/3"].waitForExistence(timeout: 5))
         app.buttons["visit-editor-save"].tap()
 
         app.terminate()
@@ -389,7 +392,7 @@ final class TasteMapUITests: XCTestCase {
         markers.element(boundBy: max(0, markers.count - 1)).tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
         app.swipeUp()
-        XCTAssertTrue(app.staticTexts["10 张"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["3 张"].waitForExistence(timeout: 5))
         let photo = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH 'restaurant-photo-'")
         ).firstMatch
@@ -397,7 +400,7 @@ final class TasteMapUITests: XCTestCase {
         // The horizontal gallery can be partially under the compact navigation bar
         // after the preceding vertical swipe. Tap its visible lower area explicitly.
         photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
-        XCTAssertTrue(app.navigationBars["1 / 10"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["1 / 3"].waitForExistence(timeout: 5))
         app.buttons["完成"].tap()
 
         app.swipeUp()
@@ -405,7 +408,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(firstVisit.waitForExistence(timeout: 5))
         firstVisit.tap()
         XCTAssertTrue(app.navigationBars["编辑到访"].waitForExistence(timeout: 5))
-        for _ in 0..<10 {
+        for _ in 0..<3 {
             let deletePhoto = app.buttons["删除照片"].firstMatch
             scrollUntilVisible(deletePhoto, in: app)
             XCTAssertTrue(deletePhoto.waitForExistence(timeout: 5))
@@ -1002,6 +1005,10 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
         let entry = app.buttons["profile-companion-analysis-entry"]
         scrollUntilVisible(entry, in: app)
+        // Move the card clear of the custom bottom navigation before tapping.
+        // On iOS 26 XCTest can report a partially covered card as hittable even
+        // though the synthesized tap is consumed by the navigation overlay.
+        app.swipeUp(velocity: .slow)
         XCTAssertTrue(entry.isHittable)
         entry.tap()
 
@@ -1394,8 +1401,13 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["我的"].tap()
         let reopenedEntry = app.buttons["profile-restaurant-lists-entry"]
         scrollUntilVisible(reopenedEntry, in: app)
+        XCTAssertTrue(reopenedEntry.waitForExistence(timeout: 5))
         reopenedEntry.tap()
-        XCTAssertTrue(app.staticTexts["P4-F 杭州周末 Top 4"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["我的榜单"].waitForExistence(timeout: 5))
+        // SwiftData has saved synchronously, but under a full two-runner UI
+        // sweep the relaunched overview can materialize its @Query later than
+        // the navigation bar. Wait for the persisted row itself.
+        XCTAssertTrue(app.staticTexts["P4-F 杭州周末 Top 4"].waitForExistence(timeout: 15))
         app.staticTexts["P4-F 杭州周末 Top 4"].tap()
         XCTAssertFalse(app.staticTexts["P4-F 雨巷火锅"].exists)
         XCTAssertTrue(app.staticTexts["P4-F 小满食堂"].exists)
@@ -1728,8 +1740,13 @@ final class TasteMapUITests: XCTestCase {
 
 private extension XCUIElement {
     func clearAndType(_ text: String) {
-        typeKey("a", modifierFlags: .command)
-        typeKey(.delete, modifierFlags: [])
+        let existingValue = value as? String ?? ""
+        coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        // Send the delete characters through this element rather than as
+        // process-wide key events. Xcode can lose TextField first-responder
+        // focus during long UI sweeps even though `typeKey` reports success.
+        typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existingValue.count + 2))
         typeText(text)
+        XCTAssertEqual(value as? String, text)
     }
 }

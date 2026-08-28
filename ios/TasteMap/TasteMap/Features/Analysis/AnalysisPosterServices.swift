@@ -77,14 +77,23 @@ enum AnalysisPosterImageResolver {
 
 struct AnalysisPosterTemporaryFileStore: Sendable {
     let rootURL: URL
+    let maximumRetainedFileCount: Int
+    let maximumFileAge: TimeInterval
 
-    init(rootURL: URL = FileManager.default.temporaryDirectory) {
+    init(
+        rootURL: URL = FileManager.default.temporaryDirectory,
+        maximumRetainedFileCount: Int = 8,
+        maximumFileAge: TimeInterval = 24 * 60 * 60
+    ) {
         self.rootURL = rootURL.appendingPathComponent("TasteMapAnalysisPosters", isDirectory: true)
+        self.maximumRetainedFileCount = max(1, maximumRetainedFileCount)
+        self.maximumFileAge = max(0, maximumFileAge)
     }
 
     func write(_ image: UIImage, id: String) throws -> URL {
         guard let data = image.pngData() else { throw AnalysisPosterRenderError.pngEncodingFailed }
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        cleanup(reservingSlots: 1)
         let safeID = id.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "-", options: .regularExpression)
         let url = rootURL.appendingPathComponent("taste-map-\(safeID)-\(UUID().uuidString).png")
         try data.write(to: url, options: .atomic)
@@ -94,6 +103,41 @@ struct AnalysisPosterTemporaryFileStore: Sendable {
     func remove(_ url: URL) {
         guard url.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL else { return }
         try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Removes abandoned exports left by interrupted share sheets. Files copied to Photos or
+    /// outside this dedicated temporary directory are never considered by this policy.
+    func cleanup(now: Date = .now, reservingSlots: Int = 0) {
+        let fileManager = FileManager.default
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let files = urls.compactMap { url -> (URL, Date)? in
+            guard url.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL,
+                  url.pathExtension.lowercased() == "png",
+                  let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { return nil }
+            return (url, values.contentModificationDate ?? .distantPast)
+        }.sorted {
+            if $0.1 != $1.1 { return $0.1 < $1.1 }
+            return $0.0.lastPathComponent < $1.0.lastPathComponent
+        }
+
+        var survivors = [(URL, Date)]()
+        for file in files {
+            if now.timeIntervalSince(file.1) > maximumFileAge {
+                try? fileManager.removeItem(at: file.0)
+            } else {
+                survivors.append(file)
+            }
+        }
+
+        let allowedExisting = max(0, maximumRetainedFileCount - max(0, reservingSlots))
+        for file in survivors.prefix(max(0, survivors.count - allowedExisting)) {
+            try? fileManager.removeItem(at: file.0)
+        }
     }
 }
 

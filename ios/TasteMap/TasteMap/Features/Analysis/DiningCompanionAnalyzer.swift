@@ -103,8 +103,8 @@ enum DiningCompanionAnalyzer {
         let repeatRate = ratio(repeatedRestaurantCount, restaurantCount)
         let sufficiency = AnalysisSufficiencyPolicy.level(
             sampleCount: visits.count,
-            emergingAt: 3,
-            establishedAt: 6
+            emergingAt: AnalysisSufficiencyThresholds.companion.emerging,
+            establishedAt: AnalysisSufficiencyThresholds.companion.established
         )
         let avatar = avatarPresentation(for: companion)
         let foodRanks = rankFoods(
@@ -376,7 +376,7 @@ enum DiningCompanionAnalyzer {
         visits: [DiningCompanionInput.VisitRecord],
         baselineRatings: [Double]
     ) -> DiningCompanionRatingSummary {
-        let ratings = visits.compactMap(\.rating)
+        let ratings = AnalysisStatisticsDefinitions.overallRatings(in: visits, rating: \.rating)
         let sharedAverage = average(ratings)
         let baselineAverage = average(baselineRatings)
         let difference: Double? = if ratings.count >= 2, baselineRatings.count >= 3,
@@ -385,8 +385,8 @@ enum DiningCompanionAnalyzer {
         } else { nil }
         let sufficiency = AnalysisSufficiencyPolicy.level(
             sampleCount: ratings.count,
-            emergingAt: 3,
-            establishedAt: 6
+            emergingAt: AnalysisSufficiencyThresholds.companion.emerging,
+            establishedAt: AnalysisSufficiencyThresholds.companion.established
         )
         let summary: String
         if ratings.isEmpty {
@@ -415,11 +415,11 @@ enum DiningCompanionAnalyzer {
     private nonisolated static func spendSummary(
         _ visits: [DiningCompanionInput.VisitRecord]
     ) -> DiningCompanionSpendSummary {
-        let values = visits.compactMap(\.myActualSpend)
-            .map { NSDecimalNumber(decimal: $0).doubleValue }
-            .filter { $0 >= 0 }
-            .sorted()
-        let median = percentile(values, 0.5)
+        let values = AnalysisStatisticsDefinitions.recordedSpendValues(
+            in: visits,
+            spend: \.myActualSpend
+        ).sorted()
+        let median = AnalysisStatisticsDefinitions.median(values)
         let total = values.isEmpty ? nil : values.reduce(0, +)
         let summary = median.map {
             "和 TA 吃饭时，你记录的本人消费中位数是 ¥\(Int($0.rounded()))；共 \(values.count) 条消费样本。"
@@ -431,8 +431,8 @@ enum DiningCompanionAnalyzer {
             summary: summary,
             sufficiency: AnalysisSufficiencyPolicy.level(
                 sampleCount: values.count,
-                emergingAt: 3,
-                establishedAt: 6
+                emergingAt: AnalysisSufficiencyThresholds.companionSpend.emerging,
+                establishedAt: AnalysisSufficiencyThresholds.companionSpend.established
             )
         )
     }

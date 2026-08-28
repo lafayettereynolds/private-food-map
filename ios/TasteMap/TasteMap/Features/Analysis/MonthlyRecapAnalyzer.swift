@@ -10,7 +10,11 @@ nonisolated enum MonthlyRecapSufficiencyPolicy {
     static func tasteChangeLevel(visitCount: Int, restaurantCount: Int) -> AnalysisDataSufficiency {
         guard visitCount >= minimumVisitsForTasteChange,
               restaurantCount >= minimumRestaurantsForTasteChange else { return .insufficient }
-        return AnalysisSufficiencyPolicy.level(sampleCount: visitCount, emergingAt: 3, establishedAt: 8)
+        return AnalysisSufficiencyPolicy.level(
+            sampleCount: visitCount,
+            emergingAt: AnalysisSufficiencyThresholds.monthly.emerging,
+            establishedAt: AnalysisSufficiencyThresholds.monthly.established
+        )
     }
 }
 
@@ -175,12 +179,14 @@ nonisolated enum MonthlyRecapAnalyzer {
     }
 
     private static func spendSummary(visits: [MonthlyRecapInput.VisitRecord]) -> MonthlySpendSummary {
-        let values = visits.compactMap { visit -> Double? in
-            guard let value = visit.myActualSpend else { return nil }
-            let double = NSDecimalNumber(decimal: value).doubleValue
-            return double.isFinite && double >= 0 ? double : nil
-        }.sorted()
-        let coverage = ratio(values.count, visits.count)
+        let values = AnalysisStatisticsDefinitions.recordedSpendValues(
+            in: visits,
+            spend: \.myActualSpend
+        ).sorted()
+        let coverage = AnalysisStatisticsDefinitions.coverage(
+            recordedCount: values.count,
+            totalCount: visits.count
+        )
         let state: MonthlySpendDisplayState
         if values.isEmpty { state = .none }
         else if coverage < MonthlyRecapSufficiencyPolicy.minimumSpendCoverageForProminence { state = .lowCoverage }
@@ -188,7 +194,7 @@ nonisolated enum MonthlyRecapAnalyzer {
         else { state = .complete }
         return MonthlySpendSummary(
             recordedTotal: values.isEmpty ? nil : values.reduce(0, +),
-            median: median(values), recordedVisitCount: values.count, visitCount: visits.count,
+            median: AnalysisStatisticsDefinitions.median(values), recordedVisitCount: values.count, visitCount: visits.count,
             coverage: coverage, displayState: state,
             sufficiency: AnalysisSufficiencyPolicy.level(sampleCount: values.count, emergingAt: 2, establishedAt: 6)
         )

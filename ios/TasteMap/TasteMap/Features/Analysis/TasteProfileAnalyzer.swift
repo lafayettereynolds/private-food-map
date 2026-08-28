@@ -124,7 +124,11 @@ enum TasteProfileAnalyzer {
             photos: activePhotos,
             dishByID: dishByID
         )
-        let overallSufficiency = AnalysisSufficiencyPolicy.level(sampleCount: activeVisits.count)
+        let overallSufficiency = AnalysisSufficiencyPolicy.level(
+            sampleCount: activeVisits.count,
+            emergingAt: AnalysisSufficiencyThresholds.tasteProfile.emerging,
+            establishedAt: AnalysisSufficiencyThresholds.tasteProfile.established
+        )
         let favorite = favoriteStatement(
             cuisine: cuisineRanking.first,
             dish: dishes.first,
@@ -296,10 +300,10 @@ enum TasteProfileAnalyzer {
     private nonisolated static func analyzeSpend(
         _ visits: [TasteProfileInput.VisitRecord]
     ) -> TasteProfileSpendAnalysis {
-        let values = visits.compactMap(\.myActualSpend)
-            .map { NSDecimalNumber(decimal: $0).doubleValue }
-            .filter { $0 >= 0 }
-            .sorted()
+        let values = AnalysisStatisticsDefinitions.recordedSpendValues(
+            in: visits,
+            spend: \.myActualSpend
+        ).sorted()
         let distribution = priceBuckets.compactMap { bucket -> SpendDistributionItem? in
             let count = values.filter(bucket.contains).count
             guard count > 0 else { return nil }
@@ -327,8 +331,12 @@ enum TasteProfileAnalyzer {
     private nonisolated static func analyzeRatings(
         _ visits: [TasteProfileInput.VisitRecord]
     ) -> TasteProfileRatingStyle {
-        let ratings = visits.compactMap(\.rating).sorted()
-        let sufficiency = AnalysisSufficiencyPolicy.level(sampleCount: ratings.count, emergingAt: 3, establishedAt: 10)
+        let ratings = AnalysisStatisticsDefinitions.overallRatings(in: visits, rating: \.rating).sorted()
+        let sufficiency = AnalysisSufficiencyPolicy.level(
+            sampleCount: ratings.count,
+            emergingAt: AnalysisSufficiencyThresholds.tasteProfile.emerging,
+            establishedAt: AnalysisSufficiencyThresholds.tasteProfile.established
+        )
         let mean = average(ratings)
         let median = percentile(ratings, 0.5)
         let deviation = mean.map { mean in

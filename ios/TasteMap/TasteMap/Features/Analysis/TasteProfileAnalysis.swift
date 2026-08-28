@@ -173,10 +173,13 @@ nonisolated struct TasteProfileInput: Sendable {
         recommendationSources: [RecommendationSource],
         profile: UserProfile?
     ) -> TasteProfileInput {
-        TasteProfileInput(
+        let identity = AnalysisRestaurantIdentity.projection(for: restaurants)
+        return TasteProfileInput(
             userDisplayName: profile?.displayName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
                 ?? "Taste Map 用户",
-            restaurants: restaurants.map { restaurant in
+            restaurants: restaurants.filter { restaurant in
+                restaurant.deletedAt != nil || identity.representativeIDs.contains(restaurant.id)
+            }.map { restaurant in
                 let contract = restaurant.remoteRecordData.flatMap {
                     try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
                 }
@@ -195,7 +198,7 @@ nonisolated struct TasteProfileInput: Sendable {
             visits: visits.map { visit in
                 VisitRecord(
                     id: visit.id,
-                    restaurantID: visit.restaurantId,
+                    restaurantID: identity.canonicalID(for: visit.restaurantId),
                     visitedAt: visit.visitedAt,
                     rating: visit.rating,
                     valueRating: visit.valueRating,
@@ -222,7 +225,7 @@ nonisolated struct TasteProfileInput: Sendable {
             dishes: dishes.map {
                 DishRecord(
                     id: $0.id,
-                    restaurantID: $0.restaurantId,
+                    restaurantID: identity.canonicalID(for: $0.restaurantId),
                     originVisitID: $0.visitId,
                     name: $0.name,
                     taste: $0.taste,
@@ -242,7 +245,7 @@ nonisolated struct TasteProfileInput: Sendable {
             photos: photos.map {
                 PhotoRecord(
                     id: $0.id,
-                    restaurantID: $0.restaurantId,
+                    restaurantID: identity.canonicalID(for: $0.restaurantId),
                     visitID: $0.visitId,
                     dishID: $0.dishId,
                     kind: $0.kind.rawValue,

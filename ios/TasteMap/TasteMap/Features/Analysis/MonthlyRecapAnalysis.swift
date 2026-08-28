@@ -159,10 +159,13 @@ nonisolated struct MonthlyRecapInput: Sendable {
         recommendationSources: [RecommendationSource],
         profile: UserProfile?
     ) -> MonthlyRecapInput {
-        MonthlyRecapInput(
+        let identity = AnalysisRestaurantIdentity.projection(for: restaurants)
+        return MonthlyRecapInput(
             userDisplayName: profile?.displayName.trimmingCharacters(in: .whitespacesAndNewlines).monthlyNonEmpty
                 ?? "Taste Map 用户",
-            restaurants: restaurants.map { restaurant in
+            restaurants: restaurants.filter { restaurant in
+                restaurant.deletedAt != nil || identity.representativeIDs.contains(restaurant.id)
+            }.map { restaurant in
                 let contract = restaurant.remoteRecordData.flatMap {
                     try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
                 }
@@ -175,7 +178,7 @@ nonisolated struct MonthlyRecapInput: Sendable {
             },
             visits: visits.map {
                 VisitRecord(
-                    id: $0.id, restaurantID: $0.restaurantId, visitedAt: $0.visitedAt,
+                    id: $0.id, restaurantID: identity.canonicalID(for: $0.restaurantId), visitedAt: $0.visitedAt,
                     rating: $0.rating, valueRating: $0.valueRating,
                     environmentRating: $0.environmentRating, serviceRating: $0.serviceRating,
                     myActualSpend: $0.myActualSpend, note: $0.note,
@@ -189,7 +192,7 @@ nonisolated struct MonthlyRecapInput: Sendable {
             },
             dishes: dishes.map {
                 DishRecord(
-                    id: $0.id, restaurantID: $0.restaurantId, originVisitID: $0.visitId,
+                    id: $0.id, restaurantID: identity.canonicalID(for: $0.restaurantId), originVisitID: $0.visitId,
                     name: $0.name, taste: $0.taste, rating: $0.rating,
                     updatedAt: $0.updatedAt, deletedAt: $0.deletedAt
                 )
@@ -199,7 +202,7 @@ nonisolated struct MonthlyRecapInput: Sendable {
             },
             photos: photos.map {
                 PhotoRecord(
-                    id: $0.id, restaurantID: $0.restaurantId, visitID: $0.visitId,
+                    id: $0.id, restaurantID: identity.canonicalID(for: $0.restaurantId), visitID: $0.visitId,
                     dishID: $0.dishId, kind: $0.kind, sortOrder: $0.sortOrder,
                     updatedAt: $0.updatedAt, deletedAt: $0.deletedAt
                 )

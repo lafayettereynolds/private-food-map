@@ -1,5 +1,15 @@
 # Taste Map 变更记录
 
+## 2026-08-29 — P4-I P4 全功能总体验收与硬化
+
+- 统一 P4-A—P4-E 的评分、消费、coverage 与数据充分度定义，并加入 provider-neutral Global Restaurant Identity 分析投影；Apple Maps/community/本地别名不再在五类报告中重复计数，tombstone 不参与合并或复活。
+- 补齐月度/年度 12 个月对账、nil 语义、全分析 identity 与海报生命周期测试；Taste Profile 的刷新 revision 现包含 soft-delete 时间戳，新增/编辑/删除会选择性重算。
+- 加固共享海报临时文件目录：只清理专用目录中的 PNG，限制 24 小时和最多 8 个文件，不触碰 Photos 或目录外文件；五类海报继续共用 1080×1920 renderer/export/save/share 管线。
+- SwiftData / Sync V1 / Worker / D1 schema 均无变化，没有新增 migration；Development D1 只读验收，Production Worker/D1 未查询、迁移、部署或写入。
+- 最终验证：iOS 单元测试 318/318 通过；Simulator UI 33 项（36 次展开运行）通过、0 失败，另有 1 条依赖外部旧 P1 store fixture 的条件迁移 UI 跳过；Vitest 290/290、两套 TypeScript 检查、Vite、11 套本地 migration、Debug/Release Simulator 和签名真机构建/安装均通过。
+- 真机自动启动被 iOS 以开发者 profile 尚未显式信任为由拒绝，因此本轮没有把真机 Photos/Share Sheet/haptic 人工 smoke 伪报为通过；没有更改 Team、Bundle Identifier、Signing 或 Capability。
+- 完整边界、统计口径、timezone 限制、隐私与验收契约见 `P4_I_PRODUCT_HARDENING.md`。
+
 ## 2026-08-29 — P4-H 原生 Premium entitlement foundation
 
 - 审计现有 Web `PremiumPaywall`、`featurePolicy`、Profile/Discovery/分析入口、会员 domain、`PREMIUM_PRODUCT.md` 和 D1 `0010`，只迁移正式确认的 12 项权益；Restaurant/Visit/WantToGo、搜索/详情、基础 Photo/Dish/Profile、社交、普通榜单和 Roulette 继续免费。
