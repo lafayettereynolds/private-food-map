@@ -17,6 +17,7 @@ struct ProfileView: View {
     @State private var isRunningAuthOperation = false
     @State private var authMessage: String?
     @State private var isEditingProfile = false
+    @State private var isShowingSocialHub = false
 
     private var activeRestaurants: [Restaurant] { restaurants.filter { $0.deletedAt == nil } }
     private var activeVisits: [Visit] { visits.filter { $0.deletedAt == nil } }
@@ -50,6 +51,28 @@ struct ProfileView: View {
                         visitedCount: statistics.visitedRestaurantCount,
                         wantToGoCount: statistics.wantToGoRestaurantCount
                     )
+                    if let userID = authenticatedUser?.id {
+                        Button { isShowingSocialHub = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.2.badge.plus")
+                                    .frame(width: 24).foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("好友与关注").font(.headline).foregroundStyle(.primary)
+                                    Text("搜索用户、处理好友请求和查看关注关系")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("profile-social-entry")
+                        .sheet(isPresented: $isShowingSocialHub) {
+                            SocialHubView(currentUserID: userID, api: authServices.socialAPI)
+                        }
+                    }
                     accountAndSyncCard
                     if activeRestaurants.isEmpty {
                         ContentUnavailableView(

@@ -67,6 +67,7 @@ import {
   ProfileV1RequestError,
   readPublicProfile as readPublicProfileV1,
 } from './profileV1'
+import { handleSocialV1, SocialV1RequestError } from './socialV1'
 
 interface Env {
   DB: D1Database
@@ -589,6 +590,11 @@ export default {
         const profileId = decodeURIComponent(url.pathname.slice('/api/v1/public/profiles/'.length))
         return json(await readPublicProfileV1(env.DB, viewer.id, profileId))
       }
+      if (url.pathname.startsWith('/api/v1/social/')) {
+        const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
+        return json(await handleSocialV1(request, env.DB, viewer.id))
+      }
       const photoContentMatch = url.pathname.match(/^\/api\/v1\/photos\/([0-9a-f-]+)\/content$/i)
       if (photoContentMatch) {
         const viewer = await resolveSyncViewer(request, env)
@@ -680,7 +686,7 @@ export default {
     } catch (error) {
       console.error('Taste Map sync error', error)
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError ? error.status : 500
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError ? error.status : 500
       const code = error instanceof AuthV1RequestError ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }

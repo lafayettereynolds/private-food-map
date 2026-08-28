@@ -734,11 +734,14 @@ struct VisitEditorView: View {
                         restaurantID: restaurantID,
                         visitID: savedVisit.id,
                         sortOrder: visibleVisitPhotos.count + offset,
+                        visibility: PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private,
                         queueForUpload: true
                     )
                     savedPhotos.append(photo)
                 }
                 for photo in savedPhotos where photo.visitId == savedVisit.id {
+                    photo.visibility = PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private
+                    photo.updatedAt = .now
                     let selectedDraft = dishDrafts.first { $0.photoID == photo.id }
                     try photoCoordinator.setDishRelationship(
                         photo,
@@ -805,6 +808,7 @@ struct VisitEditorView: View {
                             restaurantID: restaurant.id,
                             visitID: visit.id,
                             sortOrder: visibleVisitPhotos.count,
+                            visibility: PhotoVisibility(rawValue: draft.visibility.rawValue) ?? .private,
                             queueForUpload: false,
                             draftSessionID: photoDraftSessionID
                         )
@@ -839,6 +843,7 @@ struct VisitEditorView: View {
                         restaurantID: restaurant.id,
                         visitID: visit.id,
                         sortOrder: visibleVisitPhotos.count,
+                        visibility: PhotoVisibility(rawValue: draft.visibility.rawValue) ?? .private,
                         queueForUpload: false,
                         draftSessionID: photoDraftSessionID
                     )

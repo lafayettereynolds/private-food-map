@@ -96,11 +96,14 @@ export async function readPublicProfile(
     (profile.visibility === 'friends' && friend)
   if (!permitted) throw new ProfileV1RequestError('Public Profile was not found.', 404)
 
+  const readableVisitVisibility = friend && targetUserId !== viewerId
+    ? "visibility IN ('public', 'friends')"
+    : "visibility = 'public'"
   const [visitResult, restaurantResult, avatar] = await database.batch([
     database.prepare(`SELECT COUNT(*) AS count FROM visits
-      WHERE user_id = ? AND visibility = 'public' AND deleted_at IS NULL`).bind(targetUserId),
+      WHERE user_id = ? AND ${readableVisitVisibility} AND deleted_at IS NULL`).bind(targetUserId),
     database.prepare(`SELECT COUNT(DISTINCT restaurant_id) AS count FROM visits
-      WHERE user_id = ? AND visibility = 'public' AND deleted_at IS NULL`).bind(targetUserId),
+      WHERE user_id = ? AND ${readableVisitVisibility} AND deleted_at IS NULL`).bind(targetUserId),
     database.prepare(`SELECT id FROM photos
       WHERE id = ? AND user_id = ? AND kind = 'avatar' AND deleted_at IS NULL LIMIT 1`)
       .bind(profile.avatar_photo_id, targetUserId),

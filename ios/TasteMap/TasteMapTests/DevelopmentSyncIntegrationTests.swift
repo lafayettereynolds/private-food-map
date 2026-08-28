@@ -7,6 +7,83 @@ import UIKit
 @Suite("Development Worker Sync", .serialized)
 @MainActor
 struct DevelopmentSyncIntegrationTests {
+    @Test("P3-B iOS social clients search, connect, cache, revoke, and follow through Development")
+    func developmentSocialRoundTrip() async throws {
+        guard ProcessInfo.processInfo.environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
+        let runID = UUID().uuidString.lowercased()
+        let userA = "ios-p3b:\(runID):a"
+        let userB = "ios-p3b:\(runID):b"
+        let userC = "ios-p3b:\(runID):c"
+        let configuration = APIConfiguration.current()
+        let sourceA = try await makeDevelopmentProfile(
+            userID: userA, displayName: "iOS P3-B Alpha", visibility: .public,
+            configuration: configuration
+        )
+        let sourceB = try await makeDevelopmentProfile(
+            userID: userB, displayName: "iOS P3-B Beta", visibility: .public,
+            configuration: configuration
+        )
+        let sourceC = try await makeDevelopmentProfile(
+            userID: userC, displayName: "iOS P3-B Gamma", visibility: .public,
+            configuration: configuration
+        )
+        let apiA = URLSessionSocialAPIClient(configuration: configuration, authorization: DevelopmentSyncAuthorization(testUserID: userA))
+        let apiB = URLSessionSocialAPIClient(configuration: configuration, authorization: DevelopmentSyncAuthorization(testUserID: userB))
+        let apiC = URLSessionSocialAPIClient(configuration: configuration, authorization: DevelopmentSyncAuthorization(testUserID: userC))
+
+        let search = try await apiA.search(query: "P3-B Beta", cursor: nil, limit: 1)
+        let foundB = try #require(search.items.first)
+        #expect(foundB.profile.userId == userB)
+        #expect(foundB.friendshipState == .none)
+
+        let bProfile = try #require(sourceB.mainContext.fetch(FetchDescriptor<UserProfile>()).first)
+        try LocalUserProfileStore(context: sourceB.mainContext).update(
+            bProfile, displayName: bProfile.displayName, bio: bProfile.bio, city: bProfile.city,
+            avatarPhotoID: nil, avatarPreset: bProfile.avatarPreset, visibility: .friends
+        )
+        try await SyncEngine(
+            context: sourceB.mainContext,
+            api: URLSessionSyncAPIClient(configuration: configuration, authorization: DevelopmentSyncAuthorization(testUserID: userB))
+        ).synchronize()
+
+        let requested = try await apiA.requestFriend(userID: userB)
+        #expect(requested.friendship.state == .outgoingRequest)
+        let repeated = try await apiA.requestFriend(userID: userB)
+        #expect(repeated.duplicate)
+        await #expect(throws: SyncAPIError.self) { _ = try await apiA.profileContext(userID: userB) }
+        let incoming = try await apiB.friendships(scope: .incoming, cursor: nil, limit: 20)
+        #expect(incoming.items.first?.friendshipState == .incomingRequest)
+        await #expect(throws: SyncAPIError.self) {
+            _ = try await apiC.mutateFriendship(id: requested.friendship.id, action: .accept)
+        }
+        let accepted = try await apiB.mutateFriendship(id: requested.friendship.id, action: .accept)
+        #expect(accepted.friendship.state == .friends)
+        #expect(try await apiA.profileContext(userID: userB).relationship.friendshipState == .friends)
+
+        let cacheDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+        let storeURL = cacheDirectory.appendingPathComponent("p3b-social.store")
+        var cache: ModelContainer? = try TasteMapPersistence.makeContainer(storageURL: storeURL)
+        try LocalSocialStore(context: try #require(cache?.mainContext)).cache(foundB, currentUserID: userA)
+        try LocalSocialStore(context: try #require(cache?.mainContext)).upsertFriendship(accepted.friendship, currentUserID: userA)
+        cache = nil
+        let reopened = try TasteMapPersistence.makeContainer(storageURL: storeURL)
+        #expect(try LocalSocialStore(context: reopened.mainContext).cachedFriendships(currentUserID: userA).first?.perspectiveState == .friends)
+
+        _ = try await apiA.setFollowing(true, userID: userB)
+        let relation = try await apiA.profileContext(userID: userB).relationship
+        #expect(relation.isFollowing)
+        #expect(relation.friendshipState == .friends)
+        _ = try await apiA.mutateFriendship(id: requested.friendship.id, action: .remove)
+        await #expect(throws: SyncAPIError.self) { _ = try await apiA.profileContext(userID: userB) }
+        _ = try await apiA.setFollowing(false, userID: userB)
+
+        try await makeProfilePrivate(sourceA, userID: userA, configuration: configuration)
+        try await makeProfilePrivate(sourceB, userID: userB, configuration: configuration)
+        try await makeProfilePrivate(sourceC, userID: userC, configuration: configuration)
+    }
+
     @Test("P3-A iOS Profile round-trips through Development Worker and fresh SwiftData client")
     func developmentProfileRoundTrip() async throws {
         let environment = ProcessInfo.processInfo.environment
@@ -105,6 +182,46 @@ struct DevelopmentSyncIntegrationTests {
         await #expect(throws: SyncAPIError.self) {
             _ = try await publicAPI.publicProfile(userID: userID)
         }
+    }
+
+    private func makeDevelopmentProfile(
+        userID: String,
+        displayName: String,
+        visibility: ProfileVisibility,
+        configuration: APIConfiguration
+    ) async throws -> ModelContainer {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let api = URLSessionSyncAPIClient(
+            configuration: configuration,
+            authorization: DevelopmentSyncAuthorization(testUserID: userID)
+        )
+        try await SyncEngine(context: container.mainContext, api: api).synchronize()
+        let profile = try #require(container.mainContext.fetch(FetchDescriptor<UserProfile>()).first)
+        try LocalUserProfileStore(context: container.mainContext).update(
+            profile, displayName: displayName, bio: "Development Simulator E2E", city: "杭州",
+            avatarPhotoID: nil, avatarPreset: .otter, visibility: visibility
+        )
+        try await SyncEngine(context: container.mainContext, api: api).synchronize()
+        return container
+    }
+
+    private func makeProfilePrivate(
+        _ container: ModelContainer,
+        userID: String,
+        configuration: APIConfiguration
+    ) async throws {
+        let profile = try #require(container.mainContext.fetch(FetchDescriptor<UserProfile>()).first)
+        try LocalUserProfileStore(context: container.mainContext).update(
+            profile, displayName: profile.displayName, bio: "", city: "",
+            avatarPhotoID: nil, avatarPreset: profile.avatarPreset, visibility: .private
+        )
+        try await SyncEngine(
+            context: container.mainContext,
+            api: URLSessionSyncAPIClient(
+                configuration: configuration,
+                authorization: DevelopmentSyncAuthorization(testUserID: userID)
+            )
+        ).synchronize()
     }
 
     @Test("iOS auth client reaches the Development Apple verification boundary")

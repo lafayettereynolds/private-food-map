@@ -6,6 +6,7 @@ enum CompanionSourceStoreError: LocalizedError, Equatable {
     case duplicateName
     case missingCompanion
     case missingRecommendationSource
+    case targetIsNotFriend
 
     var errorDescription: String? {
         switch self {
@@ -13,6 +14,7 @@ enum CompanionSourceStoreError: LocalizedError, Equatable {
         case .duplicateName: "已经有一个完全同名的记录。"
         case .missingCompanion: "没有找到这位饭搭子，请重新选择。"
         case .missingRecommendationSource: "没有找到这个推荐来源，请重新选择。"
+        case .targetIsNotFriend: "只能主动关联已经接受的 Taste Map 好友。"
         }
     }
 }
@@ -75,6 +77,27 @@ struct LocalCompanionSourceStore {
         source.updatedAt = .now
         source.syncStatus = .pending
         try enqueue(source)
+        try context.save()
+    }
+
+    func link(
+        _ companion: DiningCompanion,
+        toTasteMapUserID userID: String,
+        acceptedFriendUserIDs: Set<String>
+    ) throws {
+        guard acceptedFriendUserIDs.contains(userID) else {
+            throw CompanionSourceStoreError.targetIsNotFriend
+        }
+        companion.linkedTasteMapUserId = userID
+        companion.updatedAt = .now
+        try enqueue(companion)
+        try context.save()
+    }
+
+    func unlinkTasteMapUser(from companion: DiningCompanion) throws {
+        companion.linkedTasteMapUserId = nil
+        companion.updatedAt = .now
+        try enqueue(companion)
         try context.save()
     }
 

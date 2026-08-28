@@ -111,6 +111,37 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP3BSocialEntryOpensNativeSearchWithoutExposingPrivateIdentityFields() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P3A_PROFILE_UI_TEST": "1",
+        ]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        let entry = app.buttons["profile-social-entry"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["好友与关注"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls.buttons["找人"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["好友"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["请求"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["关注"].exists)
+        XCTAssertTrue(app.textFields["social-search-field"].exists)
+        let privacyMessage = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "邮箱和 Apple 登录信息不能用于找人")
+        ).firstMatch
+        XCTAssertTrue(privacyMessage.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["private-ui-fixture@example.test"].exists)
+    }
+
+    @MainActor
     func testWantToGoRestaurantOpensDetailInformationCenter() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-p1b-restaurant-detail-fixture"]

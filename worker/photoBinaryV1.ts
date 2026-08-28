@@ -193,8 +193,23 @@ async function readablePhoto(database: D1Database, viewerId: string, photoId: st
             )
           )
       )
+      OR EXISTS (
+        SELECT 1 FROM visits v
+        WHERE v.id = p.visit_id AND v.user_id = p.user_id
+          AND v.deleted_at IS NULL AND (
+            (p.visibility = 'public' AND v.visibility = 'public') OR (
+              p.visibility = 'friends' AND v.visibility = 'friends' AND EXISTS (
+                SELECT 1 FROM friendships vf
+                WHERE vf.status = 'accepted' AND vf.deleted_at IS NULL AND (
+                  (vf.requester_id = ? AND vf.addressee_id = p.user_id) OR
+                  (vf.requester_id = p.user_id AND vf.addressee_id = ?)
+                )
+              )
+            )
+          )
+      )
     ) LIMIT 1`)
-    .bind(photoId, viewerId, viewerId, viewerId).first<OwnedPhotoRow>()
+    .bind(photoId, viewerId, viewerId, viewerId, viewerId, viewerId).first<OwnedPhotoRow>()
 }
 
 function uploadResponse(

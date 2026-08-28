@@ -491,6 +491,26 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
   if (mutation.operation === 'upsert' &&
     (mutation.entityType === 'companion' || mutation.entityType === 'recommendationSource')) {
     const directory = mutation.payload as DiningCompanionSyncContractV1 | RecommendationSourceSyncContractV1
+    if (mutation.entityType === 'companion' && directory.linkedTasteMapUserId) {
+      const currentLink = await database.prepare(`SELECT linked_user_id FROM dining_companions
+        WHERE id = ? AND owner_user_id = ? LIMIT 1`).bind(mutation.entityId, viewerId)
+        .first<{ linked_user_id: string | null }>()
+      if (currentLink?.linked_user_id !== directory.linkedTasteMapUserId) {
+        const acceptedFriend = await database.prepare(`SELECT id FROM friendships
+          WHERE status = 'accepted' AND deleted_at IS NULL AND (
+            (requester_id = ? AND addressee_id = ?) OR
+            (requester_id = ? AND addressee_id = ?)
+          ) LIMIT 1`).bind(
+            viewerId, directory.linkedTasteMapUserId,
+            directory.linkedTasteMapUserId, viewerId,
+          ).first()
+        if (!acceptedFriend) {
+          throw new SyncV1RequestError(
+            'Companion.linkedTasteMapUserId must reference an accepted friend.', 403,
+          )
+        }
+      }
+    }
     const normalizedName = normalizedPrivateDirectoryName(directory.displayName)
     const duplicate = mutation.entityType === 'companion'
       ? await database.prepare(`SELECT id, server_version FROM dining_companions

@@ -138,6 +138,7 @@ final class PhotoTransferCoordinator {
         restaurantID: UUID,
         visitID: UUID,
         sortOrder: Int,
+        visibility: PhotoVisibility = .private,
         queueForUpload: Bool,
         draftSessionID: UUID? = nil
     ) throws -> PhotoAsset {
@@ -147,6 +148,7 @@ final class PhotoTransferCoordinator {
             restaurantId: restaurantID,
             visitId: visitID,
             sortOrder: sortOrder,
+            visibility: visibility,
             queueForUpload: queueForUpload,
             draftSessionID: draftSessionID
         )
