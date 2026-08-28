@@ -234,6 +234,8 @@ private struct RestaurantDetailMetric: View {
 
 struct RestaurantVisitHistorySection: View {
     let visits: [Visit]
+    let companionNamesByID: [String: String]
+    let sourceNamesByID: [String: String]
     let onEdit: (Visit) -> Void
     let onDelete: (Visit) -> Void
 
@@ -263,6 +265,8 @@ struct RestaurantVisitHistorySection: View {
                     RestaurantVisitHistoryRow(
                         visit: visit,
                         ordinal: visits.count - index,
+                        companionNamesByID: companionNamesByID,
+                        sourceNamesByID: sourceNamesByID,
                         onEdit: { onEdit(visit) },
                         onDelete: { onDelete(visit) }
                     )
@@ -279,6 +283,8 @@ struct RestaurantVisitHistorySection: View {
 private struct RestaurantVisitHistoryRow: View {
     let visit: Visit
     let ordinal: Int
+    let companionNamesByID: [String: String]
+    let sourceNamesByID: [String: String]
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -317,6 +323,23 @@ private struct RestaurantVisitHistoryRow: View {
                         .lineLimit(2)
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("visit-history-context")
+                    }
+
+                    let companionNames = resolvedCompanionNames
+                    if !companionNames.isEmpty {
+                        Label(companionNames.joined(separator: "、"), systemImage: "person.2.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .accessibilityIdentifier("visit-history-companions")
+                    }
+
+                    if let sourceName = resolvedSourceName {
+                        Label(sourceName, systemImage: "sparkles")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("visit-history-recommendation-source")
                     }
 
                     if let note = visit.note, !note.isEmpty {
@@ -361,5 +384,19 @@ private struct RestaurantVisitHistoryRow: View {
         }
         .padding(.vertical, 12)
         .accessibilityIdentifier("visit-history-row-\(visit.id.uuidString)")
+    }
+
+    private var resolvedCompanionNames: [String] {
+        guard visit.companionIDs.count == visit.companionNames.count else {
+            return visit.companionNames
+        }
+        return zip(visit.companionIDs, visit.companionNames).map { id, snapshot in
+            companionNamesByID[id] ?? snapshot
+        }
+    }
+
+    private var resolvedSourceName: String? {
+        if let id = visit.recommendationSourceID, let current = sourceNamesByID[id] { return current }
+        return visit.recommendationSourceText
     }
 }

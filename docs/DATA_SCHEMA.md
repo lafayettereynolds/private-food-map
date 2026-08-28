@@ -30,6 +30,7 @@
 - `transportConvenience`: `very_convenient | convenient | normal | inconvenient | null`。
 - `specialNotes`: 最低消费、现场规则等可选文字；与一般 `note` 分开。
 - P2-E 的完整 Web→iOS 字段矩阵、nullable 合同与 legacy 保真策略见 `P2_E_DINING_CONTEXT.md`。
+- P2-F 的饭搭子/推荐来源 identity、Visit snapshot 投影、同步顺序及 migration 风险见 `P2_F_COMPANIONS_RECOMMENDATION_SOURCES.md`。
 
 ## UserProfile 本轮相关字段
 

@@ -8,6 +8,8 @@ struct RestaurantDetailView: View {
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
     @Query private var allVisitDishes: [VisitDish]
+    @Query private var allCompanions: [DiningCompanion]
+    @Query private var allRecommendationSources: [RecommendationSource]
 
     let restaurant: Restaurant
     private let navigator: any RestaurantNavigating
@@ -55,6 +57,8 @@ struct RestaurantDetailView: View {
                     RestaurantDetailedRatingsSection(summaries: detailedRatingSummaries)
                     RestaurantVisitHistorySection(
                         visits: presentation.activeVisits,
+                        companionNamesByID: companionNamesByID,
+                        sourceNamesByID: sourceNamesByID,
                         onEdit: { editingVisit = $0 },
                         onDelete: { visitPendingDeletion = $0 }
                     )
@@ -181,5 +185,19 @@ struct RestaurantDetailView: View {
 
     private var detailedRatingSummaries: [RatingSummary] {
         RatingStatistics.summaries(for: presentation.activeVisits)
+    }
+
+    private var companionNamesByID: [String: String] {
+        Dictionary(uniqueKeysWithValues: allCompanions.compactMap { companion in
+            guard companion.deletedAt == nil, let remoteID = companion.remoteID else { return nil }
+            return (remoteID, companion.displayName)
+        })
+    }
+
+    private var sourceNamesByID: [String: String] {
+        Dictionary(uniqueKeysWithValues: allRecommendationSources.compactMap { source in
+            guard source.deletedAt == nil, let remoteID = source.remoteID else { return nil }
+            return (remoteID, source.displayName)
+        })
     }
 }

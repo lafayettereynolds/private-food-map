@@ -28,6 +28,13 @@ final class Visit {
     private var portionLevelValue: String?
     private var transportConvenienceValue: String?
     var specialNotes: String?
+    private var companionIDsJSON: String = "[]"
+    private var companionNamesJSON: String = "[]"
+    var recommendationSourceID: String?
+    private var recommendationSourceTypeValue: String?
+    var recommendationSourceUserID: String?
+    var recommendationSourceText: String?
+    var sharedMealID: String?
     var partySize: Int?
     var createdAt: Date
     var updatedAt: Date
@@ -40,6 +47,26 @@ final class Visit {
     var syncStatus: SyncStatus {
         get { SyncStatus(rawValue: syncStatusValue) ?? .pending }
         set { syncStatusValue = newValue.rawValue }
+    }
+
+    var companionIDs: [String] {
+        get { VisitStringArrayStorage.decode(companionIDsJSON) }
+        set { companionIDsJSON = VisitStringArrayStorage.encode(newValue) }
+    }
+
+    var companionNames: [String] {
+        get { VisitStringArrayStorage.decode(companionNamesJSON) }
+        set { companionNamesJSON = VisitStringArrayStorage.encode(newValue) }
+    }
+
+    var recommendationSourceType: RecommendationSourceType? {
+        get { recommendationSourceTypeValue.flatMap(RecommendationSourceType.init(rawValue:)) }
+        set { recommendationSourceTypeValue = newValue?.rawValue }
+    }
+
+    var recommendationSourceTypeRawValue: String? {
+        get { recommendationSourceTypeValue }
+        set { recommendationSourceTypeValue = Self.normalizedRawValue(newValue) }
     }
 
     var diningMode: DiningMode {
@@ -166,6 +193,13 @@ final class Visit {
         portionLevel: VisitPortionLevel? = nil,
         transportConvenience: VisitTransportConvenience? = nil,
         specialNotes: String? = nil,
+        companionIDs: [String] = [],
+        companionNames: [String] = [],
+        recommendationSourceID: String? = nil,
+        recommendationSourceType: RecommendationSourceType? = nil,
+        recommendationSourceUserID: String? = nil,
+        recommendationSourceText: String? = nil,
+        sharedMealID: String? = nil,
         partySize: Int? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
@@ -200,6 +234,13 @@ final class Visit {
         self.portionLevelValue = portionLevel?.rawValue
         self.transportConvenienceValue = transportConvenience?.rawValue
         self.specialNotes = specialNotes?.nilIfBlank
+        self.companionIDsJSON = VisitStringArrayStorage.encode(companionIDs)
+        self.companionNamesJSON = VisitStringArrayStorage.encode(companionNames)
+        self.recommendationSourceID = recommendationSourceID?.nilIfBlank
+        self.recommendationSourceTypeValue = recommendationSourceType?.rawValue
+        self.recommendationSourceUserID = recommendationSourceUserID?.nilIfBlank
+        self.recommendationSourceText = recommendationSourceText?.nilIfBlank
+        self.sharedMealID = sharedMealID?.nilIfBlank
         self.partySize = partySize.flatMap { $0 >= 1 ? $0 : nil }
         self.createdAt = createdAt
         self.updatedAt = updatedAt

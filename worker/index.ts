@@ -1336,6 +1336,7 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
     if (!/^[a-zA-Z0-9:_-]{1,80}$/.test(requestedUser)) {
       throw new SyncV1RequestError('Development sync identity is invalid.', 400)
     }
+    await ensureDevelopmentSyncUser(env.DB, requestedUser)
     return { id: requestedUser, email: null, authProvider: 'local', authSubject: null }
   }
   if (env.SYNC_AUTH_MODE === 'development-test') {
@@ -1347,6 +1348,7 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
     if (!/^[a-zA-Z0-9:_-]{1,80}$/.test(requestedUser)) {
       throw new SyncV1RequestError('Development sync identity is invalid.', 400)
     }
+    await ensureDevelopmentSyncUser(env.DB, requestedUser)
     return { id: requestedUser, email: null, authProvider: 'local', authSubject: null }
   }
   if (env.SYNC_AUTH_MODE !== 'cloudflare-access') {
@@ -1356,6 +1358,14 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
     throw new SyncV1RequestError('Sync authentication is required.', 401)
   }
   return resolveViewer(request, env.DB)
+}
+
+async function ensureDevelopmentSyncUser(database: D1Database, userId: string) {
+  const now = new Date().toISOString()
+  await database.prepare(`INSERT OR IGNORE INTO users (
+    id, auth_provider, nickname, bio, city, created_at, updated_at, is_test_user
+  ) VALUES (?, 'local', ?, '', '', ?, ?, 1)`)
+    .bind(userId, `Development ${userId}`, now, now).run()
 }
 
 function isMembershipAdmin(request: Request, env: Env, viewer: ViewerIdentity) {

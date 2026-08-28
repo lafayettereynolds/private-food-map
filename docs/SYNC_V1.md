@@ -20,7 +20,7 @@ P0-B1 建立 `SwiftData ↔ SyncEngine ↔ Worker ↔ D1` 基础链路。P2-A �
 - `clientTimestamp`
 - `payload`：upsert 必填，delete 禁止携带
 
-Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-only Restaurant 不需要 `amapPoiId`；D1 旧兼容列保存空字符串，正式 identity 只来自 `placeIdentities`。P1-C 增加 canonical `diningMode`（`dine_in | takeout`）和 required-but-nullable `partySize`；P2-D 增加三项可空详细评分；P2-E 增加用餐场景、等位、消费拆分、体验标签和可见性。新客户端显式编码 nullable/空数组，旧 payload 缺少新字段时继续归一化为安全默认值。P2-E 不覆盖留给 P2-F 的饭搭子和推荐来源字段。完整字段语义见 `P2_E_DINING_CONTEXT.md`；Dish/Photo 字段见 `P2_DISH_PHOTO_FOUNDATION.md`。
+Restaurant payload 继续使用 P0-A Restaurant JSON Contract V1。Apple Maps-only Restaurant 不需要 `amapPoiId`；D1 旧兼容列保存空字符串，正式 identity 只来自 `placeIdentities`。P1-C 增加 canonical `diningMode`（`dine_in | takeout`）和 required-but-nullable `partySize`；P2-D 增加三项可空详细评分；P2-E 增加用餐场景、等位、消费拆分、体验标签和可见性；P2-F 增加 owner-scoped 饭搭子/推荐来源实体与 Visit 的 ID + snapshot 投影。新客户端显式编码 nullable/空数组，旧 payload 缺少新字段时继续归一化为安全默认值。完整字段语义见 `P2_E_DINING_CONTEXT.md` 与 `P2_F_COMPANIONS_RECOMMENDATION_SOURCES.md`；Dish/Photo 字段见 `P2_DISH_PHOTO_FOUNDATION.md`。
 
 响应逐项返回 `applied | conflict`、`duplicate`、`serverVersion`、`revision` 和可选冲突原因。
 
@@ -68,6 +68,7 @@ P0-B2-A 的远程测试身份仅用于隔离的 Development D1，开发 URL 不�
 - Restaurant/Visit 增加 `deletedAt`、`serverVersion`、`lastSyncedAt`、同步状态；已有 `createdAt/updatedAt` 直接复用。
 - P1-C 为 Visit 增加带 `dine_in` 默认值的 `diningMode` 和可空 `partySize`，使用 SwiftData additive lightweight migration，不删除旧 Store。
 - P2-E 为 Visit 增加 optional Decimal/text、带默认值的 `private` visibility，以及 raw-string/JSON-backed context；旧 Store 继续 additive 打开，未知 legacy raw value 不触发崩溃。
+- P2-F 新增 SwiftData `DiningCompanion` / `RecommendationSource` 私有目录、持久 mutation queue 与 Visit 的多饭搭子/单推荐来源关联；目录 mutation 的队列优先级早于 Visit。
 - Restaurant 保存 `remoteRecordData` 作为不透明 canonical snapshot，使原生编辑名称/地址时不会清空尚未迁移的 Web 字段；没有复制整套 Web 字段到 SwiftData。
 - `SyncCheckpoint` 保存 cursor；`SyncMutation` 保存离线队列。
 

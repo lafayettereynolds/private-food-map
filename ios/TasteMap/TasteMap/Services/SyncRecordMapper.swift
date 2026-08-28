@@ -136,11 +136,53 @@ enum SyncRecordMapper {
             portionLevel: visit.portionLevelRawValue,
             transportConvenience: visit.transportConvenienceRawValue,
             specialNotes: visit.specialNotes,
+            companions: visit.companionNames,
+            companionIds: visit.companionIDs,
+            recommendationSourceId: visit.recommendationSourceID,
+            recommendationSourceType: visit.recommendationSourceTypeRawValue,
+            recommendationSourceUserId: visit.recommendationSourceUserID,
+            recommendationSourceText: visit.recommendationSourceText,
+            sharedMealId: visit.sharedMealID,
             note: visit.note,
             myActualSpend: visit.myActualSpend.map { NSDecimalNumber(decimal: $0).doubleValue },
             createdAt: dateString(visit.createdAt),
             updatedAt: dateString(visit.updatedAt),
             deletedAt: visit.deletedAt.map(dateString)
+        )
+    }
+
+    static func companionPayload(_ companion: DiningCompanion) throws -> Data {
+        try JSONEncoder().encode(companionRecord(companion))
+    }
+
+    static func companionRecord(_ companion: DiningCompanion) -> DiningCompanionSyncContractV1 {
+        DiningCompanionSyncContractV1(
+            schemaVersion: SyncV1Contract.schemaVersion,
+            id: companion.remoteID ?? companion.id.uuidString.lowercased(),
+            userId: companion.ownerUserId,
+            displayName: companion.displayName,
+            linkedTasteMapUserId: companion.linkedTasteMapUserId,
+            createdAt: dateString(companion.createdAt),
+            updatedAt: dateString(companion.updatedAt),
+            deletedAt: companion.deletedAt.map(dateString)
+        )
+    }
+
+    static func recommendationSourcePayload(_ source: RecommendationSource) throws -> Data {
+        try JSONEncoder().encode(recommendationSourceRecord(source))
+    }
+
+    static func recommendationSourceRecord(_ source: RecommendationSource) -> RecommendationSourceSyncContractV1 {
+        RecommendationSourceSyncContractV1(
+            schemaVersion: SyncV1Contract.schemaVersion,
+            id: source.remoteID ?? source.id.uuidString.lowercased(),
+            userId: source.ownerUserId,
+            displayName: source.displayName,
+            sourceType: source.sourceType,
+            linkedTasteMapUserId: source.linkedTasteMapUserId,
+            createdAt: dateString(source.createdAt),
+            updatedAt: dateString(source.updatedAt),
+            deletedAt: source.deletedAt.map(dateString)
         )
     }
 

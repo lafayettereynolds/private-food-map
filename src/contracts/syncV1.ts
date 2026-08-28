@@ -10,11 +10,19 @@ import {
   type VisitDishJSONContractV1,
   type PhotoJSONContractV1,
 } from './dishPhotoContract'
+import {
+  decodeDiningCompanionSyncContract,
+  decodeRecommendationSourceSyncContract,
+  RECOMMENDATION_SOURCE_TYPES,
+  type DiningCompanionSyncContractV1,
+  type RecommendationSourceContractType,
+  type RecommendationSourceSyncContractV1,
+} from './companionSourceContract'
 
 export const SYNC_API_VERSION = 1 as const
 export const SYNC_SCHEMA_VERSION = 1 as const
 
-export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'visitDish' | 'photo'
+export type SyncEntityType = 'restaurant' | 'visit' | 'dish' | 'visitDish' | 'photo' | 'companion' | 'recommendationSource'
 export type SyncMutationOperation = 'upsert' | 'delete'
 export type VisitDiningModeContract = 'dine_in' | 'takeout'
 export type VisitVisibilityContract = 'private' | 'friends' | 'public'
@@ -46,6 +54,13 @@ export interface VisitSyncContractV1 {
   portionLevel: string | null
   transportConvenience: string | null
   specialNotes: string | null
+  companions: string[]
+  companionIds: string[]
+  recommendationSourceId: string | null
+  recommendationSourceType: RecommendationSourceContractType | null
+  recommendationSourceUserId: string | null
+  recommendationSourceText: string | null
+  sharedMealId: string | null
   note: string | null
   myActualSpend: number | null
   createdAt: string
@@ -60,7 +75,7 @@ export interface SyncMutationV1 {
   operation: SyncMutationOperation
   baseVersion: number
   clientTimestamp: string
-  payload?: RestaurantJSONContractV1 | VisitSyncContractV1 | DishJSONContractV1 | VisitDishJSONContractV1 | PhotoJSONContractV1
+  payload?: RestaurantJSONContractV1 | VisitSyncContractV1 | DishJSONContractV1 | VisitDishJSONContractV1 | PhotoJSONContractV1 | DiningCompanionSyncContractV1 | RecommendationSourceSyncContractV1
 }
 
 export interface SyncPushRequestV1 {
@@ -106,6 +121,8 @@ export interface SyncPullResponseV1 {
   dishes: Array<SyncRecordEnvelopeV1<DishJSONContractV1>>
   visitDishes: Array<SyncRecordEnvelopeV1<VisitDishJSONContractV1>>
   photos: Array<SyncRecordEnvelopeV1<PhotoJSONContractV1>>
+  companions: Array<SyncRecordEnvelopeV1<DiningCompanionSyncContractV1>>
+  recommendationSources: Array<SyncRecordEnvelopeV1<RecommendationSourceSyncContractV1>>
   tombstones: SyncTombstoneV1[]
   nextCursor: string
   hasMore: boolean
@@ -176,6 +193,20 @@ export function decodeVisitSyncContract(value: unknown): VisitSyncContractV1 {
   const portionLevel = legacyNullableString(value, 'portionLevel')
   const transportConvenience = legacyNullableString(value, 'transportConvenience')
   const specialNotes = legacyNullableString(value, 'specialNotes')
+  const companions = legacyStringArray(value, 'companions')
+  const companionIds = legacyStringArray(value, 'companionIds')
+  if (companions.length !== companionIds.length && companionIds.length !== 0) {
+    throw new SyncContractError('Visit companionIds must be empty for legacy data or parallel companions.')
+  }
+  const recommendationSourceId = legacyNullableString(value, 'recommendationSourceId')
+  const recommendationSourceType = legacyNullableString(value, 'recommendationSourceType')
+  if (recommendationSourceType !== null &&
+    !RECOMMENDATION_SOURCE_TYPES.includes(recommendationSourceType as RecommendationSourceContractType)) {
+    throw new SyncContractError('Visit recommendationSourceType is invalid.')
+  }
+  const recommendationSourceUserId = legacyNullableString(value, 'recommendationSourceUserId')
+  const recommendationSourceText = legacyNullableString(value, 'recommendationSourceText')
+  const sharedMealId = legacyNullableString(value, 'sharedMealId')
   return {
     ...value,
     diningMode,
@@ -198,6 +229,13 @@ export function decodeVisitSyncContract(value: unknown): VisitSyncContractV1 {
     portionLevel,
     transportConvenience,
     specialNotes,
+    companions,
+    companionIds,
+    recommendationSourceId,
+    recommendationSourceType: recommendationSourceType as RecommendationSourceContractType | null,
+    recommendationSourceUserId,
+    recommendationSourceText,
+    sharedMealId,
   } as unknown as VisitSyncContractV1
 }
 
@@ -213,7 +251,7 @@ export function stableSyncMutationJSON(mutation: SyncMutationV1) {
 
 function decodeSyncMutation(value: unknown): SyncMutationV1 {
   if (!isRecord(value) || !isNonEmptyString(value.mutationId) ||
-    !['restaurant', 'visit', 'dish', 'visitDish', 'photo'].includes(String(value.entityType)) ||
+    !['restaurant', 'visit', 'dish', 'visitDish', 'photo', 'companion', 'recommendationSource'].includes(String(value.entityType)) ||
     !isNonEmptyString(value.entityId) || !['upsert', 'delete'].includes(String(value.operation)) ||
     !Number.isInteger(value.baseVersion) || Number(value.baseVersion) < 0 ||
     !isNonEmptyString(value.clientTimestamp)) {
@@ -240,6 +278,8 @@ function decodeSyncMutation(value: unknown): SyncMutationV1 {
       case 'dish': return decodeDishJSONContract(value.payload)
       case 'visitDish': return decodeVisitDishJSONContract(value.payload)
       case 'photo': return decodePhotoJSONContract(value.payload)
+      case 'companion': return decodeDiningCompanionSyncContract(value.payload)
+      case 'recommendationSource': return decodeRecommendationSourceSyncContract(value.payload)
     }
   })()
   if (payload.id !== mutation.entityId) {

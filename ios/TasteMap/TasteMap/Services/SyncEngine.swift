@@ -55,6 +55,32 @@ final class SyncEngine {
                 timestamp: restaurant.updatedAt
             )
         }
+        for companion in try companions() {
+            if companion.remoteID == nil { companion.remoteID = companion.id.uuidString.lowercased() }
+            guard companion.serverVersion == 0, companion.deletedAt == nil,
+                  let remoteID = companion.remoteID,
+                  try queue.activeMutation(entityType: .companion, entityID: remoteID) == nil else { continue }
+            try queue.enqueueUpsert(
+                entityType: .companion,
+                entityID: remoteID,
+                baseVersion: 0,
+                payload: SyncRecordMapper.companionPayload(companion),
+                timestamp: companion.updatedAt
+            )
+        }
+        for source in try recommendationSources() {
+            if source.remoteID == nil { source.remoteID = source.id.uuidString.lowercased() }
+            guard source.serverVersion == 0, source.deletedAt == nil,
+                  let remoteID = source.remoteID,
+                  try queue.activeMutation(entityType: .recommendationSource, entityID: remoteID) == nil else { continue }
+            try queue.enqueueUpsert(
+                entityType: .recommendationSource,
+                entityID: remoteID,
+                baseVersion: 0,
+                payload: SyncRecordMapper.recommendationSourcePayload(source),
+                timestamp: source.updatedAt
+            )
+        }
         for visit in try visits() {
             if visit.remoteID == nil { visit.remoteID = visit.id.uuidString }
             guard visit.serverVersion == 0, visit.deletedAt == nil,
@@ -198,6 +224,12 @@ final class SyncEngine {
         case (.upsert, .photo):
             guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
             payload = .photo(try JSONDecoder().decode(PhotoSyncContractV1.self, from: data))
+        case (.upsert, .companion):
+            guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
+            payload = .companion(try JSONDecoder().decode(DiningCompanionSyncContractV1.self, from: data))
+        case (.upsert, .recommendationSource):
+            guard let data = mutation.payload else { throw SyncEngineError.missingMutationPayload }
+            payload = .recommendationSource(try JSONDecoder().decode(RecommendationSourceSyncContractV1.self, from: data))
         }
         return SyncMutationRequestV1(
             mutationId: mutation.mutationID.uuidString.lowercased(),
@@ -290,6 +322,12 @@ final class SyncEngine {
                 visitRemoteID: parents.visit,
                 dishRemoteID: parents.dish
             )
+        case .companion:
+            payload = try companions().first(where: { $0.remoteID == remoteID })
+                .map(SyncRecordMapper.companionPayload)
+        case .recommendationSource:
+            payload = try recommendationSources().first(where: { $0.remoteID == remoteID })
+                .map(SyncRecordMapper.recommendationSourcePayload)
         }
         try queue.rebaseActiveMutation(entityType: type, entityID: remoteID, serverVersion: serverVersion, payload: payload)
     }
@@ -301,6 +339,8 @@ final class SyncEngine {
             engineDebug("Pull started cursor=\(previousCursor)")
             let response = try await api.pull(cursor: previousCursor, limit: 200)
             for envelope in response.restaurants { try applyRestaurant(envelope) }
+            for envelope in response.companions { try applyCompanion(envelope) }
+            for envelope in response.recommendationSources { try applyRecommendationSource(envelope) }
             for envelope in response.visits { try applyVisit(envelope) }
             for envelope in response.dishes { try applyDish(envelope) }
             for envelope in response.visitDishes { try applyVisitDish(envelope) }
@@ -374,6 +414,16 @@ final class SyncEngine {
         guard let restaurant = try restaurants().first(where: { $0.remoteID == record.restaurantId }) else {
             throw SyncEngineError.missingRestaurantMapping
         }
+        let directory = LocalCompanionSourceStore(context: context)
+        let legacyCompanions = try directory.materializeLegacyCompanions(
+            ids: record.companionIds,
+            names: record.companions
+        )
+        let recommendationSourceID = try directory.materializeLegacyRecommendationSource(
+            id: record.recommendationSourceId,
+            typeRawValue: record.recommendationSourceType,
+            text: record.recommendationSourceText
+        )
         if let visit = try visits().first(where: { $0.remoteID == record.id }) {
             if try queue.hasConflict(entityType: .visit, entityID: record.id) {
                 engineDebug("Preserved conflicted local Visit during pull")
@@ -386,13 +436,29 @@ final class SyncEngine {
                         entityID: record.id,
                         reason: "server_changed_while_local_mutation_pending"
                     )
-                    update(visit, from: record, restaurantID: restaurant.id, serverVersion: envelope.serverVersion)
+                    update(
+                        visit,
+                        from: record,
+                        restaurantID: restaurant.id,
+                        companionIDs: legacyCompanions.ids,
+                        companionNames: legacyCompanions.names,
+                        recommendationSourceID: recommendationSourceID,
+                        serverVersion: envelope.serverVersion
+                    )
                     visit.syncStatus = .failed
                 }
                 return
             }
             guard envelope.serverVersion >= visit.serverVersion else { return }
-            update(visit, from: record, restaurantID: restaurant.id, serverVersion: envelope.serverVersion)
+            update(
+                visit,
+                from: record,
+                restaurantID: restaurant.id,
+                companionIDs: legacyCompanions.ids,
+                companionNames: legacyCompanions.names,
+                recommendationSourceID: recommendationSourceID,
+                serverVersion: envelope.serverVersion
+            )
             return
         }
         let visit = Visit(
@@ -421,6 +487,13 @@ final class SyncEngine {
             portionLevel: record.portionLevel.flatMap(VisitPortionLevel.init(rawValue:)),
             transportConvenience: record.transportConvenience.flatMap(VisitTransportConvenience.init(rawValue:)),
             specialNotes: record.specialNotes,
+            companionIDs: legacyCompanions.ids,
+            companionNames: legacyCompanions.names,
+            recommendationSourceID: recommendationSourceID,
+            recommendationSourceType: record.recommendationSourceType.flatMap(RecommendationSourceType.init(rawValue:)),
+            recommendationSourceUserID: record.recommendationSourceUserId,
+            recommendationSourceText: record.recommendationSourceText,
+            sharedMealID: record.sharedMealId,
             partySize: record.partySize,
             createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
             updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
@@ -436,7 +509,89 @@ final class SyncEngine {
         visit.diningDurationRawValue = record.diningDuration
         visit.portionLevelRawValue = record.portionLevel
         visit.transportConvenienceRawValue = record.transportConvenience
+        visit.recommendationSourceTypeRawValue = record.recommendationSourceType
         context.insert(visit)
+    }
+
+    private func applyCompanion(_ envelope: DiningCompanionSyncRecordEnvelopeV1) throws {
+        let record = envelope.record
+        let snapshot = try JSONEncoder().encode(record)
+        if let companion = try companions().first(where: { $0.remoteID == record.id }) {
+            if try queue.hasConflict(entityType: .companion, entityID: record.id) {
+                companion.remoteRecordData = snapshot
+                return
+            }
+            if try queue.activeMutation(entityType: .companion, entityID: record.id) != nil {
+                if envelope.serverVersion > companion.serverVersion {
+                    try queue.markConflicted(
+                        entityType: .companion,
+                        entityID: record.id,
+                        reason: "server_changed_while_local_mutation_pending"
+                    )
+                    update(companion, from: record, serverVersion: envelope.serverVersion, snapshot: snapshot)
+                    companion.syncStatus = .failed
+                }
+                return
+            }
+            guard envelope.serverVersion >= companion.serverVersion else { return }
+            update(companion, from: record, serverVersion: envelope.serverVersion, snapshot: snapshot)
+            return
+        }
+        context.insert(DiningCompanion(
+            id: UUID(uuidString: record.id) ?? UUID(),
+            ownerUserId: record.userId,
+            displayName: record.displayName,
+            linkedTasteMapUserId: record.linkedTasteMapUserId,
+            createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
+            updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
+            remoteID: record.id,
+            deletedAt: record.deletedAt.flatMap(SyncRecordMapper.date),
+            serverVersion: envelope.serverVersion,
+            lastSyncedAt: now(),
+            syncStatus: .synced,
+            remoteRecordData: snapshot
+        ))
+    }
+
+    private func applyRecommendationSource(_ envelope: RecommendationSourceSyncRecordEnvelopeV1) throws {
+        let record = envelope.record
+        let snapshot = try JSONEncoder().encode(record)
+        if let source = try recommendationSources().first(where: { $0.remoteID == record.id }) {
+            if try queue.hasConflict(entityType: .recommendationSource, entityID: record.id) {
+                source.remoteRecordData = snapshot
+                return
+            }
+            if try queue.activeMutation(entityType: .recommendationSource, entityID: record.id) != nil {
+                if envelope.serverVersion > source.serverVersion {
+                    try queue.markConflicted(
+                        entityType: .recommendationSource,
+                        entityID: record.id,
+                        reason: "server_changed_while_local_mutation_pending"
+                    )
+                    update(source, from: record, serverVersion: envelope.serverVersion, snapshot: snapshot)
+                    source.syncStatus = .failed
+                }
+                return
+            }
+            guard envelope.serverVersion >= source.serverVersion else { return }
+            update(source, from: record, serverVersion: envelope.serverVersion, snapshot: snapshot)
+            return
+        }
+        context.insert(RecommendationSource(
+            id: UUID(uuidString: record.id) ?? UUID(),
+            ownerUserId: record.userId,
+            displayName: record.displayName,
+            sourceType: record.sourceType,
+            linkedTasteMapUserId: record.linkedTasteMapUserId,
+            createdAt: SyncRecordMapper.date(record.createdAt) ?? now(),
+            updatedAt: SyncRecordMapper.date(record.updatedAt) ?? now(),
+            remoteID: record.id,
+            deletedAt: record.deletedAt.flatMap(SyncRecordMapper.date),
+            serverVersion: envelope.serverVersion,
+            lastSyncedAt: now(),
+            syncStatus: .synced,
+            remoteRecordData: snapshot
+        ))
     }
 
     private func applyDish(_ envelope: DishSyncRecordEnvelopeV1) throws {
@@ -656,6 +811,18 @@ final class SyncEngine {
             photo.lastSyncedAt = now()
             photo.uploadState = .deleted
             photo.syncStatus = .synced
+        case .companion:
+            guard let companion = try companions().first(where: { $0.remoteID == tombstone.entityId }) else { return }
+            companion.deletedAt = deletedAt
+            companion.serverVersion = tombstone.serverVersion
+            companion.lastSyncedAt = now()
+            companion.syncStatus = .synced
+        case .recommendationSource:
+            guard let source = try recommendationSources().first(where: { $0.remoteID == tombstone.entityId }) else { return }
+            source.deletedAt = deletedAt
+            source.serverVersion = tombstone.serverVersion
+            source.lastSyncedAt = now()
+            source.syncStatus = .synced
         }
     }
 
@@ -685,6 +852,9 @@ final class SyncEngine {
         _ visit: Visit,
         from record: VisitSyncContractV1,
         restaurantID: UUID,
+        companionIDs: [String],
+        companionNames: [String],
+        recommendationSourceID: String?,
         serverVersion: Int64
     ) {
         visit.restaurantId = restaurantID
@@ -711,6 +881,13 @@ final class SyncEngine {
         visit.portionLevelRawValue = record.portionLevel
         visit.transportConvenienceRawValue = record.transportConvenience
         visit.specialNotes = record.specialNotes
+        visit.companionIDs = companionIDs
+        visit.companionNames = companionNames
+        visit.recommendationSourceID = recommendationSourceID
+        visit.recommendationSourceTypeRawValue = record.recommendationSourceType
+        visit.recommendationSourceUserID = record.recommendationSourceUserId
+        visit.recommendationSourceText = record.recommendationSourceText
+        visit.sharedMealID = record.sharedMealId
         visit.partySize = record.partySize
         visit.createdAt = SyncRecordMapper.date(record.createdAt) ?? visit.createdAt
         visit.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? visit.updatedAt
@@ -718,6 +895,43 @@ final class SyncEngine {
         visit.serverVersion = serverVersion
         visit.lastSyncedAt = now()
         visit.syncStatus = .synced
+    }
+
+    private func update(
+        _ companion: DiningCompanion,
+        from record: DiningCompanionSyncContractV1,
+        serverVersion: Int64,
+        snapshot: Data
+    ) {
+        companion.ownerUserId = record.userId
+        companion.displayName = record.displayName
+        companion.linkedTasteMapUserId = record.linkedTasteMapUserId
+        companion.createdAt = SyncRecordMapper.date(record.createdAt) ?? companion.createdAt
+        companion.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? companion.updatedAt
+        companion.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)
+        companion.serverVersion = serverVersion
+        companion.lastSyncedAt = now()
+        companion.syncStatus = .synced
+        companion.remoteRecordData = snapshot
+    }
+
+    private func update(
+        _ source: RecommendationSource,
+        from record: RecommendationSourceSyncContractV1,
+        serverVersion: Int64,
+        snapshot: Data
+    ) {
+        source.ownerUserId = record.userId
+        source.displayName = record.displayName
+        source.sourceType = record.sourceType
+        source.linkedTasteMapUserId = record.linkedTasteMapUserId
+        source.createdAt = SyncRecordMapper.date(record.createdAt) ?? source.createdAt
+        source.updatedAt = SyncRecordMapper.date(record.updatedAt) ?? source.updatedAt
+        source.deletedAt = record.deletedAt.flatMap(SyncRecordMapper.date)
+        source.serverVersion = serverVersion
+        source.lastSyncedAt = now()
+        source.syncStatus = .synced
+        source.remoteRecordData = snapshot
     }
 
     private func update(
@@ -837,6 +1051,16 @@ final class SyncEngine {
             photo.serverVersion = serverVersion
             photo.lastSyncedAt = now()
             photo.syncStatus = hasLaterMutation ? .pending : .synced
+        case .companion:
+            guard let companion = try? companions().first(where: { $0.remoteID == remoteID }) else { return }
+            companion.serverVersion = serverVersion
+            companion.lastSyncedAt = now()
+            companion.syncStatus = hasLaterMutation ? .pending : .synced
+        case .recommendationSource:
+            guard let source = try? recommendationSources().first(where: { $0.remoteID == remoteID }) else { return }
+            source.serverVersion = serverVersion
+            source.lastSyncedAt = now()
+            source.syncStatus = hasLaterMutation ? .pending : .synced
         }
     }
 
@@ -861,6 +1085,14 @@ final class SyncEngine {
         case .photo:
             if let photo = try? photos().first(where: { $0.remoteID == remoteID }) {
                 photo.syncStatus = .failed
+            }
+        case .companion:
+            if let companion = try? companions().first(where: { $0.remoteID == remoteID }) {
+                companion.syncStatus = .failed
+            }
+        case .recommendationSource:
+            if let source = try? recommendationSources().first(where: { $0.remoteID == remoteID }) {
+                source.syncStatus = .failed
             }
         }
     }
@@ -890,6 +1122,14 @@ final class SyncEngine {
 
     private func photos() throws -> [PhotoAsset] {
         try context.fetch(FetchDescriptor<PhotoAsset>())
+    }
+
+    private func companions() throws -> [DiningCompanion] {
+        try context.fetch(FetchDescriptor<DiningCompanion>())
+    }
+
+    private func recommendationSources() throws -> [RecommendationSource] {
+        try context.fetch(FetchDescriptor<RecommendationSource>())
     }
 
     private func parentRemoteIDs(for photo: PhotoAsset) throws -> (restaurant: String?, visit: String?, dish: String?) {

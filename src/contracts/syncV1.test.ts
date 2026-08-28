@@ -137,6 +137,51 @@ describe('Sync API V1 contract', () => {
       valueTags: ['合理', ' 合理 ', '超值'], diningOccasionText: '', specialNotes: '',
     })).toMatchObject({ valueTags: ['合理', '超值'], diningOccasionText: null, specialNotes: null })
   })
+
+  it('round-trips multiple companions and one typed free-text recommendation source', () => {
+    expect(decodeVisitSyncContract({
+      ...validVisit,
+      companions: [' 小王 ', '妈妈'], companionIds: ['companion-1', 'companion-2'],
+      recommendationSourceId: 'source-1', recommendationSourceType: 'blogger',
+      recommendationSourceUserId: null, recommendationSourceText: ' 某美食博主 ',
+      sharedMealId: null,
+    })).toMatchObject({
+      companions: ['小王', '妈妈'], companionIds: ['companion-1', 'companion-2'],
+      recommendationSourceId: 'source-1', recommendationSourceType: 'blogger',
+      recommendationSourceText: '某美食博主',
+    })
+  })
+
+  it('keeps old Visit payloads compatible and rejects mismatched companion associations', () => {
+    expect(decodeVisitSyncContract(legacyVisit)).toMatchObject({
+      companions: [], companionIds: [], recommendationSourceId: null,
+      recommendationSourceType: null, recommendationSourceText: null, sharedMealId: null,
+    })
+    expect(() => decodeVisitSyncContract({
+      ...validVisit, companions: ['小王'], companionIds: ['one', 'two'],
+    })).toThrow(/companionIds/)
+  })
+
+  it('decodes private directory entities without trusting their claimed userId', () => {
+    const companion = {
+      schemaVersion: 1, id: 'companion-1', userId: 'forged', displayName: ' 小王 ',
+      linkedTasteMapUserId: null, createdAt: validVisit.createdAt,
+      updatedAt: validVisit.updatedAt, deletedAt: null,
+    }
+    const source = {
+      schemaVersion: 1, id: 'source-1', userId: 'forged', displayName: '某公众号',
+      sourceType: 'blogger', linkedTasteMapUserId: null,
+      createdAt: validVisit.createdAt, updatedAt: validVisit.updatedAt, deletedAt: null,
+    }
+    expect(decodeSyncPushRequest(pushRequest({
+      mutationId: 'companion-create', entityType: 'companion', entityId: companion.id,
+      operation: 'upsert', baseVersion: 0, clientTimestamp: companion.updatedAt, payload: companion,
+    })).mutations[0].payload).toMatchObject({ displayName: '小王' })
+    expect(decodeSyncPushRequest(pushRequest({
+      mutationId: 'source-create', entityType: 'recommendationSource', entityId: source.id,
+      operation: 'upsert', baseVersion: 0, clientTimestamp: source.updatedAt, payload: source,
+    })).mutations[0].payload).toMatchObject({ sourceType: 'blogger', displayName: '某公众号' })
+  })
 })
 
 function pushRequest(mutation: Record<string, unknown>) {

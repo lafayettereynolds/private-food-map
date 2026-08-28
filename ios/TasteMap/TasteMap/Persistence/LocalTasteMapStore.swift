@@ -70,9 +70,11 @@ struct LocalTasteMapStore {
 
     @discardableResult
     func createVisit(restaurantId: UUID, draft: VisitDraft) throws -> Visit {
-        let draft = try draft.validated()
+        var draft = draft
         var createdVisit: Visit?
         try context.transaction {
+            try LocalCompanionSourceStore(context: context).materializeSelections(in: &draft)
+            draft = try draft.validated()
             guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
                 .first(where: { $0.id == restaurantId && $0.deletedAt == nil }) else {
                 throw LocalTasteMapStoreError.restaurantNotFound
@@ -111,6 +113,13 @@ struct LocalTasteMapStore {
                 portionLevel: draft.portionLevel,
                 transportConvenience: draft.transportConvenience,
                 specialNotes: draft.specialNotes,
+                companionIDs: draft.companionIDs,
+                companionNames: draft.companionNames,
+                recommendationSourceID: draft.recommendationSourceID,
+                recommendationSourceType: draft.recommendationSourceTypeRawValue.flatMap(RecommendationSourceType.init(rawValue:)),
+                recommendationSourceUserID: draft.recommendationSourceUserID,
+                recommendationSourceText: draft.recommendationSourceText,
+                sharedMealID: draft.sharedMealID,
                 partySize: draft.partySize,
                 syncStatus: .pending
             )
@@ -121,6 +130,7 @@ struct LocalTasteMapStore {
             visit.diningDurationRawValue = draft.diningDurationRawValue
             visit.portionLevelRawValue = draft.portionLevelRawValue
             visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
+            visit.recommendationSourceTypeRawValue = draft.recommendationSourceTypeRawValue
             context.insert(visit)
             guard let restaurantRemoteID = restaurant.remoteID else {
                 throw LocalTasteMapStoreError.restaurantRemoteIDMissing
@@ -159,8 +169,10 @@ struct LocalTasteMapStore {
     }
 
     func update(_ visit: Visit, draft: VisitDraft) throws {
-        let draft = try draft.validated()
+        var draft = draft
         try context.transaction {
+            try LocalCompanionSourceStore(context: context).materializeSelections(in: &draft)
+            draft = try draft.validated()
             visit.visitedAt = draft.visitedAt
             visit.rating = Visit.validatedRating(draft.rating)
             visit.valueRating = Visit.validatedRating(draft.valueRating)
@@ -186,6 +198,14 @@ struct LocalTasteMapStore {
             visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
             visit.specialNotes = draft.specialNotes
                 .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            visit.companionIDs = draft.companionIDs
+            visit.companionNames = draft.companionNames
+            visit.recommendationSourceID = draft.recommendationSourceID
+            visit.recommendationSourceTypeRawValue = draft.recommendationSourceTypeRawValue
+            visit.recommendationSourceUserID = draft.recommendationSourceUserID
+            visit.recommendationSourceText = draft.recommendationSourceText
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            visit.sharedMealID = draft.sharedMealID
             visit.partySize = draft.partySize
             visit.updatedAt = .now
             visit.syncStatus = .pending

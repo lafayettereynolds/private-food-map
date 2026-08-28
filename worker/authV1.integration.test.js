@@ -226,6 +226,7 @@ function migrationFiles() {
     '0014_restaurant_contact_details.sql', '0015_restaurant_place_identities.sql',
     '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
     '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
+    '0021_companions_recommendation_sources_sync.sql',
   ]
 }
 

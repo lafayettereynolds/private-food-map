@@ -74,7 +74,7 @@ Visibility accepts only the three public contract values. Other enum-like contex
 
 All required D1 columns already exist from migrations `0001`, `0003`, `0005`, `0006`, and `0007`; P2-E therefore has no D1 migration. Development preflight confirmed the tracked schema through `0020`. No database was rebuilt or cleared.
 
-The Sync V1 Visit upsert now owns only the P1/P2 fields understood by native iOS. It deliberately does not update `recommendation_source_*`, `shared_meal_id`, `companions_json`, or `companion_ids_json`. A native P2-E edit therefore preserves P2-F and other legacy Web data already stored in D1.
+At the P2-E milestone, Sync V1 deliberately left `recommendation_source_*`, `shared_meal_id`, `companions_json`, and `companion_ids_json` untouched. P2-F now owns these fields through explicit legacy-compatible Visit contract values and private directory identities; current native edits pull, preserve, and re-encode them rather than guessing. See `P2_F_COMPANIONS_RECOMMENDATION_SOURCES.md`.
 
 Pull converts the singular legacy `dining_occasion` into a one-element array only when `dining_occasions_json` is empty. Push writes the new array plus the first-item legacy projection, allowing old Web readers and new native clients to coexist during migration.
 

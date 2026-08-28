@@ -23,6 +23,13 @@ struct VisitDraft: Equatable {
     var portionLevelRawValue: String?
     var transportConvenienceRawValue: String?
     var specialNotes: String
+    var companionIDs: [String]
+    var companionNames: [String]
+    var recommendationSourceID: String?
+    var recommendationSourceTypeRawValue: String?
+    var recommendationSourceUserID: String?
+    var recommendationSourceText: String
+    var sharedMealID: String?
     var note: String
 
     var paymentMode: VisitPaymentMode? {
@@ -93,6 +100,13 @@ struct VisitDraft: Equatable {
         portionLevel: VisitPortionLevel? = nil,
         transportConvenience: VisitTransportConvenience? = nil,
         specialNotes: String = "",
+        companionIDs: [String] = [],
+        companionNames: [String] = [],
+        recommendationSourceID: String? = nil,
+        recommendationSourceType: RecommendationSourceType? = nil,
+        recommendationSourceUserID: String? = nil,
+        recommendationSourceText: String = "",
+        sharedMealID: String? = nil,
         note: String = ""
     ) {
         self.visitedAt = visitedAt
@@ -117,6 +131,13 @@ struct VisitDraft: Equatable {
         self.portionLevelRawValue = portionLevel?.rawValue
         self.transportConvenienceRawValue = transportConvenience?.rawValue
         self.specialNotes = specialNotes
+        self.companionIDs = companionIDs
+        self.companionNames = companionNames
+        self.recommendationSourceID = recommendationSourceID
+        self.recommendationSourceTypeRawValue = recommendationSourceType?.rawValue
+        self.recommendationSourceUserID = recommendationSourceUserID
+        self.recommendationSourceText = recommendationSourceText
+        self.sharedMealID = sharedMealID
         self.note = note
     }
 
@@ -144,6 +165,13 @@ struct VisitDraft: Equatable {
             portionLevel: visit.portionLevel,
             transportConvenience: visit.transportConvenience,
             specialNotes: visit.specialNotes ?? "",
+            companionIDs: visit.companionIDs,
+            companionNames: visit.companionNames,
+            recommendationSourceID: visit.recommendationSourceID,
+            recommendationSourceType: visit.recommendationSourceType,
+            recommendationSourceUserID: visit.recommendationSourceUserID,
+            recommendationSourceText: visit.recommendationSourceText ?? "",
+            sharedMealID: visit.sharedMealID,
             note: visit.note ?? ""
         )
         paymentModeRawValue = visit.paymentModeRawValue
@@ -153,6 +181,7 @@ struct VisitDraft: Equatable {
         diningDurationRawValue = visit.diningDurationRawValue
         portionLevelRawValue = visit.portionLevelRawValue
         transportConvenienceRawValue = visit.transportConvenienceRawValue
+        recommendationSourceTypeRawValue = visit.recommendationSourceTypeRawValue
     }
 
     func validated() throws -> VisitDraft {
@@ -182,6 +211,22 @@ struct VisitDraft: Equatable {
         result.valueTags = VisitStringArrayStorage.normalized(valueTags)
         result.environmentTags = VisitStringArrayStorage.normalized(environmentTags)
         result.serviceTags = VisitStringArrayStorage.normalized(serviceTags)
+        let normalizedNames = companionNames.map(PrivateDirectoryName.normalized).filter { !$0.isEmpty }
+        var seenCompanionNames = Set<String>()
+        result.companionNames = normalizedNames.filter { seenCompanionNames.insert($0).inserted }
+        result.companionIDs = VisitStringArrayStorage.normalized(companionIDs)
+        if !result.companionIDs.isEmpty, result.companionIDs.count != result.companionNames.count {
+            throw VisitDraftValidationError.invalidCompanions
+        }
+        if !result.companionNames.isEmpty {
+            result.partySize = max(result.partySize ?? 1, result.companionNames.count + 1)
+        }
+        result.recommendationSourceText = PrivateDirectoryName.normalized(recommendationSourceText)
+        if result.recommendationSourceID == nil {
+            result.recommendationSourceTypeRawValue = result.recommendationSourceText.isEmpty
+                ? nil
+                : (result.recommendationSourceTypeRawValue ?? RecommendationSourceType.other.rawValue)
+        }
         if !result.diningOccasions.contains(.other) {
             result.diningOccasionText = ""
         }
@@ -242,6 +287,7 @@ enum VisitDraftValidationError: LocalizedError, Equatable {
     case negativeSpend
     case invalidTotalPrice
     case negativeTotalPrice
+    case invalidCompanions
 
     var errorDescription: String? {
         switch self {
@@ -253,6 +299,7 @@ enum VisitDraftValidationError: LocalizedError, Equatable {
         case .negativeSpend: "消费金额不能为负数。"
         case .invalidTotalPrice: "请输入正确的整桌账单金额，或留空。"
         case .negativeTotalPrice: "整桌账单不能为负数。"
+        case .invalidCompanions: "饭搭子资料没有完整对应，请重新选择。"
         }
     }
 }

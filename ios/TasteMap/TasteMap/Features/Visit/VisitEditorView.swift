@@ -35,6 +35,8 @@ struct VisitEditorView: View {
     @State private var showsDetailedRatings: Bool
     @State private var showsDiningContext: Bool
     @State private var showsExperienceContext: Bool
+    @State private var isChoosingCompanions = false
+    @State private var isChoosingRecommendationSource = false
 
     @MainActor
     init(
@@ -80,6 +82,7 @@ struct VisitEditorView: View {
             Form {
                 restaurantSection
                 basicsSection
+                peopleAndSourceSection
                 diningContextSection
                 ratingSection
                 detailedRatingSection
@@ -143,6 +146,20 @@ struct VisitEditorView: View {
                     existingDishes: existingRestaurantDishes,
                     photos: visibleVisitPhotos,
                     preparedPhotos: preparedPhotos
+                )
+            }
+            .sheet(isPresented: $isChoosingCompanions) {
+                CompanionPickerSheet(
+                    selectedIDs: $draft.companionIDs,
+                    selectedNames: $draft.companionNames
+                )
+            }
+            .sheet(isPresented: $isChoosingRecommendationSource) {
+                RecommendationSourcePickerSheet(
+                    selectedID: $draft.recommendationSourceID,
+                    selectedTypeRawValue: $draft.recommendationSourceTypeRawValue,
+                    selectedUserID: $draft.recommendationSourceUserID,
+                    selectedText: $draft.recommendationSourceText
                 )
             }
             .onAppear { loadDishDraftsIfNeeded() }
@@ -235,6 +252,42 @@ struct VisitEditorView: View {
             Text("用餐情况")
         } footer: {
             Text("全部可选。未记录排队与明确无需排队会作为两个不同状态保存。")
+        }
+    }
+
+    private var peopleAndSourceSection: some View {
+        Section {
+            Button {
+                isChoosingCompanions = true
+            } label: {
+                LabeledContent("和谁一起吃") {
+                    Text(draft.companionNames.isEmpty
+                         ? "未记录"
+                         : draft.companionNames.joined(separator: "、"))
+                        .foregroundStyle(draft.companionNames.isEmpty ? .secondary : .primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            .foregroundStyle(.primary)
+            .accessibilityIdentifier("visit-editor-companions")
+
+            Button {
+                isChoosingRecommendationSource = true
+            } label: {
+                LabeledContent("推荐来源") {
+                    Text(draft.recommendationSourceText.isEmpty ? "未记录" : draft.recommendationSourceText)
+                        .foregroundStyle(draft.recommendationSourceText.isEmpty ? .secondary : .primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            .foregroundStyle(.primary)
+            .accessibilityIdentifier("visit-editor-recommendation-source")
+        } header: {
+            Text("这顿饭")
+        } footer: {
+            Text("全部可选。名字只来自你的输入，不会读取通讯录；保存后下次可以直接复用。")
         }
     }
 

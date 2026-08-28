@@ -32,11 +32,98 @@ struct VisitSyncContractV1: Codable, Equatable {
     let portionLevel: String?
     let transportConvenience: String?
     let specialNotes: String?
+    let companions: [String]
+    let companionIds: [String]
+    let recommendationSourceId: String?
+    let recommendationSourceType: String?
+    let recommendationSourceUserId: String?
+    let recommendationSourceText: String?
+    let sharedMealId: String?
     let note: String?
     let myActualSpend: Double?
     let createdAt: String
     let updatedAt: String
     let deletedAt: String?
+
+    init(
+        schemaVersion: Int,
+        id: String,
+        userId: String,
+        restaurantId: String,
+        visitedAt: String,
+        diningMode: DiningMode,
+        visibility: VisitVisibility,
+        partySize: Int?,
+        totalPrice: Double?,
+        paymentMode: String?,
+        pricePerPerson: Double?,
+        queueDuration: String?,
+        diningOccasions: [String],
+        diningOccasionText: String?,
+        rating: Double?,
+        valueRating: Double?,
+        environmentRating: Double?,
+        serviceRating: Double?,
+        valueTags: [String],
+        environmentTags: [String],
+        serviceTags: [String],
+        noiseLevel: String?,
+        diningDuration: String?,
+        portionLevel: String?,
+        transportConvenience: String?,
+        specialNotes: String?,
+        companions: [String] = [],
+        companionIds: [String] = [],
+        recommendationSourceId: String? = nil,
+        recommendationSourceType: String? = nil,
+        recommendationSourceUserId: String? = nil,
+        recommendationSourceText: String? = nil,
+        sharedMealId: String? = nil,
+        note: String?,
+        myActualSpend: Double?,
+        createdAt: String,
+        updatedAt: String,
+        deletedAt: String?
+    ) {
+        self.schemaVersion = schemaVersion
+        self.id = id
+        self.userId = userId
+        self.restaurantId = restaurantId
+        self.visitedAt = visitedAt
+        self.diningMode = diningMode
+        self.visibility = visibility
+        self.partySize = partySize
+        self.totalPrice = totalPrice
+        self.paymentMode = paymentMode
+        self.pricePerPerson = pricePerPerson
+        self.queueDuration = queueDuration
+        self.diningOccasions = diningOccasions
+        self.diningOccasionText = diningOccasionText
+        self.rating = rating
+        self.valueRating = valueRating
+        self.environmentRating = environmentRating
+        self.serviceRating = serviceRating
+        self.valueTags = valueTags
+        self.environmentTags = environmentTags
+        self.serviceTags = serviceTags
+        self.noiseLevel = noiseLevel
+        self.diningDuration = diningDuration
+        self.portionLevel = portionLevel
+        self.transportConvenience = transportConvenience
+        self.specialNotes = specialNotes
+        self.companions = companions
+        self.companionIds = companionIds
+        self.recommendationSourceId = recommendationSourceId
+        self.recommendationSourceType = recommendationSourceType
+        self.recommendationSourceUserId = recommendationSourceUserId
+        self.recommendationSourceText = recommendationSourceText
+        self.sharedMealId = sharedMealId
+        self.note = note
+        self.myActualSpend = myActualSpend
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+    }
 }
 
 private extension VisitSyncContractV1 {
@@ -46,6 +133,8 @@ private extension VisitSyncContractV1 {
         case rating, valueRating, environmentRating, serviceRating
         case valueTags, environmentTags, serviceTags, noiseLevel, diningDuration
         case portionLevel, transportConvenience, specialNotes
+        case companions, companionIds, recommendationSourceId, recommendationSourceType
+        case recommendationSourceUserId, recommendationSourceText, sharedMealId
         case note, myActualSpend, createdAt, updatedAt, deletedAt
     }
 }
@@ -110,6 +199,42 @@ extension VisitSyncContractV1 {
             try container.decodeIfPresent(String.self, forKey: .transportConvenience)
         )
         specialNotes = Self.normalizedOptionalString(try container.decodeIfPresent(String.self, forKey: .specialNotes))
+        companions = VisitStringArrayStorage.normalized(
+            try container.decodeIfPresent([String].self, forKey: .companions) ?? []
+        )
+        companionIds = VisitStringArrayStorage.normalized(
+            try container.decodeIfPresent([String].self, forKey: .companionIds) ?? []
+        )
+        if !companionIds.isEmpty, companionIds.count != companions.count {
+            throw DecodingError.dataCorruptedError(
+                forKey: .companionIds,
+                in: container,
+                debugDescription: "companionIds must be empty for legacy data or parallel companions."
+            )
+        }
+        recommendationSourceId = Self.normalizedOptionalString(
+            try container.decodeIfPresent(String.self, forKey: .recommendationSourceId)
+        )
+        recommendationSourceType = Self.normalizedOptionalString(
+            try container.decodeIfPresent(String.self, forKey: .recommendationSourceType)
+        )
+        if let recommendationSourceType,
+           RecommendationSourceType(rawValue: recommendationSourceType) == nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: .recommendationSourceType,
+                in: container,
+                debugDescription: "recommendationSourceType is not supported."
+            )
+        }
+        recommendationSourceUserId = Self.normalizedOptionalString(
+            try container.decodeIfPresent(String.self, forKey: .recommendationSourceUserId)
+        )
+        recommendationSourceText = Self.normalizedOptionalString(
+            try container.decodeIfPresent(String.self, forKey: .recommendationSourceText)
+        )
+        sharedMealId = Self.normalizedOptionalString(
+            try container.decodeIfPresent(String.self, forKey: .sharedMealId)
+        )
         note = try container.decode(String?.self, forKey: .note)
         myActualSpend = try container.decode(Double?.self, forKey: .myActualSpend)
         for (key, value) in [
@@ -156,6 +281,13 @@ extension VisitSyncContractV1 {
         try container.encode(portionLevel, forKey: .portionLevel)
         try container.encode(transportConvenience, forKey: .transportConvenience)
         try container.encode(specialNotes, forKey: .specialNotes)
+        try container.encode(companions, forKey: .companions)
+        try container.encode(companionIds, forKey: .companionIds)
+        try container.encode(recommendationSourceId, forKey: .recommendationSourceId)
+        try container.encode(recommendationSourceType, forKey: .recommendationSourceType)
+        try container.encode(recommendationSourceUserId, forKey: .recommendationSourceUserId)
+        try container.encode(recommendationSourceText, forKey: .recommendationSourceText)
+        try container.encode(sharedMealId, forKey: .sharedMealId)
         try container.encode(note, forKey: .note)
         try container.encode(myActualSpend, forKey: .myActualSpend)
         try container.encode(createdAt, forKey: .createdAt)
@@ -168,6 +300,29 @@ extension VisitSyncContractV1 {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+}
+
+struct DiningCompanionSyncContractV1: Codable, Equatable {
+    let schemaVersion: Int
+    let id: String
+    let userId: String
+    let displayName: String
+    let linkedTasteMapUserId: String?
+    let createdAt: String
+    let updatedAt: String
+    let deletedAt: String?
+}
+
+struct RecommendationSourceSyncContractV1: Codable, Equatable {
+    let schemaVersion: Int
+    let id: String
+    let userId: String
+    let displayName: String
+    let sourceType: RecommendationSourceType
+    let linkedTasteMapUserId: String?
+    let createdAt: String
+    let updatedAt: String
+    let deletedAt: String?
 }
 
 enum RichRecordContractError: Error, Equatable {
@@ -557,6 +712,8 @@ enum SyncMutationPayload: Encodable {
     case dish(DishSyncContractV1)
     case visitDish(VisitDishSyncContractV1)
     case photo(PhotoSyncContractV1)
+    case companion(DiningCompanionSyncContractV1)
+    case recommendationSource(RecommendationSourceSyncContractV1)
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -566,6 +723,8 @@ enum SyncMutationPayload: Encodable {
         case .dish(let dish): try container.encode(dish)
         case .visitDish(let visitDish): try container.encode(visitDish)
         case .photo(let photo): try container.encode(photo)
+        case .companion(let companion): try container.encode(companion)
+        case .recommendationSource(let source): try container.encode(source)
         }
     }
 }
@@ -633,6 +792,16 @@ struct PhotoSyncRecordEnvelopeV1: Decodable {
     let record: PhotoSyncContractV1
 }
 
+struct DiningCompanionSyncRecordEnvelopeV1: Decodable {
+    let serverVersion: Int64
+    let record: DiningCompanionSyncContractV1
+}
+
+struct RecommendationSourceSyncRecordEnvelopeV1: Decodable {
+    let serverVersion: Int64
+    let record: RecommendationSourceSyncContractV1
+}
+
 struct SyncTombstoneV1: Codable, Equatable {
     let entityType: SyncEntityType
     let entityId: String
@@ -648,6 +817,8 @@ struct SyncPullResponseV1: Decodable {
     let dishes: [DishSyncRecordEnvelopeV1]
     let visitDishes: [VisitDishSyncRecordEnvelopeV1]
     let photos: [PhotoSyncRecordEnvelopeV1]
+    let companions: [DiningCompanionSyncRecordEnvelopeV1]
+    let recommendationSources: [RecommendationSourceSyncRecordEnvelopeV1]
     let tombstones: [SyncTombstoneV1]
     let nextCursor: String
     let hasMore: Bool
@@ -661,6 +832,8 @@ struct SyncPullResponseV1: Decodable {
         dishes: [DishSyncRecordEnvelopeV1] = [],
         visitDishes: [VisitDishSyncRecordEnvelopeV1] = [],
         photos: [PhotoSyncRecordEnvelopeV1] = [],
+        companions: [DiningCompanionSyncRecordEnvelopeV1] = [],
+        recommendationSources: [RecommendationSourceSyncRecordEnvelopeV1] = [],
         tombstones: [SyncTombstoneV1],
         nextCursor: String,
         hasMore: Bool,
@@ -673,6 +846,8 @@ struct SyncPullResponseV1: Decodable {
         self.dishes = dishes
         self.visitDishes = visitDishes
         self.photos = photos
+        self.companions = companions
+        self.recommendationSources = recommendationSources
         self.tombstones = tombstones
         self.nextCursor = nextCursor
         self.hasMore = hasMore
@@ -681,6 +856,7 @@ struct SyncPullResponseV1: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case apiVersion, schemaVersion, restaurants, visits, dishes, visitDishes, photos
+        case companions, recommendationSources
         case tombstones, nextCursor, hasMore, serverTime
     }
 
@@ -693,6 +869,11 @@ struct SyncPullResponseV1: Decodable {
         dishes = try values.decodeIfPresent([DishSyncRecordEnvelopeV1].self, forKey: .dishes) ?? []
         visitDishes = try values.decodeIfPresent([VisitDishSyncRecordEnvelopeV1].self, forKey: .visitDishes) ?? []
         photos = try values.decodeIfPresent([PhotoSyncRecordEnvelopeV1].self, forKey: .photos) ?? []
+        companions = try values.decodeIfPresent([DiningCompanionSyncRecordEnvelopeV1].self, forKey: .companions) ?? []
+        recommendationSources = try values.decodeIfPresent(
+            [RecommendationSourceSyncRecordEnvelopeV1].self,
+            forKey: .recommendationSources
+        ) ?? []
         tombstones = try values.decode([SyncTombstoneV1].self, forKey: .tombstones)
         nextCursor = try values.decode(String.self, forKey: .nextCursor)
         hasMore = try values.decode(Bool.self, forKey: .hasMore)

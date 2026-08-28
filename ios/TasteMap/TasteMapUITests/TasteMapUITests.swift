@@ -532,6 +532,143 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP2FCompanionsAndSourceCreateEditRestartAndReuse() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+        ]
+        app.launch()
+
+        openP1DDetail(in: app, tab: "想吃")
+        app.buttons["restaurant-detail-add-visit"].tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+
+        let companionEntry = app.buttons["visit-editor-companions"]
+        scrollUntilVisible(companionEntry, in: app)
+        companionEntry.tap()
+        XCTAssertTrue(app.navigationBars["和谁一起吃"].waitForExistence(timeout: 5))
+        addDirectoryName("小王", field: "companion-new-name", button: "companion-add", in: app)
+        addDirectoryName("妈妈", field: "companion-new-name", button: "companion-add", in: app)
+        app.buttons["完成"].tap()
+
+        let sourceEntry = app.buttons["visit-editor-recommendation-source"]
+        scrollUntilVisible(sourceEntry, in: app)
+        sourceEntry.tap()
+        XCTAssertTrue(app.navigationBars["推荐来源"].waitForExistence(timeout: 5))
+        addDirectoryName("朋友小李", field: "source-new-name", button: "source-add", in: app)
+        app.buttons["完成"].tap()
+        app.buttons["visit-editor-save"].tap()
+
+        let companions = app.staticTexts["visit-history-companions"]
+        scrollUntilVisible(companions, in: app)
+        XCTAssertTrue(companions.waitForExistence(timeout: 5))
+        XCTAssertTrue(companions.label.contains("小王"))
+        XCTAssertTrue(companions.label.contains("妈妈"))
+        let source = app.staticTexts["visit-history-recommendation-source"]
+        XCTAssertTrue(source.exists)
+        XCTAssertTrue(source.label.contains("朋友小李"))
+
+        scrollUntilVisible(app.staticTexts["第 1 次"], in: app)
+        app.staticTexts["第 1 次"].tap()
+        XCTAssertTrue(app.navigationBars["编辑到访"].waitForExistence(timeout: 5))
+        let editCompanions = app.buttons["visit-editor-companions"]
+        scrollUntilVisible(editCompanions, in: app)
+        editCompanions.tap()
+        XCTAssertTrue(app.navigationBars["和谁一起吃"].waitForExistence(timeout: 5))
+        tapDirectoryOption("小王", in: app)
+        app.buttons["完成"].tap()
+        let editSource = app.buttons["visit-editor-recommendation-source"]
+        scrollUntilVisible(editSource, in: app)
+        editSource.tap()
+        XCTAssertTrue(app.navigationBars["推荐来源"].waitForExistence(timeout: 5))
+        app.buttons["清除推荐来源"].tap()
+        app.buttons["完成"].tap()
+        app.buttons["visit-editor-save"].tap()
+
+        let remainingCompanion = app.staticTexts["visit-history-companions"]
+        scrollUntilVisible(remainingCompanion, in: app)
+        XCTAssertTrue(remainingCompanion.label.contains("妈妈"))
+        XCTAssertFalse(remainingCompanion.label.contains("小王"))
+        XCTAssertFalse(app.staticTexts["visit-history-recommendation-source"].exists)
+
+        app.terminate()
+        app.launchArguments = ["-p1d-persistent-offline-fixture"]
+        app.launchEnvironment = ["TASTEMAP_P1D_UI_TEST": "1"]
+        app.launch()
+        let restoredMarkers = app.otherElements.matching(
+            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+        )
+        XCTAssertTrue(restoredMarkers.firstMatch.waitForExistence(timeout: 5))
+        restoredMarkers.element(boundBy: max(0, restoredMarkers.count - 1)).tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        let restoredCompanion = app.staticTexts["visit-history-companions"]
+        scrollUntilVisible(restoredCompanion, in: app)
+        XCTAssertTrue(restoredCompanion.waitForExistence(timeout: 5))
+        XCTAssertTrue(restoredCompanion.label.contains("妈妈"))
+
+        app.buttons["restaurant-detail-add-visit"].tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        let reuseCompanion = app.buttons["visit-editor-companions"]
+        scrollUntilVisible(reuseCompanion, in: app)
+        reuseCompanion.tap()
+        XCTAssertTrue(app.navigationBars["和谁一起吃"].waitForExistence(timeout: 5))
+        let companionSearch = app.searchFields.firstMatch
+        XCTAssertTrue(companionSearch.waitForExistence(timeout: 3))
+        companionSearch.tap()
+        companionSearch.typeText("妈妈")
+        dismissSearchKeyboard(in: app)
+        tapDirectoryOption("妈妈", in: app)
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        let reuseSource = app.buttons["visit-editor-recommendation-source"]
+        scrollUntilVisible(reuseSource, in: app)
+        reuseSource.tap()
+        XCTAssertTrue(app.navigationBars["推荐来源"].waitForExistence(timeout: 5))
+        let sourceSearch = app.searchFields.firstMatch
+        XCTAssertTrue(sourceSearch.waitForExistence(timeout: 3))
+        sourceSearch.tap()
+        sourceSearch.typeText("朋友小李")
+        dismissSearchKeyboard(in: app)
+        tapDirectoryOption("朋友小李", in: app)
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        app.buttons["visit-editor-save"].tap()
+        XCTAssertTrue(app.staticTexts["第 2 次"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func addDirectoryName(
+        _ name: String,
+        field: String,
+        button: String,
+        in app: XCUIApplication
+    ) {
+        let textField = app.textFields[field]
+        XCTAssertTrue(textField.waitForExistence(timeout: 3))
+        textField.tap()
+        textField.typeText(name)
+        app.buttons[button].tap()
+    }
+
+    @MainActor
+    private func tapDirectoryOption(_ label: String, in app: XCUIApplication) {
+        let option = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", label)
+        ).firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 3))
+        option.tap()
+    }
+
+    @MainActor
+    private func dismissSearchKeyboard(in app: XCUIApplication) {
+        let searchKey = app.keyboards.buttons["Search"]
+        if searchKey.exists { searchKey.tap() }
+    }
+
+    @MainActor
     private func openP1DDetail(in app: XCUIApplication, tab: String) {
         app.segmentedControls.buttons[tab].tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]

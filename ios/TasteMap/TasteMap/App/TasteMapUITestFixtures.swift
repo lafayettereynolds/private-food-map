@@ -75,6 +75,12 @@ enum TasteMapUITestFixtures {
     ) throws {
         let context = container.mainContext
         if reset {
+            for source in try context.fetch(FetchDescriptor<RecommendationSource>()) {
+                context.delete(source)
+            }
+            for companion in try context.fetch(FetchDescriptor<DiningCompanion>()) {
+                context.delete(companion)
+            }
             for photo in try context.fetch(FetchDescriptor<PhotoAsset>()) {
                 context.delete(photo)
             }

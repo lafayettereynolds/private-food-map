@@ -25,6 +25,8 @@ describe('Worker Sync API V1 integration', () => {
       SYNC_AUTH_MODE: 'development-test',
     })
     expect(developmentResponse.status).toBe(200)
+    expect(await database.prepare("SELECT is_test_user FROM users WHERE id = 'ios-development-user'").first())
+      .toMatchObject({ is_test_user: 1 })
 
     const missingIdentity = await worker.fetch(new Request(
       'https://development.example.test/api/v1/sync/pull?schemaVersion=1&cursor=0',
@@ -134,6 +136,7 @@ describe('Worker Sync API V1 integration', () => {
     const visit = {
       ...visitPayload('rating-v', appleFixture.id, 'forged-user'),
       rating: 4.5, valueRating: 5, environmentRating: null, serviceRating: 3.5,
+      recommendationSourceType: 'other', recommendationSourceText: 'legacy-source',
     }
     await database.prepare(`INSERT INTO visits (
       id, user_id, restaurant_id, visited_at, rating, party_size, recommendation_source_text,
@@ -198,6 +201,8 @@ describe('Worker Sync API V1 integration', () => {
       pricePerPerson: null, queueDuration: null, diningOccasions: [], diningOccasionText: null,
       valueTags: [], environmentTags: [], serviceTags: [], noiseLevel: null,
       diningDuration: null, portionLevel: null, transportConvenience: null, specialNotes: null,
+      companions: ['小王'], companionIds: [], recommendationSourceType: 'other',
+      recommendationSourceText: '保留到 P2-F',
       updatedAt: '2026-08-27T09:00:00.000Z',
     }
     await push(database, 'user-a', mutation('p2e-clear', 'visit', visit.id, 1, cleared))
@@ -236,7 +241,7 @@ describe('Worker Sync API V1 integration', () => {
 
     expect(retry.acknowledgements[0]).toMatchObject({ status: 'applied', duplicate: true, serverVersion: 1 })
     expect(database.get('SELECT COUNT(*) AS count FROM restaurants').count).toBe(1)
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v3 WHERE mutation_id = 'response-lost'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v4 WHERE mutation_id = 'response-lost'").count).toBe(1)
   })
 
   it('increments server versions for valid Restaurant and Visit updates', async () => {
@@ -273,7 +278,7 @@ describe('Worker Sync API V1 integration', () => {
     const incremental = await pull(database, 'user-a', initial.nextCursor)
 
     expect(incremental.restaurants[0]).toMatchObject({ serverVersion: 2, record: { name: 'Web 更新名称' } })
-    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v3 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
+    expect(database.get("SELECT COUNT(*) AS count FROM sync_change_log_v4 WHERE mutation_id LIKE 'legacy:v0:%'").count).toBe(1)
   })
 
   it('prevents a stale device from resurrecting a server tombstone', async () => {
@@ -420,6 +425,84 @@ describe('Worker Sync API V1 integration', () => {
       status: 'conflict', serverVersion: 2, conflictReason: 'server_version_mismatch',
     })
   })
+
+  it('syncs private companions and recommendation sources with stable Visit associations', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'user-a')
+    await push(database, 'user-a', mutation('p2f-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const companion = companionPayload('companion-wang', 'forged-user', '  小王  ')
+    const source = sourcePayload('source-blogger', 'forged-user', '某美食博主', 'blogger')
+    const companionCreate = mutation('p2f-companion-create', 'companion', companion.id, 0, companion)
+    await push(database, 'user-a', companionCreate)
+    expect((await push(database, 'user-a', companionCreate)).acknowledgements[0])
+      .toMatchObject({ duplicate: true, serverVersion: 1 })
+    await push(database, 'user-a', mutation('p2f-source-create', 'recommendationSource', source.id, 0, source))
+
+    const visit = {
+      ...visitPayload('p2f-visit', appleFixture.id, 'forged-user'), partySize: 2,
+      companions: ['小王'], companionIds: [companion.id],
+      recommendationSourceId: source.id, recommendationSourceType: 'blogger',
+      recommendationSourceUserId: null, recommendationSourceText: '某美食博主', sharedMealId: null,
+    }
+    await push(database, 'user-a', mutation('p2f-visit-create', 'visit', visit.id, 0, visit))
+    const first = await pull(database, 'user-a', '0')
+    expect(first.companions[0].record).toMatchObject({
+      id: companion.id, userId: 'user-a', displayName: '小王', linkedTasteMapUserId: null,
+    })
+    expect(first.recommendationSources[0].record).toMatchObject({
+      id: source.id, userId: 'user-a', displayName: '某美食博主', sourceType: 'blogger',
+    })
+    expect(first.visits[0].record).toMatchObject({
+      companions: ['小王'], companionIds: [companion.id],
+      recommendationSourceId: source.id, recommendationSourceText: '某美食博主',
+    })
+    expect(database.get('SELECT owner_user_id FROM dining_companions WHERE id = ?', companion.id).owner_user_id)
+      .toBe('user-a')
+    expect((await pull(database, 'user-b', '0')).companions).toEqual([])
+    expect((await pull(database, 'user-b', '0')).recommendationSources).toEqual([])
+
+    const renamed = { ...companion, displayName: '王宇', updatedAt: '2026-08-27T09:30:00.000Z' }
+    await push(database, 'user-a', mutation('p2f-companion-rename', 'companion', companion.id, 1, renamed))
+    const incremental = await pull(database, 'user-a', first.nextCursor)
+    expect(incremental.companions[0]).toMatchObject({ serverVersion: 2, record: { displayName: '王宇' } })
+    expect(database.get('SELECT companions_json FROM visits WHERE id = ?', visit.id).companions_json)
+      .toBe('["小王"]')
+
+    await push(database, 'user-a', deletion('p2f-source-delete', 'recommendationSource', source.id, 1))
+    const deleted = await pull(database, 'user-a', incremental.nextCursor)
+    expect(deleted.tombstones).toContainEqual(expect.objectContaining({
+      entityType: 'recommendationSource', entityId: source.id, serverVersion: 2,
+    }))
+    expect(database.get('SELECT recommendation_source_text FROM visits WHERE id = ?', visit.id).recommendation_source_text)
+      .toBe('某美食博主')
+    expect((await push(database, 'user-a', mutation(
+      'p2f-source-resurrect', 'recommendationSource', source.id, 1, source,
+    ))).acknowledgements[0]).toMatchObject({ status: 'conflict', serverVersion: 2 })
+  })
+
+  it('rejects cross-user Visit associations and conservatively deduplicates exact normalized names', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'user-a')
+    await ensureUser(database, 'user-b')
+    await push(database, 'user-a', mutation('p2f-iso-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const userBCompanion = companionPayload('private-b', 'user-b', 'Alex')
+    await push(database, 'user-b', mutation('private-b-create', 'companion', userBCompanion.id, 0, userBCompanion))
+    const forgedVisit = {
+      ...visitPayload('p2f-forged-visit', appleFixture.id, 'user-b'),
+      companions: ['Alex'], companionIds: [userBCompanion.id],
+    }
+    await expect(push(database, 'user-a', mutation('p2f-forged', 'visit', forgedVisit.id, 0, forgedVisit)))
+      .rejects.toMatchObject({ status: 403 })
+
+    const first = companionPayload('alex-upper', 'user-a', ' Alex ')
+    await push(database, 'user-a', mutation('alex-first', 'companion', first.id, 0, first))
+    const exact = companionPayload('alex-exact', 'user-a', 'Alex', '2026-08-27T07:00:00.000Z')
+    expect((await push(database, 'user-a', mutation('alex-exact', 'companion', exact.id, 0, exact))).acknowledgements[0])
+      .toMatchObject({ status: 'conflict', conflictReason: `duplicate_name:${first.id}` })
+    const lower = companionPayload('alex-lower', 'user-a', 'alex', '2026-08-27T07:10:00.000Z')
+    expect((await push(database, 'user-a', mutation('alex-lower', 'companion', lower.id, 0, lower))).acknowledgements[0])
+      .toMatchObject({ status: 'applied' })
+  })
 })
 
 function mutation(mutationId, entityType, entityId, baseVersion, payload) {
@@ -439,6 +522,9 @@ function visitPayload(id, restaurantId, claimedUser) {
     rating: null, valueRating: null, environmentRating: null, serviceRating: null,
     valueTags: [], environmentTags: [], serviceTags: [], noiseLevel: null,
     diningDuration: null, portionLevel: null, transportConvenience: null, specialNotes: null,
+    companions: [], companionIds: [], recommendationSourceId: null,
+    recommendationSourceType: null, recommendationSourceUserId: null,
+    recommendationSourceText: null, sharedMealId: null,
     note: null, myActualSpend: null,
     createdAt: '2026-08-27T06:00:00.000Z', updatedAt: '2026-08-27T06:00:00.000Z', deletedAt: null,
   }
@@ -453,6 +539,12 @@ function legacyVisitPayload(id, restaurantId, claimedUser) {
     valueTags: _____________, environmentTags: ______________, serviceTags: _______________,
     noiseLevel: ________________, diningDuration: _________________, portionLevel: __________________,
     transportConvenience: ___________________, specialNotes: ____________________,
+    companions: _____________________, companionIds: ______________________,
+    recommendationSourceId: _______________________,
+    recommendationSourceType: ________________________,
+    recommendationSourceUserId: _________________________,
+    recommendationSourceText: __________________________,
+    sharedMealId: ___________________________,
     ...legacy
   } = visitPayload(id, restaurantId, claimedUser)
   return legacy
@@ -486,12 +578,35 @@ function photoPayload(id, restaurantId, visitId, dishId, claimedUser) {
   }
 }
 
+function companionPayload(id, claimedUser, displayName, updatedAt = '2026-08-27T06:05:00.000Z') {
+  return {
+    schemaVersion: 1, id, userId: claimedUser, displayName,
+    linkedTasteMapUserId: null, createdAt: '2026-08-27T06:05:00.000Z',
+    updatedAt, deletedAt: null,
+  }
+}
+
+function sourcePayload(id, claimedUser, displayName, sourceType = 'other') {
+  return {
+    schemaVersion: 1, id, userId: claimedUser, displayName, sourceType,
+    linkedTasteMapUserId: null, createdAt: '2026-08-27T06:06:00.000Z',
+    updatedAt: '2026-08-27T06:06:00.000Z', deletedAt: null,
+  }
+}
+
 async function push(database, viewerId, ...mutations) {
   const request = new Request('http://localhost/api/v1/sync/push', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ apiVersion: 1, schemaVersion: 1, mutations }),
   })
   return handleSyncV1Push(database, viewerId, request)
+}
+
+async function ensureUser(database, id) {
+  await database.prepare(`INSERT OR IGNORE INTO users (
+    id, auth_provider, nickname, created_at, updated_at
+  ) VALUES (?, 'test', ?, ?, ?)`)
+    .bind(id, id, '2026-08-27T06:00:00.000Z', '2026-08-27T06:00:00.000Z').run()
 }
 
 async function pull(database, viewerId, cursor) {
@@ -518,6 +633,7 @@ function migrationFiles() {
     '0014_restaurant_contact_details.sql', '0015_restaurant_place_identities.sql',
     '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
     '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
+    '0021_companions_recommendation_sources_sync.sql',
   ]
 }
 

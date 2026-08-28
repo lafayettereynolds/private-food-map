@@ -7,10 +7,12 @@ enum SyncEntityType: String, Codable, Sendable {
     case dish
     case visitDish
     case photo
+    case companion
+    case recommendationSource
 
     var dependencyPriority: Int {
         switch self {
-        case .restaurant: 0
+        case .restaurant, .companion, .recommendationSource: 0
         case .visit: 1
         case .dish: 2
         case .visitDish: 3

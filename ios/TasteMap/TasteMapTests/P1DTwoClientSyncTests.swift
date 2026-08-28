@@ -239,7 +239,7 @@ final class VersionedMemorySyncAPI: SyncAPI {
         switch type {
         case .restaurant: return restaurants[id]?.version ?? 0
         case .visit: return visits[id]?.version ?? 0
-        case .dish, .visitDish, .photo: return 0
+        case .dish, .visitDish, .photo, .companion, .recommendationSource: return 0
         }
     }
 
