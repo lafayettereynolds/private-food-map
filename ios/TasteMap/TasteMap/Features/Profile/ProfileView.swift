@@ -135,6 +135,34 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-recommendation-source-analysis-entry")
+                    NavigationLink {
+                        MonthlyRecapAnalysisScreen()
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(TasteMapAnalysisTheme.brandSoft)
+                                Text("🗓️")
+                                    .font(.title3)
+                            }
+                            .frame(width: 48, height: 48)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("本月回顾")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                Text("看看这个月吃了什么、和谁吃、从哪里发现")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-monthly-recap-entry")
                     if let userID = authenticatedUser?.id {
                         Button { isShowingSocialHub = true } label: {
                             HStack(spacing: 12) {

@@ -23,11 +23,13 @@ enum TasteMapUITestFixtures {
     static let analysisEnvironmentKey = "TASTEMAP_P4A_ANALYSIS_UI_TEST"
     static let companionAnalysisEnvironmentKey = "TASTEMAP_P4B_COMPANION_UI_TEST"
     static let recommendationSourceAnalysisEnvironmentKey = "TASTEMAP_P4C_SOURCE_UI_TEST"
+    static let monthlyRecapEnvironmentKey = "TASTEMAP_P4D_MONTHLY_UI_TEST"
 
     static var usesAnalysisFixture: Bool {
         ProcessInfo.processInfo.environment[analysisEnvironmentKey] == "1"
             || usesCompanionAnalysisFixture
             || usesRecommendationSourceAnalysisFixture
+            || usesMonthlyRecapFixture
     }
 
     static var usesCompanionAnalysisFixture: Bool {
@@ -36,6 +38,10 @@ enum TasteMapUITestFixtures {
 
     static var usesRecommendationSourceAnalysisFixture: Bool {
         ProcessInfo.processInfo.environment[recommendationSourceAnalysisEnvironmentKey] == "1"
+    }
+
+    static var usesMonthlyRecapFixture: Bool {
+        ProcessInfo.processInfo.environment[monthlyRecapEnvironmentKey] == "1"
     }
 
     static var usesCommunityFixture: Bool {
@@ -408,6 +414,102 @@ enum TasteMapUITestFixtures {
         if usesRecommendationSourceAnalysisFixture {
             try insertRecommendationSourceFixture(into: context)
         }
+        if usesMonthlyRecapFixture {
+            try insertMonthlyRecapFixture(
+                into: context,
+                companion: companion,
+                secondCompanion: secondCompanion,
+                source: source
+            )
+        }
+        try context.save()
+    }
+
+    private static func insertMonthlyRecapFixture(
+        into context: ModelContext,
+        companion: DiningCompanion,
+        secondCompanion: DiningCompanion,
+        source: RecommendationSource
+    ) throws {
+        let calendar = Calendar.current
+        let currentStart = calendar.date(from: calendar.dateComponents([.year, .month], from: .now)) ?? .now
+        let previousStart = calendar.date(byAdding: .month, value: -1, to: currentStart) ?? currentStart
+        let restaurantDefinitions: [(UUID, String, [String])] = [
+            (uuid(6_000), "P4-D 月度寿司屋", ["日料", "寿司"]),
+            (uuid(6_001), "P4-D 熟客火锅", ["火锅", "朋友聚餐"]),
+            (uuid(6_002), "P4-D 新店咖啡", ["咖啡", "甜点"]),
+        ]
+        var restaurants: [Restaurant] = []
+        for (index, definition) in restaurantDefinitions.enumerated() {
+            let restaurant = Restaurant(
+                id: definition.0, name: definition.1,
+                address: "杭州市西湖区月度路 \(index + 1) 号",
+                latitude: 30.24 + Double(index) * 0.001,
+                longitude: 120.15 + Double(index) * 0.001,
+                appleMapItemIdentifier: "apple-p4d-ui-\(index)", city: "杭州",
+                status: .visited,
+                createdAt: index == 2 ? currentStart : previousStart,
+                updatedAt: .now, syncStatus: .synced,
+                remoteRecordData: try restaurantContractData(
+                    id: definition.0, name: definition.1, tags: definition.2,
+                    status: .visited, index: 70 + index
+                )
+            )
+            context.insert(restaurant)
+            restaurants.append(restaurant)
+        }
+
+        let previousPlan = [0, 1, 0, 1, 1]
+        for (index, restaurantIndex) in previousPlan.enumerated() {
+            let date = calendar.date(byAdding: .day, value: 2 + index * 4, to: previousStart) ?? previousStart
+            context.insert(Visit(
+                id: uuid(6_100 + index), restaurantId: restaurants[restaurantIndex].id,
+                visitedAt: date, rating: [4.0, 3.5, 4.0, 4.0, 4.5][index],
+                myActualSpend: Decimal(120 + index * 18),
+                companionIDs: [secondCompanion.remoteID ?? secondCompanion.id.uuidString.lowercased()],
+                companionNames: [secondCompanion.displayName],
+                recommendationSourceID: source.remoteID,
+                recommendationSourceType: source.sourceType,
+                recommendationSourceText: source.displayName,
+                createdAt: date, updatedAt: date, syncStatus: .synced
+            ))
+        }
+
+        let currentPlan = [0, 0, 1, 2, 0, 1, 2, 2]
+        for (index, restaurantIndex) in currentPlan.enumerated() {
+            let date = min(
+                calendar.date(byAdding: .day, value: 1 + index * 3, to: currentStart) ?? currentStart,
+                .now
+            )
+            context.insert(Visit(
+                id: uuid(6_120 + index), restaurantId: restaurants[restaurantIndex].id,
+                visitedAt: date, rating: [4.5, 5, 4, 4.5, 4.5, 4, 4.5, 5][index],
+                note: index.isMultiple(of: 3) ? "P4-D 月度高光记录" : nil,
+                myActualSpend: index == 7 ? nil : Decimal(168 + index * 16),
+                diningOccasions: [index.isMultiple(of: 2) ? .friends : .solo],
+                companionIDs: [companion.remoteID ?? companion.id.uuidString.lowercased()]
+                    + (index.isMultiple(of: 4) ? [secondCompanion.remoteID ?? secondCompanion.id.uuidString.lowercased()] : []),
+                companionNames: [companion.displayName]
+                    + (index.isMultiple(of: 4) ? [secondCompanion.displayName] : []),
+                recommendationSourceID: source.remoteID,
+                recommendationSourceType: source.sourceType,
+                recommendationSourceText: source.displayName,
+                createdAt: date, updatedAt: date, syncStatus: .synced
+            ))
+        }
+    }
+
+    static func addMonthlyRecapFixtureVisit(in context: ModelContext) throws {
+        guard usesMonthlyRecapFixture else { return }
+        let visitID = uuid(6_199)
+        guard try context.fetch(FetchDescriptor<Visit>()).allSatisfy({ $0.id != visitID }) else { return }
+        let restaurantID = uuid(6_000)
+        context.insert(Visit(
+            id: visitID, restaurantId: restaurantID, visitedAt: .now,
+            rating: 4.5, note: "P4-D UI 新增到访",
+            myActualSpend: 198, createdAt: .now, updatedAt: .now,
+            syncStatus: .pending
+        ))
         try context.save()
     }
 

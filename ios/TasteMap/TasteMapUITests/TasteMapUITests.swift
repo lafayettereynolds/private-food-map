@@ -1146,6 +1146,78 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4DMonthlyRecapHistoryRestaurantPosterShareAndRefresh() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P4D_MONTHLY_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let entry = app.buttons["profile-monthly-recap-entry"]
+        scrollUntilVisible(entry, in: app)
+        // The custom bottom navigation can overlap the first visible pixels of a
+        // deeply-scrolled card. Move the card fully above that safe-area inset
+        // before tapping so the test exercises the NavigationLink itself.
+        app.swipeUp(velocity: .slow)
+        XCTAssertTrue(entry.isHittable)
+        entry.tap()
+
+        XCTAssertTrue(app.navigationBars["本月回顾"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["monthly-recap-analysis-page"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["monthly-recap-core-statistics"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["12 次用餐，5 家餐厅"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["本月餐桌主角"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "P4-D Monthly Recap Current", of: app)
+
+        let favorite = app.buttons["monthly-recap-favorite"]
+        scrollUntilVisible(favorite, in: app)
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5))
+        favorite.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 8))
+        app.navigationBars["餐厅详情"].buttons["本月回顾"].tap()
+        XCTAssertTrue(app.navigationBars["本月回顾"].waitForExistence(timeout: 8))
+
+        let share = app.buttons["monthly-recap-share-toolbar"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.images["analysis-poster-preview"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["analysis-poster-save"].exists)
+        let systemShare = app.buttons["analysis-poster-system-share"]
+        XCTAssertTrue(systemShare.exists)
+        keepScreenshot(named: "P4-D 9x16 Monthly Poster", of: app)
+        systemShare.tap()
+        let activityList = app.otherElements["ActivityListView"]
+        XCTAssertTrue(activityList.waitForExistence(timeout: 8))
+        let closeSystemShare = activityList.buttons["关闭"]
+        XCTAssertTrue(closeSystemShare.waitForExistence(timeout: 5))
+        closeSystemShare.tap()
+        XCTAssertTrue(activityList.waitForNonExistence(timeout: 8))
+        app.navigationBars["分享海报"].buttons["关闭"].tap()
+
+        let previous = app.buttons["monthly-recap-previous-month"]
+        XCTAssertTrue(previous.waitForExistence(timeout: 8))
+        previous.tap()
+        XCTAssertTrue(app.staticTexts["2026 年 7 月"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["历史月份"].exists)
+        keepScreenshot(named: "P4-D Monthly Recap Previous", of: app)
+        let next = app.buttons["monthly-recap-next-month"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        next.tap()
+        XCTAssertTrue(app.staticTexts["截至今天"].waitForExistence(timeout: 8))
+
+        let addVisit = app.buttons["monthly-recap-fixture-add-visit"]
+        scrollUntilVisible(addVisit, in: app)
+        XCTAssertTrue(addVisit.waitForExistence(timeout: 5))
+        addVisit.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["monthly-recap-fixture-result"]
+                .waitForExistence(timeout: 8)
+        )
+        XCTAssertTrue(app.staticTexts["13 次用餐，5 家餐厅"].waitForExistence(timeout: 8))
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,
