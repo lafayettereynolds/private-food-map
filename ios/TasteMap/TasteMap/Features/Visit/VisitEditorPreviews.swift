@@ -71,13 +71,18 @@ private enum VisitEditorPreviewFactory {
         container.mainContext.insert(restaurant)
 
         if state == .newDefault {
-            return AnyView(VisitEditorView(restaurant: restaurant).modelContainer(container))
+            return AnyView(
+                VisitEditorView(restaurant: restaurant)
+                    .environment(PremiumEntitlementService.preview(status: .premium))
+                    .modelContainer(container)
+            )
         }
 
         let visit = previewVisit(state, restaurantID: restaurant.id)
         container.mainContext.insert(visit)
         return AnyView(
             VisitEditorView(restaurant: restaurant, visit: visit)
+                .environment(PremiumEntitlementService.preview(status: .premium))
                 .modelContainer(container)
         )
     }

@@ -6,6 +6,7 @@ struct VisitEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
+    @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
     @Query private var allRestaurants: [Restaurant]
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
@@ -343,15 +344,25 @@ struct VisitEditorView: View {
                 }
 #endif
             } else {
-                Text("每次到访最多保存 \(PhotoImportService.maximumSelectionCount) 张照片。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("当前每次到访最多新增 \(photoLimit) 张照片；已有照片会继续保留。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if premiumEntitlementService.access(for: .expandedVisitPhotos) == .denied {
+                        Button {
+                            premiumEntitlementService.openPaywall(from: .feature(.expandedVisitPhotos))
+                        } label: {
+                            Label("Premium 可添加到 20 张", systemImage: "photo.stack")
+                        }
+                        .accessibilityIdentifier("visit-photo-premium-entry")
+                    }
+                }
             }
         } header: {
             HStack {
                 Text("照片")
                 Spacer()
-                Text("\(visibleVisitPhotos.count + preparedPhotos.count)/\(PhotoImportService.maximumSelectionCount)")
+                Text("\(visibleVisitPhotos.count + preparedPhotos.count)/\(photoLimit)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -781,7 +792,11 @@ struct VisitEditorView: View {
     }
 
     private var remainingPhotoCount: Int {
-        max(0, PhotoImportService.maximumSelectionCount - visibleVisitPhotos.count - preparedPhotos.count)
+        max(0, photoLimit - visibleVisitPhotos.count - preparedPhotos.count)
+    }
+
+    private var photoLimit: Int {
+        min(PhotoImportService.maximumSelectionCount, premiumEntitlementService.visitPhotoLimit)
     }
 
     private func importPhotos(_ items: [PhotosPickerItem]) async {

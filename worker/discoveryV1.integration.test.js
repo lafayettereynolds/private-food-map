@@ -148,6 +148,16 @@ describe('Discovery API V1 integration', () => {
     expect((await api(database, '', '/api/v1/discovery/for-you?city=杭州')).status).toBe(401)
   })
 
+  it('enforces Similar Taste on the server while keeping basic discovery available to Free users', async () => {
+    const similar = await api(database, 'free-tester', '/api/v1/discovery/similar-taste?city=杭州')
+    expect(similar.status).toBe(403)
+    await expect(similar.json()).resolves.toMatchObject({ error: expect.stringContaining('Premium') })
+
+    const basic = await api(database, 'free-tester', '/api/v1/discovery/for-you?city=杭州')
+    expect(basic.status).toBe(200)
+    await expect(basic.json()).resolves.toMatchObject({ apiVersion: 1, mode: 'for_you' })
+  })
+
   it('uses provider identities to collapse duplicate user-owned Restaurant rows and reports viewer WantToGo/visited state', async () => {
     await seedRestaurant(database, { user: 'tm_a', slug: 'want-local', name: 'Bob Pick Local', identity: 'apple-bob-pick', status: 'wantToGo' })
     await seedVisit(database, { user: 'tm_c', slug: 'bob-pick-copy', name: 'Bob Pick Copy', identity: 'apple-bob-pick', rating: 5 })

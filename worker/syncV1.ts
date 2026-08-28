@@ -244,6 +244,10 @@ export async function handleSyncV1Push(
   database: D1Database,
   viewerId: string,
   request: Request,
+  access: { isPremium: boolean; visitPhotoLimit: number } = {
+    isPremium: true,
+    visitPhotoLimit: 20,
+  },
 ): Promise<SyncPushResponseV1> {
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   if (contentLength > 2_000_000) throw new SyncV1RequestError('Sync push payload is too large.', 413)
@@ -259,7 +263,7 @@ export async function handleSyncV1Push(
 
   const acknowledgements: SyncMutationAcknowledgementV1[] = []
   for (const mutation of payload.mutations) {
-    acknowledgements.push(await applyMutation(database, viewerId, mutation))
+    acknowledgements.push(await applyMutation(database, viewerId, mutation, access))
   }
   return { apiVersion: SYNC_API_VERSION, acknowledgements, serverTime: new Date().toISOString() }
 }
@@ -505,7 +509,12 @@ export async function recordUnversionedSyncChanges(
   }
 }
 
-async function applyMutation(database: D1Database, viewerId: string, mutation: SyncMutationV1) {
+async function applyMutation(
+  database: D1Database,
+  viewerId: string,
+  mutation: SyncMutationV1,
+  access: { isPremium: boolean; visitPhotoLimit: number },
+) {
   const fingerprint = await sha256(stableSyncMutationJSON(mutation))
   const existingReceipt = await readReceipt(database, viewerId, mutation.mutationId)
   if (existingReceipt) return acknowledgement(existingReceipt, fingerprint, true)
@@ -539,6 +548,14 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
         .bind(profile.avatarPhotoId, viewerId).first<{ id: string }>()
       if (!avatar) {
         throw new SyncV1RequestError('Profile.avatarPhotoId must reference an active owned avatar Photo.', 403)
+      }
+      if (!access.isPremium) {
+        const existingProfile = await database.prepare(`SELECT avatar_photo_id FROM user_profiles
+          WHERE user_id = ? AND deleted_at IS NULL LIMIT 1`).bind(viewerId)
+          .first<{ avatar_photo_id: string | null }>()
+        if (existingProfile?.avatar_photo_id !== profile.avatarPhotoId) {
+          throw new SyncV1RequestError('A new custom Profile avatar requires Premium.', 403)
+        }
       }
     }
   }
@@ -600,6 +617,16 @@ async function applyMutation(database: D1Database, viewerId: string, mutation: S
   if (mutation.entityType === 'photo' && mutation.operation === 'upsert') {
     const photo = mutation.payload as PhotoJSONContractV1
     await assertOwnedPhotoParents(database, viewerId, photo)
+    if (!current && photo.visitId) {
+      const count = await database.prepare(`SELECT COUNT(*) AS count FROM photos
+        WHERE user_id = ? AND visit_id = ? AND deleted_at IS NULL`)
+        .bind(viewerId, photo.visitId).first<{ count: number | string }>()
+      if (Number(count?.count ?? 0) >= access.visitPhotoLimit) {
+        throw new SyncV1RequestError(
+          `This Visit has reached its ${access.visitPhotoLimit}-Photo entitlement limit.`, 403,
+        )
+      }
+    }
   }
   if (mutation.entityType === 'restaurantList' && mutation.operation === 'upsert') {
     const list = mutation.payload as RestaurantListSyncContractV1

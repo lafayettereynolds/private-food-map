@@ -46,6 +46,12 @@ struct AnnualRecapAnalysisScreen: View {
     }
 
     var body: some View {
+        PremiumFeatureGate(feature: .annualRecap) {
+            unlockedContent
+        }
+    }
+
+    private var unlockedContent: some View {
         Group {
             if let report, report.period.id == selectedPeriod.id {
                 AnnualRecapAnalysisView(

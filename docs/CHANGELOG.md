@@ -1,5 +1,14 @@
 # Taste Map 变更记录
 
+## 2026-08-29 — P4-H 原生 Premium entitlement foundation
+
+- 审计现有 Web `PremiumPaywall`、`featurePolicy`、Profile/Discovery/分析入口、会员 domain、`PREMIUM_PRODUCT.md` 和 D1 `0010`，只迁移正式确认的 12 项权益；Restaurant/Visit/WantToGo、搜索/详情、基础 Photo/Dish/Profile、社交、普通榜单和 Roulette 继续免费。
+- 原生新增集中式 entitlement contract/service/registry、认证 API client、按 Taste Map user 隔离的七天 Keychain cache、Free/Premium/Loading/Expired/Grace 状态及统一页面/深链/Analyzer/海报 render/save/share gate；退出登录和切换账号不会串状态，在线撤销覆盖离线缓存。
+- 新增 Taste Map 品牌 Paywall、轻量 Burger badge、Profile/Settings 入口、真实产品 Provider/Purchase/Restore/Manage 抽象和 12 组 Preview；无 StoreKit 商品时不显示价格、购买或假恢复成功。Development 测试 Premium 仅在 `DEBUG + Development` 可用。
+- Worker 新增认证 `GET /api/v1/me/entitlements` 最小 allowlist 响应，不接受客户端 `premium/userId` 授权；Similar Taste、Free 3/Premium 20 Visit Photo metadata 和新自定义头像在服务端复核 entitlement。降级不删除任何用户数据或绕过社交隐私。
+- Migration：无。复用不可修改的 `0010_membership_entitlements.sql`，未访问 Production D1/Worker，也未创建 App Store 商品、决定价格/周期或接入真实 StoreKit。
+- 验证范围包括 entitlement/feature/cache/multi-device Swift tests、API/auth/sync/discovery Worker tests、Release override 安全、Simulator Free→Paywall→gate→Development Premium 与 Premium 直达 E2E，以及 P0–P4-G 回归；详情见 `P4_H_PREMIUM_ENTITLEMENT_FOUNDATION.md`。
+
 ## 2026-08-29 — P4-G 原生“今天吃什么”轮盘
 
 - 审计 Web `RestaurantRoulette.tsx` 后，在原生 iOS“我的”增加单一“今天吃什么”入口；默认使用当前城市全部真实本地 Restaurant，可切换全部/想吃/去过并临时管理候选，不新增榜单轮盘、分类/评分/价位筛选、AI 推荐或权重。

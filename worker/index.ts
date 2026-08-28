@@ -78,6 +78,7 @@ import {
   consumePublicAPIQuota,
   PublicAPIRateLimitError,
 } from './publicAPIRateLimit'
+import { membershipSelfResponseV1 } from './membershipV1'
 
 interface Env {
   DB: D1Database
@@ -580,6 +581,16 @@ export default {
       if (url.pathname.startsWith('/api/v1/auth/')) {
         return json(await handleAuthV1Request(request, env))
       }
+      if (url.pathname === '/api/v1/me/entitlements') {
+        if (request.method !== 'GET') throw new RequestError('Membership method is not supported.', 405)
+        const viewer = await resolveSyncViewer(request, env)
+        const entitlement = await readViewerMembership(env.DB, viewer)
+        return json(membershipSelfResponseV1(
+          viewer.id,
+          entitlement,
+          viewer.testMembership !== undefined,
+        ))
+      }
       const publicRestaurantMatch = url.pathname.match(/^\/api\/public\/restaurants\/([a-f0-9]{24})$/)
       if (publicRestaurantMatch && request.method === 'GET') {
         return json(await readPublicRestaurant(env.DB, publicRestaurantMatch[1]))
@@ -592,7 +603,11 @@ export default {
       if (url.pathname === '/api/v1/sync/push' && request.method === 'POST') {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
-        return json(await handleSyncV1Push(env.DB, viewer.id, request))
+        const membership = await readViewerMembership(env.DB, viewer)
+        return json(await handleSyncV1Push(env.DB, viewer.id, request, {
+          isPremium: membership.isPremium,
+          visitPhotoLimit: membership.isPremium ? 20 : 3,
+        }))
       }
       if (url.pathname.startsWith('/api/v1/public/profiles/') && request.method === 'GET') {
         const viewer = await resolveSyncViewer(request, env)
@@ -609,7 +624,10 @@ export default {
       if (url.pathname.startsWith('/api/v1/discovery/')) {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
-        return json(await handleDiscoveryV1(request, env.DB, viewer.id))
+        const membership = await readViewerMembership(env.DB, viewer)
+        return json(await handleDiscoveryV1(request, env.DB, viewer.id, {
+          isPremium: membership.isPremium,
+        }))
       }
       if (url.pathname.startsWith('/api/v1/community/')) {
         const viewer = await resolveSyncViewer(request, env)
@@ -1473,7 +1491,13 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
       throw new SyncV1RequestError('Development sync identity is invalid.', 400)
     }
     await ensureDevelopmentSyncUser(env.DB, requestedUser)
-    return { id: requestedUser, email: null, authProvider: 'local', authSubject: null }
+    return {
+      id: requestedUser,
+      email: null,
+      authProvider: 'local',
+      authSubject: null,
+      testMembership: requestedUser === 'free-tester' ? 'free' : 'premium',
+    }
   }
   if (env.SYNC_AUTH_MODE === 'development-test') {
     if (env.APP_ENVIRONMENT !== 'development') {
@@ -1485,7 +1509,13 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
       throw new SyncV1RequestError('Development sync identity is invalid.', 400)
     }
     await ensureDevelopmentSyncUser(env.DB, requestedUser)
-    return { id: requestedUser, email: null, authProvider: 'local', authSubject: null }
+    return {
+      id: requestedUser,
+      email: null,
+      authProvider: 'local',
+      authSubject: null,
+      testMembership: requestedUser === 'free-tester' ? 'free' : 'premium',
+    }
   }
   if (env.SYNC_AUTH_MODE !== 'cloudflare-access') {
     throw new SyncV1RequestError('Production sync authentication is not configured.', 503)

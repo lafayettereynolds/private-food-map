@@ -244,7 +244,8 @@ struct AnnualRecapPosterSheet: View {
     let photosByID: [UUID: PhotoAsset]
     var body: some View {
         AnalysisPosterExportSheet(
-            posterID: report.id, progressMessage: "正在把这一年的味觉旅程排成海报…",
+            posterID: report.id, requiredFeature: .annualRecap,
+            progressMessage: "正在把这一年的味觉旅程排成海报…",
             references: report.photoReferences, photosByID: photosByID,
             render: { images in
                 try AnalysisPosterRenderer.render(

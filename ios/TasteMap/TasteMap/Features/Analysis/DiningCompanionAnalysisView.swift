@@ -40,6 +40,12 @@ struct DiningCompanionAnalysisScreen: View {
     }
 
     var body: some View {
+        PremiumFeatureGate(feature: .companionAnalysis) {
+            unlockedContent
+        }
+    }
+
+    private var unlockedContent: some View {
         Group {
             if let overview {
                 DiningCompanionOverviewView(

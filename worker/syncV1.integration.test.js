@@ -382,6 +382,61 @@ describe('Worker Sync API V1 integration', () => {
       .toMatchObject({ status: 'conflict' })
   })
 
+  it('enforces the Free 3 / Premium 20 Visit-photo policy and custom-avatar entitlement on the server', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'user-a')
+    await ensureUserProfile(database, 'user-a')
+    await push(database, 'user-a', mutation('premium-policy-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = visitPayload('premium-policy-v', appleFixture.id, 'forged-user')
+    await push(database, 'user-a', mutation('premium-policy-v', 'visit', visit.id, 0, visit))
+    const freeAccess = { isPremium: false, visitPhotoLimit: 3 }
+    const premiumAccess = { isPremium: true, visitPhotoLimit: 20 }
+
+    for (let index = 0; index < 3; index += 1) {
+      const photo = {
+        ...photoPayload(`premium-policy-photo-${index}`, appleFixture.id, visit.id, null, 'forged-user'),
+        kind: 'visit', sortOrder: index,
+      }
+      const result = await pushWithAccess(
+        database, 'user-a', freeAccess,
+        mutation(`premium-policy-photo-${index}`, 'photo', photo.id, 0, photo),
+      )
+      expect(result.acknowledgements[0].status).toBe('applied')
+    }
+    const fourth = {
+      ...photoPayload('premium-policy-photo-3', appleFixture.id, visit.id, null, 'forged-user'),
+      kind: 'visit', sortOrder: 3,
+    }
+    await expect(pushWithAccess(
+      database, 'user-a', freeAccess,
+      mutation('premium-policy-photo-3', 'photo', fourth.id, 0, fourth),
+    )).rejects.toMatchObject({ status: 403 })
+    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE visit_id = ?', visit.id).count).toBe(3)
+    await expect(pushWithAccess(
+      database, 'user-a', premiumAccess,
+      mutation('premium-policy-photo-3-premium', 'photo', fourth.id, 0, fourth),
+    )).resolves.toMatchObject({ acknowledgements: [expect.objectContaining({ status: 'applied' })] })
+
+    const avatar = {
+      ...photoPayload('premium-policy-avatar', null, null, null, 'forged-user'),
+      kind: 'avatar', storageKey: 'development/user-a/premium-policy-avatar',
+    }
+    await pushWithAccess(
+      database, 'user-a', freeAccess,
+      mutation('premium-policy-avatar', 'photo', avatar.id, 0, avatar),
+    )
+    const initial = await pull(database, 'user-a', '0')
+    const profile = { ...initial.profiles[0].record, avatarPhotoId: avatar.id }
+    await expect(pushWithAccess(
+      database, 'user-a', freeAccess,
+      mutation('premium-policy-avatar-profile-free', 'profile', 'user-a', 1, profile),
+    )).rejects.toMatchObject({ status: 403 })
+    await expect(pushWithAccess(
+      database, 'user-a', premiumAccess,
+      mutation('premium-policy-avatar-profile-premium', 'profile', 'user-a', 1, profile),
+    )).resolves.toMatchObject({ acknowledgements: [expect.objectContaining({ status: 'applied' })] })
+  })
+
   it('reuses one Restaurant Dish across Visits with idempotent associations and no resurrection', async () => {
     const database = makeDatabase()
     await push(database, 'user-a', mutation('p2c-r', 'restaurant', appleFixture.id, 0, appleFixture))
@@ -721,6 +776,14 @@ async function push(database, viewerId, ...mutations) {
     body: JSON.stringify({ apiVersion: 1, schemaVersion: 1, mutations }),
   })
   return handleSyncV1Push(database, viewerId, request)
+}
+
+async function pushWithAccess(database, viewerId, access, ...mutations) {
+  const request = new Request('http://localhost/api/v1/sync/push', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiVersion: 1, schemaVersion: 1, mutations }),
+  })
+  return handleSyncV1Push(database, viewerId, request, access)
 }
 
 async function ensureUser(database, id) {

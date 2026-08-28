@@ -2,6 +2,9 @@
 
 更新时间：2026-08-26
 
+- 原生 Premium 权限统一由 `PremiumEntitlementService + PremiumFeatureRegistry` 判断，并归属于认证后的 `tm_...` Taste Map user；SwiftData/UserDefaults Boolean、Apple `sub`、设备和昵称都不是授权真值。服务端 entitlement 是在线权威，Keychain 只保存按用户隔离、最多七天的离线投影；登出/换号清理活动状态，在线到期或撤销覆盖缓存。
+- P4-H 只建立中立的 monthly/annual/lifetime product abstraction，不代表已选择订阅或永久买断。真实价格只能来自未来 StoreKit `Product.displayPrice`；没有商品配置时不显示购买/恢复假按钮。Development override 必须同时满足 `DEBUG` 和 Development 环境，Release/Production 不存在自助开启路径。
+
 - 分析页与分享海报必须分离：六类分析统一由 `AnalysisShareService` 生成 `AnalysisShareData`，页面负责完整洞察，海报由独立 Renderer 只提炼 5–8 个可验证结论，禁止直接截取分析页面或为填充版面编造内容。
 - 分析海报 V1 固定为 1080 × 1440；视觉使用官方北极熊汉堡图标和现有品牌 Token。主视觉按“Visit 实拍 → 餐厅稳定封面 → 合法 Provider 图片 → 菜系兜底”降级，并通过用户、类型和周期生成稳定种子；代表餐厅名称与图片必须用同一个 `restaurantId` 绑定。
 - 所有分析分享默认经过严格隐私过滤，不分享邮箱、内部账号 ID、精确私人位置、未授权真实消费或饭搭子私密身份。“换一张照片”只能在当前报告可分享的真实候选池内轮换。

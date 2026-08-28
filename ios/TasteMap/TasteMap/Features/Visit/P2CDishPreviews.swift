@@ -44,6 +44,7 @@ private enum P2CDishPreviewFactory {
             longNames: longNames
         )
         return VisitEditorView(restaurant: fixture.restaurant, visit: fixture.visits[0])
+            .environment(PremiumEntitlementService.preview(status: .premium))
             .modelContainer(fixture.container)
     }
 

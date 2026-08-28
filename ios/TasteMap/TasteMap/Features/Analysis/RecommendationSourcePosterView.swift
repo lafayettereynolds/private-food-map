@@ -244,6 +244,7 @@ struct RecommendationSourcePosterSheet: View {
     var body: some View {
         AnalysisPosterExportSheet(
             posterID: overview.id,
+            requiredFeature: .recommendationSourceAnalysis,
             progressMessage: "正在把来源线索排成小票海报…",
             references: overview.photoReferences,
             photosByID: photosByID,

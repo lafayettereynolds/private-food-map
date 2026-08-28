@@ -4,6 +4,9 @@
 
 ## 已完成
 
+- 原生 iOS 已完成 P4-H Premium entitlement foundation：复用 Web/docs 已确认的会员产品定义，建立 12 项稳定 Feature Registry、`loading/unknown/free/premium/expired/grace` 状态、认证用户 Entitlement API、按 `tm_...` 用户隔离的七天 Keychain 离线缓存、统一页面/深链/Analyzer/海报生成保存分享 gating，以及无假价格/假购买的原生 Paywall。Development override 同时受 `DEBUG + Development` 约束，Release 无自助开通路径。
+- P4-H 未锁 Restaurant、Visit、WantToGo、搜索、详情、基础照片/菜品/资料、社交、普通榜单或“今天吃什么”。免费用户每次 Visit 可新增 3 张照片，Premium 为 20 张；历史超限照片与既有自定义头像不删除。Worker 从认证用户的 D1 entitlement 执行 Similar Taste、自定义头像和照片 metadata 额度校验，不信客户端 Boolean。复用既有 `0010`，无新 migration，Production 未访问。完整审计与边界见 `P4_H_PREMIUM_ENTITLEMENT_FOUNDATION.md`。
+
 - 原生 iOS 已完成 P4-G“今天吃什么”：在“我的”提供单一入口，从当前城市的真实本地 Restaurant 生成去重候选，支持全部/想吃/去过、临时候选管理、原生多圈轮盘、结果卡、再次抽取、Restaurant Detail、空/单候选和 120+ 大候选池。抽取为不按评分加权的均匀随机，只避免连续一次重复；结果不会自动改变 WantToGo、Visit、评分或榜单。
 - P4-G 完全读取现有 SwiftData Restaurant/Visit/Photo，Global Restaurant identity 去重且支持 Apple Maps-only；不新增持久化模型、Sync entity、Worker API、D1 migration 或 Secret。十八个 Preview、可注入 RNG/角度几何单元测试和四组 Simulator UI E2E 覆盖主要状态，Production 未访问。完整边界见 `P4_G_RESTAURANT_ROULETTE.md`。
 

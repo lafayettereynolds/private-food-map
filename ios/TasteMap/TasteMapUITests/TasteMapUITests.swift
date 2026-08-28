@@ -1521,6 +1521,65 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4HFreeProfilePaywallFeatureGateAndDevelopmentUpgrade() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = [
+            "TASTEMAP_P4A_ANALYSIS_UI_TEST": "1",
+            "TASTEMAP_P4H_PREMIUM_UI_TEST": "free",
+        ]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let profileEntry = app.buttons["profile-premium-entry"]
+        XCTAssertTrue(profileEntry.waitForExistence(timeout: 5))
+        profileEntry.tap()
+        XCTAssertTrue(app.otherElements["premium-paywall"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["premium-status-free"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["premium-no-store-products"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["premium-purchase"].exists)
+        keepScreenshot(named: "P4-H Free Paywall", of: app)
+        app.buttons["premium-paywall-close"].tap()
+        XCTAssertFalse(app.otherElements["premium-paywall"].waitForExistence(timeout: 2))
+
+        let taste = app.buttons["profile-taste-analysis-entry"]
+        scrollUntilVisible(taste, in: app)
+        taste.tap()
+        let gate = app.descendants(matching: .any)["premium-feature-gate-full_taste_profile"]
+        XCTAssertTrue(gate.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["你真正喜欢什么"].exists)
+        app.buttons["premium-feature-gate-open-paywall"].tap()
+        XCTAssertTrue(app.staticTexts["看懂长期偏好、预算、场景与评分风格"].waitForExistence(timeout: 5))
+        let enable = app.buttons["premium-development-enable"]
+        scrollUntilVisible(enable, in: app)
+        XCTAssertTrue(enable.isHittable)
+        enable.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["premium-status-active"].waitForExistence(timeout: 5))
+        app.buttons["premium-paywall-close"].tap()
+        XCTAssertTrue(app.staticTexts["你真正喜欢什么"].waitForExistence(timeout: 8))
+        XCTAssertFalse(gate.exists)
+    }
+
+    @MainActor
+    func testP4HPremiumFixtureDirectNavigationDoesNotShowPaywallAgain() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = [
+            "TASTEMAP_P4A_ANALYSIS_UI_TEST": "1",
+            "TASTEMAP_P4H_PREMIUM_UI_TEST": "premium",
+        ]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.buttons["profile-premium-badge-entry"].waitForExistence(timeout: 5))
+        let taste = app.buttons["profile-taste-analysis-entry"]
+        scrollUntilVisible(taste, in: app)
+        taste.tap()
+        XCTAssertTrue(app.staticTexts["你真正喜欢什么"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.otherElements["premium-paywall"].exists)
+        XCTAssertFalse(app.otherElements["premium-feature-gate-full_taste_profile"].exists)
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,

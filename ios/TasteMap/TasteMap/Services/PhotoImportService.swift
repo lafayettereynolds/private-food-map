@@ -38,7 +38,8 @@ nonisolated enum PhotoImportError: LocalizedError, Equatable {
 }
 
 actor PhotoImportService {
-    static let maximumSelectionCount = 10
+    // Technical ceiling. Free/Premium product limits are resolved centrally.
+    static let maximumSelectionCount = 20
     static let maximumDisplayPixel = 2_048
     static let maximumThumbnailPixel = 480
 

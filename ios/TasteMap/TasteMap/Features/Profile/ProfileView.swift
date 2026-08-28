@@ -9,6 +9,7 @@ struct ProfileView: View {
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(SyncCoordinator.self) private var syncCoordinator
+    @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var profiles: [UserProfile]
@@ -43,8 +44,10 @@ struct ProfileView: View {
                         profile: activeProfile,
                         avatarPhoto: avatarPhoto,
                         isSignedIn: authenticatedUser != nil,
+                        membershipStatus: premiumEntitlementService.membershipStatus,
                         onEdit: { isEditingProfile = true },
-                        onSignIn: { Task { await signIn() } }
+                        onSignIn: { Task { await signIn() } },
+                        onPremium: { premiumEntitlementService.openPaywall(from: .profile) }
                     )
                     ProfileStatisticsSection(statistics: statistics)
                     ProfileContentLinks(
@@ -138,6 +141,7 @@ struct ProfileView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            PremiumFeatureInlineBadge(feature: .fullTasteProfile)
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.tertiary)
                         }
@@ -166,6 +170,7 @@ struct ProfileView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            PremiumFeatureInlineBadge(feature: .companionAnalysis)
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.tertiary)
                         }
@@ -194,6 +199,7 @@ struct ProfileView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            PremiumFeatureInlineBadge(feature: .recommendationSourceAnalysis)
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.tertiary)
                         }
@@ -222,6 +228,7 @@ struct ProfileView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            PremiumFeatureInlineBadge(feature: .monthlyRecap)
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.tertiary)
                         }
@@ -245,6 +252,7 @@ struct ProfileView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
+                            PremiumFeatureInlineBadge(feature: .annualRecap)
                             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                         }
                         .padding(16)
@@ -315,6 +323,19 @@ struct ProfileView: View {
                         .foregroundStyle(.secondary)
                 }
                 SyncStatusView(presentation: syncCoordinator.presentation)
+                Button {
+                    premiumEntitlementService.openPaywall(from: .settings)
+                } label: {
+                    HStack {
+                        Label("会员与订阅", systemImage: "checkmark.seal")
+                        Spacer()
+                        Text(premiumEntitlementService.membershipStatus == .premium ? "已开通" : "查看")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right").font(.caption)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-premium-settings-entry")
                 Button(syncCoordinator.presentation.allowsRetry ? "重试同步" : "立即同步") {
                     Task {
                         if syncCoordinator.presentation.allowsRetry {
@@ -360,12 +381,17 @@ struct ProfileView: View {
             )
             authenticatedUser = fixture
             ensureLocalProfile(for: fixture)
+            if let override = TasteMapUITestFixtures.premiumOverride {
+                _ = premiumEntitlementService.setDevelopmentOverride(override)
+            }
+            await premiumEntitlementService.activate(userID: fixture.id, refreshFromServer: false)
             return
         }
 #endif
         authenticatedUser = await authServices.sessionManager.restoredUser()
         guard let authenticatedUser else { return }
         await syncCoordinator.sessionDidBecomeAvailable()
+        await premiumEntitlementService.activate(userID: authenticatedUser.id)
         ensureLocalProfile(for: authenticatedUser)
     }
 
@@ -390,6 +416,7 @@ struct ProfileView: View {
             let user = try await authServices.appleSignIn.signIn(presentationAnchor: anchor)
             authenticatedUser = user
             await syncCoordinator.sessionDidBecomeAvailable()
+            await premiumEntitlementService.activate(userID: user.id)
             ensureLocalProfile(for: user)
             return "Apple 登录和同步成功。"
         }
@@ -417,6 +444,7 @@ struct ProfileView: View {
         try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
         try? LocalRestaurantListStore(context: modelContext).purgePublicCache()
         authenticatedUser = nil
+        premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
     }
 
@@ -472,8 +500,10 @@ private struct ProfileIdentityCard: View {
     let profile: UserProfile?
     let avatarPhoto: PhotoAsset?
     let isSignedIn: Bool
+    let membershipStatus: MembershipStatus
     let onEdit: () -> Void
     let onSignIn: () -> Void
+    let onPremium: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -481,9 +511,19 @@ private struct ProfileIdentityCard: View {
                 .frame(width: 104, height: 104)
             if let profile, isSignedIn {
                 VStack(spacing: 6) {
-                    Text(profile.displayName)
-                        .font(.title2.bold())
-                        .multilineTextAlignment(.center)
+                    HStack(spacing: 6) {
+                        Text(profile.displayName)
+                            .font(.title2.bold())
+                            .multilineTextAlignment(.center)
+                        if membershipStatus == .premium || membershipStatus == .gracePeriod {
+                            Button(action: onPremium) {
+                                PremiumBurgerBadge().frame(width: 24, height: 24)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Taste Map Premium 已开通，查看会员状态")
+                            .accessibilityIdentifier("profile-premium-badge-entry")
+                        }
+                    }
                     if !profile.bio.isEmpty {
                         Text(profile.bio)
                             .font(.subheadline)
@@ -501,9 +541,16 @@ private struct ProfileIdentityCard: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-                Button("编辑资料", action: onEdit)
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("profile-edit-button")
+                HStack(spacing: 10) {
+                    Button("编辑资料", action: onEdit)
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("profile-edit-button")
+                    if membershipStatus == .free || membershipStatus == .expired {
+                        Button("开通 Premium", action: onPremium)
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("profile-premium-entry")
+                    }
+                }
             } else {
                 Text("记录属于你的每一顿")
                     .font(.title3.bold())
@@ -601,6 +648,7 @@ private struct ProfileEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
+    @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
     let profile: UserProfile
     let avatarPhoto: PhotoAsset?
     @State private var displayName: String
@@ -634,10 +682,27 @@ private struct ProfileEditorSheet: View {
                         editorAvatar.frame(width: 104, height: 104).clipShape(Circle())
                         Spacer()
                     }
-                    PhotosPicker(selection: $pickerItem, matching: .images) {
-                        Label("从照片中选择", systemImage: "photo.on.rectangle")
+                    switch premiumEntitlementService.access(for: .customAvatar) {
+                    case .allowed:
+                        PhotosPicker(selection: $pickerItem, matching: .images) {
+                            Label("从照片中选择", systemImage: "photo.on.rectangle")
+                        }
+                        .accessibilityIdentifier("profile-avatar-picker")
+                    case .denied:
+                        Button {
+                            premiumEntitlementService.openPaywall(from: .feature(.customAvatar))
+                        } label: {
+                            Label("Premium 可上传自定义头像", systemImage: "lock")
+                        }
+                        .accessibilityIdentifier("profile-avatar-premium-entry")
+                    case .loading:
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("正在确认头像权益…")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     }
-                    .accessibilityIdentifier("profile-avatar-picker")
                     ScrollView(.horizontal) {
                         HStack(spacing: 12) {
                             ForEach(ProfileAvatarPreset.allCases) { preset in
@@ -771,8 +836,10 @@ private struct ProfilePreviewScreen: View {
                     profile: profile,
                     avatarPhoto: photo,
                     isSignedIn: true,
+                    membershipStatus: .free,
                     onEdit: {},
-                    onSignIn: {}
+                    onSignIn: {},
+                    onPremium: {}
                 )
                 ProfileStatisticsSection(statistics: statistics)
                 ProfileContentLinks(

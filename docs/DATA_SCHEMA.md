@@ -98,4 +98,6 @@
 
 Development D1 `food-map-db-development` 已按顺序增量应用到 `0028`，并完成隔离 A/B 用户真实 Worker E2E；测试榜单最终 tombstone，读回检查没有活跃 P4-F 测试行。P4-F 未查询、写入或迁移 Production，因此本文不推断 Production 当前 migration 状态。任何 Production 变更仍必须先做只读 preflight、可恢复备份和逐项增量评审。
 
+P4-H 复用既有 `0010_membership_entitlements.sql`，没有新增或改写 migration。新的 `/api/v1/me/entitlements` 只是认证用户的最小 allowlist 投影，不增加表、交易记录或客户端权威字段；完整边界见 `P4_H_PREMIUM_ENTITLEMENT_FOUNDATION.md`。P4-H 未查询、写入或迁移 Production。
+
 正式数据库不得通过删除、清空或改名解决 schema 问题；所有变更继续使用增量 migration。

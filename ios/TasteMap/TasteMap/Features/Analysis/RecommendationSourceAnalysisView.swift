@@ -30,6 +30,12 @@ struct RecommendationSourceAnalysisScreen: View {
     }
 
     var body: some View {
+        PremiumFeatureGate(feature: .recommendationSourceAnalysis) {
+            unlockedContent
+        }
+    }
+
+    private var unlockedContent: some View {
         Group {
             if let overview {
                 RecommendationSourceOverviewView(

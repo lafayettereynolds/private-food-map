@@ -72,6 +72,7 @@ private enum P2EVisitContextPreviewFactory {
         let visit = previewVisit(state, restaurantID: restaurant.id)
         container.mainContext.insert(visit)
         return VisitEditorView(restaurant: restaurant, visit: visit)
+            .environment(PremiumEntitlementService.preview(status: .premium))
             .modelContainer(container)
     }
 

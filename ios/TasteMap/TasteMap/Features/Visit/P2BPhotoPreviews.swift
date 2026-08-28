@@ -13,11 +13,19 @@ import SwiftUI
     P2BPhotoPreviewFactory.visitEditor(photoStates: [.uploaded, .uploading, .failed, .queued])
 }
 
-#Preview("P2-B · 10 张上限") {
+#Preview("P2-B · Free 3 张上限") {
+    P2BPhotoPreviewFactory.visitEditor(photoStates: [
+        .uploaded, .uploading, .queued,
+    ], premium: false)
+}
+
+#Preview("P2-B · Premium 20 张上限") {
     P2BPhotoPreviewFactory.visitEditor(photoStates: [
         .uploaded, .uploaded, .uploading, .queued, .failed,
         .uploaded, .queued, .uploaded, .uploading, .failed,
-    ])
+        .uploaded, .uploaded, .uploading, .queued, .failed,
+        .uploaded, .queued, .uploaded, .uploading, .failed,
+    ], premium: true)
 }
 
 #Preview("P2-B · 餐厅图库深色", traits: .fixedLayout(width: 393, height: 852)) {
@@ -32,9 +40,10 @@ import SwiftUI
 
 @MainActor
 private enum P2BPhotoPreviewFactory {
-    static func visitEditor(photoStates: [PhotoUploadState]) -> some View {
+    static func visitEditor(photoStates: [PhotoUploadState], premium: Bool = true) -> some View {
         let fixture = fixture(photoStates: photoStates)
         return VisitEditorView(restaurant: fixture.restaurant, visit: fixture.visit)
+            .environment(PremiumEntitlementService.preview(status: premium ? .premium : .free))
             .modelContainer(fixture.container)
     }
 

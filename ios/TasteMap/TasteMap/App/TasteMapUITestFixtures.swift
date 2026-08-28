@@ -31,6 +31,16 @@ enum TasteMapUITestFixtures {
     static let restaurantRouletteEmptyEnvironmentKey = "TASTEMAP_P4G_ROULETTE_EMPTY_UI_TEST"
     static let restaurantRouletteSingleEnvironmentKey = "TASTEMAP_P4G_ROULETTE_SINGLE_UI_TEST"
     static let restaurantRouletteLargeEnvironmentKey = "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST"
+    static let premiumEnvironmentKey = "TASTEMAP_P4H_PREMIUM_UI_TEST"
+
+    static var premiumOverride: DevelopmentPremiumOverride? {
+        let value = ProcessInfo.processInfo.environment[premiumEnvironmentKey]
+        if value == DevelopmentPremiumOverride.free.rawValue { return .free }
+        if value == DevelopmentPremiumOverride.premium.rawValue { return .premium }
+        // Existing P4 analytics UI fixtures predate entitlement gating and
+        // intentionally exercise the complete analysis experience.
+        return usesAnalysisFixture || usesDiscoveryFixture ? .premium : nil
+    }
 
     private enum RestaurantRouletteFixtureMode {
         case standard

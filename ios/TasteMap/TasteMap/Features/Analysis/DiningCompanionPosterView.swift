@@ -290,6 +290,7 @@ struct DiningCompanionPosterSheet: View {
     var body: some View {
         AnalysisPosterExportSheet(
             posterID: report.id,
+            requiredFeature: .companionAnalysis,
             progressMessage: "正在把共同餐桌排成海报…",
             references: report.photoReferences,
             photosByID: photosByID,

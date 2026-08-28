@@ -5,11 +5,13 @@ import UIKit
 enum AnalysisPosterRenderError: LocalizedError, Equatable {
     case imageUnavailable
     case pngEncodingFailed
+    case premiumRequired
 
     var errorDescription: String? {
         switch self {
         case .imageUnavailable: "分享海报生成失败，请重试。"
         case .pngEncodingFailed: "分享图片暂时无法导出，请重试。"
+        case .premiumRequired: "这份完整分析海报需要 Taste Map Premium。"
         }
     }
 }
@@ -154,6 +156,7 @@ struct AnalysisPosterSheet: View {
     var body: some View {
         AnalysisPosterExportSheet(
             posterID: report.id,
+            requiredFeature: .fullTasteProfile,
             progressMessage: "正在把味觉地图排成海报…",
             references: report.hero.imageReferences + report.restaurants.map(\.imageReference),
             photosByID: photosByID,
@@ -168,6 +171,7 @@ struct AnalysisPosterSheet: View {
 /// a renderer closure; Photos authorization, temporary files and system share stay unified.
 struct AnalysisPosterExportSheet: View {
     let posterID: String
+    let requiredFeature: PremiumFeature
     let progressMessage: String
     let references: [AnalysisImageReference]
     let photosByID: [UUID: PhotoAsset]
@@ -175,6 +179,7 @@ struct AnalysisPosterExportSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
+    @Environment(PremiumEntitlementService.self) private var entitlementService
     @State private var posterImage: UIImage?
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -275,6 +280,10 @@ struct AnalysisPosterExportSheet: View {
     private func generatePoster() async {
         posterImage = nil
         errorMessage = nil
+        guard entitlementService.access(for: requiredFeature, operation: .posterRender) == .allowed else {
+            errorMessage = AnalysisPosterRenderError.premiumRequired.localizedDescription
+            return
+        }
         let images = await AnalysisPosterImageResolver.resolve(
             references: references,
             photosByID: photosByID,
@@ -289,6 +298,10 @@ struct AnalysisPosterExportSheet: View {
 
     @MainActor
     private func saveImage(_ image: UIImage) async {
+        guard entitlementService.access(for: requiredFeature, operation: .posterSave) == .allowed else {
+            statusMessage = AnalysisPosterRenderError.premiumRequired.localizedDescription
+            return
+        }
         isSaving = true
         defer { isSaving = false }
         do {
@@ -300,6 +313,10 @@ struct AnalysisPosterExportSheet: View {
     }
 
     private func share(_ image: UIImage) {
+        guard entitlementService.access(for: requiredFeature, operation: .posterShare) == .allowed else {
+            statusMessage = AnalysisPosterRenderError.premiumRequired.localizedDescription
+            return
+        }
         do {
             shareFile = ShareFile(url: try temporaryFiles.write(image, id: posterID))
         } catch {

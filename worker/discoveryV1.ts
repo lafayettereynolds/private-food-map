@@ -128,10 +128,14 @@ export async function handleDiscoveryV1(
   request: Request,
   database: D1Database,
   viewerId: string,
+  access: { isPremium: boolean } = { isPremium: true },
 ): Promise<DiscoveryPageV1> {
   if (request.method !== 'GET') throw new DiscoveryV1RequestError('Discovery method is not supported.', 405)
   const url = new URL(request.url)
   const mode = modeFromPath(url.pathname)
+  if (mode === 'similar_taste' && !access.isPremium) {
+    throw new DiscoveryV1RequestError('Taste-similar discovery requires Premium.', 403)
+  }
   await consumeDiscoveryQuota(database, viewerId)
   const city = await geographicScope(database, viewerId, (url.searchParams.get('city') ?? '').trim())
   const limit = pageLimit(url)
@@ -148,7 +152,10 @@ export async function handleDiscoveryV1(
     score < cursor.score || (score === cursor.score && card.restaurant.globalKey > cursor.key),
   )
   const visible = remaining.slice(0, limit)
-  const items = visible.map(({ card }, index) => ({ ...card, rank: index + 1 }))
+  const items = visible.map(({ card }, index) => ({
+    ...freeOrPremiumCard(card, access.isPremium),
+    rank: index + 1,
+  }))
   const tail = visible.at(-1)
   return {
     apiVersion: DISCOVERY_API_VERSION,
@@ -160,6 +167,22 @@ export async function handleDiscoveryV1(
     nextCursor: remaining.length > limit && tail
       ? encodeCursor(tail.score, tail.card.restaurant.globalKey, now)
       : null,
+  }
+}
+
+function freeOrPremiumCard(
+  card: Omit<DiscoveryCardV1, 'rank'>,
+  isPremium: boolean,
+): Omit<DiscoveryCardV1, 'rank'> {
+  if (isPremium) return card
+  return {
+    ...card,
+    reasons: card.reasons.slice(0, 1),
+    ratings: {
+      ...card.ratings,
+      similarTaste: { value: null, sampleCount: 0 },
+    },
+    similarity: null,
   }
 }
 

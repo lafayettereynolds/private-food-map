@@ -51,6 +51,12 @@ struct MonthlyRecapAnalysisScreen: View {
     }
 
     var body: some View {
+        PremiumFeatureGate(feature: .monthlyRecap) {
+            unlockedContent
+        }
+    }
+
+    private var unlockedContent: some View {
         Group {
             if let report, report.period.id == selectedPeriod.id {
                 MonthlyRecapAnalysisView(

@@ -28,6 +28,12 @@ struct TasteProfileAnalysisScreen: View {
     }
 
     var body: some View {
+        PremiumFeatureGate(feature: .fullTasteProfile) {
+            unlockedContent
+        }
+    }
+
+    private var unlockedContent: some View {
         Group {
             if let report {
                 TasteProfileAnalysisView(report: report, photosByID: photosByID)

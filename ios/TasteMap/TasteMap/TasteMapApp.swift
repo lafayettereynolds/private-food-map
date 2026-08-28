@@ -14,6 +14,7 @@ struct TasteMapApp: App {
     private let nativeAuthServices: NativeAuthServices
     private let syncCoordinator: SyncCoordinator
     private let photoTransferCoordinator: PhotoTransferCoordinator
+    private let premiumEntitlementService: PremiumEntitlementService
 
     init() {
         let authServices = NativeAuthServices(configuration: .current())
@@ -79,6 +80,16 @@ struct TasteMapApp: App {
             fatalError("Unable to initialize local Taste Map storage: \(error)")
         }
         nativeAuthServices = authServices
+        let premiumService = PremiumEntitlementService(
+            api: authServices.premiumAPI,
+            environment: .current
+        )
+#if DEBUG
+        if let override = TasteMapUITestFixtures.premiumOverride {
+            _ = premiumService.setDevelopmentOverride(override)
+        }
+#endif
+        premiumEntitlementService = premiumService
         modelContainer = container
         let coordinator = SyncCoordinator(
             context: container.mainContext,
@@ -108,6 +119,7 @@ struct TasteMapApp: App {
             ContentView()
                 .environment(nativeAuthServices)
                 .environment(syncCoordinator)
+                .environment(premiumEntitlementService)
                 .environment(\.photoTransferCoordinator, photoTransferCoordinator)
         }
         .modelContainer(modelContainer)

@@ -330,6 +330,7 @@ struct MonthlyRecapPosterSheet: View {
     var body: some View {
         AnalysisPosterExportSheet(
             posterID: report.id,
+            requiredFeature: .monthlyRecap,
             progressMessage: "正在把这个月的餐桌排成海报…",
             references: report.photoReferences,
             photosByID: photosByID,

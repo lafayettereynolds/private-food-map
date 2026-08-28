@@ -6,6 +6,7 @@ struct DiscoveryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(SyncCoordinator.self) private var syncCoordinator
+    @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
     @Query private var restaurants: [Restaurant]
     @Query private var profiles: [UserProfile]
 
@@ -37,6 +38,7 @@ struct DiscoveryView: View {
                 cards: cards, loading: loading, message: message,
                 cacheDate: cacheDate, showingCache: showingCache,
                 isSignedIn: authenticatedUser != nil,
+                similarTasteAccess: premiumEntitlementService.access(for: .similarTaste),
                 onRetry: { Task { await load(reset: true, preferCache: false) } },
                 onOpenRestaurant: { selectedCard = $0 },
                 onWantToGo: addToWantToGo,
@@ -49,6 +51,10 @@ struct DiscoveryView: View {
             .refreshable { await load(reset: true, preferCache: false) }
             .task { await restoreAndLoad() }
             .onChange(of: mode) { _, _ in Task { await load(reset: true, preferCache: true) } }
+            .onChange(of: premiumEntitlementService.membershipStatus) { _, _ in
+                guard mode == .similarTaste else { return }
+                Task { await load(reset: true, preferCache: true) }
+            }
             .onChange(of: trendWindowDays) { _, _ in
                 guard mode == .trending else { return }
                 Task { await load(reset: true, preferCache: true) }
@@ -88,17 +94,36 @@ struct DiscoveryView: View {
 #if DEBUG
         if TasteMapUITestFixtures.usesDiscoveryFixture {
             authenticatedUser = AuthenticatedUserV1(id: TasteMapUITestFixtures.profileUserID, email: nil)
+            if let override = TasteMapUITestFixtures.premiumOverride {
+                _ = premiumEntitlementService.setDevelopmentOverride(override)
+            }
+            await premiumEntitlementService.activate(
+                userID: TasteMapUITestFixtures.profileUserID,
+                refreshFromServer: false
+            )
             await load(reset: true, preferCache: true)
             return
         }
 #endif
         authenticatedUser = await authServices.sessionManager.restoredUser()
+        if let userID = authenticatedUser?.id {
+            await premiumEntitlementService.activate(userID: userID)
+        }
         await load(reset: true, preferCache: true)
     }
 
     @MainActor
     private func load(reset: Bool, preferCache: Bool) async {
         guard let userID = authenticatedUser?.id, !loading else { return }
+        if mode == .similarTaste,
+           premiumEntitlementService.access(for: .similarTaste) != .allowed {
+            cards = []
+            nextCursor = nil
+            cacheDate = nil
+            showingCache = false
+            message = nil
+            return
+        }
 #if DEBUG
         if TasteMapUITestFixtures.usesDiscoveryFixture {
             let page = TasteMapUITestFixtures.discoveryPage(mode: mode, window: trendWindowDays)
@@ -200,6 +225,7 @@ struct DiscoveryContentView: View {
     let cacheDate: Date?
     let showingCache: Bool
     let isSignedIn: Bool
+    var similarTasteAccess: PremiumAccessDecision = .allowed
     let onRetry: () -> Void
     let onOpenRestaurant: (DiscoveryCardV1) -> Void
     let onWantToGo: (DiscoveryCardV1) -> Void
@@ -233,6 +259,13 @@ struct DiscoveryContentView: View {
                 ContentUnavailableView("登录后发现", systemImage: "person.crop.circle.badge.checkmark",
                                        description: Text("请先到“我的”使用 Apple 登录。"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if mode == .similarTaste && similarTasteAccess != .allowed {
+                if similarTasteAccess == .loading {
+                    ProgressView("正在确认同味权益…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    PremiumFeatureLockedView(feature: .similarTaste)
+                }
             } else if loading && cards.isEmpty {
                 ProgressView("正在寻找真实餐厅…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if cards.isEmpty {

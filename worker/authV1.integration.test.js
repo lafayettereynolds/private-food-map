@@ -81,6 +81,50 @@ describe('Native Auth V1', () => {
     expect(takeover.status).toBe(403)
   })
 
+  it('serves entitlement only for the authenticated Taste Map user and ignores forged userId', async () => {
+    const database = makeDatabase()
+    const userA = await exchange(database, 'apple-token-entitlement-a', 'apple-entitlement-a')
+    const userB = await exchange(database, 'apple-token-entitlement-b', 'apple-entitlement-b')
+    database.sqlite.prepare(`INSERT INTO membership_entitlements (
+      id, user_id, source, starts_at, expires_at, is_lifetime, status, note,
+      metadata_json, created_at, updated_at
+    ) VALUES (?, ?, 'admin_grant', ?, NULL, 1, 'active', 'private admin note',
+      '{"internal":"not-public"}', ?, ?)`)
+      .run('membership-auth-a', userA.user.id, NOW.toISOString(), NOW.toISOString(), NOW.toISOString())
+
+    const entitlementA = await worker.fetch(new Request(
+      `https://dev.test/api/v1/me/entitlements?userId=${encodeURIComponent(userB.user.id)}`,
+      { headers: { Authorization: `Bearer ${userA.session.accessToken}` } },
+    ), environment(database))
+    expect(entitlementA.status).toBe(200)
+    const bodyA = await entitlementA.json()
+    expect(bodyA.userId).toBe(userA.user.id)
+    expect(bodyA.entitlement).toMatchObject({
+      state: 'active', isPremium: true, source: 'admin_grant', kind: 'lifetime',
+    })
+    expect(JSON.stringify(bodyA)).not.toContain('private admin note')
+    expect(JSON.stringify(bodyA)).not.toContain('internal')
+
+    const entitlementB = await worker.fetch(new Request(
+      'https://dev.test/api/v1/me/entitlements',
+      { headers: { Authorization: `Bearer ${userB.session.accessToken}` } },
+    ), environment(database))
+    expect(entitlementB.status).toBe(200)
+    expect((await entitlementB.json()).entitlement.state).toBe('free')
+
+    const missing = await worker.fetch(
+      new Request('https://dev.test/api/v1/me/entitlements'), {
+        ...environment(database), APP_ENVIRONMENT: 'development', SYNC_AUTH_MODE: 'development-test',
+      },
+    )
+    expect(missing.status).toBe(401)
+    const wrongMethod = await worker.fetch(new Request(
+      'https://dev.test/api/v1/me/entitlements',
+      { method: 'POST', headers: { Authorization: `Bearer ${userA.session.accessToken}` } },
+    ), environment(database))
+    expect(wrongMethod.status).toBe(405)
+  })
+
   it('expires access, rotates refresh, detects reuse, and revokes logout', async () => {
     const database = makeDatabase()
     const initial = await exchange(database, 'apple-token-session', 'apple-session-subject')

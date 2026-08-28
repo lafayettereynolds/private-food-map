@@ -65,6 +65,7 @@ private enum P2DRatingPreviewFactory {
         container.mainContext.insert(restaurant)
         container.mainContext.insert(visit)
         return VisitEditorView(restaurant: restaurant, visit: visit)
+            .environment(PremiumEntitlementService.preview(status: .premium))
             .modelContainer(container)
     }
 

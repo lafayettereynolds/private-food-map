@@ -123,6 +123,7 @@ private enum P2FCompanionSourcePreviewFactory {
         )
         container.mainContext.insert(visit)
         return VisitEditorView(restaurant: restaurant, visit: visit)
+            .environment(PremiumEntitlementService.preview(status: .premium))
             .modelContainer(container)
     }
 
