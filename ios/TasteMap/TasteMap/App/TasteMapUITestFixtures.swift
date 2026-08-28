@@ -24,12 +24,14 @@ enum TasteMapUITestFixtures {
     static let companionAnalysisEnvironmentKey = "TASTEMAP_P4B_COMPANION_UI_TEST"
     static let recommendationSourceAnalysisEnvironmentKey = "TASTEMAP_P4C_SOURCE_UI_TEST"
     static let monthlyRecapEnvironmentKey = "TASTEMAP_P4D_MONTHLY_UI_TEST"
+    static let annualRecapEnvironmentKey = "TASTEMAP_P4E_ANNUAL_UI_TEST"
 
     static var usesAnalysisFixture: Bool {
         ProcessInfo.processInfo.environment[analysisEnvironmentKey] == "1"
             || usesCompanionAnalysisFixture
             || usesRecommendationSourceAnalysisFixture
             || usesMonthlyRecapFixture
+            || usesAnnualRecapFixture
     }
 
     static var usesCompanionAnalysisFixture: Bool {
@@ -42,6 +44,10 @@ enum TasteMapUITestFixtures {
 
     static var usesMonthlyRecapFixture: Bool {
         ProcessInfo.processInfo.environment[monthlyRecapEnvironmentKey] == "1"
+    }
+
+    static var usesAnnualRecapFixture: Bool {
+        ProcessInfo.processInfo.environment[annualRecapEnvironmentKey] == "1"
     }
 
     static var usesCommunityFixture: Bool {
@@ -422,6 +428,120 @@ enum TasteMapUITestFixtures {
                 source: source
             )
         }
+        if usesAnnualRecapFixture {
+            try insertAnnualRecapFixture(
+                into: context, companion: companion,
+                secondCompanion: secondCompanion
+            )
+        }
+        try context.save()
+    }
+
+    private static func insertAnnualRecapFixture(
+        into context: ModelContext,
+        companion: DiningCompanion,
+        secondCompanion: DiningCompanion
+    ) throws {
+        let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: .now)
+        let previousYear = currentYear - 1
+        let sourceDefinitions: [(UUID, String, RecommendationSourceType, [Double])] = [
+            (uuid(7_001), "年度朋友私藏", .friend, [4.5, 5, 4.5, 4, 4.5, 5]),
+            (uuid(7_002), "年度踩坑收藏夹", .other, [2, 2.5, 2, 3, 2.5, 2]),
+        ]
+        var item = 0
+        for (sourceIndex, definition) in sourceDefinitions.enumerated() {
+            let source = RecommendationSource(
+                id: definition.0, ownerUserId: profileUserID,
+                displayName: definition.1, sourceType: definition.2,
+                remoteID: "p4e-source-\(sourceIndex)", syncStatus: .synced
+            )
+            context.insert(source)
+            for (ratingIndex, rating) in definition.3.enumerated() {
+                item += 1
+                let restaurantID = uuid(7_100 + item)
+                let month = 1 + ((sourceIndex * 6 + ratingIndex) % max(1, calendar.component(.month, from: .now)))
+                let date = calendar.date(from: DateComponents(
+                    year: currentYear, month: month, day: 4 + ratingIndex * 3, hour: 19
+                )) ?? .now
+                let tags = sourceIndex == 0
+                    ? (month <= 6 ? ["日料", "寿司"] : ["火锅", "朋友聚餐"])
+                    : (month <= 6 ? ["咖啡", "甜点"] : ["西餐", "约会"])
+                let name = sourceIndex == 0 ? "P4-E 年度高光店 \(ratingIndex + 1)" : "P4-E 年度踩坑店 \(ratingIndex + 1)"
+                let restaurant = Restaurant(
+                    id: restaurantID, name: name,
+                    address: "杭州市年度路 \(item) 号",
+                    latitude: 30.18 + Double(item) * 0.001,
+                    longitude: 120.08 + Double(item) * 0.001,
+                    appleMapItemIdentifier: "apple-p4e-ui-\(item)", city: "杭州",
+                    status: .visited, createdAt: date, updatedAt: date,
+                    syncStatus: .synced,
+                    remoteRecordData: try restaurantContractData(
+                        id: restaurantID, name: name, tags: tags,
+                        status: .visited, index: 100 + item
+                    )
+                )
+                context.insert(restaurant)
+                context.insert(Visit(
+                    id: uuid(7_300 + item), restaurantId: restaurantID,
+                    visitedAt: min(date, .now), rating: rating,
+                    myActualSpend: item.isMultiple(of: 5) ? nil : Decimal(120 + item * 14),
+                    diningOccasions: [item.isMultiple(of: 2) ? .friends : .solo],
+                    companionIDs: [companion.remoteID ?? companion.id.uuidString.lowercased()]
+                        + (item.isMultiple(of: 4) ? [secondCompanion.remoteID ?? secondCompanion.id.uuidString.lowercased()] : []),
+                    companionNames: [companion.displayName]
+                        + (item.isMultiple(of: 4) ? [secondCompanion.displayName] : []),
+                    recommendationSourceID: source.remoteID,
+                    recommendationSourceType: source.sourceType,
+                    recommendationSourceText: source.displayName,
+                    createdAt: min(date, .now), updatedAt: min(date, .now),
+                    syncStatus: .synced
+                ))
+            }
+        }
+        for index in 0..<8 {
+            let restaurantID = uuid(7_500 + (index % 4))
+            if index < 4 {
+                let restaurant = Restaurant(
+                    id: restaurantID, name: "P4-E 去年餐厅 \(index + 1)",
+                    address: "杭州市往年路 \(index + 1) 号",
+                    latitude: 30.30 + Double(index) * 0.001,
+                    longitude: 120.20 + Double(index) * 0.001,
+                    appleMapItemIdentifier: "apple-p4e-past-\(index)", city: "杭州",
+                    status: .visited, syncStatus: .synced,
+                    remoteRecordData: try restaurantContractData(
+                        id: restaurantID, name: "P4-E 去年餐厅 \(index + 1)",
+                        tags: index.isMultiple(of: 2) ? ["火锅"] : ["日料"],
+                        status: .visited, index: 140 + index
+                    )
+                )
+                context.insert(restaurant)
+            }
+            let date = calendar.date(from: DateComponents(
+                year: previousYear, month: 1 + index, day: 8, hour: 18
+            )) ?? .now
+            context.insert(Visit(
+                id: uuid(7_600 + index), restaurantId: restaurantID,
+                visitedAt: date, rating: 4 + Double(index % 2) * 0.5,
+                myActualSpend: Decimal(136 + index * 18),
+                companionIDs: [secondCompanion.remoteID ?? secondCompanion.id.uuidString.lowercased()],
+                companionNames: [secondCompanion.displayName],
+                createdAt: date, updatedAt: date, syncStatus: .synced
+            ))
+        }
+    }
+
+    static func addAnnualRecapFixtureVisit(in context: ModelContext) throws {
+        guard usesAnnualRecapFixture else { return }
+        let visitID = uuid(7_999)
+        guard try context.fetch(FetchDescriptor<Visit>()).allSatisfy({ $0.id != visitID }) else { return }
+        guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
+            .first(where: { $0.id == uuid(7_101) }) else { return }
+        context.insert(Visit(
+            id: visitID, restaurantId: restaurant.id, visitedAt: .now,
+            rating: 4.5, note: "P4-E UI 新增年度到访", myActualSpend: 188,
+            createdAt: .now, updatedAt: .now, syncStatus: .pending
+        ))
         try context.save()
     }
 

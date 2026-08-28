@@ -163,6 +163,28 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-monthly-recap-entry")
+                    NavigationLink {
+                        AnnualRecapAnalysisScreen()
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle().fill(TasteMapAnalysisTheme.leafGreenSoft)
+                                Text("🧭").font(.title3)
+                            }
+                            .frame(width: 48, height: 48)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("年度回顾").font(.headline).foregroundStyle(.primary)
+                                Text("回看这一年的餐桌、味觉轨迹与重要发现")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-annual-recap-entry")
                     if let userID = authenticatedUser?.id {
                         Button { isShowingSocialHub = true } label: {
                             HStack(spacing: 12) {

@@ -1218,6 +1218,97 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4EAnnualRecapHistoryRestaurantJourneyPosterShareAndRefresh() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P4E_ANNUAL_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let entry = app.buttons["profile-annual-recap-entry"]
+        scrollUntilVisible(entry, in: app)
+        app.swipeUp(velocity: .slow)
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        XCTAssertTrue(entry.isHittable)
+        entry.tap()
+
+        XCTAssertTrue(app.navigationBars["年度回顾"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["annual-recap-analysis-page"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["annual-recap-core-statistics"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["annual-recap-hero"].exists)
+        keepScreenshot(named: "P4-E Annual Recap Current", of: app)
+
+        let favorite = app.buttons["annual-recap-favorite"]
+        scrollUntilVisible(favorite, in: app)
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["同时也是年度最常去"].exists)
+        favorite.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 8))
+        app.navigationBars["餐厅详情"].buttons["年度回顾"].tap()
+        XCTAssertTrue(app.navigationBars["年度回顾"].waitForExistence(timeout: 8))
+
+        let journey = app.descendants(matching: .any)["annual-recap-taste-journey"]
+        for _ in 0..<8 where !journey.exists {
+            app.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(journey.waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["年度味觉轨迹"].exists)
+
+        let share = app.buttons["annual-recap-share-toolbar"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.images["analysis-poster-preview"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["analysis-poster-save"].exists)
+        let systemShare = app.buttons["analysis-poster-system-share"]
+        XCTAssertTrue(systemShare.exists)
+        keepScreenshot(named: "P4-E 9x16 Annual Poster", of: app)
+        systemShare.tap()
+        let activityList = app.otherElements["ActivityListView"]
+        XCTAssertTrue(activityList.waitForExistence(timeout: 8))
+        let closeSystemShare = activityList.buttons["关闭"]
+        XCTAssertTrue(closeSystemShare.waitForExistence(timeout: 5))
+        closeSystemShare.tap()
+        XCTAssertTrue(activityList.waitForNonExistence(timeout: 8))
+        app.navigationBars["分享海报"].buttons["关闭"].tap()
+
+        let previous = app.buttons["annual-recap-previous-year"]
+        for _ in 0..<10 where !previous.exists {
+            app.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(previous.waitForExistence(timeout: 8))
+        previous.tap()
+        let previousYear = Calendar.current.component(.year, from: .now) - 1
+        XCTAssertTrue(app.staticTexts["\(previousYear) 年"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["历史年度"].exists)
+        keepScreenshot(named: "P4-E Annual Recap Previous", of: app)
+
+        let next = app.buttons["annual-recap-next-year"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        next.tap()
+        XCTAssertTrue(app.staticTexts["截至今天"].waitForExistence(timeout: 10))
+
+        let visitCount = app.staticTexts["annual-recap-visit-count"]
+        scrollUntilVisible(visitCount, in: app)
+        XCTAssertTrue(visitCount.waitForExistence(timeout: 5))
+        let visitCountBeforeInsertion = visitCount.label
+
+        let addVisit = app.buttons["annual-recap-fixture-add-visit"]
+        for _ in 0..<8 where !addVisit.exists {
+            app.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(addVisit.waitForExistence(timeout: 5))
+        addVisit.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["annual-recap-fixture-result"]
+                .waitForExistence(timeout: 8)
+        )
+        scrollUntilVisible(visitCount, in: app)
+        XCTAssertTrue(visitCount.waitForExistence(timeout: 5))
+        XCTAssertNotEqual(visitCount.label, visitCountBeforeInsertion)
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,
