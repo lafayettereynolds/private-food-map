@@ -10,6 +10,7 @@ struct P3ESocialHardeningTests {
     func completeRelationshipRefreshRevokesStaleFriendship() throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
         let store = LocalSocialStore(context: container.mainContext)
+        try store.cache(result(state: .friends), currentUserID: "tm_a")
         try store.upsertFriendship(
             .init(
                 apiVersion: 1, id: "friendship:tm_a:tm_b",
@@ -29,6 +30,7 @@ struct P3ESocialHardeningTests {
         #expect(cached.perspectiveState == .none)
         #expect(cached.deletedAt != nil)
         #expect(!cached.isOptimistic)
+        #expect(try store.cachedProfiles().allSatisfy { $0.tasteMapUserID != "tm_b" })
     }
 
     @Test("A partial relationship page never deletes an unseen pagination tail")

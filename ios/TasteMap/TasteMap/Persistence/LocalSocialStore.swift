@@ -76,14 +76,19 @@ struct LocalSocialStore {
         currentUserID: String
     ) throws {
         let authoritative = Set(items.compactMap(\.friendshipId))
+        var revokedUserIDs = Set<String>()
         for friendship in try friendships() where
             friendship.currentUserID == currentUserID && friendship.deletedAt == nil &&
             Self._belongs(friendship.perspectiveState, to: scope) &&
             !authoritative.contains(friendship.relationshipID) {
+            revokedUserIDs.insert(friendship.otherUserID)
             friendship.state = .removed
             friendship.deletedAt = .now
             friendship.updatedAt = .now
             friendship.isOptimistic = false
+        }
+        for profile in try profiles() where revokedUserIDs.contains(profile.tasteMapUserID) {
+            context.delete(profile)
         }
         try context.save()
     }
