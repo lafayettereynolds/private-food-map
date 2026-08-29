@@ -1,5 +1,3 @@
-import type { BackupEntitiesV1, BackupTombstoneV1 } from './backupV1'
-
 /**
  * Exact lineage marker for the current Dexie dump. It is not schemaVersion 4
  * of `com.tastemap.backup`; it predates and is unrelated to Backup v1.
@@ -23,11 +21,23 @@ export interface LegacyWebBackupV4 {
   restaurantListItems: unknown[]
 }
 
-/** Boundary only; F1-B1 deliberately provides no legacy converter. */
+export type LegacyWebBackupV4IssueSeverity = 'info' | 'warning' | 'requiresReview' | 'blocking'
+
+/**
+ * Architecture boundary for the native strict decoder. Source IDs remain
+ * non-authoritative references and the normalized graph is intentionally not
+ * typed as Backup v1 entities. F1-C1 does not provide a TypeScript converter.
+ */
 export interface LegacyWebBackupV4StagingBoundary {
   sourceLineage: 'legacy-web-v4'
   sourceVersion: 4
-  normalizedEntities: BackupEntitiesV1
-  tombstones: BackupTombstoneV1[]
-  unsupportedFields: string[]
+  sourceIdsAreNonAuthoritative: true
+  sourceFingerprint: string
+  normalizedEntityCounts: Readonly<Record<
+    | 'restaurants' | 'visits' | 'dishes' | 'visitDishes' | 'photos'
+    | 'companions' | 'recommendationSources' | 'profiles'
+    | 'restaurantLists' | 'restaurantListItems' | 'tombstones',
+    number
+  >>
+  issueCounts: Readonly<Record<LegacyWebBackupV4IssueSeverity, number>>
 }
