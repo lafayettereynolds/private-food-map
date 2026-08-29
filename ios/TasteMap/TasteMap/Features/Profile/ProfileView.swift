@@ -20,15 +20,29 @@ struct ProfileView: View {
     @Query private var visits: [Visit]
     @Query private var profiles: [UserProfile]
     @Query private var photos: [PhotoAsset]
+    @Query private var restaurantLists: [RestaurantList]
     @State private var authenticatedUser: AuthenticatedUserV1?
     @State private var isRunningAuthOperation = false
     @State private var authMessage: String?
     @State private var isEditingProfile = false
     @State private var browseDestination: ProfileBrowseDestination?
-    @State private var isShowingSocialHub = false
+    @State private var socialHubSection: SocialHubSection?
+    @State private var socialStatistics = ProfileSocialStatistics.zero
 
-    private var activeRestaurants: [Restaurant] { restaurants.filter { $0.deletedAt == nil } }
-    private var activeVisits: [Visit] { visits.filter { $0.deletedAt == nil } }
+    private var ownedContent: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: authenticatedUser?.id,
+            restaurants: restaurants,
+            visits: visits,
+            photos: photos
+        )
+    }
+    private var activeRestaurants: [Restaurant] { ownedContent.restaurants.filter { $0.deletedAt == nil } }
+    private var activeVisits: [Visit] { ownedContent.visits.filter { $0.deletedAt == nil } }
+    private var activeListCount: Int {
+        guard let userID = authenticatedUser?.id else { return 0 }
+        return restaurantLists.filter { $0.ownerUserID == userID && $0.deletedAt == nil }.count
+    }
     private var activeProfile: UserProfile? {
         guard let userID = authenticatedUser?.id else { return nil }
         return profiles.first { $0.tasteMapUserID == userID && $0.deletedAt == nil }
@@ -129,7 +143,9 @@ struct ProfileView: View {
                                 .frame(width: 48, height: 48)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("我的榜单").font(.headline).foregroundStyle(.primary)
-                                    Text("整理、排名并分享你的餐厅主题清单")
+                                    Text(activeListCount == 0
+                                        ? "整理、排名并分享你的餐厅主题清单"
+                                        : "\(activeListCount) 份榜单 · 整理、排名并分享")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -306,29 +322,22 @@ struct ProfileView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-on-this-day-entry")
                     if let userID = authenticatedUser?.id {
-                        Button { isShowingSocialHub = true } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "person.2.badge.plus")
-                                    .frame(width: 24).foregroundStyle(Color.accentColor)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("好友与关注").font(.headline).foregroundStyle(.primary)
-                                    Text("搜索用户、处理好友请求和查看关注关系")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                            }
-                            .padding(16)
-                            .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("profile-social-entry")
-                        .sheet(isPresented: $isShowingSocialHub) {
+                        ProfileSocialStatisticsSection(
+                            statistics: socialStatistics,
+                            onFriends: { socialHubSection = .friends },
+                            onFollowing: { socialHubSection = .follows },
+                            onFollowers: { socialHubSection = .follows },
+                            onDiscover: { socialHubSection = .search }
+                        )
+                        .sheet(item: $socialHubSection, onDismiss: {
+                            Task { await loadSocialStatistics() }
+                        }) { initialSection in
                             SocialHubView(
                                 currentUserID: userID, api: authServices.socialAPI,
                                 communityAPI: authServices.communityAPI,
                                 photoAPI: authServices.photoAPI,
-                                restaurantListAPI: authServices.restaurantListAPI
+                                restaurantListAPI: authServices.restaurantListAPI,
+                                initialSection: initialSection
                             )
                         }
                     }
@@ -351,11 +360,11 @@ struct ProfileView: View {
             .navigationDestination(item: $browseDestination) { destination in
                 switch destination {
                 case .visited:
-                    RestaurantCollectionView(segment: .visited)
+                    RestaurantCollectionView(segment: .visited, currentUserID: authenticatedUser?.id)
                 case .wantToGo:
-                    RestaurantCollectionView(segment: .wantToGo)
+                    RestaurantCollectionView(segment: .wantToGo, currentUserID: authenticatedUser?.id)
                 case .footprints:
-                    TasteFootprintsView()
+                    TasteFootprintsView(currentUserID: authenticatedUser?.id)
                 }
             }
             .sheet(isPresented: $isEditingProfile) {
@@ -440,6 +449,7 @@ struct ProfileView: View {
                 _ = premiumEntitlementService.setDevelopmentOverride(override)
             }
             await premiumEntitlementService.activate(userID: fixture.id, refreshFromServer: false)
+            socialStatistics = TasteMapUITestFixtures.profileSocialStatisticsOverride ?? .zero
             return
         }
 #endif
@@ -448,6 +458,7 @@ struct ProfileView: View {
         await syncCoordinator.sessionDidBecomeAvailable()
         await premiumEntitlementService.activate(userID: authenticatedUser.id)
         ensureLocalProfile(for: authenticatedUser)
+        await loadSocialStatistics()
     }
 
     @MainActor
@@ -473,6 +484,7 @@ struct ProfileView: View {
             await syncCoordinator.sessionDidBecomeAvailable()
             await premiumEntitlementService.activate(userID: user.id)
             ensureLocalProfile(for: user)
+            await loadSocialStatistics()
             return "Apple 登录和同步成功。"
         }
     }
@@ -491,10 +503,34 @@ struct ProfileView: View {
         try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
         try? LocalRestaurantListStore(context: modelContext).purgePublicCache()
         authenticatedUser = nil
+        socialStatistics = .zero
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
         authMessage = result
         return result
+    }
+
+    @MainActor
+    private func loadSocialStatistics() async {
+        guard let userID = authenticatedUser?.id else {
+            socialStatistics = .zero
+            return
+        }
+#if DEBUG
+        if let fixture = TasteMapUITestFixtures.profileSocialStatisticsOverride {
+            socialStatistics = fixture
+            return
+        }
+#endif
+        socialStatistics = ProfileSocialStatisticsLoader.cached(
+            context: modelContext,
+            currentUserID: userID
+        )
+        socialStatistics = await ProfileSocialStatisticsLoader.load(
+            api: authServices.socialAPI,
+            context: modelContext,
+            currentUserID: userID
+        )
     }
 
     @MainActor
@@ -591,9 +627,13 @@ private struct ProfileIdentityCard: View {
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("profile-city-text")
                     }
-                    Text(profile.createdAt, format: .dateTime.year().month())
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Label {
+                        Text("加入 Taste Map · \(profile.createdAt.formatted(.dateTime.year().month()))")
+                    } icon: {
+                        Image(systemName: "calendar.badge.checkmark")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 }
                 HStack(spacing: 10) {
                     Button("编辑资料", action: onEdit)
@@ -670,6 +710,50 @@ private struct ProfileStatisticsSection: View {
         formatter.maximumFractionDigits = 0
         formatter.locale = .current
         return formatter.string(from: NSDecimalNumber(decimal: value)) ?? "¥\(value)"
+    }
+}
+
+private struct ProfileSocialStatisticsSection: View {
+    let statistics: ProfileSocialStatistics
+    let onFriends: () -> Void
+    let onFollowing: () -> Void
+    let onFollowers: () -> Void
+    let onDiscover: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("好友与关注").font(.headline)
+                Spacer()
+                Button("找人", systemImage: "person.badge.plus", action: onDiscover)
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("profile-social-entry")
+            }
+            HStack(spacing: 10) {
+                statistic("好友", value: statistics.friendCount, action: onFriends)
+                    .accessibilityIdentifier("profile-friends-stat")
+                statistic("关注", value: statistics.followingCount, action: onFollowing)
+                    .accessibilityIdentifier("profile-following-stat")
+                statistic("粉丝", value: statistics.followerCount, action: onFollowers)
+                    .accessibilityIdentifier("profile-followers-stat")
+            }
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func statistic(_ title: String, value: Int, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text("\(value)").font(.title3.bold()).foregroundStyle(.primary)
+                Text(title).font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 54)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title) \(value)，查看")
     }
 }
 

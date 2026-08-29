@@ -1,7 +1,7 @@
 import SwiftData
 import SwiftUI
 
-private enum SocialHubSection: String, CaseIterable, Identifiable {
+enum SocialHubSection: String, CaseIterable, Identifiable {
     case search = "找人"
     case friends = "好友"
     case requests = "请求"
@@ -16,7 +16,7 @@ struct SocialHubView: View {
     let communityAPI: (any CommunityAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
     let restaurantListAPI: (any RestaurantListAPI)?
-    @State private var section: SocialHubSection = .search
+    @State private var section: SocialHubSection
     @State private var query = ""
     @State private var items: [SocialUserResultV1] = []
     @State private var secondaryItems: [SocialUserResultV1] = []
@@ -61,13 +61,15 @@ struct SocialHubView: View {
         api: any SocialAPI,
         communityAPI: (any CommunityAPI)? = nil,
         photoAPI: (any PhotoBinaryAPI)? = nil,
-        restaurantListAPI: (any RestaurantListAPI)? = nil
+        restaurantListAPI: (any RestaurantListAPI)? = nil,
+        initialSection: SocialHubSection = .search
     ) {
         self.currentUserID = currentUserID
         self.api = api
         self.communityAPI = communityAPI
         self.photoAPI = photoAPI
         self.restaurantListAPI = restaurantListAPI
+        _section = State(initialValue: initialSection)
     }
 
     private var searchContent: some View {

@@ -215,7 +215,10 @@ struct AnalysisPosterSheet: View {
 /// a renderer closure; Photos authorization, temporary files and system share stay unified.
 struct AnalysisPosterExportSheet: View {
     let posterID: String
-    let requiredFeature: PremiumFeature
+    /// `nil` is reserved for product surfaces that are intentionally available to
+    /// every signed-in user. Existing premium analysis posters continue to pass a
+    /// concrete feature and retain exactly the same entitlement checks.
+    let requiredFeature: PremiumFeature?
     let progressMessage: String
     let references: [AnalysisImageReference]
     let photosByID: [UUID: PhotoAsset]
@@ -324,7 +327,7 @@ struct AnalysisPosterExportSheet: View {
     private func generatePoster() async {
         posterImage = nil
         errorMessage = nil
-        guard entitlementService.access(for: requiredFeature, operation: .posterRender) == .allowed else {
+        guard isAllowed(.posterRender) else {
             errorMessage = AnalysisPosterRenderError.premiumRequired.localizedDescription
             return
         }
@@ -342,7 +345,7 @@ struct AnalysisPosterExportSheet: View {
 
     @MainActor
     private func saveImage(_ image: UIImage) async {
-        guard entitlementService.access(for: requiredFeature, operation: .posterSave) == .allowed else {
+        guard isAllowed(.posterSave) else {
             statusMessage = AnalysisPosterRenderError.premiumRequired.localizedDescription
             return
         }
@@ -357,7 +360,7 @@ struct AnalysisPosterExportSheet: View {
     }
 
     private func share(_ image: UIImage) {
-        guard entitlementService.access(for: requiredFeature, operation: .posterShare) == .allowed else {
+        guard isAllowed(.posterShare) else {
             statusMessage = AnalysisPosterRenderError.premiumRequired.localizedDescription
             return
         }
@@ -366,6 +369,11 @@ struct AnalysisPosterExportSheet: View {
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    private func isAllowed(_ operation: PremiumProtectedOperation) -> Bool {
+        guard let requiredFeature else { return true }
+        return entitlementService.access(for: requiredFeature, operation: operation) == .allowed
     }
 }
 

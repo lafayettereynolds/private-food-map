@@ -11,11 +11,18 @@ struct RestaurantCollectionView: View {
     @Query private var recommendationSources: [RecommendationSource]
 
     let segment: RestaurantBrowseSegment
+    let currentUserID: String?
     @State private var selectedRestaurant: RestaurantBrowseSelection?
     @State private var query = ""
 
+    init(segment: RestaurantBrowseSegment, currentUserID: String? = nil) {
+        self.segment = segment
+        self.currentUserID = currentUserID
+    }
+
     var body: some View {
-        let snapshot = RestaurantBrowseBuilder.build(
+        let owned = ProfileOwnedContentScope.capture(
+            currentUserID: currentUserID,
             restaurants: restaurants,
             visits: visits,
             photos: photos,
@@ -23,6 +30,15 @@ struct RestaurantCollectionView: View {
             visitDishes: visitDishes,
             companions: companions,
             recommendationSources: recommendationSources
+        )
+        let snapshot = RestaurantBrowseBuilder.build(
+            restaurants: owned.restaurants,
+            visits: owned.visits,
+            photos: owned.photos,
+            dishes: owned.dishes,
+            visitDishes: owned.visitDishes,
+            companions: owned.companions,
+            recommendationSources: owned.recommendationSources
         )
         RestaurantBrowseList(
             segment: segment,
@@ -35,7 +51,7 @@ struct RestaurantCollectionView: View {
         .navigationTitle(segment == .visited ? "去过的餐厅" : segment == .wantToGo ? "想吃的餐厅" : segment.title)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedRestaurant) { selection in
-            if let restaurant = restaurants.first(where: {
+            if let restaurant = owned.restaurants.first(where: {
                 $0.id == selection.id && $0.deletedAt == nil
             }) {
                 RestaurantDetailView(restaurant: restaurant)

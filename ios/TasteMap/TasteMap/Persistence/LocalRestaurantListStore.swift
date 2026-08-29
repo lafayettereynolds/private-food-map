@@ -10,6 +10,7 @@ enum RestaurantListStoreError: Error, Equatable, LocalizedError {
     case listNotFound
     case itemNotFound
     case invalidReorder
+    case invalidCoverPhoto
     case notOwner
 
     var errorDescription: String? {
@@ -21,6 +22,7 @@ enum RestaurantListStoreError: Error, Equatable, LocalizedError {
         case .listNotFound: "没有找到这份榜单。"
         case .itemNotFound: "没有找到这条榜单记录。"
         case .invalidReorder: "榜单顺序已经变化，请刷新后重试。"
+        case .invalidCoverPhoto: "这张照片不能作为榜单封面。请选择自己已上传并设为公开的餐厅照片。"
         case .notOwner: "只有榜单创建者可以修改。"
         }
     }
@@ -70,6 +72,9 @@ struct LocalRestaurantListStore {
         list.visibility = visibility
         list.isRanked = isRanked
         if let coverMode {
+            if coverMode == .custom {
+                try assertSafeCoverPhoto(customCoverPhotoID, actorUserID: actorUserID)
+            }
             list.coverMode = coverMode
             list.customCoverPhotoID = coverMode == .custom ? customCoverPhotoID : nil
         }
@@ -429,6 +434,16 @@ struct LocalRestaurantListStore {
     private func assertOwner(_ list: RestaurantList, actorUserID: String) throws {
         guard list.ownerUserID == actorUserID else { throw RestaurantListStoreError.notOwner }
         guard list.deletedAt == nil else { throw RestaurantListStoreError.listNotFound }
+    }
+
+    private func assertSafeCoverPhoto(_ photoID: String?, actorUserID: String) throws {
+        guard let photoID else { throw RestaurantListStoreError.invalidCoverPhoto }
+        let photos = try context.fetch(FetchDescriptor<PhotoAsset>())
+        guard let photo = photos.first(where: {
+            ($0.remoteID ?? $0.id.uuidString.lowercased()) == photoID
+        }), ProfileOwnedContentScope.isSafeListCover(photo, ownedBy: actorUserID) else {
+            throw RestaurantListStoreError.invalidCoverPhoto
+        }
     }
 
     private func compactPositions(listID: UUID, excluding: UUID) throws {

@@ -194,6 +194,11 @@ enum TasteMapUITestFixtures {
             || usesOnThisDayFixture
     }
 
+    static var profileSocialStatisticsOverride: ProfileSocialStatistics? {
+        guard usesProfileFixture else { return nil }
+        return .init(friendCount: 12, followingCount: 18, followerCount: 9)
+    }
+
     static var usesPhotoFixture: Bool {
         ProcessInfo.processInfo.environment[photoEnvironmentKey] == "1"
     }

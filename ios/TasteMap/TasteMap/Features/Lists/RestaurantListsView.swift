@@ -298,6 +298,7 @@ struct RestaurantListEditorSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query private var photos: [PhotoAsset]
+    @Query private var restaurants: [Restaurant]
     let currentUserID: String
     let list: RestaurantList?
     @State private var title: String
@@ -374,7 +375,14 @@ struct RestaurantListEditorSheet: View {
     }
 
     private var availableCoverPhotos: [PhotoAsset] {
-        photos.filter { $0.deletedAt == nil && $0.uploadState == .uploaded && $0.visibility == .public }
+        let ownedRestaurantIDs = ProfileOwnedContentScope.capture(
+            currentUserID: currentUserID,
+            restaurants: restaurants
+        ).restaurantIDs
+        return photos.filter {
+            ProfileOwnedContentScope.isSafeListCover($0, ownedBy: currentUserID) &&
+                $0.restaurantId.map(ownedRestaurantIDs.contains) == true
+        }
     }
 
     private func save() {
@@ -410,7 +418,9 @@ struct RestaurantListAddRestaurantSheet: View {
 
     private var available: [Restaurant] {
         restaurants.filter {
-            $0.deletedAt == nil && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) ||
+            $0.deletedAt == nil &&
+                ProfileOwnedContentScope.isRestaurant($0, ownedBy: currentUserID) &&
+                (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) ||
                 $0.address.localizedCaseInsensitiveContains(query))
         }.sorted { $0.updatedAt > $1.updatedAt }
     }

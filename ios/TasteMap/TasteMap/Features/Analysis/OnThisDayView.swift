@@ -88,6 +88,7 @@ struct OnThisDayAnalysisView: View {
     let report: OnThisDayReport
     let photosByID: [UUID: PhotoAsset]
     let restaurantsByID: [UUID: Restaurant]
+    @State private var showingPoster = false
 
     var body: some View {
         ScrollView {
@@ -97,6 +98,7 @@ struct OnThisDayAnalysisView: View {
                     ForEach(report.groups) { group in
                         yearSection(group)
                     }
+                    shareCard
                     privacyNote
                 } else {
                     emptyState
@@ -110,7 +112,44 @@ struct OnThisDayAnalysisView: View {
         .tasteMapBottomNavigationHidden()
         .navigationTitle("那年今日")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if report.hasMemories {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("分享", systemImage: "square.and.arrow.up") { showingPoster = true }
+                        .accessibilityIdentifier("on-this-day-share-toolbar")
+                }
+            }
+        }
+        .sheet(isPresented: $showingPoster) {
+            OnThisDayPosterSheet(report: report, photosByID: photosByID)
+        }
         .accessibilityIdentifier("on-this-day-page")
+    }
+
+    private var shareCard: some View {
+        Button { showingPoster = true } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(TasteMapAnalysisTheme.brand)
+                    .frame(width: 52, height: 52)
+                    .background(TasteMapAnalysisTheme.brandSoft, in: RoundedRectangle(cornerRadius: 16))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("生成那年今日海报")
+                        .font(.headline)
+                        .foregroundStyle(TasteMapAnalysisTheme.ink)
+                    Text("独立 1080 × 1920 浅色图片，可保存或系统分享")
+                        .font(.caption)
+                        .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .background(.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("on-this-day-share-poster")
     }
 
     private var header: some View {

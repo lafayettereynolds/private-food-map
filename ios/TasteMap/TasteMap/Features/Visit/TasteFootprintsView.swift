@@ -11,9 +11,15 @@ struct TasteFootprintsView: View {
     @Query private var recommendationSources: [RecommendationSource]
 
     @State private var selectedRestaurant: RestaurantBrowseSelection?
+    let currentUserID: String?
+
+    init(currentUserID: String? = nil) {
+        self.currentUserID = currentUserID
+    }
 
     var body: some View {
-        let snapshot = RestaurantBrowseBuilder.build(
+        let owned = ProfileOwnedContentScope.capture(
+            currentUserID: currentUserID,
             restaurants: restaurants,
             visits: visits,
             photos: photos,
@@ -21,6 +27,15 @@ struct TasteFootprintsView: View {
             visitDishes: visitDishes,
             companions: companions,
             recommendationSources: recommendationSources
+        )
+        let snapshot = RestaurantBrowseBuilder.build(
+            restaurants: owned.restaurants,
+            visits: owned.visits,
+            photos: owned.photos,
+            dishes: owned.dishes,
+            visitDishes: owned.visitDishes,
+            companions: owned.companions,
+            recommendationSources: owned.recommendationSources
         )
 
         Group {
@@ -55,7 +70,7 @@ struct TasteFootprintsView: View {
         .navigationTitle("味觉足迹")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedRestaurant) { selection in
-            if let restaurant = restaurants.first(where: {
+            if let restaurant = owned.restaurants.first(where: {
                 $0.id == selection.id && $0.deletedAt == nil
             }) {
                 RestaurantDetailView(restaurant: restaurant)

@@ -2282,6 +2282,16 @@ final class TasteMapUITests: XCTestCase {
         app.navigationBars["餐厅详情"].buttons["那年今日"].tap()
         XCTAssertTrue(app.navigationBars["那年今日"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["on-this-day-year-2025"].exists)
+
+        let share = app.buttons["on-this-day-share-toolbar"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.images["analysis-poster-preview"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["analysis-poster-save"].exists)
+        XCTAssertTrue(app.buttons["analysis-poster-system-share"].exists)
+        app.navigationBars["分享海报"].buttons["关闭"].tap()
+        XCTAssertTrue(app.navigationBars["那年今日"].waitForExistence(timeout: 5))
     }
 
     @MainActor
