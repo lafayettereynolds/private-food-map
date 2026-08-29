@@ -47,6 +47,7 @@ struct RestaurantBrowseItem: Identifiable {
     let averageRating: Double?
     let photo: PhotoAsset?
     let visitFacets: [PersonalVisitFilterFacet]
+    let normalizedSearchText: String
 
     var id: UUID { restaurant.id }
 }
@@ -133,6 +134,7 @@ enum RestaurantBrowseBuilder {
                     restaurant: restaurant,
                     visits: visitsByRestaurant[restaurant.id] ?? [],
                     photos: (photosByRestaurant[restaurant.id] ?? []).map(\.1),
+                    dishesByVisit: dishesByVisit,
                     companionDirectory: companionNamesByID,
                     sourceDirectory: sourceNamesByID,
                     preferMarker: false
@@ -147,6 +149,7 @@ enum RestaurantBrowseBuilder {
                     restaurant: restaurant,
                     visits: visitsByRestaurant[restaurant.id] ?? [],
                     photos: (photosByRestaurant[restaurant.id] ?? []).map(\.1),
+                    dishesByVisit: dishesByVisit,
                     companionDirectory: companionNamesByID,
                     sourceDirectory: sourceNamesByID,
                     preferMarker: true
@@ -192,11 +195,26 @@ enum RestaurantBrowseBuilder {
         restaurant: Restaurant,
         visits: [Visit],
         photos: [PhotoAsset],
+        dishesByVisit: [UUID: [Dish]],
         companionDirectory: [String: String],
         sourceDirectory: [String: String],
         preferMarker: Bool
     ) -> RestaurantBrowseItem {
         let ratings = visits.compactMap(\.rating)
+        let restaurantRecord = restaurant.remoteRecordData.flatMap {
+            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+        }
+        let searchTerms = [
+            restaurant.name,
+            restaurant.city,
+            restaurant.address,
+            restaurantRecord?.longTermNote ?? "",
+        ] + visits.flatMap { visit in
+            let dishes = dishesByVisit[visit.id] ?? []
+            return [visit.note ?? ""]
+                + companionNames(for: visit, directory: companionDirectory)
+                + dishes.flatMap { [$0.name, $0.taste] }
+        }
         return RestaurantBrowseItem(
             restaurant: restaurant,
             visitCount: visits.count,
@@ -209,7 +227,8 @@ enum RestaurantBrowseBuilder {
                     companionDirectory: companionDirectory,
                     sourceDirectory: sourceDirectory
                 )
-            }
+            },
+            normalizedSearchText: RestaurantBrowseSearch.normalized(searchTerms.joined(separator: "\n"))
         )
     }
 
@@ -331,11 +350,14 @@ enum RestaurantBrowseBuilder {
 
 enum RestaurantBrowseSearch {
     static func filter(_ items: [RestaurantBrowseItem], query: String) -> [RestaurantBrowseItem] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = normalized(query)
         guard !query.isEmpty else { return items }
-        return items.filter { item in
-            [item.restaurant.name, item.restaurant.city, item.restaurant.address]
-                .contains { $0.localizedCaseInsensitiveContains(query) }
-        }
+        return items.filter { $0.normalizedSearchText.contains(query) }
+    }
+
+    static func normalized(_ value: String) -> String {
+        value.precomposedStringWithCompatibilityMapping
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 }

@@ -73,6 +73,22 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testMapMarkerSelectionUsesSharedRestaurantDetail() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
+        app.launch()
+
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 8))
+        let marker = app.descendants(matching: .any)[
+            "restaurant-map-marker-00000000-0000-0000-0000-000000010001"
+        ]
+        XCTAssertTrue(marker.waitForExistence(timeout: 10))
+        marker.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["F2-A 很长但仍需完整可读的江南季节料理餐厅"].exists)
+    }
+
+    @MainActor
     func testF2AProfileListsAndIndependentFootprints() throws {
         let app = XCUIApplication()
         app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]

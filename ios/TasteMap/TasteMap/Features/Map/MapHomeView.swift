@@ -7,11 +7,13 @@ struct MapHomeView: View {
     @Query(sort: \Restaurant.createdAt) private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var photos: [PhotoAsset]
+    @Query private var dishes: [Dish]
+    @Query private var visitDishes: [VisitDish]
     @Query private var companions: [DiningCompanion]
     @Query private var recommendationSources: [RecommendationSource]
 
+    @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @StateObject private var locationPermission = LocationPermissionManager()
-    @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var selectedSegment: RestaurantBrowseSegment = .visited
     @State private var browseMode: MapBrowseMode = .map
     @State private var filterState = PersonalRestaurantFilterState(status: .visited)
@@ -20,12 +22,18 @@ struct MapHomeView: View {
     @State private var locationFilterMessage: String?
     @State private var selectedRestaurantID: UUID?
     @State private var detailDestination: RestaurantBrowseSelection?
+    @State private var cameraFitRequestID = UUID()
+    @State private var locationRequestID: UUID?
+    @State private var mapReloadID = UUID()
+    @State private var mapRenderState: RestaurantMapRenderState = .loading
 
     var body: some View {
         let snapshot = RestaurantBrowseBuilder.build(
             restaurants: restaurants,
             visits: visits,
             photos: photos,
+            dishes: dishes,
+            visitDishes: visitDishes,
             companions: companions,
             recommendationSources: recommendationSources
         )
@@ -74,6 +82,12 @@ struct MapHomeView: View {
                 case .wantToGo: filterState.status = .wantToGo
                 case .forYou: break
                 }
+                requestCameraFit()
+            }
+            .onChange(of: filterState) { _, _ in requestCameraFit() }
+            .onChange(of: browseQuery) { _, _ in requestCameraFit() }
+            .onChange(of: browseMode) { _, mode in
+                if mode == .map { requestCameraFit() }
             }
             .onChange(of: locationPermission.isDeniedOrRestricted) { _, denied in
                 if denied, filterState.distance != nil {
@@ -181,26 +195,29 @@ struct MapHomeView: View {
         hasUnfilteredItems: Bool,
         activeFilterCount: Int
     ) -> some View {
-        ZStack(alignment: .top) {
-            Map(position: $cameraPosition, selection: $selectedRestaurantID) {
-                UserAnnotation()
-                ForEach(items) { item in
-                    Marker(
-                        item.restaurant.name,
-                        coordinate: CLLocationCoordinate2D(
-                            latitude: item.restaurant.latitude,
-                            longitude: item.restaurant.longitude
-                        )
-                    )
-                    .tag(item.restaurant.id)
-                }
-            }
-            .mapControls {
-                MapUserLocationButton()
-                MapCompass()
-                MapScaleView()
-            }
+        let markers = RestaurantMapMarkerBuilder.build(
+            items: items,
+            photos: photos,
+            segment: selectedSegment,
+            currentLocation: locationPermission.isDeniedOrRestricted
+                ? nil
+                : locationPermission.currentLocation
+        )
+        let photosByID = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) })
+
+        return ZStack(alignment: .top) {
+            ClusteredRestaurantMapView(
+                markers: markers,
+                photosByID: photosByID,
+                photoCoordinator: photoCoordinator,
+                selectedRestaurantID: $selectedRestaurantID,
+                fitRequestID: cameraFitRequestID,
+                locationRequestID: locationRequestID,
+                onRenderStateChange: { mapRenderState = $0 }
+            )
+            .id(mapReloadID)
             .ignoresSafeArea(edges: .bottom)
+            .onChange(of: markers) { _, _ in requestCameraFit() }
 
             if locationPermission.isDeniedOrRestricted {
                 Label("定位未开启，仍可浏览地图和餐厅列表", systemImage: "location.slash")
@@ -212,7 +229,37 @@ struct MapHomeView: View {
                     .padding(.top, 10)
             }
 
-            if items.isEmpty {
+            if case .loading = mapRenderState, !items.isEmpty {
+                Label("正在加载地图", systemImage: "map")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.top, locationPermission.isDeniedOrRestricted ? 54 : 10)
+                    .accessibilityIdentifier("restaurant-map-loading")
+            }
+
+            if case let .failed(message) = mapRenderState {
+                VStack(spacing: 10) {
+                    Image(systemName: "arrow.clockwise.circle")
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
+                    Text("地图暂时没有加载出来").font(.headline)
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("重新加载地图", action: reloadMap)
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("restaurant-map-retry")
+                }
+                .padding(20)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .padding(.horizontal, 32)
+                .padding(.vertical, 60)
+                .accessibilityIdentifier("restaurant-map-error")
+            } else if items.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: activeFilterCount > 0 ? "line.3.horizontal.decrease.circle" : "fork.knife.circle")
                         .font(.title2)
@@ -233,12 +280,60 @@ struct MapHomeView: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .padding(.horizontal, 32)
                 .padding(.vertical, 60)
+            } else if markers.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "mappin.slash.circle")
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
+                    Text("餐厅暂无可用坐标").font(.headline)
+                    Text("这些记录仍可在列表中查看，补充合法坐标后会显示在地图上。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(20)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .padding(.horizontal, 32)
+                .padding(.vertical, 60)
+                .accessibilityIdentifier("restaurant-map-no-coordinates")
             }
 
             if selectedSegment == .wantToGo, !items.isEmpty {
                 wantToGoCarousel(items: items)
             }
+
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        locationRequestID = UUID()
+                    } label: {
+                        Image(systemName: locationPermission.isDeniedOrRestricted ? "location.slash" : "location.fill")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                            .background(.regularMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(locationPermission.isDeniedOrRestricted)
+                    .accessibilityLabel(locationPermission.isDeniedOrRestricted ? "定位权限未开启" : "显示我的位置")
+                    .accessibilityIdentifier("restaurant-map-user-location")
+                }
+                .padding(.trailing, 14)
+                .padding(.bottom, selectedSegment == .wantToGo && !items.isEmpty ? 142 : 16)
+            }
         }
+    }
+
+    private func requestCameraFit() {
+        cameraFitRequestID = UUID()
+    }
+
+    private func reloadMap() {
+        mapRenderState = .loading
+        mapReloadID = UUID()
+        requestCameraFit()
     }
 
     private func clearFilters() {

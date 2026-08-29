@@ -5,6 +5,10 @@ struct RestaurantCollectionView: View {
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var photos: [PhotoAsset]
+    @Query private var dishes: [Dish]
+    @Query private var visitDishes: [VisitDish]
+    @Query private var companions: [DiningCompanion]
+    @Query private var recommendationSources: [RecommendationSource]
 
     let segment: RestaurantBrowseSegment
     @State private var selectedRestaurant: RestaurantBrowseSelection?
@@ -14,7 +18,11 @@ struct RestaurantCollectionView: View {
         let snapshot = RestaurantBrowseBuilder.build(
             restaurants: restaurants,
             visits: visits,
-            photos: photos
+            photos: photos,
+            dishes: dishes,
+            visitDishes: visitDishes,
+            companions: companions,
+            recommendationSources: recommendationSources
         )
         RestaurantBrowseList(
             segment: segment,
@@ -69,7 +77,7 @@ struct RestaurantBrowseList: View {
                 ContentUnavailableView(
                     "没有找到匹配的餐厅",
                     systemImage: "magnifyingglass",
-                    description: Text("可以尝试搜索餐厅名称、城市或地址。")
+                    description: Text("可以尝试搜索餐厅、城市、备注、饭搭子或菜品。")
                 )
                 .accessibilityIdentifier("restaurant-list-search-empty")
             } else {
@@ -88,7 +96,7 @@ struct RestaurantBrowseList: View {
                 .background(Color(uiColor: .systemGroupedBackground))
             }
         }
-        .searchable(text: $query, prompt: "搜索餐厅、城市或地址")
+        .searchable(text: $query, prompt: "搜索餐厅、城市、饭搭子或菜品")
     }
 }
 
