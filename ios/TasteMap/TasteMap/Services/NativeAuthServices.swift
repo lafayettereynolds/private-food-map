@@ -17,6 +17,7 @@ final class NativeAuthServices {
     let restaurantListAPI: URLSessionRestaurantListAPIClient
     let externalRestaurantLinkAPI: URLSessionExternalRestaurantLinkAPIClient
     let premiumAPI: URLSessionPremiumEntitlementAPIClient
+    let premiumCommerceAPI: URLSessionPremiumCommerceAPIClient
     let appleSignIn: AppleSignInService
 
     init(
@@ -79,6 +80,11 @@ final class NativeAuthServices {
             session: session
         )
         premiumAPI = URLSessionPremiumEntitlementAPIClient(
+            configuration: configuration,
+            authorization: sessionManager,
+            session: session
+        )
+        premiumCommerceAPI = URLSessionPremiumCommerceAPIClient(
             configuration: configuration,
             authorization: sessionManager,
             session: session

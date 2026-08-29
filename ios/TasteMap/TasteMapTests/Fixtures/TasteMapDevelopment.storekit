@@ -1,0 +1,83 @@
+{
+  "identifier" : "3BF76DA2-269E-4F3F-BD8C-3AC27F86FC78",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "zh_CN",
+    "_storefront" : "CHN"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "D5578A3E-4A1F-4128-AB67-EC6B263977B8",
+      "localizations" : [
+        {
+          "description" : "仅用于本地自动化测试，不是 App Store Connect 正式商品。",
+          "displayName" : "Taste Map Premium Development",
+          "locale" : "zh_CN"
+        }
+      ],
+      "name" : "Taste Map Premium Development",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "18.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "99BB1B12-EB7D-4565-AAB2-766E9148123A",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "本地 StoreKit 测试月度方案",
+              "displayName" : "Premium 月度（Development）",
+              "locale" : "zh_CN"
+            }
+          ],
+          "productID" : "dev.tastemap.storekit.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Premium Monthly Development",
+          "subscriptionGroupID" : "D5578A3E-4A1F-4128-AB67-EC6B263977B8",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "168.00",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "8E9153AB-FD8C-4275-8705-031F9B2C27C6",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "本地 StoreKit 测试年度方案",
+              "displayName" : "Premium 年度（Development）",
+              "locale" : "zh_CN"
+            }
+          ],
+          "productID" : "dev.tastemap.storekit.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Premium Yearly Development",
+          "subscriptionGroupID" : "D5578A3E-4A1F-4128-AB67-EC6B263977B8",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

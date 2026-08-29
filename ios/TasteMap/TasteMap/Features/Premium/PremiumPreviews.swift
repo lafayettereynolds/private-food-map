@@ -52,15 +52,16 @@ private struct PreviewMembershipPurchaseProvider: MembershipPurchaseProviding {
                 displayName: "Development 测试方案",
                 valueDescription: "仅用于验证 Store Product 展示抽象",
                 displayPrice: "StoreKit 测试价格",
-                period: .annual
+                period: .annual,
+                billingPeriodDescription: "每年续订"
             ),
         ]
     }
     func purchase(productID: String) async throws -> MembershipPurchaseResult {
-        .init(transactionID: "development-only", requiresEntitlementRefresh: false)
+        .init(transactionID: "development-only", requiresEntitlementRefresh: false, outcome: .completed)
     }
     func restore() async throws -> MembershipPurchaseResult {
-        .init(transactionID: nil, requiresEntitlementRefresh: false)
+        .init(transactionID: nil, requiresEntitlementRefresh: false, outcome: .completed)
     }
     func manageSubscription() async throws {}
 }

@@ -107,6 +107,9 @@ struct TasteMapApp: App {
         nativeAuthServices = authServices
         let premiumService = PremiumEntitlementService(
             api: authServices.premiumAPI,
+            purchaseProvider: StoreKitMembershipPurchaseProvider(
+                commerceAPI: authServices.premiumCommerceAPI
+            ),
             environment: .current
         )
 #if DEBUG

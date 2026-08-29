@@ -287,6 +287,11 @@ struct PremiumPaywallView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(product.displayName).font(.headline)
                                 Text(product.valueDescription).font(.caption).foregroundStyle(.secondary)
+                                if !product.billingPeriodDescription.isEmpty {
+                                    Text(product.billingPeriodDescription)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                             Spacer()
                             Text(product.displayPrice).font(.headline).foregroundStyle(PremiumTheme.brand)
@@ -317,6 +322,7 @@ struct PremiumPaywallView: View {
                 Text(message).font(.footnote).foregroundStyle(PremiumTheme.brandDeep)
                     .accessibilityIdentifier("premium-action-message")
             }
+            legalLinks
         }
         .padding(18)
         .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -352,6 +358,24 @@ struct PremiumPaywallView: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
             .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private var legalLinks: some View {
+        let links = ReleaseConfiguration.current().legalLinks
+        if links.termsOfServiceURL != nil || links.privacyPolicyURL != nil {
+            HStack(spacing: 18) {
+                if let terms = links.termsOfServiceURL {
+                    Link("服务条款", destination: terms)
+                }
+                if let privacy = links.privacyPolicyURL {
+                    Link("隐私政策", destination: privacy)
+                }
+            }
+            .font(.caption)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .contain)
+        }
     }
 
     private func comparisonRow(_ title: String, free: String, premium: String) -> some View {
@@ -408,7 +432,11 @@ struct PremiumPaywallView: View {
         do {
             let result = try await entitlementService.productsProvider.purchase(productID: productID)
             if result.requiresEntitlementRefresh { await entitlementService.refresh() }
-            message = "购买结果已提交，会员状态已重新验证。"
+            message = switch result.outcome {
+            case .completed: "购买已由服务器验证，会员状态已刷新。"
+            case .pending: "购买正在等待批准，完成后会自动更新。"
+            case .userCancelled: "已取消购买。"
+            }
         } catch { message = error.localizedDescription }
     }
 
@@ -419,7 +447,7 @@ struct PremiumPaywallView: View {
         do {
             let result = try await entitlementService.productsProvider.restore()
             if result.requiresEntitlementRefresh { await entitlementService.refresh() }
-            message = "恢复结果已提交，会员状态已重新验证。"
+            message = "购买已恢复并由服务器重新验证。"
         } catch { message = error.localizedDescription }
     }
 

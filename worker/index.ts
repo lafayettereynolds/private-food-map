@@ -91,6 +91,11 @@ import {
   DevelopmentDemoAdminV1Error,
   handleDevelopmentDemoAdminV1,
 } from './developmentDemoAdminV1'
+import {
+  AppStoreCommerceV1Error,
+  handleAppStoreCommerceV1,
+  handleAppStoreServerNotificationV1,
+} from './appStoreCommerceV1'
 
 interface Env {
   DB: D1Database
@@ -100,6 +105,13 @@ interface Env {
   SYNC_AUTH_MODE?: 'cloudflare-access' | 'development-test'
   APPLE_CLIENT_IDS?: string
   ADMIN_EMAILS?: string
+  APP_STORE_BUNDLE_ID?: string
+  APP_STORE_MONTHLY_PRODUCT_ID?: string
+  APP_STORE_YEARLY_PRODUCT_ID?: string
+  APP_STORE_API_ENVIRONMENT?: 'sandbox' | 'production'
+  APP_STORE_ISSUER_ID?: string
+  APP_STORE_KEY_ID?: string
+  APP_STORE_PRIVATE_KEY?: string
 }
 
 interface RestaurantRow {
@@ -593,6 +605,9 @@ export default {
       if (url.pathname.startsWith('/api/v1/auth/')) {
         return json(await handleAuthV1Request(request, env))
       }
+      if (url.pathname === '/api/v1/storekit/notifications') {
+        return json(await handleAppStoreServerNotificationV1(request, env.DB, env))
+      }
       if (url.pathname.startsWith('/api/v1/development/demo-data')) {
         const viewer = await resolveSyncViewer(request, env)
         return json(await handleDevelopmentDemoAdminV1(request, env.DB, viewer.id, env))
@@ -606,6 +621,11 @@ export default {
           entitlement,
           viewer.testMembership !== undefined,
         ))
+      }
+      if (url.pathname.startsWith('/api/v1/storekit/')) {
+        const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
+        return json(await handleAppStoreCommerceV1(request, env.DB, viewer.id, env))
       }
       const publicRestaurantMatch = url.pathname.match(/^\/api\/public\/restaurants\/([a-f0-9]{24})$/)
       if (publicRestaurantMatch && request.method === 'GET') {
@@ -777,8 +797,8 @@ export default {
         status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
       })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error ? error.status : 500
-      const code = error instanceof AuthV1RequestError ? error.code : undefined
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error ? error.status : 500
+      const code = error instanceof AuthV1RequestError || error instanceof AppStoreCommerceV1Error ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
   },

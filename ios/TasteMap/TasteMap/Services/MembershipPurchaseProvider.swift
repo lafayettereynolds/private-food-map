@@ -12,11 +12,19 @@ nonisolated struct MembershipProduct: Identifiable, Equatable, Sendable {
     let valueDescription: String
     let displayPrice: String
     let period: MembershipProductPeriod
+    let billingPeriodDescription: String
+}
+
+nonisolated enum MembershipPurchaseOutcome: Equatable, Sendable {
+    case completed
+    case pending
+    case userCancelled
 }
 
 nonisolated struct MembershipPurchaseResult: Equatable, Sendable {
     let transactionID: String?
     let requiresEntitlementRefresh: Bool
+    let outcome: MembershipPurchaseOutcome
 }
 
 nonisolated struct MembershipPurchaseCapabilities: OptionSet, Sendable {
@@ -28,10 +36,19 @@ nonisolated struct MembershipPurchaseCapabilities: OptionSet, Sendable {
 
 nonisolated protocol MembershipPurchaseProviding: Sendable {
     var capabilities: MembershipPurchaseCapabilities { get }
+    func startObserving()
+    func activate(userID: String) async
+    func sessionDidEnd(userID: String?) async
     func products() async throws -> [MembershipProduct]
     func purchase(productID: String) async throws -> MembershipPurchaseResult
     func restore() async throws -> MembershipPurchaseResult
     func manageSubscription() async throws
+}
+
+extension MembershipPurchaseProviding {
+    func startObserving() {}
+    func activate(userID: String) async {}
+    func sessionDidEnd(userID: String?) async {}
 }
 
 nonisolated struct UnconfiguredMembershipPurchaseProvider: MembershipPurchaseProviding {
@@ -54,6 +71,7 @@ nonisolated enum MembershipPurchaseError: LocalizedError, Equatable {
     case productUnavailable
     case purchaseNotCompleted
     case restoreUnavailable
+    case unverifiedTransaction
 
     var errorDescription: String? {
         switch self {
@@ -61,6 +79,7 @@ nonisolated enum MembershipPurchaseError: LocalizedError, Equatable {
         case .productUnavailable: "这个方案暂时不可用。"
         case .purchaseNotCompleted: "购买没有完成。"
         case .restoreUnavailable: "当前没有可恢复的购买。"
+        case .unverifiedTransaction: "App Store 无法验证这笔交易。"
         }
     }
 }

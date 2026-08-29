@@ -18,6 +18,7 @@ final class PremiumEntitlementService {
     @ObservationIgnored private let environment: TasteMapAppEnvironment
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let cacheMaximumAge: TimeInterval
+    @ObservationIgnored private var commerceNotificationTask: Task<Void, Never>?
 #if DEBUG
     @ObservationIgnored private var developmentOverride: DevelopmentPremiumOverride?
 #endif
@@ -36,6 +37,17 @@ final class PremiumEntitlementService {
         self.environment = environment
         self.cacheMaximumAge = cacheMaximumAge
         self.now = now
+        purchaseProvider.startObserving()
+        commerceNotificationTask = Task { [weak self] in
+            for await notification in NotificationCenter.default.notifications(
+                named: .tasteMapPremiumEntitlementChanged
+            ) {
+                guard let self,
+                      let userID = notification.object as? String,
+                      userID == self.activeUserID else { continue }
+                await self.refresh()
+            }
+        }
     }
 
     var productsProvider: any MembershipPurchaseProviding { purchaseProvider }
@@ -56,6 +68,7 @@ final class PremiumEntitlementService {
             isUsingOfflineCache = false
             lastErrorMessage = nil
         }
+        await purchaseProvider.activate(userID: userID)
 #if DEBUG
         if let developmentOverride, environment == .development {
             apply(developmentOverride.snapshot(userID: userID, now: now()), offline: false)
@@ -103,6 +116,9 @@ final class PremiumEntitlementService {
     }
 
     func sessionDidEnd() {
+        let previousUserID = activeUserID
+        Task { await purchaseProvider.sessionDidEnd(userID: previousUserID) }
+        if let previousUserID { try? cache.delete(userID: previousUserID) }
         activeUserID = nil
         snapshot = nil
         membershipStatus = .unknown
