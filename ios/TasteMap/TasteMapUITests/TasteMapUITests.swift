@@ -599,6 +599,48 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testF3ARestaurantDetailMetadataEditAndVisitRefresh() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1b-restaurant-detail-fixture"]
+        app.launchEnvironment = ["TASTEMAP_F3A_DETAIL_UI_TEST": "1"]
+        app.launch()
+
+        app.segmentedControls.buttons["想吃"].tap()
+        let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+
+        let metadata = app.staticTexts["restaurant-business-information"]
+        scrollUntilVisible(metadata, in: app)
+        XCTAssertTrue(metadata.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["restaurant-call-phone"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-opening-hours"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-reference-price"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-long-term-note"].exists)
+
+        app.buttons["编辑"].tap()
+        XCTAssertTrue(app.navigationBars["编辑餐厅"].waitForExistence(timeout: 5))
+        let phone = app.textFields["restaurant-edit-phone"]
+        XCTAssertTrue(phone.waitForExistence(timeout: 3))
+        phone.clearAndType("+86 571 8765 4321")
+        app.buttons["restaurant-edit-save"].tap()
+
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        let updatedPhone = app.staticTexts["+86 571 8765 4321"]
+        scrollUntilVisible(updatedPhone, in: app)
+        XCTAssertTrue(updatedPhone.waitForExistence(timeout: 3))
+
+        app.buttons["restaurant-detail-add-visit"].tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        app.buttons["visit-editor-save"].tap()
+        XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
+        let visitCount = app.staticTexts["1 次"]
+        scrollUntilVisible(visitCount, in: app)
+        XCTAssertTrue(visitCount.waitForExistence(timeout: 3))
+    }
+
+    @MainActor
     func testP1DOfflineCreateEditDeleteFlow() throws {
         let app = XCUIApplication()
         app.launchArguments = [

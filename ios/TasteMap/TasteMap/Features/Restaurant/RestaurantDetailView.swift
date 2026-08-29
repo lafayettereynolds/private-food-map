@@ -4,6 +4,7 @@ import SwiftUI
 struct RestaurantDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
+    @Environment(\.openURL) private var openURL
     @Query private var allVisits: [Visit]
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
@@ -11,6 +12,7 @@ struct RestaurantDetailView: View {
     @Query private var allCompanions: [DiningCompanion]
     @Query private var allRecommendationSources: [RecommendationSource]
     @Query private var profiles: [UserProfile]
+    @Query private var discoveryPlacements: [CachedDiscoveryPlacement]
 
     let restaurant: Restaurant
     private let navigator: any RestaurantNavigating
@@ -21,6 +23,7 @@ struct RestaurantDetailView: View {
     @State private var visitPendingDeletion: Visit?
     @State private var deleteError: String?
     @State private var navigationError: String?
+    @State private var phoneError: String?
     @State private var selectedPhoto: PhotoAsset?
     @State private var isAddingToList = false
 
@@ -40,11 +43,49 @@ struct RestaurantDetailView: View {
         RestaurantDetailPresentation(restaurantID: restaurant.id, visits: allVisits)
     }
 
+    private var metadata: RestaurantDetailMetadata {
+        RestaurantDetailMetadata(restaurant: restaurant)
+    }
+
+    private var ratingReferences: [RestaurantRatingReference] {
+        var values = RestaurantRatingReferenceResolver.resolve(
+            metadata: metadata,
+            currentUserID: currentUserID,
+            placements: discoveryPlacements
+        )
+        if let average = presentation.averageRating, presentation.ratedVisitCount > 0 {
+            values.insert(RestaurantRatingReference(
+                title: "我的评分",
+                value: average,
+                sampleCount: presentation.ratedVisitCount,
+                systemImage: "star.fill"
+            ), at: 0)
+        }
+        return values
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 18) {
                     RestaurantDetailHeader(restaurant: restaurant)
+                    RestaurantPhotoGallerySection(
+                        photos: activePhotos,
+                        merchantImageURL: metadata.merchantImageURL,
+                        markerEmoji: metadata.markerEmoji,
+                        onSelect: { selectedPhoto = $0 },
+                        onRetry: retryPhoto
+                    )
+                    if metadata.hasBusinessInformation {
+                        RestaurantBusinessInformationSection(
+                            metadata: metadata,
+                            onCall: callRestaurant
+                        )
+                    }
+                    RestaurantLocationSection(
+                        restaurant: restaurant,
+                        onOpenAppleMaps: openAppleMaps
+                    )
                     if currentUserID != nil {
                         Button { isAddingToList = true } label: {
                             HStack(spacing: 10) {
@@ -63,18 +104,15 @@ struct RestaurantDetailView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("restaurant-detail-add-to-list")
                     }
-                    RestaurantLocationSection(
-                        restaurant: restaurant,
-                        onOpenAppleMaps: openAppleMaps
-                    )
-                    RestaurantPhotoGallerySection(
-                        photos: activePhotos,
-                        onSelect: { selectedPhoto = $0 },
-                        onRetry: retryPhoto
-                    )
                     RestaurantDishSection(summaries: dishSummaries)
                     RestaurantDetailStatsSection(presentation: presentation)
+                    if presentation.queueSummary != nil || !presentation.tagGroups.isEmpty {
+                        RestaurantExperienceSummarySection(presentation: presentation)
+                    }
                     RestaurantDetailedRatingsSection(summaries: detailedRatingSummaries)
+                    if !ratingReferences.isEmpty {
+                        RestaurantRatingReferencesSection(references: ratingReferences)
+                    }
                     RestaurantVisitHistorySection(
                         visits: presentation.activeVisits,
                         companionNamesByID: companionNamesByID,
@@ -170,12 +208,34 @@ struct RestaurantDetailView: View {
             } message: {
                 Text(navigationError ?? "请稍后重试。")
             }
+            .alert("无法拨打电话", isPresented: Binding(
+                get: { phoneError != nil },
+                set: { if !$0 { phoneError = nil } }
+            )) {
+                Button("好", role: .cancel) { phoneError = nil }
+            } message: {
+                Text(phoneError ?? "这台设备暂时无法使用电话功能。")
+            }
         }
     }
 
     private func openAppleMaps() {
         if !navigator.openInAppleMaps(restaurant) {
             navigationError = "系统没有成功打开这家餐厅的位置。"
+        }
+    }
+
+    private func callRestaurant() {
+        guard let url = RestaurantPhoneDialing.url(for: metadata.callablePhone) else {
+            phoneError = "餐厅电话格式无法安全拨打。"
+            return
+        }
+        openURL(url) { accepted in
+            if !accepted {
+                Task { @MainActor in
+                    phoneError = "这台设备暂时无法使用电话功能。"
+                }
+            }
         }
     }
 
@@ -188,13 +248,15 @@ struct RestaurantDetailView: View {
     }
 
     private var activePhotos: [PhotoAsset] {
-        allPhotos
-            .filter { $0.restaurantId == restaurant.id && $0.deletedAt == nil }
-            .sorted { left, right in
-                left.createdAt == right.createdAt
-                    ? left.sortOrder < right.sortOrder
-                    : left.createdAt > right.createdAt
-            }
+        let activeVisitIDs = Set(presentation.activeVisits.map(\.id))
+        let photos = allPhotos.filter { photo in
+            guard photo.restaurantId == restaurant.id,
+                  photo.deletedAt == nil,
+                  photo.binaryDeletedAt == nil,
+                  photo.kind == .restaurantMarker || photo.kind == .visit else { return false }
+            return photo.visitId.map(activeVisitIDs.contains) ?? true
+        }
+        return RestaurantDetailImageResolver.orderedPhotos(photos, metadata: metadata)
     }
 
     private func retryPhoto(_ photo: PhotoAsset) {

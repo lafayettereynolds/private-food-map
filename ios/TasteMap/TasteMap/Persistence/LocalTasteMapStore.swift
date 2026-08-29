@@ -296,6 +296,75 @@ struct LocalTasteMapStore {
         try context.save()
     }
 
+    func updateDetails(
+        _ restaurant: Restaurant,
+        name: String,
+        city: String,
+        phone: String?,
+        openingHours: String?,
+        referencePrice: Decimal?,
+        longTermNote: String?
+    ) throws {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw LocalTasteMapStoreError.restaurantNameRequired
+        }
+        let normalizedPhone = Self.normalizedOptional(phone)
+        if let normalizedPhone, RestaurantPhoneDialing.url(for: normalizedPhone) == nil {
+            throw LocalTasteMapStoreError.invalidRestaurantPhone
+        }
+        if let referencePrice,
+           NSDecimalNumber(decimal: referencePrice).compare(NSDecimalNumber.zero) != .orderedDescending {
+            throw LocalTasteMapStoreError.invalidRestaurantReferencePrice
+        }
+
+        let base = try SyncRecordMapper.restaurantRecord(restaurant)
+        let updatedAt = Date.now
+        let updatedCity = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let record = try RestaurantJSONContractV1(
+            id: base.id,
+            userId: base.userId,
+            placeIdentities: base.placeIdentities,
+            amapPoiId: base.amapPoiId,
+            name: trimmedName,
+            address: restaurant.address,
+            city: updatedCity,
+            latitude: restaurant.latitude,
+            longitude: restaurant.longitude,
+            status: restaurant.status == .wantToGo ? .wantToGo : .visited,
+            preferenceLevel: base.preferenceLevel,
+            overallRating: base.overallRating,
+            foodRating: base.foodRating,
+            environmentRating: base.environmentRating,
+            serviceRating: base.serviceRating,
+            valueRating: base.valueRating,
+            tags: base.tags,
+            longTermNote: Self.normalizedOptional(longTermNote) ?? "",
+            pricePerPerson: referencePrice.map { NSDecimalNumber(decimal: $0).doubleValue },
+            phone: normalizedPhone,
+            openingHours: Self.normalizedOptional(openingHours),
+            markerType: base.markerType,
+            markerPhotoId: base.markerPhotoId,
+            merchantImageUrl: base.merchantImageUrl,
+            markerEmoji: base.markerEmoji,
+            createdAt: base.createdAt,
+            updatedAt: SyncRecordMapper.dateString(updatedAt),
+            deletedAt: base.deletedAt,
+            isTestData: base.isTestData
+        )
+        let recordData = try JSONEncoder().encode(record)
+
+        try context.transaction {
+            restaurant.name = trimmedName
+            restaurant.city = updatedCity
+            restaurant.updatedAt = updatedAt
+            restaurant.syncStatus = .pending
+            restaurant.remoteRecordData = recordData
+            try enqueue(restaurant)
+        }
+        try context.save()
+    }
+
     func delete(_ restaurant: Restaurant) throws {
         let queue = SwiftDataSyncQueue(context: context)
         guard let remoteID = restaurant.remoteID else {
@@ -432,6 +501,12 @@ struct LocalTasteMapStore {
     nonisolated private static func identityKey(_ identity: RestaurantCandidatePlaceIdentity) -> String {
         "\(identity.provider.rawValue):\(identity.externalID)"
     }
+
+    nonisolated private static func normalizedOptional(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 enum LocalTasteMapStoreError: Error {
@@ -439,6 +514,8 @@ enum LocalTasteMapStoreError: Error {
     case restaurantRemoteIDMissing
     case restaurantHasVisits
     case restaurantNameRequired
+    case invalidRestaurantPhone
+    case invalidRestaurantReferencePrice
     case visitCreationFailed
 }
 

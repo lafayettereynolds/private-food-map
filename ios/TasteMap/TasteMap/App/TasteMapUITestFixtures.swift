@@ -38,6 +38,11 @@ enum TasteMapUITestFixtures {
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
     static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
     static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
+    static let f3ADetailEnvironmentKey = "TASTEMAP_F3A_DETAIL_UI_TEST"
+
+    static var usesF3ADetailFixture: Bool {
+        ProcessInfo.processInfo.environment[f3ADetailEnvironmentKey] == "1"
+    }
 
     static var usesF2ABrowsingFixture: Bool {
         ProcessInfo.processInfo.environment[f2ABrowsingEnvironmentKey] == "1"
@@ -222,6 +227,43 @@ enum TasteMapUITestFixtures {
             status: .wantToGo,
             syncStatus: .synced
         )
+        let timestamp = SyncRecordMapper.dateString(restaurant.updatedAt)
+        restaurant.remoteRecordData = try JSONEncoder().encode(RestaurantJSONContractV1(
+            id: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
+            userId: "tm_f3a_ui_fixture",
+            placeIdentities: [try RestaurantPlaceIdentityContract(
+                provider: .appleMaps,
+                externalId: "apple-ui-test-p1b",
+                isPrimary: true,
+                createdAt: timestamp,
+                updatedAt: timestamp
+            )],
+            name: restaurant.name,
+            address: restaurant.address,
+            city: restaurant.city,
+            latitude: restaurant.latitude,
+            longitude: restaurant.longitude,
+            status: .wantToGo,
+            preferenceLevel: .normal,
+            overallRating: nil,
+            foodRating: nil,
+            environmentRating: nil,
+            serviceRating: nil,
+            valueRating: nil,
+            tags: ["江浙菜"],
+            longTermNote: "适合周末在湖边慢慢吃。",
+            pricePerPerson: 168,
+            phone: "+86 571-1234-5678",
+            openingHours: "周一至周日 11:00–22:00",
+            markerType: .emoji,
+            markerPhotoId: nil,
+            merchantImageUrl: nil,
+            markerEmoji: "🍲",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            deletedAt: nil,
+            isTestData: true
+        ))
         container.mainContext.insert(restaurant)
         try container.mainContext.save()
     }
