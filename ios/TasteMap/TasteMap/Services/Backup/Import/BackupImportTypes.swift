@@ -238,9 +238,17 @@ nonisolated struct BackupImportPreflightTiming: Equatable, Sendable {
     let totalSeconds: Double
 }
 
+/// The validated, decoded graph is carried forward from F1-C2 so planning
+/// never re-reads or re-interprets an untrusted file.
+nonisolated enum BackupImportValidatedSource: Equatable, Sendable {
+    case backupV1(BackupEnvelopeV1)
+    case legacyWebV4(LegacyBackupStagingGraph)
+}
+
 nonisolated struct BackupImportPreflightRun: Equatable, Sendable {
     let result: ImportPreflightResult
     let timing: BackupImportPreflightTiming
+    let validatedSource: BackupImportValidatedSource
 }
 
 nonisolated enum BackupImportProgressStage: String, CaseIterable, Sendable {

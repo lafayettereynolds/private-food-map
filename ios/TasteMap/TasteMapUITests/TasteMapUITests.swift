@@ -561,6 +561,38 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testF1C3DevelopmentMatchingPlanUpdatesInMemoryWithoutImportAction() throws {
+        let app = launchImportPreflightFixture("legacy")
+        openImportPreflight(in: app)
+
+        app.buttons["backup-import-choose-file"].tap()
+        let generate = app.buttons["backup-import-generate-plan"]
+        scrollUntilVisible(generate, in: app)
+        XCTAssertTrue(generate.waitForExistence(timeout: 10))
+        generate.tap()
+
+        XCTAssertTrue(app.navigationBars["匹配计划"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-plan-page"].exists)
+        XCTAssertFalse(app.buttons["正式导入"].exists)
+        XCTAssertFalse(app.buttons["导入"].exists)
+
+        let skip = app.buttons["backup-import-review-option-restaurant-skip"]
+        scrollUntilVisible(skip, in: app)
+        XCTAssertTrue(skip.waitForExistence(timeout: 3))
+        skip.tap()
+        XCTAssertTrue(app.staticTexts["已选择：跳过"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-plan-mutation-count"].exists)
+        let noExecute = app.descendants(matching: .any)["backup-import-no-execute"]
+        scrollUntilVisible(noExecute, in: app)
+        XCTAssertTrue(noExecute.exists)
+
+        app.navigationBars["匹配计划"].buttons["导入数据"].tap()
+        XCTAssertTrue(app.navigationBars["导入数据"].waitForExistence(timeout: 3))
+        app.buttons["backup-import-close"].tap()
+        XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
     func testP3BSocialEntryOpensNativeSearchWithoutExposingPrivateIdentityFields() throws {
         let app = XCUIApplication()
         app.launchArguments = [

@@ -1,10 +1,13 @@
 #if DEBUG
+import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct BackupImportPreflightView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
+    let currentTasteMapUserID: String?
     let developmentFixture: BackupImportDevelopmentFixture?
     var fileReader = BackupImportFileReader()
     var preflightService = BackupImportPreflightService()
@@ -13,6 +16,8 @@ struct BackupImportPreflightView: View {
     @State private var stage: BackupImportProgressStage?
     @State private var run: BackupImportPreflightRun?
     @State private var errorMessage: String?
+    @State private var planningErrorMessage: String?
+    @State private var planContext: BackupImportPlanContext?
     @State private var preflightTask: Task<Void, Never>?
 
     var body: some View {
@@ -20,7 +25,12 @@ struct BackupImportPreflightView: View {
             if let stage {
                 processingSection(stage)
             } else if let run {
-                BackupImportPreflightSummaryView(run: run)
+                BackupImportPreflightSummaryView(
+                    run: run,
+                    currentTasteMapUserID: currentTasteMapUserID,
+                    planningErrorMessage: planningErrorMessage,
+                    generatePlan: { generatePlan(from: run) }
+                )
             } else if let errorMessage {
                 errorSection(errorMessage)
             } else {
@@ -54,6 +64,9 @@ struct BackupImportPreflightView: View {
             }
         }
         .onDisappear { preflightTask?.cancel() }
+        .navigationDestination(item: $planContext) { value in
+            BackupImportPlanView(context: value)
+        }
     }
 
     private var introductionSection: some View {
@@ -183,6 +196,30 @@ struct BackupImportPreflightView: View {
         }
     }
 
+    @MainActor
+    private func generatePlan(from run: BackupImportPreflightRun) {
+        planningErrorMessage = nil
+        do {
+            guard run.result.blockingCount == 0 else { throw BackupImportPlanningError.preflightBlocked }
+            guard let currentTasteMapUserID else { throw BackupImportPlanningError.invalidCurrentUser }
+            let source = try BackupImportPlanningSourceMapper.graph(from: run)
+            let snapshot: BackupImportLocalSnapshot
+            if developmentFixture != nil {
+                snapshot = BackupImportDevelopmentFixture.planSnapshot(
+                    currentTasteMapUserID: currentTasteMapUserID,
+                    source: source
+                )
+            } else {
+                snapshot = try BackupImportLocalSnapshotBuilder(context: modelContext)
+                    .make(currentTasteMapUserID: currentTasteMapUserID)
+            }
+            let plan = try BackupImportPlanEngine().makePlan(source: source, local: snapshot)
+            planContext = BackupImportPlanContext(source: source, snapshot: snapshot, initialPlan: plan)
+        } catch {
+            planningErrorMessage = error.localizedDescription
+        }
+    }
+
     private static func seconds(_ duration: Duration) -> Double {
         let components = duration.components
         return Double(components.seconds) + Double(components.attoseconds) / 1e18
@@ -191,6 +228,9 @@ struct BackupImportPreflightView: View {
 
 private struct BackupImportPreflightSummaryView: View {
     let run: BackupImportPreflightRun
+    let currentTasteMapUserID: String?
+    let planningErrorMessage: String?
+    let generatePlan: () -> Void
 
     private var result: ImportPreflightResult { run.result }
 
@@ -258,10 +298,15 @@ private struct BackupImportPreflightSummaryView: View {
         }
 
         Section {
-            Button("完成预检") {}
-                .disabled(true)
-                .accessibilityHint("当前阶段只完成预检，不会写入数据")
-            Text("当前没有导入提交动作。后续数据匹配与合并会在独立阶段实现。")
+            if result.blockingCount == 0, currentTasteMapUserID != nil {
+                Button("生成匹配计划", action: generatePlan)
+                    .accessibilityIdentifier("backup-import-generate-plan")
+            }
+            if let planningErrorMessage {
+                Text(planningErrorMessage).font(.footnote).foregroundStyle(.red)
+                    .accessibilityIdentifier("backup-import-plan-error")
+            }
+            Text("匹配计划只在内存中计算。本阶段没有正式导入按钮，也不会写入任何数据。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -349,13 +394,13 @@ private struct BackupImportIssuesView: View {
 
 #Preview("Legacy clean") {
     NavigationStack {
-        BackupImportPreflightView(developmentFixture: .legacyValid)
+        BackupImportPreflightView(currentTasteMapUserID: "tm_preview", developmentFixture: .legacyValid)
     }
 }
 
 #Preview("Legacy blocking") {
     NavigationStack {
-        BackupImportPreflightView(developmentFixture: .legacyBlocking)
+        BackupImportPreflightView(currentTasteMapUserID: "tm_preview", developmentFixture: .legacyBlocking)
     }
 }
 #endif

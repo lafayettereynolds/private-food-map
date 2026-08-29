@@ -37,6 +37,39 @@ nonisolated enum BackupImportDevelopmentFixture: String, Sendable {
         return try! JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
     }
 
+    static func planSnapshot(
+        currentTasteMapUserID: String,
+        source: BackupImportSourceGraph
+    ) -> BackupImportLocalSnapshot {
+        let localRestaurant: [BackupImportLocalRecord<BackupImportSourceRestaurant>]
+        if let candidate = source.restaurants.first {
+            let value = BackupImportSourceRestaurant(
+                sourceID: "fixture-local-restaurant", placeIdentities: [],
+                name: candidate.name, address: candidate.address, city: candidate.city,
+                latitude: candidate.latitude + 0.00001, longitude: candidate.longitude,
+                status: candidate.status, preferenceLevel: candidate.preferenceLevel,
+                overallRating: candidate.overallRating, foodRating: candidate.foodRating,
+                environmentRating: candidate.environmentRating, serviceRating: candidate.serviceRating,
+                valueRating: candidate.valueRating, tags: candidate.tags,
+                longTermNote: candidate.longTermNote, pricePerPerson: candidate.pricePerPerson,
+                phone: candidate.phone, openingHours: candidate.openingHours,
+                markerType: candidate.markerType, markerPhotoSourceID: nil,
+                merchantImageURL: candidate.merchantImageURL, markerEmoji: candidate.markerEmoji,
+                createdAt: candidate.createdAt, updatedAt: candidate.updatedAt
+            )
+            localRestaurant = [BackupImportLocalRecord(
+                localID: UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!,
+                remoteID: value.sourceID, deletedAt: nil, value: value
+            )]
+        } else { localRestaurant = [] }
+        return BackupImportLocalSnapshot(
+            currentTasteMapUserID: currentTasteMapUserID,
+            revision: String(repeating: "a", count: 64), restaurants: localRestaurant,
+            visits: [], dishes: [], visitDishes: [], photos: [], companions: [],
+            recommendationSources: [], profiles: [], restaurantLists: [], restaurantListItems: []
+        )
+    }
+
     private static let timestamp = "2026-08-29T12:00:00.000Z"
 
     private static var emptyLegacyEnvelope: [String: Any] {

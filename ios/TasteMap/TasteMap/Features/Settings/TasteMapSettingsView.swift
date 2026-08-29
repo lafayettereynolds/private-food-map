@@ -57,6 +57,7 @@ struct TasteMapSettingsView: View {
                 NavigationLink {
                     DataBackupSettingsView(
                         isAuthenticated: authenticatedUser != nil,
+                        currentTasteMapUserID: authenticatedUser?.id,
                         allowsImportPreflight: allowsImportPreflight
                     )
                 } label: {
@@ -318,6 +319,7 @@ struct DataBackupSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NativeAuthServices.self) private var authServices
     let isAuthenticated: Bool
+    let currentTasteMapUserID: String?
     let allowsImportPreflight: Bool
     @State private var isShowingConfirmation = false
     @State private var isExporting = false
@@ -369,6 +371,7 @@ struct DataBackupSettingsView: View {
                 Section {
                     NavigationLink {
                         BackupImportPreflightView(
+                            currentTasteMapUserID: currentTasteMapUserID,
                             developmentFixture: BackupImportDevelopmentFixture.current
                         )
                     } label: {

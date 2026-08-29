@@ -83,7 +83,8 @@ nonisolated struct BackupImportPreflightService: Sendable {
                 validationSeconds: Self.seconds(validationStart.duration(to: validationEnd)),
                 totalSeconds: max(0, fileReadSeconds)
                     + Self.seconds(totalStart.duration(to: totalEnd))
-            )
+            ),
+            validatedSource: decoded.validatedSource
         )
     }
 
@@ -101,4 +102,11 @@ nonisolated struct BackupImportPreflightService: Sendable {
 private nonisolated enum DecodedSource {
     case backupV1(BackupEnvelopeV1)
     case legacyWebV4(LegacyBackupStagingGraph)
+
+    var validatedSource: BackupImportValidatedSource {
+        switch self {
+        case let .backupV1(envelope): .backupV1(envelope)
+        case let .legacyWebV4(graph): .legacyWebV4(graph)
+        }
+    }
 }
