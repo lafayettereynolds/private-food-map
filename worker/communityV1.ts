@@ -12,12 +12,14 @@ import {
   type PublicContentSectionV1,
   type PublicContentStatisticsV1,
   type PublicContentUserV1,
+  type PublicProfileOverviewV1,
   type PublicContentViewerStateV1,
   type PublicProfileContentPageV1,
 } from '../src/contracts/communityContract'
 import type { ProfileAvatarPresetContract, ProfileVisibilityContract } from '../src/contracts/profileContract'
 import type { RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
 import { consumePublicAPIQuota } from './publicAPIRateLimit'
+import { engagementForVisits } from './communityInteractionsV1'
 
 const MAX_NOTE_LENGTH = 1_200
 
@@ -103,7 +105,7 @@ export async function handleCommunityV1(
   request: Request,
   database: D1Database,
   viewerId: string,
-): Promise<CommunityFeedPageV1 | PublicProfileContentPageV1> {
+): Promise<CommunityFeedPageV1 | PublicProfileContentPageV1 | PublicProfileOverviewV1> {
   if (request.method !== 'GET') throw new CommunityV1RequestError('Community method is not supported.', 405)
   await consumePublicAPIQuota(database, viewerId, 'community-read', 180)
   const url = new URL(request.url)
@@ -111,6 +113,10 @@ export async function handleCommunityV1(
   const contentMatch = url.pathname.match(/^\/api\/v1\/community\/users\/([^/]+)\/content$/)
   if (contentMatch) {
     return readPublicContent(database, viewerId, decodeURIComponent(contentMatch[1]), url)
+  }
+  const overviewMatch = url.pathname.match(/^\/api\/v1\/community\/users\/([^/]+)\/overview$/)
+  if (overviewMatch) {
+    return readPublicOverview(database, viewerId, decodeURIComponent(overviewMatch[1]))
   }
   throw new CommunityV1RequestError('Community endpoint was not found.', 404)
 }
@@ -270,6 +276,7 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
     viewerRestaurantResult.results as Array<{ id: string; status: string; name: string; address: string; city: string; latitude: number; longitude: number }>,
     viewerIdentityResult.results as unknown as IdentityRow[], rows, identities,
   )
+  const engagements = await engagementForVisits(database, viewerId, visitIDs)
   return rows.map((row) => {
     const place = restaurantProjection(row, identities.get(row.restaurant_id) ?? [], photos.get(row.visit_id)?.[0] ?? null)
     const scope: PublicContentCacheScopeV1 = row.visit_visibility === 'friends' || row.profile_visibility === 'friends' ? 'friends' : 'public'
@@ -294,6 +301,7 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
       },
       viewerState: viewerStates.get(place.globalKey) ?? 'none',
       cacheScope: scope,
+      engagement: engagements.get(row.visit_id) ?? { likedByViewer: false, likeCount: 0, commentCount: 0 },
     } satisfies PublicContentItemV1
   })
 }
@@ -331,8 +339,114 @@ async function hydrateWants(database: D1Database, viewerId: string, rows: WantRo
       kind: 'want_to_go', eventAt: row.updated_at, updatedAt: row.updated_at,
       user: userProjection(row, friendships.get(row.user_id), follows.has(row.user_id), viewerId),
       restaurant, visit: null, viewerState: states.get(restaurant.globalKey) ?? 'none', cacheScope,
+      engagement: { likedByViewer: false, likeCount: 0, commentCount: 0 },
     } satisfies PublicContentItemV1
   })
+}
+
+async function readPublicOverview(
+  database: D1Database,
+  viewerId: string,
+  targetUserId: string,
+): Promise<PublicProfileOverviewV1> {
+  const access = await profileAccess(database, viewerId, targetUserId)
+  if (!access.permitted) throw new CommunityV1RequestError('Public Profile was not found.', 404)
+  const visibilityClause = viewerId === targetUserId || access.friend
+    ? "v.visibility IN ('public', 'friends')"
+    : "v.visibility = 'public'"
+  const [friendResult, followingResult, followerResult, targetWantsResult, viewerWantsResult,
+    representativeResult, footprintResult, tasteResult, ratingResult] = await database.batch([
+    database.prepare(`SELECT COUNT(*) AS count FROM friendships WHERE status = 'accepted'
+      AND deleted_at IS NULL AND (requester_id = ? OR addressee_id = ?)`)
+      .bind(targetUserId, targetUserId),
+    database.prepare(`SELECT COUNT(*) AS count FROM follows WHERE follower_id = ? AND deleted_at IS NULL`)
+      .bind(targetUserId),
+    database.prepare(`SELECT COUNT(*) AS count FROM follows WHERE followed_user_id = ? AND deleted_at IS NULL`)
+      .bind(targetUserId),
+    database.prepare(`SELECT id, user_id, updated_at, name AS restaurant_name, address, city,
+        latitude, longitude, tags_json, price_per_person, merchant_image_url, marker_emoji,
+        '' AS profile_display_name, '' AS profile_bio, '' AS profile_city,
+        NULL AS profile_avatar_photo_id, 'polar-bear' AS profile_avatar_preset_id,
+        'public' AS profile_visibility,
+        (SELECT provider FROM restaurant_place_identities i WHERE i.restaurant_id = restaurants.id
+          ORDER BY is_primary DESC, updated_at ASC LIMIT 1) AS matched_provider,
+        (SELECT external_id FROM restaurant_place_identities i WHERE i.restaurant_id = restaurants.id
+          ORDER BY is_primary DESC, updated_at ASC LIMIT 1) AS matched_external_id
+      FROM restaurants WHERE user_id = ? AND status = 'wantToGo' AND deleted_at IS NULL
+      ORDER BY updated_at DESC, id ASC LIMIT 100`).bind(targetUserId),
+    database.prepare(`SELECT i.provider, i.external_id FROM restaurants r
+      JOIN restaurant_place_identities i ON i.restaurant_id = r.id
+      WHERE r.user_id = ? AND r.status = 'wantToGo' AND r.deleted_at IS NULL`)
+      .bind(viewerId),
+    database.prepare(`SELECT ${visitProjection}, COUNT(*) OVER (PARTITION BY v.restaurant_id) AS visit_count
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
+      WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}
+      ORDER BY visit_count DESC, v.visited_at DESC, v.id ASC LIMIT 6`).bind(targetUserId),
+    database.prepare(`SELECT COALESCE(NULLIF(trim(r.city), ''), '未标注城市') AS city,
+        COUNT(DISTINCT r.id) AS restaurant_count, COUNT(v.id) AS visit_count
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}
+      GROUP BY COALESCE(NULLIF(trim(r.city), ''), '未标注城市')
+      ORDER BY visit_count DESC, city ASC LIMIT 8`).bind(targetUserId),
+    database.prepare(`SELECT r.tags_json FROM visits v
+      JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}`)
+      .bind(targetUserId),
+    database.prepare(`SELECT AVG(v.rating) AS average_rating,
+        SUM(CASE WHEN v.rating IS NOT NULL THEN 1 ELSE 0 END) AS rated_count
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}`).bind(targetUserId),
+  ])
+
+  const targetWants = targetWantsResult.results as unknown as Array<WantRow & {
+    id: string; matched_provider: string | null; matched_external_id: string | null
+  }>
+  const viewerWantIdentities = new Set((viewerWantsResult.results as Array<{ provider: string; external_id: string }>)
+    .map((row) => `${row.provider}:${row.external_id}`))
+  const allCommonRows = targetWants.filter((row) => row.matched_provider && row.matched_external_id &&
+    viewerWantIdentities.has(`${row.matched_provider}:${row.matched_external_id}`))
+  const commonRows = allCommonRows.slice(0, 6)
+  const allRestaurantIDs = unique([
+    ...commonRows.map((row) => row.id),
+    ...(representativeResult.results as unknown as ContentRow[]).map((row) => row.restaurant_id),
+  ])
+  const identitiesResult = allRestaurantIDs.length
+    ? await database.prepare(`SELECT restaurant_id, provider, external_id, is_primary
+        FROM restaurant_place_identities WHERE restaurant_id IN (${placeholders(allRestaurantIDs)})`)
+      .bind(...allRestaurantIDs).all<IdentityRow>()
+    : { results: [] as IdentityRow[] }
+  const identities = identityMap(identitiesResult.results)
+  const commonWantToGo = commonRows.map((row) => restaurantProjection({ ...row,
+    restaurant_name: row.restaurant_name,
+  }, identities.get(row.id) ?? [], null))
+
+  const representativeRows = representativeResult.results as unknown as ContentRow[]
+  const representativeRestaurants = uniqueBy(representativeRows, (row) => row.restaurant_id)
+    .slice(0, 4)
+    .map((row) => restaurantProjection(row, identities.get(row.restaurant_id) ?? [], null))
+  const tagCounts = new Map<string, number>()
+  for (const row of tasteResult.results as Array<{ tags_json: string }>) {
+    for (const tag of parseTags(row.tags_json)) tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1)
+  }
+  const topTags = [...tagCounts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 6).map(([tag]) => tag)
+  const ratingRow = ratingResult.results[0] as { average_rating?: number | null; rated_count?: number | string } | undefined
+  const ratedVisitCount = Number(ratingRow?.rated_count ?? 0)
+  const averageRating = ratedVisitCount ? Number(Number(ratingRow?.average_rating).toFixed(1)) : null
+  return {
+    apiVersion: COMMUNITY_API_VERSION,
+    targetUserId,
+    friendCount: count(friendResult), followingCount: count(followingResult), followerCount: count(followerResult),
+    commonWantToGoCount: allCommonRows.length, commonWantToGo, representativeRestaurants,
+    footprints: (footprintResult.results as Array<{ city: string; restaurant_count: number; visit_count: number }>).map((row) => ({
+      city: row.city, restaurantCount: Number(row.restaurant_count), visitCount: Number(row.visit_count),
+    })),
+    tasteSummary: {
+      topTags, averageRating, ratedVisitCount,
+      summary: topTags.length ? `常记录 ${topTags.slice(0, 3).join('、')}` : null,
+    },
+  }
 }
 
 async function profileAccess(database: D1Database, viewerId: string, targetUserId: string) {

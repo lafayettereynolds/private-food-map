@@ -78,6 +78,73 @@ export interface PublicContentItemV1 {
   visit: PublicVisitV1 | null
   viewerState: PublicContentViewerStateV1
   cacheScope: PublicContentCacheScopeV1
+  engagement: CommunityEngagementSummaryV1
+}
+
+export interface CommunityEngagementSummaryV1 {
+  likedByViewer: boolean
+  likeCount: number
+  commentCount: number
+}
+
+export interface CommunityCommentV1 {
+  apiVersion: typeof COMMUNITY_API_VERSION
+  id: string
+  contentType: 'visit'
+  contentId: string
+  body: string
+  author: PublicContentUserV1
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+  serverVersion: number
+}
+
+export interface CommunityCommentPageV1 {
+  apiVersion: typeof COMMUNITY_API_VERSION
+  items: CommunityCommentV1[]
+  nextCursor: string | null
+}
+
+export interface CommunityLikeMutationV1 {
+  apiVersion: typeof COMMUNITY_API_VERSION
+  likedByViewer: boolean
+  likeCount: number
+  commentCount: number
+  duplicate: boolean
+}
+
+export interface CommunityCommentMutationV1 {
+  apiVersion: typeof COMMUNITY_API_VERSION
+  comment: CommunityCommentV1
+  likeCount: number
+  commentCount: number
+}
+
+export interface PublicProfileTasteSummaryV1 {
+  topTags: string[]
+  averageRating: number | null
+  ratedVisitCount: number
+  summary: string | null
+}
+
+export interface PublicProfileFootprintV1 {
+  city: string
+  restaurantCount: number
+  visitCount: number
+}
+
+export interface PublicProfileOverviewV1 {
+  apiVersion: typeof COMMUNITY_API_VERSION
+  targetUserId: string
+  friendCount: number
+  followingCount: number
+  followerCount: number
+  commonWantToGoCount: number
+  commonWantToGo: PublicContentRestaurantV1[]
+  representativeRestaurants: PublicContentRestaurantV1[]
+  footprints: PublicProfileFootprintV1[]
+  tasteSummary: PublicProfileTasteSummaryV1
 }
 
 export interface PublicContentStatisticsV1 {

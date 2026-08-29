@@ -52,7 +52,10 @@ struct CommunityFeedView: View {
                                     photoAPI: authServices.photoAPI,
                                     onOpenRestaurant: { selectedItem = item },
                                     onOpenUser: { selectedUser = item.user },
-                                    onWantToGo: { addToWantToGo(item) }
+                                    onWantToGo: { addToWantToGo(item) },
+                                    interactionAPI: authServices.socialCollaborationAPI,
+                                    currentUserID: currentUserID,
+                                    onEngagementChange: { updateEngagement(itemID: item.id, engagement: $0) }
                                 )
                                 .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
                             }
@@ -88,6 +91,7 @@ struct CommunityFeedView: View {
                         api: authServices.socialAPI, communityAPI: authServices.communityAPI,
                         photoAPI: authServices.photoAPI,
                         restaurantListAPI: authServices.restaurantListAPI,
+                        interactionAPI: authServices.socialCollaborationAPI,
                         onChange: { result in
                             if result.friendshipState != .friends {
                                 items.removeAll { $0.cacheScope == .friends && $0.user.userId == result.profile.userId }
@@ -180,6 +184,11 @@ struct CommunityFeedView: View {
         var seen = Set<String>()
         return values.filter { seen.insert($0.id).inserted }
     }
+
+    private func updateEngagement(itemID: String, engagement: CommunityEngagementSummaryV1) {
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
+        items[index].engagement = engagement
+    }
 }
 
 struct PublicContentCard: View {
@@ -188,6 +197,9 @@ struct PublicContentCard: View {
     let onOpenRestaurant: () -> Void
     let onOpenUser: () -> Void
     let onWantToGo: () -> Void
+    var interactionAPI: (any CommunityInteractionAPI)? = nil
+    var currentUserID: String? = nil
+    var onEngagementChange: ((CommunityEngagementSummaryV1) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -230,6 +242,16 @@ struct PublicContentCard: View {
                 }
             }.buttonStyle(.plain)
 
+            if let visitID = item.visit?.id, let interactionAPI, let currentUserID {
+                CommunityInteractionControls(
+                    visitID: visitID,
+                    initial: item.engagement,
+                    currentUserID: currentUserID,
+                    api: interactionAPI,
+                    onChange: { onEngagementChange?($0) }
+                )
+            }
+
             HStack {
                 ShareLink(item: shareText) { Label("分享", systemImage: "square.and.arrow.up") }
                     .font(.subheadline)
@@ -247,7 +269,6 @@ struct PublicContentCard: View {
         }
         .padding(14)
         .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .accessibilityIdentifier("community-item-\(item.id)")
     }
 
     private var eventText: String {

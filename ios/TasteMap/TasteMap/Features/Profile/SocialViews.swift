@@ -14,6 +14,8 @@ struct SocialHubView: View {
     let currentUserID: String
     let api: any SocialAPI
     let communityAPI: (any CommunityAPI)?
+    let collaborationAPI: (any SocialCollaborationAPI)?
+    let interactionAPI: (any CommunityInteractionAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
     let restaurantListAPI: (any RestaurantListAPI)?
     @State private var section: SocialHubSection
@@ -25,6 +27,8 @@ struct SocialHubView: View {
     @State private var selectedUser: SocialUserResultV1?
     @State private var loading = false
     @State private var message: String?
+    @State private var suggestions: [SocialSuggestionV1] = []
+    @State private var isShowingCollaborationInbox = false
 
     var body: some View {
         NavigationStack {
@@ -47,11 +51,32 @@ struct SocialHubView: View {
                     initial: user, currentUserID: currentUserID, api: api,
                     communityAPI: communityAPI, photoAPI: photoAPI,
                     restaurantListAPI: restaurantListAPI,
+                    interactionAPI: interactionAPI,
                     onChange: { changed in
                         replace(changed)
                         selectedUser = changed
                     }
                 )
+            }
+            .sheet(isPresented: $isShowingCollaborationInbox) {
+                if let collaborationAPI {
+                    SocialCollaborationInboxView(
+                        currentUserID: currentUserID,
+                        api: collaborationAPI
+                    )
+                }
+            }
+            .toolbar {
+                if collaborationAPI != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            isShowingCollaborationInbox = true
+                        } label: {
+                            Label("协作收件箱", systemImage: "person.2.wave.2")
+                        }
+                        .accessibilityIdentifier("social-collaboration-inbox")
+                    }
+                }
             }
         }
     }
@@ -60,6 +85,8 @@ struct SocialHubView: View {
         currentUserID: String,
         api: any SocialAPI,
         communityAPI: (any CommunityAPI)? = nil,
+        collaborationAPI: (any SocialCollaborationAPI)? = nil,
+        interactionAPI: (any CommunityInteractionAPI)? = nil,
         photoAPI: (any PhotoBinaryAPI)? = nil,
         restaurantListAPI: (any RestaurantListAPI)? = nil,
         initialSection: SocialHubSection = .search
@@ -67,6 +94,8 @@ struct SocialHubView: View {
         self.currentUserID = currentUserID
         self.api = api
         self.communityAPI = communityAPI
+        self.collaborationAPI = collaborationAPI
+        self.interactionAPI = interactionAPI
         self.photoAPI = photoAPI
         self.restaurantListAPI = restaurantListAPI
         _section = State(initialValue: initialSection)
@@ -93,10 +122,27 @@ struct SocialHubView: View {
             .padding(.horizontal)
             .padding(.bottom, 10)
             if query.count < 2 && items.isEmpty {
-                ContentUnavailableView(
-                    "找到 Taste Map 用户", systemImage: "person.2.badge.plus",
-                    description: Text("输入至少 2 个字符；邮箱和 Apple 登录信息不能用于找人。")
-                )
+                if suggestions.isEmpty {
+                    ContentUnavailableView(
+                        "找到 Taste Map 用户", systemImage: "person.2.badge.plus",
+                        description: Text("输入至少 2 个字符；邮箱和 Apple 登录信息不能用于找人。")
+                    )
+                } else {
+                    List {
+                        Section("可能认识的人") {
+                            ForEach(suggestions) { suggestion in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    row(suggestion.user)
+                                    if !suggestion.reasons.isEmpty {
+                                        Text(suggestion.reasons.joined(separator: " · "))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
             } else { resultList(emptyTitle: "没有找到这个用户") }
         }
     }
@@ -201,7 +247,12 @@ struct SocialHubView: View {
         nextCursor = nil
         secondaryNextCursor = nil
         message = nil
-        guard section != .search else { return }
+        guard section != .search else {
+            if let collaborationAPI {
+                suggestions = (try? await collaborationAPI.suggestions(cursor: nil, limit: 12))?.items ?? []
+            }
+            return
+        }
         loading = true
         defer { loading = false }
         let store = LocalSocialStore(context: modelContext)
@@ -395,11 +446,13 @@ struct SocialPublicProfileView: View {
     @State private var contentMessage: String?
     @State private var showingContentCache = false
     @State private var selectedContent: PublicContentItemV1?
+    @State private var overview: PublicProfileOverviewV1?
     let currentUserID: String
     let api: any SocialAPI
     let communityAPI: (any CommunityAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
     let restaurantListAPI: (any RestaurantListAPI)?
+    let interactionAPI: (any CommunityInteractionAPI)?
     let onChange: (SocialUserResultV1) -> Void
 
     init(
@@ -409,6 +462,7 @@ struct SocialPublicProfileView: View {
         communityAPI: (any CommunityAPI)? = nil,
         photoAPI: (any PhotoBinaryAPI)? = nil,
         restaurantListAPI: (any RestaurantListAPI)? = nil,
+        interactionAPI: (any CommunityInteractionAPI)? = nil,
         onChange: @escaping (SocialUserResultV1) -> Void
     ) {
         _item = State(initialValue: initial)
@@ -417,6 +471,7 @@ struct SocialPublicProfileView: View {
         self.communityAPI = communityAPI
         self.photoAPI = photoAPI
         self.restaurantListAPI = restaurantListAPI
+        self.interactionAPI = interactionAPI
         self.onChange = onChange
     }
 
@@ -430,6 +485,7 @@ struct SocialPublicProfileView: View {
                     if let city = item.profile.city { Label(city, systemImage: "mappin.and.ellipse").foregroundStyle(.secondary) }
                     if let bio = item.profile.bio { Text(bio).multilineTextAlignment(.center).foregroundStyle(.secondary) }
                     HStack(spacing: 12) { friendshipButtons; followButton }
+                    if let overview { publicOverview(overview) }
                     if let statistics = context?.profile.statistics {
                         HStack(spacing: 12) {
                             statistic("去过餐厅", statistics.publicRestaurantCount)
@@ -497,7 +553,10 @@ struct SocialPublicProfileView: View {
                     PublicContentCard(
                         item: content, photoAPI: photoAPI,
                         onOpenRestaurant: { selectedContent = content },
-                        onOpenUser: {}, onWantToGo: { addToWantToGo(content) }
+                        onOpenUser: {}, onWantToGo: { addToWantToGo(content) },
+                        interactionAPI: interactionAPI,
+                        currentUserID: currentUserID,
+                        onEngagementChange: { updateEngagement(contentID: content.id, engagement: $0) }
                     )
                     .onAppear {
                         if content.id == contentItems.last?.id { Task { await loadMoreContent() } }
@@ -534,6 +593,49 @@ struct SocialPublicProfileView: View {
             .frame(maxWidth: .infinity).padding().background(.background, in: RoundedRectangle(cornerRadius: 18))
     }
 
+    private func publicOverview(_ overview: PublicProfileOverviewV1) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                statistic("好友", overview.friendCount)
+                statistic("关注", overview.followingCount)
+                statistic("粉丝", overview.followerCount)
+            }
+            if overview.commonWantToGoCount > 0 {
+                Label("你们有 \(overview.commonWantToGoCount) 家共同想吃", systemImage: "bookmark.fill")
+                    .font(.subheadline.weight(.semibold))
+            }
+            if !overview.tasteSummary.topTags.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("口味印象").font(.headline)
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 6) {
+                        ForEach(overview.tasteSummary.topTags, id: \.self) { tag in
+                            Text(tag).font(.caption).padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(Color.accentColor.opacity(0.1), in: Capsule())
+                        }
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                }
+            }
+            if !overview.representativeRestaurants.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("代表餐厅").font(.headline)
+                    ForEach(Array(overview.representativeRestaurants.prefix(3)), id: \.globalKey) { restaurant in
+                        Label(restaurant.name, systemImage: "fork.knife").font(.subheadline)
+                    }
+                }
+            }
+            if !overview.footprints.isEmpty {
+                Text(overview.footprints.prefix(3).map { "\($0.city) \($0.visitCount) 次" }.joined(separator: " · "))
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+
     @MainActor
     private func loadContext() async {
         do {
@@ -558,6 +660,7 @@ struct SocialPublicProfileView: View {
                 onChange(refreshed)
             }
             await loadContent(reset: true, preferCache: true)
+            if let communityAPI { overview = try? await communityAPI.publicOverview(userID: item.profile.userId) }
         } catch SyncAPIError.server(let status, _) where status == 403 || status == 404 {
             contentItems.removeAll()
             try? LocalCommunityStore(context: modelContext)
@@ -683,6 +786,11 @@ struct SocialPublicProfileView: View {
                 contentItems[index].viewerState = .wantToGo
             }
         } catch { contentMessage = "暂时无法加入想吃，请稍后重试。" }
+    }
+
+    private func updateEngagement(contentID: String, engagement: CommunityEngagementSummaryV1) {
+        guard let index = contentItems.firstIndex(where: { $0.id == contentID }) else { return }
+        contentItems[index].engagement = engagement
     }
 }
 

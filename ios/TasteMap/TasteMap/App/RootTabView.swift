@@ -53,9 +53,9 @@ struct RootTabView: View {
                 }
             }
             .sheet(item: $visitCandidate) { candidate in
-                VisitEditorView(candidate: candidate) { _ in
+                VisitEditorView(candidate: candidate, onSaved: { _ in
                     selectedTab = .map
-                }
+                })
             }
     }
 

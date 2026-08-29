@@ -7,17 +7,20 @@ struct VisitEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
+    @Environment(NativeAuthServices.self) private var authServices
     @Query private var allRestaurants: [Restaurant]
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
     @Query private var allVisitDishes: [VisitDish]
     @Query private var allVisits: [Visit]
     @Query private var profiles: [UserProfile]
+    @Query private var companions: [DiningCompanion]
 
     private let restaurant: Restaurant?
     private let candidate: RestaurantCandidate?
     private let visit: Visit?
     private let onSaved: ((UUID) -> Void)?
+    private let onVisitSaved: ((Visit) -> Void)?
 
     @State private var draft: VisitDraft
     @State private var partySizeText: String
@@ -42,18 +45,22 @@ struct VisitEditorView: View {
     @State private var showsExperienceContext: Bool
     @State private var isChoosingCompanions = false
     @State private var isChoosingRecommendationSource = false
+    @State private var invitedUserIDs: Set<String> = []
 
     @MainActor
     init(
         restaurant: Restaurant,
         visit: Visit? = nil,
-        onSaved: ((UUID) -> Void)? = nil
+        initialDraft: VisitDraft? = nil,
+        onSaved: ((UUID) -> Void)? = nil,
+        onVisitSaved: ((Visit) -> Void)? = nil
     ) {
         self.restaurant = restaurant
         candidate = nil
         self.visit = visit
         self.onSaved = onSaved
-        let initialDraft = visit.map(VisitDraft.init) ?? VisitDraft()
+        self.onVisitSaved = onVisitSaved
+        let initialDraft = visit.map(VisitDraft.init) ?? initialDraft ?? VisitDraft()
         _draft = State(initialValue: initialDraft)
         _partySizeText = State(initialValue: Self.integerString(initialDraft.partySize))
         _spendText = State(initialValue: Self.spendString(initialDraft.myActualSpend))
@@ -68,18 +75,29 @@ struct VisitEditorView: View {
     }
 
     @MainActor
-    init(candidate: RestaurantCandidate, onSaved: ((UUID) -> Void)? = nil) {
+    init(
+        candidate: RestaurantCandidate,
+        initialDraft: VisitDraft? = nil,
+        onSaved: ((UUID) -> Void)? = nil,
+        onVisitSaved: ((Visit) -> Void)? = nil
+    ) {
         restaurant = nil
         self.candidate = candidate
         visit = nil
         self.onSaved = onSaved
-        _draft = State(initialValue: VisitDraft())
-        _partySizeText = State(initialValue: "")
-        _spendText = State(initialValue: "")
-        _totalPriceText = State(initialValue: "")
-        _showsDetailedRatings = State(initialValue: false)
-        _showsDiningContext = State(initialValue: false)
-        _showsExperienceContext = State(initialValue: false)
+        self.onVisitSaved = onVisitSaved
+        let initialDraft = initialDraft ?? VisitDraft()
+        _draft = State(initialValue: initialDraft)
+        _partySizeText = State(initialValue: Self.integerString(initialDraft.partySize))
+        _spendText = State(initialValue: Self.spendString(initialDraft.myActualSpend))
+        _totalPriceText = State(initialValue: Self.spendString(initialDraft.totalPrice))
+        _showsDetailedRatings = State(initialValue: RatingDimension.allCases.contains {
+            $0.value(in: initialDraft) != nil
+        })
+        _showsDiningContext = State(initialValue:
+            !initialDraft.diningOccasionRawValues.isEmpty || initialDraft.queueDurationRawValue != nil
+        )
+        _showsExperienceContext = State(initialValue: initialDraft.hasExperienceContext)
     }
 
     var body: some View {
@@ -166,7 +184,9 @@ struct VisitEditorView: View {
                 CompanionPickerSheet(
                     selectedIDs: $draft.companionIDs,
                     selectedNames: $draft.companionNames,
-                    ownerUserID: currentUserID ?? "local"
+                    ownerUserID: currentUserID ?? "local",
+                    socialAPI: authServices.socialAPI,
+                    collaborationAPI: authServices.socialCollaborationAPI
                 )
             }
             .sheet(isPresented: $isChoosingRecommendationSource) {
@@ -289,6 +309,22 @@ struct VisitEditorView: View {
             }
             .foregroundStyle(.primary)
             .accessibilityIdentifier("visit-editor-companions")
+
+            ForEach(linkedSelectedCompanions) { companion in
+                if let userID = companion.linkedTasteMapUserId {
+                    Toggle(
+                        "邀请 \(companion.displayName) 一起记录",
+                        isOn: Binding(
+                            get: { invitedUserIDs.contains(userID) },
+                            set: { enabled in
+                                if enabled { invitedUserIDs.insert(userID) }
+                                else { invitedUserIDs.remove(userID) }
+                            }
+                        )
+                    )
+                    .accessibilityIdentifier("visit-shared-meal-invite-\(companion.id.uuidString)")
+                }
+            }
 
             Button {
                 isChoosingRecommendationSource = true
@@ -739,6 +775,19 @@ struct VisitEditorView: View {
             let restaurantID = result.restaurant.id
             let savedVisit = result.visit
 
+            if !invitedUserIDs.isEmpty, let ownerUserID = currentUserID,
+               let sourceVisitID = savedVisit.remoteID {
+                do {
+                    try authServices.socialCollaborationOutbox.enqueue(
+                        ownerUserID: ownerUserID,
+                        sourceVisitID: sourceVisitID,
+                        participantUserIDs: Array(invitedUserIDs)
+                    )
+                } catch {
+                    savedPhotoWarning = "到访已保存，但聚餐邀请尚未进入重试队列。你可以稍后重新编辑这次到访。"
+                }
+            }
+
             if let photoCoordinator {
                 do {
                     var savedPhotos = visibleVisitPhotos
@@ -767,6 +816,7 @@ struct VisitEditorView: View {
                     }
                 } catch {
                     onSaved?(restaurantID)
+                    onVisitSaved?(savedVisit)
                     savedPhotoWarning = "部分照片没有附加成功，其余到访、菜品和用餐资料已安全保存在本机。"
                     return
                 }
@@ -774,6 +824,7 @@ struct VisitEditorView: View {
 
             didCommitPhotos = true
             onSaved?(restaurantID)
+            onVisitSaved?(savedVisit)
             dismiss()
         } catch let error as LocalizedError {
             saveError = error.errorDescription ?? "本地记录没有保存成功，请重试。"
@@ -957,5 +1008,13 @@ struct VisitEditorView: View {
         if let activeUserID = premiumEntitlementService.activeUserID { return activeUserID }
         let activeProfiles = profiles.filter { $0.deletedAt == nil }
         return activeProfiles.count == 1 ? activeProfiles[0].tasteMapUserID : nil
+    }
+
+    private var linkedSelectedCompanions: [DiningCompanion] {
+        companions.filter { companion in
+            companion.deletedAt == nil && companion.ownerUserId == (currentUserID ?? "local") &&
+                companion.remoteID.map(draft.companionIDs.contains) == true &&
+                companion.linkedTasteMapUserId != nil
+        }
     }
 }

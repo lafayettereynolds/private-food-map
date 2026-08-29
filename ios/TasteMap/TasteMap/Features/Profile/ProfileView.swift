@@ -335,6 +335,8 @@ struct ProfileView: View {
                             SocialHubView(
                                 currentUserID: userID, api: authServices.socialAPI,
                                 communityAPI: authServices.communityAPI,
+                                collaborationAPI: authServices.socialCollaborationAPI,
+                                interactionAPI: authServices.socialCollaborationAPI,
                                 photoAPI: authServices.photoAPI,
                                 restaurantListAPI: authServices.restaurantListAPI,
                                 initialSection: initialSection

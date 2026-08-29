@@ -365,6 +365,7 @@ final class SyncCoordinator {
             lastFailureDisposition = nil
             consecutiveRetryableFailures = 0
             lastAutomaticSyncAt = now()
+            NotificationCenter.default.post(name: .tasteMapSyncDidComplete, object: nil)
             retryTask?.cancel()
             retryTask = nil
             return true

@@ -12,6 +12,8 @@ final class NativeAuthServices {
     let socialAPI: URLSessionSocialAPIClient
     let discoveryAPI: URLSessionDiscoveryAPIClient
     let communityAPI: URLSessionCommunityAPIClient
+    let socialCollaborationAPI: URLSessionSocialCollaborationAPIClient
+    let socialCollaborationOutbox: SocialCollaborationOutbox
     let restaurantListAPI: URLSessionRestaurantListAPIClient
     let externalRestaurantLinkAPI: URLSessionExternalRestaurantLinkAPIClient
     let premiumAPI: URLSessionPremiumEntitlementAPIClient
@@ -55,6 +57,16 @@ final class NativeAuthServices {
             configuration: configuration,
             authorization: sessionManager,
             session: session
+        )
+        let socialCollaborationAPI = URLSessionSocialCollaborationAPIClient(
+            configuration: configuration,
+            authorization: sessionManager,
+            session: session
+        )
+        self.socialCollaborationAPI = socialCollaborationAPI
+        socialCollaborationOutbox = SocialCollaborationOutbox(
+            api: socialCollaborationAPI,
+            sessionManager: sessionManager
         )
         restaurantListAPI = URLSessionRestaurantListAPIClient(
             configuration: configuration,

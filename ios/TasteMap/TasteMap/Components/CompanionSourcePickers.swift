@@ -11,10 +11,13 @@ struct CompanionPickerSheet: View {
     @Binding var selectedIDs: [String]
     @Binding var selectedNames: [String]
     var ownerUserID: String = "local"
+    var socialAPI: (any SocialAPI)?
+    var collaborationAPI: (any SocialCollaborationAPI)?
 
     @State private var searchText = ""
     @State private var newName = ""
     @State private var errorMessage: String?
+    @State private var isManagingLinks = false
 
     var body: some View {
         NavigationStack {
@@ -73,8 +76,25 @@ struct CompanionPickerSheet: View {
             .navigationTitle("和谁一起吃")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if socialAPI != nil, collaborationAPI != nil, ownerUserID != "local" {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("关联好友", systemImage: "person.crop.circle.badge.checkmark") {
+                            isManagingLinks = true
+                        }
+                        .accessibilityIdentifier("companion-link-manager")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $isManagingLinks) {
+                if let socialAPI, let collaborationAPI {
+                    CompanionLinkManagerView(
+                        currentUserID: ownerUserID,
+                        socialAPI: socialAPI,
+                        collaborationAPI: collaborationAPI
+                    )
                 }
             }
             .alert("无法保存饭搭子", isPresented: Binding(

@@ -166,7 +166,9 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     database.resetStatementCount()
     const page = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&limit=30')
     expect(page.items).toHaveLength(30)
-    expect(database.statementCount).toBeLessThanOrEqual(12)
+    // Engagement hydration adds two bounded aggregate statements regardless
+    // of card count; the feed still avoids per-item queries.
+    expect(database.statementCount).toBeLessThanOrEqual(14)
   })
 })
 
@@ -263,6 +265,7 @@ function makeDatabase() {
     '0023_social_relationships_v1.sql', '0024_social_legacy_write_compat.sql',
     '0025_discovery_v1_indexes.sql', '0026_public_community_v1_indexes.sql',
     '0027_social_hardening.sql', '0028_restaurant_lists_v1.sql',
+    '0029_social_collaboration_and_interactions.sql',
   ]) sqlite.exec(readFileSync(resolve('migrations', file), 'utf8'))
   return new SQLiteD1Database(sqlite)
 }

@@ -359,6 +359,13 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.segmentedControls.buttons["关注"].exists)
         XCTAssertTrue(app.segmentedControls.buttons["最新"].exists)
         XCTAssertTrue(app.staticTexts["云边小馆·湖滨店"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["community-like-visit-p3d-ui-0"].exists)
+        let comments = app.buttons["community-comments-visit-p3d-ui-0"]
+        XCTAssertTrue(comments.exists)
+        comments.tap()
+        XCTAssertTrue(app.navigationBars["评论"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["community-comment-field"].exists)
+        app.buttons["完成"].tap()
         keepScreenshot(named: "P3-D Community Feed", of: app)
 
         app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
@@ -763,6 +770,11 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.segmentedControls.buttons["请求"].exists)
         XCTAssertTrue(app.segmentedControls.buttons["关注"].exists)
         XCTAssertTrue(app.textFields["social-search-field"].exists)
+        let inbox = app.buttons["social-collaboration-inbox"]
+        XCTAssertTrue(inbox.exists)
+        inbox.tap()
+        XCTAssertTrue(app.navigationBars["协作收件箱"].waitForExistence(timeout: 3))
+        app.buttons["完成"].tap()
         let privacyMessage = app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "邮箱和 Apple 登录信息不能用于找人")
         ).firstMatch

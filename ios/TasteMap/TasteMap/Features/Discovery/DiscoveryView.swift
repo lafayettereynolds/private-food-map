@@ -74,6 +74,7 @@ struct DiscoveryView: View {
                         communityAPI: authServices.communityAPI,
                         photoAPI: authServices.photoAPI,
                         restaurantListAPI: authServices.restaurantListAPI,
+                        interactionAPI: authServices.socialCollaborationAPI,
                         onChange: { result in
                             if result.friendshipState != .friends {
                                 cards.removeAll {

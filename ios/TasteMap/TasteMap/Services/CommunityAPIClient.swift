@@ -6,6 +6,7 @@ protocol CommunityAPI {
     func publicContent(
         userID: String, section: PublicContentSectionV1, cursor: String?, limit: Int
     ) async throws -> PublicProfileContentPageV1
+    func publicOverview(userID: String) async throws -> PublicProfileOverviewV1
 }
 
 final class URLSessionCommunityAPIClient: CommunityAPI {
@@ -38,6 +39,11 @@ final class URLSessionCommunityAPIClient: CommunityAPI {
             .init(name: "section", value: section.rawValue), .init(name: "cursor", value: cursor),
             .init(name: "limit", value: String(limit)),
         ])
+    }
+
+    func publicOverview(userID: String) async throws -> PublicProfileOverviewV1 {
+        let escaped = userID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userID
+        return try await get(path: "/api/v1/community/users/\(escaped)/overview", query: [])
     }
 
     private func get<T: Decodable>(path: String, query: [URLQueryItem]) async throws -> T {

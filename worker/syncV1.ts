@@ -1483,6 +1483,22 @@ async function assertOwnedVisitPeople(database: D1Database, viewerId: string, vi
       throw new SyncV1RequestError('Visit recommendationSourceId must reference an active private source owned by the authenticated user.', 403)
     }
   }
+  if (visit.sharedMealId) {
+    const legacy = await database.prepare(`SELECT shared_meal_id FROM visits
+      WHERE id = ? AND user_id = ? LIMIT 1`).bind(visit.id, viewerId)
+      .first<{ shared_meal_id: string | null }>()
+    if (legacy?.shared_meal_id === visit.sharedMealId) return
+    const invitation = await database.prepare(`SELECT sm.id FROM shared_meals sm
+      JOIN shared_meal_participants smp ON smp.shared_meal_id = sm.id
+      WHERE sm.id = ? AND sm.deleted_at IS NULL AND sm.revoked_at IS NULL
+        AND smp.user_id = ? AND smp.status = 'accepted' AND smp.deleted_at IS NULL
+      LIMIT 1`).bind(visit.sharedMealId, viewerId).first<{ id: string }>()
+    if (!invitation) {
+      throw new SyncV1RequestError(
+        'Visit.sharedMealId must reference an accepted active invitation for the authenticated user.', 403,
+      )
+    }
+  }
 }
 
 async function assertOwnedDishParents(database: D1Database, viewerId: string, dish: DishJSONContractV1) {
