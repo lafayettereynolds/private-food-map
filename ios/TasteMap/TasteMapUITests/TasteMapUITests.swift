@@ -336,7 +336,7 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testBackupExportEntryExplainsPrivateDataAndPhotoExclusionBeforeGeneration() throws {
+    func testF1B3SettingsFoundationNavigationAndBackupPrivacyFlow() throws {
         let app = XCUIApplication()
         app.launchArguments = [
             "-p1d-persistent-offline-fixture",
@@ -346,14 +346,41 @@ final class TasteMapUITests: XCTestCase {
             "TASTEMAP_P1D_UI_TEST": "1",
             "TASTEMAP_P1D_RESET": "1",
             "TASTEMAP_P3A_PROFILE_UI_TEST": "1",
+            "TASTEMAP_F1B3_SETTINGS_UI_TEST": "1",
         ]
         app.launch()
 
         app.buttons["我的"].tap()
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
-        let export = app.buttons["profile-backup-export-button"]
-        scrollUntilVisible(export, in: app)
-        XCTAssertTrue(export.isHittable)
+        XCTAssertFalse(app.buttons["profile-backup-export-button"].exists)
+
+        let settings = app.buttons["profile-settings-entry"]
+        scrollUntilVisible(settings, in: app)
+        XCTAssertTrue(settings.isHittable)
+        settings.tap()
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+
+        let account = app.buttons["settings-account-entry"]
+        XCTAssertTrue(account.waitForExistence(timeout: 3))
+        account.tap()
+        XCTAssertTrue(app.navigationBars["账户"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.staticTexts["settings-tastemap-user-id"].label, "tm_p3a_ui_fixture")
+        let editProfile = app.buttons["settings-edit-profile"]
+        XCTAssertTrue(editProfile.exists)
+        XCTAssertTrue(app.buttons["settings-sign-out"].exists)
+        editProfile.tap()
+        XCTAssertTrue(app.navigationBars["编辑资料"].waitForExistence(timeout: 3))
+        app.navigationBars["编辑资料"].buttons["取消"].tap()
+        app.navigationBars["账户"].buttons["设置"].tap()
+
+        let dataAndBackup = app.buttons["settings-data-backup-entry"]
+        XCTAssertTrue(dataAndBackup.waitForExistence(timeout: 3))
+        dataAndBackup.tap()
+        XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["导入数据"].exists)
+        XCTAssertFalse(app.buttons["恢复我的备份"].exists)
+        let export = app.buttons["settings-backup-export-button"]
+        XCTAssertTrue(export.waitForExistence(timeout: 3))
         export.tap()
 
         XCTAssertTrue(app.staticTexts["导出 Backup v1"].waitForExistence(timeout: 5))
@@ -364,6 +391,33 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["生成并分享"].exists)
         app.buttons["取消"].tap()
         XCTAssertFalse(app.buttons["生成并分享"].exists)
+        app.navigationBars["数据与备份"].buttons["设置"].tap()
+
+        let sync = app.buttons["settings-sync-entry"]
+        scrollUntilVisible(sync, in: app)
+        sync.tap()
+        XCTAssertTrue(app.navigationBars["同步"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["等待同步"].exists)
+        let pendingCount = app.descendants(matching: .any)["settings-sync-pending-count"]
+        XCTAssertTrue(pendingCount.exists)
+        XCTAssertTrue(pendingCount.label.contains("2") || pendingCount.value as? String == "2")
+        app.navigationBars["同步"].buttons["设置"].tap()
+
+        let permissions = app.buttons["settings-permissions-entry"]
+        scrollUntilVisible(permissions, in: app)
+        permissions.tap()
+        XCTAssertTrue(app.navigationBars["权限"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-location-permission"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-photo-permission"].exists)
+        XCTAssertTrue(app.buttons["settings-open-system-settings"].exists)
+        app.navigationBars["权限"].buttons["设置"].tap()
+
+        let about = app.buttons["settings-about-entry"]
+        scrollUntilVisible(about, in: app)
+        about.tap()
+        XCTAssertTrue(app.navigationBars["关于"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-app-version"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-build-number"].exists)
     }
 
     @MainActor

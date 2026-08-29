@@ -33,6 +33,7 @@ enum TasteMapUITestFixtures {
     static let restaurantRouletteSingleEnvironmentKey = "TASTEMAP_P4G_ROULETTE_SINGLE_UI_TEST"
     static let restaurantRouletteLargeEnvironmentKey = "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST"
     static let premiumEnvironmentKey = "TASTEMAP_P4H_PREMIUM_UI_TEST"
+    static let settingsEnvironmentKey = "TASTEMAP_F1B3_SETTINGS_UI_TEST"
     static let restaurantAcquisitionEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST"
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
 
@@ -58,6 +59,27 @@ enum TasteMapUITestFixtures {
         // Existing P4 analytics UI fixtures predate entitlement gating and
         // intentionally exercise the complete analysis experience.
         return usesAnalysisFixture || usesDiscoveryFixture ? .premium : nil
+    }
+
+    static var usesSettingsFixture: Bool {
+        ProcessInfo.processInfo.environment[settingsEnvironmentKey] == "1"
+    }
+
+    static var settingsPermissionOverride: SettingsPermissionSnapshot? {
+        guard usesSettingsFixture else { return nil }
+        return SettingsPermissionSnapshot(location: .denied, photoAddOnly: .limited)
+    }
+
+    static var settingsSyncPresentationOverride: SyncPresentation? {
+        guard usesSettingsFixture else { return nil }
+        return SyncPresentation(
+            phase: .pending,
+            pendingCount: 2,
+            pendingPhotoCount: 1,
+            failedPhotoCount: 0,
+            conflictCount: 0,
+            lastSyncedAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
     }
 
     private enum RestaurantRouletteFixtureMode {
@@ -132,6 +154,7 @@ enum TasteMapUITestFixtures {
 
     static var usesProfileFixture: Bool {
         ProcessInfo.processInfo.environment[profileEnvironmentKey] == "1"
+            || usesSettingsFixture
             || usesAnalysisFixture
             || usesRestaurantListsFixture
             || usesRestaurantRouletteFixture

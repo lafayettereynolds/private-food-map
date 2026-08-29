@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>TASTEMAP_PRIVACY_POLICY_DEV_URL</key>
+	<string></string>
+	<key>TASTEMAP_TERMS_OF_SERVICE_DEV_URL</key>
+	<string></string>
+	<key>TASTEMAP_SUPPORT_DEV_URL</key>
+	<string></string>
+	<key>TASTEMAP_PRIVACY_POLICY_PROD_URL</key>
+	<string></string>
+	<key>TASTEMAP_TERMS_OF_SERVICE_PROD_URL</key>
+	<string></string>
+	<key>TASTEMAP_SUPPORT_PROD_URL</key>
+	<string></string>
+</dict>
+</plist>

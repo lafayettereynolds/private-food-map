@@ -19,11 +19,6 @@ struct ProfileView: View {
     @State private var authMessage: String?
     @State private var isEditingProfile = false
     @State private var isShowingSocialHub = false
-    @State private var isShowingBackupConfirmation = false
-    @State private var isExportingBackup = false
-    @State private var backupExportTask: Task<Void, Never>?
-    @State private var backupArtifact: BackupExportArtifact?
-    @State private var backupMessage: String?
 
     private var activeRestaurants: [Restaurant] { restaurants.filter { $0.deletedAt == nil } }
     private var activeVisits: [Visit] { visits.filter { $0.deletedAt == nil } }
@@ -54,6 +49,17 @@ struct ProfileView: View {
                         onSignIn: { Task { await signIn() } },
                         onPremium: { premiumEntitlementService.openPaywall(from: .profile) }
                     )
+                    settingsEntry
+                    if isRunningAuthOperation {
+                        ProgressView()
+                            .accessibilityLabel("正在处理账户操作")
+                    }
+                    if let authMessage {
+                        Text(authMessage)
+                            .font(.footnote)
+                            .foregroundStyle(authMessage.hasPrefix("失败") ? .red : .secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     ProfileStatisticsSection(statistics: statistics)
                     ProfileContentLinks(
                         visitedCount: statistics.visitedRestaurantCount,
@@ -292,7 +298,6 @@ struct ProfileView: View {
                             )
                         }
                     }
-                    accountAndSyncCard
                     if activeRestaurants.isEmpty {
                         ContentUnavailableView(
                             "还没有美食记录",
@@ -314,117 +319,59 @@ struct ProfileView: View {
                     ProfileEditorSheet(profile: activeProfile, avatarPhoto: avatarPhoto)
                 }
             }
-            .sheet(item: $backupArtifact, onDismiss: cleanupPresentedBackup) { artifact in
-                BackupExportShareSheet(fileURL: artifact.fileURL) { completed, error in
-                    finishSharingBackup(artifact, completed: completed, error: error)
-                }
-            }
             .task { await restoreSessionAndProfile() }
         }
     }
 
-    private var accountAndSyncCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("账号与同步", systemImage: "person.crop.circle.badge.checkmark")
-                .font(.headline)
-            if let authenticatedUser {
-                if let email = authenticatedUser.email {
-                    LabeledContent("Apple 邮箱", value: email)
+    private var settingsEntry: some View {
+        NavigationLink {
+            TasteMapSettingsView(
+                authenticatedUser: authenticatedUser,
+                profile: activeProfile,
+                avatarPhoto: avatarPhoto,
+                logoutAction: SettingsLogoutAction(perform: { await logout() }),
+                permissionOverride: settingsPermissionOverride,
+                syncPresentationOverride: settingsSyncPresentationOverride
+            )
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 44, height: 44)
+                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 13))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("设置").font(.headline).foregroundStyle(.primary)
+                    Text(authenticatedUser == nil
+                        ? "账户、权限、存储与关于"
+                        : "同步：\(syncCoordinator.presentation.title)")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                SyncStatusView(presentation: syncCoordinator.presentation)
-                Button {
-                    premiumEntitlementService.openPaywall(from: .settings)
-                } label: {
-                    HStack {
-                        Label("会员与订阅", systemImage: "checkmark.seal")
-                        Spacer()
-                        Text(premiumEntitlementService.membershipStatus == .premium ? "已开通" : "查看")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").font(.caption)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("profile-premium-settings-entry")
-                Button(syncCoordinator.presentation.allowsRetry ? "重试同步" : "立即同步") {
-                    Task {
-                        if syncCoordinator.presentation.allowsRetry {
-                            await syncCoordinator.retryNow()
-                        } else {
-                            await syncCoordinator.synchronizeNow()
-                        }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(syncCoordinator.presentation.phase == .syncing)
-                .accessibilityIdentifier("profile-sync-button")
-                if isExportingBackup {
-                    HStack {
-                        ProgressView()
-                        Text("正在生成 Backup v1…")
-                            .font(.subheadline)
-                        Spacer()
-                        Button("取消", role: .cancel) {
-                            backupExportTask?.cancel()
-                        }
-                    }
-                    .accessibilityIdentifier("profile-backup-export-progress")
-                } else {
-                    Button {
-                        isShowingBackupConfirmation = true
-                    } label: {
-                        HStack {
-                            Label("导出备份", systemImage: "square.and.arrow.up")
-                            Spacer()
-                            Text("JSON")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .padding(.vertical, 10)
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-backup-export-button")
-                    .simultaneousGesture(
-                        TapGesture().onEnded { isShowingBackupConfirmation = true }
-                    )
-                    .alert("导出 Backup v1", isPresented: $isShowingBackupConfirmation) {
-                        Button("生成并分享") { startBackupExport() }
-                        Button("取消", role: .cancel) {}
-                    } message: {
-                        Text("备份包含你的餐厅、到访记录、备注、消费、饭搭子和推荐来源等私人数据。Backup v1 不包含照片原图。")
-                    }
-                }
-                if let backupMessage {
-                    Text(backupMessage)
-                        .font(.footnote)
-                        .foregroundStyle(backupMessage.hasPrefix("失败") ? .red : .secondary)
-                        .accessibilityIdentifier("profile-backup-export-message")
-                }
-#if DEBUG
-                Button("验证 Token 刷新") { Task { await forceRefresh() } }
-                    .font(.subheadline)
-#endif
-                Button("退出登录", role: .destructive) { Task { await logout() } }
-                    .font(.subheadline)
-            } else {
-                Text("登录后，资料和记录会在你的设备之间安全同步。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
-            if isRunningAuthOperation { ProgressView() }
-            if let authMessage {
-                Text(authMessage)
-                    .font(.footnote)
-                    .foregroundStyle(authMessage.hasPrefix("失败") ? .red : .secondary)
-            }
+            .padding(16)
+            .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("profile-settings-entry")
+    }
+
+    private var settingsPermissionOverride: SettingsPermissionSnapshot? {
+#if DEBUG
+        TasteMapUITestFixtures.settingsPermissionOverride
+#else
+        nil
+#endif
+    }
+
+    private var settingsSyncPresentationOverride: SyncPresentation? {
+#if DEBUG
+        TasteMapUITestFixtures.settingsSyncPresentationOverride
+#else
+        nil
+#endif
     }
 
     @MainActor
@@ -479,83 +426,23 @@ struct ProfileView: View {
     }
 
     @MainActor
-    private func forceRefresh() async {
-        await performAuthOperation {
-            authenticatedUser = try await authServices.sessionManager.forceRefresh()
-            await syncCoordinator.sessionDidBecomeAvailable()
-            return "Access/refresh token 已安全轮换。"
-        }
-    }
-
-    @MainActor
-    private func logout() async {
+    private func logout() async -> String {
         isRunningAuthOperation = true
         defer { isRunningAuthOperation = false }
+        let result: String
         do {
             try await authServices.sessionManager.logout()
-            authMessage = "已退出并清理 Keychain session。"
+            result = "已退出并清理 Keychain session。"
         } catch {
-            authMessage = "已从此设备退出；服务端会话撤销暂时未确认。"
+            result = "已从此设备退出；服务端会话撤销暂时未确认。"
         }
         try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
         try? LocalRestaurantListStore(context: modelContext).purgePublicCache()
         authenticatedUser = nil
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
-    }
-
-    @MainActor
-    private func startBackupExport() {
-        guard !isExportingBackup else { return }
-        isExportingBackup = true
-        backupMessage = nil
-        let task = Task { @MainActor in
-            defer {
-                isExportingBackup = false
-                backupExportTask = nil
-            }
-            do {
-                let service = try BackupExportService(context: modelContext)
-                backupArtifact = try await service.export(
-                    authSessionManager: authServices.sessionManager
-                )
-            } catch is CancellationError {
-                backupMessage = "已取消导出，未保留临时备份文件。"
-            } catch {
-                backupMessage = "失败：\(error.localizedDescription)"
-            }
-        }
-        backupExportTask = task
-    }
-
-    @MainActor
-    private func finishSharingBackup(
-        _ artifact: BackupExportArtifact,
-        completed: Bool,
-        error: Error?
-    ) {
-        cleanup(artifact)
-        backupArtifact = nil
-        if let error {
-            backupMessage = "失败：分享未完成（\(error.localizedDescription)）"
-        } else if completed {
-            backupMessage = "Backup v1 已交给你选择的保存或分享位置。"
-        } else {
-            backupMessage = "已取消分享，临时备份文件已清理。"
-        }
-    }
-
-    @MainActor
-    private func cleanupPresentedBackup() {
-        guard let artifact = backupArtifact else { return }
-        cleanup(artifact)
-        backupArtifact = nil
-    }
-
-    @MainActor
-    private func cleanup(_ artifact: BackupExportArtifact) {
-        guard let service = try? BackupExportService(context: modelContext) else { return }
-        try? service.removeTemporaryExport(artifact)
+        authMessage = result
+        return result
     }
 
     @MainActor
@@ -754,7 +641,7 @@ private struct ProfileContentLinks: View {
     }
 }
 
-private struct ProfileEditorSheet: View {
+struct ProfileEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
