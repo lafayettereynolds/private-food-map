@@ -336,6 +336,37 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testBackupExportEntryExplainsPrivateDataAndPhotoExclusionBeforeGeneration() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P3A_PROFILE_UI_TEST": "1",
+        ]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let export = app.buttons["profile-backup-export-button"]
+        scrollUntilVisible(export, in: app)
+        XCTAssertTrue(export.isHittable)
+        export.tap()
+
+        XCTAssertTrue(app.staticTexts["导出 Backup v1"].waitForExistence(timeout: 5))
+        let warning = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Backup v1 不包含照片原图")
+        ).firstMatch
+        XCTAssertTrue(warning.exists)
+        XCTAssertTrue(app.buttons["生成并分享"].exists)
+        app.buttons["取消"].tap()
+        XCTAssertFalse(app.buttons["生成并分享"].exists)
+    }
+
+    @MainActor
     func testP3BSocialEntryOpensNativeSearchWithoutExposingPrivateIdentityFields() throws {
         let app = XCUIApplication()
         app.launchArguments = [

@@ -17,6 +17,9 @@ struct TasteMapApp: App {
     private let premiumEntitlementService: PremiumEntitlementService
 
     init() {
+        // Backup exports live in their own protected temporary directory. A
+        // bounded startup cleanup removes only files created by that subsystem.
+        try? BackupExportTemporaryFileStore().cleanup()
         let authServices = NativeAuthServices(configuration: .current())
         let container: ModelContainer
         do {

@@ -19,6 +19,11 @@ struct ProfileView: View {
     @State private var authMessage: String?
     @State private var isEditingProfile = false
     @State private var isShowingSocialHub = false
+    @State private var isShowingBackupConfirmation = false
+    @State private var isExportingBackup = false
+    @State private var backupExportTask: Task<Void, Never>?
+    @State private var backupArtifact: BackupExportArtifact?
+    @State private var backupMessage: String?
 
     private var activeRestaurants: [Restaurant] { restaurants.filter { $0.deletedAt == nil } }
     private var activeVisits: [Visit] { visits.filter { $0.deletedAt == nil } }
@@ -309,6 +314,11 @@ struct ProfileView: View {
                     ProfileEditorSheet(profile: activeProfile, avatarPhoto: avatarPhoto)
                 }
             }
+            .sheet(item: $backupArtifact, onDismiss: cleanupPresentedBackup) { artifact in
+                BackupExportShareSheet(fileURL: artifact.fileURL) { completed, error in
+                    finishSharingBackup(artifact, completed: completed, error: error)
+                }
+            }
             .task { await restoreSessionAndProfile() }
         }
     }
@@ -348,6 +358,52 @@ struct ProfileView: View {
                 .buttonStyle(.bordered)
                 .disabled(syncCoordinator.presentation.phase == .syncing)
                 .accessibilityIdentifier("profile-sync-button")
+                if isExportingBackup {
+                    HStack {
+                        ProgressView()
+                        Text("正在生成 Backup v1…")
+                            .font(.subheadline)
+                        Spacer()
+                        Button("取消", role: .cancel) {
+                            backupExportTask?.cancel()
+                        }
+                    }
+                    .accessibilityIdentifier("profile-backup-export-progress")
+                } else {
+                    Button {
+                        isShowingBackupConfirmation = true
+                    } label: {
+                        HStack {
+                            Label("导出备份", systemImage: "square.and.arrow.up")
+                            Spacer()
+                            Text("JSON")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 10)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-backup-export-button")
+                    .simultaneousGesture(
+                        TapGesture().onEnded { isShowingBackupConfirmation = true }
+                    )
+                    .alert("导出 Backup v1", isPresented: $isShowingBackupConfirmation) {
+                        Button("生成并分享") { startBackupExport() }
+                        Button("取消", role: .cancel) {}
+                    } message: {
+                        Text("备份包含你的餐厅、到访记录、备注、消费、饭搭子和推荐来源等私人数据。Backup v1 不包含照片原图。")
+                    }
+                }
+                if let backupMessage {
+                    Text(backupMessage)
+                        .font(.footnote)
+                        .foregroundStyle(backupMessage.hasPrefix("失败") ? .red : .secondary)
+                        .accessibilityIdentifier("profile-backup-export-message")
+                }
 #if DEBUG
                 Button("验证 Token 刷新") { Task { await forceRefresh() } }
                     .font(.subheadline)
@@ -446,6 +502,60 @@ struct ProfileView: View {
         authenticatedUser = nil
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
+    }
+
+    @MainActor
+    private func startBackupExport() {
+        guard !isExportingBackup else { return }
+        isExportingBackup = true
+        backupMessage = nil
+        let task = Task { @MainActor in
+            defer {
+                isExportingBackup = false
+                backupExportTask = nil
+            }
+            do {
+                let service = try BackupExportService(context: modelContext)
+                backupArtifact = try await service.export(
+                    authSessionManager: authServices.sessionManager
+                )
+            } catch is CancellationError {
+                backupMessage = "已取消导出，未保留临时备份文件。"
+            } catch {
+                backupMessage = "失败：\(error.localizedDescription)"
+            }
+        }
+        backupExportTask = task
+    }
+
+    @MainActor
+    private func finishSharingBackup(
+        _ artifact: BackupExportArtifact,
+        completed: Bool,
+        error: Error?
+    ) {
+        cleanup(artifact)
+        backupArtifact = nil
+        if let error {
+            backupMessage = "失败：分享未完成（\(error.localizedDescription)）"
+        } else if completed {
+            backupMessage = "Backup v1 已交给你选择的保存或分享位置。"
+        } else {
+            backupMessage = "已取消分享，临时备份文件已清理。"
+        }
+    }
+
+    @MainActor
+    private func cleanupPresentedBackup() {
+        guard let artifact = backupArtifact else { return }
+        cleanup(artifact)
+        backupArtifact = nil
+    }
+
+    @MainActor
+    private func cleanup(_ artifact: BackupExportArtifact) {
+        guard let service = try? BackupExportService(context: modelContext) else { return }
+        try? service.removeTemporaryExport(artifact)
     }
 
     @MainActor
