@@ -55,7 +55,10 @@ struct TasteMapSettingsView: View {
 
             Section("数据与备份") {
                 NavigationLink {
-                    DataBackupSettingsView(isAuthenticated: authenticatedUser != nil)
+                    DataBackupSettingsView(
+                        isAuthenticated: authenticatedUser != nil,
+                        allowsImportPreflight: allowsImportPreflight
+                    )
                 } label: {
                     SettingsDestinationLabel(
                         title: "数据与备份",
@@ -173,7 +176,6 @@ struct TasteMapSettingsView: View {
 #if DEBUG
             if exposesFutureArchitecture {
                 Section {
-                    FutureSettingsRow(title: "导入数据", state: availability.state(for: .importData))
                     FutureSettingsRow(title: "恢复我的备份", state: availability.state(for: .restoreBackup))
                     FutureSettingsRow(
                         title: "迁移旧版 Web 数据",
@@ -193,6 +195,15 @@ struct TasteMapSettingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .tasteMapBottomNavigationHidden()
         .accessibilityIdentifier("settings-root")
+    }
+
+    private var allowsImportPreflight: Bool {
+#if DEBUG
+        releaseConfiguration.environment == .development
+            && availability.isVisible(.importData, includeDevelopmentOnly: true)
+#else
+        false
+#endif
     }
 }
 
@@ -307,6 +318,7 @@ struct DataBackupSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NativeAuthServices.self) private var authServices
     let isAuthenticated: Bool
+    let allowsImportPreflight: Bool
     @State private var isShowingConfirmation = false
     @State private var isExporting = false
     @State private var exportTask: Task<Void, Never>?
@@ -351,6 +363,32 @@ struct DataBackupSettingsView: View {
                 Label("不包含照片原图", systemImage: "photo.badge.exclamationmark")
                     .accessibilityIdentifier("settings-backup-photo-exclusion")
             }
+
+#if DEBUG
+            if allowsImportPreflight {
+                Section {
+                    NavigationLink {
+                        BackupImportPreflightView(
+                            developmentFixture: BackupImportDevelopmentFixture.current
+                        )
+                    } label: {
+                        HStack {
+                            Label("导入数据", systemImage: "doc.badge.magnifyingglass")
+                            Spacer()
+                            Text("仅预检")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .accessibilityIdentifier("settings-import-preflight-entry")
+                } header: {
+                    Text("Import Preflight · Development")
+                } footer: {
+                    Text("只读取并检查 JSON，不会导入、合并或修改任何 Taste Map 数据。")
+                }
+            }
+#endif
 
             if let message {
                 Section {

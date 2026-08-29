@@ -83,6 +83,23 @@ struct SettingsFoundationTests {
         #expect(availability.state(for: .deleteAccount) == .developmentOnly)
     }
 
+    @Test("Import preflight is Development-only while write-capable future flows stay hidden")
+    func importPreflightAvailability() {
+        let development = SettingsFeatureAvailability(
+            releaseConfiguration: ReleaseConfiguration(environment: .development, legalLinks: .empty)
+        )
+        let production = SettingsFeatureAvailability(
+            releaseConfiguration: ReleaseConfiguration(environment: .production, legalLinks: .empty)
+        )
+
+        #expect(development.state(for: .importData) == .developmentOnly)
+        #expect(development.isVisible(.importData, includeDevelopmentOnly: true))
+        #expect(!production.isVisible(.importData))
+        #expect(!development.isVisible(.restoreBackup))
+        #expect(!development.isVisible(.migrateLegacyWebData))
+        #expect(!development.isVisible(.deleteAccount))
+    }
+
     @Test("Configured legal and subscription capabilities become available without fake values")
     func configuredAvailability() {
         let configuration = ReleaseConfiguration(

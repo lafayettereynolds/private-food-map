@@ -474,7 +474,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(dataAndBackup.waitForExistence(timeout: 3))
         dataAndBackup.tap()
         XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["导入数据"].exists)
+        XCTAssertTrue(app.buttons["settings-import-preflight-entry"].exists)
         XCTAssertFalse(app.buttons["恢复我的备份"].exists)
         let export = app.buttons["settings-backup-export-button"]
         XCTAssertTrue(export.waitForExistence(timeout: 3))
@@ -515,6 +515,49 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["关于"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["settings-app-version"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["settings-build-number"].exists)
+    }
+
+    @MainActor
+    func testF1C2LegacyImportPreflightDryRunAndDetails() throws {
+        let app = launchImportPreflightFixture("legacy")
+        openImportPreflight(in: app)
+
+        app.buttons["backup-import-choose-file"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-processing"]
+            .waitForExistence(timeout: 2))
+        let format = app.descendants(matching: .any)["backup-import-source-format"]
+        XCTAssertTrue(format.waitForExistence(timeout: 10))
+        XCTAssertTrue(format.label.contains("Legacy Web v4") || (format.value as? String)?.contains("Legacy Web v4") == true)
+        let photoMessage = app.descendants(matching: .any)["backup-import-photo-message"]
+        scrollUntilVisible(photoMessage, in: app)
+        XCTAssertTrue(photoMessage.exists)
+
+        let details = app.buttons["backup-import-issues-entry"]
+        scrollUntilVisible(details, in: app)
+        XCTAssertTrue(details.isHittable)
+        details.tap()
+        XCTAssertTrue(app.navigationBars["问题详情"].waitForExistence(timeout: 3))
+        app.navigationBars["问题详情"].buttons["导入数据"].tap()
+
+        let close = app.buttons["backup-import-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
+        close.tap()
+        XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testF1C2BlockingFixtureCannotContinue() throws {
+        let app = launchImportPreflightFixture("blocking")
+        openImportPreflight(in: app)
+
+        app.buttons["backup-import-choose-file"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-blocking-state"]
+            .waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["此文件暂时无法继续导入。"].exists)
+        XCTAssertFalse(app.buttons["导入"].exists)
+        let details = app.buttons["backup-import-issues-entry"]
+        scrollUntilVisible(details, in: app)
+        XCTAssertTrue(details.isHittable)
     }
 
     @MainActor
@@ -2055,6 +2098,44 @@ final class TasteMapUITests: XCTestCase {
         note.typeText("完整离线记录")
         app.buttons["visit-editor-save"].tap()
         XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func launchImportPreflightFixture(_ mode: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P3A_PROFILE_UI_TEST": "1",
+            "TASTEMAP_F1B3_SETTINGS_UI_TEST": "1",
+            "TASTEMAP_F1C2_IMPORT_UI_TEST": mode,
+        ]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func openImportPreflight(in app: XCUIApplication) {
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let settings = app.buttons["profile-settings-entry"]
+        scrollUntilVisible(settings, in: app)
+        XCTAssertTrue(settings.isHittable)
+        settings.tap()
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+        let dataAndBackup = app.buttons["settings-data-backup-entry"]
+        XCTAssertTrue(dataAndBackup.waitForExistence(timeout: 3))
+        dataAndBackup.tap()
+        XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
+        let importEntry = app.buttons["settings-import-preflight-entry"]
+        scrollUntilVisible(importEntry, in: app)
+        XCTAssertTrue(importEntry.isHittable)
+        importEntry.tap()
+        XCTAssertTrue(app.navigationBars["导入数据"].waitForExistence(timeout: 3))
     }
 
     @MainActor
