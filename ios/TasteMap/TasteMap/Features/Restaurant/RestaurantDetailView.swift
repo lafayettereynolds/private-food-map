@@ -1,10 +1,12 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct RestaurantDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     @Query private var allVisits: [Visit]
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
@@ -26,6 +28,9 @@ struct RestaurantDetailView: View {
     @State private var phoneError: String?
     @State private var selectedPhoto: PhotoAsset?
     @State private var isAddingToList = false
+    @State private var isShowingRoulette = false
+    @State private var isConfirmingRestaurantDeletion = false
+    @State private var actionError: String?
 
     @MainActor
     init(restaurant: Restaurant) {
@@ -45,6 +50,10 @@ struct RestaurantDetailView: View {
 
     private var metadata: RestaurantDetailMetadata {
         RestaurantDetailMetadata(restaurant: restaurant)
+    }
+
+    private var sharePayload: RestaurantSharePayload {
+        RestaurantSharingService.payload(restaurant: restaurant, metadata: metadata)
     }
 
     private var ratingReferences: [RestaurantRatingReference] {
@@ -76,6 +85,20 @@ struct RestaurantDetailView: View {
                         onSelect: { selectedPhoto = $0 },
                         onRetry: retryPhoto
                     )
+                    RestaurantQuickActionsSection(
+                        restaurant: restaurant,
+                        sharePayload: sharePayload,
+                        canMutate: canMutateRestaurant,
+                        canAddToList: currentUserID != nil,
+                        onRecordVisit: { isAddingVisit = true },
+                        onMarkWantToGo: markWantToGo,
+                        onEdit: { isEditingRestaurant = true },
+                        onAddToList: { isAddingToList = true },
+                        onAddToRoulette: { isShowingRoulette = true },
+                        onCopyName: { UIPasteboard.general.string = restaurant.name },
+                        onCopyAddress: { UIPasteboard.general.string = restaurant.address },
+                        onDelete: { isConfirmingRestaurantDeletion = true }
+                    )
                     if metadata.hasBusinessInformation {
                         RestaurantBusinessInformationSection(
                             metadata: metadata,
@@ -86,24 +109,6 @@ struct RestaurantDetailView: View {
                         restaurant: restaurant,
                         onOpenAppleMaps: openAppleMaps
                     )
-                    if currentUserID != nil {
-                        Button { isAddingToList = true } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "text.badge.plus")
-                                    .foregroundStyle(Color.accentColor)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("加入榜单").font(.headline).foregroundStyle(.primary)
-                                    Text("可同时整理到不同主题，不会改变想吃状态")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer(); Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                            }
-                            .padding(15)
-                            .background(.background, in: RoundedRectangle(cornerRadius: 18))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("restaurant-detail-add-to-list")
-                    }
                     RestaurantDishSection(summaries: dishSummaries)
                     RestaurantDetailStatsSection(presentation: presentation)
                     if presentation.queueSummary != nil || !presentation.tagGroups.isEmpty {
@@ -133,6 +138,13 @@ struct RestaurantDetailView: View {
                     Button("编辑", systemImage: "square.and.pencil") {
                         isEditingRestaurant = true
                     }
+                    .disabled(!canMutateRestaurant)
+                }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button("删除餐厅", systemImage: "trash", role: .destructive) {
+                        isConfirmingRestaurantDeletion = true
+                    }
+                    .disabled(!canMutateRestaurant)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -149,6 +161,7 @@ struct RestaurantDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .disabled(!canMutateRestaurant)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(.bar)
@@ -168,6 +181,14 @@ struct RestaurantDetailView: View {
                     AddRestaurantToListsSheet(
                         restaurant: restaurant,
                         currentUserID: currentUserID
+                    )
+                }
+            }
+            .sheet(isPresented: $isShowingRoulette) {
+                NavigationStack {
+                    RestaurantRouletteScreen(
+                        preferredCity: restaurant.city,
+                        initialRestaurantID: restaurant.id
                     )
                 }
             }
@@ -192,6 +213,17 @@ struct RestaurantDetailView: View {
             } message: {
                 Text("只会删除这一条到访，不会影响这家餐厅的其他历史记录。")
             }
+            .confirmationDialog(
+                "删除这家餐厅？",
+                isPresented: $isConfirmingRestaurantDeletion,
+                titleVisibility: .visible
+            ) {
+                Button("删除餐厅及其记录", role: .destructive, action: deleteRestaurant)
+                    .accessibilityIdentifier("restaurant-delete-confirm")
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("餐厅、到访、菜品和照片记录会先在本机标记删除，并按依赖顺序进入同步队列。其他设备同步后也不会把旧记录恢复。")
+            }
             .alert("无法删除", isPresented: Binding(
                 get: { deleteError != nil },
                 set: { if !$0 { deleteError = nil } }
@@ -215,6 +247,14 @@ struct RestaurantDetailView: View {
                 Button("好", role: .cancel) { phoneError = nil }
             } message: {
                 Text(phoneError ?? "这台设备暂时无法使用电话功能。")
+            }
+            .alert("操作没有完成", isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            )) {
+                Button("好", role: .cancel) { actionError = nil }
+            } message: {
+                Text(actionError ?? "请稍后重试。")
             }
         }
     }
@@ -244,6 +284,28 @@ struct RestaurantDetailView: View {
             try LocalTasteMapStore(context: modelContext).delete(visit)
         } catch {
             deleteError = "这条到访记录没有删除成功。"
+        }
+    }
+
+    private func markWantToGo() {
+        do {
+            try LocalTasteMapStore(context: modelContext).markWantToGo(restaurant)
+        } catch {
+            actionError = "想吃状态没有保存成功。"
+        }
+    }
+
+    private func deleteRestaurant() {
+        do {
+            try LocalTasteMapStore(context: modelContext).delete(
+                restaurant,
+                actorUserID: currentUserID
+            )
+            dismiss()
+        } catch LocalTasteMapStoreError.restaurantOwnershipMismatch {
+            actionError = "当前登录用户无权删除这条餐厅记录。"
+        } catch {
+            actionError = "餐厅没有删除成功，现有记录已保留。"
         }
     }
 
@@ -293,5 +355,10 @@ struct RestaurantDetailView: View {
 
     private var currentUserID: String? {
         profiles.first { $0.deletedAt == nil }?.tasteMapUserID
+    }
+
+    private var canMutateRestaurant: Bool {
+        guard let owner = metadata.ownerUserID, owner.hasPrefix("tm_") else { return true }
+        return owner == currentUserID
     }
 }

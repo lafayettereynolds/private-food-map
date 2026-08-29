@@ -112,6 +112,7 @@ struct RestaurantExperienceTagGroup: Identifiable, Equatable {
 }
 
 struct RestaurantDetailMetadata: Equatable {
+    let ownerUserID: String?
     let storedPhone: String?
     let openingHours: String?
     let referencePrice: Decimal?
@@ -119,6 +120,7 @@ struct RestaurantDetailMetadata: Equatable {
     let merchantImageURL: URL?
     let markerPhotoID: String?
     let markerEmoji: String
+    let markerType: RestaurantJSONContractV1.RestaurantMarkerTypeContract
     let globalIdentityKeys: Set<String>
 
     @MainActor
@@ -126,6 +128,7 @@ struct RestaurantDetailMetadata: Equatable {
         let record = restaurant.remoteRecordData.flatMap {
             try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
         }
+        ownerUserID = Self.trimmed(record?.userId)
         storedPhone = Self.trimmed(record?.phone)
         openingHours = Self.trimmed(record?.openingHours)
         if let price = record?.pricePerPerson, price.isFinite, price > 0 {
@@ -137,6 +140,7 @@ struct RestaurantDetailMetadata: Equatable {
         merchantImageURL = Self.safeHTTPSURL(record?.merchantImageUrl)
         markerPhotoID = Self.trimmed(record?.markerPhotoId)
         markerEmoji = Self.trimmed(record?.markerEmoji) ?? "🍽️"
+        markerType = record?.markerType ?? .emoji
 
         var keys = Set(record?.placeIdentities.map {
             "\($0.provider.rawValue):\($0.externalId)"

@@ -10,9 +10,11 @@ struct RestaurantRouletteScreen: View {
     @State private var isShowingSearch = false
 
     let preferredCity: String?
+    let initialRestaurantID: UUID?
 
-    init(preferredCity: String? = nil) {
+    init(preferredCity: String? = nil, initialRestaurantID: UUID? = nil) {
         self.preferredCity = preferredCity
+        self.initialRestaurantID = initialRestaurantID
     }
 
     private var candidates: [RouletteCandidate] {
@@ -29,6 +31,7 @@ struct RestaurantRouletteScreen: View {
             restaurants: restaurants,
             photos: photos,
             preferredCity: preferredCity,
+            initialResultGlobalKey: initialResultGlobalKey,
             onSearch: { isShowingSearch = true }
         )
         .sheet(isPresented: $isShowingSearch) {
@@ -49,6 +52,11 @@ struct RestaurantRouletteScreen: View {
                 }
             }
         }
+    }
+
+    private var initialResultGlobalKey: String? {
+        guard let initialRestaurantID else { return nil }
+        return candidates.first(where: { $0.restaurantID == initialRestaurantID })?.globalKey
     }
 }
 

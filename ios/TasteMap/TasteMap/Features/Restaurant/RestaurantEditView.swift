@@ -4,15 +4,21 @@ import SwiftUI
 struct RestaurantEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query private var allPhotos: [PhotoAsset]
 
     let restaurant: Restaurant
 
     @State private var name: String
+    @State private var address: String
     @State private var city: String
+    @State private var status: RestaurantStatus
     @State private var phone: String
     @State private var openingHours: String
     @State private var referencePrice: String
     @State private var longTermNote: String
+    @State private var markerType: RestaurantJSONContractV1.RestaurantMarkerTypeContract
+    @State private var markerPhotoID: String?
+    @State private var markerEmoji: String
     @State private var isSaving = false
     @State private var saveError: String?
 
@@ -21,13 +27,18 @@ struct RestaurantEditView: View {
         self.restaurant = restaurant
         let metadata = RestaurantDetailMetadata(restaurant: restaurant)
         _name = State(initialValue: restaurant.name)
+        _address = State(initialValue: restaurant.address)
         _city = State(initialValue: restaurant.city)
+        _status = State(initialValue: restaurant.status)
         _phone = State(initialValue: metadata.storedPhone ?? "")
         _openingHours = State(initialValue: metadata.openingHours ?? "")
         _referencePrice = State(initialValue: metadata.referencePrice.map {
             NSDecimalNumber(decimal: $0).stringValue
         } ?? "")
         _longTermNote = State(initialValue: metadata.longTermNote ?? "")
+        _markerType = State(initialValue: metadata.markerType)
+        _markerPhotoID = State(initialValue: metadata.markerPhotoID)
+        _markerEmoji = State(initialValue: metadata.markerEmoji)
     }
 
     var body: some View {
@@ -38,6 +49,15 @@ struct RestaurantEditView: View {
                         .accessibilityIdentifier("restaurant-edit-name")
                     TextField("城市（可选）", text: $city)
                         .accessibilityIdentifier("restaurant-edit-city")
+                    TextField("地址（可选）", text: $address, axis: .vertical)
+                        .lineLimit(2...4)
+                        .accessibilityIdentifier("restaurant-edit-address")
+                    Picker("状态", selection: $status) {
+                        ForEach(RestaurantStatus.allCases, id: \.self) { value in
+                            Label(value.title, systemImage: value.systemImage).tag(value)
+                        }
+                    }
+                    .accessibilityIdentifier("restaurant-edit-status")
                 }
 
                 Section {
@@ -64,15 +84,42 @@ struct RestaurantEditView: View {
                 }
 
                 Section {
-                    LabeledContent("地址", value: restaurant.address.isEmpty ? "暂无地址" : restaurant.address)
+                    Picker("地图标记", selection: $markerType) {
+                        Text("表情").tag(RestaurantJSONContractV1.RestaurantMarkerTypeContract.emoji)
+                        Text("图片").tag(RestaurantJSONContractV1.RestaurantMarkerTypeContract.image)
+                    }
+                    .accessibilityIdentifier("restaurant-edit-marker-type")
+                    if markerType == .emoji {
+                        TextField("地图表情", text: $markerEmoji)
+                            .accessibilityIdentifier("restaurant-edit-marker-emoji")
+                    } else if markerPhotos.isEmpty {
+                        Text("暂无专用地图照片，将继续使用商户图片或默认标记。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("地图照片", selection: $markerPhotoID) {
+                            Text("自动选择").tag(String?.none)
+                            ForEach(markerPhotos) { photo in
+                                Text(photo.fileName ?? "地图照片").tag(photoIdentity(photo) as String?)
+                            }
+                        }
+                        .accessibilityIdentifier("restaurant-edit-marker-photo")
+                    }
+                } header: {
+                    Text("地图呈现")
+                } footer: {
+                    Text("地图照片只可选择属于这家餐厅的专用标记照片；不会改变地点身份。")
+                }
+
+                Section {
                     LabeledContent("地图位置") {
                         Text(String(format: "%.5f, %.5f", restaurant.latitude, restaurant.longitude))
                             .foregroundStyle(.secondary)
                     }
                 } header: {
-                    Text("受保护的位置资料")
+                    Text("受保护的地点身份")
                 } footer: {
-                    Text("地址和坐标来自当前地点记录。本阶段不开放修改，避免地址、地图位置和外部地点身份不一致。")
+                    Text("编辑地址不会重建餐厅；坐标、Taste Map Restaurant ID 与 Apple Maps / 高德等 Provider identity 保持不变。需要重新校准地点时应走地点身份校验流程。")
                 }
 
                 if restaurant.appleMapItemIdentifier != nil {
@@ -130,16 +177,38 @@ struct RestaurantEditView: View {
         do {
             try LocalTasteMapStore(context: modelContext).updateDetails(
                 restaurant,
-                name: name,
-                city: city,
-                phone: normalizedPhone,
-                openingHours: openingHours,
-                referencePrice: price,
-                longTermNote: longTermNote
+                update: RestaurantDetailsUpdate(
+                    name: name,
+                    address: address,
+                    city: city,
+                    status: status,
+                    phone: normalizedPhone,
+                    openingHours: openingHours,
+                    referencePrice: price,
+                    longTermNote: longTermNote,
+                    markerType: markerType,
+                    markerPhotoID: markerType == .image ? markerPhotoID : nil,
+                    markerEmoji: markerEmoji
+                )
             )
             dismiss()
         } catch {
             saveError = "餐厅资料没有保存成功，请重试。"
         }
+    }
+
+    private var markerPhotos: [PhotoAsset] {
+        allPhotos
+            .filter {
+                $0.restaurantId == restaurant.id &&
+                    $0.kind == .restaurantMarker &&
+                    $0.deletedAt == nil &&
+                    $0.binaryDeletedAt == nil
+            }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func photoIdentity(_ photo: PhotoAsset) -> String {
+        photo.remoteID ?? photo.id.uuidString.lowercased()
     }
 }

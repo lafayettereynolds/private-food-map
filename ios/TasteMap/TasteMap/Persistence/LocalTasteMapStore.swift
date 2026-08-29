@@ -305,33 +305,65 @@ struct LocalTasteMapStore {
         referencePrice: Decimal?,
         longTermNote: String?
     ) throws {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = try SyncRecordMapper.restaurantRecord(restaurant)
+        try updateDetails(
+            restaurant,
+            update: RestaurantDetailsUpdate(
+                name: name,
+                address: restaurant.address,
+                city: city,
+                status: restaurant.status,
+                phone: phone,
+                openingHours: openingHours,
+                referencePrice: referencePrice,
+                longTermNote: longTermNote,
+                markerType: base.markerType,
+                markerPhotoID: base.markerPhotoId,
+                markerEmoji: base.markerEmoji
+            )
+        )
+    }
+
+    func updateDetails(_ restaurant: Restaurant, update: RestaurantDetailsUpdate) throws {
+        let trimmedName = update.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw LocalTasteMapStoreError.restaurantNameRequired
         }
-        let normalizedPhone = Self.normalizedOptional(phone)
+        let normalizedPhone = Self.normalizedOptional(update.phone)
         if let normalizedPhone, RestaurantPhoneDialing.url(for: normalizedPhone) == nil {
             throw LocalTasteMapStoreError.invalidRestaurantPhone
         }
-        if let referencePrice,
+        if let referencePrice = update.referencePrice,
            NSDecimalNumber(decimal: referencePrice).compare(NSDecimalNumber.zero) != .orderedDescending {
             throw LocalTasteMapStoreError.invalidRestaurantReferencePrice
         }
 
         let base = try SyncRecordMapper.restaurantRecord(restaurant)
         let updatedAt = Date.now
-        let updatedCity = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let updatedAddress = update.address.trimmingCharacters(in: .whitespacesAndNewlines)
+        let updatedCity = update.city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let updatedMarkerPhotoID = Self.normalizedOptional(update.markerPhotoID)
+        if let updatedMarkerPhotoID, updatedMarkerPhotoID != base.markerPhotoId {
+            let ownsMarkerPhoto = try context.fetch(FetchDescriptor<PhotoAsset>()).contains { photo in
+                photo.restaurantId == restaurant.id && photo.deletedAt == nil &&
+                    photo.kind == .restaurantMarker &&
+                    (photo.remoteID == updatedMarkerPhotoID ||
+                     photo.id.uuidString.lowercased() == updatedMarkerPhotoID.lowercased())
+            }
+            guard ownsMarkerPhoto else { throw LocalTasteMapStoreError.invalidRestaurantMarkerPhoto }
+        }
+        let updatedMarkerEmoji = Self.normalizedOptional(update.markerEmoji) ?? "🍽️"
         let record = try RestaurantJSONContractV1(
             id: base.id,
             userId: base.userId,
             placeIdentities: base.placeIdentities,
             amapPoiId: base.amapPoiId,
             name: trimmedName,
-            address: restaurant.address,
+            address: updatedAddress,
             city: updatedCity,
             latitude: restaurant.latitude,
             longitude: restaurant.longitude,
-            status: restaurant.status == .wantToGo ? .wantToGo : .visited,
+            status: update.status == .wantToGo ? .wantToGo : .visited,
             preferenceLevel: base.preferenceLevel,
             overallRating: base.overallRating,
             foodRating: base.foodRating,
@@ -339,14 +371,14 @@ struct LocalTasteMapStore {
             serviceRating: base.serviceRating,
             valueRating: base.valueRating,
             tags: base.tags,
-            longTermNote: Self.normalizedOptional(longTermNote) ?? "",
-            pricePerPerson: referencePrice.map { NSDecimalNumber(decimal: $0).doubleValue },
+            longTermNote: Self.normalizedOptional(update.longTermNote) ?? "",
+            pricePerPerson: update.referencePrice.map { NSDecimalNumber(decimal: $0).doubleValue },
             phone: normalizedPhone,
-            openingHours: Self.normalizedOptional(openingHours),
-            markerType: base.markerType,
-            markerPhotoId: base.markerPhotoId,
+            openingHours: Self.normalizedOptional(update.openingHours),
+            markerType: update.markerType,
+            markerPhotoId: updatedMarkerPhotoID,
             merchantImageUrl: base.merchantImageUrl,
-            markerEmoji: base.markerEmoji,
+            markerEmoji: updatedMarkerEmoji,
             createdAt: base.createdAt,
             updatedAt: SyncRecordMapper.dateString(updatedAt),
             deletedAt: base.deletedAt,
@@ -356,7 +388,9 @@ struct LocalTasteMapStore {
 
         try context.transaction {
             restaurant.name = trimmedName
+            restaurant.address = updatedAddress
             restaurant.city = updatedCity
+            restaurant.status = update.status
             restaurant.updatedAt = updatedAt
             restaurant.syncStatus = .pending
             restaurant.remoteRecordData = recordData
@@ -365,31 +399,159 @@ struct LocalTasteMapStore {
         try context.save()
     }
 
-    func delete(_ restaurant: Restaurant) throws {
-        let queue = SwiftDataSyncQueue(context: context)
-        guard let remoteID = restaurant.remoteID else {
-            context.delete(restaurant)
-            try context.save()
-            return
-        }
-        if restaurant.serverVersion == 0 {
-            let hasVisits = try context.fetch(FetchDescriptor<Visit>())
-                .contains { $0.restaurantId == restaurant.id && $0.deletedAt == nil }
-            guard !hasVisits else { throw LocalTasteMapStoreError.restaurantHasVisits }
-            try queue.removeMutations(entityType: .restaurant, entityID: remoteID)
-            context.delete(restaurant)
-        } else {
-            restaurant.deletedAt = .now
-            restaurant.updatedAt = restaurant.deletedAt ?? .now
-            restaurant.syncStatus = .pending
-            try queue.enqueueDelete(
-                entityType: .restaurant,
-                entityID: remoteID,
-                baseVersion: restaurant.serverVersion,
-                timestamp: restaurant.updatedAt
+    func markWantToGo(_ restaurant: Restaurant) throws {
+        let base = try SyncRecordMapper.restaurantRecord(restaurant)
+        try updateDetails(
+            restaurant,
+            update: RestaurantDetailsUpdate(
+                name: restaurant.name,
+                address: restaurant.address,
+                city: restaurant.city,
+                status: .wantToGo,
+                phone: base.phone,
+                openingHours: base.openingHours,
+                referencePrice: base.pricePerPerson.map { Decimal($0) },
+                longTermNote: base.longTermNote,
+                markerType: base.markerType,
+                markerPhotoID: base.markerPhotoId,
+                markerEmoji: base.markerEmoji
             )
+        )
+    }
+
+    func delete(_ restaurant: Restaurant, actorUserID: String? = nil) throws {
+        let queue = SwiftDataSyncQueue(context: context)
+        let record = try? SyncRecordMapper.restaurantRecord(restaurant)
+        if let actorUserID,
+           let ownerUserID = record?.userId.trimmingCharacters(in: .whitespacesAndNewlines),
+           !ownerUserID.isEmpty,
+           ownerUserID != actorUserID {
+            throw LocalTasteMapStoreError.restaurantOwnershipMismatch
+        }
+
+        let now = Date.now
+        let visits = try context.fetch(FetchDescriptor<Visit>()).filter {
+            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+        }
+        let dishes = try context.fetch(FetchDescriptor<Dish>()).filter {
+            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+        }
+        let associations = try context.fetch(FetchDescriptor<VisitDish>()).filter {
+            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+        }
+        let photos = try context.fetch(FetchDescriptor<PhotoAsset>()).filter {
+            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+        }
+        let retainsChildTombstones = !photos.isEmpty ||
+            visits.contains(where: { $0.serverVersion > 0 }) ||
+            dishes.contains(where: { $0.serverVersion > 0 }) ||
+            associations.contains(where: { $0.serverVersion > 0 })
+
+        try context.transaction {
+            // Child tombstones are queued first conceptually. SyncEntityType's
+            // delete dependency priority guarantees Photo → VisitDish → Dish →
+            // Visit → Restaurant even if these mutations are persisted together.
+            for photo in photos {
+                let remoteID = photo.remoteID ?? photo.id.uuidString.lowercased()
+                photo.deletedAt = now
+                photo.updatedAt = now
+                photo.uploadState = .deleted
+                photo.syncStatus = .pending
+                if photo.serverVersion == 0 {
+                    try queue.removeMutations(entityType: .photo, entityID: remoteID)
+                } else {
+                    try queue.enqueueDelete(
+                        entityType: .photo,
+                        entityID: remoteID,
+                        baseVersion: photo.serverVersion,
+                        timestamp: now
+                    )
+                }
+            }
+
+            for association in associations {
+                let remoteID = association.remoteID ?? association.id.uuidString.lowercased()
+                if association.serverVersion == 0 {
+                    try queue.removeMutations(entityType: .visitDish, entityID: remoteID)
+                    context.delete(association)
+                } else {
+                    association.deletedAt = now
+                    association.updatedAt = now
+                    association.syncStatus = .pending
+                    try queue.enqueueDelete(
+                        entityType: .visitDish,
+                        entityID: remoteID,
+                        baseVersion: association.serverVersion,
+                        timestamp: now
+                    )
+                }
+            }
+
+            for dish in dishes {
+                let remoteID = dish.remoteID ?? dish.id.uuidString.lowercased()
+                if dish.serverVersion == 0 {
+                    try queue.removeMutations(entityType: .dish, entityID: remoteID)
+                    context.delete(dish)
+                } else {
+                    dish.deletedAt = now
+                    dish.updatedAt = now
+                    dish.syncStatus = .pending
+                    try queue.enqueueDelete(
+                        entityType: .dish,
+                        entityID: remoteID,
+                        baseVersion: dish.serverVersion,
+                        timestamp: now
+                    )
+                }
+            }
+
+            for visit in visits {
+                let remoteID = visit.remoteID ?? visit.id.uuidString.lowercased()
+                if visit.serverVersion == 0 {
+                    try queue.removeMutations(entityType: .visit, entityID: remoteID)
+                    context.delete(visit)
+                } else {
+                    visit.deletedAt = now
+                    visit.updatedAt = now
+                    visit.syncStatus = .pending
+                    try queue.enqueueDelete(
+                        entityType: .visit,
+                        entityID: remoteID,
+                        baseVersion: visit.serverVersion,
+                        timestamp: now
+                    )
+                }
+            }
+
+            let remoteID = restaurant.remoteID ?? restaurant.id.uuidString.lowercased()
+            if restaurant.serverVersion == 0 {
+                try queue.removeMutations(entityType: .restaurant, entityID: remoteID)
+                // Local photo tombstones retain file paths until the established
+                // photo cleanup lifecycle removes binaries. Keep their parent
+                // tombstone so no retained object points at a missing Restaurant.
+                if !retainsChildTombstones {
+                    context.delete(restaurant)
+                } else {
+                    restaurant.deletedAt = now
+                    restaurant.updatedAt = now
+                    restaurant.syncStatus = .pending
+                }
+            } else {
+                restaurant.deletedAt = now
+                restaurant.updatedAt = now
+                restaurant.syncStatus = .pending
+                try queue.enqueueDelete(
+                    entityType: .restaurant,
+                    entityID: remoteID,
+                    baseVersion: restaurant.serverVersion,
+                    timestamp: now
+                )
+            }
         }
         try context.save()
+        if !photos.isEmpty {
+            NotificationCenter.default.post(name: .tasteMapPhotoTransferStateChanged, object: nil)
+        }
     }
 
     private func enqueue(_ restaurant: Restaurant) throws {
@@ -516,6 +678,8 @@ enum LocalTasteMapStoreError: Error {
     case restaurantNameRequired
     case invalidRestaurantPhone
     case invalidRestaurantReferencePrice
+    case invalidRestaurantMarkerPhoto
+    case restaurantOwnershipMismatch
     case visitCreationFailed
 }
 

@@ -841,8 +841,11 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-reference-price"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-long-term-note"].exists)
 
-        app.buttons["编辑"].tap()
+        app.buttons["编辑"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["编辑餐厅"].waitForExistence(timeout: 5))
+        let address = app.textFields["restaurant-edit-address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 3))
+        address.clearAndType("杭州市上城区任务三新地址 88 号")
         let phone = app.textFields["restaurant-edit-phone"]
         XCTAssertTrue(phone.waitForExistence(timeout: 3))
         phone.clearAndType("+86 571 8765 4321")
@@ -852,6 +855,7 @@ final class TasteMapUITests: XCTestCase {
         let updatedPhone = app.staticTexts["+86 571 8765 4321"]
         scrollUntilVisible(updatedPhone, in: app)
         XCTAssertTrue(updatedPhone.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["杭州市上城区任务三新地址 88 号"].exists)
 
         app.buttons["restaurant-detail-add-visit"].tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
@@ -860,6 +864,48 @@ final class TasteMapUITests: XCTestCase {
         let visitCount = app.staticTexts["1 次"]
         scrollUntilVisible(visitCount, in: app)
         XCTAssertTrue(visitCount.waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testRestaurantParityActionsShareHookAndConfirmedDelete() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1b-restaurant-detail-fixture"]
+        app.launchEnvironment = ["TASTEMAP_F3A_DETAIL_UI_TEST": "1"]
+        app.launch()
+
+        app.segmentedControls.buttons["想吃"].tap()
+        let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+
+        let share = app.buttons["restaurant-action-share"]
+        scrollUntilVisible(share, in: app)
+        XCTAssertTrue(share.exists)
+        XCTAssertTrue(app.buttons["restaurant-action-record-visit"].exists)
+        XCTAssertTrue(app.buttons["restaurant-action-want-to-go"].exists)
+        XCTAssertTrue(app.buttons["restaurant-action-edit"].exists)
+        XCTAssertTrue(app.buttons["restaurant-detail-add-to-list"].exists)
+        XCTAssertTrue(app.buttons["restaurant-action-roulette"].exists)
+        XCTAssertTrue(app.buttons["restaurant-action-copy"].exists)
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "公开网页链接将在分享服务接通后提供")
+        ).firstMatch.exists)
+
+        app.buttons["restaurant-action-copy"].tap()
+        XCTAssertTrue(app.buttons["复制餐厅名"].waitForExistence(timeout: 2))
+        app.buttons["复制餐厅名"].tap()
+
+        let delete = app.buttons["restaurant-action-delete"]
+        scrollUntilVisible(delete, in: app)
+        XCTAssertTrue(delete.isHittable)
+        delete.tap()
+        let confirm = app.buttons["restaurant-delete-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.firstMatch.tap()
+
+        XCTAssertFalse(app.navigationBars["餐厅详情"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["P1-B 想吃餐厅"].exists)
     }
 
     @MainActor

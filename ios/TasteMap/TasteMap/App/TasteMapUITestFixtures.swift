@@ -233,6 +233,12 @@ enum TasteMapUITestFixtures {
     }
 
     static func insertRestaurantDetailFixture(into container: ModelContainer) throws {
+        container.mainContext.insert(UserProfile(
+            tasteMapUserID: "tm_f3a_ui_fixture",
+            displayName: "Restaurant Fixture",
+            city: "杭州",
+            syncStatus: .synced
+        ))
         let restaurant = Restaurant(
             id: detailRestaurantID,
             name: "P1-B 想吃餐厅",
