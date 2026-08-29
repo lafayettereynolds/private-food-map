@@ -37,9 +37,14 @@ enum TasteMapUITestFixtures {
     static let restaurantAcquisitionEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST"
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
     static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
+    static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
 
     static var usesF2ABrowsingFixture: Bool {
         ProcessInfo.processInfo.environment[f2ABrowsingEnvironmentKey] == "1"
+    }
+
+    static var usesF2BFiltersFixture: Bool {
+        ProcessInfo.processInfo.environment[f2BFiltersEnvironmentKey] == "1"
     }
 
     static var usesRestaurantAcquisitionFixture: Bool {
@@ -164,6 +169,7 @@ enum TasteMapUITestFixtures {
             || usesRestaurantListsFixture
             || usesRestaurantRouletteFixture
             || usesF2ABrowsingFixture
+            || usesF2BFiltersFixture
     }
 
     static var usesPhotoFixture: Bool {
@@ -474,6 +480,70 @@ enum TasteMapUITestFixtures {
             restaurantId: recentID,
             visitId: firstVisit.id,
             dishId: dish.id,
+            syncStatus: .synced
+        ))
+        try context.save()
+    }
+
+    static func insertF2BFiltersFixture(into container: ModelContainer) throws {
+        guard usesF2BFiltersFixture else { return }
+        let context = container.mainContext
+        let matching = Restaurant(
+            id: uuid(11_001),
+            name: "F2-B 命中外卖餐厅",
+            address: "西湖区筛选路 1 号",
+            latitude: 30.2741,
+            longitude: 120.1551,
+            city: "杭州",
+            status: .visited,
+            createdAt: .now.addingTimeInterval(-86_400 * 30),
+            syncStatus: .synced
+        )
+        let excluded = Restaurant(
+            id: uuid(11_002),
+            name: "F2-B 排除到店餐厅",
+            address: "静安区筛选路 2 号",
+            latitude: 31.2304,
+            longitude: 121.4737,
+            city: "上海",
+            status: .visited,
+            createdAt: .now.addingTimeInterval(-86_400 * 20),
+            syncStatus: .synced
+        )
+        context.insert(matching)
+        context.insert(excluded)
+        context.insert(Visit(
+            id: uuid(11_101),
+            restaurantId: matching.id,
+            visitedAt: .now.addingTimeInterval(-86_400 * 10),
+            rating: 4.5,
+            pricePerPerson: 150,
+            diningMode: .takeout,
+            queueDuration: .noWait,
+            diningOccasions: [.friends],
+            companionNames: ["小林"],
+            recommendationSourceType: .friend,
+            syncStatus: .synced
+        ))
+        context.insert(Visit(
+            id: uuid(11_102),
+            restaurantId: matching.id,
+            visitedAt: .now.addingTimeInterval(-86_400 * 15),
+            rating: 4.5,
+            diningMode: .takeout,
+            syncStatus: .synced
+        ))
+        context.insert(Visit(
+            id: uuid(11_103),
+            restaurantId: excluded.id,
+            visitedAt: .now.addingTimeInterval(-86_400 * 5),
+            rating: 3,
+            pricePerPerson: 80,
+            diningMode: .dineIn,
+            queueDuration: nil,
+            diningOccasions: [.business],
+            companionNames: ["阿宁"],
+            recommendationSourceType: .dianping,
             syncStatus: .synced
         ))
         try context.save()

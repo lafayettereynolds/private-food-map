@@ -32,6 +32,7 @@ struct TasteMapApp: App {
             let useAnalysisFixture = TasteMapUITestFixtures.usesAnalysisFixture
             let useRestaurantAcquisitionFixture = TasteMapUITestFixtures.usesRestaurantAcquisitionFixture
             let useF2ABrowsingFixture = TasteMapUITestFixtures.usesF2ABrowsingFixture
+            let useF2BFiltersFixture = TasteMapUITestFixtures.usesF2BFiltersFixture
             let usePersistentOfflineFixture = TasteMapUITestFixtures.usesPersistentFixture
             let resetPersistentOfflineFixture = TasteMapUITestFixtures.requestsPersistentFixtureReset
             let persistenceConfigurationName = usePersistentOfflineFixture
@@ -47,6 +48,7 @@ struct TasteMapApp: App {
             let useAnalysisFixture = false
             let useRestaurantAcquisitionFixture = false
             let useF2ABrowsingFixture = false
+            let useF2BFiltersFixture = false
             let usePersistentOfflineFixture = false
             let resetPersistentOfflineFixture = false
             let persistenceConfigurationName = "TasteMap"
@@ -54,7 +56,8 @@ struct TasteMapApp: App {
             #endif
             container = try TasteMapPersistence.makeContainer(
                 inMemory: useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture
-                    || useAnalysisFixture || useRestaurantAcquisitionFixture || useF2ABrowsingFixture,
+                    || useAnalysisFixture || useRestaurantAcquisitionFixture || useF2ABrowsingFixture
+                    || useF2BFiltersFixture,
                 configurationName: persistenceConfigurationName,
                 storageURL: persistenceStorageURL
             )
@@ -86,6 +89,10 @@ struct TasteMapApp: App {
             if useF2ABrowsingFixture {
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)
                 try TasteMapUITestFixtures.insertF2ABrowsingFixture(into: container)
+            }
+            if useF2BFiltersFixture {
+                try TasteMapUITestFixtures.insertProfileFixture(into: container)
+                try TasteMapUITestFixtures.insertF2BFiltersFixture(into: container)
             }
             #endif
         } catch {

@@ -105,6 +105,40 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testF2BMapFilterMultiSelectApplyListParityAndReset() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_F2B_FILTERS_UI_TEST": "1"]
+        app.launch()
+
+        let filter = app.buttons["personal-filter-button"]
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        XCTAssertTrue(app.navigationBars["筛选与排序"].waitForExistence(timeout: 5))
+
+        let topRating = app.buttons["personal-filter-rating-5"]
+        XCTAssertTrue(topRating.waitForExistence(timeout: 3))
+        topRating.tap()
+        let takeout = app.buttons["personal-filter-dining-takeout"]
+        scrollUntilVisible(takeout, in: app)
+        XCTAssertTrue(takeout.isHittable)
+        takeout.tap()
+        app.buttons["personal-filter-apply"].tap()
+
+        XCTAssertTrue(app.staticTexts["筛选后 1 家"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["列表"].tap()
+        XCTAssertTrue(app.staticTexts["F2-B 命中外卖餐厅"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["F2-B 排除到店餐厅"].exists)
+
+        app.buttons["personal-filter-button"].tap()
+        let reset = app.buttons["personal-filter-reset"]
+        XCTAssertTrue(reset.waitForExistence(timeout: 3))
+        reset.tap()
+        app.buttons["personal-filter-apply"].tap()
+        XCTAssertTrue(app.staticTexts["F2-B 命中外卖餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["F2-B 排除到店餐厅"].exists)
+    }
+
+    @MainActor
     func testRestaurantAcquisitionNearbyRequiresExplicitWantToGoAction() throws {
         let app = XCUIApplication()
         app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST": "1"]

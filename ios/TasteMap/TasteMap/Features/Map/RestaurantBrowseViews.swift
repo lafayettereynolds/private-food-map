@@ -8,6 +8,7 @@ struct RestaurantCollectionView: View {
 
     let segment: RestaurantBrowseSegment
     @State private var selectedRestaurant: RestaurantBrowseSelection?
+    @State private var query = ""
 
     var body: some View {
         let snapshot = RestaurantBrowseBuilder.build(
@@ -18,6 +19,9 @@ struct RestaurantCollectionView: View {
         RestaurantBrowseList(
             segment: segment,
             items: snapshot.items(for: segment),
+            query: $query,
+            isFiltered: false,
+            onClearFilters: {},
             onSelect: { selectedRestaurant = RestaurantBrowseSelection(id: $0.restaurant.id) }
         )
         .navigationTitle(segment == .visited ? "去过的餐厅" : segment == .wantToGo ? "想吃的餐厅" : segment.title)
@@ -37,9 +41,10 @@ struct RestaurantCollectionView: View {
 struct RestaurantBrowseList: View {
     let segment: RestaurantBrowseSegment
     let items: [RestaurantBrowseItem]
+    @Binding var query: String
+    let isFiltered: Bool
+    let onClearFilters: () -> Void
     let onSelect: (RestaurantBrowseItem) -> Void
-
-    @State private var query = ""
 
     private var filteredItems: [RestaurantBrowseItem] {
         RestaurantBrowseSearch.filter(items, query: query)
@@ -47,7 +52,18 @@ struct RestaurantBrowseList: View {
 
     var body: some View {
         Group {
-            if items.isEmpty {
+            if items.isEmpty, isFiltered {
+                ContentUnavailableView {
+                    Label("当前无符合条件的餐厅", systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text("可以清除筛选，重新查看你的餐厅。")
+                } actions: {
+                    Button("清除全部筛选", action: onClearFilters)
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("personal-filter-list-zero-clear")
+                }
+                .accessibilityIdentifier("personal-filter-list-zero")
+            } else if items.isEmpty {
                 RestaurantBrowseEmptyState(segment: segment)
             } else if filteredItems.isEmpty {
                 ContentUnavailableView(

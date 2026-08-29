@@ -46,6 +46,7 @@ struct RestaurantBrowseItem: Identifiable {
     let latestVisitAt: Date?
     let averageRating: Double?
     let photo: PhotoAsset?
+    let visitFacets: [PersonalVisitFilterFacet]
 
     var id: UUID { restaurant.id }
 }
@@ -65,6 +66,7 @@ struct RestaurantBrowseSnapshot {
     let visited: [RestaurantBrowseItem]
     let wantToGo: [RestaurantBrowseItem]
     let footprints: [TasteFootprintItem]
+    let filterOptions: PersonalRestaurantFilterOptions
 
     func items(for segment: RestaurantBrowseSegment) -> [RestaurantBrowseItem] {
         switch segment {
@@ -131,6 +133,8 @@ enum RestaurantBrowseBuilder {
                     restaurant: restaurant,
                     visits: visitsByRestaurant[restaurant.id] ?? [],
                     photos: (photosByRestaurant[restaurant.id] ?? []).map(\.1),
+                    companionDirectory: companionNamesByID,
+                    sourceDirectory: sourceNamesByID,
                     preferMarker: false
                 )
             }
@@ -143,6 +147,8 @@ enum RestaurantBrowseBuilder {
                     restaurant: restaurant,
                     visits: visitsByRestaurant[restaurant.id] ?? [],
                     photos: (photosByRestaurant[restaurant.id] ?? []).map(\.1),
+                    companionDirectory: companionNamesByID,
+                    sourceDirectory: sourceNamesByID,
                     preferMarker: true
                 )
             }
@@ -173,10 +179,12 @@ enum RestaurantBrowseBuilder {
                 )
             }
 
+        let browseItems = visited + wantToGo
         return RestaurantBrowseSnapshot(
             visited: visited,
             wantToGo: wantToGo,
-            footprints: footprints
+            footprints: footprints,
+            filterOptions: PersonalRestaurantFilterProjection.options(from: browseItems)
         )
     }
 
@@ -184,6 +192,8 @@ enum RestaurantBrowseBuilder {
         restaurant: Restaurant,
         visits: [Visit],
         photos: [PhotoAsset],
+        companionDirectory: [String: String],
+        sourceDirectory: [String: String],
         preferMarker: Bool
     ) -> RestaurantBrowseItem {
         let ratings = visits.compactMap(\.rating)
@@ -192,7 +202,55 @@ enum RestaurantBrowseBuilder {
             visitCount: visits.count,
             latestVisitAt: visits.map(\.visitedAt).max(),
             averageRating: ratings.isEmpty ? nil : ratings.reduce(0, +) / Double(ratings.count),
-            photo: preferredPhoto(from: photos, preferMarker: preferMarker)
+            photo: preferredPhoto(from: photos, preferMarker: preferMarker),
+            visitFacets: visits.map {
+                filterFacet(
+                    for: $0,
+                    companionDirectory: companionDirectory,
+                    sourceDirectory: sourceDirectory
+                )
+            }
+        )
+    }
+
+    private static func filterFacet(
+        for visit: Visit,
+        companionDirectory: [String: String],
+        sourceDirectory: [String: String]
+    ) -> PersonalVisitFilterFacet {
+        let companionOptions = Set(companionNames(for: visit, directory: companionDirectory).map {
+            PersonalFilterOption(
+                id: PersonalRestaurantFilterProjection.optionID(prefix: "companion", title: $0),
+                title: $0
+            )
+        })
+        var sourceTitles: [String] = []
+        if let sourceID = visit.recommendationSourceID,
+           let directoryName = sourceDirectory[sourceID], !directoryName.isEmpty {
+            sourceTitles.append(directoryName)
+        }
+        if let sourceText = visit.recommendationSourceText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sourceText.isEmpty {
+            sourceTitles.append(sourceText)
+        }
+        if let sourceType = visit.recommendationSourceType {
+            sourceTitles.append(sourceType.title)
+        }
+        let sourceOptions = Set(stableNames(sourceTitles).map {
+            PersonalFilterOption(
+                id: PersonalRestaurantFilterProjection.optionID(prefix: "source", title: $0),
+                title: $0
+            )
+        })
+        return PersonalVisitFilterFacet(
+            visitedAt: visit.visitedAt,
+            rating: visit.rating,
+            pricePerPerson: visit.pricePerPerson.map { NSDecimalNumber(decimal: $0).doubleValue },
+            diningMode: visit.diningMode,
+            queueDuration: visit.queueDuration,
+            occasionRawValues: Set(visit.diningOccasionRawValues),
+            companionOptions: companionOptions,
+            sourceOptions: sourceOptions
         )
     }
 
