@@ -473,12 +473,14 @@ final class SyncEngine {
         let directory = LocalCompanionSourceStore(context: context)
         let legacyCompanions = try directory.materializeLegacyCompanions(
             ids: record.companionIds,
-            names: record.companions
+            names: record.companions,
+            ownerUserID: record.userId
         )
         let recommendationSourceID = try directory.materializeLegacyRecommendationSource(
             id: record.recommendationSourceId,
             typeRawValue: record.recommendationSourceType,
-            text: record.recommendationSourceText
+            text: record.recommendationSourceText,
+            ownerUserID: record.userId
         )
         if let visit = try visits().first(where: { $0.remoteID == record.id }) {
             if try queue.hasConflict(entityType: .visit, entityID: record.id) {

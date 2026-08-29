@@ -5,6 +5,7 @@ struct DishManagerSheet: View {
 
     @Binding var drafts: [DishDraft]
     let existingDishes: [Dish]
+    var usageByDishID: [UUID: DishReuseUsage] = [:]
     let photos: [PhotoAsset]
     let preparedPhotos: [PreparedLocalPhoto]
 
@@ -69,7 +70,7 @@ struct DishManagerSheet: View {
                                         .font(.body.weight(.semibold))
                                         .foregroundStyle(.primary)
                                         .multilineTextAlignment(.leading)
-                                    Text(dish.rating.map { String(format: "%.1f ★", $0) } ?? "未评分")
+                                    Text(reuseDetail(for: dish))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -122,7 +123,15 @@ struct DishManagerSheet: View {
         let query = DishIdentity.normalizedName(searchText)
         return existingDishes
             .filter { query.isEmpty || DishIdentity.normalizedName($0.name).contains(query) }
-            .sorted { $0.updatedAt == $1.updatedAt ? $0.name < $1.name : $0.updatedAt > $1.updatedAt }
+    }
+
+    private func reuseDetail(for dish: Dish) -> String {
+        let rating = dish.rating.map { String(format: "%.1f ★", $0) } ?? "未评分"
+        guard let usage = usageByDishID[dish.id], usage.count > 0 else { return rating }
+        if let latest = usage.lastUsedAt {
+            return "吃过 \(usage.count) 次 · 最近 \(latest.formatted(.dateTime.month().day())) · \(rating)"
+        }
+        return "吃过 \(usage.count) 次 · \(rating)"
     }
 
     private func save(_ draft: DishDraft) {

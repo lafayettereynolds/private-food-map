@@ -311,13 +311,11 @@ struct RestaurantDetailView: View {
 
     private var activePhotos: [PhotoAsset] {
         let activeVisitIDs = Set(presentation.activeVisits.map(\.id))
-        let photos = allPhotos.filter { photo in
-            guard photo.restaurantId == restaurant.id,
-                  photo.deletedAt == nil,
-                  photo.binaryDeletedAt == nil,
-                  photo.kind == .restaurantMarker || photo.kind == .visit else { return false }
-            return photo.visitId.map(activeVisitIDs.contains) ?? true
-        }
+        let photos = RestaurantDetailImageResolver.visibleRestaurantPhotos(
+            allPhotos,
+            restaurantID: restaurant.id,
+            activeVisitIDs: activeVisitIDs
+        )
         return RestaurantDetailImageResolver.orderedPhotos(photos, metadata: metadata)
     }
 

@@ -24,13 +24,13 @@ struct LocalCompanionSourceStore {
     let context: ModelContext
 
     @discardableResult
-    func findOrCreateCompanion(name: String) throws -> DiningCompanion {
+    func findOrCreateCompanion(name: String, ownerUserID: String = "local") throws -> DiningCompanion {
         let name = PrivateDirectoryName.normalized(name)
         guard !name.isEmpty else { throw CompanionSourceStoreError.blankName }
-        if let existing = try companions().first(where: {
+        if let existing = try companions(ownerUserID: ownerUserID).first(where: {
             $0.deletedAt == nil && PrivateDirectoryName.normalized($0.displayName) == name
         }) { return existing }
-        let companion = DiningCompanion(displayName: name)
+        let companion = DiningCompanion(ownerUserId: ownerUserID, displayName: name)
         context.insert(companion)
         try enqueue(companion)
         return companion
@@ -39,14 +39,15 @@ struct LocalCompanionSourceStore {
     @discardableResult
     func findOrCreateRecommendationSource(
         name: String,
-        type: RecommendationSourceType = .other
+        type: RecommendationSourceType = .other,
+        ownerUserID: String = "local"
     ) throws -> RecommendationSource {
         let name = PrivateDirectoryName.normalized(name)
         guard !name.isEmpty else { throw CompanionSourceStoreError.blankName }
-        if let existing = try recommendationSources().first(where: {
+        if let existing = try recommendationSources(ownerUserID: ownerUserID).first(where: {
             $0.deletedAt == nil && PrivateDirectoryName.normalized($0.displayName) == name
         }) { return existing }
-        let source = RecommendationSource(displayName: name, sourceType: type)
+        let source = RecommendationSource(ownerUserId: ownerUserID, displayName: name, sourceType: type)
         context.insert(source)
         try enqueue(source)
         return source
@@ -55,7 +56,7 @@ struct LocalCompanionSourceStore {
     func rename(_ companion: DiningCompanion, to name: String) throws {
         let name = PrivateDirectoryName.normalized(name)
         guard !name.isEmpty else { throw CompanionSourceStoreError.blankName }
-        guard try !companions().contains(where: {
+        guard try !companions(ownerUserID: companion.ownerUserId).contains(where: {
             $0.id != companion.id && $0.deletedAt == nil &&
                 PrivateDirectoryName.normalized($0.displayName) == name
         }) else { throw CompanionSourceStoreError.duplicateName }
@@ -69,7 +70,7 @@ struct LocalCompanionSourceStore {
     func rename(_ source: RecommendationSource, to name: String) throws {
         let name = PrivateDirectoryName.normalized(name)
         guard !name.isEmpty else { throw CompanionSourceStoreError.blankName }
-        guard try !recommendationSources().contains(where: {
+        guard try !recommendationSources(ownerUserID: source.ownerUserId).contains(where: {
             $0.id != source.id && $0.deletedAt == nil &&
                 PrivateDirectoryName.normalized($0.displayName) == name
         }) else { throw CompanionSourceStoreError.duplicateName }
@@ -129,13 +130,15 @@ struct LocalCompanionSourceStore {
         )
     }
 
-    func materializeSelections(in draft: inout VisitDraft) throws {
+    func materializeSelections(in draft: inout VisitDraft, ownerUserID: String = "local") throws {
         if draft.companionIDs.isEmpty, !draft.companionNames.isEmpty {
-            let values = try draft.companionNames.map(findOrCreateCompanion)
+            let values = try draft.companionNames.map {
+                try findOrCreateCompanion(name: $0, ownerUserID: ownerUserID)
+            }
             draft.companionIDs = values.compactMap(\.remoteID)
             draft.companionNames = values.map(\.displayName)
         } else if !draft.companionIDs.isEmpty {
-            let all = try companions()
+            let all = try companions(ownerUserID: ownerUserID)
             let values = try draft.companionIDs.map { remoteID in
                 guard let companion = all.first(where: { $0.remoteID == remoteID && $0.deletedAt == nil }) else {
                     throw CompanionSourceStoreError.missingCompanion
@@ -146,7 +149,7 @@ struct LocalCompanionSourceStore {
         }
 
         if let sourceID = draft.recommendationSourceID {
-            guard let source = try recommendationSources().first(where: {
+            guard let source = try recommendationSources(ownerUserID: ownerUserID).first(where: {
                 $0.remoteID == sourceID && $0.deletedAt == nil
             }) else { throw CompanionSourceStoreError.missingRecommendationSource }
             draft.recommendationSourceText = source.displayName
@@ -157,7 +160,8 @@ struct LocalCompanionSourceStore {
                 .flatMap(RecommendationSourceType.init(rawValue:)) ?? .other
             let source = try findOrCreateRecommendationSource(
                 name: draft.recommendationSourceText,
-                type: type
+                type: type,
+                ownerUserID: ownerUserID
             )
             draft.recommendationSourceID = source.remoteID
             draft.recommendationSourceText = source.displayName
@@ -171,16 +175,17 @@ struct LocalCompanionSourceStore {
     /// edit the Visit without discarding those references.
     func materializeLegacyCompanions(
         ids: [String],
-        names: [String]
+        names: [String],
+        ownerUserID: String = "local"
     ) throws -> (ids: [String], names: [String]) {
         guard !names.isEmpty else { return ([], []) }
         if ids.isEmpty {
-            let values = try names.map(findOrCreateCompanion)
+            let values = try names.map { try findOrCreateCompanion(name: $0, ownerUserID: ownerUserID) }
             return (values.compactMap(\.remoteID), names.map(PrivateDirectoryName.normalized))
         }
         guard ids.count == names.count else { return (ids, names) }
 
-        var all = try companions()
+        var all = try companions(ownerUserID: ownerUserID)
         var resolvedIDs: [String] = []
         for (remoteID, snapshot) in zip(ids, names) {
             if all.contains(where: { $0.remoteID == remoteID }) {
@@ -194,7 +199,11 @@ struct LocalCompanionSourceStore {
                 resolvedIDs.append(existingID)
                 continue
             }
-            let companion = DiningCompanion(displayName: normalizedName, remoteID: remoteID)
+            let companion = DiningCompanion(
+                ownerUserId: ownerUserID,
+                displayName: normalizedName,
+                remoteID: remoteID
+            )
             context.insert(companion)
             try enqueue(companion)
             all.append(companion)
@@ -209,13 +218,17 @@ struct LocalCompanionSourceStore {
     func materializeLegacyRecommendationSource(
         id: String?,
         typeRawValue: String?,
-        text: String?
+        text: String?,
+        ownerUserID: String = "local"
     ) throws -> String? {
         let normalizedText = PrivateDirectoryName.normalized(text ?? "")
         if let id {
-            if try recommendationSources().contains(where: { $0.remoteID == id }) { return id }
+            if try recommendationSources(ownerUserID: ownerUserID).contains(where: { $0.remoteID == id }) {
+                return id
+            }
             guard !normalizedText.isEmpty else { return id }
             let source = RecommendationSource(
+                ownerUserId: ownerUserID,
                 displayName: normalizedText,
                 sourceType: typeRawValue.flatMap(RecommendationSourceType.init(rawValue:)) ?? .other,
                 remoteID: id
@@ -227,7 +240,8 @@ struct LocalCompanionSourceStore {
         guard !normalizedText.isEmpty else { return nil }
         return try findOrCreateRecommendationSource(
             name: normalizedText,
-            type: typeRawValue.flatMap(RecommendationSourceType.init(rawValue:)) ?? .other
+            type: typeRawValue.flatMap(RecommendationSourceType.init(rawValue:)) ?? .other,
+            ownerUserID: ownerUserID
         ).remoteID
     }
 
@@ -257,12 +271,16 @@ struct LocalCompanionSourceStore {
         )
     }
 
-    private func companions() throws -> [DiningCompanion] {
-        try context.fetch(FetchDescriptor<DiningCompanion>())
+    private func companions(ownerUserID: String? = nil) throws -> [DiningCompanion] {
+        let values = try context.fetch(FetchDescriptor<DiningCompanion>())
+        guard let ownerUserID else { return values }
+        return values.filter { $0.ownerUserId == ownerUserID }
     }
 
-    private func recommendationSources() throws -> [RecommendationSource] {
-        try context.fetch(FetchDescriptor<RecommendationSource>())
+    private func recommendationSources(ownerUserID: String? = nil) throws -> [RecommendationSource] {
+        let values = try context.fetch(FetchDescriptor<RecommendationSource>())
+        guard let ownerUserID else { return values }
+        return values.filter { $0.ownerUserId == ownerUserID }
     }
 
     private func softDelete(

@@ -11,6 +11,8 @@ struct VisitEditorView: View {
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
     @Query private var allVisitDishes: [VisitDish]
+    @Query private var allVisits: [Visit]
+    @Query private var profiles: [UserProfile]
 
     private let restaurant: Restaurant?
     private let candidate: RestaurantCandidate?
@@ -21,7 +23,9 @@ struct VisitEditorView: View {
     @State private var partySizeText: String
     @State private var spendText: String
     @State private var totalPriceText: String
-    @State private var isSaving = false
+    @State private var submissionGate = VisitSubmissionGate()
+    @State private var didSaveCore = false
+    @State private var savedPhotoWarning: String?
     @State private var saveError: String?
     @State private var isConfirmingDeletion = false
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -82,16 +86,16 @@ struct VisitEditorView: View {
         NavigationStack {
             Form {
                 restaurantSection
+                noteSection
+                ratingSection
                 basicsSection
                 peopleAndSourceSection
                 diningContextSection
-                ratingSection
-                detailedRatingSection
-                dishesSection
-                photosSection
                 spendSection
+                photosSection
+                dishesSection
+                detailedRatingSection
                 experienceContextSection
-                noteSection
                 privacySection
                 if visit != nil { deleteSection }
             }
@@ -106,7 +110,7 @@ struct VisitEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") { save() }
-                        .disabled(isSaving || isImportingPhotos)
+                        .disabled(isSaving || isImportingPhotos || didSaveCore)
                         .accessibilityIdentifier("visit-editor-save")
                 }
             }
@@ -136,6 +140,14 @@ struct VisitEditorView: View {
             } message: {
                 Text(photoError ?? "请换一张图片重试。")
             }
+            .alert("到访已保存", isPresented: Binding(
+                get: { savedPhotoWarning != nil },
+                set: { if !$0 { savedPhotoWarning = nil } }
+            )) {
+                Button("完成") { dismiss() }
+            } message: {
+                Text(savedPhotoWarning ?? "部分照片没有附加成功，其余到访资料已安全保存在本机。")
+            }
             .onChange(of: pickerItems) { _, newItems in
                 guard !newItems.isEmpty else { return }
                 pickerItems = []
@@ -145,6 +157,7 @@ struct VisitEditorView: View {
                 DishManagerSheet(
                     drafts: $dishDrafts,
                     existingDishes: existingRestaurantDishes,
+                    usageByDishID: dishUsageByID,
                     photos: visibleVisitPhotos,
                     preparedPhotos: preparedPhotos
                 )
@@ -152,7 +165,8 @@ struct VisitEditorView: View {
             .sheet(isPresented: $isChoosingCompanions) {
                 CompanionPickerSheet(
                     selectedIDs: $draft.companionIDs,
-                    selectedNames: $draft.companionNames
+                    selectedNames: $draft.companionNames,
+                    ownerUserID: currentUserID ?? "local"
                 )
             }
             .sheet(isPresented: $isChoosingRecommendationSource) {
@@ -160,7 +174,8 @@ struct VisitEditorView: View {
                     selectedID: $draft.recommendationSourceID,
                     selectedTypeRawValue: $draft.recommendationSourceTypeRawValue,
                     selectedUserID: $draft.recommendationSourceUserID,
-                    selectedText: $draft.recommendationSourceText
+                    selectedText: $draft.recommendationSourceText,
+                    ownerUserID: currentUserID ?? "local"
                 )
             }
             .onAppear { loadDishDraftsIfNeeded() }
@@ -170,6 +185,8 @@ struct VisitEditorView: View {
             }
         }
     }
+
+    private var isSaving: Bool { submissionGate.isSubmitting }
 
     private var restaurantSection: some View {
         Section("餐厅") {
@@ -695,12 +712,12 @@ struct VisitEditorView: View {
     }
 
     private func save() {
+        guard !didSaveCore, submissionGate.begin() else { return }
         Task { await saveAsync() }
     }
 
     private func saveAsync() async {
-        isSaving = true
-        defer { isSaving = false }
+        defer { submissionGate.finish() }
 
         do {
             var validatedDraft = draft
@@ -709,65 +726,50 @@ struct VisitEditorView: View {
             validatedDraft.totalPrice = try VisitDraft.totalPrice(from: totalPriceText)
             validatedDraft = try validatedDraft.validated()
 
-            let store = LocalTasteMapStore(context: modelContext)
-            let restaurantID: UUID
-            let savedVisit: Visit
-            if let visit, let restaurant {
-                try store.update(visit, draft: validatedDraft)
-                restaurantID = restaurant.id
-                savedVisit = visit
-            } else {
-                let resolvedRestaurant: Restaurant
-                if let restaurant {
-                    resolvedRestaurant = restaurant
-                } else if let candidate {
-                    resolvedRestaurant = try store.restaurant(for: candidate, among: allRestaurants)
-                } else {
-                    throw VisitEditorError.missingRestaurant
-                }
-                savedVisit = try store.createVisit(
-                    restaurantId: resolvedRestaurant.id,
-                    draft: validatedDraft
-                )
-                restaurantID = resolvedRestaurant.id
-            }
+            let result = try LocalVisitRecordingStore(context: modelContext).commit(
+                restaurant: restaurant,
+                candidate: candidate,
+                existingVisit: visit,
+                allRestaurants: allRestaurants,
+                draft: validatedDraft,
+                dishDrafts: dishDrafts,
+                actorUserID: currentUserID
+            )
+            didSaveCore = true
+            let restaurantID = result.restaurant.id
+            let savedVisit = result.visit
 
             if let photoCoordinator {
-                let dishMap = try LocalDishStore(context: modelContext).reconcile(
-                    restaurantID: restaurantID,
-                    visitID: savedVisit.id,
-                    drafts: dishDrafts
-                )
-                var savedPhotos = visibleVisitPhotos
-                for (offset, prepared) in preparedPhotos.enumerated() {
-                    let photo = try photoCoordinator.attachPreparedPhoto(
-                        prepared,
-                        restaurantID: restaurantID,
-                        visitID: savedVisit.id,
-                        sortOrder: visibleVisitPhotos.count + offset,
-                        visibility: PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private,
-                        queueForUpload: true
-                    )
-                    savedPhotos.append(photo)
-                }
-                for photo in savedPhotos where photo.visitId == savedVisit.id {
-                    photo.visibility = PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private
-                    photo.updatedAt = .now
-                    let selectedDraft = dishDrafts.first { $0.photoID == photo.id }
-                    try photoCoordinator.setDishRelationship(
-                        photo,
-                        dish: selectedDraft.flatMap { dishMap[$0.id] }
-                    )
-                    if photo.draftSessionID == photoDraftSessionID {
-                        try photoCoordinator.enqueue(photo)
+                do {
+                    var savedPhotos = visibleVisitPhotos
+                    for (offset, prepared) in preparedPhotos.enumerated() {
+                        let photo = try photoCoordinator.attachPreparedPhoto(
+                            prepared,
+                            restaurantID: restaurantID,
+                            visitID: savedVisit.id,
+                            sortOrder: visibleVisitPhotos.count + offset,
+                            visibility: PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private,
+                            queueForUpload: true
+                        )
+                        savedPhotos.append(photo)
                     }
+                    for photo in savedPhotos where photo.visitId == savedVisit.id {
+                        photo.visibility = PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private
+                        photo.updatedAt = .now
+                        let selectedDraft = dishDrafts.first { $0.photoID == photo.id }
+                        try photoCoordinator.setDishRelationship(
+                            photo,
+                            dish: selectedDraft.flatMap { result.dishesByDraftID[$0.id] }
+                        )
+                        if photo.draftSessionID == photoDraftSessionID {
+                            try photoCoordinator.enqueue(photo)
+                        }
+                    }
+                } catch {
+                    onSaved?(restaurantID)
+                    savedPhotoWarning = "部分照片没有附加成功，其余到访、菜品和用餐资料已安全保存在本机。"
+                    return
                 }
-            } else {
-                _ = try LocalDishStore(context: modelContext).reconcile(
-                    restaurantID: restaurantID,
-                    visitID: savedVisit.id,
-                    drafts: dishDrafts
-                )
             }
 
             didCommitPhotos = true
@@ -897,9 +899,8 @@ struct VisitEditorView: View {
     }
 
     private func deleteVisit() {
-        guard let visit else { return }
-        isSaving = true
-        defer { isSaving = false }
+        guard let visit, submissionGate.begin() else { return }
+        defer { submissionGate.finish() }
         do {
             try LocalTasteMapStore(context: modelContext).delete(visit)
             dismiss()
@@ -909,12 +910,22 @@ struct VisitEditorView: View {
     }
 
     private var existingRestaurantDishes: [Dish] {
-        let restaurantID = restaurant?.id
-        var seen = Set<String>()
-        return allDishes
-            .filter { $0.restaurantId == restaurantID && $0.deletedAt == nil }
-            .sorted { $0.createdAt == $1.createdAt ? ($0.remoteID ?? "") < ($1.remoteID ?? "") : $0.createdAt < $1.createdAt }
-            .filter { seen.insert(DishIdentity.normalizedName($0.name)).inserted }
+        guard let restaurantID = restaurant?.id else { return [] }
+        return DishReuseResolver.orderedUniqueDishes(
+            restaurantID: restaurantID,
+            dishes: allDishes,
+            usageByDishID: dishUsageByID
+        )
+    }
+
+    private var dishUsageByID: [UUID: DishReuseUsage] {
+        guard let restaurantID = restaurant?.id else { return [:] }
+        return DishReuseResolver.usage(
+            restaurantID: restaurantID,
+            dishes: allDishes,
+            associations: allVisitDishes,
+            visits: allVisits
+        )
     }
 
     private func loadDishDraftsIfNeeded() {
@@ -941,8 +952,10 @@ struct VisitEditorView: View {
     private static func spendString(_ spend: Decimal?) -> String {
         spend.map { NSDecimalNumber(decimal: $0).stringValue } ?? ""
     }
-}
 
-private enum VisitEditorError: Error {
-    case missingRestaurant
+    private var currentUserID: String? {
+        if let activeUserID = premiumEntitlementService.activeUserID { return activeUserID }
+        let activeProfiles = profiles.filter { $0.deletedAt == nil }
+        return activeProfiles.count == 1 ? activeProfiles[0].tasteMapUserID : nil
+    }
 }

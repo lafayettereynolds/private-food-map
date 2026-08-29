@@ -1003,7 +1003,7 @@ final class TasteMapUITests: XCTestCase {
         ]
         app.launch()
         let markers = app.otherElements.matching(
-            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
         )
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
         markers.element(boundBy: max(0, markers.count - 1)).tap()
@@ -1014,9 +1014,7 @@ final class TasteMapUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH 'restaurant-photo-'")
         ).firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 5))
-        // The horizontal gallery can be partially under the compact navigation bar
-        // after the preceding vertical swipe. Tap its visible lower area explicitly.
-        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        photo.tap()
         XCTAssertTrue(app.navigationBars["1 / 3"].waitForExistence(timeout: 5))
         app.buttons["完成"].tap()
 
@@ -1032,7 +1030,18 @@ final class TasteMapUITests: XCTestCase {
             deletePhoto.tap()
         }
         app.buttons["visit-editor-save"].tap()
-        XCTAssertTrue(app.staticTexts["尚未添加"].waitForExistence(timeout: 5))
+        let galleryTitle = app.staticTexts["照片"]
+        for _ in 0..<12 where !galleryTitle.isHittable {
+            app.swipeDown()
+        }
+        XCTAssertTrue(galleryTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["餐厅图标"].waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            app.buttons.matching(
+                NSPredicate(format: "identifier BEGINSWITH 'restaurant-photo-'")
+            ).count,
+            0
+        )
     }
 
     @MainActor
@@ -1052,6 +1061,15 @@ final class TasteMapUITests: XCTestCase {
         openP1DDetail(in: app, tab: "想吃")
         app.buttons["restaurant-detail-add-visit"].tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+
+        let note = app.descendants(matching: .any)["visit-editor-note"]
+        scrollUntilVisible(note, in: app)
+        note.tap()
+        note.typeText("P2-G 完整离线记录")
+        let overall = app.buttons["4.5 星"]
+        scrollUntilVisible(overall, in: app)
+        overall.tap()
+
         app.segmentedControls.buttons["外卖"].tap()
         app.textFields["visit-editor-party-size"].tap()
         app.textFields["visit-editor-party-size"].typeText("3")
@@ -1075,21 +1093,10 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(friends, in: app)
         friends.tap()
 
-        let overall = app.buttons["4.5 星"]
-        scrollUntilVisible(overall, in: app)
-        overall.tap()
-        let details = app.descendants(matching: .any)["visit-detailed-ratings"]
-        scrollUntilVisible(details, in: app)
-        details.tap()
-        let value = app.buttons["性价比 5.0 星"]
-        scrollUntilVisible(value, in: app)
-        value.tap()
-        let environment = app.buttons["环境 4.0 星"]
-        scrollUntilVisible(environment, in: app)
-        environment.tap()
-        let service = app.buttons["服务 3.5 星"]
-        scrollUntilVisible(service, in: app)
-        service.tap()
+        let spend = app.textFields["visit-editor-spend"]
+        scrollUntilVisible(spend, in: app)
+        spend.tap()
+        spend.typeText("128")
 
         let importButton = app.buttons["visit-photo-ui-test-import"]
         scrollUntilVisible(importButton, in: app)
@@ -1107,18 +1114,24 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["dish-save"].tap()
         app.buttons["dish-manager-done"].tap()
 
-        let spend = app.textFields["visit-editor-spend"]
-        scrollUntilVisible(spend, in: app)
-        spend.tap()
-        spend.typeText("128")
-        let note = app.descendants(matching: .any)["visit-editor-note"]
-        scrollUntilVisible(note, in: app)
-        note.tap()
-        note.typeText("P2-G 完整离线记录")
+        let details = app.descendants(matching: .any)["visit-detailed-ratings"]
+        scrollUntilVisible(details, in: app)
+        details.tap()
+        let value = app.buttons["性价比 5.0 星"]
+        scrollUntilVisible(value, in: app)
+        value.tap()
+        let environment = app.buttons["环境 4.0 星"]
+        scrollUntilVisible(environment, in: app)
+        environment.tap()
+        let service = app.buttons["服务 3.5 星"]
+        scrollUntilVisible(service, in: app)
+        service.tap()
+
         selectPicker("visit-editor-visibility", option: "公开", in: app)
         app.buttons["visit-editor-save"].tap()
 
         XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["1 张"].waitForExistence(timeout: 5))
         scrollUntilVisible(app.staticTexts["P2-G 招牌菜"], in: app)
         XCTAssertTrue(app.staticTexts["P2-G 招牌菜"].exists)
         let companions = app.staticTexts["visit-history-companions"]
@@ -1126,7 +1139,6 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(companions.label.contains("P2-G 饭搭子"))
         XCTAssertTrue(app.staticTexts["visit-history-recommendation-source"].label.contains("P2-G 推荐来源"))
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-detailed-rating-value"].exists)
-        XCTAssertTrue(app.staticTexts["1 张"].exists)
 
         app.terminate()
         app.launchArguments = ["-p1d-persistent-offline-fixture"]
@@ -1135,7 +1147,9 @@ final class TasteMapUITests: XCTestCase {
             "TASTEMAP_P2B_UI_TEST": "1",
         ]
         app.launch()
-        let markers = app.otherElements.matching(NSPredicate(format: "label == 'P1-D 离线验收餐厅'"))
+        let markers = app.otherElements.matching(
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
+        )
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
         markers.element(boundBy: max(0, markers.count - 1)).tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
@@ -1145,6 +1159,32 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["P2-G 完整离线记录"].exists)
         XCTAssertTrue(app.staticTexts["visit-history-companions"].label.contains("P2-G 饭搭子"))
         XCTAssertTrue(app.staticTexts["visit-history-recommendation-source"].label.contains("P2-G 推荐来源"))
+    }
+
+    @MainActor
+    func testTask04DoubleTapSaveCreatesOnlyOneVisit() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+        ]
+        app.launch()
+
+        openP1DDetail(in: app, tab: "想吃")
+        app.buttons["restaurant-detail-add-visit"].tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
+        let save = app.buttons["visit-editor-save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 3))
+        save.doubleTap()
+
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        scrollUntilVisible(app.staticTexts["第 1 次"], in: app)
+        XCTAssertTrue(app.staticTexts["第 1 次"].exists)
+        XCTAssertFalse(app.staticTexts["第 2 次"].exists)
     }
 
     @MainActor
@@ -1161,7 +1201,9 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_P1D_UI_TEST": "1"]
         app.launch()
 
-        let markers = app.otherElements.matching(NSPredicate(format: "label == 'P1-D 离线验收餐厅'"))
+        let markers = app.otherElements.matching(
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
+        )
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 8))
         markers.element(boundBy: max(0, markers.count - 1)).tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
@@ -1186,7 +1228,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         let markers = app.otherElements.matching(
-            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
         )
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
         markers.element(boundBy: max(0, markers.count - 1)).tap()
@@ -1249,7 +1291,7 @@ final class TasteMapUITests: XCTestCase {
         ]
         app.launch()
         let markers = app.otherElements.matching(
-            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
         )
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
         markers.element(boundBy: max(0, markers.count - 1)).tap()
@@ -1376,7 +1418,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_P1D_UI_TEST": "1"]
         app.launch()
         let markers = app.otherElements.matching(
-            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
         )
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
         markers.element(boundBy: max(0, markers.count - 1)).tap()
@@ -1463,7 +1505,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_P1D_UI_TEST": "1"]
         app.launch()
         let markers = app.otherElements.matching(
-            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
         )
         XCTAssertTrue(markers.firstMatch.waitForExistence(timeout: 5))
         markers.element(boundBy: max(0, markers.count - 1)).tap()
@@ -1543,7 +1585,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_P1D_UI_TEST": "1"]
         app.launch()
         let restoredMarkers = app.otherElements.matching(
-            NSPredicate(format: "label == 'P1-D 离线验收餐厅'")
+            NSPredicate(format: "identifier == 'restaurant-map-marker-11111111-2222-3333-4444-555555555555'")
         )
         XCTAssertTrue(restoredMarkers.firstMatch.waitForExistence(timeout: 5))
         restoredMarkers.element(boundBy: max(0, restoredMarkers.count - 1)).tap()

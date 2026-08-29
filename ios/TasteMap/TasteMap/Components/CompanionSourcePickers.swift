@@ -10,6 +10,7 @@ struct CompanionPickerSheet: View {
 
     @Binding var selectedIDs: [String]
     @Binding var selectedNames: [String]
+    var ownerUserID: String = "local"
 
     @State private var searchText = ""
     @State private var newName = ""
@@ -88,7 +89,7 @@ struct CompanionPickerSheet: View {
     }
 
     private var activeCompanions: [DiningCompanion] {
-        companions.filter { $0.deletedAt == nil }
+        companions.filter { $0.deletedAt == nil && $0.ownerUserId == ownerUserID }
     }
 
     private var filteredCompanions: [DiningCompanion] {
@@ -132,7 +133,7 @@ struct CompanionPickerSheet: View {
     private func add() {
         do {
             let companion = try LocalCompanionSourceStore(context: modelContext)
-                .findOrCreateCompanion(name: newName)
+                .findOrCreateCompanion(name: newName, ownerUserID: ownerUserID)
             try modelContext.save()
             if let remoteID = companion.remoteID, !selectedIDs.contains(remoteID) {
                 selectedIDs.append(remoteID)
@@ -145,6 +146,7 @@ struct CompanionPickerSheet: View {
             errorMessage = "饭搭子没有保存成功。"
         }
     }
+
 }
 
 struct RecommendationSourcePickerSheet: View {
@@ -158,6 +160,7 @@ struct RecommendationSourcePickerSheet: View {
     @Binding var selectedTypeRawValue: String?
     @Binding var selectedUserID: String?
     @Binding var selectedText: String
+    var ownerUserID: String = "local"
 
     @State private var searchText = ""
     @State private var newName = ""
@@ -243,7 +246,7 @@ struct RecommendationSourcePickerSheet: View {
     }
 
     private var activeSources: [RecommendationSource] {
-        sources.filter { $0.deletedAt == nil }
+        sources.filter { $0.deletedAt == nil && $0.ownerUserId == ownerUserID }
     }
 
     private var filteredSources: [RecommendationSource] {
@@ -282,7 +285,11 @@ struct RecommendationSourcePickerSheet: View {
     private func add() {
         do {
             let source = try LocalCompanionSourceStore(context: modelContext)
-                .findOrCreateRecommendationSource(name: newName, type: newType)
+                .findOrCreateRecommendationSource(
+                    name: newName,
+                    type: newType,
+                    ownerUserID: ownerUserID
+                )
             try modelContext.save()
             select(source)
             newName = ""
@@ -292,4 +299,5 @@ struct RecommendationSourcePickerSheet: View {
             errorMessage = "推荐来源没有保存成功。"
         }
     }
+
 }

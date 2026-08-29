@@ -64,7 +64,8 @@ struct LocalDishStore {
     func reconcile(
         restaurantID: UUID,
         visitID: UUID,
-        drafts: [DishDraft]
+        drafts: [DishDraft],
+        saveChanges: Bool = true
     ) throws -> [UUID: Dish] {
         let parents = try activeParents(restaurantID: restaurantID, visitID: visitID)
         let validated = try drafts.map { try $0.validated() }
@@ -83,13 +84,13 @@ struct LocalDishStore {
         }
 
         for association in try activeAssociations(visitID: visitID) where !desiredDishIDs.contains(association.dishId) {
-            try remove(association)
+            try remove(association, saveChanges: false)
         }
-        try context.save()
+        if saveChanges { try context.save() }
         return result
     }
 
-    func remove(_ association: VisitDish) throws {
+    func remove(_ association: VisitDish, saveChanges: Bool = true) throws {
         let remoteID = association.remoteID ?? association.id.uuidString.lowercased()
         let queue = SwiftDataSyncQueue(context: context)
         if association.serverVersion == 0 {
@@ -106,7 +107,7 @@ struct LocalDishStore {
                 timestamp: association.updatedAt
             )
         }
-        try context.save()
+        if saveChanges { try context.save() }
     }
 
     func removeAssociations(for visitID: UUID) throws {

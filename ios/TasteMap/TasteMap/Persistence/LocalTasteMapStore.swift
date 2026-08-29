@@ -86,83 +86,106 @@ struct LocalTasteMapStore {
     }
 
     @discardableResult
-    func createVisit(restaurantId: UUID, draft: VisitDraft) throws -> Visit {
-        var draft = draft
+    func createVisit(
+        restaurantId: UUID,
+        draft: VisitDraft,
+        actorUserID: String? = nil
+    ) throws -> Visit {
         var createdVisit: Visit?
         try context.transaction {
-            try LocalCompanionSourceStore(context: context).materializeSelections(in: &draft)
-            draft = try draft.validated()
-            guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
-                .first(where: { $0.id == restaurantId && $0.deletedAt == nil }) else {
-                throw LocalTasteMapStoreError.restaurantNotFound
-            }
-            let isTransitioningFromWantToGo = restaurant.status == .wantToGo
-            if isTransitioningFromWantToGo {
-                restaurant.status = .visited
-                restaurant.updatedAt = .now
-                restaurant.syncStatus = .pending
-            }
-            if isTransitioningFromWantToGo || restaurant.remoteID == nil || restaurant.serverVersion == 0 {
-                try enqueue(restaurant)
-            }
-            let visit = Visit(
+            createdVisit = try createVisitInCurrentTransaction(
                 restaurantId: restaurantId,
-                visitedAt: draft.visitedAt,
-                rating: draft.rating,
-                valueRating: draft.valueRating,
-                environmentRating: draft.environmentRating,
-                serviceRating: draft.serviceRating,
-                note: draft.note,
-                myActualSpend: draft.myActualSpend,
-                totalPrice: draft.totalPrice,
-                pricePerPerson: draft.calculatedPricePerPerson,
-                diningMode: draft.diningMode,
-                visibility: draft.visibility,
-                paymentMode: draft.paymentMode,
-                queueDuration: draft.queueDuration,
-                diningOccasions: draft.diningOccasions,
-                diningOccasionText: draft.diningOccasionText,
-                valueTags: draft.valueTags,
-                environmentTags: draft.environmentTags,
-                serviceTags: draft.serviceTags,
-                noiseLevel: draft.noiseLevel,
-                diningDuration: draft.diningDuration,
-                portionLevel: draft.portionLevel,
-                transportConvenience: draft.transportConvenience,
-                specialNotes: draft.specialNotes,
-                companionIDs: draft.companionIDs,
-                companionNames: draft.companionNames,
-                recommendationSourceID: draft.recommendationSourceID,
-                recommendationSourceType: draft.recommendationSourceTypeRawValue.flatMap(RecommendationSourceType.init(rawValue:)),
-                recommendationSourceUserID: draft.recommendationSourceUserID,
-                recommendationSourceText: draft.recommendationSourceText,
-                sharedMealID: draft.sharedMealID,
-                partySize: draft.partySize,
-                syncStatus: .pending
+                draft: draft,
+                actorUserID: actorUserID
             )
-            visit.paymentModeRawValue = draft.paymentModeRawValue
-            visit.queueDurationRawValue = draft.queueDurationRawValue
-            visit.diningOccasionRawValues = draft.diningOccasionRawValues
-            visit.noiseLevelRawValue = draft.noiseLevelRawValue
-            visit.diningDurationRawValue = draft.diningDurationRawValue
-            visit.portionLevelRawValue = draft.portionLevelRawValue
-            visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
-            visit.recommendationSourceTypeRawValue = draft.recommendationSourceTypeRawValue
-            context.insert(visit)
-            guard let restaurantRemoteID = restaurant.remoteID else {
-                throw LocalTasteMapStoreError.restaurantRemoteIDMissing
-            }
-            try SwiftDataSyncQueue(context: context).enqueueUpsert(
-                entityType: .visit,
-                entityID: visit.remoteID ?? visit.id.uuidString,
-                baseVersion: visit.serverVersion,
-                payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
-                timestamp: visit.updatedAt
-            )
-            createdVisit = visit
         }
         guard let createdVisit else { throw LocalTasteMapStoreError.visitCreationFailed }
         return createdVisit
+    }
+
+    /// Used by aggregate stores that already own the surrounding transaction.
+    /// Keeping this body save-free lets Visit, Dish, associations, and their
+    /// mutations commit or roll back as one business graph.
+    func createVisitInCurrentTransaction(
+        restaurantId: UUID,
+        draft: VisitDraft,
+        actorUserID: String? = nil
+    ) throws -> Visit {
+        var draft = draft
+        guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
+            .first(where: { $0.id == restaurantId && $0.deletedAt == nil }) else {
+            throw LocalTasteMapStoreError.restaurantNotFound
+        }
+        let ownerUserID = try ownerUserID(for: restaurant, actorUserID: actorUserID)
+        try LocalCompanionSourceStore(context: context).materializeSelections(
+            in: &draft,
+            ownerUserID: ownerUserID
+        )
+        draft = try draft.validated()
+        let isTransitioningFromWantToGo = restaurant.status == .wantToGo
+        if isTransitioningFromWantToGo {
+            restaurant.status = .visited
+            restaurant.updatedAt = .now
+            restaurant.syncStatus = .pending
+        }
+        if isTransitioningFromWantToGo || restaurant.remoteID == nil || restaurant.serverVersion == 0 {
+            try enqueue(restaurant)
+        }
+        let visit = Visit(
+            restaurantId: restaurantId,
+            visitedAt: draft.visitedAt,
+            rating: draft.rating,
+            valueRating: draft.valueRating,
+            environmentRating: draft.environmentRating,
+            serviceRating: draft.serviceRating,
+            note: draft.note,
+            myActualSpend: draft.myActualSpend,
+            totalPrice: draft.totalPrice,
+            pricePerPerson: draft.calculatedPricePerPerson,
+            diningMode: draft.diningMode,
+            visibility: draft.visibility,
+            paymentMode: draft.paymentMode,
+            queueDuration: draft.queueDuration,
+            diningOccasions: draft.diningOccasions,
+            diningOccasionText: draft.diningOccasionText,
+            valueTags: draft.valueTags,
+            environmentTags: draft.environmentTags,
+            serviceTags: draft.serviceTags,
+            noiseLevel: draft.noiseLevel,
+            diningDuration: draft.diningDuration,
+            portionLevel: draft.portionLevel,
+            transportConvenience: draft.transportConvenience,
+            specialNotes: draft.specialNotes,
+            companionIDs: draft.companionIDs,
+            companionNames: draft.companionNames,
+            recommendationSourceID: draft.recommendationSourceID,
+            recommendationSourceType: draft.recommendationSourceTypeRawValue.flatMap(RecommendationSourceType.init(rawValue:)),
+            recommendationSourceUserID: draft.recommendationSourceUserID,
+            recommendationSourceText: draft.recommendationSourceText,
+            sharedMealID: draft.sharedMealID,
+            partySize: draft.partySize,
+            syncStatus: .pending
+        )
+        visit.paymentModeRawValue = draft.paymentModeRawValue
+        visit.queueDurationRawValue = draft.queueDurationRawValue
+        visit.diningOccasionRawValues = draft.diningOccasionRawValues
+        visit.noiseLevelRawValue = draft.noiseLevelRawValue
+        visit.diningDurationRawValue = draft.diningDurationRawValue
+        visit.portionLevelRawValue = draft.portionLevelRawValue
+        visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
+        visit.recommendationSourceTypeRawValue = draft.recommendationSourceTypeRawValue
+        context.insert(visit)
+        guard let restaurantRemoteID = restaurant.remoteID else {
+            throw LocalTasteMapStoreError.restaurantRemoteIDMissing
+        }
+        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+            entityType: .visit,
+            entityID: visit.remoteID ?? visit.id.uuidString,
+            baseVersion: visit.serverVersion,
+            payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
+            timestamp: visit.updatedAt
+        )
+        return visit
     }
 
     func update(
@@ -180,60 +203,74 @@ struct LocalTasteMapStore {
         try update(visit, draft: draft)
     }
 
-    func update(_ visit: Visit, draft: VisitDraft) throws {
-        var draft = draft
+    func update(_ visit: Visit, draft: VisitDraft, actorUserID: String? = nil) throws {
         try context.transaction {
-            try LocalCompanionSourceStore(context: context).materializeSelections(in: &draft)
-            draft = try draft.validated()
-            visit.visitedAt = draft.visitedAt
-            visit.rating = Visit.validatedRating(draft.rating)
-            visit.valueRating = Visit.validatedRating(draft.valueRating)
-            visit.environmentRating = Visit.validatedRating(draft.environmentRating)
-            visit.serviceRating = Visit.validatedRating(draft.serviceRating)
-            visit.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            visit.myActualSpend = draft.myActualSpend
-            visit.totalPrice = draft.totalPrice
-            visit.pricePerPerson = draft.calculatedPricePerPerson
-            visit.diningMode = draft.diningMode
-            visit.visibility = draft.visibility
-            visit.paymentModeRawValue = draft.paymentModeRawValue
-            visit.queueDurationRawValue = draft.queueDurationRawValue
-            visit.diningOccasionRawValues = draft.diningOccasionRawValues
-            visit.diningOccasionText = draft.diningOccasionText
-                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            visit.valueTags = draft.valueTags
-            visit.environmentTags = draft.environmentTags
-            visit.serviceTags = draft.serviceTags
-            visit.noiseLevelRawValue = draft.noiseLevelRawValue
-            visit.diningDurationRawValue = draft.diningDurationRawValue
-            visit.portionLevelRawValue = draft.portionLevelRawValue
-            visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
-            visit.specialNotes = draft.specialNotes
-                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            visit.companionIDs = draft.companionIDs
-            visit.companionNames = draft.companionNames
-            visit.recommendationSourceID = draft.recommendationSourceID
-            visit.recommendationSourceTypeRawValue = draft.recommendationSourceTypeRawValue
-            visit.recommendationSourceUserID = draft.recommendationSourceUserID
-            visit.recommendationSourceText = draft.recommendationSourceText
-                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            visit.sharedMealID = draft.sharedMealID
-            visit.partySize = draft.partySize
-            visit.updatedAt = .now
-            visit.syncStatus = .pending
-            guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
-                .first(where: { $0.id == visit.restaurantId }),
-                  let restaurantRemoteID = restaurant.remoteID else {
-                throw LocalTasteMapStoreError.restaurantRemoteIDMissing
-            }
-            try SwiftDataSyncQueue(context: context).enqueueUpsert(
-                entityType: .visit,
-                entityID: visit.remoteID ?? visit.id.uuidString,
-                baseVersion: visit.serverVersion,
-                payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
-                timestamp: visit.updatedAt
-            )
+            try updateVisitInCurrentTransaction(visit, draft: draft, actorUserID: actorUserID)
         }
+    }
+
+    func updateVisitInCurrentTransaction(
+        _ visit: Visit,
+        draft: VisitDraft,
+        actorUserID: String? = nil
+    ) throws {
+        var draft = draft
+        guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
+            .first(where: { $0.id == visit.restaurantId && $0.deletedAt == nil }) else {
+            throw LocalTasteMapStoreError.restaurantRemoteIDMissing
+        }
+        let ownerUserID = try ownerUserID(for: restaurant, actorUserID: actorUserID)
+        try LocalCompanionSourceStore(context: context).materializeSelections(
+            in: &draft,
+            ownerUserID: ownerUserID
+        )
+        draft = try draft.validated()
+        visit.visitedAt = draft.visitedAt
+        visit.rating = Visit.validatedRating(draft.rating)
+        visit.valueRating = Visit.validatedRating(draft.valueRating)
+        visit.environmentRating = Visit.validatedRating(draft.environmentRating)
+        visit.serviceRating = Visit.validatedRating(draft.serviceRating)
+        visit.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        visit.myActualSpend = draft.myActualSpend
+        visit.totalPrice = draft.totalPrice
+        visit.pricePerPerson = draft.calculatedPricePerPerson
+        visit.diningMode = draft.diningMode
+        visit.visibility = draft.visibility
+        visit.paymentModeRawValue = draft.paymentModeRawValue
+        visit.queueDurationRawValue = draft.queueDurationRawValue
+        visit.diningOccasionRawValues = draft.diningOccasionRawValues
+        visit.diningOccasionText = draft.diningOccasionText
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        visit.valueTags = draft.valueTags
+        visit.environmentTags = draft.environmentTags
+        visit.serviceTags = draft.serviceTags
+        visit.noiseLevelRawValue = draft.noiseLevelRawValue
+        visit.diningDurationRawValue = draft.diningDurationRawValue
+        visit.portionLevelRawValue = draft.portionLevelRawValue
+        visit.transportConvenienceRawValue = draft.transportConvenienceRawValue
+        visit.specialNotes = draft.specialNotes
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        visit.companionIDs = draft.companionIDs
+        visit.companionNames = draft.companionNames
+        visit.recommendationSourceID = draft.recommendationSourceID
+        visit.recommendationSourceTypeRawValue = draft.recommendationSourceTypeRawValue
+        visit.recommendationSourceUserID = draft.recommendationSourceUserID
+        visit.recommendationSourceText = draft.recommendationSourceText
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        visit.sharedMealID = draft.sharedMealID
+        visit.partySize = draft.partySize
+        visit.updatedAt = .now
+        visit.syncStatus = .pending
+        guard let restaurantRemoteID = restaurant.remoteID else {
+            throw LocalTasteMapStoreError.restaurantRemoteIDMissing
+        }
+        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+            entityType: .visit,
+            entityID: visit.remoteID ?? visit.id.uuidString,
+            baseVersion: visit.serverVersion,
+            payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: restaurantRemoteID),
+            timestamp: visit.updatedAt
+        )
     }
 
     func delete(_ visit: Visit) throws {
@@ -668,6 +705,21 @@ struct LocalTasteMapStore {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func ownerUserID(for restaurant: Restaurant, actorUserID: String?) throws -> String {
+        let recordOwner = (try? SyncRecordMapper.restaurantRecord(restaurant).userId)
+            .flatMap(Self.normalizedOptional) ?? "local"
+        if let actorUserID = Self.normalizedOptional(actorUserID),
+           recordOwner.hasPrefix("tm_"),
+           recordOwner != actorUserID {
+            throw LocalTasteMapStoreError.restaurantOwnershipMismatch
+        }
+        // A newly-created local contract is intentionally unassigned until the
+        // authenticated Worker overwrites its userId. Use the current actor for
+        // private companion/source directory ownership without changing the
+        // Restaurant identity contract locally.
+        return Self.normalizedOptional(actorUserID) ?? recordOwner
     }
 }
 

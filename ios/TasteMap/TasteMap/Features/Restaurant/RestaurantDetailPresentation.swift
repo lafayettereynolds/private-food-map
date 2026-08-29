@@ -253,6 +253,20 @@ enum RestaurantDetailImageSource: Equatable {
 
 @MainActor
 enum RestaurantDetailImageResolver {
+    static func visibleRestaurantPhotos(
+        _ photos: [PhotoAsset],
+        restaurantID: UUID,
+        activeVisitIDs: Set<UUID>
+    ) -> [PhotoAsset] {
+        photos.filter { photo in
+            guard photo.restaurantId == restaurantID,
+                  photo.deletedAt == nil,
+                  photo.binaryDeletedAt == nil,
+                  [.restaurantMarker, .visit, .dish].contains(photo.kind) else { return false }
+            return photo.visitId.map(activeVisitIDs.contains) ?? true
+        }
+    }
+
     static func orderedPhotos(
         _ photos: [PhotoAsset],
         metadata: RestaurantDetailMetadata
