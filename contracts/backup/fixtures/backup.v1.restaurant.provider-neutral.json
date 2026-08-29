@@ -1,0 +1,42 @@
+{
+  "id": "restaurant-provider-neutral",
+  "placeIdentities": [
+    {
+      "provider": "amap",
+      "externalId": "B0NEUTRAL",
+      "isPrimary": false,
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "provider": "apple_maps",
+      "externalId": "I-NEUTRAL",
+      "isPrimary": true,
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    }
+  ],
+  "name": "双 Provider 餐厅",
+  "address": "示例地址",
+  "city": "上海",
+  "latitude": 31.2,
+  "longitude": 121.4,
+  "status": "visited",
+  "preferenceLevel": "normal",
+  "overallRating": null,
+  "foodRating": null,
+  "environmentRating": null,
+  "serviceRating": null,
+  "valueRating": null,
+  "tags": [],
+  "longTermNote": "",
+  "pricePerPerson": null,
+  "phone": null,
+  "openingHours": null,
+  "markerType": "emoji",
+  "markerPhotoId": null,
+  "merchantImageUrl": null,
+  "markerEmoji": "🍽️",
+  "createdAt": "2026-08-01T00:00:00.000Z",
+  "updatedAt": "2026-08-02T00:00:00.000Z"
+}

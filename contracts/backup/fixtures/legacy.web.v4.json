@@ -1,0 +1,16 @@
+{
+  "app": "Taste Map",
+  "version": 4,
+  "environment": "development",
+  "databaseName": "food-map-development",
+  "exportedAt": "2026-08-01T00:00:00.000Z",
+  "restaurants": [],
+  "visits": [],
+  "photos": [],
+  "users": [],
+  "friendships": [],
+  "sharedMeals": [],
+  "sharedMealParticipants": [],
+  "restaurantLists": [],
+  "restaurantListItems": []
+}

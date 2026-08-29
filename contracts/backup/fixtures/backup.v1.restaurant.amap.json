@@ -1,0 +1,35 @@
+{
+  "id": "restaurant-amap-only",
+  "placeIdentities": [
+    {
+      "provider": "amap",
+      "externalId": "B0AMAPONLY",
+      "isPrimary": true,
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "updatedAt": "2026-08-01T00:00:00.000Z"
+    }
+  ],
+  "name": "高德餐厅",
+  "address": "高德示例地址",
+  "city": "上海",
+  "latitude": 31.2,
+  "longitude": 121.4,
+  "status": "wantToGo",
+  "preferenceLevel": "normal",
+  "overallRating": null,
+  "foodRating": null,
+  "environmentRating": null,
+  "serviceRating": null,
+  "valueRating": null,
+  "tags": [],
+  "longTermNote": "",
+  "pricePerPerson": null,
+  "phone": null,
+  "openingHours": null,
+  "markerType": "emoji",
+  "markerPhotoId": null,
+  "merchantImageUrl": null,
+  "markerEmoji": "🗺️",
+  "createdAt": "2026-08-01T00:00:00.000Z",
+  "updatedAt": "2026-08-01T00:00:00.000Z"
+}

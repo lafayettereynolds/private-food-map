@@ -1,0 +1,49 @@
+{
+  "format": "com.tastemap.backup",
+  "schemaVersion": 1,
+  "exportId": "22222222-2222-4222-8222-222222222222",
+  "exportedAt": "2026-08-29T10:05:00.000Z",
+  "source": {
+    "platform": "web",
+    "appVersion": "1.0.0",
+    "appBuild": "100",
+    "environment": "development"
+  },
+  "scope": {
+    "kind": "user-data",
+    "includesPhotoBinaries": false
+  },
+  "entities": {
+    "restaurants": [],
+    "visits": [],
+    "dishes": [],
+    "visitDishes": [],
+    "photos": [],
+    "companions": [],
+    "recommendationSources": [],
+    "profiles": [],
+    "restaurantLists": [],
+    "restaurantListItems": []
+  },
+  "tombstones": [],
+  "metadata": {
+    "entityCounts": {
+      "restaurants": 0,
+      "visits": 0,
+      "dishes": 0,
+      "visitDishes": 0,
+      "photos": 0,
+      "companions": 0,
+      "recommendationSources": 0,
+      "profiles": 0,
+      "restaurantLists": 0,
+      "restaurantListItems": 0
+    },
+    "tombstoneCount": 0
+  },
+  "integrity": {
+    "canonicalization": "tastemap-backup-v1",
+    "algorithm": "sha256",
+    "digest": "81b7c767652f6928b7062596d52873bde77319897251cd46de3bba178d6fcdb4"
+  }
+}

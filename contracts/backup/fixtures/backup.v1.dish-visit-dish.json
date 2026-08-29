@@ -1,0 +1,24 @@
+{
+  "dish": {
+    "id": "dish-fixture",
+    "restaurantId": "restaurant-fixture",
+    "originVisitId": "visit-fixture",
+    "name": "红烧肉",
+    "taste": "浓油赤酱",
+    "rating": 4.5,
+    "price": "58.00",
+    "photoId": null,
+    "sortOrder": 0,
+    "createdAt": "2026-08-01T00:00:00.000Z",
+    "updatedAt": "2026-08-01T00:00:00.000Z"
+  },
+  "visitDish": {
+    "id": "visit-dish-fixture",
+    "restaurantId": "restaurant-fixture",
+    "visitId": "visit-fixture",
+    "dishId": "dish-fixture",
+    "sortOrder": 0,
+    "createdAt": "2026-08-01T00:00:00.000Z",
+    "updatedAt": "2026-08-01T00:00:00.000Z"
+  }
+}

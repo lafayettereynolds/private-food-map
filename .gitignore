@@ -23,6 +23,9 @@ vite.config.d.ts
 *backup*.json
 *备份*.json
 
+# Versioned schemas and synthetic fixtures are source, not user backup files.
+!contracts/backup/**/*.json
+
 # Editor and operating-system files
 .vscode/
 .idea/

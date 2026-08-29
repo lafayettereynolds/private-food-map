@@ -1,0 +1,73 @@
+{
+  "list": {
+    "id": "list-fixture",
+    "title": "排序榜单",
+    "description": "position 是业务顺序。",
+    "visibility": "private",
+    "isRanked": true,
+    "coverMode": "automatic",
+    "customCoverPhotoId": null,
+    "createdAt": "2026-08-01T00:00:00.000Z",
+    "updatedAt": "2026-08-01T00:00:00.000Z"
+  },
+  "items": [
+    {
+      "id": "list-item-a",
+      "listId": "list-fixture",
+      "restaurantId": "restaurant-a",
+      "restaurantGlobalKey": "manual:tastemap:restaurant-a",
+      "position": 0,
+      "note": "第一名",
+      "restaurant": {
+        "globalKey": "manual:tastemap:restaurant-a",
+        "restaurantId": "restaurant-a",
+        "placeIdentities": [
+          {
+            "provider": "manual",
+            "externalId": "tastemap:restaurant-a",
+            "isPrimary": true
+          }
+        ],
+        "name": "餐厅 A",
+        "address": "",
+        "city": "",
+        "latitude": 0,
+        "longitude": 0,
+        "markerPhotoId": null,
+        "merchantImageUrl": null,
+        "markerEmoji": "🍽️"
+      },
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "updatedAt": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "id": "list-item-b",
+      "listId": "list-fixture",
+      "restaurantId": "restaurant-b",
+      "restaurantGlobalKey": "manual:tastemap:restaurant-b",
+      "position": 1,
+      "note": "第二名",
+      "restaurant": {
+        "globalKey": "manual:tastemap:restaurant-b",
+        "restaurantId": "restaurant-b",
+        "placeIdentities": [
+          {
+            "provider": "manual",
+            "externalId": "tastemap:restaurant-b",
+            "isPrimary": true
+          }
+        ],
+        "name": "餐厅 B",
+        "address": "",
+        "city": "",
+        "latitude": 0,
+        "longitude": 0,
+        "markerPhotoId": null,
+        "merchantImageUrl": null,
+        "markerEmoji": "🍜"
+      },
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "updatedAt": "2026-08-01T00:00:00.000Z"
+    }
+  ]
+}

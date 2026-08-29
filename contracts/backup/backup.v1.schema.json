@@ -1,0 +1,598 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:com:tastemap:backup:schema:1",
+  "title": "Taste Map Backup v1",
+  "description": "Versioned metadata-only user-data backup. It conveys no authentication, ownership, social, or entitlement authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "schemaVersion",
+    "exportId",
+    "exportedAt",
+    "source",
+    "scope",
+    "entities",
+    "tombstones",
+    "metadata",
+    "integrity"
+  ],
+  "properties": {
+    "format": { "const": "com.tastemap.backup" },
+    "schemaVersion": { "const": 1 },
+    "exportId": { "$ref": "#/$defs/uuid" },
+    "exportedAt": { "$ref": "#/$defs/timestamp" },
+    "source": { "$ref": "#/$defs/source" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "entities": { "$ref": "#/$defs/entities" },
+    "tombstones": {
+      "type": "array",
+      "maxItems": 250000,
+      "items": { "$ref": "#/$defs/tombstone" }
+    },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "integrity": { "$ref": "#/$defs/integrity" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": ".*\\S.*"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "UTC absolute instant with exactly millisecond precision.",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "money": {
+      "type": "string",
+      "description": "Non-negative decimal money with exactly two fractional digits; never a JSON number.",
+      "pattern": "^(0|[1-9][0-9]{0,15})\\.[0-9]{2}$"
+    },
+    "nullableMoney": {
+      "anyOf": [
+        { "$ref": "#/$defs/money" },
+        { "type": "null" }
+      ]
+    },
+    "nullableId": {
+      "anyOf": [
+        { "$ref": "#/$defs/id" },
+        { "type": "null" }
+      ]
+    },
+    "nullableText": {
+      "anyOf": [
+        { "type": "string", "maxLength": 20000 },
+        { "type": "null" }
+      ]
+    },
+    "nullableHttpsURL": {
+      "anyOf": [
+        { "type": "string", "maxLength": 2048, "pattern": "^https://" },
+        { "type": "null" }
+      ]
+    },
+    "rating": {
+      "anyOf": [
+        { "type": "number", "minimum": 0.5, "maximum": 5, "multipleOf": 0.5 },
+        { "type": "null" }
+      ]
+    },
+    "visibility": {
+      "enum": ["private", "friends", "public"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "appVersion", "appBuild", "environment"],
+      "properties": {
+        "platform": { "enum": ["ios", "web"] },
+        "appVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "appBuild": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "environment": { "enum": ["development", "production"] }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "includesPhotoBinaries"],
+      "properties": {
+        "kind": { "const": "user-data" },
+        "includesPhotoBinaries": { "const": false }
+      }
+    },
+    "placeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "externalId", "isPrimary", "createdAt", "updatedAt"],
+      "properties": {
+        "provider": { "enum": ["amap", "apple_maps", "manual", "other"] },
+        "externalId": { "$ref": "#/$defs/id" },
+        "isPrimary": { "type": "boolean" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "restaurant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "placeIdentities", "name", "address", "city", "latitude", "longitude",
+        "status", "preferenceLevel", "overallRating", "foodRating", "environmentRating",
+        "serviceRating", "valueRating", "tags", "longTermNote", "pricePerPerson", "phone",
+        "openingHours", "markerType", "markerPhotoId", "merchantImageUrl", "markerEmoji",
+        "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "placeIdentities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/placeIdentity" },
+          "contains": {
+            "type": "object",
+            "required": ["isPrimary"],
+            "properties": { "isPrimary": { "const": true } }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "address": { "type": "string", "maxLength": 1000 },
+        "city": { "type": "string", "maxLength": 200 },
+        "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+        "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+        "status": { "enum": ["visited", "wantToGo"] },
+        "preferenceLevel": { "enum": ["favorite", "like", "normal", "avoid"] },
+        "overallRating": { "$ref": "#/$defs/rating" },
+        "foodRating": { "$ref": "#/$defs/rating" },
+        "environmentRating": { "$ref": "#/$defs/rating" },
+        "serviceRating": { "$ref": "#/$defs/rating" },
+        "valueRating": { "$ref": "#/$defs/rating" },
+        "tags": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "longTermNote": { "type": "string", "maxLength": 20000 },
+        "pricePerPerson": { "$ref": "#/$defs/nullableMoney" },
+        "phone": {
+          "anyOf": [
+            { "type": "string", "maxLength": 100 },
+            { "type": "null" }
+          ]
+        },
+        "openingHours": {
+          "anyOf": [
+            { "type": "string", "maxLength": 2000 },
+            { "type": "null" }
+          ]
+        },
+        "markerType": { "enum": ["image", "emoji"] },
+        "markerPhotoId": { "$ref": "#/$defs/nullableId" },
+        "merchantImageUrl": { "$ref": "#/$defs/nullableHttpsURL" },
+        "markerEmoji": { "type": "string", "maxLength": 32 },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "visit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "restaurantId", "visitedAt", "diningMode", "visibility", "partySize",
+        "totalPrice", "myActualSpend", "paymentMode", "pricePerPerson", "queueDuration",
+        "diningOccasions", "diningOccasionText", "rating", "valueRating",
+        "environmentRating", "serviceRating", "valueTags", "environmentTags", "serviceTags",
+        "noiseLevel", "diningDuration", "portionLevel", "transportConvenience", "specialNotes",
+        "companionIds", "recommendationSourceId", "recommendationSourceType",
+        "recommendationSourceText", "sharedMealReferenceHint", "note", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "restaurantId": { "$ref": "#/$defs/id" },
+        "visitedAt": { "$ref": "#/$defs/timestamp" },
+        "diningMode": { "enum": ["dine_in", "takeout"] },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "partySize": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1, "maximum": 1000 },
+            { "type": "null" }
+          ]
+        },
+        "totalPrice": { "$ref": "#/$defs/nullableMoney" },
+        "myActualSpend": { "$ref": "#/$defs/nullableMoney" },
+        "paymentMode": {
+          "enum": ["aa", "my_treat", "treated", "separate", "other", null]
+        },
+        "pricePerPerson": { "$ref": "#/$defs/nullableMoney" },
+        "queueDuration": {
+          "enum": ["none", "under15", "under30", "under60", "under90", "under120", "over120", null]
+        },
+        "diningOccasions": {
+          "type": "array",
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": { "enum": ["solo", "date", "friends", "family", "business", "celebration", "other"] }
+        },
+        "diningOccasionText": { "$ref": "#/$defs/nullableText" },
+        "rating": { "$ref": "#/$defs/rating" },
+        "valueRating": { "$ref": "#/$defs/rating" },
+        "environmentRating": { "$ref": "#/$defs/rating" },
+        "serviceRating": { "$ref": "#/$defs/rating" },
+        "valueTags": { "$ref": "#/$defs/tagSet" },
+        "environmentTags": { "$ref": "#/$defs/tagSet" },
+        "serviceTags": { "$ref": "#/$defs/tagSet" },
+        "noiseLevel": { "enum": ["quiet", "normal", "loud", "very_loud", null] },
+        "diningDuration": { "enum": ["under15", "under30", "under45", "under60", "under90", "under120", "over120", null] },
+        "portionLevel": { "enum": ["small", "normal", "generous", null] },
+        "transportConvenience": { "enum": ["very_convenient", "convenient", "normal", "inconvenient", null] },
+        "specialNotes": { "$ref": "#/$defs/nullableText" },
+        "companionIds": {
+          "type": "array",
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "recommendationSourceId": { "$ref": "#/$defs/nullableId" },
+        "recommendationSourceType": { "enum": ["friend", "xiaohongshu", "douyin", "dianping", "blogger", "self", "other", null] },
+        "recommendationSourceText": { "$ref": "#/$defs/nullableText" },
+        "sharedMealReferenceHint": { "$ref": "#/$defs/nullableId" },
+        "note": { "$ref": "#/$defs/nullableText" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "tagSet": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+    },
+    "dish": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "restaurantId", "originVisitId", "name", "taste", "rating", "price",
+        "photoId", "sortOrder", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "restaurantId": { "$ref": "#/$defs/id" },
+        "originVisitId": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "taste": { "type": "string", "maxLength": 2000 },
+        "rating": { "$ref": "#/$defs/rating" },
+        "price": { "$ref": "#/$defs/nullableMoney" },
+        "photoId": { "$ref": "#/$defs/nullableId" },
+        "sortOrder": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "visitDish": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "restaurantId", "visitId", "dishId", "sortOrder", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "restaurantId": { "$ref": "#/$defs/id" },
+        "visitId": { "$ref": "#/$defs/id" },
+        "dishId": { "$ref": "#/$defs/id" },
+        "sortOrder": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "photoParent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityType", "entityId"],
+      "properties": {
+        "entityType": { "enum": ["restaurant", "visit", "dish", "profile"] },
+        "entityId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "photo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "parent", "kind", "fileName", "mimeType", "byteSize", "width", "height",
+        "sortOrder", "visibility", "contentSha256", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "parent": { "$ref": "#/$defs/photoParent" },
+        "kind": { "enum": ["restaurant-marker", "visit", "dish", "avatar"] },
+        "fileName": {
+          "anyOf": [
+            { "type": "string", "maxLength": 512 },
+            { "type": "null" }
+          ]
+        },
+        "mimeType": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$" },
+        "byteSize": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "width": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            { "type": "null" }
+          ]
+        },
+        "height": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            { "type": "null" }
+          ]
+        },
+        "sortOrder": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "contentSha256": {
+          "anyOf": [
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            { "type": "null" }
+          ]
+        },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "restaurant-marker" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "parent": {
+                "type": "object",
+                "properties": { "entityType": { "const": "restaurant" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "visit" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "parent": {
+                "type": "object",
+                "properties": { "entityType": { "const": "visit" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "dish" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "parent": {
+                "type": "object",
+                "properties": { "entityType": { "const": "dish" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "avatar" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "parent": {
+                "type": "object",
+                "properties": { "entityType": { "const": "profile" } }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "companion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "recommendationSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "sourceType", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "sourceType": { "enum": ["friend", "xiaohongshu", "douyin", "dianping", "blogger", "self", "other"] },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "displayName", "bio", "city", "avatarPhotoId", "avatarPresetId",
+        "visibility", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "bio": { "type": "string", "maxLength": 160 },
+        "city": { "type": "string", "maxLength": 30 },
+        "avatarPhotoId": { "$ref": "#/$defs/nullableId" },
+        "avatarPresetId": {
+          "enum": [
+            "polar-bear", "penguin", "cat", "dog", "parrot", "dinosaur", "shiba", "panda",
+            "otter", "hedgehog", "rabbit", "koala", "fox", "raccoon", "deer", "whale"
+          ]
+        },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "restaurantList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "title", "description", "visibility", "isRanked", "coverMode",
+        "customCoverPhotoId", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 240 },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "isRanked": { "type": "boolean" },
+        "coverMode": { "enum": ["automatic", "custom"] },
+        "customCoverPhotoId": { "$ref": "#/$defs/nullableId" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "listPlaceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "externalId", "isPrimary"],
+      "properties": {
+        "provider": { "enum": ["amap", "apple_maps", "manual", "other"] },
+        "externalId": { "$ref": "#/$defs/id" },
+        "isPrimary": { "type": "boolean" }
+      }
+    },
+    "listPlace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "globalKey", "restaurantId", "placeIdentities", "name", "address", "city",
+        "latitude", "longitude", "markerPhotoId", "merchantImageUrl", "markerEmoji"
+      ],
+      "properties": {
+        "globalKey": { "$ref": "#/$defs/id" },
+        "restaurantId": { "$ref": "#/$defs/id" },
+        "placeIdentities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/listPlaceIdentity" },
+          "contains": {
+            "type": "object",
+            "required": ["isPrimary"],
+            "properties": { "isPrimary": { "const": true } }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "address": { "type": "string", "maxLength": 1000 },
+        "city": { "type": "string", "maxLength": 200 },
+        "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+        "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+        "markerPhotoId": { "$ref": "#/$defs/nullableId" },
+        "merchantImageUrl": { "$ref": "#/$defs/nullableHttpsURL" },
+        "markerEmoji": { "type": "string", "maxLength": 32 }
+      }
+    },
+    "restaurantListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "listId", "restaurantId", "restaurantGlobalKey", "position", "note",
+        "restaurant", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "listId": { "$ref": "#/$defs/id" },
+        "restaurantId": { "$ref": "#/$defs/id" },
+        "restaurantGlobalKey": { "$ref": "#/$defs/id" },
+        "position": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "note": { "type": "string", "maxLength": 160 },
+        "restaurant": { "$ref": "#/$defs/listPlace" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "entities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "restaurants", "visits", "dishes", "visitDishes", "photos", "companions",
+        "recommendationSources", "profiles", "restaurantLists", "restaurantListItems"
+      ],
+      "properties": {
+        "restaurants": { "type": "array", "maxItems": 25000, "items": { "$ref": "#/$defs/restaurant" } },
+        "visits": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/visit" } },
+        "dishes": { "type": "array", "maxItems": 200000, "items": { "$ref": "#/$defs/dish" } },
+        "visitDishes": { "type": "array", "maxItems": 300000, "items": { "$ref": "#/$defs/visitDish" } },
+        "photos": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/photo" } },
+        "companions": { "type": "array", "maxItems": 25000, "items": { "$ref": "#/$defs/companion" } },
+        "recommendationSources": { "type": "array", "maxItems": 25000, "items": { "$ref": "#/$defs/recommendationSource" } },
+        "profiles": { "type": "array", "maxItems": 1, "items": { "$ref": "#/$defs/profile" } },
+        "restaurantLists": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/restaurantList" } },
+        "restaurantListItems": { "type": "array", "maxItems": 200000, "items": { "$ref": "#/$defs/restaurantListItem" } }
+      }
+    },
+    "tombstone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityType", "id", "deletedAt"],
+      "properties": {
+        "entityType": {
+          "enum": [
+            "restaurant", "visit", "dish", "visitDish", "photo", "companion",
+            "recommendationSource", "profile", "restaurantList", "restaurantListItem"
+          ]
+        },
+        "id": { "$ref": "#/$defs/id" },
+        "deletedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "entityCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "restaurants", "visits", "dishes", "visitDishes", "photos", "companions",
+        "recommendationSources", "profiles", "restaurantLists", "restaurantListItems"
+      ],
+      "properties": {
+        "restaurants": { "type": "integer", "minimum": 0 },
+        "visits": { "type": "integer", "minimum": 0 },
+        "dishes": { "type": "integer", "minimum": 0 },
+        "visitDishes": { "type": "integer", "minimum": 0 },
+        "photos": { "type": "integer", "minimum": 0 },
+        "companions": { "type": "integer", "minimum": 0 },
+        "recommendationSources": { "type": "integer", "minimum": 0 },
+        "profiles": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "restaurantLists": { "type": "integer", "minimum": 0 },
+        "restaurantListItems": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityCounts", "tombstoneCount"],
+      "properties": {
+        "entityCounts": { "$ref": "#/$defs/entityCounts" },
+        "tombstoneCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalization", "algorithm", "digest"],
+      "properties": {
+        "canonicalization": { "const": "tastemap-backup-v1" },
+        "algorithm": { "const": "sha256" },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

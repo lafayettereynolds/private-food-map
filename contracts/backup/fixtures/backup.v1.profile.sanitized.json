@@ -1,0 +1,11 @@
+{
+  "id": "profile-fixture",
+  "displayName": "Taste Map 用户",
+  "bio": "只含可编辑展示资料。",
+  "city": "杭州",
+  "avatarPhotoId": null,
+  "avatarPresetId": "polar-bear",
+  "visibility": "private",
+  "createdAt": "2026-08-01T00:00:00.000Z",
+  "updatedAt": "2026-08-01T00:00:00.000Z"
+}

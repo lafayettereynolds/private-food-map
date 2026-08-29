@@ -1,0 +1,338 @@
+{
+  "format": "com.tastemap.backup",
+  "schemaVersion": 1,
+  "exportId": "11111111-1111-4111-8111-111111111111",
+  "exportedAt": "2026-08-29T10:00:00.000Z",
+  "source": {
+    "platform": "ios",
+    "appVersion": "1.0.0",
+    "appBuild": "100",
+    "environment": "development"
+  },
+  "scope": {
+    "kind": "user-data",
+    "includesPhotoBinaries": false
+  },
+  "entities": {
+    "restaurants": [
+      {
+        "id": "restaurant-amap",
+        "placeIdentities": [
+          {
+            "provider": "amap",
+            "externalId": "B0AMAP123",
+            "isPrimary": true,
+            "createdAt": "2026-01-01T08:00:00.000Z",
+            "updatedAt": "2026-08-01T08:00:00.000Z"
+          }
+        ],
+        "name": "江南小馆",
+        "address": "上海市黄浦区示例路 1 号",
+        "city": "上海",
+        "latitude": 31.2304,
+        "longitude": 121.4737,
+        "status": "wantToGo",
+        "preferenceLevel": "normal",
+        "overallRating": null,
+        "foodRating": null,
+        "environmentRating": null,
+        "serviceRating": null,
+        "valueRating": null,
+        "tags": ["本帮菜"],
+        "longTermNote": "",
+        "pricePerPerson": null,
+        "phone": null,
+        "openingHours": null,
+        "markerType": "emoji",
+        "markerPhotoId": null,
+        "merchantImageUrl": null,
+        "markerEmoji": "🥢",
+        "createdAt": "2026-01-01T08:00:00.000Z",
+        "updatedAt": "2026-08-01T08:00:00.000Z"
+      },
+      {
+        "id": "restaurant-apple",
+        "placeIdentities": [
+          {
+            "provider": "apple_maps",
+            "externalId": "I1234567890",
+            "isPrimary": true,
+            "createdAt": "2026-02-01T09:30:00.000Z",
+            "updatedAt": "2026-08-20T09:30:00.000Z"
+          }
+        ],
+        "name": "青山寿司",
+        "address": "杭州市西湖区示例路 8 号",
+        "city": "杭州",
+        "latitude": 30.2741,
+        "longitude": 120.1551,
+        "status": "visited",
+        "preferenceLevel": "favorite",
+        "overallRating": 4.5,
+        "foodRating": 5,
+        "environmentRating": 4,
+        "serviceRating": 4.5,
+        "valueRating": 4,
+        "tags": ["安静", "日料"],
+        "longTermNote": "适合纪念日。",
+        "pricePerPerson": "328.50",
+        "phone": "0571-12345678",
+        "openingHours": "11:30-22:00",
+        "markerType": "image",
+        "markerPhotoId": "photo-dish-1",
+        "merchantImageUrl": "https://images.example.test/restaurant-apple.jpg",
+        "markerEmoji": "🍣",
+        "createdAt": "2026-02-01T09:30:00.000Z",
+        "updatedAt": "2026-08-20T09:30:00.000Z"
+      },
+      {
+        "id": "restaurant-manual",
+        "placeIdentities": [
+          {
+            "provider": "manual",
+            "externalId": "tastemap:restaurant-manual",
+            "isPrimary": true,
+            "createdAt": "2026-03-01T12:00:00.000Z",
+            "updatedAt": "2026-03-01T12:00:00.000Z"
+          }
+        ],
+        "name": "家里的周末餐桌",
+        "address": "",
+        "city": "",
+        "latitude": 0,
+        "longitude": 0,
+        "status": "visited",
+        "preferenceLevel": "like",
+        "overallRating": 5,
+        "foodRating": null,
+        "environmentRating": null,
+        "serviceRating": null,
+        "valueRating": null,
+        "tags": [],
+        "longTermNote": "手动记录，不代表地图 provider identity。",
+        "pricePerPerson": "0.00",
+        "phone": null,
+        "openingHours": null,
+        "markerType": "emoji",
+        "markerPhotoId": null,
+        "merchantImageUrl": null,
+        "markerEmoji": "🏠",
+        "createdAt": "2026-03-01T12:00:00.000Z",
+        "updatedAt": "2026-03-01T12:00:00.000Z"
+      }
+    ],
+    "visits": [
+      {
+        "id": "visit-1",
+        "restaurantId": "restaurant-apple",
+        "visitedAt": "2026-08-18T11:45:00.000Z",
+        "diningMode": "dine_in",
+        "visibility": "private",
+        "partySize": 2,
+        "totalPrice": "657.00",
+        "myActualSpend": "328.50",
+        "paymentMode": "aa",
+        "pricePerPerson": "328.50",
+        "queueDuration": "under15",
+        "diningOccasions": ["date"],
+        "diningOccasionText": "周年晚餐",
+        "rating": 4.5,
+        "valueRating": 4,
+        "environmentRating": 4,
+        "serviceRating": 4.5,
+        "valueTags": ["值得回访"],
+        "environmentTags": ["安静"],
+        "serviceTags": ["细致"],
+        "noiseLevel": "quiet",
+        "diningDuration": "under120",
+        "portionLevel": "normal",
+        "transportConvenience": "convenient",
+        "specialNotes": "提前预约。",
+        "companionIds": ["companion-1"],
+        "recommendationSourceId": "source-1",
+        "recommendationSourceType": "friend",
+        "recommendationSourceText": "朋友小林推荐",
+        "sharedMealReferenceHint": "legacy-shared-meal-1",
+        "note": "金枪鱼很好。",
+        "createdAt": "2026-08-18T13:45:00.000Z",
+        "updatedAt": "2026-08-19T08:00:00.000Z"
+      }
+    ],
+    "dishes": [
+      {
+        "id": "dish-1",
+        "restaurantId": "restaurant-apple",
+        "originVisitId": "visit-1",
+        "name": "金枪鱼握寿司",
+        "taste": "油脂均衡",
+        "rating": 5,
+        "price": "68.00",
+        "photoId": "photo-dish-1",
+        "sortOrder": 0,
+        "createdAt": "2026-08-18T13:45:00.000Z",
+        "updatedAt": "2026-08-18T13:45:00.000Z"
+      }
+    ],
+    "visitDishes": [
+      {
+        "id": "visit-dish-1",
+        "restaurantId": "restaurant-apple",
+        "visitId": "visit-1",
+        "dishId": "dish-1",
+        "sortOrder": 0,
+        "createdAt": "2026-08-18T13:45:00.000Z",
+        "updatedAt": "2026-08-18T13:45:00.000Z"
+      }
+    ],
+    "photos": [
+      {
+        "id": "photo-dish-1",
+        "parent": {
+          "entityType": "dish",
+          "entityId": "dish-1"
+        },
+        "kind": "dish",
+        "fileName": "tuna-sushi.heic",
+        "mimeType": "image/heic",
+        "byteSize": 2048000,
+        "width": 3024,
+        "height": 4032,
+        "sortOrder": 0,
+        "visibility": "private",
+        "contentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "createdAt": "2026-08-18T12:15:00.000Z",
+        "updatedAt": "2026-08-18T12:15:00.000Z"
+      }
+    ],
+    "companions": [
+      {
+        "id": "companion-1",
+        "displayName": "小林",
+        "createdAt": "2026-04-01T08:00:00.000Z",
+        "updatedAt": "2026-08-01T08:00:00.000Z"
+      }
+    ],
+    "recommendationSources": [
+      {
+        "id": "source-1",
+        "displayName": "小林推荐",
+        "sourceType": "friend",
+        "createdAt": "2026-04-01T08:00:00.000Z",
+        "updatedAt": "2026-08-01T08:00:00.000Z"
+      }
+    ],
+    "profiles": [
+      {
+        "id": "profile-1",
+        "displayName": "Lafayette",
+        "bio": "认真吃饭，认真记录。",
+        "city": "杭州",
+        "avatarPhotoId": null,
+        "avatarPresetId": "otter",
+        "visibility": "friends",
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-08-20T09:30:00.000Z"
+      }
+    ],
+    "restaurantLists": [
+      {
+        "id": "list-1",
+        "title": "最想再去的店",
+        "description": "按我自己的回访意愿排序。",
+        "visibility": "private",
+        "isRanked": true,
+        "coverMode": "automatic",
+        "customCoverPhotoId": null,
+        "createdAt": "2026-05-01T10:00:00.000Z",
+        "updatedAt": "2026-08-20T10:00:00.000Z"
+      }
+    ],
+    "restaurantListItems": [
+      {
+        "id": "list-item-1",
+        "listId": "list-1",
+        "restaurantId": "restaurant-apple",
+        "restaurantGlobalKey": "apple_maps:I1234567890",
+        "position": 0,
+        "note": "第一名",
+        "restaurant": {
+          "globalKey": "apple_maps:I1234567890",
+          "restaurantId": "restaurant-apple",
+          "placeIdentities": [
+            {
+              "provider": "apple_maps",
+              "externalId": "I1234567890",
+              "isPrimary": true
+            }
+          ],
+          "name": "青山寿司",
+          "address": "杭州市西湖区示例路 8 号",
+          "city": "杭州",
+          "latitude": 30.2741,
+          "longitude": 120.1551,
+          "markerPhotoId": "photo-dish-1",
+          "merchantImageUrl": "https://images.example.test/restaurant-apple.jpg",
+          "markerEmoji": "🍣"
+        },
+        "createdAt": "2026-05-01T10:00:00.000Z",
+        "updatedAt": "2026-08-20T10:00:00.000Z"
+      },
+      {
+        "id": "list-item-2",
+        "listId": "list-1",
+        "restaurantId": "restaurant-amap",
+        "restaurantGlobalKey": "amap:B0AMAP123",
+        "position": 1,
+        "note": "还没去过",
+        "restaurant": {
+          "globalKey": "amap:B0AMAP123",
+          "restaurantId": "restaurant-amap",
+          "placeIdentities": [
+            {
+              "provider": "amap",
+              "externalId": "B0AMAP123",
+              "isPrimary": true
+            }
+          ],
+          "name": "江南小馆",
+          "address": "上海市黄浦区示例路 1 号",
+          "city": "上海",
+          "latitude": 31.2304,
+          "longitude": 121.4737,
+          "markerPhotoId": null,
+          "merchantImageUrl": null,
+          "markerEmoji": "🥢"
+        },
+        "createdAt": "2026-05-02T10:00:00.000Z",
+        "updatedAt": "2026-08-20T10:00:00.000Z"
+      }
+    ]
+  },
+  "tombstones": [
+    {
+      "entityType": "visit",
+      "id": "visit-deleted",
+      "deletedAt": "2026-08-10T10:00:00.000Z"
+    }
+  ],
+  "metadata": {
+    "entityCounts": {
+      "restaurants": 3,
+      "visits": 1,
+      "dishes": 1,
+      "visitDishes": 1,
+      "photos": 1,
+      "companions": 1,
+      "recommendationSources": 1,
+      "profiles": 1,
+      "restaurantLists": 1,
+      "restaurantListItems": 2
+    },
+    "tombstoneCount": 1
+  },
+  "integrity": {
+    "canonicalization": "tastemap-backup-v1",
+    "algorithm": "sha256",
+    "digest": "a6883838433007dd19a46e3096a9babbf6994a6b5ba9c18f68ae5da5f6aa99cb"
+  }
+}
