@@ -280,6 +280,31 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-annual-recap-entry")
+                    NavigationLink {
+                        OnThisDayScreen(
+                            currentUserID: authenticatedUser?.id ?? OnThisDayInput.localOwnerID,
+                            context: onThisDayContext
+                        )
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle().fill(TasteMapAnalysisTheme.caramelSoft)
+                                Text("🍲").font(.title3)
+                            }
+                            .frame(width: 48, height: 48)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("那年今日").font(.headline).foregroundStyle(.primary)
+                                Text("回到往年同一天留下的真实味觉记忆")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-on-this-day-entry")
                     if let userID = authenticatedUser?.id {
                         Button { isShowingSocialHub = true } label: {
                             HStack(spacing: 12) {
@@ -390,6 +415,14 @@ struct ProfileView: View {
         TasteMapUITestFixtures.settingsSyncPresentationOverride
 #else
         nil
+#endif
+    }
+
+    private var onThisDayContext: OnThisDayContext {
+#if DEBUG
+        TasteMapUITestFixtures.onThisDayContextOverride ?? .live()
+#else
+        .live()
 #endif
     }
 

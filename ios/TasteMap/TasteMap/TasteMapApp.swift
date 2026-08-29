@@ -33,6 +33,7 @@ struct TasteMapApp: App {
             let useRestaurantAcquisitionFixture = TasteMapUITestFixtures.usesRestaurantAcquisitionFixture
             let useF2ABrowsingFixture = TasteMapUITestFixtures.usesF2ABrowsingFixture
             let useF2BFiltersFixture = TasteMapUITestFixtures.usesF2BFiltersFixture
+            let useOnThisDayFixture = TasteMapUITestFixtures.usesOnThisDayFixture
             let usePersistentOfflineFixture = TasteMapUITestFixtures.usesPersistentFixture
             let resetPersistentOfflineFixture = TasteMapUITestFixtures.requestsPersistentFixtureReset
             let persistenceConfigurationName = usePersistentOfflineFixture
@@ -49,6 +50,7 @@ struct TasteMapApp: App {
             let useRestaurantAcquisitionFixture = false
             let useF2ABrowsingFixture = false
             let useF2BFiltersFixture = false
+            let useOnThisDayFixture = false
             let usePersistentOfflineFixture = false
             let resetPersistentOfflineFixture = false
             let persistenceConfigurationName = "TasteMap"
@@ -57,7 +59,7 @@ struct TasteMapApp: App {
             container = try TasteMapPersistence.makeContainer(
                 inMemory: useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture
                     || useAnalysisFixture || useRestaurantAcquisitionFixture || useF2ABrowsingFixture
-                    || useF2BFiltersFixture,
+                    || useF2BFiltersFixture || useOnThisDayFixture,
                 configurationName: persistenceConfigurationName,
                 storageURL: persistenceStorageURL
             )
@@ -93,6 +95,10 @@ struct TasteMapApp: App {
             if useF2BFiltersFixture {
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)
                 try TasteMapUITestFixtures.insertF2BFiltersFixture(into: container)
+            }
+            if useOnThisDayFixture {
+                try TasteMapUITestFixtures.insertProfileFixture(into: container)
+                try TasteMapUITestFixtures.insertOnThisDayFixture(into: container)
             }
             #endif
         } catch {

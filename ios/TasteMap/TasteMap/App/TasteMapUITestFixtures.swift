@@ -39,6 +39,22 @@ enum TasteMapUITestFixtures {
     static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
     static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
     static let f3ADetailEnvironmentKey = "TASTEMAP_F3A_DETAIL_UI_TEST"
+    static let onThisDayEnvironmentKey = "TASTEMAP_F7A_ON_THIS_DAY_UI_TEST"
+
+    static var usesOnThisDayFixture: Bool {
+        ProcessInfo.processInfo.environment[onThisDayEnvironmentKey] == "1"
+    }
+
+    static var onThisDayContextOverride: OnThisDayContext? {
+        guard usesOnThisDayFixture else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "zh_Hans_CN")
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let referenceDate = calendar.date(
+            from: DateComponents(year: 2026, month: 8, day: 29, hour: 12)
+        )!
+        return OnThisDayContext(referenceDate: referenceDate, calendar: calendar)
+    }
 
     static var usesF3ADetailFixture: Bool {
         ProcessInfo.processInfo.environment[f3ADetailEnvironmentKey] == "1"
@@ -175,6 +191,7 @@ enum TasteMapUITestFixtures {
             || usesRestaurantRouletteFixture
             || usesF2ABrowsingFixture
             || usesF2BFiltersFixture
+            || usesOnThisDayFixture
     }
 
     static var usesPhotoFixture: Bool {
@@ -420,6 +437,72 @@ enum TasteMapUITestFixtures {
             avatarPreset: .polarBear,
             visibility: .private,
             serverVersion: 1,
+            syncStatus: .synced
+        ))
+        try context.save()
+    }
+
+    static func insertOnThisDayFixture(into container: ModelContainer) throws {
+        guard usesOnThisDayFixture else { return }
+        let context = container.mainContext
+        let restaurantID = uuid(14_001)
+        let restaurant = Restaurant(
+            id: restaurantID,
+            name: "那年今日 · 湖畔小馆",
+            address: "杭州市西湖区回忆路 29 号",
+            latitude: 30.251,
+            longitude: 120.165,
+            appleMapItemIdentifier: "apple-f7a-ui-memory",
+            city: "杭州",
+            status: .visited,
+            syncStatus: .synced,
+            remoteRecordData: try restaurantContractData(
+                id: restaurantID,
+                name: "那年今日 · 湖畔小馆",
+                tags: ["江浙菜", "朋友聚餐"],
+                index: 14_001
+            )
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let visitedAt = calendar.date(
+            from: DateComponents(year: 2025, month: 8, day: 29, hour: 19, minute: 20)
+        )!
+        let visit = Visit(
+            id: uuid(14_002),
+            restaurantId: restaurantID,
+            visitedAt: visitedAt,
+            rating: 4.5,
+            note: "去年今天和小林在湖边吃了一顿很舒服的晚饭。",
+            myActualSpend: 268,
+            companionNames: ["小林"],
+            recommendationSourceType: .friend,
+            recommendationSourceText: "朋友小林",
+            createdAt: visitedAt,
+            updatedAt: visitedAt,
+            syncStatus: .synced
+        )
+        let dish = Dish(
+            id: uuid(14_003),
+            restaurantId: restaurantID,
+            visitId: visit.id,
+            name: "龙井虾仁",
+            sortOrder: 0,
+            createdAt: visitedAt,
+            updatedAt: visitedAt,
+            syncStatus: .synced
+        )
+        context.insert(restaurant)
+        context.insert(visit)
+        context.insert(dish)
+        context.insert(VisitDish(
+            id: uuid(14_004),
+            restaurantId: restaurantID,
+            visitId: visit.id,
+            dishId: dish.id,
+            sortOrder: 0,
+            createdAt: visitedAt,
+            updatedAt: visitedAt,
             syncStatus: .synced
         ))
         try context.save()

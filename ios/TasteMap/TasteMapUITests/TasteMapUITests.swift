@@ -1941,6 +1941,40 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testF7AProfileOnThisDayHistoricalRestaurantAndBack() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_F7A_ON_THIS_DAY_UI_TEST": "1"]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        let entry = app.buttons["profile-on-this-day-entry"]
+        scrollUntilVisible(entry, in: app)
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        XCTAssertTrue(entry.isHittable)
+        entry.tap()
+
+        XCTAssertTrue(app.navigationBars["那年今日"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["on-this-day-page"].exists)
+        XCTAssertTrue(app.staticTexts["看看过去这些年的今天，你吃了什么。"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["on-this-day-year-2025"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["那年今日 · 湖畔小馆"].exists)
+        keepScreenshot(named: "F7-A On This Day", of: app)
+
+        let memory = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'on-this-day-memory-'")
+        ).firstMatch
+        scrollUntilVisible(memory, in: app)
+        XCTAssertTrue(memory.waitForExistence(timeout: 5))
+        memory.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["那年今日 · 湖畔小馆"].waitForExistence(timeout: 5))
+        app.navigationBars["餐厅详情"].buttons["那年今日"].tap()
+        XCTAssertTrue(app.navigationBars["那年今日"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["on-this-day-year-2025"].exists)
+    }
+
+    @MainActor
     private func addDirectoryName(
         _ name: String,
         field: String,
