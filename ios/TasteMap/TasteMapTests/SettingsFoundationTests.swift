@@ -59,7 +59,7 @@ struct SettingsFoundationTests {
         )
 
         #expect(availability.isVisible(.exportBackup))
-        #expect(!availability.isVisible(.importData))
+        #expect(availability.isVisible(.importData))
         #expect(!availability.isVisible(.restoreBackup))
         #expect(!availability.isVisible(.migrateLegacyWebData))
         #expect(!availability.isVisible(.deleteAccount))
@@ -70,21 +70,21 @@ struct SettingsFoundationTests {
         #expect(!availability.isVisible(.manageSubscription))
     }
 
-    @Test("Development Preview can inspect future architecture without making it a release feature")
+    @Test("Development Preview keeps completed import visible while exposing future architecture")
     func developmentArchitectureAvailability() {
         let availability = SettingsFeatureAvailability(
             releaseConfiguration: ReleaseConfiguration(environment: .development, legalLinks: .empty),
             exposesFutureArchitecture: true
         )
 
-        #expect(availability.state(for: .importData) == .developmentOnly)
-        #expect(!availability.isVisible(.importData))
+        #expect(availability.state(for: .importData) == .implemented)
+        #expect(availability.isVisible(.importData))
         #expect(availability.isVisible(.importData, includeDevelopmentOnly: true))
         #expect(availability.state(for: .deleteAccount) == .developmentOnly)
     }
 
-    @Test("Import preflight is Development-only while write-capable future flows stay hidden")
-    func importPreflightAvailability() {
+    @Test("Import is a Release feature while Restore, Legacy Claim, and account deletion stay hidden")
+    func importFlowAvailability() {
         let development = SettingsFeatureAvailability(
             releaseConfiguration: ReleaseConfiguration(environment: .development, legalLinks: .empty)
         )
@@ -92,9 +92,9 @@ struct SettingsFoundationTests {
             releaseConfiguration: ReleaseConfiguration(environment: .production, legalLinks: .empty)
         )
 
-        #expect(development.state(for: .importData) == .developmentOnly)
-        #expect(development.isVisible(.importData, includeDevelopmentOnly: true))
-        #expect(!production.isVisible(.importData))
+        #expect(development.state(for: .importData) == .implemented)
+        #expect(development.isVisible(.importData))
+        #expect(production.isVisible(.importData))
         #expect(!development.isVisible(.restoreBackup))
         #expect(!development.isVisible(.migrateLegacyWebData))
         #expect(!development.isVisible(.deleteAccount))

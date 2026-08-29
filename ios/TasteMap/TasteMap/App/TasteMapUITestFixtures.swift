@@ -343,7 +343,7 @@ enum TasteMapUITestFixtures {
         let existing = try context.fetch(FetchDescriptor<Restaurant>())
             .first { $0.id == detailRestaurantID }
         guard existing == nil else { return }
-        context.insert(Restaurant(
+        let restaurant = Restaurant(
             id: detailRestaurantID,
             name: "P1-D 离线验收餐厅",
             address: "杭州市上城区湖滨路 18 号",
@@ -353,7 +353,47 @@ enum TasteMapUITestFixtures {
             city: "杭州",
             status: .wantToGo,
             syncStatus: .synced
-        ))
+        )
+        if BackupImportDevelopmentFixture.current != nil {
+            let timestamp = SyncRecordMapper.dateString(restaurant.updatedAt)
+            restaurant.remoteRecordData = try JSONEncoder().encode(RestaurantJSONContractV1(
+                id: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
+                userId: profileUserID,
+                placeIdentities: [try RestaurantPlaceIdentityContract(
+                    provider: .appleMaps,
+                    externalId: "apple-ui-test-p1d",
+                    isPrimary: true,
+                    createdAt: timestamp,
+                    updatedAt: timestamp
+                )],
+                name: restaurant.name,
+                address: restaurant.address,
+                city: restaurant.city,
+                latitude: restaurant.latitude,
+                longitude: restaurant.longitude,
+                status: .wantToGo,
+                preferenceLevel: .normal,
+                overallRating: nil,
+                foodRating: nil,
+                environmentRating: nil,
+                serviceRating: nil,
+                valueRating: nil,
+                tags: [],
+                longTermNote: "",
+                pricePerPerson: nil,
+                phone: nil,
+                openingHours: nil,
+                markerType: .emoji,
+                markerPhotoId: nil,
+                merchantImageUrl: nil,
+                markerEmoji: "🍽️",
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                deletedAt: nil,
+                isTestData: true
+            ))
+        }
+        context.insert(restaurant)
         if usesRestaurantListsFixture {
             for index in 1..<5 {
                 context.insert(Restaurant(

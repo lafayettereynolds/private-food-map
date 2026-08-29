@@ -1,316 +1,340 @@
-#if DEBUG
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
+nonisolated struct BackupImportFixtureInput: Sendable {
+    let fileName: String
+    let data: Data
+    let delay: Duration?
+}
+
 struct BackupImportPreflightView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(NativeAuthServices.self) private var authServices
+    @Environment(SyncCoordinator.self) private var syncCoordinator
 
-    let currentTasteMapUserID: String?
-    let developmentFixture: BackupImportDevelopmentFixture?
-    var fileReader = BackupImportFileReader()
-    var preflightService = BackupImportPreflightService()
-
+    let fixtureInput: BackupImportFixtureInput?
+    @State private var coordinator: BackupImportFlowCoordinator
     @State private var isShowingFileImporter = false
-    @State private var stage: BackupImportProgressStage?
-    @State private var run: BackupImportPreflightRun?
-    @State private var errorMessage: String?
-    @State private var planningErrorMessage: String?
-    @State private var planContext: BackupImportPlanContext?
-    @State private var preflightTask: Task<Void, Never>?
+
+    init(
+        modelContainer: ModelContainer,
+        currentTasteMapUserID: String?,
+        fixtureInput: BackupImportFixtureInput? = nil,
+        injectedFailurePoint: BackupImportFailurePoint? = nil
+    ) {
+        self.fixtureInput = fixtureInput
+        _coordinator = State(initialValue: BackupImportFlowCoordinator(
+            container: modelContainer,
+            currentTasteMapUserID: currentTasteMapUserID,
+            injectedFailurePoint: injectedFailurePoint
+        ))
+    }
 
     var body: some View {
-        List {
-            if let stage {
-                processingSection(stage)
-            } else if let run {
+        List { content }
+            .navigationTitle(navigationTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("backup-import-preflight-page")
+            .toolbar { toolbar }
+            .fileImporter(
+                isPresented: $isShowingFileImporter,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false,
+                onCompletion: handleFileSelection
+            )
+            .onDisappear { coordinator.viewDidDisappear() }
+            .onChange(of: coordinator.state) { _, state in
+                if state == .completed { syncCoordinator.refreshPresentation() }
+            }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch coordinator.state {
+        case .idle, .selectingFile:
+            introduction
+        case .reading:
+            processing("读取文件", "正在执行 25 MiB 限制、严格 UTF-8 与安全文件访问检查。", true)
+        case .preflighting:
+            processing("安全预检", "正在识别 Backup v1 / Legacy Web v4，并检查关系、照片与权限字段。", true)
+        case .preflightReady:
+            if let run = coordinator.preflightRun {
                 BackupImportPreflightSummaryView(
                     run: run,
-                    currentTasteMapUserID: currentTasteMapUserID,
-                    planningErrorMessage: planningErrorMessage,
-                    generatePlan: { generatePlan(from: run) }
+                    isAuthenticated: coordinator.currentTasteMapUserID != nil,
+                    generatePlan: coordinator.generatePlan
                 )
-            } else if let errorMessage {
-                errorSection(errorMessage)
-            } else {
-                introductionSection
             }
-        }
-        .navigationTitle("导入数据")
-        .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("backup-import-preflight-page")
-        .toolbar {
-            if run != nil || errorMessage != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { dismiss() }
-                        .accessibilityIdentifier("backup-import-close")
+        case .planning:
+            processing("生成匹配计划", "正在用当前账户、本地快照与文件指纹建立可验证计划。", true)
+        case let .reviewRequired(completed, total):
+            if let plan = coordinator.plan, let item = coordinator.currentReviewItem {
+                BackupImportPlanSummarySection(plan: plan)
+                BackupImportReviewSection(
+                    item: item,
+                    completed: completed,
+                    total: total,
+                    select: { coordinator.select($0, for: item) }
+                )
+                if coordinator.unresolvedReviewCount > 1,
+                   plan.reviewItems.allSatisfy({ item in
+                       item.options.contains(where: { $0.kind == .create })
+                   }) {
+                    Section {
+                        Button("其余可新建项全部作为新记录") {
+                            coordinator.makeAllRemainingNewWhereAvailable()
+                        }
+                        .accessibilityIdentifier("backup-import-review-all-create")
+                    } footer: {
+                        Text("此操作只选择“新建”，绝不会批量合并相似项。")
+                    }
                 }
             }
-        }
-        .fileImporter(
-            isPresented: $isShowingFileImporter,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { selection in
-            switch selection {
-            case let .success(urls):
-                guard let url = urls.first else { return }
-                startPreflight(url: url)
-            case let .failure(error):
-                if (error as NSError).code != NSUserCancelledError {
-                    errorMessage = "文件选择未完成：\(error.localizedDescription)"
+        case .readyToImport:
+            if let plan = coordinator.plan, let run = coordinator.preflightRun {
+                BackupImportPlanSummarySection(plan: plan)
+                BackupImportLimitationsSection(run: run)
+                Section {
+                    Button("查看最终确认") { coordinator.prepareFinalConfirmation() }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .accessibilityIdentifier("backup-import-review-complete")
+                } footer: {
+                    Text("所有需要确认的项目已处理。此时仍未写入任何数据。")
                 }
             }
-        }
-        .onDisappear { preflightTask?.cancel() }
-        .navigationDestination(item: $planContext) { value in
-            BackupImportPlanView(context: value)
+        case .confirming:
+            if let plan = coordinator.plan, let run = coordinator.preflightRun {
+                BackupImportFinalConfirmationView(
+                    plan: plan,
+                    run: run,
+                    confirm: beginImport,
+                    back: coordinator.returnToPlan
+                )
+            }
+        case let .importing(stage):
+            processing(stage.title, "事务已经开始，正在完成原子写入与同步队列建立。为避免半状态，此阶段不能取消。", false)
+        case .verifying:
+            processing("验证本地数据", "正在检查目标 ID、餐厅身份、到访关联、榜单顺序与同步队列。", false)
+        case .completed:
+            if let result = coordinator.result {
+                BackupImportResultView(
+                    result: result,
+                    syncPresentation: syncCoordinator.presentation,
+                    syncNow: { Task { await syncCoordinator.synchronizeNow() } },
+                    importAnother: coordinator.startAnotherImport
+                )
+            }
+        case let .failed(failure):
+            failureView(failure)
+        case .cancelled:
+            cancelledView
+        case .planStale:
+            stalePlanView
         }
     }
 
-    private var introductionSection: some View {
+    private var introduction: some View {
         Group {
             Section {
-                Label("只读安全预检", systemImage: "checkmark.shield")
-                    .font(.headline)
-                Text("系统会先检查文件并显示预览，确认前不会修改任何数据。")
-                Text("支持 Taste Map Backup v1 与 Legacy Web v4 JSON。当前版本不会执行导入、合并或同步。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Label("安全合并到当前账户", systemImage: "checkmark.shield").font(.headline)
+                Text("支持 Taste Map Backup v1 与 Legacy Web v4 JSON。系统会先预检和匹配，只有你最终确认后才写入。")
+                Text("Import 只添加或安全合并业务副本，不会恢复账户、Premium、好友权限或旧版远端 owner。")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
-
             Section {
                 Button(action: chooseFile) {
-                    Label(
-                        developmentFixture == nil ? "选择 JSON 文件" : "选择测试文件",
-                        systemImage: "doc.badge.magnifyingglass"
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    Label(fixtureInput == nil ? "选择 JSON 文件" : "选择测试文件", systemImage: "doc.badge.plus")
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
+                .disabled(coordinator.currentTasteMapUserID == nil)
                 .accessibilityIdentifier("backup-import-choose-file")
             } footer: {
-                Text("文件仅在本机离线检查；不会上传，也不会永久保存文件访问权限。")
+                Text(coordinator.currentTasteMapUserID == nil
+                    ? "请先登录 Taste Map，再导入到当前账户。"
+                    : "文件只在本机处理；完全离线也可以完成本地导入，联网后由现有同步队列上传。")
             }
         }
     }
 
-    private func processingSection(_ stage: BackupImportProgressStage) -> some View {
+    private func processing(_ title: String, _ detail: String, _ canCancel: Bool) -> some View {
         Section {
             VStack(spacing: 16) {
                 ProgressView().controlSize(.large)
-                Text(stage.title).font(.headline)
-                Text("大型 Legacy 文件可能需要一些时间。不会显示虚假的百分比。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("取消", role: .cancel) { preflightTask?.cancel() }
-                    .frame(minWidth: 88, minHeight: 44)
-                    .accessibilityIdentifier("backup-import-cancel")
+                Text(title).font(.headline)
+                Text(detail).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                if canCancel {
+                    Button("取消", role: .cancel) { coordinator.cancelBeforeTransaction() }
+                        .frame(minWidth: 88, minHeight: 44)
+                        .accessibilityIdentifier("backup-import-cancel")
+                } else {
+                    Label("正在完成安全导入…", systemImage: "lock.shield")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 28)
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("backup-import-processing")
         }
     }
 
-    private func errorSection(_ message: String) -> some View {
+    private func failureView(_ failure: BackupImportFailurePresentation) -> some View {
         Group {
             Section {
-                Label("无法完成预检", systemImage: "exclamationmark.triangle")
-                    .font(.headline)
-                    .foregroundStyle(.red)
-                Text(message)
-                    .accessibilityIdentifier("backup-import-error-message")
+                Label("无法完成导入", systemImage: "exclamationmark.triangle.fill")
+                    .font(.headline).foregroundStyle(.red)
+                Text(failure.message).accessibilityIdentifier("backup-import-error-message")
+                if failure.existingDataUnchanged {
+                    Text("你的现有数据保持不变。").font(.footnote).foregroundStyle(.secondary)
+                }
+#if DEBUG
+                Text("错误代码：\(failure.code)").font(.caption.monospaced()).foregroundStyle(.secondary)
+#endif
             }
             Section {
-                Button("重新选择文件", action: chooseFile)
-                    .accessibilityIdentifier("backup-import-reselect")
+                Button("重新选择文件", action: chooseFile).accessibilityIdentifier("backup-import-reselect")
                 Button("关闭", role: .cancel) { dismiss() }
             }
         }
     }
 
+    private var cancelledView: some View {
+        Group {
+            Section {
+                Label("已取消", systemImage: "xmark.circle")
+                    .font(.headline)
+                    .accessibilityIdentifier("backup-import-cancelled-state")
+                Text("尚未开始事务，没有修改任何数据。").foregroundStyle(.secondary)
+            }
+            Section {
+                Button("重新选择文件", action: chooseFile)
+                Button("关闭", role: .cancel) { dismiss() }
+            }
+        }
+    }
+
+    private var stalePlanView: some View {
+        Group {
+            Section {
+                Label("数据已发生变化", systemImage: "arrow.clockwise.circle.fill")
+                    .font(.headline).foregroundStyle(.orange)
+                Text("原匹配计划已拒绝执行。需要基于当前本地数据重新检查；不会在后台悄悄替换计划后继续写入。")
+            }
+            Section {
+                Button("重新生成匹配计划") { coordinator.regenerateAfterStalePlan() }
+                    .accessibilityIdentifier("backup-import-regenerate-stale-plan")
+                Button("取消", role: .cancel) { coordinator.cancelBeforeTransaction() }
+            }
+        }
+    }
+
+    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if coordinator.state != .idle, coordinator.state != .completed,
+           !coordinator.state.transactionHasStarted {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("关闭") { dismiss() }.accessibilityIdentifier("backup-import-close")
+            }
+        }
+    }
+
+    private var navigationTitle: String {
+        switch coordinator.state {
+        case .reviewRequired: "逐项确认"
+        case .readyToImport: "匹配计划"
+        case .confirming: "最终确认"
+        case .completed: "导入结果"
+        default: "导入数据"
+        }
+    }
+
     private func chooseFile() {
-        run = nil
-        errorMessage = nil
-        if let developmentFixture {
-            startPreflight(fixture: developmentFixture)
+        coordinator.beginFileSelection()
+        if let fixtureInput {
+            coordinator.readAndPreflight(data: fixtureInput.data, fileName: fixtureInput.fileName, fixtureDelay: fixtureInput.delay)
         } else {
             isShowingFileImporter = true
         }
     }
 
-    private func startPreflight(url: URL) {
-        execute {
-            try await fileReader.read(from: url)
+    private func handleFileSelection(_ selection: Result<[URL], Error>) {
+        switch selection {
+        case let .success(urls):
+            guard let url = urls.first else { coordinator.fileSelectionCancelled(); return }
+            coordinator.readAndPreflight(url: url)
+        case let .failure(error):
+            if (error as NSError).code == NSUserCancelledError { coordinator.fileSelectionCancelled() }
+            else { coordinator.fileSelectionFailed() }
         }
     }
 
-    private func startPreflight(fixture: BackupImportDevelopmentFixture) {
-        execute {
-            // Keep the real processing state observable in UI automation;
-            // normal user-selected files do not incur this fixture-only delay.
-            try await Task.sleep(for: .milliseconds(1_500))
-            return try await fileReader.read(data: fixture.data, fileName: fixture.fileName)
+    private func beginImport() {
+        Task { @MainActor in
+            let currentUserID = await authServices.sessionManager.restoredUser()?.id
+#if DEBUG
+            let fixtureUserID = BackupImportDevelopmentFixture.current == nil ? nil : coordinator.currentTasteMapUserID
+#else
+            let fixtureUserID: String? = nil
+#endif
+            coordinator.execute(currentUserIDAtConfirmation: currentUserID ?? fixtureUserID)
         }
-    }
-
-    private func execute(
-        read: @escaping @Sendable () async throws -> BackupImportSourceFile
-    ) {
-        preflightTask?.cancel()
-        run = nil
-        errorMessage = nil
-        stage = .reading
-        preflightTask = Task { @MainActor in
-            let clock = ContinuousClock()
-            let readStart = clock.now
-            do {
-                let source = try await read()
-                let readSeconds = Self.seconds(readStart.duration(to: clock.now))
-                try Task.checkCancellation()
-                stage = .inspecting
-                await Task.yield()
-                stage = .decoding
-                let completed = try await preflightService.preflight(
-                    source,
-                    fileReadSeconds: readSeconds
-                )
-                try Task.checkCancellation()
-                stage = .summarizing
-                await Task.yield()
-                run = completed
-                stage = nil
-            } catch is CancellationError {
-                stage = nil
-                errorMessage = BackupImportPreflightError.cancelled.localizedDescription
-            } catch let error as BackupImportPreflightError {
-                stage = nil
-                errorMessage = error.localizedDescription
-            } catch {
-                stage = nil
-                errorMessage = "无法安全检查这个文件。"
-            }
-            preflightTask = nil
-        }
-    }
-
-    @MainActor
-    private func generatePlan(from run: BackupImportPreflightRun) {
-        planningErrorMessage = nil
-        do {
-            guard run.result.blockingCount == 0 else { throw BackupImportPlanningError.preflightBlocked }
-            guard let currentTasteMapUserID else { throw BackupImportPlanningError.invalidCurrentUser }
-            let source = try BackupImportPlanningSourceMapper.graph(from: run)
-            let snapshot: BackupImportLocalSnapshot
-            if developmentFixture != nil {
-                snapshot = BackupImportDevelopmentFixture.planSnapshot(
-                    currentTasteMapUserID: currentTasteMapUserID,
-                    source: source
-                )
-            } else {
-                snapshot = try BackupImportLocalSnapshotBuilder(context: modelContext)
-                    .make(currentTasteMapUserID: currentTasteMapUserID)
-            }
-            let plan = try BackupImportPlanEngine().makePlan(source: source, local: snapshot)
-            planContext = BackupImportPlanContext(source: source, snapshot: snapshot, initialPlan: plan)
-        } catch {
-            planningErrorMessage = error.localizedDescription
-        }
-    }
-
-    private static func seconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 }
 
-private struct BackupImportPreflightSummaryView: View {
+struct BackupImportPreflightSummaryView: View {
     let run: BackupImportPreflightRun
-    let currentTasteMapUserID: String?
-    let planningErrorMessage: String?
+    let isAuthenticated: Bool
     let generatePlan: () -> Void
-
     private var result: ImportPreflightResult { run.result }
 
     var body: some View {
         statusSection
-
         Section("文件") {
-            LabeledContent("类型", value: result.sourceFormat.title)
-                .accessibilityIdentifier("backup-import-source-format")
+            LabeledContent("类型", value: result.sourceFormat.title).accessibilityIdentifier("backup-import-source-format")
             LabeledContent("版本", value: "\(result.sourceVersion)")
-            if let exportedAt = result.sourceMetadata.exportedAt {
-                LabeledContent("导出时间", value: exportedAt)
-            }
-            LabeledContent(
-                "文件大小",
-                value: ByteCountFormatter.string(
-                    fromByteCount: Int64(result.fileSize),
-                    countStyle: .file
-                )
-            )
+            if let exportedAt = result.sourceMetadata.exportedAt { LabeledContent("导出时间", value: exportedAt) }
+            LabeledContent("文件大小", value: ByteCountFormatter.string(fromByteCount: Int64(result.fileSize), countStyle: .file))
+#if DEBUG
             VStack(alignment: .leading, spacing: 6) {
                 Text("文件 SHA-256").font(.caption).foregroundStyle(.secondary)
-                Text(result.sourceFileSHA256)
-                    .font(.caption2.monospaced())
-                    .textSelection(.enabled)
+                Text(result.sourceFileSHA256).font(.caption2.monospaced()).textSelection(.enabled)
             }
+#endif
         }
-
         Section("内容") {
-            count("餐厅", result.counts.restaurants)
-            count("到访", result.counts.visits)
-            count("菜品", result.counts.dishes)
-            count("菜品关联", result.counts.visitDishes)
-            count("照片记录", result.counts.photos)
-            count("饭搭子", result.counts.companions)
-            count("推荐来源", result.counts.recommendationSources)
-            count("榜单", result.counts.restaurantLists)
+            count("餐厅", result.counts.restaurants); count("到访", result.counts.visits)
+            count("菜品", result.counts.dishes); count("菜品关联", result.counts.visitDishes)
+            count("照片记录", result.counts.photos); count("饭搭子", result.counts.companions)
+            count("推荐来源", result.counts.recommendationSources); count("榜单", result.counts.restaurantLists)
             count("榜单条目", result.counts.restaurantListItems)
-            count("Tombstone", result.counts.tombstones)
         }
-
-        Section("检查摘要") {
+        Section("安全检查") {
             LabeledContent("无法继续", value: "\(result.blockingCount)")
             LabeledContent("需要确认", value: "\(result.reviewCount)")
             LabeledContent("警告", value: "\(result.warningCount)")
-            LabeledContent("已忽略身份/权限字段", value: "\(result.securityDiscardCount)")
-            LabeledContent("旧版已停用字段", value: "\(result.deprecatedFieldCount)")
-            LabeledContent("不支持的内容", value: "\(result.unsupportedCount)")
+            LabeledContent("已忽略身份/权限信息", value: "\(result.securityDiscardCount)")
+            LabeledContent("旧版已停用内容", value: "\(result.deprecatedFieldCount)")
         }
-
         Section("照片") {
             Label(result.photoBinaryStatus.message, systemImage: "photo.badge.exclamationmark")
                 .accessibilityIdentifier("backup-import-photo-message")
         }
-
         if !result.issues.isEmpty {
             Section {
-                NavigationLink {
-                    BackupImportIssuesView(result: result)
-                } label: {
+                NavigationLink { BackupImportIssuesView(result: result) } label: {
                     Label("查看问题详情", systemImage: "list.bullet.rectangle")
-                }
-                .accessibilityIdentifier("backup-import-issues-entry")
+                }.accessibilityIdentifier("backup-import-issues-entry")
             }
         }
-
         Section {
-            if result.blockingCount == 0, currentTasteMapUserID != nil {
+            if result.blockingCount == 0, isAuthenticated {
                 Button("生成匹配计划", action: generatePlan)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .accessibilityIdentifier("backup-import-generate-plan")
             }
-            if let planningErrorMessage {
-                Text(planningErrorMessage).font(.footnote).foregroundStyle(.red)
-                    .accessibilityIdentifier("backup-import-plan-error")
-            }
-            Text("匹配计划只在内存中计算。本阶段没有正式导入按钮，也不会写入任何数据。")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+        } footer: {
+            Text(result.blockingCount == 0 ? "下一步只生成匹配计划，仍不会写入。" : "请查看阻塞原因，或重新选择文件。")
         }
-
+#if DEBUG
         Section("Development Timing") {
             LabeledContent("读取", value: Self.duration(run.timing.fileReadSeconds))
             LabeledContent("格式检查", value: Self.duration(run.timing.inspectionSeconds))
@@ -318,44 +342,29 @@ private struct BackupImportPreflightSummaryView: View {
             LabeledContent("验证", value: Self.duration(run.timing.validationSeconds))
             LabeledContent("总计", value: Self.duration(run.timing.totalSeconds))
         }
+#endif
     }
 
     private var statusSection: some View {
         Section {
             if result.blockingCount > 0 {
                 Label("此文件暂时无法继续导入。", systemImage: "xmark.octagon.fill")
-                    .font(.headline)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("backup-import-blocking-state")
-                Text("请查看阻塞原因，或重新选择文件。")
+                    .font(.headline).foregroundStyle(.red).accessibilityIdentifier("backup-import-blocking-state")
             } else if result.reviewCount > 0 {
-                Label("文件可以继续分析，但存在需要确认的问题。", systemImage: "exclamationmark.bubble.fill")
-                    .font(.headline)
-                    .foregroundStyle(.orange)
-                    .accessibilityIdentifier("backup-import-review-state")
-                Text("本轮不会要求你做合并决定，也不会修改数据。")
+                Label("文件可以继续，但有内容需要确认。", systemImage: "exclamationmark.bubble.fill")
+                    .font(.headline).foregroundStyle(.orange).accessibilityIdentifier("backup-import-review-state")
             } else {
                 Label("预检通过。", systemImage: "checkmark.circle.fill")
-                    .font(.headline)
-                    .foregroundStyle(.green)
-                    .accessibilityIdentifier("backup-import-clean-state")
-                Text("文件结构有效，可以进入下一步的数据匹配阶段。")
+                    .font(.headline).foregroundStyle(.green).accessibilityIdentifier("backup-import-clean-state")
             }
         }
     }
-
-    private func count(_ title: String, _ value: Int) -> some View {
-        LabeledContent(title, value: "\(value)")
-    }
-
-    private static func duration(_ seconds: Double) -> String {
-        String(format: "%.3f s", seconds)
-    }
+    private func count(_ title: String, _ value: Int) -> some View { LabeledContent(title, value: "\(value)") }
+    private static func duration(_ seconds: Double) -> String { String(format: "%.3f s", seconds) }
 }
 
-private struct BackupImportIssuesView: View {
+struct BackupImportIssuesView: View {
     let result: ImportPreflightResult
-
     var body: some View {
         List {
             ForEach(BackupImportIssueSeverity.allCases, id: \.self) { severity in
@@ -365,22 +374,9 @@ private struct BackupImportIssuesView: View {
                         ForEach(issues) { issue in
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(issue.title).font(.headline)
-                                Text(issue.explanation)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                if let entityType = issue.entityType {
-                                    Text("类型：\(entityType)").font(.caption)
-                                }
-                                if let reference = issue.sourceReference {
-                                    Text("安全引用：\(reference)")
-                                        .font(.caption.monospaced())
-                                        .textSelection(.enabled)
-                                }
-                                if issue.count > 1 {
-                                    Text("共 \(issue.count) 项").font(.caption)
-                                }
-                            }
-                            .padding(.vertical, 4)
+                                Text(issue.explanation).font(.subheadline).foregroundStyle(.secondary)
+                                if issue.count > 1 { Text("共 \(issue.count) 项").font(.caption) }
+                            }.padding(.vertical, 4)
                         }
                     }
                 }
@@ -391,16 +387,3 @@ private struct BackupImportIssuesView: View {
         .accessibilityIdentifier("backup-import-issues-page")
     }
 }
-
-#Preview("Legacy clean") {
-    NavigationStack {
-        BackupImportPreflightView(currentTasteMapUserID: "tm_preview", developmentFixture: .legacyValid)
-    }
-}
-
-#Preview("Legacy blocking") {
-    NavigationStack {
-        BackupImportPreflightView(currentTasteMapUserID: "tm_preview", developmentFixture: .legacyBlocking)
-    }
-}
-#endif

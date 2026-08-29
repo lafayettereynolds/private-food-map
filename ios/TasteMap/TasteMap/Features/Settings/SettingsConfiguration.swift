@@ -32,9 +32,9 @@ nonisolated struct SettingsFeatureAvailability: Equatable, Sendable {
             : .notConfigured
         states = [
             .exportBackup: .implemented,
-            // F1-C2 is a real read-only capability, but it remains gated to
-            // Development until the write/merge stages exist.
-            .importData: .developmentOnly,
+            // F1-C4 connects the validated C1-C3 pipeline to the explicit,
+            // atomic user flow. Restore remains a separate future capability.
+            .importData: .implemented,
             .restoreBackup: futureState,
             .migrateLegacyWebData: futureState,
             .deleteAccount: futureState,

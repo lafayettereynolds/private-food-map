@@ -58,7 +58,7 @@ struct TasteMapSettingsView: View {
                     DataBackupSettingsView(
                         isAuthenticated: authenticatedUser != nil,
                         currentTasteMapUserID: authenticatedUser?.id,
-                        allowsImportPreflight: allowsImportPreflight
+                        allowsImport: availability.isVisible(.importData)
                     )
                 } label: {
                     SettingsDestinationLabel(
@@ -198,14 +198,6 @@ struct TasteMapSettingsView: View {
         .accessibilityIdentifier("settings-root")
     }
 
-    private var allowsImportPreflight: Bool {
-#if DEBUG
-        releaseConfiguration.environment == .development
-            && availability.isVisible(.importData, includeDevelopmentOnly: true)
-#else
-        false
-#endif
-    }
 }
 
 struct AccountSettingsView: View {
@@ -320,7 +312,7 @@ struct DataBackupSettingsView: View {
     @Environment(NativeAuthServices.self) private var authServices
     let isAuthenticated: Bool
     let currentTasteMapUserID: String?
-    let allowsImportPreflight: Bool
+    let allowsImport: Bool
     @State private var isShowingConfirmation = false
     @State private var isExporting = false
     @State private var exportTask: Task<Void, Never>?
@@ -366,32 +358,35 @@ struct DataBackupSettingsView: View {
                     .accessibilityIdentifier("settings-backup-photo-exclusion")
             }
 
-#if DEBUG
-            if allowsImportPreflight {
+            if allowsImport {
                 Section {
                     NavigationLink {
                         BackupImportPreflightView(
+                            modelContainer: modelContext.container,
                             currentTasteMapUserID: currentTasteMapUserID,
-                            developmentFixture: BackupImportDevelopmentFixture.current
+                            fixtureInput: importFixtureInput,
+                            injectedFailurePoint: importFailurePoint
                         )
                     } label: {
                         HStack {
-                            Label("导入数据", systemImage: "doc.badge.magnifyingglass")
+                            Label("导入数据", systemImage: "doc.badge.plus")
                             Spacer()
-                            Text("仅预检")
+                            Text("JSON")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         .frame(minHeight: 44)
                     }
-                    .accessibilityIdentifier("settings-import-preflight-entry")
+                    .disabled(!isAuthenticated)
+                    .accessibilityIdentifier("settings-import-data-entry")
                 } header: {
-                    Text("Import Preflight · Development")
+                    Text("Import Data")
                 } footer: {
-                    Text("只读取并检查 JSON，不会导入、合并或修改任何 Taste Map 数据。")
+                    Text(isAuthenticated
+                        ? "安全合并 Backup v1 或 Legacy Web v4 数据；照片原图无法从 JSON 恢复。"
+                        : "登录 Taste Map 后才能把数据导入当前账户。")
                 }
             }
-#endif
 
             if let message {
                 Section {
@@ -463,6 +458,22 @@ struct DataBackupSettingsView: View {
     private func cleanup(_ artifact: BackupExportArtifact) {
         guard let service = try? BackupExportService(context: modelContext) else { return }
         try? service.removeTemporaryExport(artifact)
+    }
+
+    private var importFixtureInput: BackupImportFixtureInput? {
+#if DEBUG
+        BackupImportDevelopmentFixture.current?.input
+#else
+        nil
+#endif
+    }
+
+    private var importFailurePoint: BackupImportFailurePoint? {
+#if DEBUG
+        BackupImportDevelopmentFixture.current?.injectedFailurePoint
+#else
+        nil
+#endif
     }
 }
 

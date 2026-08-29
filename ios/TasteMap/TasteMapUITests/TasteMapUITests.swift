@@ -474,7 +474,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(dataAndBackup.waitForExistence(timeout: 3))
         dataAndBackup.tap()
         XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["settings-import-preflight-entry"].exists)
+        XCTAssertTrue(app.buttons["settings-import-data-entry"].exists)
         XCTAssertFalse(app.buttons["恢复我的备份"].exists)
         let export = app.buttons["settings-backup-export-button"]
         XCTAssertTrue(export.waitForExistence(timeout: 3))
@@ -561,7 +561,7 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testF1C3DevelopmentMatchingPlanUpdatesInMemoryWithoutImportAction() throws {
+    func testF1C3DevelopmentMatchingPlanStillRequiresFinalConfirmation() throws {
         let app = launchImportPreflightFixture("legacy")
         openImportPreflight(in: app)
 
@@ -571,7 +571,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(generate.waitForExistence(timeout: 10))
         generate.tap()
 
-        XCTAssertTrue(app.navigationBars["匹配计划"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["逐项确认"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.descendants(matching: .any)["backup-import-plan-page"].exists)
         XCTAssertFalse(app.buttons["正式导入"].exists)
         XCTAssertFalse(app.buttons["导入"].exists)
@@ -580,16 +580,147 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(skip, in: app)
         XCTAssertTrue(skip.waitForExistence(timeout: 3))
         skip.tap()
-        XCTAssertTrue(app.staticTexts["已选择：跳过"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["backup-import-plan-mutation-count"].exists)
-        let noExecute = app.descendants(matching: .any)["backup-import-no-execute"]
-        scrollUntilVisible(noExecute, in: app)
-        XCTAssertTrue(noExecute.exists)
+        XCTAssertTrue(app.navigationBars["匹配计划"].waitForExistence(timeout: 3))
+        let reviewComplete = app.buttons["backup-import-review-complete"]
+        scrollUntilVisible(reviewComplete, in: app)
+        XCTAssertTrue(reviewComplete.exists)
+        XCTAssertFalse(app.buttons["backup-import-confirm-execute"].exists)
 
-        app.navigationBars["匹配计划"].buttons["导入数据"].tap()
-        XCTAssertTrue(app.navigationBars["导入数据"].waitForExistence(timeout: 3))
         app.buttons["backup-import-close"].tap()
         XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testF1C4BackupV1FormalImportCompletesAndShowsLocalResult() throws {
+        let app = launchImportPreflightFixture("backup")
+        openImportPreflight(in: app)
+
+        app.buttons["backup-import-choose-file"].tap()
+        let generate = app.buttons["backup-import-generate-plan"]
+        scrollUntilVisible(generate, in: app)
+        XCTAssertTrue(generate.waitForExistence(timeout: 10))
+        generate.tap()
+
+        XCTAssertTrue(app.navigationBars["匹配计划"].waitForExistence(timeout: 8))
+        let reviewComplete = app.buttons["backup-import-review-complete"]
+        scrollUntilVisible(reviewComplete, in: app)
+        XCTAssertTrue(reviewComplete.waitForExistence(timeout: 8))
+        reviewComplete.tap()
+        XCTAssertTrue(app.navigationBars["最终确认"].waitForExistence(timeout: 5))
+        let photoWarning = app.descendants(matching: .any)["backup-import-final-photo-warning"]
+        scrollUntilVisible(photoWarning, in: app)
+        XCTAssertTrue(photoWarning.exists)
+        let execute = app.buttons["backup-import-confirm-execute"]
+        scrollUntilVisible(execute, in: app)
+        XCTAssertTrue(execute.isHittable)
+        execute.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-local-success"]
+            .waitForExistence(timeout: 15))
+        XCTAssertTrue(app.navigationBars["导入结果"].exists)
+        let mutationCount = app.descendants(matching: .any)["backup-import-result-mutation-count"]
+        scrollUntilVisible(mutationCount, in: app)
+        XCTAssertTrue(mutationCount.exists)
+        let importAnother = app.buttons["backup-import-another"]
+        scrollUntilVisible(importAnother, in: app)
+        XCTAssertTrue(importAnother.exists)
+        let restaurants = app.buttons["backup-import-result-restaurants"]
+        scrollUntilVisible(restaurants, in: app)
+        XCTAssertTrue(restaurants.isHittable)
+        restaurants.tap()
+        XCTAssertTrue(app.navigationBars["去过的餐厅"].waitForExistence(timeout: 8))
+        let importedRestaurant = app.staticTexts["F1-C4 Backup v1 餐厅"]
+        XCTAssertTrue(importedRestaurant.waitForExistence(timeout: 5))
+        importedRestaurant.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testF1C4LegacyReviewCreateImportAndRestaurantNavigation() throws {
+        let app = launchImportPreflightFixture("legacy")
+        openImportPreflight(in: app)
+
+        app.buttons["backup-import-choose-file"].tap()
+        let generate = app.buttons["backup-import-generate-plan"]
+        scrollUntilVisible(generate, in: app)
+        XCTAssertTrue(generate.waitForExistence(timeout: 10))
+        generate.tap()
+
+        XCTAssertTrue(app.navigationBars["逐项确认"].waitForExistence(timeout: 8))
+        let create = app.buttons["backup-import-review-option-restaurant-create"]
+        scrollUntilVisible(create, in: app)
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        create.tap()
+
+        let reviewComplete = app.buttons["backup-import-review-complete"]
+        scrollUntilVisible(reviewComplete, in: app)
+        XCTAssertTrue(reviewComplete.waitForExistence(timeout: 5))
+        reviewComplete.tap()
+        XCTAssertTrue(app.navigationBars["最终确认"].waitForExistence(timeout: 5))
+        let execute = app.buttons["backup-import-confirm-execute"]
+        scrollUntilVisible(execute, in: app)
+        XCTAssertTrue(execute.isHittable)
+        execute.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-local-success"]
+            .waitForExistence(timeout: 15))
+        let mutationCount = app.descendants(matching: .any)["backup-import-result-mutation-count"]
+        XCTAssertTrue(mutationCount.exists)
+        let restaurants = app.buttons["backup-import-result-restaurants"]
+        scrollUntilVisible(restaurants, in: app)
+        XCTAssertTrue(restaurants.isHittable)
+        restaurants.tap()
+        XCTAssertTrue(app.navigationBars["去过的餐厅"].waitForExistence(timeout: 8))
+        let importedRestaurant = app.staticTexts["P1-D 离线验收餐厅"]
+        XCTAssertTrue(importedRestaurant.waitForExistence(timeout: 5))
+        importedRestaurant.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testF1C4InjectedFailureShowsExistingDataUnchanged() throws {
+        let app = launchImportPreflightFixture("failure")
+        openImportPreflight(in: app)
+
+        app.buttons["backup-import-choose-file"].tap()
+        let generate = app.buttons["backup-import-generate-plan"]
+        scrollUntilVisible(generate, in: app)
+        XCTAssertTrue(generate.waitForExistence(timeout: 10))
+        generate.tap()
+        XCTAssertTrue(app.navigationBars["逐项确认"].waitForExistence(timeout: 8))
+        let create = app.buttons["backup-import-review-option-restaurant-create"]
+        scrollUntilVisible(create, in: app)
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        create.tap()
+        let reviewComplete = app.buttons["backup-import-review-complete"]
+        scrollUntilVisible(reviewComplete, in: app)
+        XCTAssertTrue(reviewComplete.waitForExistence(timeout: 5))
+        reviewComplete.tap()
+        XCTAssertTrue(app.navigationBars["最终确认"].waitForExistence(timeout: 5))
+        let execute = app.buttons["backup-import-confirm-execute"]
+        scrollUntilVisible(execute, in: app)
+        XCTAssertTrue(execute.isHittable)
+        execute.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-error-message"]
+            .waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["你的现有数据保持不变。"].exists)
+        XCTAssertTrue(app.buttons["backup-import-reselect"].exists)
+    }
+
+    @MainActor
+    func testF1C4PreTransactionCancelWritesNothing() throws {
+        let app = launchImportPreflightFixture("legacy")
+        openImportPreflight(in: app)
+
+        app.buttons["backup-import-choose-file"].tap()
+        let cancel = app.buttons["backup-import-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 2))
+        cancel.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["backup-import-cancelled-state"]
+            .waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["尚未开始事务，没有修改任何数据。"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["backup-import-local-success"].exists)
     }
 
     @MainActor
@@ -2163,7 +2294,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(dataAndBackup.waitForExistence(timeout: 3))
         dataAndBackup.tap()
         XCTAssertTrue(app.navigationBars["数据与备份"].waitForExistence(timeout: 3))
-        let importEntry = app.buttons["settings-import-preflight-entry"]
+        let importEntry = app.buttons["settings-import-data-entry"]
         scrollUntilVisible(importEntry, in: app)
         XCTAssertTrue(importEntry.isHittable)
         importEntry.tap()

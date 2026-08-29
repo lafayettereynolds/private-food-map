@@ -6,6 +6,8 @@ import Foundation
 nonisolated enum BackupImportDevelopmentFixture: String, Sendable {
     case legacyValid
     case legacyBlocking
+    case backupV1
+    case transactionFailure
 
     static let environmentKey = "TASTEMAP_F1C2_IMPORT_UI_TEST"
 
@@ -13,61 +15,42 @@ nonisolated enum BackupImportDevelopmentFixture: String, Sendable {
         switch ProcessInfo.processInfo.environment[environmentKey] {
         case "legacy": .legacyValid
         case "blocking": .legacyBlocking
+        case "backup": .backupV1
+        case "failure": .transactionFailure
         default: nil
         }
+    }
+
+    var input: BackupImportFixtureInput {
+        BackupImportFixtureInput(fileName: fileName, data: data, delay: .seconds(4))
+    }
+
+    var injectedFailurePoint: BackupImportFailurePoint? {
+        self == .transactionFailure ? .beforeSave : nil
     }
 
     var fileName: String {
         switch self {
         case .legacyValid: "TasteMap-Legacy-v4-Fixture.json"
         case .legacyBlocking: "TasteMap-Legacy-v4-Broken-Reference.json"
+        case .backupV1: "TasteMap-Backup-v1-Fixture.json"
+        case .transactionFailure: "TasteMap-Legacy-v4-Failure-Fixture.json"
         }
     }
 
     var data: Data {
         var root = Self.emptyLegacyEnvelope
         switch self {
-        case .legacyValid:
+        case .legacyValid, .transactionFailure:
             root["restaurants"] = [Self.restaurant(id: "legacy-r-1")]
             root["visits"] = [Self.visit(id: "legacy-v-1", restaurantID: "legacy-r-1")]
         case .legacyBlocking:
             root["visits"] = [Self.visit(id: "legacy-v-broken", restaurantID: "missing-r")]
+        case .backupV1:
+            return Self.emptyBackupV1
         }
         // Every fixture value is a JSON primitive created in this file.
         return try! JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
-    }
-
-    static func planSnapshot(
-        currentTasteMapUserID: String,
-        source: BackupImportSourceGraph
-    ) -> BackupImportLocalSnapshot {
-        let localRestaurant: [BackupImportLocalRecord<BackupImportSourceRestaurant>]
-        if let candidate = source.restaurants.first {
-            let value = BackupImportSourceRestaurant(
-                sourceID: "fixture-local-restaurant", placeIdentities: [],
-                name: candidate.name, address: candidate.address, city: candidate.city,
-                latitude: candidate.latitude + 0.00001, longitude: candidate.longitude,
-                status: candidate.status, preferenceLevel: candidate.preferenceLevel,
-                overallRating: candidate.overallRating, foodRating: candidate.foodRating,
-                environmentRating: candidate.environmentRating, serviceRating: candidate.serviceRating,
-                valueRating: candidate.valueRating, tags: candidate.tags,
-                longTermNote: candidate.longTermNote, pricePerPerson: candidate.pricePerPerson,
-                phone: candidate.phone, openingHours: candidate.openingHours,
-                markerType: candidate.markerType, markerPhotoSourceID: nil,
-                merchantImageURL: candidate.merchantImageURL, markerEmoji: candidate.markerEmoji,
-                createdAt: candidate.createdAt, updatedAt: candidate.updatedAt
-            )
-            localRestaurant = [BackupImportLocalRecord(
-                localID: UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!,
-                remoteID: value.sourceID, deletedAt: nil, value: value
-            )]
-        } else { localRestaurant = [] }
-        return BackupImportLocalSnapshot(
-            currentTasteMapUserID: currentTasteMapUserID,
-            revision: String(repeating: "a", count: 64), restaurants: localRestaurant,
-            visits: [], dishes: [], visitDishes: [], photos: [], companions: [],
-            recommendationSources: [], profiles: [], restaurantLists: [], restaurantListItems: []
-        )
     }
 
     private static let timestamp = "2026-08-29T12:00:00.000Z"
@@ -96,11 +79,11 @@ nonisolated enum BackupImportDevelopmentFixture: String, Sendable {
             "id": id,
             "userId": "legacy-owner",
             "amapPoiId": "",
-            "name": "预检测试餐厅",
-            "address": "测试路 1 号",
-            "city": "上海",
-            "latitude": 31.2304,
-            "longitude": 121.4737,
+            "name": "P1-D 离线验收餐厅",
+            "address": "杭州市上城区湖滨路 18 号",
+            "city": "杭州",
+            "latitude": 30.25901,
+            "longitude": 120.168,
             "status": "visited",
             "preferenceLevel": "like",
             "overallRating": NSNull(),
@@ -167,6 +150,121 @@ nonisolated enum BackupImportDevelopmentFixture: String, Sendable {
             "updatedAt": timestamp,
             "deletedAt": NSNull(),
         ]
+    }
+
+    private static var emptyBackupV1: Data {
+        let timestamp = try! BackupTimestampV1(Self.timestamp)
+        let restaurantID = "f1c4-backup-v1-restaurant"
+        let visitID = "f1c4-backup-v1-visit"
+        let restaurant = BackupRestaurantV1(
+            id: restaurantID,
+            placeIdentities: [BackupPlaceIdentityV1(
+                provider: .appleMaps,
+                externalId: "apple-f1c4-backup-v1",
+                isPrimary: true,
+                createdAt: timestamp,
+                updatedAt: timestamp
+            )],
+            name: "F1-C4 Backup v1 餐厅",
+            address: "杭州市西湖区测试路 1 号",
+            city: "杭州",
+            latitude: 30.2601,
+            longitude: 120.1501,
+            status: .visited,
+            preferenceLevel: .like,
+            overallRating: nil,
+            foodRating: nil,
+            environmentRating: nil,
+            serviceRating: nil,
+            valueRating: nil,
+            tags: ["Backup v1"],
+            longTermNote: "F1-C4 Development fixture",
+            pricePerPerson: nil,
+            phone: nil,
+            openingHours: nil,
+            markerType: .emoji,
+            markerPhotoId: nil,
+            merchantImageUrl: nil,
+            markerEmoji: "🍜",
+            createdAt: timestamp,
+            updatedAt: timestamp
+        )
+        let visit = BackupVisitV1(
+            id: visitID,
+            restaurantId: restaurantID,
+            visitedAt: timestamp,
+            diningMode: .dineIn,
+            visibility: .private,
+            partySize: nil,
+            totalPrice: nil,
+            myActualSpend: nil,
+            paymentMode: nil,
+            pricePerPerson: nil,
+            queueDuration: nil,
+            diningOccasions: [],
+            diningOccasionText: nil,
+            rating: nil,
+            valueRating: nil,
+            environmentRating: nil,
+            serviceRating: nil,
+            valueTags: [],
+            environmentTags: [],
+            serviceTags: [],
+            noiseLevel: nil,
+            diningDuration: nil,
+            portionLevel: nil,
+            transportConvenience: nil,
+            specialNotes: nil,
+            companionIds: [],
+            recommendationSourceId: nil,
+            recommendationSourceType: nil,
+            recommendationSourceText: nil,
+            sharedMealReferenceHint: nil,
+            note: "F1-C4 Backup v1 UI fixture",
+            createdAt: timestamp,
+            updatedAt: timestamp
+        )
+        let entities = BackupEntitiesV1(
+            restaurants: [restaurant], visits: [visit], dishes: [], visitDishes: [], photos: [],
+            companions: [], recommendationSources: [], profiles: [],
+            restaurantLists: [], restaurantListItems: []
+        )
+        let counts = BackupEntityCountsV1(
+            restaurants: 1, visits: 1, dishes: 0, visitDishes: 0, photos: 0,
+            companions: 0, recommendationSources: 0, profiles: 0,
+            restaurantLists: 0, restaurantListItems: 0
+        )
+        let payload = BackupIntegrityPayloadV1(
+            format: BackupV1Contract.format,
+            schemaVersion: BackupV1Contract.schemaVersion,
+            exportId: "11111111-aaaa-4aaa-8aaa-111111111111",
+            exportedAt: timestamp,
+            source: BackupSourceV1(
+                platform: .ios, appVersion: "1.0", appBuild: "1", environment: .development
+            ),
+            scope: BackupScopeV1(),
+            entities: entities,
+            tombstones: [],
+            metadata: BackupMetadataV1(entityCounts: counts, tombstoneCount: 0)
+        )
+        let digest = BackupCanonicalJSONV1.sha256Hex(
+            of: try! BackupCanonicalJSONV1.canonicalString(for: payload)
+        )
+        let envelope = BackupEnvelopeV1(
+            format: payload.format,
+            schemaVersion: payload.schemaVersion,
+            exportId: payload.exportId,
+            exportedAt: payload.exportedAt,
+            source: payload.source,
+            scope: payload.scope,
+            entities: payload.entities,
+            tombstones: payload.tombstones,
+            metadata: payload.metadata,
+            integrity: try! BackupIntegrityV1(digest: digest)
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try! encoder.encode(envelope)
     }
 }
 #endif
