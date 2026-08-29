@@ -79,6 +79,10 @@ import {
   PublicAPIRateLimitError,
 } from './publicAPIRateLimit'
 import { membershipSelfResponseV1 } from './membershipV1'
+import {
+  DevelopmentDemoAdminV1Error,
+  handleDevelopmentDemoAdminV1,
+} from './developmentDemoAdminV1'
 
 interface Env {
   DB: D1Database
@@ -581,6 +585,10 @@ export default {
       if (url.pathname.startsWith('/api/v1/auth/')) {
         return json(await handleAuthV1Request(request, env))
       }
+      if (url.pathname.startsWith('/api/v1/development/demo-data')) {
+        const viewer = await resolveSyncViewer(request, env)
+        return json(await handleDevelopmentDemoAdminV1(request, env.DB, viewer.id, env))
+      }
       if (url.pathname === '/api/v1/me/entitlements') {
         if (request.method !== 'GET') throw new RequestError('Membership method is not supported.', 405)
         const viewer = await resolveSyncViewer(request, env)
@@ -752,7 +760,7 @@ export default {
         status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
       })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError ? error.status : 500
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error ? error.status : 500
       const code = error instanceof AuthV1RequestError ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }

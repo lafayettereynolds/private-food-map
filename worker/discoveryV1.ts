@@ -447,12 +447,19 @@ function trendingCards(
   coldStart = false,
 ) {
   const wantPlaceKeys = new Map<string, Set<string>>()
+  const mostRecentWantByPlace = new Map<string, WantRow>()
   const restaurantToPlace = new Map<string, string>()
   groups.forEach((group) => group.restaurantIDs.forEach((restaurantID) => restaurantToPlace.set(restaurantID, group.globalKey)))
   data.wants.filter((want) => want.user_id !== data.viewerId).forEach((want) => {
     const key = restaurantToPlace.get(want.restaurant_id)
     if (!key || data.now - Date.parse(want.created_at) > 30 * DAY) return
     wantPlaceKeys.set(key, new Set([...(wantPlaceKeys.get(key) ?? []), want.user_id]))
+  })
+  data.wants.forEach((want) => {
+    const key = restaurantToPlace.get(want.restaurant_id)
+    if (!key) return
+    const current = mostRecentWantByPlace.get(key)
+    if (!current || want.created_at > current.created_at) mostRecentWantByPlace.set(key, want)
   })
   return [...groups.values()].flatMap((group): RankedCard[] => {
     const publicVisits = group.visits.filter((visit) => visit.visibility === 'public')
@@ -467,8 +474,7 @@ function trendingCards(
     const source = [...recent].sort((left, right) =>
       right.visited_at.localeCompare(left.visited_at) || left.user_id.localeCompare(right.user_id),
     )[0] ?? publicVisits[0]
-    const mostRecentWant = data.wants.filter((want) => restaurantToPlace.get(want.restaurant_id) === group.globalKey)
-      .sort((left, right) => right.created_at.localeCompare(left.created_at))[0]
+    const mostRecentWant = mostRecentWantByPlace.get(group.globalKey)
     const reasons: DiscoveryReasonV1[] = [{
       code: coldStart ? 'COLD_START_TRENDING' : 'TRENDING_UNIQUE_USERS',
       text: coldStart
@@ -553,6 +559,10 @@ function groupPlaces(
   }
   const identityOwner = new Map<string, string>()
   const fingerprintOwner = new Map<string, string>()
+  const firstVisitByRestaurant = new Map<string, DiscoveryVisitRow>()
+  visits.forEach((visit) => {
+    if (!firstVisitByRestaurant.has(visit.restaurant_id)) firstVisitByRestaurant.set(visit.restaurant_id, visit)
+  })
   restaurantIDs.forEach((restaurantID) => {
     for (const identity of identitiesByRestaurant.get(restaurantID) ?? []) {
       if (identity.provider === 'manual') continue
@@ -561,7 +571,7 @@ function groupPlaces(
       if (owner) union(owner, restaurantID)
       else identityOwner.set(identityKey, restaurantID)
     }
-    const visit = visits.find((item) => item.restaurant_id === restaurantID)
+    const visit = firstVisitByRestaurant.get(restaurantID)
     if (!visit) return
     const fingerprint = placeFingerprint(visit)
     const owner = fingerprintOwner.get(fingerprint)
@@ -572,7 +582,9 @@ function groupPlaces(
   const byRoot = new Map<string, DiscoveryVisitRow[]>()
   visits.forEach((visit) => {
     const root = find(visit.restaurant_id)
-    byRoot.set(root, [...(byRoot.get(root) ?? []), visit])
+    const group = byRoot.get(root)
+    if (group) group.push(visit)
+    else byRoot.set(root, [visit])
   })
   const result = new Map<string, PlaceGroup>()
   byRoot.forEach((groupVisits) => {
@@ -615,11 +627,21 @@ function addWantOnlyGroups(
   identitiesByRestaurant: Map<string, DiscoveryPlaceIdentityV1[]>,
 ) {
   const identityToKey = new Map<string, string>()
+  const restaurantToKey = new Map<string, string>()
+  const fingerprintToKey = new Map<string, string>()
   groups.forEach((group) => group.identities.forEach((identity) => {
     if (identity.provider !== 'manual') identityToKey.set(`${identity.provider}:${identity.externalId}`, group.globalKey)
   }))
+  groups.forEach((group) => {
+    group.restaurantIDs.forEach((restaurantID) => restaurantToKey.set(restaurantID, group.globalKey))
+    const visit = group.visits[0]
+    if (visit) {
+      const fingerprint = placeFingerprint(visit)
+      if (!fingerprintToKey.has(fingerprint)) fingerprintToKey.set(fingerprint, group.globalKey)
+    }
+  })
   wants.forEach((want) => {
-    if ([...groups.values()].some((group) => group.restaurantIDs.includes(want.restaurant_id))) return
+    if (restaurantToKey.has(want.restaurant_id)) return
     const identities = identitiesByRestaurant.get(want.restaurant_id) ?? []
     const matched = identities.filter((identity) => identity.provider !== 'manual')
       .map((identity) => identityToKey.get(`${identity.provider}:${identity.externalId}`))
@@ -627,13 +649,13 @@ function addWantOnlyGroups(
     const row = { restaurant_name: want.restaurant_name, address: want.address, city: want.city,
       latitude: want.latitude, longitude: want.longitude }
     const fingerprint = placeFingerprint(row)
-    const fingerprintMatch = [...groups.values()].find((group) =>
-      group.visits[0] && placeFingerprint(group.visits[0]) === fingerprint)?.globalKey
+    const fingerprintMatch = fingerprintToKey.get(fingerprint)
     const globalKey = matched ?? fingerprintMatch ?? globalPlaceKey(identities, row)
     const existing = groups.get(globalKey)
     if (existing) {
       existing.restaurantIDs = unique([...existing.restaurantIDs, want.restaurant_id])
       existing.identities = normalizeIdentities([...existing.identities, ...identities], globalKey)
+      restaurantToKey.set(want.restaurant_id, globalKey)
       return
     }
     const normalizedIdentities = normalizeIdentities(identities, globalKey)
@@ -646,6 +668,11 @@ function addWantOnlyGroups(
         merchantImageUrl: safeHTTPSURL(want.merchant_image_url), markerEmoji: want.marker_emoji || '🍽️', photo: null,
       },
     })
+    restaurantToKey.set(want.restaurant_id, globalKey)
+    if (!fingerprintToKey.has(fingerprint)) fingerprintToKey.set(fingerprint, globalKey)
+    normalizedIdentities.forEach((identity) => {
+      if (identity.provider !== 'manual') identityToKey.set(`${identity.provider}:${identity.externalId}`, globalKey)
+    })
   })
 }
 
@@ -654,10 +681,17 @@ function viewerStates(data: DiscoveryData, groups: Map<string, PlaceGroup>, visi
   visited.forEach((key) => states.set(key, 'visited'))
   const restaurantKey = new Map<string, string>()
   const identityKey = new Map<string, string>()
+  const fingerprintKey = new Map<string, string>()
   groups.forEach((group) => group.restaurantIDs.forEach((restaurantID) => restaurantKey.set(restaurantID, group.globalKey)))
   groups.forEach((group) => group.identities.forEach((identity) => {
     if (identity.provider !== 'manual') identityKey.set(`${identity.provider}:${identity.externalId}`, group.globalKey)
   }))
+  groups.forEach((group) => {
+    const visit = group.visits[0]
+    if (!visit) return
+    const fingerprint = placeFingerprint(visit)
+    if (!fingerprintKey.has(fingerprint)) fingerprintKey.set(fingerprint, group.globalKey)
+  })
   data.viewerRestaurants.forEach((restaurant) => {
     const ownIdentities = data.identitiesByRestaurant.get(restaurant.id) ?? []
     const matchedIdentityKey = ownIdentities
@@ -666,8 +700,7 @@ function viewerStates(data: DiscoveryData, groups: Map<string, PlaceGroup>, visi
       .find((value): value is string => Boolean(value))
     const fingerprint = placeFingerprint({ restaurant_name: restaurant.name, address: restaurant.address,
       city: restaurant.city, latitude: restaurant.latitude, longitude: restaurant.longitude })
-    const key = matchedIdentityKey ?? ([...groups.values()].find((group) =>
-      placeFingerprint(group.visits[0]) === fingerprint)?.globalKey ?? globalPlaceKey(ownIdentities, {
+    const key = matchedIdentityKey ?? (fingerprintKey.get(fingerprint) ?? globalPlaceKey(ownIdentities, {
         restaurant_name: restaurant.name, address: restaurant.address, city: restaurant.city,
         latitude: restaurant.latitude, longitude: restaurant.longitude,
       }))

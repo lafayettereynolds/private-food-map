@@ -1,5 +1,13 @@
 # Taste Map 变更记录
 
+## 2026-08-29 — Development 50 用户确定性演示数据
+
+- 新增 Development-only `tm_demo_v2` 数据生成器与远程 Seed/Clear/Reseed/Verify 命令：50 个固定虚拟用户按 Heavy/Normal/Light/Sparse 分层，共享 360 家完全虚构的餐厅 universe；同一天输出稳定，Visit 时间窗口随日期前移。
+- 实际 Development D1 写入 4516 条 Demo Visit、1047 家 WantToGo、1512 道 Dish、84 个 List、105 条 Friendship 和 125 条 Follow；Current User manifest 另含 90 家去过、275 条 Visit、28 家想吃、92 道 Dish、5 个 List、11 个推荐来源和 9 位饭搭子。
+- Similar Taste 使用 S/A/B/C/D/E 原始 overlap 梯度，Trending 使用 7 日/30 日/历史 Visit，未写入任何 similarity、trend、rank 或推荐结果；真实正式算法返回 38 条同味推荐、36 条 7 日趋势、50 条 30 日趋势和来自 22 个用户的 50 条 Community 首屏内容。
+- 新增精确 namespace 清理和 Development admin route，只接受 `api-dev.tastemap.cn`、Development test auth 与专用 admin identity；Current User 只按派生 manifest ID 清理，保留既有非 Seed 数据。Production Worker/D1 未访问。
+- 为 50 用户 Development 数据规模做输出等价的 Worker 查找性能优化，不改变阈值、权重、排序、权限或 API contract；增加生成器、合同、清理隔离、fail-closed 与幂等回归测试。
+
 ## 2026-08-29 — P4-I P4 全功能总体验收与硬化
 
 - 统一 P4-A—P4-E 的评分、消费、coverage 与数据充分度定义，并加入 provider-neutral Global Restaurant Identity 分析投影；Apple Maps/community/本地别名不再在五类报告中重复计数，tombstone 不参与合并或复活。

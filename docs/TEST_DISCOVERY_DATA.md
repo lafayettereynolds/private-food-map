@@ -1,39 +1,54 @@
-# 发现功能测试数据
+# Development Demo Data v2
 
-更新时间：2026-08-26
+更新时间：2026-08-29
 
-## 使用范围
+## 安全边界
 
-- 只允许在 Development 本地 D1 使用。
-- 不复制 Production 餐厅和用户，也不向 Production 自动写入模拟数据。
-- 所有模拟记录都有测试标记，可独立重建或清理。
+- 只允许 `https://api-dev.tastemap.cn`，脚本会同时验证完整 Base URL 与 hostname。
+- Worker 必须同时为 `APP_ENVIRONMENT=development`、`SYNC_AUTH_MODE=development-test`。
+- Production、错误 host、缺少专用 `tm_demo_v2_admin` 身份时全部 fail closed。
+- 不直接执行远程 D1 SQL dump；Restaurant、Visit、Dish、List、Profile 等都通过现有 Sync V1 写入，好友/关注通过 Social V1 写入。
+- 50 个虚拟用户固定为 `tm_demo_v2_user_01`…`tm_demo_v2_user_50`，不使用 Apple identity。
+- 当前用户样本记录使用 `tm_demo_v2_current_<user-hash>_*` manifest；清理只接受该用户派生出的精确 entity ID 前缀。
+- Demo 清理使用 50 个精确 ID allowlist，不按昵称、日期、用户数量或 `is_test_data` 模糊删除。
 
-## 当前固定数据集
+## 固定数据规模
 
-- 40 个测试用户，覆盖杭州、上海、东京等城市和多组口味偏好。
-- 66 家测试餐厅及餐厅图片。
-- 1326 条有效到访，包含重复到访、评分、笔记、到店/外卖等组合。
-- 179 条关注、29 条好友关系、583 条想吃以及 36 场共同饭局。
-- 当前测试账号固定拥有 10 个“我关注的”和 9 个“关注我的”。
+- 50 个虚拟用户：8 Heavy、22 Normal、12 Light、8 Sparse。
+- 360 家完全虚构的共享 Restaurant universe；没有真实商户名称、电话或商户图片 URL。
+- Current User：90 家去过、275 次 Visit、28 家想吃、92 道 Dish、5 个 List、11 个推荐来源、9 位饭搭子。
+- Demo Users：约 4,500–7,000 次 Visit、800–1,200 家想吃、1,000–1,800 道 Dish、70–120 个 List、150–250 条社交关系。
+- 同味输入分为 S/A/B/C/D/E 六层；只写 Restaurant/Visit/Rating 等原始行为，不写 similarity、trending 或 rank 结果。
+- 7 日、30 日和历史活动由相对 `referenceNow` 的真实 Visit 日期形成。
+- 同一天生成字节级稳定；跨天运行时活动窗口随日期推进。
 
-## 非会员本地对照数据
+## 必需环境变量
 
-- 固定种子：`TASTE_MAP_TEST_SEED = 20260826`。
-- 数据库：`food-map-dev-free`，账号：`free-tester`；不会读取、复制或清理 `food-map-dev` 与 `food-map-prod`。
-- 50 家餐厅：35 家去过、15 家想吃；城市覆盖杭州 42 家、上海 2 家、北京 2 家、东京 4 家。
-- 68 条到访，包含 10 家重复到访餐厅；评分包含半星、空评分和不同分段，消费、笔记、照片、可见性等字段保持真实稀疏度。
-- 8 位饭搭子、8 类推荐来源、4 个食单、24 条食单餐厅，用于验证免费账号可积累完整原始记录，但会员洞察继续受 Entitlement 限制。
+```bash
+export TASTEMAP_API_DEV_BASE_URL=https://api-dev.tastemap.cn
+export TASTEMAP_DEVELOPMENT_CURRENT_USER_ID=<Development Taste Map user ID>
+```
 
-## 饭搭子头像与筛选验收
+第二项必须是 Development 中已有的真实/测试 Taste Map user ID，不能是 demo/admin ID。
 
-- 免费测试账号固定提供 8 位饭搭子，包含高频、低频、最近、历史、已绑定真实账号、私人头像、稳定文字头像和家人/朋友类别型记录；全部模式按共同次数降序，最近模式按最近共同到访降序，常一起模式按次数与最近日期排序。
-- 历史饭搭子统一使用“至少共同到访 3 次且 90 天未共同到访”的门槛；固定种子同时包含命中者与因共同次数不足而不命中的旧记录，空结果时仍显示专用说明。
-- 自动化样本覆盖已绑定用户真实头像、私人头像输入、稳定文字头像、类别头像、占位降级、搜索叠加筛选、空日期置后、同分破局以及详情对象切换。
-- 种子版本不变时不会重复写入；只有非会员测试数据版本变化时才在 `food-map-dev-free` 内重建对应账号数据。
+## 命令
 
-## 维护命令
+```bash
+pnpm run seed:test-users
+pnpm run reset:test-users
+pnpm run reseed:development-demo
+pnpm run verify:development-demo
+```
 
-- `pnpm run seed:test-users`：在本地 Development D1 中可重复生成同一套数据。
-- `pnpm run reset:test-users`：只清理带测试标记的数据。
+- `seed`：幂等写入；同日再次运行只命中 mutation receipts，不创建副本。
+- `clear`：只清理精确 Demo namespace 与 `DevelopmentSeedManifest` 中的 current-user records。
+- `reseed`：先安全清理，再生成当天的确定性数据。
+- `verify`：逐用户增量 pull 验证全部 manifest 记录，并调用正式 Similar Taste、Trending、Community、Public Profile API 检查产品输出。
 
-命令会先检查本地 migration；不会连接或修改远端 Production D1。
+当前 50 用户规模会真实分页读取 51 个账户。2026-08-29 的远程验收耗时约 29 分钟；命令会逐账户输出进度，避免长时间无反馈。这里的目标是 Development 数据正确性验收，不是压力测试。
+
+可用 `--reference-now <ISO-8601>` 固定某个验收日；普通开发应省略，让当天趋势窗口自然前移。
+
+## 照片说明
+
+本数据集不伪造餐厅照片、不热链第三方图片，也不向 R2 写入假图片。Public Profile、Community 和 Discovery 的无图降级由现有正式产品逻辑处理。

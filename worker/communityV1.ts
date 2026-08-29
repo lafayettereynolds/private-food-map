@@ -427,20 +427,27 @@ function buildViewerStates(
     contentKeys.set(restaurant.restaurant_id, globalPlaceKey(identities, restaurant))
   })
   const identityToContent = new Map<string, string>()
+  const fingerprintToContent = new Map<string, string>()
   contentIdentityMap.forEach((identities, restaurantID) => identities.forEach((identity) => {
     if (identity.provider !== 'manual') identityToContent.set(`${identity.provider}:${identity.externalId}`, contentKeys.get(restaurantID)!)
   }))
+  contentRestaurants.forEach((restaurant) => {
+    const fingerprint = placeFingerprint(restaurant)
+    if (!fingerprintToContent.has(fingerprint)) {
+      fingerprintToContent.set(fingerprint, contentKeys.get(restaurant.restaurant_id)!)
+    }
+  })
   const viewerIdentityMap = identityMap(viewerIdentities)
   const states = new Map<string, PublicContentViewerStateV1>()
   viewerRestaurants.forEach((restaurant) => {
     const identityMatch = (viewerIdentityMap.get(restaurant.id) ?? [])
       .map((identity) => identityToContent.get(`${identity.provider}:${identity.externalId}`))
       .find(Boolean)
-    const fallback = [...contentRestaurants].find((candidate) => placeFingerprint(candidate) === placeFingerprint({
+    const fallbackKey = fingerprintToContent.get(placeFingerprint({
       restaurant_name: restaurant.name, address: restaurant.address, city: restaurant.city,
       latitude: restaurant.latitude, longitude: restaurant.longitude,
     }))
-    const key = identityMatch ?? (fallback ? contentKeys.get(fallback.restaurant_id) : null)
+    const key = identityMatch ?? fallbackKey
     if (!key) return
     if (restaurant.status === 'visited') states.set(key, 'visited')
     else if (!states.has(key)) states.set(key, 'want_to_go')

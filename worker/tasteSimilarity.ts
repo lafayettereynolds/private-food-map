@@ -48,7 +48,11 @@ function buildProfiles(signals: TasteRatingSignal[]) {
   const profiles = new Map<string, TasteProfile>()
   const userMeans = new Map<string, number>()
   const byUser = new Map<string, number[]>()
-  signals.forEach((signal) => byUser.set(signal.userId, [...(byUser.get(signal.userId) ?? []), signal.ratingOutOfTen]))
+  signals.forEach((signal) => {
+    const ratings = byUser.get(signal.userId)
+    if (ratings) ratings.push(signal.ratingOutOfTen)
+    else byUser.set(signal.userId, [signal.ratingOutOfTen])
+  })
   byUser.forEach((ratings, userId) => userMeans.set(userId, ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length))
   signals.forEach((signal) => {
     const profile = profiles.get(signal.userId) ?? { pois: new Map(), tags: new Map() }

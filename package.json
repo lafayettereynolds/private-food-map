@@ -44,8 +44,10 @@
     "d1:migrate:remote": "wrangler d1 migrations apply food-map-db --remote",
     "d1:preflight:development": "wrangler d1 migrations list food-map-db-development --remote --config wrangler.development.jsonc",
     "d1:migrate:development": "wrangler d1 migrations apply food-map-db-development --remote --config wrangler.development.jsonc",
-    "seed:test-users": "wrangler d1 migrations apply food-map-db --local && node scripts/seed-test-users.mjs seed --environment development",
-    "reset:test-users": "wrangler d1 migrations apply food-map-db --local && node scripts/seed-test-users.mjs reset --environment development",
+    "seed:test-users": "node scripts/seed-development-demo.mjs seed --environment development",
+    "reset:test-users": "node scripts/seed-development-demo.mjs clear --environment development",
+    "reseed:development-demo": "node scripts/seed-development-demo.mjs reseed --environment development",
+    "verify:development-demo": "node scripts/seed-development-demo.mjs verify --environment development",
     "deploy": "pnpm run build && wrangler deploy",
     "deploy:development": "pnpm run build && wrangler deploy --config wrangler.development.jsonc"
   },
