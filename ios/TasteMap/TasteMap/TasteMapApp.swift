@@ -31,6 +31,7 @@ struct TasteMapApp: App {
             let useCommunityFixture = TasteMapUITestFixtures.usesCommunityFixture
             let useAnalysisFixture = TasteMapUITestFixtures.usesAnalysisFixture
             let useRestaurantAcquisitionFixture = TasteMapUITestFixtures.usesRestaurantAcquisitionFixture
+            let useF2ABrowsingFixture = TasteMapUITestFixtures.usesF2ABrowsingFixture
             let usePersistentOfflineFixture = TasteMapUITestFixtures.usesPersistentFixture
             let resetPersistentOfflineFixture = TasteMapUITestFixtures.requestsPersistentFixtureReset
             let persistenceConfigurationName = usePersistentOfflineFixture
@@ -45,6 +46,7 @@ struct TasteMapApp: App {
             let useCommunityFixture = false
             let useAnalysisFixture = false
             let useRestaurantAcquisitionFixture = false
+            let useF2ABrowsingFixture = false
             let usePersistentOfflineFixture = false
             let resetPersistentOfflineFixture = false
             let persistenceConfigurationName = "TasteMap"
@@ -52,7 +54,7 @@ struct TasteMapApp: App {
             #endif
             container = try TasteMapPersistence.makeContainer(
                 inMemory: useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture
-                    || useAnalysisFixture || useRestaurantAcquisitionFixture,
+                    || useAnalysisFixture || useRestaurantAcquisitionFixture || useF2ABrowsingFixture,
                 configurationName: persistenceConfigurationName,
                 storageURL: persistenceStorageURL
             )
@@ -80,6 +82,10 @@ struct TasteMapApp: App {
             if useAnalysisFixture {
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)
                 try TasteMapUITestFixtures.insertTasteProfileAnalysisFixture(into: container)
+            }
+            if useF2ABrowsingFixture {
+                try TasteMapUITestFixtures.insertProfileFixture(into: container)
+                try TasteMapUITestFixtures.insertF2ABrowsingFixture(into: container)
             }
             #endif
         } catch {

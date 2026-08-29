@@ -42,6 +42,69 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testF2AMapListSwitchAndSharedRestaurantDetail() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
+        app.launch()
+
+        let listMode = app.segmentedControls.buttons["列表"]
+        XCTAssertTrue(listMode.waitForExistence(timeout: 5))
+        listMode.tap()
+        let restaurantName = "F2-A 很长但仍需完整可读的江南季节料理餐厅"
+        XCTAssertTrue(app.staticTexts[restaurantName].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["2 次到访"].exists)
+        XCTAssertTrue(app.staticTexts["4.5"].exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(
+            identifier: "restaurant-photo-fallback-00000000-0000-0000-0000-000000010001"
+        ).firstMatch.exists)
+
+        let mapMode = app.segmentedControls.buttons["地图"]
+        XCTAssertTrue(mapMode.exists)
+        mapMode.tap()
+        XCTAssertTrue(mapMode.isSelected)
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 5))
+        listMode.tap()
+        XCTAssertTrue(app.staticTexts[restaurantName].waitForExistence(timeout: 5))
+
+        let row = app.buttons.containing(.staticText, identifier: restaurantName).firstMatch
+        XCTAssertTrue(row.exists)
+        row.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testF2AProfileListsAndIndependentFootprints() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
+        app.launch()
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+
+        let visitedEntry = app.buttons["profile-visited-list-entry"]
+        scrollUntilVisible(visitedEntry, in: app)
+        visitedEntry.tap()
+        XCTAssertTrue(app.navigationBars["去过的餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["F2-A 很长但仍需完整可读的江南季节料理餐厅"].exists)
+        app.navigationBars["去过的餐厅"].buttons.firstMatch.tap()
+
+        let wantedEntry = app.buttons["profile-want-list-entry"]
+        scrollUntilVisible(wantedEntry, in: app)
+        wantedEntry.tap()
+        XCTAssertTrue(app.navigationBars["想吃的餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["F2-A 想吃小馆"].exists)
+        app.navigationBars["想吃的餐厅"].buttons.firstMatch.tap()
+
+        let footprintEntry = app.buttons["profile-taste-footprints-entry"]
+        scrollUntilVisible(footprintEntry, in: app)
+        footprintEntry.tap()
+        XCTAssertTrue(app.navigationBars["味觉足迹"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "taste-footprint-item-")).count, 2)
+        XCTAssertTrue(app.staticTexts["未评分"].exists)
+        XCTAssertFalse(app.staticTexts["F2-A 已删除餐厅"].exists)
+        XCTAssertFalse(app.staticTexts["F2-A 已删除餐厅"].waitForExistence(timeout: 1))
+    }
+
+    @MainActor
     func testRestaurantAcquisitionNearbyRequiresExplicitWantToGoAction() throws {
         let app = XCUIApplication()
         app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST": "1"]

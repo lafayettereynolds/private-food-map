@@ -36,6 +36,11 @@ enum TasteMapUITestFixtures {
     static let settingsEnvironmentKey = "TASTEMAP_F1B3_SETTINGS_UI_TEST"
     static let restaurantAcquisitionEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST"
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
+    static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
+
+    static var usesF2ABrowsingFixture: Bool {
+        ProcessInfo.processInfo.environment[f2ABrowsingEnvironmentKey] == "1"
+    }
 
     static var usesRestaurantAcquisitionFixture: Bool {
         ProcessInfo.processInfo.environment[restaurantAcquisitionEnvironmentKey] == "1"
@@ -158,6 +163,7 @@ enum TasteMapUITestFixtures {
             || usesAnalysisFixture
             || usesRestaurantListsFixture
             || usesRestaurantRouletteFixture
+            || usesF2ABrowsingFixture
     }
 
     static var usesPhotoFixture: Bool {
@@ -366,6 +372,108 @@ enum TasteMapUITestFixtures {
             avatarPreset: .polarBear,
             visibility: .private,
             serverVersion: 1,
+            syncStatus: .synced
+        ))
+        try context.save()
+    }
+
+    static func insertF2ABrowsingFixture(into container: ModelContainer) throws {
+        guard usesF2ABrowsingFixture else { return }
+        let context = container.mainContext
+        let recentID = uuid(10_001)
+        let wantedID = uuid(10_002)
+        let deletedID = uuid(10_003)
+        let recent = Restaurant(
+            id: recentID,
+            name: "F2-A 很长但仍需完整可读的江南季节料理餐厅",
+            address: "文三路 88 号",
+            latitude: 30.27,
+            longitude: 120.13,
+            city: "杭州",
+            status: .visited,
+            createdAt: Date(timeIntervalSince1970: 1_778_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_778_000_000),
+            syncStatus: .synced
+        )
+        let wanted = Restaurant(
+            id: wantedID,
+            name: "F2-A 想吃小馆",
+            address: "愚园路 19 号",
+            latitude: 31.22,
+            longitude: 121.44,
+            city: "上海",
+            status: .wantToGo,
+            createdAt: Date(timeIntervalSince1970: 1_778_100_000),
+            updatedAt: Date(timeIntervalSince1970: 1_778_100_000),
+            syncStatus: .synced
+        )
+        let deleted = Restaurant(
+            id: deletedID,
+            name: "F2-A 已删除餐厅",
+            address: "不会显示",
+            latitude: 30.20,
+            longitude: 120.10,
+            city: "杭州",
+            status: .visited,
+            deletedAt: Date(timeIntervalSince1970: 1_778_300_000),
+            syncStatus: .synced
+        )
+        context.insert(recent)
+        context.insert(wanted)
+        context.insert(deleted)
+
+        let firstVisit = Visit(
+            id: uuid(10_101),
+            restaurantId: recentID,
+            visitedAt: Date(timeIntervalSince1970: 1_778_200_000),
+            rating: 4.5,
+            note: "F2-A 第一条真实足迹，菜品轻盈，适合慢慢吃。",
+            companionNames: ["小林"],
+            recommendationSourceType: .friend,
+            syncStatus: .synced
+        )
+        let nilRatingVisit = Visit(
+            id: uuid(10_102),
+            restaurantId: recentID,
+            visitedAt: Date(timeIntervalSince1970: 1_778_250_000),
+            rating: nil,
+            note: "F2-A 未评分足迹",
+            syncStatus: .synced
+        )
+        let deletedVisit = Visit(
+            id: uuid(10_103),
+            restaurantId: recentID,
+            visitedAt: Date(timeIntervalSince1970: 1_778_260_000),
+            rating: 2,
+            deletedAt: Date(timeIntervalSince1970: 1_778_270_000),
+            syncStatus: .synced
+        )
+        let orphanedByRestaurant = Visit(
+            id: uuid(10_104),
+            restaurantId: deletedID,
+            visitedAt: Date(timeIntervalSince1970: 1_778_280_000),
+            rating: 5,
+            syncStatus: .synced
+        )
+        context.insert(firstVisit)
+        context.insert(nilRatingVisit)
+        context.insert(deletedVisit)
+        context.insert(orphanedByRestaurant)
+
+        let dish = Dish(
+            id: uuid(10_201),
+            restaurantId: recentID,
+            visitId: firstVisit.id,
+            name: "炭烤时蔬",
+            rating: 4.5,
+            syncStatus: .synced
+        )
+        context.insert(dish)
+        context.insert(VisitDish(
+            id: uuid(10_202),
+            restaurantId: recentID,
+            visitId: firstVisit.id,
+            dishId: dish.id,
             syncStatus: .synced
         ))
         try context.save()

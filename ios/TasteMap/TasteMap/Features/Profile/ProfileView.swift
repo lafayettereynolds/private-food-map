@@ -4,6 +4,12 @@ import SwiftData
 import SwiftUI
 import UIKit
 
+private enum ProfileBrowseDestination: Hashable {
+    case visited
+    case wantToGo
+    case footprints
+}
+
 struct ProfileView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
@@ -18,6 +24,7 @@ struct ProfileView: View {
     @State private var isRunningAuthOperation = false
     @State private var authMessage: String?
     @State private var isEditingProfile = false
+    @State private var browseDestination: ProfileBrowseDestination?
     @State private var isShowingSocialHub = false
 
     private var activeRestaurants: [Restaurant] { restaurants.filter { $0.deletedAt == nil } }
@@ -63,7 +70,9 @@ struct ProfileView: View {
                     ProfileStatisticsSection(statistics: statistics)
                     ProfileContentLinks(
                         visitedCount: statistics.visitedRestaurantCount,
-                        wantToGoCount: statistics.wantToGoRestaurantCount
+                        wantToGoCount: statistics.wantToGoRestaurantCount,
+                        footprintCount: statistics.visitCount,
+                        onSelect: { browseDestination = $0 }
                     )
                     NavigationLink {
                         RestaurantRouletteScreen(preferredCity: activeProfile?.city)
@@ -314,6 +323,16 @@ struct ProfileView: View {
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("我的")
+            .navigationDestination(item: $browseDestination) { destination in
+                switch destination {
+                case .visited:
+                    RestaurantCollectionView(segment: .visited)
+                case .wantToGo:
+                    RestaurantCollectionView(segment: .wantToGo)
+                case .footprints:
+                    TasteFootprintsView()
+                }
+            }
             .sheet(isPresented: $isEditingProfile) {
                 if let activeProfile {
                     ProfileEditorSheet(profile: activeProfile, avatarPhoto: avatarPhoto)
@@ -469,12 +488,17 @@ struct ProfileBasicStatistics: Equatable {
     let totalSpend: Decimal?
 
     init(restaurants: [Restaurant], visits: [Visit]) {
-        visitedRestaurantCount = Set(visits.map(\.restaurantId)).count
-        wantToGoRestaurantCount = restaurants.filter { $0.status == .wantToGo }.count
-        visitCount = visits.count
-        let ratings = visits.compactMap(\.rating)
+        let activeRestaurants = restaurants.filter { $0.deletedAt == nil }
+        let activeRestaurantIDs = Set(activeRestaurants.map(\.id))
+        let activeVisits = visits.filter {
+            $0.deletedAt == nil && activeRestaurantIDs.contains($0.restaurantId)
+        }
+        visitedRestaurantCount = activeRestaurants.filter { $0.status == .visited }.count
+        wantToGoRestaurantCount = activeRestaurants.filter { $0.status == .wantToGo }.count
+        visitCount = activeVisits.count
+        let ratings = activeVisits.compactMap(\.rating)
         averageRating = ratings.isEmpty ? nil : ratings.reduce(0, +) / Double(ratings.count)
-        let spend = visits.compactMap(\.myActualSpend)
+        let spend = activeVisits.compactMap(\.myActualSpend)
         totalSpend = spend.isEmpty ? nil : spend.reduce(Decimal.zero, +)
     }
 
@@ -619,12 +643,28 @@ private struct ProfileStatisticsSection: View {
 private struct ProfileContentLinks: View {
     let visitedCount: Int
     let wantToGoCount: Int
+    let footprintCount: Int
+    let onSelect: (ProfileBrowseDestination) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            row("去过的餐厅", value: "\(visitedCount)", icon: "checkmark.circle.fill")
+            Button { onSelect(.visited) } label: {
+                row("去过的餐厅", value: "\(visitedCount)", icon: "checkmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile-visited-list-entry")
             Divider().padding(.leading, 48)
-            row("想吃的餐厅", value: "\(wantToGoCount)", icon: "bookmark.fill")
+            Button { onSelect(.wantToGo) } label: {
+                row("想吃的餐厅", value: "\(wantToGoCount)", icon: "bookmark.fill")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile-want-list-entry")
+            Divider().padding(.leading, 48)
+            Button { onSelect(.footprints) } label: {
+                row("味觉足迹", value: "\(footprintCount)", icon: "point.bottomleft.forward.to.point.topright.scurvepath")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile-taste-footprints-entry")
         }
         .padding(.horizontal, 16)
         .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -636,8 +676,13 @@ private struct ProfileContentLinks: View {
             Text(title)
             Spacer()
             Text(value).foregroundStyle(.secondary)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 15)
+        .contentShape(Rectangle())
     }
 }
 
@@ -841,7 +886,9 @@ private struct ProfilePreviewScreen: View {
                 ProfileStatisticsSection(statistics: statistics)
                 ProfileContentLinks(
                     visitedCount: statistics.visitedRestaurantCount,
-                    wantToGoCount: statistics.wantToGoRestaurantCount
+                    wantToGoCount: statistics.wantToGoRestaurantCount,
+                    footprintCount: statistics.visitCount,
+                    onSelect: { _ in }
                 )
                 SyncStatusView(presentation: sync)
                     .padding(18)
