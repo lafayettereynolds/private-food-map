@@ -36,6 +36,8 @@
     "test:p3e:development": "node scripts/test-p3e-development.mjs",
     "test:task06": "node scripts/test-social-collaboration-migration.mjs && vitest run worker/socialCollaborationV1.integration.test.js worker/communityV1.integration.test.js worker/socialV1.integration.test.js worker/syncV1.integration.test.js",
     "test:task06:development": "node scripts/test-social-collaboration-development.mjs",
+    "test:task07": "vitest run worker/discoveryV1.integration.test.js worker/communityV1.integration.test.js worker/socialCollaborationV1.integration.test.js worker/socialV1.integration.test.js worker/photoBinaryV1.test.ts worker/syncV1.integration.test.js worker/tasteSimilarity.test.ts",
+    "test:task07:development": "node scripts/test-discovery-development.mjs && node scripts/test-community-development.mjs && node scripts/test-social-collaboration-development.mjs && node scripts/seed-development-demo.mjs verify --environment development",
     "test:p4f": "node scripts/test-restaurant-lists-migration.mjs && vitest run src/contracts/restaurantListContract.test.ts worker/restaurantListsV1.integration.test.js worker/syncV1.integration.test.js",
     "test:p4f:development": "node scripts/test-restaurant-lists-development.mjs",
     "test:p4h": "vitest run worker/membershipV1.test.ts worker/authV1.integration.test.js worker/discoveryV1.integration.test.js worker/syncV1.integration.test.js src/services/featurePolicy.test.ts",

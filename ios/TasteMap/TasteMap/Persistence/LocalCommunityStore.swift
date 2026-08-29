@@ -55,4 +55,20 @@ struct LocalCommunityStore {
         }
         try context.save()
     }
+
+    /// Keeps an explicit viewer action visible in every cached public feed while
+    /// retaining the original author's read-only projection.
+    func updateViewerState(
+        globalKey: String,
+        currentUserID: String,
+        state: DiscoveryViewerRestaurantStateV1
+    ) throws {
+        for cached in try context.fetch(FetchDescriptor<CachedCommunityContent>())
+        where cached.currentUserID == currentUserID {
+            guard var item = cached.item, item.restaurant.globalKey == globalKey else { continue }
+            item.viewerState = state
+            cached.payload = try JSONEncoder().encode(item)
+        }
+        try context.save()
+    }
 }

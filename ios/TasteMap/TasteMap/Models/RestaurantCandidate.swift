@@ -125,3 +125,26 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         }
     }
 }
+
+extension DiscoveryRestaurantProjectionV1 {
+    /// Provider-neutral conversion used only after an explicit viewer action.
+    /// Public author Visits, notes and photos are intentionally not part of it.
+    var restaurantCandidate: RestaurantCandidate {
+        RestaurantCandidate(
+            name: name,
+            address: address,
+            city: city,
+            latitude: latitude,
+            longitude: longitude,
+            appleMapItemIdentifier: placeIdentities.first { $0.provider == .appleMaps }?.externalId,
+            placeIdentities: placeIdentities.map {
+                RestaurantCandidatePlaceIdentity(
+                    provider: $0.provider,
+                    externalID: $0.externalId,
+                    isPrimary: $0.isPrimary
+                )
+            },
+            photoURL: merchantImageUrl.flatMap(URL.init(string:))
+        )
+    }
+}

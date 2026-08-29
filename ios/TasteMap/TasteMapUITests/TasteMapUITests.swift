@@ -318,7 +318,7 @@ final class TasteMapUITests: XCTestCase {
 
         app.segmentedControls.buttons["同味"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "基于 5 家共同评分餐厅")).firstMatch.waitForExistence(timeout: 5))
-        app.staticTexts["同味小林"].firstMatch.tap()
+        app.buttons["同味小林"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["公开主页"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["同味小林"].exists)
         app.buttons["完成"].tap()
@@ -345,6 +345,46 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(want.waitForExistence(timeout: 5))
         want.tap()
         XCTAssertTrue(app.staticTexts["已想吃"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testTask07DiscoveryFiltersReasonsAndViewerActions() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P3C_DISCOVERY_UI_TEST": "1"]
+        app.launch()
+        app.buttons["发现"].tap()
+
+        XCTAssertTrue(app.buttons["discovery-city-menu"].waitForExistence(timeout: 5))
+        app.buttons["discovery-filters"].tap()
+        XCTAssertTrue(app.navigationBars["筛选推荐"].waitForExistence(timeout: 3))
+        app.buttons["discovery-rating"].tap()
+        app.buttons["4.5 分以上"].tap()
+        app.buttons["discovery-filter-done"].tap()
+        XCTAssertTrue(app.staticTexts["P3-C 发现寿司店"].waitForExistence(timeout: 5))
+
+        let reasons = app.buttons["discovery-reasons-place:p3c-ui-0"]
+        if !reasons.exists { app.swipeUp() }
+        XCTAssertTrue(reasons.waitForExistence(timeout: 3))
+        reasons.tap()
+        XCTAssertTrue(app.staticTexts["当前城市的公开评分样本稳定"].waitForExistence(timeout: 3))
+
+        let record = app.buttons["discovery-record-place:p3c-ui-0"]
+        XCTAssertTrue(record.waitForExistence(timeout: 3))
+        record.tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 3))
+        app.buttons["取消"].tap()
+
+        let list = app.buttons["discovery-list-place:p3c-ui-0"]
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
+        list.tap()
+        XCTAssertTrue(app.navigationBars["加入榜单"].waitForExistence(timeout: 3))
+        app.buttons["完成"].tap()
+
+        let roulette = app.buttons["discovery-roulette-place:p3c-ui-0"]
+        XCTAssertTrue(roulette.waitForExistence(timeout: 3))
+        roulette.tap()
+        XCTAssertTrue(app.navigationBars["今天吃什么"].waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
     }
 
     @MainActor
@@ -398,6 +438,39 @@ final class TasteMapUITests: XCTestCase {
         ).firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["云边小馆·湖滨店"].exists)
         keepScreenshot(named: "P3-D Community Offline Cache", of: app)
+    }
+
+    @MainActor
+    func testTask07CommunityViewerActionsAndWantActivity() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_P3D_COMMUNITY_UI_TEST": "1"]
+        app.launch()
+        app.buttons["发现"].tap()
+        app.segmentedControls.buttons["社区动态"].tap()
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "加入了想吃")
+        ).firstMatch.waitForExistence(timeout: 5))
+
+        app.swipeDown()
+        let record = app.buttons["community-record-place:p3d-ui-0"]
+        if !record.exists { app.swipeDown() }
+        XCTAssertTrue(record.waitForExistence(timeout: 3))
+        record.tap()
+        XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 3))
+        app.buttons["取消"].tap()
+
+        let list = app.buttons["community-list-place:p3d-ui-0"]
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
+        list.tap()
+        XCTAssertTrue(app.navigationBars["加入榜单"].waitForExistence(timeout: 3))
+        app.buttons["完成"].tap()
+
+        let roulette = app.buttons["community-roulette-place:p3d-ui-0"]
+        XCTAssertTrue(roulette.waitForExistence(timeout: 3))
+        roulette.tap()
+        XCTAssertTrue(app.navigationBars["今天吃什么"].waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
     }
 
     @MainActor

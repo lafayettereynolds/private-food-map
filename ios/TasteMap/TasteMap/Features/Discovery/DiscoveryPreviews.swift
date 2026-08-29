@@ -3,6 +3,7 @@ import SwiftUI
 private struct DiscoveryPreviewHost: View {
     @State var mode: DiscoveryModeV1
     @State var window = 7
+    @State var filters = DiscoveryBrowseFilters()
     let cards: [DiscoveryCardV1]
     var loading = false
     var message: String?
@@ -13,10 +14,15 @@ private struct DiscoveryPreviewHost: View {
         NavigationStack {
             DiscoveryContentView(
                 mode: $mode, trendWindowDays: $window, cards: cards,
-                loading: loading, message: message,
+                unfilteredCardCount: cards.count,
+                loading: loading, loadingMore: false, message: message,
                 cacheDate: cached ? .now.addingTimeInterval(-1800) : nil,
                 showingCache: cached, isSignedIn: signedIn,
+                city: "杭州", availableCities: ["杭州", "上海"], filters: $filters,
+                filterEmptyReason: nil, distanceAnchorDescription: nil, canLoadMore: false,
+                onSelectCity: { _ in }, onResetFilters: {},
                 onRetry: {}, onOpenRestaurant: { _ in }, onWantToGo: { _ in },
+                onRecordVisit: { _ in }, onAddToList: { _ in }, onAddToRoulette: { _ in },
                 onOpenUser: { _ in }, onLoadMore: {}, photoAPI: nil
             )
             .navigationTitle("发现")
@@ -61,7 +67,10 @@ private enum DiscoveryPreviewFixtures {
                     friends: .init(value: index == 0 ? 5 : nil, sampleCount: index == 0 ? 2 : 0),
                     similarTaste: .init(value: mode == .similarTaste ? 4.8 : nil, sampleCount: mode == .similarTaste ? 4 : 0)
                 ),
-                reasons: [reason], sourceUser: mode == .trending ? nil : user,
+                reasons: [
+                    reason,
+                    .init(code: "COMMUNITY_QUALITY", text: "当前城市的公开评分样本稳定"),
+                ], sourceUser: mode == .trending ? nil : user,
                 similarity: mode == .similarTaste ? .init(percent: 91, sharedRestaurantCount: 5) : nil,
                 trend: mode == .trending ? .init(windowDays: 7, uniqueVisitorCount: 8, wantToGoCount: 4) : nil,
                 cacheScope: .public, rank: index + 1, score: Double(100 - index)

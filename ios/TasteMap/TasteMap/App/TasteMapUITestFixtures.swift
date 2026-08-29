@@ -831,7 +831,10 @@ enum TasteMapUITestFixtures {
                                community: .init(value: 4.6, sampleCount: 8),
                                friends: .init(value: 4.8, sampleCount: 2),
                                similarTaste: .init(value: 4.7, sampleCount: 3)),
-                reasons: [reason], sourceUser: mode == .trending ? nil : source,
+                reasons: [
+                    reason,
+                    .init(code: "COMMUNITY_QUALITY", text: "当前城市的公开评分样本稳定"),
+                ], sourceUser: mode == .trending ? nil : source,
                 similarity: mode == .similarTaste ? .init(percent: 91, sharedRestaurantCount: 5) : nil,
                 trend: mode == .trending ? .init(windowDays: window, uniqueVisitorCount: 8, wantToGoCount: 3) : nil,
                 cacheScope: .public, rank: index + 1, score: Double(100 - index)
@@ -871,6 +874,14 @@ enum TasteMapUITestFixtures {
                 pricePerPerson: 136, merchantImageUrl: nil,
                 markerEmoji: index.isMultiple(of: 2) ? "🍲" : "🍣", photo: nil
             )
+            let photos: [PublicContentPhotoV1] = index == 0
+                ? (0..<3).map {
+                    .init(
+                        photoId: String(format: "00000000-0000-4000-8000-%012d", 7_000 + $0),
+                        variant: .thumbnail
+                    )
+                }
+                : []
             let visit = PublicVisitV1(
                 id: "visit-p3d-ui-\(index)", ownerUserId: user.userId,
                 restaurantGlobalKey: restaurant.globalKey, visitedAt: eventAt,
@@ -879,11 +890,13 @@ enum TasteMapUITestFixtures {
                     ? "这是一段用于验证较长内容的真实到访备注。菜的火候很稳，朋友们都愿意下次再来；即使文字变长，卡片也应该保持清楚、自然，并且不能泄露消费、饭搭子或推荐来源。"
                     : "热气腾腾，味道很稳，适合和朋友慢慢吃。",
                 visibility: user.friendshipState == .friends ? .friends : .public,
-                photos: [], updatedAt: eventAt
+                photos: photos, updatedAt: eventAt
             )
             return PublicContentItemV1(
-                id: "visit:\(visit.id)", kind: .visit, eventAt: eventAt, updatedAt: eventAt,
-                user: user, restaurant: restaurant, visit: visit,
+                id: index == 1 ? "want:place:p3d-ui-1" : "visit:\(visit.id)",
+                kind: index == 1 ? .wantToGo : .visit,
+                eventAt: eventAt, updatedAt: eventAt,
+                user: user, restaurant: restaurant, visit: index == 1 ? nil : visit,
                 viewerState: index == 3 ? .visited : .none,
                 cacheScope: user.friendshipState == .friends ? .friends : .public
             )

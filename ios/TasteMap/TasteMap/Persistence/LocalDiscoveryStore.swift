@@ -68,12 +68,7 @@ struct LocalDiscoveryStore {
             }
             return existing
         }
-        let appleIdentity = projection.placeIdentities.first { $0.provider == .appleMaps }?.externalId
-        let candidate = RestaurantCandidate(
-            name: projection.name, address: projection.address,
-            latitude: projection.latitude, longitude: projection.longitude,
-            appleMapItemIdentifier: appleIdentity
-        )
+        let candidate = projection.restaurantCandidate
         let restaurant = try LocalTasteMapStore(context: context)
             .addToWantToGo(candidate: candidate, among: restaurants)
         restaurant.city = projection.city
@@ -155,12 +150,7 @@ struct LocalDiscoveryStore {
             }
             return !keys.isDisjoint(with: projectedKeys)
         }) { return identityMatch }
-        let candidate = RestaurantCandidate(
-            name: projection.name, address: projection.address,
-            latitude: projection.latitude, longitude: projection.longitude,
-            appleMapItemIdentifier: projection.placeIdentities.first { $0.provider == .appleMaps }?.externalId
-        )
-        return RestaurantDeduplicator.match(for: candidate, in: restaurants)
+        return RestaurantDeduplicator.match(for: projection.restaurantCandidate, in: restaurants)
     }
 
     private func discoveryRecordData(for restaurant: Restaurant,

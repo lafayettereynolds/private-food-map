@@ -121,8 +121,7 @@ try {
     pagination: true, followDoesNotGrantFriendData: true, unfriendRevocation: true,
     publicPhotoAuthorization: true, guessedPhotoDeniedByProfile: true, tombstoneRemoved: true,
     forgedUserIgnored: true, unauthorizedDenied: true,
-    likes: 'not implemented because Web has no server-backed Like domain',
-    comments: 'not implemented because Web has no server-backed Comment domain',
+    interactions: 'Real Like and Comment are covered by the Task 06 Development E2E suite',
     cleanup: 'runs in finally: records tombstoned, R2 objects deleted, profiles private',
   }, null, 2))
 } finally {

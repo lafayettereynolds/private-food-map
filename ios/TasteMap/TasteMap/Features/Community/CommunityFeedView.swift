@@ -5,6 +5,7 @@ import UIKit
 struct CommunityFeedView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NativeAuthServices.self) private var authServices
+    @Environment(SyncCoordinator.self) private var syncCoordinator
     @Query private var restaurants: [Restaurant]
     @State private var scope: CommunityFeedScopeV1 = .following
     @State private var currentUserID: String?
@@ -16,11 +17,20 @@ struct CommunityFeedView: View {
     @State private var showingCache = false
     @State private var selectedItem: PublicContentItemV1?
     @State private var selectedUser: PublicContentUserV1?
+    @State private var selectedVisitItem: PublicContentItemV1?
+    @State private var selectedListItem: PublicContentItemV1?
+    @State private var selectedRouletteRestaurantID: UUID?
 
     var body: some View {
         NavigationStack {
             Group {
-                if loading && items.isEmpty {
+                if currentUserID == nil && !loading {
+                    ContentUnavailableView(
+                        "登录后查看社区",
+                        systemImage: "person.crop.circle.badge.checkmark",
+                        description: Text("请先到“我的”使用 Apple 登录。")
+                    )
+                } else if loading && items.isEmpty {
                     ProgressView("正在加载社区动态…").frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if items.isEmpty {
                     ContentUnavailableView {
@@ -53,6 +63,9 @@ struct CommunityFeedView: View {
                                     onOpenRestaurant: { selectedItem = item },
                                     onOpenUser: { selectedUser = item.user },
                                     onWantToGo: { addToWantToGo(item) },
+                                    onRecordVisit: { selectedVisitItem = item },
+                                    onAddToList: { selectedListItem = item },
+                                    onAddToRoulette: { addToRoulette(item) },
                                     interactionAPI: authServices.socialCollaborationAPI,
                                     currentUserID: currentUserID,
                                     onEngagementChange: { updateEngagement(itemID: item.id, engagement: $0) }
@@ -81,8 +94,42 @@ struct CommunityFeedView: View {
             .sheet(item: $selectedItem) { item in
                 DiscoveryRestaurantDestination(
                     card: item.discoveryCard, restaurants: restaurants,
-                    onWantToGo: { addToWantToGo(item) }, photoAPI: authServices.photoAPI
+                    onWantToGo: { addToWantToGo(item) },
+                    onViewerStateChange: {
+                        updateViewerState(globalKey: item.restaurant.globalKey, state: $0)
+                    },
+                    photoAPI: authServices.photoAPI
                 )
+            }
+            .sheet(item: $selectedVisitItem) { item in
+                VisitEditorView(
+                    candidate: item.restaurant.discoveryProjection.restaurantCandidate,
+                    onVisitSaved: { _ in
+                        updateViewerState(globalKey: item.restaurant.globalKey, state: .visited)
+                        Task { await syncCoordinator.synchronizeNow() }
+                    }
+                )
+            }
+            .sheet(item: $selectedListItem) { item in
+                if let currentUserID {
+                    AddPlaceToListsSheet(
+                        place: item.restaurant.discoveryProjection,
+                        currentUserID: currentUserID
+                    )
+                }
+            }
+            .sheet(isPresented: Binding(
+                get: { selectedRouletteRestaurantID != nil },
+                set: { if !$0 { selectedRouletteRestaurantID = nil } }
+            )) {
+                NavigationStack {
+                    RestaurantRouletteScreen(initialRestaurantID: selectedRouletteRestaurantID)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("完成") { selectedRouletteRestaurantID = nil }
+                            }
+                        }
+                }
             }
             .sheet(item: $selectedUser) { user in
                 if let currentUserID {
@@ -126,10 +173,17 @@ struct CommunityFeedView: View {
     private func load(reset: Bool, preferCache: Bool) async {
         guard let currentUserID, !loading else { return }
         let route = LocalCommunityStore.feedRoute(scope)
-        if reset && preferCache, let cached = try? LocalCommunityStore(context: modelContext)
-            .cached(currentUserID: currentUserID, routeKey: route) {
-            items = cached.items
-            showingCache = true
+        if reset {
+            if preferCache, let cached = try? LocalCommunityStore(context: modelContext)
+                .cached(currentUserID: currentUserID, routeKey: route) {
+                items = cached.items
+                showingCache = true
+                nextCursor = nil
+            } else {
+                items = []
+                showingCache = false
+                nextCursor = nil
+            }
         }
         loading = true; defer { loading = false }
         do {
@@ -145,7 +199,7 @@ struct CommunityFeedView: View {
         } catch {
             if items.isEmpty, let cached = try? LocalCommunityStore(context: modelContext)
                 .cached(currentUserID: currentUserID, routeKey: route) {
-                items = cached.items; showingCache = true
+                items = cached.items; showingCache = true; nextCursor = nil
             }
             message = items.isEmpty ? "社区内容暂时无法加载，请稍后重试。" : "刷新失败，继续显示已有缓存。"
         }
@@ -153,7 +207,7 @@ struct CommunityFeedView: View {
 
     @MainActor
     private func loadMore() async {
-        guard let currentUserID, let cursor = nextCursor, !loadingMore else { return }
+        guard let currentUserID, let cursor = nextCursor, !loadingMore, !showingCache else { return }
         loadingMore = true; defer { loadingMore = false }
         do {
             let page = try await authServices.communityAPI.feed(scope: scope, cursor: cursor, limit: 20)
@@ -171,13 +225,48 @@ struct CommunityFeedView: View {
     private func addToWantToGo(_ item: PublicContentItemV1) {
         guard item.viewerState == .none else { return }
         do {
-            _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+            let restaurant = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
                 projection: item.restaurant.discoveryProjection, among: restaurants
             )
-            for index in items.indices where items[index].restaurant.globalKey == item.restaurant.globalKey {
-                items[index].viewerState = .wantToGo
-            }
+            updateViewerState(
+                globalKey: item.restaurant.globalKey,
+                state: restaurant.status == .visited ? .visited : .wantToGo
+            )
+            Task { await syncCoordinator.synchronizeNow() }
         } catch { message = "暂时无法加入想吃，请稍后重试。" }
+    }
+
+    @MainActor
+    private func addToRoulette(_ item: PublicContentItemV1) {
+        do {
+            let restaurant = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+                projection: item.restaurant.discoveryProjection,
+                among: restaurants
+            )
+            updateViewerState(
+                globalKey: item.restaurant.globalKey,
+                state: restaurant.status == .visited ? .visited : .wantToGo
+            )
+            selectedRouletteRestaurantID = restaurant.id
+            Task { await syncCoordinator.synchronizeNow() }
+        } catch { message = "暂时无法加入轮盘，请稍后重试。" }
+    }
+
+    @MainActor
+    private func updateViewerState(
+        globalKey: String,
+        state: DiscoveryViewerRestaurantStateV1
+    ) {
+        for index in items.indices where items[index].restaurant.globalKey == globalKey {
+            items[index].viewerState = state
+        }
+        guard let currentUserID else { return }
+        try? LocalCommunityStore(context: modelContext).updateViewerState(
+            globalKey: globalKey, currentUserID: currentUserID, state: state
+        )
+        try? LocalDiscoveryStore(context: modelContext).updateViewerState(
+            globalKey: globalKey, currentUserID: currentUserID, state: state
+        )
     }
 
     private func deduplicated(_ values: [PublicContentItemV1]) -> [PublicContentItemV1] {
@@ -197,6 +286,9 @@ struct PublicContentCard: View {
     let onOpenRestaurant: () -> Void
     let onOpenUser: () -> Void
     let onWantToGo: () -> Void
+    var onRecordVisit: () -> Void = {}
+    var onAddToList: () -> Void = {}
+    var onAddToRoulette: () -> Void = {}
     var interactionAPI: (any CommunityInteractionAPI)? = nil
     var currentUserID: String? = nil
     var onEngagementChange: ((CommunityEngagementSummaryV1) -> Void)? = nil
@@ -252,20 +344,17 @@ struct PublicContentCard: View {
                 )
             }
 
-            HStack {
-                ShareLink(item: shareText) { Label("分享", systemImage: "square.and.arrow.up") }
-                    .font(.subheadline)
-                Spacer()
-                switch item.viewerState {
-                case .none:
-                    Button(action: onWantToGo) { Label("想吃", systemImage: "bookmark") }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                case .wantToGo:
-                    Label("已想吃", systemImage: "bookmark.fill").font(.caption.weight(.semibold)).foregroundStyle(.blue)
-                case .visited:
-                    Label("去过", systemImage: "checkmark.circle.fill").font(.caption.weight(.semibold)).foregroundStyle(.green)
-                }
-            }
+            DiscoveryRestaurantQuickActions(
+                viewerState: item.viewerState,
+                onRecordVisit: onRecordVisit,
+                onWantToGo: onWantToGo,
+                onAddToList: onAddToList,
+                onAddToRoulette: onAddToRoulette,
+                identifierPrefix: "community",
+                restaurantKey: item.restaurant.globalKey
+            )
+            ShareLink(item: shareText) { Label("分享动态", systemImage: "square.and.arrow.up") }
+                .font(.subheadline)
         }
         .padding(14)
         .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
