@@ -248,6 +248,75 @@ struct BackupImportMergeEngineTests {
         #expect(try observer.fetchCount(FetchDescriptor<SyncMutation>()) == 10)
     }
 
+    @Test("Legacy v4 manual cross-provider merge re-resolves Visit and a second import is a no-op")
+    func repeatedLegacyManualMergeIsIdempotent() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let localRestaurant = try ownedProviderRestaurant(
+            provider: .amap,
+            externalID: "amap-existing",
+            name: "同一家老店"
+        )
+        context.insert(localRestaurant)
+        try context.save()
+
+        let sourceFile = try await BackupImportFileReader().read(
+            data: legacyCrossProviderData(),
+            fileName: "legacy-cross-provider-v4.json"
+        )
+        let preflight = try await BackupImportPreflightService().preflight(
+            sourceFile,
+            inspectedAt: Date(timeIntervalSince1970: 0)
+        )
+        let graph = try BackupImportPlanningSourceMapper.graph(from: preflight)
+        #expect(graph.sourceFormat == .legacyWebV4)
+
+        let firstSnapshot = try BackupImportLocalSnapshotBuilder(context: context)
+            .make(currentTasteMapUserID: userID)
+        let reviewPlan = try BackupImportPlanEngine().makePlan(source: graph, local: firstSnapshot)
+        let review = try #require(reviewPlan.reviewItems.first { $0.entityType == .restaurant })
+        let merge = try #require(review.options.first { $0.kind == .merge })
+        let mergeDecision = decision(review, option: merge, graph: graph, local: firstSnapshot)
+        let firstPlan = try BackupImportPlanEngine().makePlan(
+            source: graph,
+            local: firstSnapshot,
+            decisions: [mergeDecision]
+        )
+        #expect(firstPlan.canBeConfirmed)
+
+        let firstResult = try BackupImportTransactionWriter(container: container).execute(
+            ConfirmedBackupImportPlan(
+                plan: firstPlan,
+                sourceGraph: graph,
+                decisions: [mergeDecision]
+            ),
+            currentTasteMapUserID: userID
+        )
+        #expect(firstResult.writtenEntityCount == 2)
+        let firstMutationCount = try context.fetchCount(FetchDescriptor<SyncMutation>())
+        let importedVisit = try #require(context.fetch(FetchDescriptor<Visit>()).first)
+        #expect(importedVisit.restaurantId == localRestaurant.id)
+        #expect(try context.fetchCount(FetchDescriptor<Restaurant>()) == 1)
+
+        let secondSnapshot = try BackupImportLocalSnapshotBuilder(context: context)
+            .make(currentTasteMapUserID: userID)
+        let secondPlan = try BackupImportPlanEngine().makePlan(source: graph, local: secondSnapshot)
+        #expect(secondPlan.canBeConfirmed)
+        #expect(secondPlan.reviewItems.isEmpty)
+        #expect(secondPlan.actions.first { $0.entityType == .restaurant }?.action != .create)
+        #expect(secondPlan.actions.first { $0.entityType == .visit }?.action == .exactDuplicate)
+
+        let secondResult = try BackupImportTransactionWriter(container: container).execute(
+            ConfirmedBackupImportPlan(plan: secondPlan, sourceGraph: graph, decisions: []),
+            currentTasteMapUserID: userID
+        )
+        #expect(secondResult.writtenEntityCount == 0)
+        #expect(secondResult.queuedMutationCount == 0)
+        #expect(try context.fetchCount(FetchDescriptor<Restaurant>()) == 1)
+        #expect(try context.fetchCount(FetchDescriptor<Visit>()) == 1)
+        #expect(try context.fetchCount(FetchDescriptor<SyncMutation>()) == firstMutationCount)
+    }
+
     @Test("Planner handles 1,000 Restaurants, 10,000 Visits and 5,000 Dishes with indexed matching")
     func largeDataset() throws {
         let restaurants = (0..<1_000).map { restaurant("r-\($0)", name: "餐厅 \($0)", identities: [identity("apple_maps", "apple-\($0)", true)]) }
@@ -368,6 +437,161 @@ struct BackupImportMergeEngineTests {
             remoteID: id.uuidString.lowercased(),
             remoteRecordData: try JSONEncoder().encode(contract)
         )
+    }
+
+    private func ownedProviderRestaurant(
+        provider: RestaurantPlaceProvider,
+        externalID: String,
+        name: String
+    ) throws -> Restaurant {
+        let id = fixedUUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+        let timestamp = SyncRecordMapper.dateString(Date(timeIntervalSince1970: 1_700_000_000))
+        let place = try RestaurantPlaceIdentityContract(
+            provider: provider,
+            externalId: externalID,
+            isPrimary: true,
+            createdAt: timestamp,
+            updatedAt: timestamp
+        )
+        let contract = try RestaurantJSONContractV1(
+            id: id.uuidString.lowercased(),
+            userId: userID,
+            placeIdentities: [place],
+            name: name,
+            address: "商场一楼",
+            city: "上海",
+            latitude: 31.2,
+            longitude: 121.5,
+            status: .visited,
+            preferenceLevel: .normal,
+            overallRating: nil,
+            foodRating: nil,
+            environmentRating: nil,
+            serviceRating: nil,
+            valueRating: nil,
+            tags: [],
+            longTermNote: "",
+            pricePerPerson: nil,
+            phone: nil,
+            openingHours: nil,
+            markerType: .emoji,
+            markerPhotoId: nil,
+            merchantImageUrl: nil,
+            markerEmoji: "🍽️",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            deletedAt: nil
+        )
+        return Restaurant(
+            id: id,
+            ownerUserID: userID,
+            name: name,
+            address: "商场一楼",
+            latitude: 31.2,
+            longitude: 121.5,
+            city: "上海",
+            remoteID: id.uuidString.lowercased(),
+            remoteRecordData: try JSONEncoder().encode(contract)
+        )
+    }
+
+    private func legacyCrossProviderData() throws -> Data {
+        let timestamp = "2026-08-01T00:00:00.000Z"
+        let restaurant: [String: Any] = [
+            "id": "legacy-restaurant",
+            "userId": "legacy-owner",
+            "amapPoiId": "",
+            "placeIdentities": [[
+                "provider": "apple_maps",
+                "externalId": "apple-legacy",
+                "isPrimary": true,
+                "createdAt": timestamp,
+                "updatedAt": timestamp,
+            ]],
+            "name": "同一家老店",
+            "address": "商场一楼",
+            "city": "上海",
+            "latitude": 31.2,
+            "longitude": 121.5,
+            "status": "visited",
+            "preferenceLevel": "normal",
+            "overallRating": NSNull(),
+            "foodRating": NSNull(),
+            "environmentRating": NSNull(),
+            "serviceRating": NSNull(),
+            "valueRating": NSNull(),
+            "tags": [],
+            "longTermNote": "",
+            "pricePerPerson": NSNull(),
+            "phone": NSNull(),
+            "openingHours": NSNull(),
+            "markerType": "emoji",
+            "markerImageData": NSNull(),
+            "markerPhotoId": NSNull(),
+            "merchantImageUrl": NSNull(),
+            "markerEmoji": "🍽️",
+            "createdAt": timestamp,
+            "updatedAt": timestamp,
+            "deletedAt": NSNull(),
+        ]
+        let visit: [String: Any] = [
+            "id": "legacy-visit",
+            "userId": "legacy-owner",
+            "restaurantId": "legacy-restaurant",
+            "visitedAt": timestamp,
+            "rating": NSNull(),
+            "visibility": "private",
+            "diningMode": "dine_in",
+            "totalPrice": NSNull(),
+            "myActualSpend": NSNull(),
+            "paymentMode": NSNull(),
+            "pricePerPerson": NSNull(),
+            "partySize": NSNull(),
+            "queueDuration": NSNull(),
+            "diningOccasions": [],
+            "diningOccasion": NSNull(),
+            "diningOccasionText": "",
+            "valueRating": NSNull(),
+            "environmentRating": NSNull(),
+            "serviceRating": NSNull(),
+            "valueTags": [],
+            "environmentTags": [],
+            "serviceTags": [],
+            "noiseLevel": NSNull(),
+            "diningDuration": NSNull(),
+            "portionLevel": NSNull(),
+            "transportConvenience": NSNull(),
+            "specialNotes": "",
+            "recommendationSourceType": NSNull(),
+            "recommendationSourceUserId": NSNull(),
+            "recommendationSourceText": "",
+            "sharedMealId": NSNull(),
+            "companions": [],
+            "companionIds": [],
+            "dishes": [],
+            "note": "",
+            "photos": [],
+            "photoIds": [],
+            "createdAt": timestamp,
+            "updatedAt": timestamp,
+            "deletedAt": NSNull(),
+        ]
+        return try JSONSerialization.data(withJSONObject: [
+            "app": "Taste Map",
+            "version": 4,
+            "environment": "development",
+            "databaseName": "FoodMapDB",
+            "exportedAt": timestamp,
+            "restaurants": [restaurant],
+            "visits": [visit],
+            "photos": [],
+            "users": [],
+            "friendships": [],
+            "sharedMeals": [],
+            "sharedMealParticipants": [],
+            "restaurantLists": [],
+            "restaurantListItems": [],
+        ], options: [.sortedKeys])
     }
 }
 

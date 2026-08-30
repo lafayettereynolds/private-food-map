@@ -291,7 +291,10 @@ struct BackupImportResultView: View {
         }
         Section {
             NavigationLink {
-                RestaurantCollectionView(segment: .visited)
+                RestaurantCollectionView(
+                    segment: .visited,
+                    currentUserID: result.currentTasteMapUserID
+                )
             } label: {
                 Label("查看餐厅", systemImage: "fork.knife")
             }

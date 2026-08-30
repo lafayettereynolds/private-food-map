@@ -9,8 +9,10 @@ enum TasteMapRuntimeTier: String, Equatable, Sendable {
 }
 
 struct TasteMapRuntimeConfiguration: Equatable, Sendable {
+    #if DEBUG
     static let explicitTierEnvironmentKey = "TASTEMAP_TEST_TIER"
     static let uiRuntimeEnvironmentKey = "TASTEMAP_UI_TEST_RUNTIME"
+    #endif
 
     let tier: TasteMapRuntimeTier
 
@@ -19,12 +21,19 @@ struct TasteMapRuntimeConfiguration: Equatable, Sendable {
     var allowsAutomaticServices: Bool { tier == .application }
 
     static var current: TasteMapRuntimeConfiguration {
+        #if DEBUG
         resolve(
             environment: ProcessInfo.processInfo.environment,
             arguments: ProcessInfo.processInfo.arguments
         )
+        #else
+        // Release artifacts cannot be switched into a fixture or isolated-test
+        // tier through process environment or launch arguments.
+        TasteMapRuntimeConfiguration(tier: .application)
+        #endif
     }
 
+    #if DEBUG
     static func resolve(
         environment: [String: String],
         arguments: [String]
@@ -46,6 +55,7 @@ struct TasteMapRuntimeConfiguration: Equatable, Sendable {
         }
         return TasteMapRuntimeConfiguration(tier: .application)
     }
+    #endif
 }
 
 nonisolated final class IsolatedAuthCredentialStore: AuthCredentialStoring, @unchecked Sendable {
