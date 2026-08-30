@@ -46,7 +46,7 @@ struct RecommendationSourcePosterView: View {
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
             }
             .foregroundStyle(TasteMapAnalysisTheme.brand)
-            Text("我的推荐来源档案")
+            Text("谁最会种草")
                 .font(.system(size: 60, weight: .heavy, design: .rounded))
                 .foregroundStyle(TasteMapAnalysisTheme.ink)
             Text("\(overview.userDisplayName) · 谁真正带我吃到了好店")

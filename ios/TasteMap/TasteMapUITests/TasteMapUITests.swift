@@ -2035,7 +2035,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(entry.isHittable)
         entry.tap()
 
-        XCTAssertTrue(app.navigationBars["饭搭子分析"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["最佳饭搭子"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.descendants(matching: .any)["companion-analysis-overview"].exists)
         let lead = app.buttons["companion-analysis-lead"]
         XCTAssertTrue(lead.waitForExistence(timeout: 5))
@@ -2069,8 +2069,8 @@ final class TasteMapUITests: XCTestCase {
             app.descendants(matching: .any)["companion-analysis-fixture-mutation-result"]
                 .waitForExistence(timeout: 8)
         )
-        app.navigationBars["你和 小林"].buttons["饭搭子分析"].tap()
-        XCTAssertTrue(app.navigationBars["饭搭子分析"].waitForExistence(timeout: 8))
+        app.navigationBars["你和 小林"].buttons["最佳饭搭子"].tap()
+        XCTAssertTrue(app.navigationBars["最佳饭搭子"].waitForExistence(timeout: 8))
         XCTAssertTrue(lead.waitForExistence(timeout: 8))
         lead.tap()
         XCTAssertTrue(app.navigationBars["你和 小林"].waitForExistence(timeout: 8))
@@ -2101,7 +2101,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(entry.isHittable)
         entry.tap()
 
-        XCTAssertTrue(app.navigationBars["推荐来源分析"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["谁最会种草"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.descendants(matching: .any)["recommendation-source-analysis-overview"].exists)
         XCTAssertTrue(app.staticTexts["最常使用来源"].waitForExistence(timeout: 5))
         let bestLabel = app.staticTexts["最靠谱推荐来源"]
@@ -2135,8 +2135,8 @@ final class TasteMapUITests: XCTestCase {
         closeRestaurant.tap()
         XCTAssertTrue(closeRestaurant.waitForNonExistence(timeout: 8))
 
-        app.navigationBars["小林的私藏清单"].buttons["推荐来源分析"].tap()
-        XCTAssertTrue(app.navigationBars["推荐来源分析"].waitForExistence(timeout: 8))
+        app.navigationBars["小林的私藏清单"].buttons["谁最会种草"].tap()
+        XCTAssertTrue(app.navigationBars["谁最会种草"].waitForExistence(timeout: 8))
         let share = app.buttons["recommendation-source-share-toolbar"]
         XCTAssertTrue(share.waitForExistence(timeout: 5))
         share.tap()
@@ -2167,8 +2167,8 @@ final class TasteMapUITests: XCTestCase {
             app.descendants(matching: .any)["recommendation-source-fixture-result"]
                 .waitForExistence(timeout: 8)
         )
-        app.navigationBars["小林的私藏清单"].buttons["推荐来源分析"].tap()
-        XCTAssertTrue(app.navigationBars["推荐来源分析"].waitForExistence(timeout: 8))
+        app.navigationBars["小林的私藏清单"].buttons["谁最会种草"].tap()
+        XCTAssertTrue(app.navigationBars["谁最会种草"].waitForExistence(timeout: 8))
         scrollUntilVisible(sourceCard, in: app)
         sourceCard.tap()
         XCTAssertTrue(app.navigationBars["小林的私藏清单"].waitForExistence(timeout: 8))

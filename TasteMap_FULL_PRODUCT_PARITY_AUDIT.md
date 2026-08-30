@@ -118,7 +118,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 
 ### 5.1 Correctly shared today
 
-- 本人 Map marker、Map list、Profile 去过/想吃、味觉足迹、Roulette、On This Day、月度/年度回顾、饭搭子与推荐来源分析中的**本地 Restaurant**，最终都调用 `RestaurantDetailView(restaurant:)`。
+- 本人 Map marker、Map list、Profile 去过/想吃、味觉足迹、Roulette、On This Day、月度/年度回顾、最佳饭搭子与谁最会种草中的**本地 Restaurant**，最终都调用 `RestaurantDetailView(restaurant:)`。
 - `VisitEditorView` 同时负责新增和编辑，不存在第二套保存逻辑。
 - Map/List 使用同一 `PersonalRestaurantFilterState` 和同一 browse snapshot。
 - Auth、Sync、Backup、Premium 均使用单一 service，不应在 parity 修复中重做。

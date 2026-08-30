@@ -273,7 +273,7 @@ struct ProfileView: View {
                     DiningCompanionAnalysisScreen()
                 } label: {
                     ProfileDashboardTile(
-                        emoji: "🥢", title: "饭搭子分析", detail: "看看和谁最合拍",
+                        emoji: "🥢", title: "最佳饭搭子", detail: "看看和谁最合拍",
                         tint: TasteMapAnalysisTheme.leafGreenSoft,
                         premiumFeature: .companionAnalysis
                     )
@@ -285,7 +285,7 @@ struct ProfileView: View {
                     RecommendationSourceAnalysisScreen()
                 } label: {
                     ProfileDashboardTile(
-                        emoji: "🧾", title: "推荐来源分析", detail: "谁最靠谱，谁最坑",
+                        emoji: "🧾", title: "谁最会种草", detail: "谁最靠谱，谁最坑",
                         tint: TasteMapAnalysisTheme.caramelSoft,
                         premiumFeature: .recommendationSourceAnalysis
                     )

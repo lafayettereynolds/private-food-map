@@ -99,7 +99,7 @@ struct RecommendationSourceOverviewView: View {
         }
         .background(TasteMapAnalysisTheme.canvas.ignoresSafeArea())
         .tasteMapBottomNavigationHidden()
-        .navigationTitle("推荐来源分析")
+        .navigationTitle("谁最会种草")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

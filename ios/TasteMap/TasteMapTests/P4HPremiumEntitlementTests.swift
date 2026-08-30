@@ -116,6 +116,8 @@ struct P4HPremiumEntitlementTests {
         #expect(!PremiumFeature.allCases.map(\.rawValue).contains("restaurant_search"))
         #expect(!PremiumFeature.allCases.map(\.rawValue).contains("restaurant_lists"))
         #expect(!PremiumFeature.allCases.map(\.rawValue).contains("restaurant_roulette"))
+        #expect(PremiumFeatureRegistry.definition(for: .companionAnalysis).title == "最佳饭搭子")
+        #expect(PremiumFeatureRegistry.definition(for: .recommendationSourceAnalysis).title == "谁最会种草")
     }
 
     @Test("16-20 UI, direct navigation, analyzer and Poster operations share the same policy")

@@ -53,7 +53,7 @@ struct DiningCompanionPosterView: View {
             }
             .foregroundStyle(TasteMapAnalysisTheme.brand)
 
-            Text("我和 \(report.companionDisplayName) 的饭搭子档案")
+            Text("最佳饭搭子 · 我和 \(report.companionDisplayName)")
                 .font(.system(size: 56, weight: .heavy, design: .rounded))
                 .foregroundStyle(TasteMapAnalysisTheme.ink)
                 .lineLimit(2)
