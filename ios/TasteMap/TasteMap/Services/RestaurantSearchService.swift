@@ -53,6 +53,38 @@ enum RestaurantSearchError: Error, Equatable {
     case locationNotFound
 }
 
+enum RestaurantDistanceOrdering {
+    static func distance(from origin: RestaurantCoordinate, to target: RestaurantCoordinate) -> CLLocationDistance {
+        CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+            .distance(from: CLLocation(latitude: target.latitude, longitude: target.longitude))
+    }
+
+    static func measuringAndSorting(
+        _ candidates: [RestaurantCandidate],
+        from origin: RestaurantCoordinate
+    ) -> [RestaurantCandidate] {
+        candidates.map { candidate in
+            RestaurantCandidate(
+                id: candidate.id,
+                name: candidate.name,
+                address: candidate.address,
+                city: candidate.city,
+                district: candidate.district,
+                latitude: candidate.latitude,
+                longitude: candidate.longitude,
+                appleMapItemIdentifier: candidate.appleMapItemIdentifier,
+                placeIdentities: candidate.placeIdentities,
+                distanceMeters: distance(from: origin, to: candidate.coordinate),
+                photoURL: candidate.photoURL
+            )
+        }
+        .sorted {
+            ($0.distanceMeters ?? .greatestFiniteMagnitude)
+                < ($1.distanceMeters ?? .greatestFiniteMagnitude)
+        }
+    }
+}
+
 struct MapKitRestaurantSearchService: RestaurantSearching {
     nonisolated init() {}
 
@@ -81,7 +113,9 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
         }
 
         let response = try await MKLocalSearch(request: request).start()
-        return candidates(from: response.mapItems, city: scope.city, origin: scope.center)
+        let values = candidates(from: response.mapItems, city: scope.city)
+        guard let center = scope.center else { return values }
+        return RestaurantDistanceOrdering.measuringAndSorting(values, from: center)
     }
 
     func nearby(center: RestaurantCoordinate, radiusMeters: Double = 3_000) async throws -> [RestaurantCandidate] {
@@ -95,9 +129,11 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
             longitudinalMeters: radiusMeters * 2
         )
         let response = try await MKLocalSearch(request: request).start()
-        return candidates(from: response.mapItems, city: "", origin: center)
+        return RestaurantDistanceOrdering.measuringAndSorting(
+            candidates(from: response.mapItems, city: ""),
+            from: center
+        )
             .filter { ($0.distanceMeters ?? .greatestFiniteMagnitude) <= radiusMeters }
-            .sorted { ($0.distanceMeters ?? .greatestFiniteMagnitude) < ($1.distanceMeters ?? .greatestFiniteMagnitude) }
     }
 
     func locationContext(for coordinate: RestaurantCoordinate) async throws -> RestaurantLocationContext {
@@ -154,8 +190,7 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
 
     private func candidates(
         from mapItems: [MKMapItem],
-        city: String,
-        origin: RestaurantCoordinate?
+        city: String
     ) -> [RestaurantCandidate] {
         var seen = Set<String>()
         return mapItems.compactMap { mapItem in
@@ -166,18 +201,13 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
             let key = externalID ?? "\(name)|\(coordinate.latitude)|\(coordinate.longitude)"
             guard seen.insert(key).inserted else { return nil }
             let address = mapItemAddress(mapItem)
-            let distance = origin.map {
-                CLLocation(latitude: $0.latitude, longitude: $0.longitude)
-                    .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
-            }
             return RestaurantCandidate(
                 name: name,
                 address: address,
                 city: city,
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude,
-                appleMapItemIdentifier: externalID,
-                distanceMeters: distance
+                appleMapItemIdentifier: externalID
             )
         }
     }

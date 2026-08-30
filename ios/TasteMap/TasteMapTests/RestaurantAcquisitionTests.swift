@@ -20,9 +20,145 @@ struct RestaurantAcquisitionTests {
 
         #expect(viewModel.nearbyState == .loaded)
         #expect(viewModel.nearbyResults.map(\.name) == ["附近小馆"])
-        #expect(viewModel.nearbyResults.first?.distanceMeters == 180)
+        #expect(abs((viewModel.nearbyResults.first?.distanceMeters ?? 0) - 110.9) < 1)
         #expect(viewModel.detectedCity == "杭州")
         #expect(search.nearbyRadius == 3_000)
+        #expect(search.nearbyCenters == [RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)])
+        #expect(viewModel.locationAccuracy == .precise)
+    }
+
+    @Test("Fresh CLLocation is accepted and a stale cached CLLocation is rejected")
+    func freshAndStaleLocationPolicy() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let fresh = acquisitionLocation(timestamp: now.addingTimeInterval(-2), horizontalAccuracy: 12)
+        let stale = acquisitionLocation(timestamp: now.addingTimeInterval(-120), horizontalAccuracy: 12)
+
+        #expect(RestaurantLocationFixPolicy.isUsable(fresh, accuracyAuthorization: .fullAccuracy, now: now))
+        #expect(!RestaurantLocationFixPolicy.isUsable(stale, accuracyAuthorization: .fullAccuracy, now: now))
+    }
+
+    @Test("Delayed first fix remains locating and does not search from a fallback center")
+    func delayedFirstFix() async {
+        let search = AcquisitionSearchSpy()
+        let location = AcquisitionLocationStub(delay: .milliseconds(80))
+        let viewModel = RestaurantAcquisitionViewModel(
+            searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(),
+            locationProvider: location
+        )
+
+        let task = Task { await viewModel.loadNearby() }
+        try? await Task.sleep(for: .milliseconds(10))
+
+        #expect(viewModel.nearbyState == .loading)
+        #expect(search.nearbyCenters.isEmpty)
+
+        await task.value
+        #expect(viewModel.nearbyState == .loaded)
+        #expect(search.nearbyCenters.count == 1)
+    }
+
+    @Test("Stale provider result never reaches Nearby search")
+    func staleLocationDoesNotSearch() async {
+        let search = AcquisitionSearchSpy()
+        let stale = acquisitionLocation(timestamp: Date().addingTimeInterval(-300), horizontalAccuracy: 10)
+        let viewModel = RestaurantAcquisitionViewModel(
+            searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(),
+            locationProvider: AcquisitionLocationStub(locations: [stale])
+        )
+
+        await viewModel.loadNearby()
+
+        guard case .failed = viewModel.nearbyState else {
+            Issue.record("Expected stale location to leave Nearby in a recoverable failed state")
+            return
+        }
+        #expect(search.nearbyCenters.isEmpty)
+        #expect(viewModel.currentCoordinate == nil)
+    }
+
+    @Test("Reduced accuracy stays honest while still using the returned CLLocation")
+    func reducedAccuracy() async {
+        let search = AcquisitionSearchSpy()
+        let location = acquisitionLocation(horizontalAccuracy: 3_000)
+        let viewModel = RestaurantAcquisitionViewModel(
+            searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(),
+            locationProvider: AcquisitionLocationStub(
+                accuracyAuthorization: .reducedAccuracy,
+                locations: [location]
+            )
+        )
+
+        await viewModel.loadNearby()
+
+        #expect(viewModel.nearbyState == .loaded)
+        #expect(viewModel.locationAccuracy == .reduced)
+        #expect(search.nearbyCenters == [RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)])
+    }
+
+    @Test("Movement update replaces the GPS query center and distance origin")
+    func movementUpdate() async {
+        let search = AcquisitionSearchSpy()
+        let first = acquisitionLocation(latitude: 30.2741, longitude: 120.1551)
+        let second = acquisitionLocation(latitude: 30.2841, longitude: 120.1651)
+        let location = AcquisitionLocationStub(locations: [first, second])
+        let viewModel = RestaurantAcquisitionViewModel(
+            searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(),
+            locationProvider: location
+        )
+
+        await viewModel.loadNearby()
+        await viewModel.loadNearby()
+
+        #expect(search.nearbyCenters == [
+            RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551),
+            RestaurantCoordinate(latitude: 30.2841, longitude: 120.1651),
+        ])
+        #expect(viewModel.currentCoordinate == RestaurantCoordinate(latitude: 30.2841, longitude: 120.1651))
+    }
+
+    @Test("Foreground refresh requests a new fix instead of reusing the prior center")
+    func foregroundRefresh() async {
+        let search = AcquisitionSearchSpy()
+        let location = AcquisitionLocationStub(locations: [
+            acquisitionLocation(latitude: 30.2741, longitude: 120.1551),
+            acquisitionLocation(latitude: 30.2941, longitude: 120.1751),
+        ])
+        let viewModel = RestaurantAcquisitionViewModel(
+            searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(),
+            locationProvider: location
+        )
+
+        await viewModel.loadNearby()
+        await viewModel.refreshAfterForeground()
+
+        #expect(location.requestCount == 2)
+        #expect(search.nearbyCenters.last == RestaurantCoordinate(latitude: 30.2941, longitude: 120.1751))
+    }
+
+    @Test("Shared fixed coordinate sorts a 40m restaurant before farther results")
+    func fixedCoordinateDistanceSorting() throws {
+        let fixture = try loadNearbyLocationFixture()
+        let origin = RestaurantCoordinate(latitude: fixture.latitude, longitude: fixture.longitude)
+        let candidates = fixture.candidates.reversed().map { value in
+            RestaurantCandidate(
+                name: value.name,
+                address: "fixture",
+                latitude: value.latitude,
+                longitude: value.longitude
+            )
+        }
+
+        let sorted = RestaurantDistanceOrdering.measuringAndSorting(candidates, from: origin)
+
+        #expect(sorted.map(\.name) == ["fixture-40m", "fixture-420m", "fixture-2km"])
+        #expect((sorted[0].distanceMeters ?? 0) > 39)
+        #expect((sorted[0].distanceMeters ?? 0) < 41)
+        #expect((sorted[1].distanceMeters ?? 0) > 419)
     }
 
     @Test("Nearby no-result is a completed empty state with manual fallback available")
@@ -317,6 +453,7 @@ private final class AcquisitionSearchSpy: RestaurantSearching, @unchecked Sendab
     var lastQuery: String?
     var lastScope: RestaurantSearchScope?
     var nearbyRadius: Double?
+    var nearbyCenters: [RestaurantCoordinate] = []
     var returnsNoResults = false
     var returnsNoNearbyResults = false
 
@@ -341,6 +478,7 @@ private final class AcquisitionSearchSpy: RestaurantSearching, @unchecked Sendab
 
     func nearby(center: RestaurantCoordinate, radiusMeters: Double) async throws -> [RestaurantCandidate] {
         nearbyRadius = radiusMeters
+        nearbyCenters.append(center)
         if returnsNoNearbyResults { return [] }
         return [RestaurantCandidate(
             name: "附近小馆",
@@ -365,17 +503,69 @@ private final class AcquisitionSearchSpy: RestaurantSearching, @unchecked Sendab
 @MainActor
 private final class AcquisitionLocationStub: RestaurantLocationProviding {
     let authorizationStatus: CLAuthorizationStatus
+    let accuracyAuthorization: CLAccuracyAuthorization
     private let error: RestaurantLocationError?
+    private let locations: [CLLocation]
+    private let delay: Duration?
+    private(set) var requestCount = 0
 
-    init(error: RestaurantLocationError? = nil) {
+    init(
+        error: RestaurantLocationError? = nil,
+        accuracyAuthorization: CLAccuracyAuthorization = .fullAccuracy,
+        locations: [CLLocation] = [acquisitionLocation()],
+        delay: Duration? = nil
+    ) {
         self.error = error
+        self.accuracyAuthorization = accuracyAuthorization
+        self.locations = locations
+        self.delay = delay
         authorizationStatus = error == .permissionDenied ? .denied : .authorizedWhenInUse
     }
 
     func requestCurrentLocation() async throws -> CLLocation {
         if let error { throw error }
-        return CLLocation(latitude: 30.2741, longitude: 120.1551)
+        if let delay { try? await Task.sleep(for: delay) }
+        let index = min(requestCount, locations.count - 1)
+        requestCount += 1
+        return locations[index]
     }
+}
+
+private struct NearbyLocationFixture: Decodable {
+    struct Candidate: Decodable {
+        let name: String
+        let latitude: Double
+        let longitude: Double
+    }
+
+    let latitude: Double
+    let longitude: Double
+    let candidates: [Candidate]
+}
+
+private func loadNearbyLocationFixture() throws -> NearbyLocationFixture {
+    let repositoryRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let url = repositoryRoot.appendingPathComponent("contracts/fixtures/nearby-location.v1.json")
+    return try JSONDecoder().decode(NearbyLocationFixture.self, from: Data(contentsOf: url))
+}
+
+private func acquisitionLocation(
+    latitude: Double = 30.2741,
+    longitude: Double = 120.1551,
+    timestamp: Date = Date(),
+    horizontalAccuracy: CLLocationAccuracy = 8
+) -> CLLocation {
+    CLLocation(
+        coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+        altitude: 0,
+        horizontalAccuracy: horizontalAccuracy,
+        verticalAccuracy: 10,
+        timestamp: timestamp
+    )
 }
 
 @MainActor

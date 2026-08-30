@@ -20,15 +20,18 @@ struct RestaurantAcquisitionDependencies {
 
 struct AddRestaurantView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @StateObject private var viewModel: RestaurantAcquisitionViewModel
     @AppStorage("taste-map-last-search-city") private var city = ""
     @State private var query = ""
-    @State private var linkPresented = false
+    @State private var linkValue: String
     @State private var manualPresented = false
+    @State private var selectedCandidate: RestaurantCandidate?
+    @State private var pendingManualCandidate: RestaurantCandidate?
+    @State private var cityEdited = false
     @State private var actionError: String?
-    @State private var didPresentSharedImport = false
 
     private let initialSharedText: String?
     let onAction: (RestaurantCandidate, RestaurantSearchAction) throws -> Void
@@ -48,6 +51,7 @@ struct AddRestaurantView: View {
             locationProvider: dependencies.locationProvider
         ))
         self.initialSharedText = initialSharedText
+        _linkValue = State(initialValue: initialSharedText ?? "")
         self.onAction = onAction
     }
 
@@ -55,10 +59,10 @@ struct AddRestaurantView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    introduction
-                    nearbySection
                     searchSection
-                    otherMethods
+                    linkImportSection
+                    if !viewModel.hasSearched { nearbySection }
+                    manualEntry
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 28)
@@ -75,39 +79,38 @@ struct AddRestaurantView: View {
             .task {
                 guard viewModel.nearbyState == .idle else { return }
                 await viewModel.loadNearby()
-                if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   let detectedCity = viewModel.detectedCity {
+                if !cityEdited, let detectedCity = viewModel.detectedCity {
                     city = detectedCity
                 }
-                if !didPresentSharedImport,
-                   !(initialSharedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
-                    didPresentSharedImport = true
-                    linkPresented = true
+                if !(initialSharedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                   viewModel.linkResults.isEmpty,
+                   viewModel.linkMessage == nil {
+                    await viewModel.resolveLink(linkValue, city: city)
                 }
             }
             .onChange(of: viewModel.detectedCity) { _, detectedCity in
-                if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   let detectedCity {
+                if !cityEdited, let detectedCity {
                     city = detectedCity
                 }
             }
-            .sheet(isPresented: $linkPresented) {
-                RestaurantLinkImportView(
-                    viewModel: viewModel,
-                    city: city,
-                    restaurants: scopedRestaurants,
-                    initialValue: initialSharedText ?? "",
-                    onAction: perform
-                )
+            .onChange(of: scenePhase) { previous, value in
+                guard value == .active, previous != .active, viewModel.nearbyState != .idle else { return }
+                Task { await viewModel.refreshAfterForeground() }
             }
-            .sheet(isPresented: $manualPresented) {
+            .sheet(isPresented: $manualPresented, onDismiss: presentPendingManualCandidate) {
                 ManualRestaurantAddView(
                     viewModel: viewModel,
                     initialCity: city,
                     restaurants: scopedRestaurants,
-                    onCityChanged: { city = $0 },
-                    onAction: perform
+                    onCityChanged: { value in
+                        cityEdited = true
+                        city = value
+                    },
+                    onSelect: { candidate in pendingManualCandidate = candidate }
                 )
+            }
+            .sheet(item: $selectedCandidate) { candidate in
+                RestaurantCandidateConfirmationView(candidate: candidate, onAction: perform)
             }
             .alert("无法添加餐厅", isPresented: Binding(
                 get: { actionError != nil },
@@ -119,29 +122,6 @@ struct AddRestaurantView: View {
             }
         }
         .tint(AcquisitionPalette.brand)
-    }
-
-    private var introduction: some View {
-        HStack(alignment: .top, spacing: 13) {
-            Image(systemName: "fork.knife")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(AcquisitionPalette.brand, in: RoundedRectangle(cornerRadius: 14))
-            VStack(alignment: .leading, spacing: 5) {
-                Text("把真实餐厅加入 Taste Map")
-                    .font(.headline)
-                    .foregroundStyle(AcquisitionPalette.ink)
-                Text("从附近选择、按城市搜索，或添加地图上搜不到的小店。浏览候选不会自动写入你的地图。")
-                    .font(.subheadline)
-                    .foregroundStyle(AcquisitionPalette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(16)
-        .acquisitionCard()
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("add-restaurant-introduction")
     }
 
     private var nearbySection: some View {
@@ -173,6 +153,15 @@ struct AddRestaurantView: View {
                     retry: { Task { await viewModel.loadNearby() } }
                 )
             case .loaded:
+                if viewModel.locationAccuracy == .reduced {
+                    AcquisitionMessage(
+                        icon: "location.circle",
+                        title: "当前为大致位置",
+                        message: "系统只提供了有限精度定位，附近结果可能有明显偏差。可在系统设置中为 Taste Map 开启精确位置后重新定位。",
+                        retryTitle: "重新定位",
+                        retry: { Task { await viewModel.loadNearby() } }
+                    )
+                }
                 if viewModel.nearbyResults.isEmpty {
                     AcquisitionMessage(
                         icon: "mappin.slash",
@@ -182,24 +171,18 @@ struct AddRestaurantView: View {
                         retry: { Task { await viewModel.loadNearby() } }
                     )
                 } else {
-                    if let label = viewModel.currentLocationLabel {
-                        Label(label, systemImage: "location.circle")
-                            .font(.caption)
-                            .foregroundStyle(AcquisitionPalette.muted)
-                            .lineLimit(2)
-                    }
-                    ForEach(viewModel.nearbyResults.prefix(5)) { candidate in
+                    ForEach(viewModel.nearbyResults.prefix(8)) { candidate in
                         RestaurantAcquisitionCandidateRow(
                             candidate: candidate,
                             existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
-                            onAction: perform
+                            onSelect: select
                         )
                     }
-                    if viewModel.nearbyResults.count > 5 {
-                        Text("附近还有 \(viewModel.nearbyResults.count - 5) 个结果，可用名称进一步搜索。")
-                            .font(.caption)
-                            .foregroundStyle(AcquisitionPalette.muted)
-                    }
+                    Text(viewModel.locationAccuracy == .reduced
+                         ? "以上餐厅按当前大致位置计算距离。"
+                         : "以上餐厅按当前 GPS 坐标计算，并由近到远排序。")
+                        .font(.caption)
+                        .foregroundStyle(AcquisitionPalette.muted)
                 }
             }
         }
@@ -207,20 +190,6 @@ struct AddRestaurantView: View {
 
     private var searchSection: some View {
         AcquisitionSection(title: "搜索餐厅", subtitle: "名称、地址与城市范围", systemImage: "magnifyingglass") {
-            VStack(alignment: .leading, spacing: 7) {
-                Text("搜索城市")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AcquisitionPalette.muted)
-                HStack(spacing: 10) {
-                    Image(systemName: "building.2")
-                        .foregroundStyle(AcquisitionPalette.brand)
-                    TextField("例如：杭州、上海、东京、纽约", text: $city)
-                        .textInputAutocapitalization(.words)
-                        .accessibilityIdentifier("restaurant-city-field")
-                }
-                .acquisitionInput()
-            }
-
             VStack(alignment: .leading, spacing: 7) {
                 Text("餐厅名称或地址")
                     .font(.caption.weight(.semibold))
@@ -231,9 +200,17 @@ struct AddRestaurantView: View {
                     TextField("例如：寿喜烧、南京西路", text: $query)
                         .submitLabel(.search)
                         .accessibilityIdentifier("restaurant-query-field")
+                        .onChange(of: query) { _, value in
+                            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                viewModel.clearSearch()
+                            }
+                        }
                         .onSubmit { Task { await viewModel.search(query: query, city: city) } }
                     if !query.isEmpty {
-                        Button { query = "" } label: {
+                        Button {
+                            query = ""
+                            viewModel.clearSearch()
+                        } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(AcquisitionPalette.muted)
                                 .frame(width: 44, height: 44)
@@ -241,6 +218,33 @@ struct AddRestaurantView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("清除餐厅搜索")
                     }
+                }
+                .acquisitionInput()
+
+                if let label = viewModel.currentLocationLabel {
+                    Label(label, systemImage: "location.circle")
+                        .font(.caption)
+                        .foregroundStyle(AcquisitionPalette.muted)
+                        .lineLimit(2)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("搜索城市")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AcquisitionPalette.muted)
+                HStack(spacing: 10) {
+                    Image(systemName: "building.2")
+                        .foregroundStyle(AcquisitionPalette.brand)
+                    TextField("例如：杭州、上海、东京、纽约", text: Binding(
+                        get: { city },
+                        set: { value in
+                            cityEdited = true
+                            city = value
+                        }
+                    ))
+                        .textInputAutocapitalization(.words)
+                        .accessibilityIdentifier("restaurant-city-field")
                 }
                 .acquisitionInput()
             }
@@ -267,28 +271,81 @@ struct AddRestaurantView: View {
                 RestaurantAcquisitionCandidateRow(
                     candidate: candidate,
                     existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
-                    onAction: perform
+                    onSelect: select
                 )
             }
         }
     }
 
-    private var otherMethods: some View {
-        AcquisitionSection(title: "其他添加方式", subtitle: "地图上搜不到也没关系", systemImage: "ellipsis.circle") {
-            AcquisitionMethodButton(
-                icon: "link",
-                title: "粘贴餐厅链接",
-                subtitle: "支持 Apple 地图、高德和普通餐厅网页"
-            ) { linkPresented = true }
-            .accessibilityIdentifier("open-restaurant-link-import")
+    private var linkImportSection: some View {
+        AcquisitionSection(title: "粘贴餐厅链接", subtitle: "Apple 地图、高德、普通网页或分享文字", systemImage: "link") {
+            HStack(spacing: 10) {
+                Image(systemName: "link")
+                    .foregroundStyle(AcquisitionPalette.brand)
+                TextField("粘贴链接或分享文字", text: $linkValue)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .accessibilityIdentifier("restaurant-link-field")
+                    .onChange(of: linkValue) { _, _ in
+                        viewModel.clearLinkResolution()
+                    }
+            }
+            .acquisitionInput()
 
+            Button {
+                Task { await viewModel.resolveLink(linkValue, city: city) }
+            } label: {
+                HStack {
+                    if viewModel.isResolvingLink { ProgressView().tint(.white) }
+                    else { Image(systemName: "wand.and.stars") }
+                    Text(viewModel.isResolvingLink ? "正在识别" : "识别餐厅")
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(AcquisitionPalette.brand)
+            .disabled(viewModel.isResolvingLink || linkValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityIdentifier("resolve-restaurant-link")
+
+            if let message = viewModel.linkMessage {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(AcquisitionPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(viewModel.linkResults) { candidate in
+                RestaurantAcquisitionCandidateRow(
+                    candidate: candidate,
+                    existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
+                    onSelect: select
+                )
+            }
+        }
+    }
+
+    private var manualEntry: some View {
+        AcquisitionSection(title: "地图上搜不到？", subtitle: "小摊、快闪店、私房店和新开门店", systemImage: "storefront") {
             AcquisitionMethodButton(
                 icon: "storefront",
-                title: "手动添加地图上搜不到的小店",
-                subtitle: "适合小摊、快闪店、私房店和新开门店"
+                title: "手动添加",
+                subtitle: "输入名称并确认真实位置"
             ) { manualPresented = true }
             .accessibilityIdentifier("open-manual-restaurant")
         }
+    }
+
+    private func select(_ candidate: RestaurantCandidate, existing: Restaurant?) {
+        if existing != nil {
+            perform(candidate, .recordVisit)
+        } else {
+            selectedCandidate = candidate
+        }
+    }
+
+    private func presentPendingManualCandidate() {
+        guard let pendingManualCandidate else { return }
+        self.pendingManualCandidate = nil
+        selectedCandidate = pendingManualCandidate
     }
 
     private func perform(_ candidate: RestaurantCandidate, _ action: RestaurantSearchAction) {
@@ -301,89 +358,84 @@ struct AddRestaurantView: View {
     }
 }
 
-private struct RestaurantLinkImportView: View {
+private struct RestaurantCandidateConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var viewModel: RestaurantAcquisitionViewModel
-    let city: String
-    let restaurants: [Restaurant]
+    let candidate: RestaurantCandidate
     let onAction: (RestaurantCandidate, RestaurantSearchAction) -> Void
-    @State private var value: String
+    @State private var selection: Selection = .visited
 
-    init(
-        viewModel: RestaurantAcquisitionViewModel,
-        city: String,
-        restaurants: [Restaurant],
-        initialValue: String = "",
-        onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) -> Void
-    ) {
-        self.viewModel = viewModel
-        self.city = city
-        self.restaurants = restaurants
-        self.onAction = onAction
-        _value = State(initialValue: initialValue)
+    private enum Selection: String, CaseIterable, Identifiable {
+        case visited = "我去过"
+        case wantToGo = "我想去"
+        var id: Self { self }
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(candidate.name)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(AcquisitionPalette.ink)
+                        if !candidate.address.isEmpty {
+                            Label(candidate.address, systemImage: "mappin.and.ellipse")
+                                .font(.subheadline)
+                                .foregroundStyle(AcquisitionPalette.muted)
+                        }
+                        let location = [candidate.city, candidate.district]
+                            .filter { !$0.isEmpty }
+                            .joined(separator: " · ")
+                        if !location.isEmpty {
+                            Text(location)
+                                .font(.caption)
+                                .foregroundStyle(AcquisitionPalette.muted)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .acquisitionCard()
+
+                    Picker("餐厅状态", selection: $selection) {
+                        ForEach(Selection.allCases) { value in
+                            Text(value.rawValue).tag(value)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("restaurant-status-selection")
+
                     AcquisitionMessage(
-                        icon: "link",
-                        title: "粘贴餐厅链接或分享文字",
-                        message: "Taste Map 会先提取餐厅线索，再让你确认。识别结果不会自动写入数据库。",
+                        icon: selection == .visited ? "fork.knife" : "bookmark",
+                        title: selection == .visited ? "记录这次体验" : "加入想吃清单",
+                        message: selection == .visited
+                            ? "继续后填写日期、评分、消费、菜品和照片。"
+                            : "先保存餐厅，之后到访时再补充完整记录。",
                         retryTitle: nil,
                         retry: nil
                     )
-                    TextEditor(text: $value)
-                        .frame(minHeight: 110)
-                        .padding(12)
-                        .background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 14))
-                        .overlay { RoundedRectangle(cornerRadius: 14).stroke(AcquisitionPalette.border) }
-                        .accessibilityLabel("餐厅链接或分享文字")
-                        .accessibilityIdentifier("restaurant-link-field")
 
                     Button {
-                        Task { await viewModel.resolveLink(value, city: city) }
+                        onAction(candidate, selection == .visited ? .recordVisit : .wantToGo)
                     } label: {
-                        HStack {
-                            if viewModel.isResolvingLink { ProgressView().tint(.white) }
-                            else { Image(systemName: "wand.and.stars") }
-                            Text(viewModel.isResolvingLink ? "正在识别" : "识别餐厅")
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 48)
+                        Label(
+                            selection == .visited ? "继续记录到访" : "保存到我的地图",
+                            systemImage: selection == .visited ? "fork.knife" : "bookmark.fill"
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 50)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(AcquisitionPalette.brand)
-                    .disabled(viewModel.isResolvingLink || value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("resolve-restaurant-link")
-
-                    if let message = viewModel.linkMessage {
-                        Text(message)
-                            .font(.subheadline)
-                            .foregroundStyle(AcquisitionPalette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    ForEach(viewModel.linkResults) { candidate in
-                        RestaurantAcquisitionCandidateRow(
-                            candidate: candidate,
-                            existing: RestaurantDeduplicator.match(for: candidate, in: restaurants),
-                            onAction: onAction
-                        )
-                    }
+                    .accessibilityIdentifier("confirm-restaurant-selection")
                 }
                 .padding(16)
             }
             .background(AcquisitionPalette.page.ignoresSafeArea())
-            .navigationTitle("粘贴餐厅链接")
+            .navigationTitle("写下这家餐厅")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
-            }
-            .task {
-                guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                      viewModel.linkResults.isEmpty,
-                      viewModel.linkMessage == nil else { return }
-                await viewModel.resolveLink(value, city: city)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("返回") { dismiss() }
+                }
             }
         }
         .tint(AcquisitionPalette.brand)
@@ -396,7 +448,7 @@ private struct ManualRestaurantAddView: View {
     let initialCity: String
     let restaurants: [Restaurant]
     let onCityChanged: (String) -> Void
-    let onAction: (RestaurantCandidate, RestaurantSearchAction) -> Void
+    let onSelect: (RestaurantCandidate) -> Void
 
     @State private var name = ""
     @State private var city: String
@@ -412,20 +464,23 @@ private struct ManualRestaurantAddView: View {
         initialCity: String,
         restaurants: [Restaurant],
         onCityChanged: @escaping (String) -> Void,
-        onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) -> Void
+        onSelect: @escaping (RestaurantCandidate) -> Void
     ) {
         self.viewModel = viewModel
         self.initialCity = initialCity
         self.restaurants = restaurants
         self.onCityChanged = onCityChanged
-        self.onAction = onAction
+        self.onSelect = onSelect
         _city = State(initialValue: initialCity)
-        let center = viewModel.currentCoordinate ?? RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)
-        _cameraPosition = State(initialValue: .region(MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude),
-            latitudinalMeters: 12_000,
-            longitudinalMeters: 12_000
-        )))
+        if let center = viewModel.currentCoordinate {
+            _cameraPosition = State(initialValue: .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude),
+                latitudinalMeters: 12_000,
+                longitudinalMeters: 12_000
+            )))
+        } else {
+            _cameraPosition = State(initialValue: .automatic)
+        }
     }
 
     private var candidate: RestaurantCandidate? {
@@ -524,27 +579,17 @@ private struct ManualRestaurantAddView: View {
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(AcquisitionPalette.brandDeep)
                         }
-                        HStack(spacing: 10) {
-                            Button {
-                                onCityChanged(city)
-                                onAction(candidate, .wantToGo)
-                            } label: {
-                                Label("加入想吃", systemImage: "bookmark")
-                                    .frame(maxWidth: .infinity, minHeight: 48)
-                            }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifier("manual-add-want-to-go")
-                            Button {
-                                onCityChanged(city)
-                                onAction(candidate, .recordVisit)
-                            } label: {
-                                Label(existing == nil ? "记录去过" : "再次记录", systemImage: "fork.knife")
-                                    .frame(maxWidth: .infinity, minHeight: 48)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(AcquisitionPalette.brand)
-                            .accessibilityIdentifier("manual-record-visit")
+                        Button {
+                            onCityChanged(city)
+                            onSelect(candidate)
+                            dismiss()
+                        } label: {
+                            Label(existing == nil ? "确认位置并继续" : "再次记录到访", systemImage: "checkmark")
+                                .frame(maxWidth: .infinity, minHeight: 48)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AcquisitionPalette.brand)
+                        .accessibilityIdentifier("manual-confirm-restaurant")
                     }
                 }
                 .padding(16)
@@ -613,7 +658,7 @@ private struct ManualRestaurantAddView: View {
 private struct RestaurantAcquisitionCandidateRow: View {
     let candidate: RestaurantCandidate
     let existing: Restaurant?
-    let onAction: (RestaurantCandidate, RestaurantSearchAction) -> Void
+    let onSelect: (RestaurantCandidate, Restaurant?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -664,25 +709,15 @@ private struct RestaurantAcquisitionCandidateRow: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                Button {
-                    onAction(candidate, .wantToGo)
-                } label: {
-                    Label("加入想吃", systemImage: "bookmark")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("candidate-want-\(candidate.id.uuidString)")
-                Button {
-                    onAction(candidate, .recordVisit)
-                } label: {
-                    Label(existing == nil ? "记录去过" : "再次记录", systemImage: "fork.knife")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AcquisitionPalette.brand)
-                .accessibilityIdentifier("candidate-visit-\(candidate.id.uuidString)")
+            Button {
+                onSelect(candidate, existing)
+            } label: {
+                Label(existing == nil ? "选择" : "再次记录到访", systemImage: existing == nil ? "checkmark" : "fork.knife")
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(AcquisitionPalette.brand)
+            .accessibilityIdentifier("candidate-select-\(candidate.id.uuidString)")
         }
         .padding(14)
         .background(AcquisitionPalette.surfaceSubtle, in: RoundedRectangle(cornerRadius: 18))

@@ -1,0 +1,21 @@
+{
+  "latitude": 30.2741,
+  "longitude": 120.1551,
+  "candidates": [
+    {
+      "name": "fixture-40m",
+      "latitude": 30.27446,
+      "longitude": 120.1551
+    },
+    {
+      "name": "fixture-420m",
+      "latitude": 30.27788,
+      "longitude": 120.1551
+    },
+    {
+      "name": "fixture-2km",
+      "latitude": 30.2921,
+      "longitude": 120.1551
+    }
+  ]
+}
