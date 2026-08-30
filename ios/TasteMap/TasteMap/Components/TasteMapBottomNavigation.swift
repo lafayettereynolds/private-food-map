@@ -28,6 +28,7 @@ struct TasteMapBottomNavigation: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(tab.title)
                     .accessibilityAddTraits(selection == tab ? .isSelected : [])
+                    .accessibilityIdentifier("app-tab-\(tab.rawValue)")
                 }
             }
             .padding(.horizontal, 8)

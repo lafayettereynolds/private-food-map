@@ -14,6 +14,7 @@ struct MapHomeView: View {
 
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Environment(\.localAccountScope) private var accountScope
+    @Environment(\.modelContext) private var modelContext
     @StateObject private var locationPermission = LocationPermissionManager()
     @State private var selectedSegment: RestaurantBrowseSegment = .visited
     @State private var browseMode: MapBrowseMode = .map
@@ -23,12 +24,15 @@ struct MapHomeView: View {
     @State private var locationFilterMessage: String?
     @State private var selectedRestaurantID: UUID?
     @State private var detailDestination: RestaurantBrowseSelection?
+    @State private var visitEditorDestination: RestaurantBrowseSelection?
+    @State private var rouletteDestination: RestaurantBrowseSelection?
+    @State private var quickActionMessage: String?
     @State private var cameraFitRequestID = UUID()
     @State private var locationRequestID: UUID?
     @State private var mapReloadID = UUID()
     @State private var mapRenderState: RestaurantMapRenderState = .loading
 
-    private let compactControlsHeight: CGFloat = 96
+    private let compactControlsHeight: CGFloat = 148
 
     private var scopedPhotos: [PhotoAsset] {
         photos.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
@@ -80,7 +84,17 @@ struct MapHomeView: View {
                         onSelect: {
                             detailDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
                         },
+                        onRecordVisit: {
+                            visitEditorDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
+                        },
+                        onToggleWantToGo: {
+                            toggleWantToGo($0.restaurant)
+                        },
+                        onOpenRoulette: {
+                            rouletteDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
+                        },
                         usesSystemSearch: false,
+                        showsContextHeader: true,
                         contentTopInset: compactControlsHeight,
                         contentBottomInset: 84
                     )
@@ -91,8 +105,6 @@ struct MapHomeView: View {
                     activeFilterCount: filterResult.activeFilterCount,
                     options: snapshot.filterOptions
                 )
-
-                floatingBrowseModeButton
             }
             .background(TasteMapCoreTheme.page)
             .toolbar(.hidden, for: .navigationBar)
@@ -133,6 +145,20 @@ struct MapHomeView: View {
                     ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
                 }
             }
+            .sheet(item: $visitEditorDestination) { destination in
+                if let restaurant = owned.restaurants.first(where: {
+                    $0.id == destination.id && $0.deletedAt == nil
+                }) {
+                    VisitEditorView(restaurant: restaurant)
+                } else {
+                    ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
+                }
+            }
+            .sheet(item: $rouletteDestination) { destination in
+                NavigationStack {
+                    RestaurantRouletteScreen(initialRestaurantID: destination.id)
+                }
+            }
             .sheet(isPresented: $isShowingFilters) {
                 PersonalRestaurantFilterSheet(
                     state: filterState,
@@ -150,6 +176,14 @@ struct MapHomeView: View {
             } message: {
                 Text(locationFilterMessage ?? "")
             }
+            .alert("餐厅快捷操作", isPresented: Binding(
+                get: { quickActionMessage != nil },
+                set: { if !$0 { quickActionMessage = nil } }
+            )) {
+                Button("知道了", role: .cancel) { quickActionMessage = nil }
+            } message: {
+                Text(quickActionMessage ?? "")
+            }
         }
     }
 
@@ -159,13 +193,24 @@ struct MapHomeView: View {
         options: PersonalRestaurantFilterOptions
     ) -> some View {
         VStack(spacing: 7) {
-            TasteMapSegmentedControl(
-                selection: $selectedSegment,
-                items: RestaurantBrowseSegment.allCases.map {
-                    .init($0, title: $0.title, systemImage: $0.systemImage)
-                },
-                accessibilityIdentifier: "map-content-segment"
-            )
+            Text("我的地图")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("map-home-title")
+
+            HStack(spacing: 8) {
+                TasteMapSegmentedControl(
+                    selection: $selectedSegment,
+                    items: RestaurantBrowseSegment.allCases.map {
+                        .init($0, title: $0.title, systemImage: $0.systemImage)
+                    },
+                    accessibilityIdentifier: "map-content-segment"
+                )
+
+                mapListModeControl
+            }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
@@ -265,10 +310,52 @@ struct MapHomeView: View {
             .scrollClipDisabled()
             .accessibilityIdentifier("map-filter-chip-strip")
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
+        .padding(.horizontal, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+        .background(TasteMapCoreTheme.page.opacity(0.97))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("map-home-compact-controls")
+    }
+
+    private var mapListModeControl: some View {
+        HStack(spacing: 2) {
+            mapListModeButton(.map, title: "地图", systemImage: "map")
+            mapListModeButton(.list, title: "列表", systemImage: "list.bullet")
+        }
+        .padding(2)
+        .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(TasteMapCoreTheme.border)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("map-list-mode-control")
+    }
+
+    private func mapListModeButton(
+        _ mode: MapBrowseMode,
+        title: String,
+        systemImage: String
+    ) -> some View {
+        let isSelected = browseMode == mode
+        return Button {
+            browseMode = mode
+        } label: {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.white : TasteMapCoreTheme.textSecondary)
+                .frame(width: 36, height: 34)
+                .background(
+                    isSelected ? TasteMapCoreTheme.brand : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .accessibilityIdentifier(mode == .map ? "map-header-view-map" : "map-header-view-list")
     }
 
     private var listSearchChip: some View {
@@ -345,40 +432,6 @@ struct MapHomeView: View {
     private func selectedOptionTitle(id: String?, in options: [PersonalFilterOption]) -> String? {
         guard let id else { return nil }
         return options.first(where: { $0.id == id })?.title
-    }
-
-    private var floatingBrowseModeButton: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Button {
-                    browseMode = browseMode == .map ? .list : .map
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: browseMode == .map ? "list.bullet" : "map")
-                        Text(browseMode == .map ? "查看列表" : "查看地图")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .frame(height: 40)
-                    .background(TasteMapCoreTheme.brand, in: Capsule())
-                    .shadow(color: TasteMapCoreTheme.brand.opacity(0.25), radius: 8, y: 3)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(browseMode == .map ? "查看列表" : "查看地图")
-                .accessibilityIdentifier(
-                    browseMode == .map ? "map-floating-view-list" : "map-floating-view-map"
-                )
-            }
-            .padding(.trailing, 14)
-            // MapKit extends below the app's custom safe-area inset. Keep the
-            // mode control explicitly above the bottom navigation instead of
-            // letting it become visible-but-untappable underneath that bar.
-            .padding(.bottom, 78)
-        }
-        .allowsHitTesting(true)
     }
 
     private func mapContent(
@@ -533,6 +586,22 @@ struct MapHomeView: View {
 
     private func clearFilters() {
         filterState.resetKeepingStatus()
+    }
+
+    private func toggleWantToGo(_ restaurant: Restaurant) {
+        if restaurant.status == .visited {
+            quickActionMessage = "「\(restaurant.name)」已经在去过清单里，可以继续记录到访。"
+            return
+        }
+        do {
+            try LocalTasteMapStore(context: modelContext).delete(
+                restaurant,
+                actorUserID: accountScope.ownerUserID
+            )
+            quickActionMessage = "「\(restaurant.name)」已移出想吃。"
+        } catch {
+            quickActionMessage = "暂时无法更新想吃状态，请稍后重试。"
+        }
     }
 
     private func applyFilters(_ proposedState: PersonalRestaurantFilterState) {

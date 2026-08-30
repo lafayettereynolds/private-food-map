@@ -6,13 +6,26 @@
 审计对象：当前 React/Web 移动端与当前原生 iOS / SwiftUI App  
 审计标准：功能、交互、布局、页面结构、数据语义和组件复用必须同时成立；仅“能打开”或“已有类似功能”不算通过。
 
+## 0. Source-of-truth amendment｜2026-08-30
+
+Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖本报告初版中冲突的局部结论，并直接进入对应模块的验收合同：
+
+1. Map 顶部需要明确留白与标题「我的地图」；标题下使用紧凑的图标式「地图 / 列表」切换。旧结论中“只能使用右下浮动 Map/List 切换”的限制已废止。
+2. Map 的去过 / 想吃 / 适合你状态、筛选结果与 Map/List 必须继续共享同一个 projection；横向 compact chips 保留。
+3. Discovery 标题「发现」居中；关注 / 为你推荐 / 同味之选 / 最新 / 趋势等宽分布；筛选与 Map 使用同源视觉和交互 token。
+4. Profile 身份区展示关注 / 被关注；顶部业务统计改为去过 / 想去 / 总消费。统计必须复用真实 Web 口径对应的数据来源，不允许只替换标题。
+5. 自本修订起，每个页面先完成 Step A（Web 功能语义、数据来源、入口与状态审计），再完成 Step B（SwiftUI 布局/交互还原）。功能搬错按 parity bug 修复，不归为视觉差异。
+6. Analytics 是独立完整模块：口味档案、饭搭子、推荐来源、本月回顾、年度回顾及各自竖版分享海报必须恢复已经确认的 Analysis Theme。仅有普通卡片、统计列表或图表不算通过；先检查 Git 历史/现有分支中的既有实现并优先复用，不得凭感觉设计第三套。
+
+该修订不会创建第二套 Map、Discovery 或 Profile；现有正式页面就地收口。
+
 ## 1. Executive conclusion
 
 当前 iOS 已经具备很完整的数据和业务能力，Map、Discovery、Profile 也在前一轮修复中恢复了大部分顶层信息架构，但仍未达到本轮定义的 Product Parity。
 
 最重要的结论：
 
-1. **Map 顶层结构已基本符合最新产品决定**：去过 / 想吃 / 适合你、横向 compact chips、右下浮动 Map/List 切换、底部添加餐厅均已存在；不能再恢复顶部 Map/List segmented control。
+1. **Map 数据与筛选结构基本正确，但顶部产品结构需按最新决定重排**：去过 / 想吃 / 适合你和横向 compact chips 已存在；需要新增「我的地图」标题与图标式 Map/List 切换，并移除旧右下模式切换。
 2. **List 仍缺 Web 的高信息密度结构**：Web 有标题/数量、搜索、筛选、每行三类快捷动作；iOS 当前只有紧凑餐厅行，没有同级快捷动作与列表上下文摘要。
 3. **Discovery 一级导航已恢复正确**：关注 / 为你推荐 / 同味之选 / 最新 / 趋势均为同一级；没有错误的“发现餐厅 / 社区动态”中间层。但城市/筛选控件和内容卡仍比 Web 更大、更卡片化。
 4. **Profile 分组拓扑已恢复，但密度和统计语义仍不一致**：Web 头部统计是关注、粉丝、去过、想吃；iOS 当前头部统计是去过、到访、平均分、消费，社交统计被移出同级关系。iOS 头像头部、统计和入口卡高度也明显更大。
@@ -62,8 +75,8 @@
 
 | 页面 / 模块 | Web structure | iOS current structure | Missing / misplaced / interaction gap | Reuse problem | Severity | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| Map | 品牌头；去过/想吃/推荐；地图主体；筛选；右下查看列表；底部添加餐厅 | 去过/想吃/适合你；单排 chips；地图主体；右下查看列表；底部添加餐厅 | 已符合 Lafayette 最新 Beli-style 决定；需保证 chips 滚动、active count、安全区和小屏 | Map/List 已共用 filter state | S2 | 保持拓扑，只补密度与 regression；不得恢复顶部 Map/List segmented |
-| Personal List | MY TASTE MAP 标题、总数、分类计数、搜索、筛选、紧凑行、每行记录/想吃/抽签动作 | 顶部分类 + 搜索/chips + 紧凑餐厅行；浮动查看地图 | 缺列表上下文标题/数量；行内快捷动作缺失；地址/到访/评分虽有但层级不同 | 与 Map 共用数据，但行组件未复用 Web quick-action semantics | S1 | 重构 List header/row；保持浮动查看地图 |
+| Map | 品牌头；去过/想吃/推荐；地图主体；筛选；底部添加餐厅；最新产品决定要求「我的地图」与图标式模式切换 | 去过/想吃/适合你；单排 chips；地图主体；右下查看列表；底部添加餐厅 | 需加入顶部留白和「我的地图」，把模式切换迁到标题下的紧凑图标组；保证 chips、active count、安全区和小屏 | Map/List 已共用 filter state | S1 | 按执行期最新决定重排现有唯一 Map 页面，不创建第二套页面 |
+| Personal List | MY TASTE MAP 标题、总数、分类计数、搜索、筛选、紧凑行、每行记录/想吃/抽签动作 | 顶部分类 + 搜索/chips + 紧凑餐厅行；浮动查看地图 | 缺列表上下文标题/数量；行内快捷动作缺失；地址/到访/评分虽有但层级不同 | 与 Map 共用数据，但行组件未复用 Web quick-action semantics | S1 | 重构 List header/row；使用标题下同一模式切换，不保留重复浮动切换 |
 | Map filters | Web 入口打开完整筛选，当前产品决定要求单排 compact chips + More | 已有城市/评分/消费/到访次数/饭搭子等横向 chips 和完整 sheet | 需核对菜系/更多、active 文案、计数、横向可达性；当前视觉 pill 偏高 | `PersonalRestaurantFilterState` 为单一状态，正确 | S2 | 调整 chip token 和覆盖测试，不改筛选引擎 |
 | Add Restaurant | 搜索餐厅 → 城市 → 搜索；粘贴链接；Nearby；Manual | 同一能力顺序，但以多个超大卡片/按钮纵向堆叠 | 首屏只能看到搜索、链接和一条 Nearby；信息密度低于 Web；确认页另起一步可接受 | 同一 `AddRestaurantView`，无第二套 acquisition | S2 | 压缩 section/header/row；保留显式确认 |
 | Nearby / GPS | 当前 GPS → 3 km provider query → 距离排序 → 紧凑结果 | fresh CLLocation validator、精度/时间校验、3 km filter、`CLLocation.distance`、foreground refresh | fixture 147 m 通过，但真实同坐标 provider 结果尚无本轮证据；Reduced Accuracy 必须诚实显示 | query center 已集中在 ViewModel | S1 | 不重写定位；新增同坐标与 stale/reduced/foreground regression，最终真机一次验收 |
@@ -87,7 +100,7 @@
 | Settings | Account/Data/Sync/Privacy/Permissions/Storage/Premium/Help/About | 原生 Settings navigation | 原生 List/Form 是允许差异；真实能力与隐藏未实现入口符合要求 | services 均复用现有实现 | S3 | 不重构；做入口/返回一致性验证 |
 | Premium / Paywall | Web membership presentation/paywall | StoreKit 2 abstraction + native paywall | 正式 Product ID 仍是 release gate；不是本轮 parity 代码缺口 | entitlement 单一 | S3 | 不触碰 App Store 配置；只验证 Profile/Settings入口一致 |
 | On This Day | Profile 回味入口 → 记忆列表/详情/分享 | native analyzer/view/poster | 入口与能力存在 | 餐厅点击为 local detail | S3 | 增加统一详情标识断言 |
-| Taste / Companion / Source analytics | Profile 洞察入口 → 分析 → 代表餐厅 → 分享 | native analyzers/views/posters | 页面主题可以不同于 Core App；餐厅入口必须同一详情 | Companion/Source 有薄 sheet wrapper，但主体 local `RestaurantDetailView` | S2 | wrapper 仅保留 dismiss；统一 entrySource，不复制主体 |
+| Taste / Companion / Source / Monthly / Annual analytics | Web 统计语义与已确认的独立 Analysis Theme：中心食物、四周引导线/标签/卡片、代表餐厅图文、统一竖版海报 | native analyzers/views/posters 已存在，但必须重新确认页面和海报是否仍是已批准版本，而非普通纵向卡片/图表堆叠 | 入口存在不等于通过；需逐项验证偏好、价位、氛围、来源、饭搭子、评分、回头率、关键词、时间、消费和代表餐厅，且页面/海报共享数据语义 | 已有 Analysis design tokens、poster services 和五类 analyzer；应优先复用 Git 中正确实现，禁止创建第三套主题 | S1 | 独立 Analytics 模块完成历史实现审计、语义回归、页面/海报视觉证据；暖白食物主题不得扩散到 Core App |
 | Monthly / Annual recap | 回味入口 → recap → 代表餐厅 → 海报 | native equivalent | 主要能力完整；入口/详情一致性需回归 | local detail 共用 | S3 | cross-entry contract tests |
 | Share link landing | Web public route按 visibility返回公开投影 | native public landing | 外部公开 Restaurant 可能只有 remote projection；必须用统一详情主体 | 当前 landing 与 Discovery remote path边界需统一 | S1 | 接入统一 remote Restaurant Detail projection |
 
