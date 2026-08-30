@@ -16,6 +16,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 4. Profile 身份区展示关注 / 被关注；顶部业务统计改为去过 / 想去 / 总消费。统计必须复用真实 Web 口径对应的数据来源，不允许只替换标题。
 5. 自本修订起，每个页面先完成 Step A（Web 功能语义、数据来源、入口与状态审计），再完成 Step B（SwiftUI 布局/交互还原）。功能搬错按 parity bug 修复，不归为视觉差异。
 6. Analytics 是独立完整模块：口味档案、饭搭子、推荐来源、本月回顾、年度回顾及各自竖版分享海报必须恢复已经确认的 Analysis Theme。仅有普通卡片、统计列表或图表不算通过；先检查 Git 历史/现有分支中的既有实现并优先复用，不得凭感觉设计第三套。
+7. 全 App 建立统一 `Food & Dining Visual Language`：Food、Drink、Tableware、Receipt、Menu、Takeaway 与 Generic Dining 使用同一资产/组件系统。Core App 中只作为克制的辅助视觉；Analytics / Poster 中可以更突出。任何视觉必须标明是 Decorative 还是 Data-linked，后者只能来自真实数据。Premium 历史汉堡资产不受该系统覆盖。
 
 该修订不会创建第二套 Map、Discovery 或 Profile；现有正式页面就地收口。
 
@@ -36,6 +37,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
    - 因此同一家餐厅会因入口和本地状态不同看到不同主体。
 7. **本地 Restaurant Detail 自身顺序也不符合 Web 标准**：当前 iOS 是 Hero → Header → 评分参考 → Actions → Business Info；Web 和本轮锁定标准是 Hero → 城市/状态/名称/地址 → Actions → 人均/电话/营业时间/路线 → 评分参考 → 用户实拍 → 我的到访概览 → 到访历史。
 8. Visit、Dish、Photo、Settings、Premium、分析页与回顾页的业务闭环基本存在；主要剩余工作是页面密度、入口一致性和统一 Restaurant Detail，而不是重做 P0–P4 数据架构。
+9. 当前 Core App 仍缺少一套稳定、可识别且不制造假数据语义的 Food & Dining Visual Library。Map 远距离 cluster 需要由“纯数字圆点”升级为稳定 Food/Dining visual + count；近距离 Restaurant 仍优先独立 Marker。空态、Profile、Lists、Roulette 等只在合适位置使用 Decorative visual，Analytics 才优先使用真实数据驱动的 Food Hero。
 
 ## 2. Evidence and method
 
@@ -103,6 +105,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 | Taste / Companion / Source / Monthly / Annual analytics | Web 统计语义与已确认的独立 Analysis Theme：中心食物、四周引导线/标签/卡片、代表餐厅图文、统一竖版海报 | native analyzers/views/posters 已存在，但必须重新确认页面和海报是否仍是已批准版本，而非普通纵向卡片/图表堆叠 | 入口存在不等于通过；需逐项验证偏好、价位、氛围、来源、饭搭子、评分、回头率、关键词、时间、消费和代表餐厅，且页面/海报共享数据语义 | 已有 Analysis design tokens、poster services 和五类 analyzer；应优先复用 Git 中正确实现，禁止创建第三套主题 | S1 | 独立 Analytics 模块完成历史实现审计、语义回归、页面/海报视觉证据；暖白食物主题不得扩散到 Core App |
 | Monthly / Annual recap | 回味入口 → recap → 代表餐厅 → 海报 | native equivalent | 主要能力完整；入口/详情一致性需回归 | local detail 共用 | S3 | cross-entry contract tests |
 | Share link landing | Web public route按 visibility返回公开投影 | native public landing | 外部公开 Restaurant 可能只有 remote projection；必须用统一详情主体 | 当前 landing 与 Discovery remote path边界需统一 | S1 | 接入统一 remote Restaurant Detail projection |
+| Food & Dining visual language | 已确认的品牌覆盖范围包括 Map/cluster、空态、Profile、Lists、Roulette、Discovery、Community、Analytics/Poster 等；Core App 克制，Analysis 更大胆 | 目前各页面混用 SF Symbols、emoji 和局部插画，cluster 仍以纯数字为主，缺少统一分类、容器、深浅色和稳定 seed 规则 | 缺少 Decorative/Data-linked 边界；同场景图案稳定性没有合同；系统 emoji 不能作为正式资产；Premium 历史汉堡不得被覆盖 | 需要建立唯一 `FoodDiningVisualLibrary` / 等价组件，而不是页面各画一套 | S1 | 先审计现有资产与 Git 历史；建立统一 library，再以少量高价值场景接入并测试稳定性和数据真实性 |
 
 ## 5. Navigation and reusable component audit
 
@@ -169,8 +172,10 @@ RestaurantDetailView(
 | 3 | Discovery + Community | 调整 | 五个一级 tab不变；收紧 header/filter/card；Community仍在相同一级结构；餐厅动作统一 | `Restore Discovery and Community parity` |
 | 4 | Profile / My + Public Profile | 重构布局 | compact header；关注/粉丝/去过/想吃同级；主入口/回味/食单/洞察恢复 Web密度 | `Restore Profile product parity` |
 | 5 | Global Restaurant Detail | **核心重构** | local/remote使用同一主体；固定 section contract；entrySource只管导航；全部入口验证 | `Unify global Restaurant Detail` |
-| 6 | Remaining pages | 调整 | Visit section order、Lists tokens、Social/Analytics/Share landing cross-entry consistency | `Close remaining product parity gaps` |
-| 7 | Closure | 验收 | 全量 tests/build；Web/iOS after screenshots；全入口 Detail contract；剩余 gap诚实列出 | `Document full product parity closure` |
+| 6 | Remaining core pages | 调整 | Visit section order、Lists tokens、Social/Share landing cross-entry consistency | `Close remaining core product parity gaps` |
+| 7 | Food & Dining Visual Language | 视觉系统 + 有限接入 | 复用既有正确资产；统一 food/drink/tableware/receipt/menu/takeaway/generic dining；稳定 seed；Map 远距离 Food/Dining cluster；空态/Profile/Lists/Roulette 的克制 Decorative 示例 | `Establish Food and Dining visual language` |
+| 8 | Analytics + Share Posters | **独立完整模块** | 先核对五类 analyzer 的统计口径，再复用已确认 Analysis Theme；动态中心 Food Hero、四周分析、代表餐厅图文、五类统一竖版海报；所有 Data-linked visual 有真实证据 | `Restore Analytics and poster product parity` |
+| 9 | Closure | 验收 | 全量 tests/build；Web/iOS after screenshots；全入口 Detail contract；Food/Dining Decorative/Data-linked证据；Analytics 页面/海报证据；剩余 gap诚实列出 | `Document full product parity closure` |
 
 ## 8. Pages requiring refactor vs adjustment
 
@@ -187,7 +192,14 @@ RestaurantDetailView(
 - Add Restaurant card/row density.
 - Discovery header, city/filter controls and result card density.
 - Community card tokens and actions.
-- Visit section ordering, Lists rows/covers, analytics wrappers.
+- Visit section ordering、Lists rows/covers。
+
+### Must restore as a separate visual/data module
+
+- Taste Profile、Companion、Recommendation Source、Monthly、Annual 的统计语义、页面和分享海报。
+- Food Hero 必须由高频菜系/代表餐厅/真实分析结论驱动；数据不足时才使用明确的 Decorative composition，不得伪装成用户偏好。
+- 页面阅读布局与竖版海报共享 Design Tokens 和 presentation model，但不强行共享完全相同的布局。
+- Core App 的 Food/Dining 装饰与 Analysis Theme 分层：前者低强度，后者可以更具故事感。
 
 ### Verify only; do not rewrite
 
@@ -217,6 +229,21 @@ RestaurantDetailView(
 必须自动验证下列入口都出现同一组 section identifiers，顺序相同：Map、List、Search/Nearby saved result、Discovery local、Discovery remote、Community、Public Profile、Companion、Recommendation Source、Monthly、Annual、Lists、Visited、WantToGo、On This Day、Roulette、Public Share。
 
 remote detail 必须验证：浏览不会创建本地 Restaurant；显式 WantToGo/Visit 后才创建；随后重开显示同一主体且状态更新。
+
+### Food & Dining visual language
+
+- 近距离每家 Restaurant 优先独立 Marker；远距离 cluster 使用 Food/Dining visual + count，不能只剩纯数字圆点。
+- cluster visual 根据稳定 cluster coordinate/identifier seed 选择，轻微拖动或 rerender 不应无意义跳变。
+- Decorative visual 不附会数据；Data-linked visual 必须有明确 analyzer/provider 证据，并覆盖无数据/多元偏好降级。
+- Light/Dark、Dynamic Type、Reduce Motion、small iPhone 下不遮挡内容、不成为无标签交互控件。
+- 覆盖 Map、空态、Profile/Lists/Roulette 的代表性 Core 场景以及全部 Analytics/Poster；验收目标不是“每页都有图标”。
+
+### Analytics and posters
+
+- 五类 analyzer 的日期区间、nullable rating、消费、饭搭子、推荐来源、回头率、代表餐厅口径与 Web/已锁定合同一致。
+- 口味档案覆盖偏好排行、价位、氛围、推荐来源、饭搭子、评分风格、回头率、关键词、用餐时间、消费和代表餐厅图文。
+- Taste / Companion / Recommendation Source / Monthly / Annual 页面均有独立竖版 poster renderer，不是页面截图；共享同一 Analysis token 和 Food/Dining asset language。
+- “最坑推荐来源”等已锁定产品文案不得改名；无真实数据时显示诚实空态，不生成假结论。
 
 ## 10. Safety boundary
 
