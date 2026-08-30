@@ -28,7 +28,7 @@ struct MapHomeView: View {
     @State private var mapReloadID = UUID()
     @State private var mapRenderState: RestaurantMapRenderState = .loading
 
-    private let compactControlsHeight: CGFloat = 104
+    private let compactControlsHeight: CGFloat = 96
 
     private var scopedPhotos: [PhotoAsset] {
         photos.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
@@ -81,14 +81,18 @@ struct MapHomeView: View {
                             detailDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
                         },
                         usesSystemSearch: false,
-                        contentTopInset: compactControlsHeight
+                        contentTopInset: compactControlsHeight,
+                        contentBottomInset: 84
                     )
                 }
 
                 controls(
                     resultCount: displayedItems.count,
-                    activeFilterCount: filterResult.activeFilterCount
+                    activeFilterCount: filterResult.activeFilterCount,
+                    options: snapshot.filterOptions
                 )
+
+                floatingBrowseModeButton
             }
             .background(TasteMapCoreTheme.page)
             .toolbar(.hidden, for: .navigationBar)
@@ -149,8 +153,12 @@ struct MapHomeView: View {
         }
     }
 
-    private func controls(resultCount: Int, activeFilterCount: Int) -> some View {
-        VStack(spacing: 6) {
+    private func controls(
+        resultCount: Int,
+        activeFilterCount: Int,
+        options: PersonalRestaurantFilterOptions
+    ) -> some View {
+        VStack(spacing: 7) {
             TasteMapSegmentedControl(
                 selection: $selectedSegment,
                 items: RestaurantBrowseSegment.allCases.map {
@@ -159,129 +167,218 @@ struct MapHomeView: View {
                 accessibilityIdentifier: "map-content-segment"
             )
 
-            HStack(spacing: 7) {
-                compactModeControl
-
-                if browseMode == .list {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(TasteMapCoreTheme.textSecondary)
-                            .accessibilityHidden(true)
-                        TextField("搜索餐厅", text: $browseQuery)
-                            .font(.subheadline)
-                            .textInputAutocapitalization(.never)
-                            .submitLabel(.search)
-                            .accessibilityIdentifier("restaurant-list-search-field")
-                        if !browseQuery.isEmpty {
-                            Button {
-                                browseQuery = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel("清除搜索")
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: 36)
-                    .background(TasteMapCoreTheme.surface, in: Capsule())
-                    .overlay { Capsule().stroke(TasteMapCoreTheme.border) }
-                } else {
-                    Spacer(minLength: 0)
-                }
-
-                if selectedSegment != .forYou {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
                     Button {
                         isShowingFilters = true
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "line.3.horizontal.decrease")
-                            Text(activeFilterCount > 0 ? "筛选后 \(resultCount) 家" : filterState.sort.title)
-                                .lineLimit(1)
                             if activeFilterCount > 0 {
                                 Text("\(activeFilterCount)")
                                     .font(.caption2.bold())
                                     .foregroundStyle(.white)
-                                    .frame(minWidth: 18, minHeight: 18)
+                                    .frame(minWidth: 17, minHeight: 17)
                                     .background(TasteMapCoreTheme.brand, in: Circle())
                             }
                         }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(TasteMapCoreTheme.brandDeep)
-                        .padding(.horizontal, 10)
-                        .frame(height: 36)
-                        .background(TasteMapCoreTheme.surface, in: Capsule())
-                        .overlay { Capsule().stroke(TasteMapCoreTheme.border) }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        activeFilterCount > 0
-                            ? "筛选后 \(resultCount) 家，排序\(filterState.sort.title)"
-                            : "筛选与排序，当前\(filterState.sort.title)"
-                    )
+                    .mapFilterChipStyle(isActive: activeFilterCount > 0)
+                    .accessibilityLabel(activeFilterCount == 0 ? "筛选" : "已启用 \(activeFilterCount) 项筛选")
                     .accessibilityIdentifier("personal-filter-button")
 
-                    if activeFilterCount > 0 {
-                        Text("筛选后 \(resultCount) 家")
-                            .accessibilityIdentifier("personal-filter-result-count")
-                            .accessibilityHidden(true)
-                        Button(action: clearFilters) {
-                            Image(systemName: "xmark")
-                                .font(.caption.bold())
-                                .frame(width: 32, height: 32)
-                                .background(TasteMapCoreTheme.surface, in: Circle())
-                                .overlay { Circle().stroke(TasteMapCoreTheme.border) }
+                    if browseMode == .list {
+                        listSearchChip
+                    }
+
+                    cityChip(options: options)
+
+                    filterSummaryChip(
+                        title: filterState.ratingBands.isEmpty
+                            ? "评分"
+                            : filterState.ratingBands.sorted { $0.rawValue > $1.rawValue }
+                                .map(\.title).joined(separator: "、"),
+                        isActive: !filterState.ratingBands.isEmpty,
+                        identifier: "map-filter-chip-rating"
+                    )
+
+                    if filterState.appliesVisitScopedFilters {
+                        filterSummaryChip(
+                            title: filterState.priceRange?.title ?? "消费",
+                            isActive: filterState.priceRange != nil,
+                            identifier: "map-filter-chip-price"
+                        )
+                        filterSummaryChip(
+                            title: filterState.visitCount.map { "到访 \($0.title)" } ?? "到访次数",
+                            isActive: filterState.visitCount != nil,
+                            identifier: "map-filter-chip-visits"
+                        )
+                        if !options.companions.isEmpty {
+                            filterSummaryChip(
+                                title: selectedOptionTitle(id: filterState.companionID, in: options.companions) ?? "饭搭子",
+                                isActive: filterState.companionID != nil,
+                                identifier: "map-filter-chip-companion"
+                            )
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("清除筛选")
+                        if !options.sources.isEmpty {
+                            filterSummaryChip(
+                                title: selectedOptionTitle(id: filterState.sourceID, in: options.sources) ?? "推荐来源",
+                                isActive: filterState.sourceID != nil,
+                                identifier: "map-filter-chip-source"
+                            )
+                        }
+                    }
+
+                    Menu {
+                        ForEach(PersonalRestaurantSort.allCases) { sort in
+                            Button {
+                                filterState.sort = sort
+                            } label: {
+                                if filterState.sort == sort {
+                                    Label(sort.title, systemImage: "checkmark")
+                                } else {
+                                    Text(sort.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(filterState.sort.title, systemImage: "arrow.up.arrow.down")
+                    }
+                    .mapFilterChipStyle(isActive: filterState.sort != .comprehensive)
+                    .accessibilityIdentifier("map-filter-chip-sort")
+
+                    if activeFilterCount > 0 {
+                        Button(action: clearFilters) {
+                            Label("清除", systemImage: "xmark")
+                        }
+                        .mapFilterChipStyle(isActive: false)
                         .accessibilityIdentifier("personal-filter-clear")
+
+                        Text("筛选后 \(resultCount) 家")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                            .accessibilityIdentifier("personal-filter-result-count")
                     }
                 }
+                .padding(.horizontal, 1)
             }
+            .scrollClipDisabled()
+            .accessibilityIdentifier("map-filter-chip-strip")
         }
-        .padding(7)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(TasteMapCoreTheme.border.opacity(0.82))
-        }
-        .shadow(color: TasteMapCoreTheme.cardShadow, radius: 10, y: 4)
         .padding(.horizontal, 10)
         .padding(.top, 6)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("map-home-compact-controls")
     }
 
-    private var compactModeControl: some View {
-        HStack(spacing: 2) {
-            ForEach(MapBrowseMode.allCases) { mode in
+    private var listSearchChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                .accessibilityHidden(true)
+            TextField("搜索餐厅", text: $browseQuery)
+                .font(.caption)
+                .frame(width: 112)
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+                .accessibilityIdentifier("restaurant-list-search-field")
+            if !browseQuery.isEmpty {
                 Button {
-                    browseMode = mode
+                    browseQuery = ""
                 } label: {
-                    Image(systemName: mode.systemImage)
-                        .font(.subheadline.weight(.semibold))
-                        .frame(width: 34, height: 32)
-                        .foregroundStyle(
-                            browseMode == mode
-                                ? TasteMapCoreTheme.brandDeep
-                                : TasteMapCoreTheme.textSecondary
-                        )
-                        .background(
-                            browseMode == mode ? TasteMapCoreTheme.surface : .clear,
-                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        )
+                    Image(systemName: "xmark.circle.fill")
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(mode.title)
-                .accessibilityAddTraits(browseMode == mode ? .isSelected : [])
-                .accessibilityIdentifier("map-list-mode-picker-\(mode.title)")
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("清除搜索")
             }
         }
-        .padding(2)
-        .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 11))
-        .overlay { RoundedRectangle(cornerRadius: 11).stroke(TasteMapCoreTheme.border.opacity(0.75)) }
+        .padding(.horizontal, 11)
+        .frame(height: 34)
+        .background(TasteMapCoreTheme.surface, in: Capsule())
+        .overlay { Capsule().stroke(TasteMapCoreTheme.border) }
+    }
+
+    @ViewBuilder
+    private func cityChip(options: PersonalRestaurantFilterOptions) -> some View {
+        if options.cities.isEmpty {
+            filterSummaryChip(title: "城市", isActive: false, identifier: "map-filter-chip-city")
+        } else {
+            Menu {
+                Button {
+                    filterState.city = nil
+                } label: {
+                    if filterState.city == nil { Label("全部城市", systemImage: "checkmark") }
+                    else { Text("全部城市") }
+                }
+                ForEach(options.cities, id: \.self) { city in
+                    Button {
+                        filterState.city = city
+                    } label: {
+                        if filterState.city == city { Label(city, systemImage: "checkmark") }
+                        else { Text(city) }
+                    }
+                }
+            } label: {
+                Label(filterState.city ?? "城市", systemImage: "mappin.and.ellipse")
+            }
+            .mapFilterChipStyle(isActive: filterState.city != nil)
+            .accessibilityIdentifier("map-filter-chip-city")
+        }
+    }
+
+    private func filterSummaryChip(title: String, isActive: Bool, identifier: String) -> some View {
+        Button {
+            isShowingFilters = true
+        } label: {
+            HStack(spacing: 4) {
+                Text(title).lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
+        }
+        .mapFilterChipStyle(isActive: isActive)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func selectedOptionTitle(id: String?, in options: [PersonalFilterOption]) -> String? {
+        guard let id else { return nil }
+        return options.first(where: { $0.id == id })?.title
+    }
+
+    private var floatingBrowseModeButton: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    browseMode = browseMode == .map ? .list : .map
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: browseMode == .map ? "list.bullet" : "map")
+                        Text(browseMode == .map ? "查看列表" : "查看地图")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .frame(height: 40)
+                    .background(TasteMapCoreTheme.brand, in: Capsule())
+                    .shadow(color: TasteMapCoreTheme.brand.opacity(0.25), radius: 8, y: 3)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(browseMode == .map ? "查看列表" : "查看地图")
+                .accessibilityIdentifier(
+                    browseMode == .map ? "map-floating-view-list" : "map-floating-view-map"
+                )
+            }
+            .padding(.trailing, 14)
+            // MapKit extends below the app's custom safe-area inset. Keep the
+            // mode control explicitly above the bottom navigation instead of
+            // letting it become visible-but-untappable underneath that bar.
+            .padding(.bottom, 78)
+        }
+        .allowsHitTesting(true)
     }
 
     private func mapContent(
@@ -419,7 +516,7 @@ struct MapHomeView: View {
                     .accessibilityIdentifier("restaurant-map-user-location")
                 }
                 .padding(.trailing, 14)
-                .padding(.bottom, selectedSegment == .wantToGo && !items.isEmpty ? 142 : 16)
+                .padding(.bottom, selectedSegment == .wantToGo && !items.isEmpty ? 194 : 70)
             }
         }
     }
@@ -515,6 +612,19 @@ private enum MapBrowseMode: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String { self == .map ? "地图" : "列表" }
     var systemImage: String { self == .map ? "map" : "list.bullet" }
+}
+
+private extension View {
+    func mapFilterChipStyle(isActive: Bool) -> some View {
+        self
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isActive ? Color.white : TasteMapCoreTheme.brandDeep)
+            .padding(.horizontal, 11)
+            .frame(height: 34)
+            .background(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.surface, in: Capsule())
+            .overlay { Capsule().stroke(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.border) }
+            .buttonStyle(.plain)
+    }
 }
 
 #Preview("地图 / 列表双模式") {

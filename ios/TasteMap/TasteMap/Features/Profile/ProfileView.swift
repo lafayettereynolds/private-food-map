@@ -60,7 +60,7 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: 14) {
                     ProfileIdentityCard(
                         profile: activeProfile,
                         avatarPhoto: avatarPhoto,
@@ -70,7 +70,6 @@ struct ProfileView: View {
                         onSignIn: { Task { await signIn() } },
                         onPremium: { premiumEntitlementService.openPaywall(from: .profile) }
                     )
-                    settingsEntry
                     if isRunningAuthOperation {
                         ProgressView()
                             .accessibilityLabel("正在处理账户操作")
@@ -81,246 +80,13 @@ struct ProfileView: View {
                             .foregroundStyle(authMessage.hasPrefix("失败") ? .red : .secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    ProfileStatisticsSection(statistics: statistics)
-                    ProfileContentLinks(
-                        visitedCount: statistics.visitedRestaurantCount,
-                        wantToGoCount: statistics.wantToGoRestaurantCount,
-                        footprintCount: statistics.visitCount,
-                        onSelect: { browseDestination = $0 }
-                    )
-                    NavigationLink {
-                        RestaurantRouletteScreen(preferredCity: activeProfile?.city)
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [RouletteTheme.brandSoft, RouletteTheme.cream],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(RouletteTheme.brand)
-                            }
-                            .frame(width: 52, height: 52)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("今天吃什么")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("从我的真实餐厅里，轻松转出今天这一家")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(RouletteTheme.brand)
-                        }
-                        .padding(16)
-                        .tasteMapCoreCard(radius: 20)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .stroke(RouletteTheme.brand.opacity(0.12))
-                        }
+                    if authenticatedUser != nil {
+                        ProfileStatisticsSection(statistics: statistics)
+                        primaryActions
+                        memoriesSection
+                        listsSection
+                        insightsSection
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-restaurant-roulette-entry")
-                    if let userID = authenticatedUser?.id {
-                        NavigationLink {
-                            RestaurantListsOverviewView(
-                                currentUserID: userID,
-                                photoAPI: authServices.photoAPI
-                            )
-                        } label: {
-                            HStack(spacing: 14) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .fill(Color.accentColor.opacity(0.12))
-                                    Text("📋").font(.title3)
-                                }
-                                .frame(width: 48, height: 48)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("我的榜单").font(.headline).foregroundStyle(.primary)
-                                    Text(activeListCount == 0
-                                        ? "整理、排名并分享你的餐厅主题清单"
-                                        : "\(activeListCount) 份榜单 · 整理、排名并分享")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                            }
-                            .padding(16)
-                            .tasteMapCoreCard(radius: 20)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("profile-restaurant-lists-entry")
-                    }
-                    NavigationLink {
-                        TasteProfileAnalysisScreen()
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(TasteMapAnalysisTheme.ingredientRedSoft)
-                                Text("🍽️")
-                                    .font(.title3)
-                            }
-                            .frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("我的口味档案")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("把真实到访整理成味觉地图与分享海报")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            PremiumFeatureInlineBadge(feature: .fullTasteProfile)
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(16)
-                        .tasteMapCoreCard(radius: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-taste-analysis-entry")
-                    NavigationLink {
-                        DiningCompanionAnalysisScreen()
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(TasteMapAnalysisTheme.leafGreenSoft)
-                                Text("🥢")
-                                    .font(.title3)
-                            }
-                            .frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("饭搭子分析")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("看看你和 TA 常吃什么、常去哪与下次吃什么")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            PremiumFeatureInlineBadge(feature: .companionAnalysis)
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(16)
-                        .tasteMapCoreCard(radius: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-companion-analysis-entry")
-                    NavigationLink {
-                        RecommendationSourceAnalysisScreen()
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(TasteMapAnalysisTheme.caramelSoft)
-                                Text("🧾")
-                                    .font(.title3)
-                            }
-                            .frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("推荐来源分析")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("看看谁最常安利、谁最靠谱，以及最坑推荐来源")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            PremiumFeatureInlineBadge(feature: .recommendationSourceAnalysis)
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(16)
-                        .tasteMapCoreCard(radius: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-recommendation-source-analysis-entry")
-                    NavigationLink {
-                        MonthlyRecapAnalysisScreen()
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(TasteMapAnalysisTheme.brandSoft)
-                                Text("🗓️")
-                                    .font(.title3)
-                            }
-                            .frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("本月回顾")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("看看这个月吃了什么、和谁吃、从哪里发现")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            PremiumFeatureInlineBadge(feature: .monthlyRecap)
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(16)
-                        .tasteMapCoreCard(radius: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-monthly-recap-entry")
-                    NavigationLink {
-                        AnnualRecapAnalysisScreen()
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle().fill(TasteMapAnalysisTheme.leafGreenSoft)
-                                Text("🧭").font(.title3)
-                            }
-                            .frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("年度回顾").font(.headline).foregroundStyle(.primary)
-                                Text("回看这一年的餐桌、味觉轨迹与重要发现")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            PremiumFeatureInlineBadge(feature: .annualRecap)
-                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                        }
-                        .padding(16)
-                        .tasteMapCoreCard(radius: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-annual-recap-entry")
-                    NavigationLink {
-                        OnThisDayScreen(
-                            currentUserID: authenticatedUser?.id ?? OnThisDayInput.localOwnerID,
-                            context: onThisDayContext
-                        )
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle().fill(TasteMapAnalysisTheme.caramelSoft)
-                                Text("🍲").font(.title3)
-                            }
-                            .frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("那年今日").font(.headline).foregroundStyle(.primary)
-                                Text("回到往年同一天留下的真实味觉记忆")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                        }
-                        .padding(16)
-                        .tasteMapCoreCard(radius: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-on-this-day-entry")
                     if let userID = authenticatedUser?.id {
                         ProfileSocialStatisticsSection(
                             statistics: socialStatistics,
@@ -344,7 +110,7 @@ struct ProfileView: View {
                             )
                         }
                     }
-                    if activeRestaurants.isEmpty {
+                    if authenticatedUser != nil, activeRestaurants.isEmpty {
                         ContentUnavailableView(
                             "还没有美食记录",
                             systemImage: "fork.knife.circle",
@@ -353,13 +119,15 @@ struct ProfileView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                     }
+                    settingsEntry
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
                 .padding(.bottom, 110)
             }
             .background(TasteMapCoreTheme.page)
             .navigationTitle("我的")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if let user = authenticatedUser, activeProfile?.visibility == .public {
                     ToolbarItem(placement: .primaryAction) {
@@ -387,6 +155,146 @@ struct ProfileView: View {
             }
             .task { await restoreSessionAndProfile() }
         }
+    }
+
+    private var primaryActions: some View {
+        ProfileDashboardSection(title: "") {
+            LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 10) {
+                NavigationLink {
+                    RestaurantRouletteScreen(preferredCity: activeProfile?.city)
+                } label: {
+                    ProfileDashboardTile(
+                        emoji: "🎯",
+                        title: "今天吃什么",
+                        detail: "转出今天这一家",
+                        tint: RouletteTheme.brandSoft
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-restaurant-roulette-entry")
+
+                NavigationLink {
+                    TasteProfileAnalysisScreen()
+                } label: {
+                    ProfileDashboardTile(
+                        emoji: "🍽️",
+                        title: "我的口味档案",
+                        detail: "看懂真实味觉偏好",
+                        tint: TasteMapAnalysisTheme.ingredientRedSoft,
+                        premiumFeature: .fullTasteProfile
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-taste-analysis-entry")
+            }
+        }
+        .accessibilityIdentifier("profile-primary-actions")
+    }
+
+    private var memoriesSection: some View {
+        ProfileDashboardSection(title: "回味") {
+            LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 3), spacing: 8) {
+                NavigationLink {
+                    MonthlyRecapAnalysisScreen()
+                } label: {
+                    ProfileCompactTile(
+                        emoji: "🗓️", title: "本月回顾",
+                        tint: TasteMapAnalysisTheme.brandSoft,
+                        premiumFeature: .monthlyRecap
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-monthly-recap-entry")
+
+                NavigationLink {
+                    AnnualRecapAnalysisScreen()
+                } label: {
+                    ProfileCompactTile(
+                        emoji: "🧭", title: "年度回顾",
+                        tint: TasteMapAnalysisTheme.leafGreenSoft,
+                        premiumFeature: .annualRecap
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-annual-recap-entry")
+
+                NavigationLink {
+                    OnThisDayScreen(
+                        currentUserID: authenticatedUser?.id ?? OnThisDayInput.localOwnerID,
+                        context: onThisDayContext
+                    )
+                } label: {
+                    ProfileCompactTile(
+                        emoji: "🍲", title: "那年今日",
+                        tint: TasteMapAnalysisTheme.caramelSoft
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-on-this-day-entry")
+            }
+        }
+        .accessibilityIdentifier("profile-memories-section")
+    }
+
+    private var listsSection: some View {
+        ProfileDashboardSection(title: "我的食单") {
+            VStack(spacing: 10) {
+                ProfileContentLinks(
+                    visitedCount: statistics.visitedRestaurantCount,
+                    wantToGoCount: statistics.wantToGoRestaurantCount,
+                    footprintCount: statistics.visitCount,
+                    onSelect: { browseDestination = $0 }
+                )
+                if let userID = authenticatedUser?.id {
+                    NavigationLink {
+                        RestaurantListsOverviewView(
+                            currentUserID: userID,
+                            photoAPI: authServices.photoAPI
+                        )
+                    } label: {
+                        ProfileCompactRow(
+                            emoji: "📋",
+                            title: "我的榜单",
+                            detail: activeListCount == 0 ? "整理主题餐厅清单" : "\(activeListCount) 份榜单"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-restaurant-lists-entry")
+                }
+            }
+        }
+        .accessibilityIdentifier("profile-lists-section")
+    }
+
+    private var insightsSection: some View {
+        ProfileDashboardSection(title: "发现与洞察") {
+            LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 10) {
+                NavigationLink {
+                    DiningCompanionAnalysisScreen()
+                } label: {
+                    ProfileDashboardTile(
+                        emoji: "🥢", title: "饭搭子分析", detail: "看看和谁最合拍",
+                        tint: TasteMapAnalysisTheme.leafGreenSoft,
+                        premiumFeature: .companionAnalysis
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-companion-analysis-entry")
+
+                NavigationLink {
+                    RecommendationSourceAnalysisScreen()
+                } label: {
+                    ProfileDashboardTile(
+                        emoji: "🧾", title: "推荐来源分析", detail: "谁最靠谱，谁最坑",
+                        tint: TasteMapAnalysisTheme.caramelSoft,
+                        premiumFeature: .recommendationSourceAnalysis
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-recommendation-source-analysis-entry")
+            }
+        }
+        .accessibilityIdentifier("profile-insights-section")
     }
 
     private var settingsEntry: some View {
@@ -629,18 +537,19 @@ private struct ProfileIdentityCard: View {
     let onPremium: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
+        HStack(alignment: .center, spacing: 14) {
             ProfileAvatarView(profile: profile, photo: avatarPhoto)
-                .frame(width: 104, height: 104)
+                .frame(width: isSignedIn ? 72 : 62, height: isSignedIn ? 72 : 62)
             if let profile, isSignedIn {
-                VStack(spacing: 6) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
                         Text(profile.displayName)
-                            .font(.title2.bold())
-                            .multilineTextAlignment(.center)
+                            .font(.title3.bold())
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                         if membershipStatus == .premium || membershipStatus == .gracePeriod {
                             Button(action: onPremium) {
-                                PremiumBurgerBadge().frame(width: 24, height: 24)
+                                PremiumBurgerBadge().frame(width: 22, height: 22)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Taste Map Premium 已开通，查看会员状态")
@@ -649,61 +558,73 @@ private struct ProfileIdentityCard: View {
                     }
                     if !profile.bio.isEmpty {
                         Text(profile.bio)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .accessibilityIdentifier("profile-bio-text")
-                    }
-                    if !profile.city.isEmpty {
-                        Label(profile.city, systemImage: "mappin.and.ellipse")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .accessibilityIdentifier("profile-city-text")
+                            .lineLimit(2)
+                            .accessibilityIdentifier("profile-bio-text")
                     }
-                    Label {
-                        Text("加入 Taste Map · \(profile.createdAt.formatted(.dateTime.year().month()))")
-                    } icon: {
-                        Image(systemName: "calendar.badge.checkmark")
+                    HStack(spacing: 8) {
+                        if !profile.city.isEmpty {
+                            Label(profile.city, systemImage: "mappin.and.ellipse")
+                                .accessibilityIdentifier("profile-city-text")
+                        }
+                        Label {
+                            Text("加入于 \(profile.createdAt.formatted(.dateTime.year().month()))")
+                        } icon: {
+                            Image(systemName: "calendar.badge.checkmark")
+                        }
                     }
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                }
-                HStack(spacing: 10) {
-                    Button("编辑资料", action: onEdit)
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("profile-edit-button")
-                    if membershipStatus == .free || membershipStatus == .expired {
-                        Button("开通 Premium", action: onPremium)
+                    .lineLimit(1)
+
+                    HStack(spacing: 8) {
+                        Button("编辑资料", action: onEdit)
                             .buttonStyle(.bordered)
-                            .accessibilityIdentifier("profile-premium-entry")
+                            .controlSize(.small)
+                            .accessibilityIdentifier("profile-edit-button")
+                        if membershipStatus == .free || membershipStatus == .expired {
+                            Button("Premium", action: onPremium)
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                                .accessibilityIdentifier("profile-premium-entry")
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text("记录属于你的每一顿")
-                    .font(.title3.bold())
-                Button(action: onSignIn) {
-                    Label("使用 Apple 登录", systemImage: "apple.logo")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("记录属于你的每一顿")
+                        .font(.headline)
+                    Text("登录后查看个人档案、统计与回味。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button(action: onSignIn) {
+                        Label("使用 Apple 登录", systemImage: "apple.logo")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("profile-sign-in-button")
                 }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("profile-sign-in-button")
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .padding(.horizontal, 18)
+        .padding(14)
         .background(
             LinearGradient(
                 colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surface],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(TasteMapCoreTheme.border.opacity(0.9))
         }
-        .shadow(color: TasteMapCoreTheme.cardShadow, radius: 14, y: 5)
+        .shadow(color: TasteMapCoreTheme.cardShadow, radius: 8, y: 3)
+        .accessibilityIdentifier("profile-compact-header")
     }
 }
 
@@ -711,35 +632,35 @@ private struct ProfileStatisticsSection: View {
     let statistics: ProfileBasicStatistics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("我的记录").font(.headline)
-            LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 12) {
-                statistic("去过", value: "\(statistics.visitedRestaurantCount)", icon: "fork.knife")
-                statistic("到访", value: "\(statistics.visitCount)", icon: "calendar")
-                statistic(
-                    "平均评分",
-                    value: statistics.averageRating.map { String(format: "%.1f", $0) } ?? "未评分",
-                    icon: "star.fill"
-                )
-                statistic(
-                    "实际消费",
-                    value: statistics.totalSpend.map(Self.currencyString) ?? "暂无",
-                    icon: "wallet.bifold"
-                )
-            }
+        HStack(spacing: 0) {
+            statistic("去过", value: "\(statistics.visitedRestaurantCount)")
+            Divider().frame(height: 36)
+            statistic("到访", value: "\(statistics.visitCount)")
+            Divider().frame(height: 36)
+            statistic(
+                "平均分",
+                value: statistics.averageRating.map { String(format: "%.1f", $0) } ?? "—"
+            )
+            Divider().frame(height: 36)
+            statistic(
+                "消费",
+                value: statistics.totalSpend.map(Self.currencyString) ?? "—"
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 11)
+        .tasteMapCoreCard(radius: 18)
+        .accessibilityIdentifier("profile-horizontal-statistics")
     }
 
-    private func statistic(_ title: String, value: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon).foregroundStyle(Color.accentColor)
-            Text(value).font(.title3.bold())
+    private func statistic(_ title: String, value: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.subheadline.bold())
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
-        .padding(15)
-        .tasteMapCoreCard(radius: 18)
+        .frame(maxWidth: .infinity, minHeight: 42)
     }
 
     nonisolated private static func currencyString(_ value: Decimal) -> String {
@@ -821,8 +742,8 @@ private struct ProfileContentLinks: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("profile-taste-footprints-entry")
         }
-        .padding(.horizontal, 16)
-        .tasteMapCoreCard(radius: 20)
+        .padding(.horizontal, 14)
+        .tasteMapCoreCard(radius: 16)
     }
 
     private func row(_ title: String, value: String, icon: String) -> some View {
@@ -836,8 +757,114 @@ private struct ProfileContentLinks: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 15)
+        .padding(.vertical, 11)
         .contentShape(Rectangle())
+    }
+}
+
+private struct ProfileDashboardSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: title.isEmpty ? 0 : 9) {
+            if !title.isEmpty {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(TasteMapCoreTheme.textPrimary)
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ProfileDashboardTile: View {
+    let emoji: String
+    let title: String
+    let detail: String
+    let tint: Color
+    var premiumFeature: PremiumFeature?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                Text(emoji)
+                    .font(.title3)
+                    .frame(width: 36, height: 36)
+                    .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                Spacer(minLength: 4)
+                if let premiumFeature {
+                    PremiumFeatureInlineBadge(feature: premiumFeature)
+                }
+            }
+            Text(title)
+                .font(.subheadline.bold())
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+        .padding(12)
+        .tasteMapCoreCard(radius: 17)
+    }
+}
+
+private struct ProfileCompactTile: View {
+    let emoji: String
+    let title: String
+    let tint: Color
+    var premiumFeature: PremiumFeature?
+
+    var body: some View {
+        VStack(spacing: 7) {
+            Text(emoji)
+                .font(.title3)
+                .frame(width: 36, height: 36)
+                .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            Text(title)
+                .font(.caption.bold())
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            if let premiumFeature {
+                PremiumFeatureInlineBadge(feature: premiumFeature)
+                    .scaleEffect(0.88)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 96)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 9)
+        .tasteMapCoreCard(radius: 16)
+    }
+}
+
+private struct ProfileCompactRow: View {
+    let emoji: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Text(emoji)
+                .font(.body)
+                .frame(width: 34, height: 34)
+                .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                Text(detail).font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.bold())
+                .foregroundStyle(.tertiary)
+        }
+        .padding(12)
+        .tasteMapCoreCard(radius: 16)
     }
 }
 

@@ -71,6 +71,7 @@ struct RestaurantBrowseList: View {
     let onSelect: (RestaurantBrowseItem) -> Void
     var usesSystemSearch = true
     var contentTopInset: CGFloat = 0
+    var contentBottomInset: CGFloat = 28
 
     private var filteredItems: [RestaurantBrowseItem] {
         RestaurantBrowseSearch.filter(items, query: query)
@@ -122,7 +123,7 @@ struct RestaurantBrowseList: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.top, 6)
-                    .padding(.bottom, 28)
+                    .padding(.bottom, contentBottomInset)
                 }
                 .background(TasteMapCoreTheme.page)
             }
