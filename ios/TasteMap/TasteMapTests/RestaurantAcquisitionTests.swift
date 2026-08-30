@@ -161,6 +161,50 @@ struct RestaurantAcquisitionTests {
         #expect((sorted[1].distanceMeters ?? 0) > 419)
     }
 
+    @Test("Nearby uses the same broad restaurant query vocabulary as Web and merges provider duplicates")
+    func nearbyQueryCoverageAndMerge() {
+        let origin = RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)
+        let sharedIdentity = "apple-shared-nearby"
+        let far = RestaurantCandidate(
+            name: "较远餐厅",
+            address: "远路 8 号",
+            latitude: 30.2841,
+            longitude: 120.1551,
+            appleMapItemIdentifier: "apple-far-nearby"
+        )
+        let close = RestaurantCandidate(
+            name: "最近餐厅",
+            address: "近路 1 号",
+            latitude: 30.27446,
+            longitude: 120.1551,
+            appleMapItemIdentifier: sharedIdentity
+        )
+        let duplicate = RestaurantCandidate(
+            name: "最近餐厅（重复结果）",
+            address: "近路 1 号",
+            latitude: 30.27446,
+            longitude: 120.1551,
+            appleMapItemIdentifier: sharedIdentity
+        )
+        let outOfRange = RestaurantCandidate(
+            name: "范围外餐厅",
+            address: "远郊",
+            latitude: 30.32,
+            longitude: 120.1551,
+            appleMapItemIdentifier: "apple-outside-nearby"
+        )
+
+        let merged = RestaurantNearbySearchPolicy.merge(
+            [[far, close], [duplicate], [outOfRange]],
+            from: origin,
+            radiusMeters: 3_000
+        )
+
+        #expect(RestaurantNearbySearchPolicy.keywords == ["餐厅", "美食", "饭店"])
+        #expect(merged.map(\.name) == ["最近餐厅", "较远餐厅"])
+        #expect(merged.first?.distanceMeters != nil)
+    }
+
     @Test("Nearby no-result is a completed empty state with manual fallback available")
     func nearbyNoResults() async {
         let search = AcquisitionSearchSpy()

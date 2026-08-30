@@ -381,10 +381,19 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["添加餐厅"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["V1 附近小馆"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["147 米"].exists)
-        keepScreenshot(named: "Restaurant Acquisition Nearby", of: app)
+        XCTAssertTrue(app.textFields["restaurant-query-field"].exists)
+        XCTAssertTrue(app.textFields["restaurant-link-field"].exists)
+
+        let candidate = app.descendants(matching: .any)[
+            "restaurant-candidate-AC000001-0000-0000-0000-000000000001"
+        ]
+        XCTAssertTrue(candidate.exists)
+        XCTAssertLessThanOrEqual(candidate.frame.height, 78)
+        keepScreenshot(named: "Full Parity Add Restaurant Nearby After", of: app)
 
         let select = app.buttons["candidate-select-AC000001-0000-0000-0000-000000000001"]
         XCTAssertTrue(select.waitForExistence(timeout: 3))
+        XCTAssertLessThanOrEqual(select.frame.width, 64)
         select.tap()
         XCTAssertTrue(app.navigationBars["写下这家餐厅"].waitForExistence(timeout: 3))
         segmentedOption("我想去", in: app).tap()
