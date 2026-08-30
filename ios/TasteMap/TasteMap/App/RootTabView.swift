@@ -7,13 +7,21 @@ struct RootTabView: View {
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
-    @State private var selectedTab: AppTab = .map
+    @State private var selectedTab: AppTab
     @State private var isShowingSearch = false
     @State private var requestedVisitCandidate: RestaurantCandidate?
     @State private var visitCandidate: RestaurantCandidate?
     @State private var isBottomNavigationHidden = false
     @State private var pendingSharedImport: PendingRestaurantImport?
     @State private var publicShareRoute: PublicShareRouteSelection?
+
+    init() {
+#if DEBUG
+        _selectedTab = State(initialValue: TasteMapUITestFixtures.coreParityInitialTab ?? .map)
+#else
+        _selectedTab = State(initialValue: .map)
+#endif
+    }
 
     private var scopedRestaurants: [Restaurant] {
         restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
@@ -148,32 +156,134 @@ extension View {
     }
 }
 
-private enum DiscoverHubSection: String, CaseIterable, Identifiable {
-    case discovery = "发现餐厅"
-    case community = "社区动态"
+enum DiscoverHubSection: String, CaseIterable, Identifiable {
+    case following
+    case forYou
+    case similarTaste
+    case latest
+    case trending
+
     var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .following: "关注"
+        case .forYou: "为你推荐"
+        case .similarTaste: "同味之选"
+        case .latest: "最新"
+        case .trending: "趋势"
+        }
+    }
+
+    var discoveryMode: DiscoveryModeV1? {
+        switch self {
+        case .forYou: .forYou
+        case .similarTaste: .similarTaste
+        case .trending: .trending
+        case .following, .latest: nil
+        }
+    }
+
+    var communityScope: CommunityFeedScopeV1? {
+        switch self {
+        case .following: .following
+        case .latest: .latest
+        case .forYou, .similarTaste, .trending: nil
+        }
+    }
 }
 
 struct DiscoverHubView: View {
-    @State private var section: DiscoverHubSection = .discovery
+    @State private var section: DiscoverHubSection = .forYou
 
     var body: some View {
         VStack(spacing: 0) {
-            TasteMapSegmentedControl(
-                selection: $section,
-                items: [
-                    .init(.discovery, title: "发现餐厅", systemImage: "sparkles"),
-                    .init(.community, title: "社区动态", systemImage: "person.2.fill"),
-                ],
-                accessibilityIdentifier: "discover-hub-segment"
-            )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(TasteMapCoreTheme.page)
-            if section == .discovery { DiscoveryView() }
-            else { CommunityFeedView() }
+            discoveryHeader
+            discoveryNavigation
+            Group {
+                if let mode = section.discoveryMode {
+                    DiscoveryView(
+                        initialMode: mode,
+                        showsModePicker: false,
+                        showsNavigationTitle: false
+                    )
+                    .id(section)
+                } else if let scope = section.communityScope {
+                    CommunityFeedView(
+                        initialScope: scope,
+                        showsScopePicker: false,
+                        showsNavigationTitle: false
+                    )
+                    .id(section)
+                }
+            }
         }
         .tasteMapCorePage()
+    }
+
+    private var discoveryHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("DISCOVER")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(TasteMapCoreTheme.brand)
+                Text("发现")
+                    .font(.title2.bold())
+                    .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                Text("按照你的口味，找到更值得参考的人和下一家餐厅。")
+                    .font(.caption)
+                    .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "globe.asia.australia.fill")
+                .font(.title2)
+                .foregroundStyle(TasteMapCoreTheme.brand)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 5)
+        .background(TasteMapCoreTheme.page)
+        .accessibilityIdentifier("discovery-header")
+    }
+
+    private var discoveryNavigation: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 18) {
+                ForEach(DiscoverHubSection.allCases) { item in
+                    Button {
+                        section = item
+                    } label: {
+                        VStack(spacing: 7) {
+                            Text(item.title)
+                                .font(.subheadline.weight(section == item ? .bold : .medium))
+                                .foregroundStyle(
+                                    section == item
+                                        ? TasteMapCoreTheme.brandDeep
+                                        : TasteMapCoreTheme.textSecondary
+                                )
+                                .fixedSize(horizontal: true, vertical: false)
+                            Capsule()
+                                .fill(section == item ? TasteMapCoreTheme.brand : .clear)
+                                .frame(height: 3)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(section == item ? .isSelected : [])
+                    .accessibilityIdentifier("discovery-primary-\(item.rawValue)")
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .scrollClipDisabled()
+        .padding(.top, 2)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(TasteMapCoreTheme.border).frame(height: 1)
+        }
+        .background(TasteMapCoreTheme.page)
+        .accessibilityIdentifier("discovery-primary-navigation")
     }
 }
 

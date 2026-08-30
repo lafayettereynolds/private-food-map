@@ -12,7 +12,10 @@ struct DiscoveryView: View {
     @Query private var restaurants: [Restaurant]
     @Query private var profiles: [UserProfile]
 
-    @State private var mode: DiscoveryModeV1 = .forYou
+    let showsModePicker: Bool
+    let showsNavigationTitle: Bool
+
+    @State private var mode: DiscoveryModeV1
     @State private var trendWindowDays = 7
     @State private var authenticatedUser: AuthenticatedUserV1?
     @State private var cards: [DiscoveryCardV1] = []
@@ -33,6 +36,16 @@ struct DiscoveryView: View {
     @State private var distanceAnchor: DiscoveryBrowseCoordinate?
     @State private var distanceAnchorDescription: String?
     @StateObject private var locationManager = LocationPermissionManager()
+
+    init(
+        initialMode: DiscoveryModeV1 = .forYou,
+        showsModePicker: Bool = true,
+        showsNavigationTitle: Bool = true
+    ) {
+        self.showsModePicker = showsModePicker
+        self.showsNavigationTitle = showsNavigationTitle
+        _mode = State(initialValue: initialMode)
+    }
 
     private var ownedRestaurants: [Restaurant] {
         restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
@@ -91,9 +104,11 @@ struct DiscoveryView: View {
                 onAddToRoulette: addToRoulette,
                 onOpenUser: { selectedUser = $0 },
                 onLoadMore: { Task { await loadMore() } },
-                photoAPI: authServices.photoAPI
+                photoAPI: authServices.photoAPI,
+                showsModePicker: showsModePicker
             )
-            .navigationTitle("发现")
+            .navigationTitle(showsNavigationTitle ? "发现" : "")
+            .toolbar(showsNavigationTitle ? .visible : .hidden, for: .navigationBar)
             .background(TasteMapCoreTheme.page)
             .refreshable { await load(reset: true, preferCache: false) }
             .task { await restoreAndLoad() }
@@ -422,16 +437,19 @@ struct DiscoveryContentView: View {
     let onOpenUser: (DiscoveryPublicUserProjectionV1) -> Void
     let onLoadMore: () -> Void
     let photoAPI: (any PhotoBinaryAPI)?
+    var showsModePicker = true
     @State private var showingFilters = false
     @State private var enteringCity = false
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
-                Picker("发现内容", selection: $mode) {
-                    ForEach(DiscoveryModeV1.allCases) { Text($0.title).tag($0) }
+                if showsModePicker {
+                    Picker("发现内容", selection: $mode) {
+                        ForEach(DiscoveryModeV1.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
                 HStack(spacing: 10) {
                     DiscoveryCityMenu(
                         city: city,

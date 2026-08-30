@@ -40,6 +40,13 @@ enum TasteMapUITestFixtures {
     static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
     static let f3ADetailEnvironmentKey = "TASTEMAP_F3A_DETAIL_UI_TEST"
     static let onThisDayEnvironmentKey = "TASTEMAP_F7A_ON_THIS_DAY_UI_TEST"
+    static let coreParityInitialTabEnvironmentKey = "TASTEMAP_CORE_PARITY_INITIAL_TAB"
+
+    static var coreParityInitialTab: AppTab? {
+        guard let value = ProcessInfo.processInfo.environment[coreParityInitialTabEnvironmentKey]
+        else { return nil }
+        return AppTab(rawValue: value)
+    }
 
     static var usesOnThisDayFixture: Bool {
         ProcessInfo.processInfo.environment[onThisDayEnvironmentKey] == "1"

@@ -7,7 +7,10 @@ struct CommunityFeedView: View {
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(SyncCoordinator.self) private var syncCoordinator
     @Query private var restaurants: [Restaurant]
-    @State private var scope: CommunityFeedScopeV1 = .following
+    let showsScopePicker: Bool
+    let showsNavigationTitle: Bool
+
+    @State private var scope: CommunityFeedScopeV1
     @State private var currentUserID: String?
     @State private var items: [PublicContentItemV1] = []
     @State private var nextCursor: String?
@@ -20,6 +23,16 @@ struct CommunityFeedView: View {
     @State private var selectedVisitItem: PublicContentItemV1?
     @State private var selectedListItem: PublicContentItemV1?
     @State private var selectedRouletteRestaurantID: UUID?
+
+    init(
+        initialScope: CommunityFeedScopeV1 = .following,
+        showsScopePicker: Bool = true,
+        showsNavigationTitle: Bool = true
+    ) {
+        self.showsScopePicker = showsScopePicker
+        self.showsNavigationTitle = showsNavigationTitle
+        _scope = State(initialValue: initialScope)
+    }
 
     private var ownedRestaurants: [Restaurant] {
         guard let currentUserID else { return [] }
@@ -85,13 +98,16 @@ struct CommunityFeedView: View {
                     }
                 }
             }
-            .navigationTitle("社区")
+            .navigationTitle(showsNavigationTitle ? "社区" : "")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(showsNavigationTitle ? .visible : .hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("社区内容", selection: $scope) {
-                        ForEach(CommunityFeedScopeV1.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented).frame(width: 190)
+                if showsScopePicker {
+                    ToolbarItem(placement: .principal) {
+                        Picker("社区内容", selection: $scope) {
+                            ForEach(CommunityFeedScopeV1.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }.pickerStyle(.segmented).frame(width: 190)
+                    }
                 }
             }
             .background(TasteMapCoreTheme.page)
