@@ -146,7 +146,7 @@ struct OnThisDayAnalysisView: View {
                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
             .padding(16)
-            .background(.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("on-this-day-share-poster")
@@ -221,7 +221,7 @@ struct OnThisDayAnalysisView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24)
         .padding(.vertical, 58)
-        .background(.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .accessibilityIdentifier("on-this-day-empty")
     }
 
@@ -311,7 +311,7 @@ private struct OnThisDayMemoryCard: View {
             }
             .padding(17)
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)

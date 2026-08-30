@@ -41,6 +41,8 @@
     "test:task08": "node scripts/test-storekit-migration.mjs && vitest run worker/appStoreCommerceV1.integration.test.ts worker/membershipV1.test.ts worker/authV1.integration.test.js",
     "test:task09": "node scripts/test-public-sharing-migration.mjs && vitest run worker/publicSharingV1.integration.test.js",
     "test:task09:development": "node scripts/test-public-sharing-development.mjs",
+    "test:task12": "node scripts/test-release-safety-migration.mjs && vitest run worker/releaseSafetyV1.integration.test.js worker/communityV1.integration.test.js worker/socialCollaborationV1.integration.test.js worker/socialV1.integration.test.js worker/authV1.integration.test.js",
+    "test:task12:development": "TASTEMAP_API_DEV_BASE_URL=https://api-dev.tastemap.cn node scripts/test-release-safety-development.mjs",
     "test:p4f": "node scripts/test-restaurant-lists-migration.mjs && vitest run src/contracts/restaurantListContract.test.ts worker/restaurantListsV1.integration.test.js worker/syncV1.integration.test.js",
     "test:p4f:development": "node scripts/test-restaurant-lists-development.mjs",
     "test:p4h": "vitest run worker/membershipV1.test.ts worker/authV1.integration.test.js worker/discoveryV1.integration.test.js worker/syncV1.integration.test.js src/services/featurePolicy.test.ts",

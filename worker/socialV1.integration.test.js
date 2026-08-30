@@ -278,6 +278,7 @@ function makeDatabase() {
     '0023_social_relationships_v1.sql', '0024_social_legacy_write_compat.sql',
     '0025_discovery_v1_indexes.sql', '0026_public_community_v1_indexes.sql',
     '0027_social_hardening.sql', '0028_restaurant_lists_v1.sql',
+    '0032_release_safety.sql',
   ]) sqlite.exec(readFileSync(resolve('migrations', file), 'utf8'))
   return new SQLiteD1Database(sqlite)
 }

@@ -98,6 +98,7 @@ export async function handleSocialV1(
   const contextMatch = url.pathname.match(/^\/api\/v1\/social\/users\/([^/]+)\/context$/)
   if (contextMatch && request.method === 'GET') {
     const target = decodeURIComponent(contextMatch[1])
+    await requireTarget(database, viewerId, target)
     return {
       apiVersion: API_VERSION,
       profile: await readPublicProfile(database, viewerId, target),
@@ -129,11 +130,15 @@ async function searchUsers(database: D1Database, viewerId: string, url: URL) {
       AND follow.deleted_at IS NULL
     WHERE p.deleted_at IS NULL AND p.user_id <> ?
       AND p.visibility = 'public'
+      AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.deleted_at IS NULL AND (
+        (ub.blocker_user_id = ? AND ub.blocked_user_id = p.user_id) OR
+        (ub.blocker_user_id = p.user_id AND ub.blocked_user_id = ?)
+      ))
       AND (LOWER(p.display_name) LIKE ? ESCAPE '\\' OR LOWER(p.city) LIKE ? ESCAPE '\\')
       AND (LOWER(p.display_name) > ? OR (LOWER(p.display_name) = ? AND p.user_id > ?))
     ORDER BY LOWER(p.display_name), p.user_id
     LIMIT ?`).bind(
-      viewerId, viewerId, viewerId, viewerId, viewerId, viewerId,
+      viewerId, viewerId, viewerId, viewerId, viewerId, viewerId, viewerId, viewerId,
       like, like, cursor.primary, cursor.primary, cursor.secondary, limit + 1,
     ).all<SocialUserRow>()
   return userPage(rows.results, viewerId, limit)
@@ -373,6 +378,12 @@ async function requireTarget(database: D1Database, viewerId: string, targetUserI
   const target = await database.prepare(`SELECT user_id FROM user_profiles
     WHERE user_id = ? AND deleted_at IS NULL LIMIT 1`).bind(targetUserId).first()
   if (!target) throw new SocialV1RequestError('没有找到这个用户。', 404)
+  if (await database.prepare(`SELECT id FROM user_blocks WHERE deleted_at IS NULL AND (
+    (blocker_user_id = ? AND blocked_user_id = ?) OR
+    (blocker_user_id = ? AND blocked_user_id = ?)
+  ) LIMIT 1`).bind(viewerId, targetUserId, targetUserId, viewerId).first()) {
+    throw new SocialV1RequestError('没有找到这个用户。', 404)
+  }
 }
 
 async function consumeSearchQuota(database: D1Database, viewerId: string) {

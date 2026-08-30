@@ -1,25 +1,32 @@
 import SwiftUI
+import UIKit
 
 /// Shared visual language for in-app analysis and share-first poster compositions.
-/// These tokens intentionally stay independent from system dark mode because exported
-/// posters always use the same warm-white Taste Map canvas.
+/// In-app surfaces resolve semantically in Dark Mode. Exported poster roots explicitly
+/// force Light Mode, so their established warm-white composition remains deterministic.
 enum TasteMapAnalysisTheme {
     static let brand = Color(red: 0.03, green: 0.56, blue: 0.97)
     static let brandDeep = Color(red: 0.02, green: 0.35, blue: 0.69)
-    static let brandSoft = Color(red: 0.91, green: 0.97, blue: 1.00)
-    static let canvas = Color(red: 0.985, green: 0.981, blue: 0.968)
-    static let card = Color.white
-    static let ink = Color(red: 0.10, green: 0.15, blue: 0.19)
-    static let secondaryInk = Color(red: 0.37, green: 0.43, blue: 0.47)
+    static let brandSoft = dynamic(light: .init(232, 247, 255), dark: .init(28, 48, 62))
+    static let canvas = TasteMapCoreTheme.page
+    static let card = TasteMapCoreTheme.surface
+    static let ink = TasteMapCoreTheme.textPrimary
+    static let secondaryInk = TasteMapCoreTheme.textSecondary
     static let ingredientRed = Color(red: 0.88, green: 0.30, blue: 0.27)
-    static let ingredientRedSoft = Color(red: 1.00, green: 0.92, blue: 0.90)
+    static let ingredientRedSoft = dynamic(light: .init(255, 235, 230), dark: .init(64, 38, 37))
     static let leafGreen = Color(red: 0.25, green: 0.60, blue: 0.38)
-    static let leafGreenSoft = Color(red: 0.91, green: 0.97, blue: 0.91)
+    static let leafGreenSoft = dynamic(light: .init(232, 247, 232), dark: .init(34, 55, 40))
     static let cream = Color(red: 0.96, green: 0.88, blue: 0.70)
-    static let creamSoft = Color(red: 1.00, green: 0.97, blue: 0.89)
+    static let creamSoft = dynamic(light: .init(255, 247, 227), dark: .init(58, 50, 34))
     static let caramel = Color(red: 0.70, green: 0.43, blue: 0.25)
-    static let caramelSoft = Color(red: 0.97, green: 0.91, blue: 0.85)
-    static let hairline = Color(red: 0.89, green: 0.90, blue: 0.88)
+    static let caramelSoft = dynamic(light: .init(247, 232, 217), dark: .init(60, 46, 37))
+    static let hairline = TasteMapCoreTheme.border
+
+    private static func dynamic(light: CoreRGB, dark: CoreRGB) -> Color {
+        Color(uiColor: UIColor { traits in
+            (traits.userInterfaceStyle == .dark ? dark : light).uiColorForAnalysis
+        })
+    }
 
     static func color(for tone: AnalysisTone) -> Color {
         switch tone {
@@ -39,6 +46,17 @@ enum TasteMapAnalysisTheme {
         case .cream: creamSoft
         case .caramel: caramelSoft
         }
+    }
+}
+
+private extension CoreRGB {
+    var uiColorForAnalysis: UIColor {
+        UIColor(
+            red: CGFloat(red) / 255,
+            green: CGFloat(green) / 255,
+            blue: CGFloat(blue) / 255,
+            alpha: alpha
+        )
     }
 }
 struct AnalysisSectionHeader: View {

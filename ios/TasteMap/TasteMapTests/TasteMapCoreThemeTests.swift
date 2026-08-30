@@ -23,6 +23,14 @@ struct TasteMapCoreThemeTests {
             TasteMapCorePaletteContract.webSurface,
             TasteMapCorePaletteContract.webBrand
         ) >= 4.5)
+        #expect(contrast(
+            TasteMapCoreDarkPaletteContract.textPrimary,
+            TasteMapCoreDarkPaletteContract.surface
+        ) >= 4.5)
+        #expect(contrast(
+            TasteMapCoreDarkPaletteContract.textPrimary,
+            TasteMapCoreDarkPaletteContract.background
+        ) >= 4.5)
     }
 
     private func contrast(_ foreground: CoreRGB, _ background: CoreRGB) -> Double {

@@ -11,6 +11,8 @@ export type PublicAPIRateBucket =
   | 'community-comment-read'
   | 'community-comment-create'
   | 'community-comment-delete'
+  | 'community-report-create'
+  | 'community-block-mutation'
   | 'social-collaboration-read'
   | 'social-collaboration-mutation'
   | 'restaurant-list-read'

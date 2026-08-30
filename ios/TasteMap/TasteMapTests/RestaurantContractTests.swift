@@ -74,6 +74,15 @@ struct RestaurantContractTests {
         #expect(try configured.url(for: "/api/sync").absoluteString == "http://127.0.0.1:8788/api/sync")
     }
 
+    @Test("Debug configuration uses only the isolated Development Worker")
+    func debugDevelopmentDefault() {
+#if DEBUG
+        let configuration = APIConfiguration.current()
+        #expect(configuration.environment == .development)
+        #expect(configuration.baseURL?.absoluteString == "https://api-dev.tastemap.cn")
+#endif
+    }
+
     private func fixture(named name: String) throws -> Data {
         let bundle = Bundle(for: ContractBundleMarker.self)
         let candidates = [

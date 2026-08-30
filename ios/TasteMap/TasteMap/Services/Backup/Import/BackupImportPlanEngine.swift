@@ -60,7 +60,11 @@ nonisolated struct BackupImportPlanEngine: Sendable {
             source: source.visits,
             local: local.visits,
             localRestaurants: local.restaurants,
+            localCompanions: local.companions,
+            localRecommendationSources: local.recommendationSources,
             restaurantActions: restaurantActions,
+            companionActions: Dictionary(uniqueKeysWithValues: companionResult.map { ($0.sourceID, $0) }),
+            recommendationSourceActions: Dictionary(uniqueKeysWithValues: sourceResult.map { ($0.sourceID, $0) }),
             sourceHash: source.sourceFileSHA256,
             localRevision: local.revision,
             decisionIndex: decisionIndex
@@ -73,6 +77,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
             source: source.dishes,
             local: local.dishes,
             localRestaurants: local.restaurants,
+            localVisits: local.visits,
             restaurantActions: restaurantActions,
             visitActions: visitActions,
             sourceHash: source.sourceFileSHA256,
@@ -226,13 +231,33 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         var reviews: [ImportPlanReviewItem] = []
 
         for value in source.sorted(by: { $0.sourceID < $1.sourceID }) {
+            let deterministicTargetID = Self.targetID(sourceHash, .restaurant, value.sourceID)
             let authoritativeKeys = value.placeIdentities
                 .filter { Self.authoritativeProvider($0.provider) }
                 .map(\.key)
             if authoritativeKeys.contains(where: deletedKeys.contains)
-                || deleted.contains(where: { $0.remoteID == value.sourceID }) {
+                || deleted.contains(where: {
+                    $0.remoteID == value.sourceID || $0.remoteID == deterministicTargetID
+                        || $0.localID.uuidString.lowercased() == deterministicTargetID
+                }) {
                 actions.append(action(.restaurant, value.sourceID, nil, nil, .skip,
                                       "skipBecauseTombstoned", value.name, []))
+                continue
+            }
+            if let imported = active.first(where: {
+                $0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID
+            }) {
+                actions.append(action(
+                    .restaurant,
+                    value.sourceID,
+                    imported.localID.uuidString.lowercased(),
+                    imported.localID.uuidString.lowercased(),
+                    .exactDuplicate,
+                    "sameImportSourceEntity",
+                    value.name,
+                    []
+                ))
                 continue
             }
             let exactCandidates = Dictionary(
@@ -284,7 +309,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
             if probable.count == 1, let candidate = probable.first {
                 let reviewID = "restaurant:\(value.sourceID):possibleSame"
                 let candidateID = candidate.localID.uuidString.lowercased()
-                let newID = Self.targetID(sourceHash, .restaurant, value.sourceID)
+                let newID = deterministicTargetID
                 let item = ImportPlanReviewItem(
                     id: reviewID,
                     entityType: .restaurant,
@@ -327,7 +352,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                 actions.append(action(
                     .restaurant,
                     value.sourceID,
-                    Self.targetID(sourceHash, .restaurant, value.sourceID),
+                    deterministicTargetID,
                     nil,
                     .create,
                     probable.count > 1 ? "ambiguousChainOrBranchCreateNew" : "noExactIdentity",
@@ -343,12 +368,22 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         source: [BackupImportSourceVisit],
         local: [BackupImportLocalRecord<BackupImportSourceVisit>],
         localRestaurants: [BackupImportLocalRecord<BackupImportSourceRestaurant>],
+        localCompanions: [BackupImportLocalRecord<BackupImportSourceCompanion>],
+        localRecommendationSources: [BackupImportLocalRecord<BackupImportSourceRecommendationSource>],
         restaurantActions: [String: BackupImportPlannedAction],
+        companionActions: [String: BackupImportPlannedAction],
+        recommendationSourceActions: [String: BackupImportPlannedAction],
         sourceHash: String,
         localRevision: String,
         decisionIndex: [String: BackupImportReviewDecision]
     ) throws -> (actions: [BackupImportPlannedAction], reviews: [ImportPlanReviewItem]) {
         let restaurantRemoteByLocalID = Dictionary(uniqueKeysWithValues: localRestaurants.map {
+            ($0.localID.uuidString.lowercased(), $0.remoteID)
+        })
+        let companionRemoteByLocalID = Dictionary(uniqueKeysWithValues: localCompanions.map {
+            ($0.localID.uuidString.lowercased(), $0.remoteID)
+        })
+        let recommendationRemoteByLocalID = Dictionary(uniqueKeysWithValues: localRecommendationSources.map {
             ($0.localID.uuidString.lowercased(), $0.remoteID)
         })
         let active = local.filter { $0.deletedAt == nil }
@@ -358,6 +393,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         var actions: [BackupImportPlannedAction] = []
         var reviews: [ImportPlanReviewItem] = []
         for value in source.sorted(by: { $0.sourceID < $1.sourceID }) {
+            let deterministicTargetID = Self.targetID(sourceHash, .visit, value.sourceID)
             guard let restaurantAction = restaurantActions[value.sourceRestaurantID] else {
                 actions.append(action(.visit, value.sourceID, nil, nil, .blocked,
                                       "missingRestaurantPlan", "到访记录", [value.sourceRestaurantID]))
@@ -375,12 +411,30 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                                       "restaurantReviewPending", "到访记录", [value.sourceRestaurantID]))
                 continue
             }
-            if deletedIDs.contains(value.sourceID) {
+            if deletedIDs.contains(value.sourceID) || deletedIDs.contains(deterministicTargetID) {
                 actions.append(action(.visit, value.sourceID, nil, nil, .skip,
                                       "skipBecauseTombstoned", "到访记录", [value.sourceRestaurantID]))
                 continue
             }
+            if let imported = byRemoteID[deterministicTargetID]?.first {
+                actions.append(action(.visit, value.sourceID, imported.localID.uuidString.lowercased(),
+                                      imported.localID.uuidString.lowercased(), .exactDuplicate,
+                                      "sameImportSourceEntity", "到访记录", [value.sourceRestaurantID]))
+                continue
+            }
             let mappedRestaurantRemoteID = restaurantRemoteByLocalID[restaurantTargetID] ?? restaurantTargetID
+            let mappedCompanionIDs = value.companionSourceIDs.compactMap { sourceID -> String? in
+                guard let action = companionActions[sourceID],
+                      action.action != .skip,
+                      let targetID = action.targetID else { return nil }
+                return companionRemoteByLocalID[targetID] ?? targetID
+            }
+            let mappedRecommendationID = value.recommendationSourceID.flatMap { sourceID -> String? in
+                guard let action = recommendationSourceActions[sourceID],
+                      action.action != .skip,
+                      let targetID = action.targetID else { return nil }
+                return recommendationRemoteByLocalID[targetID] ?? targetID
+            }
             var mapped = value
             mapped = BackupImportSourceVisit(
                 sourceID: value.sourceID,
@@ -408,8 +462,8 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                 portionLevel: value.portionLevel,
                 transportConvenience: value.transportConvenience,
                 specialNotes: value.specialNotes,
-                companionSourceIDs: value.companionSourceIDs,
-                recommendationSourceID: value.recommendationSourceID,
+                companionSourceIDs: mappedCompanionIDs,
+                recommendationSourceID: mappedRecommendationID,
                 recommendationSourceType: value.recommendationSourceType,
                 recommendationSourceText: value.recommendationSourceText,
                 note: value.note,
@@ -460,7 +514,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                                       duplicate.localID.uuidString.lowercased(), .exactDuplicate,
                                       "canonicalFullContentFingerprint", "到访记录", [value.sourceRestaurantID]))
             } else {
-                actions.append(action(.visit, value.sourceID, Self.targetID(sourceHash, .visit, value.sourceID), nil,
+                actions.append(action(.visit, value.sourceID, deterministicTargetID, nil,
                                       .create, "distinctVisit", "到访记录", [value.sourceRestaurantID]))
             }
         }
@@ -471,6 +525,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         source: [BackupImportSourceDish],
         local: [BackupImportLocalRecord<BackupImportSourceDish>],
         localRestaurants: [BackupImportLocalRecord<BackupImportSourceRestaurant>],
+        localVisits: [BackupImportLocalRecord<BackupImportSourceVisit>],
         restaurantActions: [String: BackupImportPlannedAction],
         visitActions: [String: BackupImportPlannedAction],
         sourceHash: String,
@@ -478,6 +533,9 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         decisionIndex: [String: BackupImportReviewDecision]
     ) throws -> (actions: [BackupImportPlannedAction], reviews: [ImportPlanReviewItem]) {
         let restaurantRemoteByLocalID = Dictionary(uniqueKeysWithValues: localRestaurants.map {
+            ($0.localID.uuidString.lowercased(), $0.remoteID)
+        })
+        let visitRemoteByLocalID = Dictionary(uniqueKeysWithValues: localVisits.map {
             ($0.localID.uuidString.lowercased(), $0.remoteID)
         })
         let active = local.filter { $0.deletedAt == nil }
@@ -489,6 +547,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         var actions: [BackupImportPlannedAction] = []
         var reviews: [ImportPlanReviewItem] = []
         for value in source.sorted(by: { $0.sourceID < $1.sourceID }) {
+            let deterministicTargetID = Self.targetID(sourceHash, .dish, value.sourceID)
             guard let restaurantAction = restaurantActions[value.sourceRestaurantID],
                   let visitAction = visitActions[value.sourceVisitID] else {
                 actions.append(action(.dish, value.sourceID, nil, nil, .blocked,
@@ -507,21 +566,47 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                                       "dependencyReviewPending", value.name, [value.sourceRestaurantID, value.sourceVisitID]))
                 continue
             }
-            if deletedIDs.contains(value.sourceID) {
+            if deletedIDs.contains(value.sourceID) || deletedIDs.contains(deterministicTargetID) {
                 actions.append(action(.dish, value.sourceID, nil, nil, .skip,
                                       "skipBecauseTombstoned", value.name, [value.sourceRestaurantID, value.sourceVisitID]))
                 continue
             }
+            if let imported = byRemoteID[deterministicTargetID]?.first {
+                actions.append(action(.dish, value.sourceID, imported.localID.uuidString.lowercased(),
+                                      imported.localID.uuidString.lowercased(), .exactDuplicate,
+                                      "sameImportSourceEntity", value.name,
+                                      [value.sourceRestaurantID, value.sourceVisitID]))
+                continue
+            }
             let restaurantRemoteID = restaurantRemoteByLocalID[restaurantTargetID] ?? restaurantTargetID
+            let visitRemoteID = visitAction.targetID.map { visitRemoteByLocalID[$0] ?? $0 } ?? value.sourceVisitID
             if let sameID = byRemoteID[value.sourceID]?.first,
-               Self.dishFingerprint(value, mappedRestaurant: restaurantRemoteID)
-                == Self.dishFingerprint(sameID.value, mappedRestaurant: sameID.value.sourceRestaurantID) {
+               Self.dishFingerprint(value, mappedRestaurant: restaurantRemoteID, mappedVisit: visitRemoteID)
+                == Self.dishFingerprint(
+                    sameID.value,
+                    mappedRestaurant: sameID.value.sourceRestaurantID,
+                    mappedVisit: sameID.value.sourceVisitID
+                ) {
                 actions.append(action(.dish, value.sourceID, sameID.localID.uuidString.lowercased(),
                                       sameID.localID.uuidString.lowercased(), .exactDuplicate,
                                       "exactStableID", value.name, [value.sourceRestaurantID, value.sourceVisitID]))
                 continue
             }
             let candidates = nameIndex["\(restaurantRemoteID)|\(Self.normalized(value.name))"] ?? []
+            if let duplicate = candidates.first(where: {
+                Self.dishFingerprint(value, mappedRestaurant: restaurantRemoteID, mappedVisit: visitRemoteID)
+                    == Self.dishFingerprint(
+                        $0.value,
+                        mappedRestaurant: $0.value.sourceRestaurantID,
+                        mappedVisit: $0.value.sourceVisitID
+                    )
+            }) {
+                actions.append(action(.dish, value.sourceID, duplicate.localID.uuidString.lowercased(),
+                                      duplicate.localID.uuidString.lowercased(), .exactDuplicate,
+                                      "canonicalFullContentFingerprint", value.name,
+                                      [value.sourceRestaurantID, value.sourceVisitID]))
+                continue
+            }
             if let candidate = candidates.first {
                 let reviewID = "dish:\(value.sourceID):sameName"
                 let newID = Self.targetID(sourceHash, .dish, value.sourceID)
@@ -565,7 +650,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                     ))
                 }
             } else {
-                actions.append(action(.dish, value.sourceID, Self.targetID(sourceHash, .dish, value.sourceID), nil,
+                actions.append(action(.dish, value.sourceID, deterministicTargetID, nil,
                                       .create, "distinctDish", value.name,
                                       [value.sourceRestaurantID, value.sourceVisitID]))
             }
@@ -584,6 +669,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         sourceHash: String
     ) -> [BackupImportPlannedAction] {
         let active = local.filter { $0.deletedAt == nil }
+        let deleted = local.filter { $0.deletedAt != nil }
         let visitRemoteByLocalID = Dictionary(uniqueKeysWithValues: localVisits.map {
             ($0.localID.uuidString.lowercased(), $0.remoteID)
         })
@@ -591,6 +677,24 @@ nonisolated struct BackupImportPlanEngine: Sendable {
             ($0.localID.uuidString.lowercased(), $0.remoteID)
         })
         return source.sorted(by: { $0.sourceID < $1.sourceID }).map { value in
+            let deterministicTargetID = Self.targetID(sourceHash, .visitDish, value.sourceID)
+            if deleted.contains(where: {
+                $0.remoteID == value.sourceID || $0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID
+            }) {
+                return action(.visitDish, value.sourceID, nil, nil, .skip,
+                              "skipBecauseTombstoned", "菜品关联",
+                              [value.sourceRestaurantID, value.sourceVisitID, value.sourceDishID])
+            }
+            if let imported = active.first(where: {
+                $0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID
+            }) {
+                return action(.visitDish, value.sourceID, imported.localID.uuidString.lowercased(),
+                              imported.localID.uuidString.lowercased(), .exactDuplicate,
+                              "sameImportSourceEntity", "菜品关联",
+                              [value.sourceRestaurantID, value.sourceVisitID, value.sourceDishID])
+            }
             guard let restaurant = restaurantActions[value.sourceRestaurantID],
                   let visit = visitActions[value.sourceVisitID],
                   let dish = dishActions[value.sourceDishID] else {
@@ -621,7 +725,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                               "exactVisitDishAssociation", "菜品关联",
                               [value.sourceRestaurantID, value.sourceVisitID, value.sourceDishID])
             }
-            return action(.visitDish, value.sourceID, Self.targetID(sourceHash, .visitDish, value.sourceID), nil,
+            return action(.visitDish, value.sourceID, deterministicTargetID, nil,
                           .create, "newVisitDishAssociation", "菜品关联",
                           [value.sourceRestaurantID, value.sourceVisitID, value.sourceDishID])
         }
@@ -637,16 +741,25 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         }
         let deletedIDs = Set(local.filter { $0.deletedAt != nil }.map(\.remoteID))
         return source.sorted(by: { $0.sourceID < $1.sourceID }).map { value in
-            if deletedIDs.contains(value.sourceID) {
+            let deterministicTargetID = Self.targetID(sourceHash, .companion, value.sourceID)
+            if deletedIDs.contains(value.sourceID) || deletedIDs.contains(deterministicTargetID) {
                 return action(.companion, value.sourceID, nil, nil, .skip,
                               "skipBecauseTombstoned", value.displayName, [])
+            }
+            if let imported = local.first(where: {
+                $0.deletedAt == nil && ($0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID)
+            }) {
+                return action(.companion, value.sourceID, imported.localID.uuidString.lowercased(),
+                              imported.localID.uuidString.lowercased(), .exactDuplicate,
+                              "sameImportSourceEntity", value.displayName, [])
             }
             if let match = activeIndex[Self.normalized(value.displayName)]?.first {
                 return action(.companion, value.sourceID, match.localID.uuidString.lowercased(),
                               match.localID.uuidString.lowercased(), .exactMerge,
                               "normalizedDisplayName", value.displayName, [])
             }
-            return action(.companion, value.sourceID, Self.targetID(sourceHash, .companion, value.sourceID), nil,
+            return action(.companion, value.sourceID, deterministicTargetID, nil,
                           .create, "newPrivateDirectoryEntry", value.displayName, [])
         }
     }
@@ -661,9 +774,19 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         }
         let deletedIDs = Set(local.filter { $0.deletedAt != nil }.map(\.remoteID))
         return source.sorted(by: { $0.sourceID < $1.sourceID }).map { value in
-            if deletedIDs.contains(value.sourceID) {
+            let deterministicTargetID = Self.targetID(sourceHash, .recommendationSource, value.sourceID)
+            if deletedIDs.contains(value.sourceID) || deletedIDs.contains(deterministicTargetID) {
                 return action(.recommendationSource, value.sourceID, nil, nil, .skip,
                               "skipBecauseTombstoned", value.displayName, [])
+            }
+            if let imported = local.first(where: {
+                $0.deletedAt == nil && ($0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID)
+            }) {
+                return action(.recommendationSource, value.sourceID,
+                              imported.localID.uuidString.lowercased(),
+                              imported.localID.uuidString.lowercased(), .exactDuplicate,
+                              "sameImportSourceEntity", value.displayName, [])
             }
             let key = "\(Self.normalized(value.displayName))|\(value.sourceType)"
             if let match = activeIndex[key]?.first {
@@ -672,7 +795,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                               "normalizedNameAndType", value.displayName, [])
             }
             return action(.recommendationSource, value.sourceID,
-                          Self.targetID(sourceHash, .recommendationSource, value.sourceID), nil,
+                          deterministicTargetID, nil,
                           .create, "newRecommendationSource", value.displayName, [])
         }
     }
@@ -745,9 +868,18 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         var actions: [BackupImportPlannedAction] = []
         var reviews: [ImportPlanReviewItem] = []
         for value in source.sorted(by: { $0.sourceID < $1.sourceID }) {
-            if deletedIDs.contains(value.sourceID) {
+            let deterministicTargetID = Self.targetID(sourceHash, .restaurantList, value.sourceID)
+            if deletedIDs.contains(value.sourceID) || deletedIDs.contains(deterministicTargetID) {
                 actions.append(action(.restaurantList, value.sourceID, nil, nil, .skip,
                                       "skipBecauseTombstoned", value.title, []))
+            } else if let imported = local.first(where: {
+                $0.deletedAt == nil && ($0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID)
+            }) {
+                actions.append(action(.restaurantList, value.sourceID,
+                                      imported.localID.uuidString.lowercased(),
+                                      imported.localID.uuidString.lowercased(), .exactDuplicate,
+                                      "sameImportSourceEntity", value.title, []))
             } else if let sameID = activeByID[value.sourceID]?.first {
                 if Self.listFingerprint(value) == Self.listFingerprint(sameID.value) {
                     actions.append(action(.restaurantList, value.sourceID, sameID.localID.uuidString.lowercased(),
@@ -791,7 +923,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
             } else {
                 // Title is intentionally not an identity; duplicate titles remain legal.
                 actions.append(action(.restaurantList, value.sourceID,
-                                      Self.targetID(sourceHash, .restaurantList, value.sourceID), nil,
+                                      deterministicTargetID, nil,
                                       .create, "newListTitleNotIdentity", value.title, []))
             }
         }
@@ -808,6 +940,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         sourceHash: String
     ) -> [BackupImportPlannedAction] {
         let active = local.filter { $0.deletedAt == nil }
+        let deleted = local.filter { $0.deletedAt != nil }
         let listRemoteByLocalID = Dictionary(uniqueKeysWithValues: localLists.map {
             ($0.localID.uuidString.lowercased(), $0.remoteID)
         })
@@ -817,6 +950,25 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         return source.sorted {
             ($0.sourceListID, $0.position, $0.sourceID) < ($1.sourceListID, $1.position, $1.sourceID)
         }.map { value in
+            let deterministicTargetID = Self.targetID(sourceHash, .restaurantListItem, value.sourceID)
+            if deleted.contains(where: {
+                $0.remoteID == value.sourceID || $0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID
+            }) {
+                return action(.restaurantListItem, value.sourceID, nil, nil, .skip,
+                              "skipBecauseTombstoned", "榜单条目",
+                              [value.sourceListID, value.sourceRestaurantID])
+            }
+            if let imported = active.first(where: {
+                $0.remoteID == deterministicTargetID
+                    || $0.localID.uuidString.lowercased() == deterministicTargetID
+            }) {
+                return action(.restaurantListItem, value.sourceID,
+                              imported.localID.uuidString.lowercased(),
+                              imported.localID.uuidString.lowercased(), .exactDuplicate,
+                              "sameImportSourceEntity", "榜单条目",
+                              [value.sourceListID, value.sourceRestaurantID])
+            }
             guard let list = listActions[value.sourceListID],
                   let restaurant = restaurantActions[value.sourceRestaurantID] else {
                 return action(.restaurantListItem, value.sourceID, nil, nil, .blocked,
@@ -846,7 +998,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
                               "exactListItem", "榜单条目", [value.sourceListID, value.sourceRestaurantID])
             }
             return action(.restaurantListItem, value.sourceID,
-                          Self.targetID(sourceHash, .restaurantListItem, value.sourceID), nil,
+                          deterministicTargetID, nil,
                           .create, "newListItem", "榜单条目", [value.sourceListID, value.sourceRestaurantID])
         }
     }
@@ -926,8 +1078,16 @@ nonisolated struct BackupImportPlanEngine: Sendable {
         fingerprint(FingerprintVisit(value: value))
     }
 
-    private static func dishFingerprint(_ value: BackupImportSourceDish, mappedRestaurant: String) -> String {
-        fingerprint(FingerprintDish(value: value, mappedRestaurant: mappedRestaurant))
+    private static func dishFingerprint(
+        _ value: BackupImportSourceDish,
+        mappedRestaurant: String,
+        mappedVisit: String
+    ) -> String {
+        fingerprint(FingerprintDish(
+            value: value,
+            mappedRestaurant: mappedRestaurant,
+            mappedVisit: mappedVisit
+        ))
     }
 
     private static func listFingerprint(_ value: BackupImportSourceRestaurantList) -> String {
@@ -1020,9 +1180,9 @@ private nonisolated struct FingerprintDish: Encodable {
     let price: Decimal?
     let sortOrder: Int
 
-    init(value: BackupImportSourceDish, mappedRestaurant: String) {
+    init(value: BackupImportSourceDish, mappedRestaurant: String, mappedVisit: String) {
         restaurant = mappedRestaurant
-        visit = value.sourceVisitID
+        visit = mappedVisit
         name = value.name
         taste = value.taste
         rating = value.rating

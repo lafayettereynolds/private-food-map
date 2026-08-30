@@ -337,6 +337,7 @@ struct ProfileView: View {
                                 communityAPI: authServices.communityAPI,
                                 collaborationAPI: authServices.socialCollaborationAPI,
                                 interactionAPI: authServices.socialCollaborationAPI,
+                                safetyAPI: authServices.releaseSafetyAPI,
                                 photoAPI: authServices.photoAPI,
                                 restaurantListAPI: authServices.restaurantListAPI,
                                 initialSection: initialSection
@@ -395,6 +396,7 @@ struct ProfileView: View {
                 profile: activeProfile,
                 avatarPhoto: avatarPhoto,
                 logoutAction: SettingsLogoutAction(perform: { await logout() }),
+                accountDeletedAction: SettingsAccountDeletedAction(perform: { await accountDeletionDidComplete() }),
                 permissionOverride: settingsPermissionOverride,
                 syncPresentationOverride: settingsSyncPresentationOverride
             )
@@ -520,6 +522,17 @@ struct ProfileView: View {
         syncCoordinator.sessionDidEnd()
         authMessage = result
         return result
+    }
+
+    @MainActor
+    private func accountDeletionDidComplete() async {
+        try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
+        try? LocalRestaurantListStore(context: modelContext).purgePublicCache()
+        authenticatedUser = nil
+        socialStatistics = .zero
+        premiumEntitlementService.sessionDidEnd()
+        syncCoordinator.sessionDidEnd()
+        authMessage = "Taste Map 账户已永久删除。"
     }
 
     @MainActor

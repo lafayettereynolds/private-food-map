@@ -67,8 +67,10 @@ struct CommunityFeedView: View {
                                     onAddToList: { selectedListItem = item },
                                     onAddToRoulette: { addToRoulette(item) },
                                     interactionAPI: authServices.socialCollaborationAPI,
+                                    safetyAPI: authServices.releaseSafetyAPI,
                                     currentUserID: currentUserID,
-                                    onEngagementChange: { updateEngagement(itemID: item.id, engagement: $0) }
+                                    onEngagementChange: { updateEngagement(itemID: item.id, engagement: $0) },
+                                    onBlocked: { blockDidComplete(userID: item.user.userId) }
                                 )
                                 .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
                             }
@@ -139,6 +141,7 @@ struct CommunityFeedView: View {
                         photoAPI: authServices.photoAPI,
                         restaurantListAPI: authServices.restaurantListAPI,
                         interactionAPI: authServices.socialCollaborationAPI,
+                        safetyAPI: authServices.releaseSafetyAPI,
                         onChange: { result in
                             if result.friendshipState != .friends {
                                 items.removeAll { $0.cacheScope == .friends && $0.user.userId == result.profile.userId }
@@ -253,6 +256,16 @@ struct CommunityFeedView: View {
     }
 
     @MainActor
+    private func blockDidComplete(userID: String) {
+        guard let currentUserID else { return }
+        items.removeAll { $0.user.userId == userID }
+        try? LocalCommunityStore(context: modelContext)
+            .invalidateOwner(userID, currentUserID: currentUserID)
+        selectedUser = nil
+        message = "已屏蔽该用户。"
+    }
+
+    @MainActor
     private func updateViewerState(
         globalKey: String,
         state: DiscoveryViewerRestaurantStateV1
@@ -290,8 +303,10 @@ struct PublicContentCard: View {
     var onAddToList: () -> Void = {}
     var onAddToRoulette: () -> Void = {}
     var interactionAPI: (any CommunityInteractionAPI)? = nil
+    var safetyAPI: (any ReleaseSafetyAPI)? = nil
     var currentUserID: String? = nil
     var onEngagementChange: ((CommunityEngagementSummaryV1) -> Void)? = nil
+    var onBlocked: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -334,13 +349,16 @@ struct PublicContentCard: View {
                 }
             }.buttonStyle(.plain)
 
-            if let visitID = item.visit?.id, let interactionAPI, let currentUserID {
+            if let visitID = item.visit?.id, let interactionAPI, let safetyAPI, let currentUserID {
                 CommunityInteractionControls(
                     visitID: visitID,
                     initial: item.engagement,
                     currentUserID: currentUserID,
+                    authorUserID: item.user.userId,
                     api: interactionAPI,
-                    onChange: { onEngagementChange?($0) }
+                    safetyAPI: safetyAPI,
+                    onChange: { onEngagementChange?($0) },
+                    onBlocked: { onBlocked?() }
                 )
             }
 

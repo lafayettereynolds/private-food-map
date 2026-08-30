@@ -208,6 +208,46 @@ struct BackupImportMergeEngineTests {
         try FileManager.default.removeItem(at: directory)
     }
 
+    @Test("Importing the same backup twice is a no-op for the complete graph")
+    func repeatedImportIsIdempotent() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let graph = baseGraph()
+
+        let firstSnapshot = try BackupImportLocalSnapshotBuilder(context: container.mainContext)
+            .make(currentTasteMapUserID: userID)
+        let firstPlan = try BackupImportPlanEngine().makePlan(source: graph, local: firstSnapshot)
+        let firstResult = try BackupImportTransactionWriter(container: container).execute(
+            ConfirmedBackupImportPlan(plan: firstPlan, sourceGraph: graph, decisions: []),
+            currentTasteMapUserID: userID
+        )
+        #expect(firstResult.writtenEntityCount == 10)
+
+        let secondSnapshot = try BackupImportLocalSnapshotBuilder(context: container.mainContext)
+            .make(currentTasteMapUserID: userID)
+        let secondPlan = try BackupImportPlanEngine().makePlan(source: graph, local: secondSnapshot)
+        #expect(secondPlan.canBeConfirmed)
+        #expect(secondPlan.actions.filter { $0.action == .create }.isEmpty)
+
+        let secondResult = try BackupImportTransactionWriter(container: container).execute(
+            ConfirmedBackupImportPlan(plan: secondPlan, sourceGraph: graph, decisions: []),
+            currentTasteMapUserID: userID
+        )
+        #expect(secondResult.writtenEntityCount == 0)
+        #expect(secondResult.queuedMutationCount == 0)
+
+        let observer = ModelContext(container)
+        #expect(try observer.fetchCount(FetchDescriptor<Restaurant>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<Visit>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<Dish>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<VisitDish>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<DiningCompanion>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<RecommendationSource>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<UserProfile>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<RestaurantList>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<RestaurantListItem>()) == 2)
+        #expect(try observer.fetchCount(FetchDescriptor<SyncMutation>()) == 10)
+    }
+
     @Test("Planner handles 1,000 Restaurants, 10,000 Visits and 5,000 Dishes with indexed matching")
     func largeDataset() throws {
         let restaurants = (0..<1_000).map { restaurant("r-\($0)", name: "餐厅 \($0)", identities: [identity("apple_maps", "apple-\($0)", true)]) }

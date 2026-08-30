@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct PremiumFeatureGate<Content: View>: View {
     @Environment(PremiumEntitlementService.self) private var entitlementService
@@ -49,7 +50,7 @@ struct PremiumFeatureLockedView: View {
                 .font(.subheadline)
                 .foregroundStyle(PremiumTheme.ink)
                 .padding(18)
-                .background(.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 Button {
                     entitlementService.openPaywall(from: .feature(feature))
                 } label: {
@@ -139,10 +140,6 @@ struct PremiumPaywallView: View {
             }
             .task { await loadProductsIfNeeded() }
         }
-        // The Premium visual system is deliberately a light, food-first surface.
-        // Keep it legible when the device uses Dark Mode instead of mixing white
-        // cards with system-dark primary text colors.
-        .environment(\.colorScheme, .light)
         .accessibilityIdentifier("premium-paywall")
     }
 
@@ -165,7 +162,7 @@ struct PremiumPaywallView: View {
         .padding(20)
         .background(
             LinearGradient(
-                colors: [.white, PremiumTheme.brandSoft, PremiumTheme.cream],
+                colors: [TasteMapCoreTheme.surface, PremiumTheme.brandSoft, PremiumTheme.cream],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
@@ -233,7 +230,7 @@ struct PremiumPaywallView: View {
             }
         }
         .padding(18)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var comparison: some View {
@@ -246,7 +243,7 @@ struct PremiumPaywallView: View {
             comparisonRow("完整分析与回顾", free: "预览", premium: "完整")
         }
         .padding(18)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     @ViewBuilder
@@ -325,7 +322,7 @@ struct PremiumPaywallView: View {
             legalLinks
         }
         .padding(18)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     @ViewBuilder
@@ -348,7 +345,7 @@ struct PremiumPaywallView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(18)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var dataOwnershipNote: some View {
@@ -511,7 +508,7 @@ private struct PremiumFoodMotif: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
                     .fill(PremiumTheme.cream)
-                Circle().fill(.white).frame(width: min(proxy.size.width, proxy.size.height) * 0.68)
+                Circle().fill(TasteMapCoreTheme.surface).frame(width: min(proxy.size.width, proxy.size.height) * 0.68)
                     .shadow(color: PremiumTheme.brand.opacity(0.1), radius: 16, y: 8)
                 Text("🍣  🥗\n  🍲  🍰")
                     .font(.system(size: min(proxy.size.width, proxy.size.height) * 0.19))
@@ -519,11 +516,11 @@ private struct PremiumFoodMotif: View {
                     .rotationEffect(.degrees(-4))
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.title3.bold()).foregroundStyle(PremiumTheme.brand)
-                    .padding(10).background(.white, in: Circle())
+                    .padding(10).background(TasteMapCoreTheme.surface, in: Circle())
                     .position(x: proxy.size.width * 0.82, y: proxy.size.height * 0.24)
                 Image(systemName: "receipt")
                     .font(.title3.bold()).foregroundStyle(PremiumTheme.caramel)
-                    .padding(10).background(.white, in: Circle())
+                    .padding(10).background(TasteMapCoreTheme.surface, in: Circle())
                     .position(x: proxy.size.width * 0.16, y: proxy.size.height * 0.75)
             }
         }
@@ -536,7 +533,11 @@ private enum PremiumTheme {
     static let brandDeep = TasteMapCoreTheme.brandDeep
     static let brandSoft = TasteMapCoreTheme.brandSoft
     static let canvas = TasteMapCoreTheme.page
-    static let cream = Color(red: 247 / 255, green: 240 / 255, blue: 224 / 255)
+    static let cream = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 52 / 255, green: 46 / 255, blue: 35 / 255, alpha: 1)
+            : UIColor(red: 247 / 255, green: 240 / 255, blue: 224 / 255, alpha: 1)
+    })
     static let bun = Color(red: 231 / 255, green: 184 / 255, blue: 94 / 255)
     static let leaf = Color(red: 121 / 255, green: 166 / 255, blue: 110 / 255)
     static let patty = Color(red: 164 / 255, green: 93 / 255, blue: 66 / 255)

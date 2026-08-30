@@ -66,6 +66,16 @@ actor AuthSessionManager: SyncAuthorizationProviding {
         }
     }
 
+    /// Used only after the server has completed authenticated account deletion.
+    /// No second logout request is sent because every server session has already
+    /// been revoked by the deletion job.
+    func clearLocalSessionAfterAccountDeletion() throws {
+        credential = nil
+        refreshTask?.cancel()
+        refreshTask = nil
+        try credentialStore.delete()
+    }
+
     private func validCredential() async throws -> AuthCredential {
         guard let credential else { throw AuthSessionError.notAuthenticated }
         guard credential.refreshTokenExpiresAt > now() else {

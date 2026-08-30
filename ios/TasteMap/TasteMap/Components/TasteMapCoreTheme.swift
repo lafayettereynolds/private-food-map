@@ -72,6 +72,13 @@ nonisolated enum TasteMapCorePaletteContract {
     static let webDivider = CoreRGB(227, 230, 232)
 }
 
+nonisolated enum TasteMapCoreDarkPaletteContract {
+    static let background = CoreRGB(16, 21, 25)
+    static let surface = CoreRGB(27, 34, 40)
+    static let textPrimary = CoreRGB(235, 240, 244)
+    static let divider = CoreRGB(58, 69, 79)
+}
+
 private struct TasteMapCoreCardModifier: ViewModifier {
     let radius: CGFloat
     let padding: CGFloat?
@@ -150,6 +157,8 @@ struct TasteMapSectionHeader: View {
 }
 
 struct TasteMapSegmentedControl<Option: Hashable>: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     struct Item: Identifiable {
         let option: Option
         let title: String
@@ -171,7 +180,9 @@ struct TasteMapSegmentedControl<Option: Hashable>: View {
         HStack(spacing: 4) {
             ForEach(items) { item in
                 Button {
-                    withAnimation(.easeOut(duration: 0.16)) { selection = item.option }
+                    withAnimation(accessibilityReduceMotion ? nil : .easeOut(duration: 0.16)) {
+                        selection = item.option
+                    }
                 } label: {
                     HStack(spacing: 5) {
                         if let systemImage = item.systemImage {

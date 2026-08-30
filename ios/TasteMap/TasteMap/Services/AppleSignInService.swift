@@ -6,6 +6,7 @@ enum AppleSignInServiceError: Error, Equatable {
     case signInAlreadyInProgress
     case missingCredential
     case stateMismatch
+    case accountMismatch
 }
 
 @MainActor
@@ -24,6 +25,32 @@ final class AppleSignInService: NSObject,
     }
 
     func signIn(presentationAnchor: ASPresentationAnchor) async throws -> AuthenticatedUserV1 {
+        let response = try await exchangeAppleCredential(presentationAnchor: presentationAnchor)
+        return try await sessionManager.accept(response)
+    }
+
+    /// Performs a fresh Apple authorization without allowing a different
+    /// Apple identity to replace the currently selected Taste Map session.
+    func reauthenticate(
+        expectedUserID: String,
+        presentationAnchor: ASPresentationAnchor
+    ) async throws -> AuthenticatedUserV1 {
+        let response = try await exchangeAppleCredential(presentationAnchor: presentationAnchor)
+        guard response.user.id == expectedUserID else {
+            // Exchange creates an isolated server session. Revoke it before
+            // returning the mismatch and never persist it to Keychain.
+            try? await api.logout(
+                accessToken: response.session.accessToken,
+                refreshToken: response.session.refreshToken
+            )
+            throw AppleSignInServiceError.accountMismatch
+        }
+        return try await sessionManager.accept(response)
+    }
+
+    private func exchangeAppleCredential(
+        presentationAnchor: ASPresentationAnchor
+    ) async throws -> AuthSessionResponseV1 {
         guard continuation == nil else { throw AppleSignInServiceError.signInAlreadyInProgress }
         let challenge = try await api.challenge()
         let provider = ASAuthorizationAppleIDProvider()
@@ -46,14 +73,13 @@ final class AppleSignInService: NSObject,
               let identityToken = String(data: identityTokenData, encoding: .utf8) else {
             throw AppleSignInServiceError.missingCredential
         }
-        let response = try await api.exchangeAppleToken(
+        return try await api.exchangeAppleToken(
             identityToken: identityToken,
             state: challenge.state,
             nonce: challenge.nonce,
             givenName: credential.fullName?.givenName,
             familyName: credential.fullName?.familyName
         )
-        return try await sessionManager.accept(response)
     }
 
     func authorizationController(

@@ -180,7 +180,7 @@ struct AnnualRecapAnalysisView: View {
     private var yearSelector: some View {
         HStack(spacing: 12) {
             Button { onSelectPeriod(report.period.previous) } label: {
-                Image(systemName: "chevron.left").frame(width: 38, height: 38).background(.white, in: Circle())
+                Image(systemName: "chevron.left").frame(width: 38, height: 38).background(TasteMapAnalysisTheme.card, in: Circle())
             }
             .accessibilityLabel("上一年")
             .accessibilityIdentifier("annual-recap-previous-year")
@@ -201,11 +201,11 @@ struct AnnualRecapAnalysisView: View {
                 }
                 .foregroundStyle(TasteMapAnalysisTheme.ink)
                 .padding(.horizontal, 15).padding(.vertical, 10)
-                .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 18))
             }
             .accessibilityIdentifier("annual-recap-year-menu")
             Button { onSelectPeriod(report.period.next) } label: {
-                Image(systemName: "chevron.right").frame(width: 38, height: 38).background(.white, in: Circle())
+                Image(systemName: "chevron.right").frame(width: 38, height: 38).background(TasteMapAnalysisTheme.card, in: Circle())
             }
             .disabled(report.period.next.year > AnnualPeriod.current(calendar: report.period.calendar).year)
             .accessibilityLabel("下一年")
@@ -339,7 +339,7 @@ struct AnnualRecapAnalysisView: View {
                         }
                         Spacer()
                     }
-                    .padding(15).background(.white, in: RoundedRectangle(cornerRadius: 20))
+                    .padding(15).background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 20))
                 }
             }
         }
@@ -440,7 +440,7 @@ struct AnnualRecapAnalysisView: View {
             }
         }
         .frame(maxWidth: .infinity).padding(.horizontal, 24).padding(.vertical, 56)
-        .background(.white, in: RoundedRectangle(cornerRadius: 28))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 28))
         .accessibilityIdentifier("annual-recap-empty")
     }
 
@@ -490,7 +490,7 @@ private struct AnnualMetricTile: View {
         }
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading).padding(16)
         .background(TasteMapAnalysisTheme.softColor(for: tone).opacity(0.62), in: RoundedRectangle(cornerRadius: 22))
-        .overlay { RoundedRectangle(cornerRadius: 22).stroke(.white, lineWidth: 1) }
+        .overlay { RoundedRectangle(cornerRadius: 22).stroke(TasteMapAnalysisTheme.hairline, lineWidth: 1) }
     }
 }
 
@@ -507,7 +507,7 @@ private struct AnnualRestaurantRow: View {
             }
             Spacer(minLength: 4); Image(systemName: "chevron.right").foregroundStyle(TasteMapAnalysisTheme.brand)
         }
-        .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 22))
+        .padding(12).background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22))
     }
 }
 
@@ -523,7 +523,7 @@ private struct AnnualMilestoneCard: View {
                 Text(milestone.detail).font(.caption).foregroundStyle(TasteMapAnalysisTheme.secondaryInk).lineLimit(3)
             }.padding(15)
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 24)).clipShape(RoundedRectangle(cornerRadius: 24))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 24)).clipShape(RoundedRectangle(cornerRadius: 24))
     }
 }
 

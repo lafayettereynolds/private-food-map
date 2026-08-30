@@ -37,7 +37,7 @@ nonisolated struct SettingsFeatureAvailability: Equatable, Sendable {
             .importData: .implemented,
             .restoreBackup: futureState,
             .migrateLegacyWebData: futureState,
-            .deleteAccount: futureState,
+            .deleteAccount: .implemented,
             .privacyPolicy: releaseConfiguration.legalLinks.privacyPolicyURL == nil
                 ? .notConfigured : .implemented,
             .termsOfService: releaseConfiguration.legalLinks.termsOfServiceURL == nil

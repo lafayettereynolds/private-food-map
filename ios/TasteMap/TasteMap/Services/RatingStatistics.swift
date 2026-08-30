@@ -10,7 +10,8 @@ struct RatingSummary: Equatable, Identifiable, Sendable {
     var id: RatingDimension { dimension }
 }
 
-nonisolated enum RatingStatistics {
+@MainActor
+enum RatingStatistics {
     static func summaries(for visits: [Visit]) -> [RatingSummary] {
         let active = visits.filter { $0.deletedAt == nil }
         return RatingDimension.allCases.compactMap { dimension in

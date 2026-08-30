@@ -101,6 +101,14 @@ import {
   createPublicShareV1,
   readPublicShareV1,
 } from './publicSharingV1'
+import {
+  AccountDeletionV1Error,
+  handleAccountDeletionV1,
+} from './accountDeletionV1'
+import {
+  handleModerationV1,
+  ModerationV1Error,
+} from './moderationV1'
 
 interface Env {
   DB: D1Database
@@ -621,6 +629,18 @@ export default {
       if (url.pathname.startsWith('/api/v1/auth/')) {
         return json(await handleAuthV1Request(request, env))
       }
+      if (url.pathname === '/api/v1/account-deletion/status' ||
+          url.pathname === '/api/v1/account-deletion/retry') {
+        return json(await handleAccountDeletionV1(request, env, null))
+      }
+      if (url.pathname.startsWith('/api/v1/account-deletion/')) {
+        const viewer = await resolveSyncViewer(request, env)
+        return json(await handleAccountDeletionV1(request, env, {
+          id: viewer.id,
+          authenticatedAt: viewer.authenticatedAt,
+          developmentIdentity: viewer.authProvider === 'local' && env.APP_ENVIRONMENT === 'development',
+        }))
+      }
       if (url.pathname === '/api/v1/storekit/notifications') {
         return json(await handleAppStoreServerNotificationV1(request, env.DB, env))
       }
@@ -698,6 +718,10 @@ export default {
       if (url.pathname.startsWith('/api/v1/community/')) {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
+        if (url.pathname === '/api/v1/community/reports' ||
+            url.pathname.startsWith('/api/v1/community/blocks/')) {
+          return json(await handleModerationV1(request, env.DB, viewer.id))
+        }
         if (url.pathname.startsWith('/api/v1/community/content/') ||
           url.pathname.startsWith('/api/v1/community/comments/')) {
           return json(await handleCommunityInteractionsV1(request, env.DB, viewer.id))
@@ -822,8 +846,8 @@ export default {
         status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
       })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error ? error.status : 500
-      const code = error instanceof AuthV1RequestError || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error ? error.code : undefined
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.status : 500
+      const code = error instanceof AuthV1RequestError || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
   },
@@ -1533,6 +1557,7 @@ interface ViewerIdentity {
   authProvider: 'apple' | 'cloudflare-access' | 'local'
   authSubject: string | null
   testMembership?: 'premium' | 'free'
+  authenticatedAt?: string
 }
 
 async function resolveViewer(request: Request, database: D1Database): Promise<ViewerIdentity> {
@@ -1571,7 +1596,13 @@ async function resolveViewer(request: Request, database: D1Database): Promise<Vi
 async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIdentity> {
   const authenticated = await authenticateAccessToken(request, env.DB)
   if (authenticated) {
-    return { id: authenticated.id, email: authenticated.email, authProvider: 'apple', authSubject: null }
+    return {
+      id: authenticated.id,
+      email: authenticated.email,
+      authProvider: 'apple',
+      authSubject: null,
+      authenticatedAt: authenticated.authenticatedAt,
+    }
   }
   const hostname = new URL(request.url).hostname
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
@@ -1617,10 +1648,14 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
 
 async function ensureDevelopmentSyncUser(database: D1Database, userId: string) {
   const now = new Date().toISOString()
-  await database.prepare(`INSERT OR IGNORE INTO users (
+  const active = await database.prepare(`INSERT INTO users (
     id, auth_provider, nickname, bio, city, created_at, updated_at, is_test_user
-  ) VALUES (?, 'local', ?, '', '', ?, ?, 1)`)
-    .bind(userId, `Development ${userId}`, now, now).run()
+  ) VALUES (?, 'local', ?, '', '', ?, ?, 1)
+  ON CONFLICT(id) DO UPDATE SET updated_at = users.updated_at
+  WHERE users.deleted_at IS NULL
+  RETURNING deleted_at`).bind(userId, `Development ${userId}`, now, now)
+    .first<{ deleted_at: string | null }>()
+  if (!active) throw new SyncV1RequestError('Deleted account cannot be restored by a stale client.', 401)
 }
 
 function isMembershipAdmin(request: Request, env: Env, viewer: ViewerIdentity) {

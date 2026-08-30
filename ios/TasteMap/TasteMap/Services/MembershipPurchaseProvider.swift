@@ -46,9 +46,9 @@ nonisolated protocol MembershipPurchaseProviding: Sendable {
 }
 
 extension MembershipPurchaseProviding {
-    func startObserving() {}
-    func activate(userID: String) async {}
-    func sessionDidEnd(userID: String?) async {}
+    nonisolated func startObserving() {}
+    nonisolated func activate(userID: String) async {}
+    nonisolated func sessionDidEnd(userID: String?) async {}
 }
 
 nonisolated struct UnconfiguredMembershipPurchaseProvider: MembershipPurchaseProviding {

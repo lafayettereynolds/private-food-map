@@ -22,6 +22,8 @@ export interface AuthV1Env {
 export interface AuthenticatedUser {
   id: string
   email: string | null
+  sessionId?: string
+  authenticatedAt?: string
 }
 
 interface AuthDependencies {
@@ -72,6 +74,7 @@ interface SessionRow {
   refresh_expires_at: string
   refresh_generation: number
   revoked_at: string | null
+  created_at: string
 }
 
 interface HistoryRow {
@@ -119,13 +122,13 @@ export async function authenticateAccessToken(request: Request, database: D1Data
   const tokenHash = await sha256(match[1])
   const row = await database.prepare(`SELECT s.*, u.email
     FROM auth_sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.access_token_hash = ? LIMIT 1`).bind(tokenHash).first<SessionRow>()
+    WHERE s.access_token_hash = ? AND u.deleted_at IS NULL LIMIT 1`).bind(tokenHash).first<SessionRow>()
   if (!row || row.revoked_at || Date.parse(row.access_expires_at) <= now.getTime()) {
     throw unauthorized('Access token is expired or revoked.', 'invalid_access_token')
   }
   await database.prepare('UPDATE auth_sessions SET last_used_at = ? WHERE id = ?')
     .bind(now.toISOString(), row.id).run()
-  return { id: row.user_id, email: row.email }
+  return { id: row.user_id, email: row.email, sessionId: row.id, authenticatedAt: row.created_at }
 }
 
 async function createChallenge(database: D1Database, now: Date): Promise<AuthChallengeResponseV1> {
@@ -243,7 +246,7 @@ async function refreshSession(database: D1Database, request: Request, now: Date)
   if (!isOpaqueToken(payload.refreshToken, 'tm_refresh_')) throw unauthorized('Refresh token is invalid.', 'invalid_refresh_token')
   const oldHash = await sha256(payload.refreshToken)
   let session = await database.prepare(`SELECT s.*, u.email FROM auth_sessions s
-    JOIN users u ON u.id = s.user_id WHERE s.refresh_token_hash = ? LIMIT 1`)
+    JOIN users u ON u.id = s.user_id WHERE s.refresh_token_hash = ? AND u.deleted_at IS NULL LIMIT 1`)
     .bind(oldHash).first<SessionRow>()
   if (!session) {
     const reused = await database.prepare('SELECT session_id FROM auth_refresh_token_history WHERE token_hash = ? LIMIT 1')

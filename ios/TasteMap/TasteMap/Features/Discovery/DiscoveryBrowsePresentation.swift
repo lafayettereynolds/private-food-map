@@ -21,13 +21,13 @@ struct DiscoveryBrowseFilters: Equatable, Sendable {
     var maximumDistanceKilometers: Double?
     var minimumRating: Double?
 
-    var activeCount: Int {
+    nonisolated var activeCount: Int {
         (sort == .recommended ? 0 : 1) +
             (maximumDistanceKilometers == nil ? 0 : 1) +
             (minimumRating == nil ? 0 : 1)
     }
 
-    var needsDistanceAnchor: Bool {
+    nonisolated var needsDistanceAnchor: Bool {
         sort == .nearest || maximumDistanceKilometers != nil
     }
 

@@ -162,7 +162,7 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
 }
 
 extension Notification.Name {
-    static let tasteMapPremiumEntitlementChanged = Notification.Name(
+    nonisolated static let tasteMapPremiumEntitlementChanged = Notification.Name(
         "com.lafayette.tastemap.premium-entitlement-changed"
     )
 }

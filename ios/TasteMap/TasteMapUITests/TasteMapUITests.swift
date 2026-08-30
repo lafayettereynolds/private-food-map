@@ -1011,8 +1011,9 @@ final class TasteMapUITests: XCTestCase {
         addCompleteVisit(in: app)
         addMinimalVisit(in: app)
 
-        XCTAssertTrue(app.staticTexts["2 条"].waitForExistence(timeout: 5))
-        app.swipeUp()
+        let twoVisits = app.staticTexts["2 条"]
+        scrollUntilVisible(twoVisits, in: app)
+        XCTAssertTrue(twoVisits.waitForExistence(timeout: 5))
         let completeVisit = app.staticTexts["第 1 次"]
         XCTAssertTrue(completeVisit.waitForExistence(timeout: 3))
         completeVisit.tap()
@@ -2178,8 +2179,9 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
         restaurant.tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["加入想吃"].waitForExistence(timeout: 5))
-        app.buttons["加入想吃"].tap()
+        let wantToGo = app.buttons["discovery-detail-want-apple_maps:p4f-public-1"]
+        XCTAssertTrue(wantToGo.waitForExistence(timeout: 5))
+        wantToGo.tap()
         keepScreenshot(named: "P4-F Public List To Want To Go", of: app)
 
         app.terminate()
@@ -2444,7 +2446,19 @@ final class TasteMapUITests: XCTestCase {
     private func addCompleteVisit(in app: XCUIApplication) {
         app.buttons["restaurant-detail-add-visit"].tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
-        segmentedOption("外卖", in: app).tap()
+        // The restored editor keeps the free-form record near the top and
+        // spending near the bottom. Fill it before moving down the form so the
+        // test does not need to reverse-scroll through an active number pad.
+        let note = app.descendants(matching: .any)["visit-editor-note"]
+        scrollUntilVisible(note, in: app)
+        XCTAssertTrue(note.waitForExistence(timeout: 3))
+        note.tap()
+        note.typeText("完整离线记录")
+        app.navigationBars["新增到访"].tap()
+        let diningMode = segmentedOption("外卖", in: app)
+        scrollUntilVisible(diningMode, in: app)
+        XCTAssertTrue(diningMode.waitForExistence(timeout: 3))
+        diningMode.tap()
         app.textFields["visit-editor-party-size"].tap()
         app.textFields["visit-editor-party-size"].typeText("2")
         let rating = app.buttons["4.5 星"]
@@ -2455,10 +2469,6 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(spend, in: app)
         spend.tap()
         spend.typeText("128.5")
-        let note = app.descendants(matching: .any)["visit-editor-note"]
-        scrollUntilVisible(note, in: app)
-        note.tap()
-        note.typeText("完整离线记录")
         app.buttons["visit-editor-save"].tap()
         XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
     }

@@ -23,6 +23,7 @@ enum RatingDimension: String, CaseIterable, Codable, Identifiable, Sendable {
         }
     }
 
+    @MainActor
     func value(in visit: Visit) -> Double? {
         switch self {
         case .value: visit.valueRating

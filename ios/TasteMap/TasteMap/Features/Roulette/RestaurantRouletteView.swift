@@ -232,7 +232,7 @@ struct RestaurantRouletteExperienceView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: RouletteTheme.brandDeep.opacity(0.07), radius: 18, y: 9)
     }
 
@@ -275,7 +275,7 @@ struct RestaurantRouletteExperienceView: View {
             }
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var rouletteStage: some View {
@@ -334,7 +334,7 @@ struct RestaurantRouletteExperienceView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 34)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .accessibilityIdentifier("roulette-empty-state")
     }
 
@@ -416,7 +416,7 @@ struct RestaurantRouletteExperienceView: View {
             }
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: RouletteTheme.brandDeep.opacity(0.08), radius: 18, y: 9)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("今天吃：\(candidate.displayName)。\(candidate.statusDetail)")
@@ -798,12 +798,13 @@ private enum RouletteHaptics {
 }
 
 enum RouletteTheme {
-    static let brand = Color(red: 0.31, green: 0.42, blue: 0.55)
-    static let brandDeep = Color(red: 0.20, green: 0.31, blue: 0.41)
-    static let brandSoft = Color(red: 0.93, green: 0.96, blue: 0.98)
-    static let canvas = Color(red: 0.975, green: 0.975, blue: 0.965)
-    static let ink = Color(red: 0.09, green: 0.16, blue: 0.21)
-    static let muted = Color(red: 0.36, green: 0.41, blue: 0.45)
+    static let brand = TasteMapCoreTheme.brand
+    static let brandDeep = TasteMapCoreTheme.brandDeep
+    static let brandSoft = TasteMapCoreTheme.brandSoft
+    static let canvas = TasteMapCoreTheme.page
+    static let surface = TasteMapCoreTheme.surface
+    static let ink = TasteMapCoreTheme.textPrimary
+    static let muted = TasteMapCoreTheme.textSecondary
     static let leaf = Color(red: 0.27, green: 0.55, blue: 0.38)
     static let leafSoft = Color(red: 0.91, green: 0.96, blue: 0.92)
     static let cream = Color(red: 0.98, green: 0.94, blue: 0.84)

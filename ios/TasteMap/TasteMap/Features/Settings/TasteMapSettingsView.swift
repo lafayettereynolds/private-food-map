@@ -10,6 +10,7 @@ struct TasteMapSettingsView: View {
     let profile: UserProfile?
     let avatarPhoto: PhotoAsset?
     let logoutAction: SettingsLogoutAction
+    var accountDeletedAction = SettingsAccountDeletedAction(perform: {})
     var releaseConfiguration: ReleaseConfiguration = .current()
     var permissionOverride: SettingsPermissionSnapshot?
     var storageOverride: SettingsStorageSnapshot?
@@ -41,7 +42,8 @@ struct TasteMapSettingsView: View {
                         authenticatedUser: authenticatedUser,
                         profile: profile,
                         avatarPhoto: avatarPhoto,
-                        logoutAction: logoutAction
+                        logoutAction: logoutAction,
+                        accountDeletedAction: accountDeletedAction
                     )
                 } label: {
                     SettingsDestinationLabel(
@@ -208,6 +210,7 @@ struct AccountSettingsView: View {
     let profile: UserProfile?
     let avatarPhoto: PhotoAsset?
     let logoutAction: SettingsLogoutAction
+    let accountDeletedAction: SettingsAccountDeletedAction
     @State private var isEditingProfile = false
     @State private var isConfirmingLogout = false
     @State private var isLoggingOut = false
@@ -269,6 +272,23 @@ struct AccountSettingsView: View {
                     .accessibilityIdentifier("settings-sign-out")
                 } footer: {
                     Text("退出会撤销当前会话并清理此设备上的 Keychain 凭据，不会删除你的餐厅或到访记录。")
+                }
+            }
+
+            if let userID = authenticatedUser?.id {
+                Section {
+                    NavigationLink {
+                        AccountDeletionView(
+                            currentUserID: userID,
+                            completionAction: accountDeletedAction
+                        )
+                    } label: {
+                        Label("删除账户", systemImage: "person.crop.circle.badge.minus")
+                            .foregroundStyle(.red)
+                    }
+                    .accessibilityIdentifier("settings-delete-account")
+                } footer: {
+                    Text("永久删除 Taste Map 账户需要重新使用 Apple 登录验证，并由服务器完成 D1 与照片对象删除。")
                 }
             }
 

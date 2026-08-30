@@ -19,6 +19,7 @@ final class NativeAuthServices {
     let premiumAPI: URLSessionPremiumEntitlementAPIClient
     let premiumCommerceAPI: URLSessionPremiumCommerceAPIClient
     let publicSharingAPI: URLSessionPublicSharingAPIClient
+    let releaseSafetyAPI: URLSessionReleaseSafetyAPIClient
     let appleSignIn: AppleSignInService
 
     init(
@@ -91,6 +92,11 @@ final class NativeAuthServices {
             session: session
         )
         publicSharingAPI = URLSessionPublicSharingAPIClient(
+            configuration: configuration,
+            authorization: sessionManager,
+            session: session
+        )
+        releaseSafetyAPI = URLSessionReleaseSafetyAPIClient(
             configuration: configuration,
             authorization: sessionManager,
             session: session

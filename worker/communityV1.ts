@@ -135,7 +135,7 @@ async function readFeed(database: D1Database, viewerId: string, url: URL): Promi
       (fc.requester_id = v.user_id AND fc.addressee_id = ?)
     ))
   )` : ''
-  const bindings: unknown[] = [viewerId, viewerId, viewerId]
+  const bindings: unknown[] = [viewerId, viewerId, viewerId, viewerId, viewerId]
   if (scope === 'following') bindings.push(viewerId, viewerId, viewerId)
   bindings.push(snapshotISO, cursor.eventAt, cursor.eventAt, cursor.id, limit + 1)
   const query = `SELECT ${visitProjection}
@@ -149,6 +149,11 @@ async function readFeed(database: D1Database, viewerId: string, url: URL): Promi
           (vf.requester_id = ? AND vf.addressee_id = v.user_id) OR
           (vf.requester_id = v.user_id AND vf.addressee_id = ?)
         ))
+      )
+    ) AND NOT EXISTS (
+      SELECT 1 FROM user_blocks ub WHERE ub.deleted_at IS NULL AND (
+        (ub.blocker_user_id = ? AND ub.blocked_user_id = v.user_id) OR
+        (ub.blocker_user_id = v.user_id AND ub.blocked_user_id = ?)
       )
     ) ${relationClause}
       AND v.visited_at <= ?
@@ -454,6 +459,13 @@ async function profileAccess(database: D1Database, viewerId: string, targetUserI
       avatar_preset_id, visibility, created_at, deleted_at FROM user_profiles
     WHERE user_id = ? AND deleted_at IS NULL LIMIT 1`).bind(targetUserId).first<ProfileRow>()
   if (!profile) return { permitted: false, friend: false, visibility: null as ProfileVisibilityContract | null }
+  if (targetUserId !== viewerId && await database.prepare(`SELECT id FROM user_blocks
+    WHERE deleted_at IS NULL AND (
+      (blocker_user_id = ? AND blocked_user_id = ?) OR
+      (blocker_user_id = ? AND blocked_user_id = ?)
+    ) LIMIT 1`).bind(viewerId, targetUserId, targetUserId, viewerId).first()) {
+    return { permitted: false, friend: false, visibility: profile.visibility }
+  }
   const friend = targetUserId === viewerId || Boolean(await database.prepare(`SELECT id FROM friendships
     WHERE status = 'accepted' AND deleted_at IS NULL AND (
       (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)

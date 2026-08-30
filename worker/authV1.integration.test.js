@@ -11,6 +11,7 @@ import {
   sha256,
   verifyAppleIdentityToken,
 } from './authV1'
+import { handleAccountDeletionV1 } from './accountDeletionV1'
 
 const NOW = new Date('2026-08-27T10:00:00.000Z')
 const AUDIENCE = 'com.lafayette.tastemap'
@@ -157,6 +158,32 @@ describe('Native Auth V1', () => {
       .rejects.toMatchObject({ code: 'invalid_access_token' })
   })
 
+  it('creates a new Taste Map user when the same Apple identity returns after completed deletion', async () => {
+    const database = makeDatabase()
+    const first = await exchange(database, 'apple-token-before-delete', 'apple-returning-subject')
+    const statusToken = `tm_delete_${'c'.repeat(48)}`
+
+    const completed = await handleAccountDeletionV1(new Request(
+      'https://dev.test/api/v1/account-deletion/confirm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiVersion: 1, requestId: crypto.randomUUID(), statusToken, confirmation: 'DELETE',
+        }),
+      },
+    ), environment(database), { id: first.user.id, developmentIdentity: true }, NOW)
+
+    expect(completed.status).toBe('completed')
+    await expect(authenticateAccessToken(bearerRequest(first.session.accessToken), database, NOW))
+      .rejects.toMatchObject({ code: 'invalid_access_token' })
+    expect(database.get('SELECT COUNT(*) AS count FROM auth_identities WHERE user_id = ?', first.user.id).count)
+      .toBe(0)
+
+    const returning = await exchange(database, 'apple-token-after-delete', 'apple-returning-subject')
+    expect(returning.user.id).not.toBe(first.user.id)
+    expect(database.get(`SELECT COUNT(*) AS count FROM users
+      WHERE deleted_at IS NULL AND id IN (?, ?)`, first.user.id, returning.user.id).count).toBe(1)
+  })
+
   it('never enables the Development identity header in Production', async () => {
     const response = await worker.fetch(new Request(
       'https://api.example.test/api/v1/sync/pull?schemaVersion=1&cursor=0',
@@ -274,7 +301,8 @@ function migrationFiles() {
     '0022_user_profiles_sync.sql', '0023_social_relationships_v1.sql',
     '0024_social_legacy_write_compat.sql', '0025_discovery_v1_indexes.sql',
     '0026_public_community_v1_indexes.sql', '0027_social_hardening.sql',
-    '0028_restaurant_lists_v1.sql',
+    '0028_restaurant_lists_v1.sql', '0029_social_collaboration_and_interactions.sql',
+    '0030_app_store_commerce.sql', '0031_public_sharing.sql', '0032_release_safety.sql',
   ]
 }
 

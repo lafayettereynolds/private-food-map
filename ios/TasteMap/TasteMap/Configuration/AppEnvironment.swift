@@ -33,6 +33,14 @@ nonisolated struct APIConfiguration: Equatable, Sendable {
     ) -> APIConfiguration {
         let keys = [developmentKey, productionKey, fallbackKey]
         var values = bundledValues(bundle: bundle, keys: keys)
+#if DEBUG
+        // Development has a deliberate, non-secret endpoint default. Keeping
+        // it behind DEBUG means Release artifacts cannot silently connect to
+        // or even contain the Development Worker URL.
+        if values[developmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            values[developmentKey] = "https://api-dev.tastemap.cn"
+        }
+#endif
         keys.forEach { key in
             if let value = bundle.object(forInfoDictionaryKey: key) as? String {
                 values[key] = value

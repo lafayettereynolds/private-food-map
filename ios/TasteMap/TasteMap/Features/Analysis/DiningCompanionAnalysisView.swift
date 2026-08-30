@@ -166,13 +166,13 @@ struct DiningCompanionOverviewView: View {
             .padding(20)
             .background(
                 LinearGradient(
-                    colors: [.white, TasteMapAnalysisTheme.brandSoft.opacity(0.72)],
+                    colors: [TasteMapAnalysisTheme.card, TasteMapAnalysisTheme.brandSoft.opacity(0.72)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
                 in: RoundedRectangle(cornerRadius: 28, style: .continuous)
             )
-            .overlay { RoundedRectangle(cornerRadius: 28).stroke(.white, lineWidth: 1.5) }
+            .overlay { RoundedRectangle(cornerRadius: 28).stroke(TasteMapAnalysisTheme.hairline, lineWidth: 1.5) }
             .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.08), radius: 16, y: 9)
         }
         .buttonStyle(.plain)
@@ -209,7 +209,7 @@ struct DiningCompanionOverviewView: View {
                     .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(18)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 22))
+                    .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22))
             } else {
                 ForEach(overview.summaries) { summary in
                     if let report = overview.analysis(for: summary.id) {
@@ -285,7 +285,7 @@ private struct DiningCompanionSummaryCard: View {
             }
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
@@ -479,7 +479,7 @@ struct DiningCompanionDetailView: View {
                     }
                 }
                 .padding(16)
-                .background(.white, in: RoundedRectangle(cornerRadius: 22))
+                .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22))
             }
         }
         .accessibilityIdentifier("companion-top-foods")
@@ -674,7 +674,7 @@ struct DiningCompanionDetailView: View {
             Image(systemName: "chevron.right").foregroundStyle(TasteMapAnalysisTheme.brand)
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 22))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22))
 
         if let id = recommendation.localRestaurantID, let restaurant = restaurantsByID[id] {
             Button { selectedRestaurant = restaurant } label: { card }
@@ -748,7 +748,7 @@ private struct DiningCompanionRestaurantCard: View {
             }
             .padding(15)
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 24))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 24))
         .clipShape(RoundedRectangle(cornerRadius: 24))
     }
 }

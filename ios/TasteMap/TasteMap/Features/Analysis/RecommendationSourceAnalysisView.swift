@@ -218,7 +218,7 @@ struct RecommendationSourceOverviewView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 25)
-            .background(.white, in: ReceiptShape())
+            .background(TasteMapAnalysisTheme.card, in: ReceiptShape())
             .shadow(color: TasteMapAnalysisTheme.caramel.opacity(0.08), radius: 14, y: 7)
         }
     }
@@ -337,7 +337,7 @@ private struct RecommendationConclusionCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 202, alignment: .topLeading)
         .padding(15)
-        .background(.white, in: RoundedRectangle(cornerRadius: 22))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22))
     }
 }
 
@@ -368,7 +368,7 @@ private struct RecommendationSourceSummaryCard: View {
             }
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 22))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22))
     }
 }
 
@@ -423,7 +423,7 @@ struct RecommendationSourceDetailView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 34)
                     .fill(LinearGradient(
-                        colors: [.white, TasteMapAnalysisTheme.softColor(for: analysis.sourceType.analysisTone)],
+                        colors: [TasteMapAnalysisTheme.card, TasteMapAnalysisTheme.softColor(for: analysis.sourceType.analysisTone)],
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     ))
                 VStack(spacing: 12) {
@@ -438,7 +438,7 @@ struct RecommendationSourceDetailView: View {
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(TasteMapAnalysisTheme.color(for: analysis.sourceType.analysisTone))
                         .padding(.horizontal, 13).padding(.vertical, 7)
-                        .background(.white.opacity(0.86), in: Capsule())
+                        .background(TasteMapAnalysisTheme.card.opacity(0.86), in: Capsule())
                     Text("\(analysis.restaurantCount) 家不同餐厅沿着这条线索进入你的 Taste Map")
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
@@ -479,7 +479,7 @@ struct RecommendationSourceDetailView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
         .padding(15)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 20))
     }
 
     private var ratingStory: some View {
@@ -555,7 +555,7 @@ struct RecommendationSourceDetailView: View {
                             Image(systemName: "chevron.right").foregroundStyle(TasteMapAnalysisTheme.brand)
                         }
                         .padding(12)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+                        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 20))
                     }
                     .buttonStyle(.plain)
                     .disabled(restaurantsByID[evidence.id] == nil)
@@ -604,10 +604,10 @@ private struct RecommendationSourceTrailHero: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 38)
                     .fill(RadialGradient(
-                        colors: [.white, TasteMapAnalysisTheme.creamSoft.opacity(0.88)],
+                        colors: [TasteMapAnalysisTheme.card, TasteMapAnalysisTheme.creamSoft.opacity(0.88)],
                         center: .center, startRadius: 30, endRadius: 260
                     ))
-                    .overlay { RoundedRectangle(cornerRadius: 38).stroke(.white, lineWidth: 2) }
+                    .overlay { RoundedRectangle(cornerRadius: 38).stroke(TasteMapAnalysisTheme.hairline, lineWidth: 2) }
                     .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.09), radius: 20, y: 12)
                 AnalysisConnectorWeb()
                     .stroke(TasteMapAnalysisTheme.brand.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, dash: [6, 8]))
@@ -625,7 +625,7 @@ private struct RecommendationSourceTrailHero: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(TasteMapAnalysisTheme.brandDeep)
                     .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(.white.opacity(0.92), in: Capsule())
+                    .background(TasteMapAnalysisTheme.card.opacity(0.92), in: Capsule())
                     .position(x: width / 2, y: 335)
             }
         }
@@ -644,7 +644,7 @@ private struct RecommendationSourceTrailHero: View {
         .frame(width: 112)
         .frame(minHeight: 76)
         .padding(7)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 18))
         .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.08), radius: 10, y: 5)
     }
 

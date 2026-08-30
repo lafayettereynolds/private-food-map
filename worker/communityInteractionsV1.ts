@@ -90,11 +90,19 @@ export async function engagementForVisits(
     database.prepare(`SELECT content_id, COUNT(*) AS count,
         MAX(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS liked_by_viewer
       FROM content_likes
-      WHERE content_type = 'visit' AND deleted_at IS NULL AND content_id IN (${marks})
-      GROUP BY content_id`).bind(viewerId, ...uniqueIDs),
+      WHERE content_type = 'visit' AND deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.deleted_at IS NULL AND (
+          (ub.blocker_user_id = ? AND ub.blocked_user_id = content_likes.user_id) OR
+          (ub.blocker_user_id = content_likes.user_id AND ub.blocked_user_id = ?)
+        )) AND content_id IN (${marks})
+      GROUP BY content_id`).bind(viewerId, viewerId, viewerId, ...uniqueIDs),
     database.prepare(`SELECT content_id, COUNT(*) AS count FROM content_comments
-      WHERE content_type = 'visit' AND deleted_at IS NULL AND content_id IN (${marks})
-      GROUP BY content_id`).bind(...uniqueIDs),
+      WHERE content_type = 'visit' AND deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.deleted_at IS NULL AND (
+          (ub.blocker_user_id = ? AND ub.blocked_user_id = content_comments.user_id) OR
+          (ub.blocker_user_id = content_comments.user_id AND ub.blocked_user_id = ?)
+        )) AND content_id IN (${marks})
+      GROUP BY content_id`).bind(viewerId, viewerId, ...uniqueIDs),
   ])
   const result = new Map<string, CommunityEngagementSummaryV1>()
   for (const id of uniqueIDs) result.set(id, { likedByViewer: false, likeCount: 0, commentCount: 0 })
@@ -155,9 +163,13 @@ async function readComments(
     FROM content_comments c
     JOIN user_profiles p ON p.user_id = c.user_id AND p.deleted_at IS NULL
     WHERE c.content_type = 'visit' AND c.content_id = ? AND c.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.deleted_at IS NULL AND (
+        (ub.blocker_user_id = ? AND ub.blocked_user_id = c.user_id) OR
+        (ub.blocker_user_id = c.user_id AND ub.blocked_user_id = ?)
+      ))
       AND (c.created_at < ? OR (c.created_at = ? AND c.id > ?))
     ORDER BY c.created_at DESC, c.id ASC LIMIT ?`)
-    .bind(visitID, cursor.createdAt, cursor.createdAt, cursor.id, limit + 1).all<CommentRow>()
+    .bind(visitID, viewerId, viewerId, cursor.createdAt, cursor.createdAt, cursor.id, limit + 1).all<CommentRow>()
   const visible = rows.results.slice(0, limit)
   const items = await commentContracts(database, viewerId, visible)
   return {
@@ -223,6 +235,13 @@ async function requireReadableVisit(database: D1Database, viewerId: string, visi
     JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
     WHERE v.id = ? AND v.deleted_at IS NULL LIMIT 1`).bind(visitID).first<VisitAccessRow>()
   if (!row || row.visibility === 'private') {
+    throw new CommunityInteractionV1Error('没有找到可互动的公开内容。', 404)
+  }
+  if (row.user_id !== viewerId && await database.prepare(`SELECT id FROM user_blocks
+    WHERE deleted_at IS NULL AND (
+      (blocker_user_id = ? AND blocked_user_id = ?) OR
+      (blocker_user_id = ? AND blocked_user_id = ?)
+    ) LIMIT 1`).bind(viewerId, row.user_id, row.user_id, viewerId).first()) {
     throw new CommunityInteractionV1Error('没有找到可互动的公开内容。', 404)
   }
   const owner = row.user_id === viewerId

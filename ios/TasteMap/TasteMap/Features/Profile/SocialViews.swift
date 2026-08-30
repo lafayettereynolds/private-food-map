@@ -16,6 +16,7 @@ struct SocialHubView: View {
     let communityAPI: (any CommunityAPI)?
     let collaborationAPI: (any SocialCollaborationAPI)?
     let interactionAPI: (any CommunityInteractionAPI)?
+    let safetyAPI: (any ReleaseSafetyAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
     let restaurantListAPI: (any RestaurantListAPI)?
     @State private var section: SocialHubSection
@@ -52,6 +53,7 @@ struct SocialHubView: View {
                     communityAPI: communityAPI, photoAPI: photoAPI,
                     restaurantListAPI: restaurantListAPI,
                     interactionAPI: interactionAPI,
+                    safetyAPI: safetyAPI,
                     onChange: { changed in
                         replace(changed)
                         selectedUser = changed
@@ -87,6 +89,7 @@ struct SocialHubView: View {
         communityAPI: (any CommunityAPI)? = nil,
         collaborationAPI: (any SocialCollaborationAPI)? = nil,
         interactionAPI: (any CommunityInteractionAPI)? = nil,
+        safetyAPI: (any ReleaseSafetyAPI)? = nil,
         photoAPI: (any PhotoBinaryAPI)? = nil,
         restaurantListAPI: (any RestaurantListAPI)? = nil,
         initialSection: SocialHubSection = .search
@@ -96,6 +99,7 @@ struct SocialHubView: View {
         self.communityAPI = communityAPI
         self.collaborationAPI = collaborationAPI
         self.interactionAPI = interactionAPI
+        self.safetyAPI = safetyAPI
         self.photoAPI = photoAPI
         self.restaurantListAPI = restaurantListAPI
         _section = State(initialValue: initialSection)
@@ -447,12 +451,15 @@ struct SocialPublicProfileView: View {
     @State private var showingContentCache = false
     @State private var selectedContent: PublicContentItemV1?
     @State private var overview: PublicProfileOverviewV1?
+    @State private var reportTarget: CommunityReportTarget?
+    @State private var confirmingBlock = false
     let currentUserID: String
     let api: any SocialAPI
     let communityAPI: (any CommunityAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
     let restaurantListAPI: (any RestaurantListAPI)?
     let interactionAPI: (any CommunityInteractionAPI)?
+    let safetyAPI: (any ReleaseSafetyAPI)?
     let onChange: (SocialUserResultV1) -> Void
 
     init(
@@ -463,6 +470,7 @@ struct SocialPublicProfileView: View {
         photoAPI: (any PhotoBinaryAPI)? = nil,
         restaurantListAPI: (any RestaurantListAPI)? = nil,
         interactionAPI: (any CommunityInteractionAPI)? = nil,
+        safetyAPI: (any ReleaseSafetyAPI)? = nil,
         onChange: @escaping (SocialUserResultV1) -> Void
     ) {
         _item = State(initialValue: initial)
@@ -472,6 +480,7 @@ struct SocialPublicProfileView: View {
         self.photoAPI = photoAPI
         self.restaurantListAPI = restaurantListAPI
         self.interactionAPI = interactionAPI
+        self.safetyAPI = safetyAPI
         self.onChange = onChange
     }
 
@@ -515,7 +524,30 @@ struct SocialPublicProfileView: View {
             }
             .navigationTitle("公开主页")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if safetyAPI != nil {
+                        Menu {
+                            Button("举报用户", systemImage: "exclamationmark.bubble") {
+                                reportTarget = CommunityReportTarget(
+                                    type: .user,
+                                    contentID: item.profile.userId,
+                                    authorUserID: item.profile.userId,
+                                    title: "\(item.profile.displayName) 的公开主页"
+                                )
+                            }
+                            Button("屏蔽用户", systemImage: "person.crop.circle.badge.xmark", role: .destructive) {
+                                confirmingBlock = true
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .accessibilityLabel("用户安全操作")
+                        .accessibilityIdentifier("social-profile-safety")
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+            }
             .task { await loadContext() }
             .onChange(of: contentSection) { _, _ in Task { await loadContent(reset: true, preferCache: true) } }
             .sheet(item: $selectedContent) { content in
@@ -523,6 +555,15 @@ struct SocialPublicProfileView: View {
                     card: content.discoveryCard, restaurants: restaurants,
                     onWantToGo: { addToWantToGo(content) }, photoAPI: photoAPI
                 )
+            }
+            .sheet(item: $reportTarget) { target in
+                if let safetyAPI { CommunityReportSheet(target: target, api: safetyAPI) }
+            }
+            .alert("屏蔽这个用户？", isPresented: $confirmingBlock) {
+                Button("屏蔽", role: .destructive) { Task { await blockProfileOwner() } }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("你们将无法在搜索、主页和社区内容中看到对方。已有好友和关注关系会解除。")
             }
         }
     }
@@ -555,8 +596,10 @@ struct SocialPublicProfileView: View {
                         onOpenRestaurant: { selectedContent = content },
                         onOpenUser: {}, onWantToGo: { addToWantToGo(content) },
                         interactionAPI: interactionAPI,
+                        safetyAPI: safetyAPI,
                         currentUserID: currentUserID,
-                        onEngagementChange: { updateEngagement(contentID: content.id, engagement: $0) }
+                        onEngagementChange: { updateEngagement(contentID: content.id, engagement: $0) },
+                        onBlocked: { blockCompletedLocally() }
                     )
                     .onAppear {
                         if content.id == contentItems.last?.id { Task { await loadMoreContent() } }
@@ -722,6 +765,28 @@ struct SocialPublicProfileView: View {
     private func update(state: FriendshipPerspectiveState, id: String?, following: Bool) {
         item = .init(profile: item.profile, friendshipId: id, friendshipState: state, isFollowing: following)
         onChange(item)
+    }
+
+    @MainActor
+    private func blockProfileOwner() async {
+        guard let safetyAPI else { return }
+        processing = true
+        defer { processing = false }
+        do {
+            _ = try await safetyAPI.setBlocked(true, userID: item.profile.userId)
+            blockCompletedLocally()
+        } catch {
+            message = "屏蔽没有完成，请稍后重试。"
+        }
+    }
+
+    @MainActor
+    private func blockCompletedLocally() {
+        contentItems.removeAll()
+        try? LocalCommunityStore(context: modelContext)
+            .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
+        try? LocalSocialStore(context: modelContext).invalidateProfile(item.profile.userId)
+        dismiss()
     }
 
     @MainActor

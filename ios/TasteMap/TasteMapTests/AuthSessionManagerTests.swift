@@ -49,6 +49,19 @@ struct AuthSessionManagerTests {
         #expect(await manager.restoredUser() == nil)
     }
 
+    @Test("Completed account deletion clears Keychain without issuing a second logout")
+    func accountDeletionClearsOnlyLocalSession() async throws {
+        let store = MemoryCredentialStore(sampleCredential(accessToken: "tm_access_deleted"))
+        let api = MockAuthAPI()
+        let manager = AuthSessionManager(api: api, credentialStore: store)
+
+        try await manager.clearLocalSessionAfterAccountDeletion()
+
+        #expect((try? store.load()) == nil)
+        #expect(await manager.restoredUser() == nil)
+        #expect(await api.logoutCount == 0)
+    }
+
     private func sampleCredential(accessToken: String) -> AuthCredential {
         AuthCredential(
             user: AuthenticatedUserV1(id: "tm_test_user", email: nil),
@@ -81,6 +94,7 @@ nonisolated private final class MemoryCredentialStore: AuthCredentialStoring, @u
 
 private actor MockAuthAPI: AuthAPI {
     private(set) var refreshCount = 0
+    private(set) var logoutCount = 0
     private let logoutError: Error?
 
     init(logoutError: Error? = nil) {
@@ -118,6 +132,7 @@ private actor MockAuthAPI: AuthAPI {
     }
 
     func logout(accessToken: String?, refreshToken: String) async throws {
+        logoutCount += 1
         if let logoutError { throw logoutError }
     }
 }

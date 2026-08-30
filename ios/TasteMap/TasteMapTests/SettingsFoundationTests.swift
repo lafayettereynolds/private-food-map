@@ -62,7 +62,7 @@ struct SettingsFoundationTests {
         #expect(availability.isVisible(.importData))
         #expect(!availability.isVisible(.restoreBackup))
         #expect(!availability.isVisible(.migrateLegacyWebData))
-        #expect(!availability.isVisible(.deleteAccount))
+        #expect(availability.isVisible(.deleteAccount))
         #expect(!availability.isVisible(.privacyPolicy))
         #expect(!availability.isVisible(.termsOfService))
         #expect(!availability.isVisible(.support))
@@ -80,10 +80,10 @@ struct SettingsFoundationTests {
         #expect(availability.state(for: .importData) == .implemented)
         #expect(availability.isVisible(.importData))
         #expect(availability.isVisible(.importData, includeDevelopmentOnly: true))
-        #expect(availability.state(for: .deleteAccount) == .developmentOnly)
+        #expect(availability.state(for: .deleteAccount) == .implemented)
     }
 
-    @Test("Import is a Release feature while Restore, Legacy Claim, and account deletion stay hidden")
+    @Test("Import and account deletion are Release features while Restore and Legacy Claim stay hidden")
     func importFlowAvailability() {
         let development = SettingsFeatureAvailability(
             releaseConfiguration: ReleaseConfiguration(environment: .development, legalLinks: .empty)
@@ -97,7 +97,8 @@ struct SettingsFoundationTests {
         #expect(production.isVisible(.importData))
         #expect(!development.isVisible(.restoreBackup))
         #expect(!development.isVisible(.migrateLegacyWebData))
-        #expect(!development.isVisible(.deleteAccount))
+        #expect(development.isVisible(.deleteAccount))
+        #expect(production.isVisible(.deleteAccount))
     }
 
     @Test("Configured legal and subscription capabilities become available without fake values")

@@ -199,7 +199,7 @@ struct MonthlyRecapAnalysisView: View {
             Button { onSelectPeriod(report.period.previous) } label: {
                 Image(systemName: "chevron.left")
                     .frame(width: 38, height: 38)
-                    .background(.white, in: Circle())
+                    .background(TasteMapAnalysisTheme.card, in: Circle())
             }
             .accessibilityLabel("上个月")
             .accessibilityIdentifier("monthly-recap-previous-month")
@@ -221,14 +221,14 @@ struct MonthlyRecapAnalysisView: View {
                 }
                 .foregroundStyle(TasteMapAnalysisTheme.ink)
                 .padding(.horizontal, 15).padding(.vertical, 10)
-                .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 18))
             }
             .accessibilityIdentifier("monthly-recap-month-menu")
 
             Button { onSelectPeriod(report.period.next) } label: {
                 Image(systemName: "chevron.right")
                     .frame(width: 38, height: 38)
-                    .background(.white, in: Circle())
+                    .background(TasteMapAnalysisTheme.card, in: Circle())
             }
             .disabled(report.period.next.start > MonthlyPeriod.current(calendar: report.period.calendar).start)
             .accessibilityLabel("下个月")
@@ -475,7 +475,7 @@ struct MonthlyRecapAnalysisView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24).padding(.vertical, 56)
-        .background(.white, in: RoundedRectangle(cornerRadius: 28))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 28))
         .accessibilityIdentifier("monthly-recap-empty")
     }
 
@@ -535,7 +535,7 @@ private struct MonthlyMetricTile: View {
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .padding(16)
         .background(TasteMapAnalysisTheme.softColor(for: tone).opacity(0.62), in: RoundedRectangle(cornerRadius: 22))
-        .overlay { RoundedRectangle(cornerRadius: 22).stroke(.white, lineWidth: 1) }
+        .overlay { RoundedRectangle(cornerRadius: 22).stroke(TasteMapAnalysisTheme.hairline, lineWidth: 1) }
     }
 }
 
@@ -557,7 +557,7 @@ private struct MonthlyRestaurantRow: View {
             Image(systemName: "chevron.right").foregroundStyle(TasteMapAnalysisTheme.brand)
         }
         .padding(12)
-        .background(.white, in: RoundedRectangle(cornerRadius: 22))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 22))
     }
 }
 

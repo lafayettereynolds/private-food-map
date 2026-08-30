@@ -186,7 +186,7 @@ struct TasteProfileAnalysisView: View {
                     }
                 }
                 .padding(17)
-                .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
         }
     }
@@ -300,12 +300,12 @@ private struct AnalysisHeroMap: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 34, style: .continuous)
                     .fill(RadialGradient(
-                        colors: [.white, TasteMapAnalysisTheme.creamSoft.opacity(0.7)],
+                        colors: [TasteMapAnalysisTheme.card, TasteMapAnalysisTheme.creamSoft.opacity(0.7)],
                         center: .center,
                         startRadius: 35,
                         endRadius: 260
                     ))
-                    .overlay { RoundedRectangle(cornerRadius: 34).stroke(.white, lineWidth: 1.5) }
+                    .overlay { RoundedRectangle(cornerRadius: 34).stroke(TasteMapAnalysisTheme.hairline, lineWidth: 1.5) }
                     .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.08), radius: 22, y: 12)
 
                 AnalysisConnectorWeb()
@@ -372,7 +372,7 @@ struct AnalysisCalloutCard: View {
         }
         .padding(11)
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-        .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(TasteMapAnalysisTheme.card.opacity(0.95), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(alignment: .leading) {
             Capsule().fill(TasteMapAnalysisTheme.color(for: callout.tone))
                 .frame(width: 4).padding(.vertical, 13)
@@ -401,7 +401,7 @@ struct AnalysisInsightStoryCard: View {
             Spacer(minLength: 0)
         }
         .padding(17)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(alignment: .topTrailing) {
             Circle().fill(TasteMapAnalysisTheme.softColor(for: insight.tone))
                 .frame(width: 44, height: 44).offset(x: 14, y: -14).clipped()
@@ -512,7 +512,7 @@ struct RestaurantStoryCard: View {
             }
             .padding(15)
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }

@@ -12,6 +12,7 @@ final class CachedCommunityContent {
     var fetchedAt: Date
     var payload: Data
 
+    @MainActor
     init(currentUserID: String, routeKey: String, item: PublicContentItemV1, fetchedAt: Date) throws {
         cacheID = Self.id(currentUserID: currentUserID, routeKey: routeKey, contentID: item.id)
         self.currentUserID = currentUserID
@@ -23,6 +24,7 @@ final class CachedCommunityContent {
         payload = try JSONEncoder().encode(item)
     }
 
+    @MainActor
     var item: PublicContentItemV1? { try? JSONDecoder().decode(PublicContentItemV1.self, from: payload) }
 
     static func id(currentUserID: String, routeKey: String, contentID: String) -> String {

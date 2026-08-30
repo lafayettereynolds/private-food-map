@@ -3,11 +3,11 @@ import Foundation
 /// Boundary for Task 09 to supply a real, privacy-reviewed public Restaurant URL.
 /// The default implementation intentionally returns nil: this task must not invent
 /// a host or expose a private deep link as if it were publicly shareable.
-protocol RestaurantPublicURLProviding: Sendable {
+nonisolated protocol RestaurantPublicURLProviding: Sendable {
     func publicURL(forRestaurantGlobalID globalID: String) -> URL?
 }
 
-struct UnconfiguredRestaurantPublicURLProvider: RestaurantPublicURLProviding {
+nonisolated struct UnconfiguredRestaurantPublicURLProvider: RestaurantPublicURLProviding {
     func publicURL(forRestaurantGlobalID globalID: String) -> URL? { nil }
 }
 
