@@ -32,7 +32,8 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 - Module 3 Discovery / Community：已完成并独立提交。
 - 正式名称 override：`最佳饭搭子`、`谁最会种草` 已完成并独立提交。
 - Module 4 Profile / Public Profile / Premium badge：已完成；证据与测试见 [FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md](reports/FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md)。
-- 下一项：Module 5 Global Restaurant Detail single source。
+- Module 5 Global Restaurant Detail single source：已完成；本地与远程 projection 共用同一有序主体，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_5_GLOBAL_RESTAURANT_DETAIL.md](reports/FULL_PRODUCT_PARITY_MODULE_5_GLOBAL_RESTAURANT_DETAIL.md)。
+- 下一项：Module 6 Roulette 历史体验恢复。
 
 ## 1. Executive conclusion
 
@@ -45,12 +46,9 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 3. **Discovery 一级导航已恢复正确**：关注 / 为你推荐 / 同味之选 / 最新 / 趋势均为同一级；没有错误的“发现餐厅 / 社区动态”中间层。但城市/筛选控件和内容卡仍比 Web 更大、更卡片化。
 4. **Profile 分组拓扑已恢复，但密度和统计语义仍不一致**：Web 头部统计是关注、粉丝、去过、想吃；iOS 当前头部统计是去过、到访、平均分、消费，社交统计被移出同级关系。iOS 头像头部、统计和入口卡高度也明显更大。
 5. **Add Restaurant 的功能入口顺序已接近 Web，但 iOS 组件尺寸显著偏大**。Nearby 的 fresh-location 校验、3 km query、`CLLocation.distance` 排序已在代码中存在；真实 GPS 结果仍需用同一坐标做最终真机验收，不能只凭 fixture 宣称通过。
-6. **Restaurant Detail 是当前唯一 S0 结构问题**：
-   - 本地 Restaurant 使用 `RestaurantDetailView`；
-   - Discovery / Community / Public Profile / Public List 在餐厅尚未成为本地记录时，使用 `DiscoveryRestaurantDestination` 内另一套手写详情主体；
-   - 因此同一家餐厅会因入口和本地状态不同看到不同主体。
-7. **本地 Restaurant Detail 自身顺序也不符合 Web 标准**：当前 iOS 是 Hero → Header → 评分参考 → Actions → Business Info；Web 和本轮锁定标准是 Hero → 城市/状态/名称/地址 → Actions → 人均/电话/营业时间/路线 → 评分参考 → 用户实拍 → 我的到访概览 → 到访历史。
-8. Visit、Dish、Photo、Settings、Premium、分析页与回顾页的业务闭环基本存在；主要剩余工作是页面密度、入口一致性和统一 Restaurant Detail，而不是重做 P0–P4 数据架构。
+6. **Restaurant Detail 的 S0 结构问题已经在 Module 5 关闭**：本地 Restaurant 与远程公开 projection 现在共用 `RestaurantDetailStandardBody`，`entrySource` 只表达入口来源，不再决定主体 UI。
+7. **Restaurant Detail 固定顺序已经落地并可测试**：Hero → 城市/状态/名称/地址 → Actions → 人均/电话/营业时间/路线 → 评分参考 → 用户实拍 → 我的到访概览 → 到访历史；无值的 optional 字段不会制造假数据。
+8. Visit、Dish、Photo、Settings、Premium、分析页与回顾页的业务闭环基本存在；Restaurant Detail 已统一，主要剩余工作是页面密度、历史 Roulette 视觉、Food & Dining 视觉系统、Analytics 页面/海报和剩余入口一致性，而不是重做 P0–P4 数据架构。
 9. 当前 Core App 仍缺少一套稳定、可识别且不制造假数据语义的 Food & Dining Visual Library。Map 远距离 cluster 需要由“纯数字圆点”升级为稳定 Food/Dining visual + count；近距离 Restaurant 仍优先独立 Marker。空态、Profile、Lists、Roulette 等只在合适位置使用 Decorative visual，Analytics 才优先使用真实数据驱动的 Food Hero。
 10. Discovery 内容卡必须逐 mode 审计 rating 来源；“有一个分数”不等于语义正确。Activity rating 与 Restaurant aggregate rating 的混用属于 Function Migration Bug。
 11. Roulette 和 Premium badge 都存在历史视觉回退风险。两个模块必须以仓库历史、截图和既有资产作为证据，不得把当前样式直接认定为通过。
@@ -100,11 +98,11 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 | Add Restaurant | 搜索餐厅 → 城市 → 搜索；粘贴链接；Nearby；Manual | 同一能力顺序，但以多个超大卡片/按钮纵向堆叠 | 首屏只能看到搜索、链接和一条 Nearby；信息密度低于 Web；确认页另起一步可接受 | 同一 `AddRestaurantView`，无第二套 acquisition | S2 | 压缩 section/header/row；保留显式确认 |
 | Nearby / GPS | 当前 GPS → 3 km provider query → 距离排序 → 紧凑结果 | fresh CLLocation validator、精度/时间校验、3 km filter、`CLLocation.distance`、foreground refresh | fixture 147 m 通过，但真实同坐标 provider 结果尚无本轮证据；Reduced Accuracy 必须诚实显示 | query center 已集中在 ViewModel | S1 | 不重写定位；新增同坐标与 stale/reduced/foreground regression，最终真机一次验收 |
 | Restaurant Search | Web 高德名称+城市；链接解析；无结果/错误 | Apple Maps 搜索 + AMap/link Worker；无结果/错误/重试 | provider 结果可不同；页面密度不同但功能语义完整 | acquisition flow 统一 | S3 | 仅布局收口与回归 |
-| Restaurant Detail — local | Hero；城市/状态；名称；地址；动作；人均/电话/营业时间/路线；四类评分；用户实拍；我的概览；历史 | Hero；Header；评分；Actions；Business；Stats；Dish；Experience；Detailed Rating；Location；History | 顺序错误；首屏评分与动作卡过大；用户实拍没有作为固定独立段落；基础信息未在评分前完整呈现 | local 主体集中在 `RestaurantDetailView` | S0 | 重新编排唯一详情 shell 和 section 顺序 |
-| Restaurant Detail — remote/public | 与 local 同一主体；无我的私有记录时显示安全空态；用户显式保存后才创建本地数据 | `DiscoveryRestaurantDestination` 另写图片/名称/地址/推荐理由/说明/快捷动作，省略标准主体 | 同餐厅因是否已本地保存而出现两套详情；缺标准基础信息、四类评分、用户实拍 | **严重重复主体**；Public List/Profile/Community 复用的是错误的 remote wrapper | S0 | 让 remote projection 进入同一个 `RestaurantDetailView`；entry source 只管关闭/analytics/返回 |
+| Restaurant Detail — local | Hero；城市/状态；名称；地址；动作；人均/电话/营业时间/路线；四类评分；用户实拍；我的概览；历史 | Module 5 后使用 `RestaurantDetailStandardBody` 与固定 `RestaurantDetailSectionOrderContract` | 标准主体和相对顺序已恢复；扩展记录保留在标准主体之后 | local wrapper 只提供本地数据和 actions | PASS | 见 Module 5 报告；后续只做全局视觉 token 回归 |
+| Restaurant Detail — remote/public | 与 local 同一主体；无我的私有记录时显示安全空态；用户显式保存后才创建本地数据 | Module 5 后 remote projection 进入同一 `RestaurantDetailStandardBody` | 主体一致；缺失 optional 字段隐藏；打开不落本地；私有段落显示安全空态 | `DiscoveryRestaurantDestination` 仅为数据/导航适配器 | PASS | 见 Module 5 跨入口矩阵与截图 |
 | Visit create/edit | Web modal：餐厅、日期、评分、丰富上下文、Dish/Photo、保存 | SwiftUI editor：同字段、local-first、nullable、分组/Disclosure | 字段闭环完整；部分 section 顺序与 Web 不完全一致；系统 keyboard/sheet 差异允许 | create/edit 共用 `VisitEditorView` | S2 | 调整 section order/labels；不改模型或保存语义 |
 | Dish | Visit 内 Dish editor；可复用历史菜品、价格/评分/备注/图 | Dish manager sheet + reuse presentation | 功能完整；卡片密度和操作按钮层级需视觉核对 | 本地/详情统计共用 Dish model | S3 | 只做剩余布局与入口验证 |
-| Photo | Visit 照片选择、排序、上传状态、实拍展示 | PhotosPicker/local-first/upload/retry/gallery | 业务完整；Restaurant Detail 中“用户实拍”的固定位置不正确 | Photo gallery 可复用，但 Detail section 编排不统一 | S1 | 详情中建立固定 User Photos section；不改上传架构 |
+| Photo | Visit 照片选择、排序、上传状态、实拍展示 | PhotosPicker/local-first/upload/retry/gallery；Module 5 后详情中有固定用户实拍段落 | 上传业务完整；详情顺序问题已关闭；公开 projection 没有图片时保持诚实空态 | 本地/远程共用 `RestaurantUserPhotosSection` 容器，不改上传架构 | PASS | 后续仅在 Food & Dining / 全局 token 阶段做视觉回归 |
 | Discovery shell | DISCOVER/发现/描述；城市；关注/为你推荐/同味之选/最新/趋势；筛选 | 同一五个一级 tab；城市和筛选下一行 | 顶层 parity 已恢复；iOS 城市/筛选 pill 过大，卡片起点更低 | `DiscoverHubView` 已统一入口 | S2 | 收紧 header、pill 高度和间距；保持五个一级 tab |
 | For You / Same Taste / Trending | 推荐/Activity内容卡、理由、该条 Visit rating、动作、用户来源 | 大图大卡、理由/评分/动作存在，但 rating source 必须逐 mode 追踪 | 除密度外，任何使用 Restaurant aggregate rating 替代 Activity rating 的路径都是功能错误；无 rating 必须诚实显示未评分 | Card 共用，但详情点击进入 remote duplicate | S1 | 先修 rating projection/data contract，再调整密度，最后接唯一详情 |
 | Community following/latest | 同一 Discovery 一级 tab 下的动态 feed；头像、餐厅、内容、Activity rating、照片、点赞/评论/分享/动作 | 同一一级 tab，`CommunityFeedView` feed card | 信息能力完整；需确认 rating 是该 Activity；卡片视觉与 Discovery cards 有割裂；点击餐厅仍走 remote duplicate | feed 与 discovery 各有卡组件，详情应共享 | S1 | 先回归 Activity rating，再统一详情和共同 action tokens |
@@ -135,10 +133,10 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 
 ### 5.2 Duplicate or misleading reuse that must be removed
 
-1. `DiscoveryRestaurantDestination`：local 分支调用 `RestaurantDetailView`，remote 分支自己维护另一套 Restaurant Detail 主体。
-2. `CommunityFeedView`、`SocialPublicProfileView`、`RestaurantListDetailView`、`PublicRestaurantListDetailView` 都通过 `DiscoveryRestaurantDestination` 打开 remote Restaurant，因此继承上述差异。
+1. `DiscoveryRestaurantDestination` 的重复主体已在 Module 5 删除；它现在只适配 local/remote 数据与导航，并进入同一个 `RestaurantDetailStandardBody`。
+2. `CommunityFeedView`、`SocialPublicProfileView`、`RestaurantListDetailView`、`PublicRestaurantListDetailView` 已接入同一主体和明确的 `RestaurantDetailEntrySource`。
 3. `CompanionRestaurantDetailSheet` 与 `RecommendationSourceRestaurantDetailSheet` 是允许存在的**导航 wrapper**，但应只负责 close/back，不得拥有详情主体。
-4. Restaurant Detail 的 section order 当前由 `RestaurantDetailView` 直接堆叠，缺少一份可测试的固定 Layout Contract。
+4. Restaurant Detail 已建立可测试的 `RestaurantDetailSectionOrderContract`；后续入口不得绕开该 contract。
 
 ### 5.3 Target architecture
 

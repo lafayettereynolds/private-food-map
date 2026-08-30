@@ -495,7 +495,7 @@ struct MonthlyRecapAnalysisView: View {
     private func storyLink(_ item: MonthlyRestaurantStory, identifier: String) -> some View {
         let content = MonthlyRestaurantRow(story: item, photosByID: photosByID)
         if let restaurant = restaurantsByID[item.id] {
-            NavigationLink { RestaurantDetailView(restaurant: restaurant) } label: { content }
+            NavigationLink { RestaurantDetailView(restaurant: restaurant, entrySource: .analysis) } label: { content }
                 .buttonStyle(.plain).accessibilityIdentifier(identifier)
         } else { content.accessibilityIdentifier(identifier) }
     }
@@ -511,7 +511,7 @@ struct MonthlyRecapAnalysisView: View {
             photosByID: photosByID
         )
         if let restaurant = restaurantsByID[item.id] {
-            NavigationLink { RestaurantDetailView(restaurant: restaurant) } label: { content }
+            NavigationLink { RestaurantDetailView(restaurant: restaurant, entrySource: .analysis) } label: { content }
                 .buttonStyle(.plain).accessibilityIdentifier(identifier)
         } else { content.accessibilityIdentifier(identifier) }
     }

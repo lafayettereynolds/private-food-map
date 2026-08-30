@@ -1,28 +1,68 @@
 import MapKit
 import SwiftUI
 
+struct RestaurantDetailIdentityPresentation: Equatable {
+    let name: String
+    let address: String
+    let city: String
+    let status: RestaurantStatus?
+
+    @MainActor
+    init(restaurant: Restaurant) {
+        name = restaurant.name
+        address = restaurant.address
+        city = restaurant.city
+        status = restaurant.status
+    }
+
+    init(
+        projection: DiscoveryRestaurantProjectionV1,
+        viewerState: DiscoveryViewerRestaurantStateV1
+    ) {
+        name = projection.name
+        address = projection.address
+        city = projection.city
+        switch viewerState {
+        case .none: status = nil
+        case .wantToGo: status = .wantToGo
+        case .visited: status = .visited
+        }
+    }
+}
+
 struct RestaurantDetailHeader: View {
-    let restaurant: Restaurant
+    let identity: RestaurantDetailIdentityPresentation
+
+    @MainActor
+    init(restaurant: Restaurant) {
+        identity = RestaurantDetailIdentityPresentation(restaurant: restaurant)
+    }
+
+    init(identity: RestaurantDetailIdentityPresentation) {
+        self.identity = identity
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 7) {
-                    if !restaurant.city.isEmpty {
-                        Label(restaurant.city, systemImage: "location.fill")
+                    if !identity.city.isEmpty {
+                        Label(identity.city, systemImage: "building.2")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(TasteMapCoreTheme.textSecondary)
                     }
-                    Text(restaurant.name)
+                    Text(identity.name)
                         .font(.title.bold())
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 4)
-                RestaurantStatusBadge(status: restaurant.status)
+                if let status = identity.status {
+                    RestaurantStatusBadge(status: status)
+                }
             }
 
-            if !restaurant.address.isEmpty {
-                Label(restaurant.address, systemImage: "mappin.and.ellipse")
+            if !identity.address.isEmpty {
+                Label(identity.address, systemImage: "mappin.and.ellipse")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -59,6 +99,7 @@ struct RestaurantPhotoGallerySection: View {
     let markerEmoji: String
     let onSelect: (PhotoAsset) -> Void
     let onRetry: (PhotoAsset) -> Void
+    var showsThumbnails = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -91,7 +132,7 @@ struct RestaurantPhotoGallerySection: View {
                     }
                 }
 
-                if photos.count > 1 {
+                if showsThumbnails, photos.count > 1 {
                     ScrollView(.horizontal) {
                         LazyHStack(spacing: 8) {
                             ForEach(Array(photos.dropFirst())) { photo in
@@ -134,6 +175,156 @@ struct RestaurantPhotoGallerySection: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-photo-gallery")
     }
+}
+
+struct RestaurantUserPhotosSection<Content: View>: View {
+    let hasPhotos: Bool
+    @ViewBuilder let content: Content
+
+    init(hasPhotos: Bool, @ViewBuilder content: () -> Content) {
+        self.hasPhotos = hasPhotos
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("用户实拍")
+                .font(.title3.bold())
+            if hasPhotos {
+                content
+            } else {
+                ContentUnavailableView(
+                    "还没有用户实拍",
+                    systemImage: "photo.on.rectangle.angled",
+                    description: Text("公开或本人记录的到访照片会显示在这里。")
+                )
+                .frame(maxWidth: .infinity, minHeight: 150)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .tasteMapCoreCard(radius: 22)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("restaurant-user-photos")
+    }
+}
+
+struct RestaurantLocalUserPhotosContent: View {
+    let photos: [PhotoAsset]
+    let onSelect: (PhotoAsset) -> Void
+    let onRetry: (PhotoAsset) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 10) {
+                ForEach(photos) { photo in
+                    Button { onSelect(photo) } label: {
+                        PhotoAssetImageView(photo: photo)
+                            .frame(width: 132, height: 96)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(alignment: .bottomLeading) {
+                                PhotoUploadStatusBadge(photo: photo).padding(6)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("restaurant-user-photo-\(photo.id.uuidString)")
+                    .overlay(alignment: .bottomTrailing) {
+                        if photo.uploadState == .failed {
+                            Button("重试") { onRetry(photo) }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.mini)
+                                .padding(6)
+                        }
+                    }
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+}
+
+/// The single ordered Restaurant Detail subject used by local and remote routes.
+/// Source-specific wrappers provide data and actions, never their own section order.
+struct RestaurantDetailStandardBody<
+    Hero: View,
+    Header: View,
+    Actions: View,
+    Business: View,
+    Location: View,
+    Ratings: View,
+    UserPhotos: View,
+    PersonalOverview: View,
+    History: View,
+    Context: View,
+    Extended: View
+>: View {
+    let hero: Hero
+    let header: Header
+    let actions: Actions
+    let business: Business
+    let location: Location
+    let ratings: Ratings
+    let userPhotos: UserPhotos
+    let personalOverview: PersonalOverview
+    let history: History
+    let context: Context
+    let extended: Extended
+
+    init(
+        @ViewBuilder hero: () -> Hero,
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder actions: () -> Actions,
+        @ViewBuilder business: () -> Business,
+        @ViewBuilder location: () -> Location,
+        @ViewBuilder ratings: () -> Ratings,
+        @ViewBuilder userPhotos: () -> UserPhotos,
+        @ViewBuilder personalOverview: () -> PersonalOverview,
+        @ViewBuilder history: () -> History,
+        @ViewBuilder context: () -> Context,
+        @ViewBuilder extended: () -> Extended
+    ) {
+        self.hero = hero()
+        self.header = header()
+        self.actions = actions()
+        self.business = business()
+        self.location = location()
+        self.ratings = ratings()
+        self.userPhotos = userPhotos()
+        self.personalOverview = personalOverview()
+        self.history = history()
+        self.context = context()
+        self.extended = extended()
+    }
+
+    var body: some View {
+        LazyVStack(spacing: 14) {
+            hero
+            header
+            actions
+            business
+            location
+            ratings
+            userPhotos
+            personalOverview
+            history
+            context
+            extended
+        }
+    }
+}
+
+enum RestaurantDetailSectionOrderContract {
+    static let identifiers = [
+        "restaurant-photo-gallery",
+        "restaurant-detail-header",
+        "restaurant-detail-quick-actions",
+        "restaurant-business-information",
+        "restaurant-detail-location",
+        "restaurant-rating-references",
+        "restaurant-user-photos",
+        "restaurant-detail-statistics",
+        "restaurant-visit-history",
+    ]
 }
 
 private struct RestaurantPhotoFallback: View {
@@ -195,6 +386,16 @@ struct RestaurantBusinessInformationSection: View {
                 .padding(.bottom, 8)
                 .accessibilityIdentifier("restaurant-business-information")
 
+            if let referencePrice = metadata.referencePrice {
+                informationRow(
+                    title: "参考人均",
+                    value: RestaurantDetailFormatting.referencePrice(referencePrice),
+                    systemImage: "yensign.circle.fill"
+                )
+                .accessibilityIdentifier("restaurant-reference-price")
+                dividerAfterReferencePrice
+            }
+
             if let phone = metadata.callablePhone {
                 Button(action: onCall) {
                     informationRow(
@@ -216,16 +417,6 @@ struct RestaurantBusinessInformationSection: View {
                 dividerAfterOpeningHours
             }
 
-            if let referencePrice = metadata.referencePrice {
-                informationRow(
-                    title: "参考人均",
-                    value: RestaurantDetailFormatting.referencePrice(referencePrice),
-                    systemImage: "yensign.circle.fill"
-                )
-                .accessibilityIdentifier("restaurant-reference-price")
-                dividerAfterReferencePrice
-            }
-
             if let longTermNote = metadata.longTermNote {
                 informationRow(title: "我的长期备注", value: longTermNote, systemImage: "note.text")
                     .accessibilityIdentifier("restaurant-long-term-note")
@@ -237,19 +428,21 @@ struct RestaurantBusinessInformationSection: View {
     }
 
     @ViewBuilder private var dividerAfterPhone: some View {
-        if metadata.openingHours != nil || metadata.referencePrice != nil || metadata.longTermNote != nil {
+        if metadata.openingHours != nil || metadata.longTermNote != nil {
             Divider().padding(.leading, 36)
         }
     }
 
     @ViewBuilder private var dividerAfterOpeningHours: some View {
-        if metadata.referencePrice != nil || metadata.longTermNote != nil {
+        if metadata.longTermNote != nil {
             Divider().padding(.leading, 36)
         }
     }
 
     @ViewBuilder private var dividerAfterReferencePrice: some View {
-        if metadata.longTermNote != nil { Divider().padding(.leading, 36) }
+        if metadata.callablePhone != nil || metadata.openingHours != nil || metadata.longTermNote != nil {
+            Divider().padding(.leading, 36)
+        }
     }
 
     private func informationRow(
@@ -383,14 +576,62 @@ struct RestaurantRatingReferencesSection: View {
     }
 }
 
+struct RestaurantDiscoveryContextSection: View {
+    let context: DiscoveryCachedCardContext
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("发现线索")
+                .font(.title3.bold())
+            ForEach(context.reasons) { reason in
+                Label(reason.text, systemImage: "sparkles")
+                    .font(.subheadline)
+                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
+            }
+            if let similarity = context.similarity {
+                Label(
+                    "同味度 \(similarity.percent)% · \(similarity.sharedRestaurantCount) 家共同评分餐厅",
+                    systemImage: "person.2.wave.2"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .tasteMapCoreCard(radius: 22)
+        .accessibilityIdentifier("restaurant-discovery-context")
+    }
+}
+
 struct RestaurantLocationSection: View {
-    let restaurant: Restaurant
+    let name: String
+    let latitude: Double
+    let longitude: Double
     let onOpenAppleMaps: () -> Void
+
+    @MainActor
+    init(restaurant: Restaurant, onOpenAppleMaps: @escaping () -> Void) {
+        name = restaurant.name
+        latitude = restaurant.latitude
+        longitude = restaurant.longitude
+        self.onOpenAppleMaps = onOpenAppleMaps
+    }
+
+    init(
+        projection: DiscoveryRestaurantProjectionV1,
+        onOpenAppleMaps: @escaping () -> Void
+    ) {
+        name = projection.name
+        latitude = projection.latitude
+        longitude = projection.longitude
+        self.onOpenAppleMaps = onOpenAppleMaps
+    }
 
     private var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(
-            latitude: restaurant.latitude,
-            longitude: restaurant.longitude
+            latitude: latitude,
+            longitude: longitude
         )
     }
 
@@ -404,18 +645,18 @@ struct RestaurantLocationSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("位置")
+            Text("到这里去")
                 .font(.title3.bold())
 
             Map(initialPosition: .region(region), interactionModes: []) {
-                Marker(restaurant.name, coordinate: coordinate)
+                Marker(name, coordinate: coordinate)
             }
             .frame(height: 180)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .accessibilityHidden(true)
 
             Button(action: onOpenAppleMaps) {
-                Label("在 Apple Maps 中打开", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                Label("用 Apple Maps 导航", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -425,11 +666,23 @@ struct RestaurantLocationSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .tasteMapCoreCard(radius: 22)
+        .accessibilityIdentifier("restaurant-detail-location")
     }
 }
 
 struct RestaurantDetailStatsSection: View {
-    let presentation: RestaurantDetailPresentation
+    let presentation: RestaurantDetailPresentation?
+    let remoteMessage: String?
+
+    init(presentation: RestaurantDetailPresentation) {
+        self.presentation = presentation
+        remoteMessage = nil
+    }
+
+    init(remoteMessage: String) {
+        presentation = nil
+        self.remoteMessage = remoteMessage
+    }
 
     private let columns = [
         GridItem(.flexible(), spacing: 16),
@@ -441,39 +694,49 @@ struct RestaurantDetailStatsSection: View {
             Text("我的记录")
                 .font(.title3.bold())
 
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
-                RestaurantDetailMetric(
-                    title: "到访次数",
-                    value: "\(presentation.visitCount) 次",
-                    systemImage: "repeat"
+            if let presentation {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                    RestaurantDetailMetric(
+                        title: "到访次数",
+                        value: "\(presentation.visitCount) 次",
+                        systemImage: "repeat"
+                    )
+                    RestaurantDetailMetric(
+                        title: "平均评分",
+                        value: presentation.averageRating.map { String(format: "%.1f", $0) } ?? "暂无评分",
+                        systemImage: "star.fill"
+                    )
+                    RestaurantDetailMetric(
+                        title: "最近到访",
+                        value: presentation.latestVisit.map {
+                            RestaurantDetailFormatting.shortDate($0.visitedAt)
+                        } ?? "暂无记录",
+                        systemImage: "calendar"
+                    )
+                    RestaurantDetailMetric(
+                        title: "累计消费",
+                        value: presentation.totalSpend.map(RestaurantDetailFormatting.currency) ?? "暂无记录",
+                        systemImage: "wallet.bifold.fill"
+                    )
+                    RestaurantDetailMetric(
+                        title: "平均每次消费",
+                        value: presentation.averageSpend.map(RestaurantDetailFormatting.currency) ?? "暂无记录",
+                        systemImage: "chart.line.uptrend.xyaxis"
+                    )
+                }
+            } else {
+                ContentUnavailableView(
+                    "还没有我的记录",
+                    systemImage: "fork.knife.circle",
+                    description: Text(remoteMessage ?? "记录到访后会在这里显示你的统计。")
                 )
-                RestaurantDetailMetric(
-                    title: "平均评分",
-                    value: presentation.averageRating.map { String(format: "%.1f", $0) } ?? "暂无评分",
-                    systemImage: "star.fill"
-                )
-                RestaurantDetailMetric(
-                    title: "最近到访",
-                    value: presentation.latestVisit.map {
-                        RestaurantDetailFormatting.shortDate($0.visitedAt)
-                    } ?? "暂无记录",
-                    systemImage: "calendar"
-                )
-                RestaurantDetailMetric(
-                    title: "累计消费",
-                    value: presentation.totalSpend.map(RestaurantDetailFormatting.currency) ?? "暂无记录",
-                    systemImage: "wallet.bifold.fill"
-                )
-                RestaurantDetailMetric(
-                    title: "平均每次消费",
-                    value: presentation.averageSpend.map(RestaurantDetailFormatting.currency) ?? "暂无记录",
-                    systemImage: "chart.line.uptrend.xyaxis"
-                )
+                .frame(maxWidth: .infinity, minHeight: 150)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .tasteMapCoreCard(radius: 22)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-detail-statistics")
     }
 }
@@ -548,6 +811,7 @@ struct RestaurantVisitHistorySection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .tasteMapCoreCard(radius: 22)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-visit-history")
     }
 }

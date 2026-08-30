@@ -135,7 +135,7 @@ struct RestaurantDetailCompletionTests {
             currentUserID: "tm_owner",
             placements: [placement]
         )
-        #expect(values.map(\.title) == ["大家评分", "好友评分", "同味评分"])
+        #expect(values.map(\.title) == ["全部用户评分", "好友评分", "同味评分"])
         #expect(values.map(\.sampleCount) == [12, 4, 6])
         #expect(values.map(\.value) == [4.4, 4.8, 4.6])
     }
@@ -275,6 +275,55 @@ struct RestaurantDetailCompletionTests {
 
         #expect(RestaurantDetailMetadata(restaurant: restaurant).longTermNote == note)
         #expect(RestaurantDetailPresentation(restaurantID: id, visits: [visit]).tagGroups.first { $0.title == "环境" }?.tags.count == 6)
+    }
+
+    @Test("local 与 remote Restaurant Detail 使用同一固定 section contract")
+    func globalSectionOrderIsSingleSource() {
+        #expect(RestaurantDetailSectionOrderContract.identifiers == [
+            "restaurant-photo-gallery",
+            "restaurant-detail-header",
+            "restaurant-detail-quick-actions",
+            "restaurant-business-information",
+            "restaurant-detail-location",
+            "restaurant-rating-references",
+            "restaurant-user-photos",
+            "restaurant-detail-statistics",
+            "restaurant-visit-history",
+        ])
+    }
+
+    @Test("remote projection 保留 identity、参考人均和商家图但不伪造私有 metadata")
+    func remoteMetadataProjectionIsSafe() {
+        let projection = DiscoveryRestaurantProjectionV1(
+            globalKey: "apple_maps:remote-f3",
+            placeIdentities: [
+                .init(provider: .appleMaps, externalId: "remote-f3", isPrimary: true),
+            ],
+            name: "Remote F3 餐厅", address: "西湖路 9 号", city: "杭州",
+            latitude: 30.24, longitude: 120.15, tags: ["日料"],
+            pricePerPerson: 238,
+            merchantImageUrl: "https://example.test/remote.jpg",
+            markerEmoji: "🍣",
+            photo: .init(photoId: UUID().uuidString, variant: .thumbnail)
+        )
+        let metadata = RestaurantDetailMetadata(projection: projection)
+        let identity = RestaurantDetailIdentityPresentation(
+            projection: projection,
+            viewerState: .none
+        )
+
+        #expect(metadata.referencePrice == Decimal(238))
+        #expect(metadata.merchantImageURL?.host == "example.test")
+        #expect(metadata.callablePhone == nil)
+        #expect(metadata.openingHours == nil)
+        #expect(metadata.longTermNote == nil)
+        #expect(metadata.globalIdentityKeys == ["apple_maps:remote-f3"])
+        #expect(identity.name == "Remote F3 餐厅")
+        #expect(identity.city == "杭州")
+        #expect(identity.status == nil)
+        #expect(RestaurantDetailIdentityPresentation(
+            projection: projection, viewerState: .wantToGo
+        ).status == .wantToGo)
     }
 
     private func makeRestaurant(

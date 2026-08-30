@@ -2,6 +2,22 @@ import SwiftData
 import SwiftUI
 import UIKit
 
+enum RestaurantDetailEntrySource: String, CaseIterable, Sendable {
+    case map
+    case list
+    case search
+    case nearby
+    case discovery
+    case community
+    case publicProfile
+    case restaurantList
+    case analysis
+    case roulette
+    case onThisDay
+    case share
+    case unknown
+}
+
 struct RestaurantDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
@@ -18,6 +34,7 @@ struct RestaurantDetailView: View {
     @Query private var discoveryPlacements: [CachedDiscoveryPlacement]
 
     let restaurant: Restaurant
+    let entrySource: RestaurantDetailEntrySource
     private let navigator: any RestaurantNavigating
 
     @State private var isAddingVisit = false
@@ -34,14 +51,23 @@ struct RestaurantDetailView: View {
     @State private var actionError: String?
 
     @MainActor
-    init(restaurant: Restaurant) {
+    init(
+        restaurant: Restaurant,
+        entrySource: RestaurantDetailEntrySource = .unknown
+    ) {
         self.restaurant = restaurant
+        self.entrySource = entrySource
         navigator = AppleMapsRestaurantNavigator()
     }
 
     @MainActor
-    init(restaurant: Restaurant, navigator: any RestaurantNavigating) {
+    init(
+        restaurant: Restaurant,
+        entrySource: RestaurantDetailEntrySource = .unknown,
+        navigator: any RestaurantNavigating
+    ) {
         self.restaurant = restaurant
+        self.entrySource = entrySource
         self.navigator = navigator
     }
 
@@ -86,24 +112,31 @@ struct RestaurantDetailView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 14) {
+                RestaurantDetailStandardBody {
                     RestaurantPhotoGallerySection(
                         photos: activePhotos,
                         merchantImageURL: metadata.merchantImageURL,
                         markerEmoji: metadata.markerEmoji,
                         onSelect: { selectedPhoto = $0 },
-                        onRetry: retryPhoto
+                        onRetry: retryPhoto,
+                        showsThumbnails: false
                     )
+                } header: {
                     RestaurantDetailHeader(restaurant: restaurant)
-                    if !ratingReferences.isEmpty {
-                        RestaurantRatingReferencesSection(references: ratingReferences)
-                    }
+                } actions: {
                     RestaurantQuickActionsSection(
-                        restaurant: restaurant,
+                        restaurantAddress: restaurant.address,
+                        status: restaurant.status,
                         publicShareEntityID: restaurant.remoteID ?? "",
                         canPublicShare: canPublicShareRestaurant,
-                        canMutate: canMutateRestaurant,
+                        showsShareAvailabilityHint: true,
+                        canRecordVisit: canMutateRestaurant,
+                        canMarkWantToGo: false,
+                        canEdit: canMutateRestaurant,
+                        canDelete: canMutateRestaurant,
                         canAddToList: currentUserID != nil,
+                        canAddToRoulette: currentUserID != nil,
+                        identifiers: .local,
                         onRecordVisit: { isAddingVisit = true },
                         onMarkWantToGo: markWantToGo,
                         onEdit: { isEditingRestaurant = true },
@@ -113,22 +146,33 @@ struct RestaurantDetailView: View {
                         onCopyAddress: { UIPasteboard.general.string = restaurant.address },
                         onDelete: { isConfirmingRestaurantDeletion = true }
                     )
+                } business: {
                     if metadata.hasBusinessInformation {
                         RestaurantBusinessInformationSection(
                             metadata: metadata,
                             onCall: callRestaurant
                         )
                     }
-                    RestaurantDetailStatsSection(presentation: presentation)
-                    RestaurantDishSection(summaries: dishSummaries)
-                    if presentation.queueSummary != nil || !presentation.tagGroups.isEmpty {
-                        RestaurantExperienceSummarySection(presentation: presentation)
-                    }
-                    RestaurantDetailedRatingsSection(summaries: detailedRatingSummaries)
+                } location: {
                     RestaurantLocationSection(
                         restaurant: restaurant,
                         onOpenAppleMaps: openAppleMaps
                     )
+                } ratings: {
+                    if !ratingReferences.isEmpty {
+                        RestaurantRatingReferencesSection(references: ratingReferences)
+                    }
+                } userPhotos: {
+                    RestaurantUserPhotosSection(hasPhotos: !activePhotos.isEmpty) {
+                        RestaurantLocalUserPhotosContent(
+                            photos: activePhotos,
+                            onSelect: { selectedPhoto = $0 },
+                            onRetry: retryPhoto
+                        )
+                    }
+                } personalOverview: {
+                    RestaurantDetailStatsSection(presentation: presentation)
+                } history: {
                     RestaurantVisitHistorySection(
                         visits: presentation.activeVisits,
                         companionNamesByID: companionNamesByID,
@@ -136,6 +180,16 @@ struct RestaurantDetailView: View {
                         onEdit: { editingVisit = $0 },
                         onDelete: { visitPendingDeletion = $0 }
                     )
+                } context: {
+                    if let latestDiscoveryContext {
+                        RestaurantDiscoveryContextSection(context: latestDiscoveryContext)
+                    }
+                } extended: {
+                    RestaurantDishSection(summaries: dishSummaries)
+                    if presentation.queueSummary != nil || !presentation.tagGroups.isEmpty {
+                        RestaurantExperienceSummarySection(presentation: presentation)
+                    }
+                    RestaurantDetailedRatingsSection(summaries: detailedRatingSummaries)
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 8)
@@ -383,5 +437,17 @@ struct RestaurantDetailView: View {
                   $0.tasteMapUserID == currentUserID && $0.deletedAt == nil && $0.visibility == .public
               }) else { return false }
         return presentation.activeVisits.contains { $0.visibility == .public }
+    }
+
+    private var latestDiscoveryContext: DiscoveryCachedCardContext? {
+        guard let currentUserID, !metadata.globalIdentityKeys.isEmpty else { return nil }
+        return discoveryPlacements
+            .filter {
+                $0.currentUserID == currentUserID &&
+                    metadata.globalIdentityKeys.contains($0.globalKey)
+            }
+            .sorted { $0.generatedAt > $1.generatedAt }
+            .compactMap(\.context)
+            .first
     }
 }

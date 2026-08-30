@@ -896,12 +896,15 @@ private struct DiscoveryRestaurantCard: View {
 struct DiscoveryRestaurantImage: View {
     let restaurant: DiscoveryRestaurantProjectionV1
     let photoAPI: (any PhotoBinaryAPI)?
+    var allowsMerchantImageFallback = true
     @State private var image: UIImage?
 
     var body: some View {
         ZStack {
             if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else if let value = restaurant.merchantImageUrl, let url = URL(string: value) {
+            else if allowsMerchantImageFallback,
+                    let value = restaurant.merchantImageUrl,
+                    let url = URL(string: value) {
                 AsyncImage(url: url) { phase in
                     if let image = phase.image { image.resizable().scaledToFill() } else { placeholder }
                 }
@@ -932,10 +935,30 @@ struct DiscoveryRestaurantDestination: View {
     let onWantToGo: () -> Void
     var onViewerStateChange: (DiscoveryViewerRestaurantStateV1) -> Void = { _ in }
     let photoAPI: (any PhotoBinaryAPI)?
+    var entrySource: RestaurantDetailEntrySource = .discovery
     @State private var addingToList = false
     @State private var recordingVisit = false
     @State private var rouletteRestaurantID: UUID?
     @State private var actionMessage: String?
+    @State private var navigationError: String?
+    @State private var viewerState: DiscoveryViewerRestaurantStateV1
+
+    init(
+        card: DiscoveryCardV1,
+        restaurants: [Restaurant],
+        onWantToGo: @escaping () -> Void,
+        onViewerStateChange: @escaping (DiscoveryViewerRestaurantStateV1) -> Void = { _ in },
+        photoAPI: (any PhotoBinaryAPI)?,
+        entrySource: RestaurantDetailEntrySource = .discovery
+    ) {
+        self.card = card
+        self.restaurants = restaurants
+        self.onWantToGo = onWantToGo
+        self.onViewerStateChange = onViewerStateChange
+        self.photoAPI = photoAPI
+        self.entrySource = entrySource
+        _viewerState = State(initialValue: card.viewerState)
+    }
 
     private var currentUserID: String? {
         accountScope.authenticatedUserID
@@ -948,51 +971,105 @@ struct DiscoveryRestaurantDestination: View {
     var body: some View {
         if let local = LocalDiscoveryStore(context: modelContext)
             .localRestaurant(for: card.restaurant, among: ownedRestaurants) {
-            RestaurantDetailView(restaurant: local)
+            RestaurantDetailView(restaurant: local, entrySource: entrySource)
         } else {
             NavigationStack {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    RestaurantDetailStandardBody {
                         DiscoveryRestaurantImage(restaurant: card.restaurant, photoAPI: photoAPI)
-                            .frame(height: 250).clipShape(RoundedRectangle(cornerRadius: 24))
-                        Text(card.restaurant.name).font(.largeTitle.bold())
-                        Label([card.restaurant.city, card.restaurant.address].filter { !$0.isEmpty }.joined(separator: " · "),
-                              systemImage: "mappin.and.ellipse").foregroundStyle(.secondary)
-                        ForEach(card.reasons) { Label($0.text, systemImage: "sparkles").foregroundStyle(Color.accentColor) }
-                        if let similarity = card.displayableSimilarity {
-                            Label(
-                                "同味度 \(similarity.percent)% · \(similarity.sharedRestaurantCount) 家共同评分餐厅",
-                                systemImage: "person.2.wave.2"
-                            )
-                            .font(.subheadline).foregroundStyle(.secondary)
+                            .frame(height: 216)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .accessibilityIdentifier("restaurant-photo-gallery")
+                    } header: {
+                        RestaurantDetailHeader(identity: remoteIdentity)
+                    } actions: {
+                        RestaurantQuickActionsSection(
+                            restaurantAddress: card.restaurant.address,
+                            status: remoteIdentity.status,
+                            publicShareEntityID: "",
+                            canPublicShare: false,
+                            showsShareAvailabilityHint: false,
+                            canRecordVisit: currentUserID != nil,
+                            canMarkWantToGo: currentUserID != nil && viewerState == .none,
+                            canEdit: false,
+                            canDelete: false,
+                            canAddToList: currentUserID != nil,
+                            canAddToRoulette: currentUserID != nil,
+                            identifiers: .discoveryDetail(restaurantKey: card.restaurant.globalKey),
+                            onRecordVisit: { recordingVisit = true },
+                            onMarkWantToGo: markRemoteWantToGo,
+                            onEdit: {},
+                            onAddToList: { addingToList = true },
+                            onAddToRoulette: addToRoulette,
+                            onCopyName: { UIPasteboard.general.string = card.restaurant.name },
+                            onCopyAddress: { UIPasteboard.general.string = card.restaurant.address },
+                            onDelete: {}
+                        )
+                    } business: {
+                        if remoteMetadata.hasBusinessInformation {
+                            RestaurantBusinessInformationSection(metadata: remoteMetadata, onCall: {})
                         }
-                        Text("这是可浏览的社区餐厅信息。只有你明确加入想吃或记录到访后，才会创建属于你的餐厅记录。")
-                            .font(.footnote).foregroundStyle(.secondary)
+                    } location: {
+                        RestaurantLocationSection(
+                            projection: card.restaurant,
+                            onOpenAppleMaps: openRemoteInAppleMaps
+                        )
+                    } ratings: {
+                        if !remoteRatingReferences.isEmpty {
+                            RestaurantRatingReferencesSection(references: remoteRatingReferences)
+                        }
+                    } userPhotos: {
+                        RestaurantUserPhotosSection(hasPhotos: card.restaurant.photo != nil) {
+                            DiscoveryRestaurantImage(
+                                restaurant: card.restaurant,
+                                photoAPI: photoAPI,
+                                allowsMerchantImageFallback: false
+                            )
+                            .frame(height: 180)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                    } personalOverview: {
+                        RestaurantDetailStatsSection(
+                            remoteMessage: "只有你明确记录到访后，才会创建并显示属于你的餐厅记录。"
+                        )
+                    } history: {
+                        RestaurantVisitHistorySection(
+                            visits: [], companionNamesByID: [:], sourceNamesByID: [:],
+                            onEdit: { _ in }, onDelete: { _ in }
+                        )
+                    } context: {
+                        RestaurantDiscoveryContextSection(
+                            context: DiscoveryCachedCardContext(card: card)
+                        )
+                    } extended: {
                         if let actionMessage {
                             Text(actionMessage).font(.footnote).foregroundStyle(.secondary)
                         }
-                    }.padding(18)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+                    .padding(.bottom, 28)
                 }
-                .navigationTitle("餐厅详情").navigationBarTitleDisplayMode(.inline)
+                .background(TasteMapCoreTheme.page)
+                .navigationTitle("餐厅详情")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
-                    if currentUserID != nil {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button("加入榜单", systemImage: "list.number") { addingToList = true }
-                        }
-                    }
                 }
                 .safeAreaInset(edge: .bottom) {
-                    DiscoveryRestaurantQuickActions(
-                        viewerState: card.viewerState,
-                        onRecordVisit: { recordingVisit = true },
-                        onWantToGo: onWantToGo,
-                        onAddToList: { addingToList = true },
-                        onAddToRoulette: addToRoulette,
-                        identifierPrefix: "discovery-detail",
-                        restaurantKey: card.restaurant.globalKey
-                    )
-                    .padding().background(.bar)
+                    Button { recordingVisit = true } label: {
+                        Label("记录到访", systemImage: "plus.circle.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(currentUserID == nil)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.bar)
+                    .accessibilityIdentifier("restaurant-detail-add-visit")
                 }
                 .sheet(isPresented: $addingToList) {
                     if let currentUserID {
@@ -1003,6 +1080,7 @@ struct DiscoveryRestaurantDestination: View {
                     VisitEditorView(
                         candidate: card.restaurant.restaurantCandidate,
                         onVisitSaved: { _ in
+                            viewerState = .visited
                             onViewerStateChange(.visited)
                             Task { await syncCoordinator.synchronizeNow() }
                         }
@@ -1024,7 +1102,76 @@ struct DiscoveryRestaurantDestination: View {
                         }
                     }
                 }
+                .alert("无法打开 Apple Maps", isPresented: Binding(
+                    get: { navigationError != nil },
+                    set: { if !$0 { navigationError = nil } }
+                )) {
+                    Button("好", role: .cancel) { navigationError = nil }
+                } message: {
+                    Text(navigationError ?? "请稍后重试。")
+                }
             }
+        }
+    }
+
+    private var remoteIdentity: RestaurantDetailIdentityPresentation {
+        RestaurantDetailIdentityPresentation(
+            projection: card.restaurant,
+            viewerState: viewerState
+        )
+    }
+
+    private var remoteMetadata: RestaurantDetailMetadata {
+        RestaurantDetailMetadata(projection: card.restaurant)
+    }
+
+    private var remoteRatingReferences: [RestaurantRatingReference] {
+        [
+            remoteRatingReference("我的评分", card.ratings.mine, "star.fill"),
+            remoteRatingReference("全部用户评分", card.ratings.community, "person.3.fill"),
+            remoteRatingReference("好友评分", card.ratings.friends, "person.2.fill"),
+            remoteRatingReference("同味评分", card.ratings.similarTaste, "person.2.wave.2.fill"),
+        ].compactMap { $0 }
+    }
+
+    private func remoteRatingReference(
+        _ title: String,
+        _ rating: DiscoveryRatingProjectionV1,
+        _ systemImage: String
+    ) -> RestaurantRatingReference? {
+        guard let value = rating.value, value.isFinite, (0...5).contains(value),
+              rating.sampleCount > 0 else { return nil }
+        return RestaurantRatingReference(
+            title: title, value: value,
+            sampleCount: rating.sampleCount, systemImage: systemImage
+        )
+    }
+
+    @MainActor
+    private func markRemoteWantToGo() {
+        guard currentUserID != nil, viewerState == .none else { return }
+        onWantToGo()
+        viewerState = .wantToGo
+        onViewerStateChange(.wantToGo)
+    }
+
+    @MainActor
+    private func openRemoteInAppleMaps() {
+        let projectedRestaurant = Restaurant(
+            ownerUserID: LocalAccountOwner.legacyQuarantine,
+            name: card.restaurant.name,
+            address: card.restaurant.address,
+            latitude: card.restaurant.latitude,
+            longitude: card.restaurant.longitude,
+            appleMapItemIdentifier: card.restaurant.placeIdentities
+                .first(where: { $0.provider == .appleMaps })?.externalId,
+            city: card.restaurant.city,
+            status: viewerState == .visited ? .visited : .wantToGo,
+            remoteID: card.restaurant.globalKey,
+            syncStatus: .synced
+        )
+        if !AppleMapsRestaurantNavigator().openInAppleMaps(projectedRestaurant) {
+            navigationError = "系统没有成功打开这家餐厅的位置。"
         }
     }
 
@@ -1037,6 +1184,7 @@ struct DiscoveryRestaurantDestination: View {
                 currentUserID: currentUserID ?? LocalAccountOwner.guest
             )
             let state: DiscoveryViewerRestaurantStateV1 = restaurant.status == .visited ? .visited : .wantToGo
+            viewerState = state
             onViewerStateChange(state)
             rouletteRestaurantID = restaurant.id
             Task { await syncCoordinator.synchronizeNow() }

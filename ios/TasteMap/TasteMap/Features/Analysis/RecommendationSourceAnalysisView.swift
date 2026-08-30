@@ -319,7 +319,7 @@ struct RecommendationSourceOverviewView: View {
             photosByID: photosByID
         )
         if let restaurant = restaurantsByID[evidence.id] {
-            NavigationLink { RestaurantDetailView(restaurant: restaurant) } label: { card }
+            NavigationLink { RestaurantDetailView(restaurant: restaurant, entrySource: .analysis) } label: { card }
                 .buttonStyle(.plain)
         } else { card }
     }
@@ -679,7 +679,7 @@ private struct RecommendationSourceRestaurantDetailSheet: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RestaurantDetailView(restaurant: restaurant)
+            RestaurantDetailView(restaurant: restaurant, entrySource: .analysis)
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.headline.weight(.bold))

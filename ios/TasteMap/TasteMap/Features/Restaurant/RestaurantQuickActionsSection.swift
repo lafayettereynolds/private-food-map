@@ -1,11 +1,41 @@
 import SwiftUI
 
+struct RestaurantQuickActionIdentifiers: Sendable, Equatable {
+    let recordVisit: String
+    let wantToGo: String
+    let addToList: String
+    let addToRoulette: String
+
+    static let local = RestaurantQuickActionIdentifiers(
+        recordVisit: "restaurant-action-record-visit",
+        wantToGo: "restaurant-action-want-to-go",
+        addToList: "restaurant-detail-add-to-list",
+        addToRoulette: "restaurant-action-roulette"
+    )
+
+    static func discoveryDetail(restaurantKey: String) -> RestaurantQuickActionIdentifiers {
+        RestaurantQuickActionIdentifiers(
+            recordVisit: "discovery-detail-record-\(restaurantKey)",
+            wantToGo: "discovery-detail-want-\(restaurantKey)",
+            addToList: "discovery-detail-list-\(restaurantKey)",
+            addToRoulette: "discovery-detail-roulette-\(restaurantKey)"
+        )
+    }
+}
+
 struct RestaurantQuickActionsSection: View {
-    let restaurant: Restaurant
+    let restaurantAddress: String
+    let status: RestaurantStatus?
     let publicShareEntityID: String
     let canPublicShare: Bool
-    let canMutate: Bool
+    let showsShareAvailabilityHint: Bool
+    let canRecordVisit: Bool
+    let canMarkWantToGo: Bool
+    let canEdit: Bool
+    let canDelete: Bool
     let canAddToList: Bool
+    let canAddToRoulette: Bool
+    let identifiers: RestaurantQuickActionIdentifiers
     let onRecordVisit: () -> Void
     let onMarkWantToGo: () -> Void
     let onEdit: () -> Void
@@ -18,24 +48,27 @@ struct RestaurantQuickActionsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
-                primaryAction("记录到访", systemImage: "plus", enabled: canMutate, action: onRecordVisit)
-                    .accessibilityIdentifier("restaurant-action-record-visit")
+                primaryAction("记录到访", systemImage: "plus", enabled: canRecordVisit, action: onRecordVisit)
+                    .accessibilityIdentifier(identifiers.recordVisit)
                 primaryAction(
-                    restaurant.status == .wantToGo ? "已在想吃" : "标记想吃",
+                    wantToGoTitle,
                     systemImage: "bookmark.fill",
-                    enabled: canMutate && restaurant.status != .wantToGo,
+                    enabled: canMarkWantToGo,
                     action: onMarkWantToGo
                 )
-                .accessibilityIdentifier("restaurant-action-want-to-go")
-                primaryAction("加入抽签", systemImage: "dice.fill", action: onAddToRoulette)
-                    .accessibilityIdentifier("restaurant-action-roulette")
+                .accessibilityIdentifier(identifiers.wantToGo)
+                primaryAction(
+                    "加入抽签", systemImage: "dice.fill",
+                    enabled: canAddToRoulette, action: onAddToRoulette
+                )
+                    .accessibilityIdentifier(identifiers.addToRoulette)
             }
 
             HStack(spacing: 8) {
-                compactAction("编辑", systemImage: "square.and.pencil", enabled: canMutate, action: onEdit)
+                compactAction("编辑", systemImage: "square.and.pencil", enabled: canEdit, action: onEdit)
                     .accessibilityIdentifier("restaurant-action-edit")
                 compactAction("榜单", systemImage: "text.badge.plus", enabled: canAddToList, action: onAddToList)
-                    .accessibilityIdentifier("restaurant-detail-add-to-list")
+                    .accessibilityIdentifier(identifiers.addToList)
                 PublicShareButton(
                     entityType: .restaurant,
                     entityID: publicShareEntityID,
@@ -49,11 +82,11 @@ struct RestaurantQuickActionsSection: View {
                 Menu {
                     Button("复制餐厅名", systemImage: "doc.on.doc", action: onCopyName)
                         .accessibilityIdentifier("restaurant-action-copy-name")
-                    if !restaurant.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if !restaurantAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Button("复制地址", systemImage: "mappin.and.ellipse", action: onCopyAddress)
                             .accessibilityIdentifier("restaurant-action-copy-address")
                     }
-                    if canMutate {
+                    if canDelete {
                         Button("删除餐厅", systemImage: "trash", role: .destructive, action: onDelete)
                             .accessibilityIdentifier("restaurant-action-delete")
                     }
@@ -63,7 +96,7 @@ struct RestaurantQuickActionsSection: View {
                 }
                 .accessibilityIdentifier("restaurant-action-more")
             }
-            if !canPublicShare {
+            if showsShareAvailabilityHint, !canPublicShare {
                 Label("将本人主页设为公开，并至少公开一次到访后，才可生成餐厅公开链接。", systemImage: "hand.raised.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -74,6 +107,14 @@ struct RestaurantQuickActionsSection: View {
         .tasteMapCoreCard(radius: 16)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-detail-quick-actions")
+    }
+
+    private var wantToGoTitle: String {
+        switch status {
+        case .wantToGo: "已在想吃"
+        case .visited: "已去过"
+        case nil: "标记想吃"
+        }
     }
 
     private func primaryAction(

@@ -701,6 +701,22 @@ final class TasteMapUITests: XCTestCase {
 
         app.staticTexts["云边小馆·湖滨店"].tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-photo-gallery"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-detail-header"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-detail-quick-actions"].exists)
+        let remoteLocation = app.otherElements["restaurant-detail-location"]
+        scrollUntilReadable(remoteLocation, in: app)
+        XCTAssertTrue(remoteLocation.waitForExistence(timeout: 3))
+        let remotePhotos = app.otherElements["restaurant-user-photos"]
+        scrollUntilReadable(remotePhotos, in: app)
+        XCTAssertTrue(remotePhotos.waitForExistence(timeout: 3))
+        let remoteOverview = app.otherElements["restaurant-detail-statistics"]
+        scrollUntilReadable(remoteOverview, in: app)
+        XCTAssertTrue(remoteOverview.waitForExistence(timeout: 3))
+        let remoteHistory = app.otherElements["restaurant-visit-history"]
+        scrollUntilReadable(remoteHistory, in: app)
+        XCTAssertTrue(remoteHistory.waitForExistence(timeout: 3))
+        keepScreenshot(named: "Global Restaurant Detail Remote After", of: app)
         app.buttons["完成"].tap()
 
         let want = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "想吃")).firstMatch
@@ -1205,12 +1221,25 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
 
         let metadata = app.staticTexts["restaurant-business-information"]
-        scrollUntilVisible(metadata, in: app)
+        scrollUntilReadable(metadata, in: app)
         XCTAssertTrue(metadata.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["restaurant-call-phone"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-opening-hours"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-reference-price"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-long-term-note"].exists)
+        let location = app.otherElements["restaurant-detail-location"]
+        scrollUntilReadable(location, in: app)
+        XCTAssertTrue(location.waitForExistence(timeout: 3))
+        let userPhotos = app.otherElements["restaurant-user-photos"]
+        scrollUntilReadable(userPhotos, in: app)
+        XCTAssertTrue(userPhotos.waitForExistence(timeout: 3))
+        let personalOverview = app.otherElements["restaurant-detail-statistics"]
+        scrollUntilReadable(personalOverview, in: app)
+        XCTAssertTrue(personalOverview.waitForExistence(timeout: 3))
+        let visitHistory = app.otherElements["restaurant-visit-history"]
+        scrollUntilReadable(visitHistory, in: app)
+        XCTAssertTrue(visitHistory.waitForExistence(timeout: 3))
+        keepScreenshot(named: "Global Restaurant Detail Local After", of: app)
 
         let edit = app.navigationBars["餐厅详情"].buttons["编辑"]
         XCTAssertTrue(edit.isHittable)
@@ -2843,6 +2872,29 @@ final class TasteMapUITests: XCTestCase {
         // the app's custom bottom navigation. Keep a real tap-safe margin so
         // long Profile/Settings cards do not absorb a no-op tap at the edge.
         for _ in 0..<30 where !element.isHittable || element.frame.maxY > app.frame.maxY - 92 {
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+    }
+
+    /// Scrolls read-only section containers into the visible viewport without
+    /// requiring them to become hittable. Structural accessibility elements
+    /// intentionally have no tap action, so using `isHittable` would always
+    /// exhaust the gesture budget even after the section is on screen.
+    @MainActor
+    private func scrollUntilReadable(_ element: XCUIElement, in app: XCUIApplication) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.68))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.24))
+        let readableViewport = CGRect(
+            x: app.frame.minX,
+            y: app.frame.minY + 72,
+            width: app.frame.width,
+            height: max(1, app.frame.height - 164)
+        )
+
+        for _ in 0..<16 {
+            if element.exists, element.frame.intersects(readableViewport) {
+                return
+            }
             start.press(forDuration: 0.05, thenDragTo: end)
         }
     }

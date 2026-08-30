@@ -417,7 +417,7 @@ struct RestaurantRouletteExperienceView: View {
 
                 if let restaurant = restaurants.first(where: { $0.id == candidate.restaurantID }) {
                     NavigationLink {
-                        RestaurantDetailView(restaurant: restaurant)
+                        RestaurantDetailView(restaurant: restaurant, entrySource: .roulette)
                     } label: {
                         Label("查看餐厅", systemImage: "arrow.right")
                             .frame(maxWidth: .infinity)

@@ -121,7 +121,8 @@ struct CommunityFeedView: View {
                     onViewerStateChange: {
                         updateViewerState(globalKey: item.restaurant.globalKey, state: $0)
                     },
-                    photoAPI: authServices.photoAPI
+                    photoAPI: authServices.photoAPI,
+                    entrySource: .community
                 )
             }
             .sheet(item: $selectedVisitItem) { item in

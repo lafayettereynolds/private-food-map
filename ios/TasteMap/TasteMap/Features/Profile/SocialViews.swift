@@ -546,7 +546,8 @@ struct SocialPublicProfileView: View {
             .sheet(item: $selectedContent) { content in
                 DiscoveryRestaurantDestination(
                     card: content.discoveryCard, restaurants: restaurants,
-                    onWantToGo: { addToWantToGo(content) }, photoAPI: photoAPI
+                    onWantToGo: { addToWantToGo(content) }, photoAPI: photoAPI,
+                    entrySource: .publicProfile
                 )
             }
             .sheet(item: $reportTarget) { target in

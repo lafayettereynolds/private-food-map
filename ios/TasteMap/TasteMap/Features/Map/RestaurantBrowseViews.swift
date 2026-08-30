@@ -54,7 +54,7 @@ struct RestaurantCollectionView: View {
             if let restaurant = owned.restaurants.first(where: {
                 $0.id == selection.id && $0.deletedAt == nil
             }) {
-                RestaurantDetailView(restaurant: restaurant)
+                RestaurantDetailView(restaurant: restaurant, entrySource: .list)
             } else {
                 ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
             }

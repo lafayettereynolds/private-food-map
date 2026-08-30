@@ -140,7 +140,7 @@ struct MapHomeView: View {
                 if let restaurant = owned.restaurants.first(where: {
                     $0.id == destination.id && $0.deletedAt == nil
                 }) {
-                    RestaurantDetailView(restaurant: restaurant)
+                    RestaurantDetailView(restaurant: restaurant, entrySource: .map)
                 } else {
                     ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
                 }

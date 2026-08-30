@@ -715,7 +715,7 @@ private struct CompanionRestaurantDetailSheet: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RestaurantDetailView(restaurant: restaurant)
+            RestaurantDetailView(restaurant: restaurant, entrySource: .analysis)
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.headline.weight(.bold))

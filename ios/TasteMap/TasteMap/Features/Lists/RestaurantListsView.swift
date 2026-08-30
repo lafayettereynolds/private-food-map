@@ -229,7 +229,8 @@ struct RestaurantListDetailView: View {
                 card: place.listDiscoveryCard,
                 restaurants: restaurants,
                 onWantToGo: { addToWantToGo(place) },
-                photoAPI: photoAPI
+                photoAPI: photoAPI,
+                entrySource: .restaurantList
             )
         }
         .alert("榜单没有更新", isPresented: .init(get: { message != nil }, set: { if !$0 { message = nil } })) {
@@ -819,7 +820,8 @@ struct PublicRestaurantListDetailView: View {
             .sheet(item: $selected) { place in
                 DiscoveryRestaurantDestination(
                     card: place.listDiscoveryCard, restaurants: restaurants,
-                    onWantToGo: { addToWantToGo(place) }, photoAPI: photoAPI
+                    onWantToGo: { addToWantToGo(place) }, photoAPI: photoAPI,
+                    entrySource: .restaurantList
                 )
             }
         }
