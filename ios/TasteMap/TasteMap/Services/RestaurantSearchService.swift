@@ -102,19 +102,32 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
 
     func locationContext(for coordinate: RestaurantCoordinate) async throws -> RestaurantLocationContext {
         guard coordinate.isValid else { throw RestaurantSearchError.invalidCoordinate }
-        guard let request = MKReverseGeocodingRequest(location: CLLocation(
+        let location = CLLocation(
             latitude: coordinate.latitude,
             longitude: coordinate.longitude
-        )), let mapItem = try await request.mapItems.first else {
+        )
+        if #available(iOS 26.0, *) {
+            guard let request = MKReverseGeocodingRequest(location: location),
+                  let mapItem = try await request.mapItems.first else {
+                throw RestaurantSearchError.locationNotFound
+            }
+            let representations = mapItem.addressRepresentations
+            let city = representations?.cityName ?? ""
+            let district = representations?.cityWithContext ?? ""
+            let address = mapItem.address?.fullAddress
+                ?? representations?.fullAddress(includingRegion: true, singleLine: true)
+                ?? ""
+            return RestaurantLocationContext(city: city, district: district, address: address)
+        }
+
+        guard let placemark = try await CLGeocoder().reverseGeocodeLocation(location).first else {
             throw RestaurantSearchError.locationNotFound
         }
-        let representations = mapItem.addressRepresentations
-        let city = representations?.cityName ?? ""
-        let district = representations?.cityWithContext ?? ""
-        let address = mapItem.address?.fullAddress
-            ?? representations?.fullAddress(includingRegion: true, singleLine: true)
-            ?? ""
-        return RestaurantLocationContext(city: city, district: district, address: address)
+        return RestaurantLocationContext(
+            city: placemark.locality ?? placemark.administrativeArea ?? "",
+            district: placemark.subLocality ?? placemark.subAdministrativeArea ?? "",
+            address: placemark.name ?? legacyAddress(from: placemark)
+        )
     }
 
     func coordinate(for address: String, city: String) async throws -> RestaurantCoordinate {
@@ -128,7 +141,7 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
         request.resultTypes = [.address, .pointOfInterest]
         let response = try await MKLocalSearch(request: request).start()
         guard let item = response.mapItems.first else { throw RestaurantSearchError.locationNotFound }
-        let value = item.location.coordinate
+        let value = mapItemCoordinate(item)
         return RestaurantCoordinate(latitude: value.latitude, longitude: value.longitude)
     }
 
@@ -148,13 +161,11 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
         return mapItems.compactMap { mapItem in
             guard let name = mapItem.name?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !name.isEmpty else { return nil }
-            let coordinate = mapItem.location.coordinate
-            let externalID = mapItem.identifier?.rawValue
+            let coordinate = mapItemCoordinate(mapItem)
+            let externalID = mapItemExternalID(mapItem)
             let key = externalID ?? "\(name)|\(coordinate.latitude)|\(coordinate.longitude)"
             guard seen.insert(key).inserted else { return nil }
-            let address = mapItem.address?.fullAddress
-                ?? mapItem.addressRepresentations?.fullAddress(includingRegion: true, singleLine: true)
-                ?? ""
+            let address = mapItemAddress(mapItem)
             let distance = origin.map {
                 CLLocation(latitude: $0.latitude, longitude: $0.longitude)
                     .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
@@ -169,6 +180,37 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
                 distanceMeters: distance
             )
         }
+    }
+
+    private func mapItemCoordinate(_ mapItem: MKMapItem) -> CLLocationCoordinate2D {
+        if #available(iOS 26.0, *) {
+            return mapItem.location.coordinate
+        }
+        return mapItem.placemark.coordinate
+    }
+
+    private func mapItemExternalID(_ mapItem: MKMapItem) -> String? {
+        if #available(iOS 18.0, *) {
+            return mapItem.identifier?.rawValue
+        }
+        return nil
+    }
+
+    private func mapItemAddress(_ mapItem: MKMapItem) -> String {
+        if #available(iOS 26.0, *) {
+            return mapItem.address?.fullAddress
+                ?? mapItem.addressRepresentations?.fullAddress(includingRegion: true, singleLine: true)
+                ?? ""
+        }
+        return mapItem.placemark.title ?? legacyAddress(from: mapItem.placemark)
+    }
+
+    private func legacyAddress(from placemark: CLPlacemark) -> String {
+        [placemark.subThoroughfare, placemark.thoroughfare, placemark.subLocality,
+         placemark.locality, placemark.administrativeArea]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 

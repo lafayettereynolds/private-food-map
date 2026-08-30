@@ -13,7 +13,12 @@ struct AppleMapsRestaurantNavigator: RestaurantNavigating {
             latitude: restaurant.latitude,
             longitude: restaurant.longitude
         )
-        let mapItem = MKMapItem(location: location, address: nil)
+        let mapItem: MKMapItem
+        if #available(iOS 26.0, *) {
+            mapItem = MKMapItem(location: location, address: nil)
+        } else {
+            mapItem = MKMapItem(placemark: MKPlacemark(coordinate: location.coordinate))
+        }
         mapItem.name = restaurant.name
         return mapItem
     }

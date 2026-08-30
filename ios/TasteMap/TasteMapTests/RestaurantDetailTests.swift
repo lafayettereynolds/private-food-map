@@ -132,10 +132,16 @@ struct RestaurantDetailTests {
     func appleMapsNavigationUsesRestaurantLocation() {
         let restaurant = restaurant()
         let mapItem = AppleMapsRestaurantNavigator().mapItem(for: restaurant)
+        let coordinate: CLLocationCoordinate2D
+        if #available(iOS 26.0, *) {
+            coordinate = mapItem.location.coordinate
+        } else {
+            coordinate = mapItem.placemark.coordinate
+        }
 
         #expect(mapItem.name == restaurant.name)
-        #expect(abs(mapItem.location.coordinate.latitude - restaurant.latitude) < 0.000_001)
-        #expect(abs(mapItem.location.coordinate.longitude - restaurant.longitude) < 0.000_001)
+        #expect(abs(coordinate.latitude - restaurant.latitude) < 0.000_001)
+        #expect(abs(coordinate.longitude - restaurant.longitude) < 0.000_001)
         #expect(restaurant.appleMapItemIdentifier == "apple-detail-place")
     }
 
