@@ -167,6 +167,7 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     func testCoreProductLayoutParityMapDiscoveryProfileEvidence() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
         app.launchEnvironment = [
             "TASTEMAP_F2A_BROWSING_UI_TEST": "1",
             "TASTEMAP_CORE_PARITY_INITIAL_TAB": "map",
@@ -228,8 +229,12 @@ final class TasteMapUITests: XCTestCase {
             "TASTEMAP_CORE_PARITY_INITIAL_TAB": "profile",
         ]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["profile-compact-header"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.descendants(matching: .any)["profile-horizontal-statistics"].exists)
+        XCTAssertTrue(app.buttons["profile-edit-button"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["profile-following-stat"].exists)
+        XCTAssertTrue(app.buttons["profile-followers-stat"].exists)
+        XCTAssertTrue(app.buttons["profile-stat-visited"].exists)
+        XCTAssertTrue(app.buttons["profile-stat-want"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["profile-stat-spend"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["profile-primary-actions"].exists)
         XCTAssertTrue(app.buttons["profile-restaurant-roulette-entry"].exists)
         XCTAssertTrue(app.buttons["profile-taste-analysis-entry"].exists)
@@ -265,8 +270,10 @@ final class TasteMapUITests: XCTestCase {
         ]
         app.launch()
 
-        XCTAssertTrue(app.descendants(matching: .any)["profile-compact-header"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.descendants(matching: .any)["profile-horizontal-statistics"].exists)
+        XCTAssertTrue(app.buttons["profile-edit-button"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["profile-stat-visited"].exists)
+        XCTAssertTrue(app.buttons["profile-stat-want"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["profile-stat-spend"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["profile-primary-actions"].exists)
         XCTAssertTrue(app.buttons["profile-restaurant-roulette-entry"].isHittable)
         XCTAssertTrue(app.buttons["profile-taste-analysis-entry"].isHittable)
@@ -666,6 +673,7 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     func testP3DCommunityFeedOpensPublicProfileRestaurantAndSupportsExplicitWantToGo() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
         app.launchEnvironment = ["TASTEMAP_P3D_COMMUNITY_UI_TEST": "1"]
         app.launch()
         app.buttons["发现"].tap()
@@ -686,6 +694,9 @@ final class TasteMapUITests: XCTestCase {
         app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["公开主页"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["常去小馆的阿岚"].exists)
+        XCTAssertTrue(app.staticTexts["常去小馆的阿岚"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["public-profile-metric-strip"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Core Parity Public Profile After", of: app)
         app.buttons["完成"].tap()
 
         app.staticTexts["云边小馆·湖滨店"].tap()
@@ -2559,6 +2570,7 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     func testP4HFreeProfilePaywallFeatureGateAndDevelopmentUpgrade() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
         app.launchEnvironment = [
             "TASTEMAP_P4A_ANALYSIS_UI_TEST": "1",
             "TASTEMAP_P4H_PREMIUM_UI_TEST": "free",
@@ -2594,6 +2606,22 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["premium-paywall-close"].tap()
         XCTAssertTrue(app.staticTexts["你真正喜欢什么"].waitForExistence(timeout: 8))
         XCTAssertFalse(gate.exists)
+    }
+
+    @MainActor
+    func testCoreProductParityPremiumProfileUsesApprovedHamburgerBadge() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = [
+            "TASTEMAP_P4A_ANALYSIS_UI_TEST": "1",
+            "TASTEMAP_P4H_PREMIUM_UI_TEST": "premium",
+        ]
+        app.launch()
+
+        app.buttons["我的"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["profile-premium-badge-entry"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Core Parity Approved Premium Hamburger", of: app)
     }
 
     @MainActor

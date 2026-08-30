@@ -21,8 +21,18 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 9. Roulette 页面与 Wheel 本体需要先审计 Git 历史、旧截图、旧资产和已认可测试版；恢复已确认版本，不凭感觉创建第四套。Wheel segments 必须与真实 candidate pool 一一对应，禁止复制餐厅、placeholder segment 或视觉/结果集合不一致。
 10. Premium badge 必须恢复历史测试版已经认可的同一枚 hamburger asset，并在 Profile、Premium 与会员状态入口复用；禁止重新设计或出现第三种汉堡。
 11. Marker 规则按最新时间顺序合并：正常/近距离每家 Restaurant 优先独立 Marker；禁止纯数字 `38 / 12 / 7` 气泡。只有极远缩放才允许 `Food/Dining visual + auxiliary count` 的稳定聚合；这覆盖早期“任何层级绝不聚合”的要求，但不允许数字成为唯一主体。
+12. 全局 Icon / Label 规则：图标必须具有真实语义；同一层级组件组要么全部使用语义 icon，要么全部不用。City Filter 使用城市/建筑语义，不得用 GPS 图标冒充；定位图标只表示真实 current location。熟悉的系统动作可使用 icon-only，但必须有明确 accessibility label；筛选与数据维度需要时使用 icon + 短文字/当前值，禁止冗余长说明。
 
 该修订不会创建第二套 Map、Discovery 或 Profile；现有正式页面就地收口。
+
+### Module execution status
+
+- Module 1 Map / List：已完成并独立提交。
+- Module 2 Add Restaurant / Nearby：已完成并独立提交。
+- Module 3 Discovery / Community：已完成并独立提交。
+- 正式名称 override：`最佳饭搭子`、`谁最会种草` 已完成并独立提交。
+- Module 4 Profile / Public Profile / Premium badge：已完成；证据与测试见 [FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md](reports/FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md)。
+- 下一项：Module 5 Global Restaurant Detail single source。
 
 ## 1. Executive conclusion
 

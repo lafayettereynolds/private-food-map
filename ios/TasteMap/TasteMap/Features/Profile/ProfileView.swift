@@ -66,9 +66,14 @@ struct ProfileView: View {
                         avatarPhoto: avatarPhoto,
                         isSignedIn: authenticatedUser != nil,
                         membershipStatus: premiumEntitlementService.membershipStatus,
+                        socialStatistics: socialStatistics,
                         onEdit: { isEditingProfile = true },
                         onSignIn: { Task { await signIn() } },
-                        onPremium: { premiumEntitlementService.openPaywall(from: .profile) }
+                        onPremium: { premiumEntitlementService.openPaywall(from: .profile) },
+                        onFriends: { socialHubSection = .friends },
+                        onFollowing: { socialHubSection = .follows },
+                        onFollowers: { socialHubSection = .follows },
+                        onDiscover: { socialHubSection = .search }
                     )
                     if isRunningAuthOperation {
                         ProgressView()
@@ -81,34 +86,15 @@ struct ProfileView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if authenticatedUser != nil {
-                        ProfileStatisticsSection(statistics: statistics)
+                        ProfileStatisticsSection(
+                            statistics: statistics,
+                            onVisited: { browseDestination = .visited },
+                            onWantToGo: { browseDestination = .wantToGo }
+                        )
                         primaryActions
                         memoriesSection
                         listsSection
                         insightsSection
-                    }
-                    if let userID = authenticatedUser?.id {
-                        ProfileSocialStatisticsSection(
-                            statistics: socialStatistics,
-                            onFriends: { socialHubSection = .friends },
-                            onFollowing: { socialHubSection = .follows },
-                            onFollowers: { socialHubSection = .follows },
-                            onDiscover: { socialHubSection = .search }
-                        )
-                        .sheet(item: $socialHubSection, onDismiss: {
-                            Task { await loadSocialStatistics() }
-                        }) { initialSection in
-                            SocialHubView(
-                                currentUserID: userID, api: authServices.socialAPI,
-                                communityAPI: authServices.communityAPI,
-                                collaborationAPI: authServices.socialCollaborationAPI,
-                                interactionAPI: authServices.socialCollaborationAPI,
-                                safetyAPI: authServices.releaseSafetyAPI,
-                                photoAPI: authServices.photoAPI,
-                                restaurantListAPI: authServices.restaurantListAPI,
-                                initialSection: initialSection
-                            )
-                        }
                     }
                     if authenticatedUser != nil, activeRestaurants.isEmpty {
                         ContentUnavailableView(
@@ -151,6 +137,22 @@ struct ProfileView: View {
             .sheet(isPresented: $isEditingProfile) {
                 if let activeProfile {
                     ProfileEditorSheet(profile: activeProfile, avatarPhoto: avatarPhoto)
+                }
+            }
+            .sheet(item: $socialHubSection, onDismiss: {
+                Task { await loadSocialStatistics() }
+            }) { initialSection in
+                if let userID = authenticatedUser?.id {
+                    SocialHubView(
+                        currentUserID: userID, api: authServices.socialAPI,
+                        communityAPI: authServices.communityAPI,
+                        collaborationAPI: authServices.socialCollaborationAPI,
+                        interactionAPI: authServices.socialCollaborationAPI,
+                        safetyAPI: authServices.releaseSafetyAPI,
+                        photoAPI: authServices.photoAPI,
+                        restaurantListAPI: authServices.restaurantListAPI,
+                        initialSection: initialSection
+                    )
                 }
             }
             .task { await restoreSessionAndProfile() }
@@ -532,85 +534,125 @@ private struct ProfileIdentityCard: View {
     let avatarPhoto: PhotoAsset?
     let isSignedIn: Bool
     let membershipStatus: MembershipStatus
+    let socialStatistics: ProfileSocialStatistics
     let onEdit: () -> Void
     let onSignIn: () -> Void
     let onPremium: () -> Void
+    let onFriends: () -> Void
+    let onFollowing: () -> Void
+    let onFollowers: () -> Void
+    let onDiscover: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            ProfileAvatarView(profile: profile, photo: avatarPhoto)
-                .frame(width: isSignedIn ? 72 : 62, height: isSignedIn ? 72 : 62)
-            if let profile, isSignedIn {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 7) {
-                        Text(profile.displayName)
-                            .font(.title3.bold())
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        if membershipStatus == .premium || membershipStatus == .gracePeriod {
-                            Button(action: onPremium) {
-                                PremiumBurgerBadge().frame(width: 22, height: 22)
+        VStack(spacing: 11) {
+            HStack(alignment: .center, spacing: 13) {
+                ProfileAvatarView(profile: profile, photo: avatarPhoto)
+                    .frame(width: isSignedIn ? 64 : 58, height: isSignedIn ? 64 : 58)
+                if let profile, isSignedIn {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 7) {
+                            Text(profile.displayName)
+                                .font(.headline.bold())
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            if membershipStatus == .premium || membershipStatus == .gracePeriod {
+                                Button(action: onPremium) {
+                                    PremiumBurgerBadge().frame(width: 21, height: 21)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Taste Map Premium 已开通，查看会员状态")
+                                .accessibilityIdentifier("profile-premium-badge-entry")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Taste Map Premium 已开通，查看会员状态")
-                            .accessibilityIdentifier("profile-premium-badge-entry")
+                        }
+                        if !profile.bio.isEmpty {
+                            Text(profile.bio)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .accessibilityIdentifier("profile-bio-text")
+                        }
+                        HStack(spacing: 8) {
+                            if !profile.city.isEmpty {
+                                Label(profile.city, systemImage: "building.2")
+                                    .accessibilityIdentifier("profile-city-text")
+                            }
+                            Label {
+                                Text("加入于 \(profile.createdAt.formatted(.dateTime.year().month()))")
+                            } icon: {
+                                Image(systemName: "calendar.badge.checkmark")
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+
+                        HStack(spacing: 8) {
+                            Button("编辑资料", action: onEdit)
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .accessibilityIdentifier("profile-edit-button")
+                            if membershipStatus == .free || membershipStatus == .expired {
+                                Button("Premium", action: onPremium)
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+                                    .accessibilityIdentifier("profile-premium-entry")
+                            }
                         }
                     }
-                    if !profile.bio.isEmpty {
-                        Text(profile.bio)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("记录属于你的每一顿")
+                            .font(.headline)
+                        Text("登录后查看个人档案、统计与回味。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .accessibilityIdentifier("profile-bio-text")
-                    }
-                    HStack(spacing: 8) {
-                        if !profile.city.isEmpty {
-                            Label(profile.city, systemImage: "mappin.and.ellipse")
-                                .accessibilityIdentifier("profile-city-text")
+                        Button(action: onSignIn) {
+                            Label("使用 Apple 登录", systemImage: "apple.logo")
                         }
-                        Label {
-                            Text("加入于 \(profile.createdAt.formatted(.dateTime.year().month()))")
-                        } icon: {
-                            Image(systemName: "calendar.badge.checkmark")
-                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("profile-sign-in-button")
                     }
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
 
-                    HStack(spacing: 8) {
-                        Button("编辑资料", action: onEdit)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .accessibilityIdentifier("profile-edit-button")
-                        if membershipStatus == .free || membershipStatus == .expired {
-                            Button("Premium", action: onPremium)
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                                .accessibilityIdentifier("profile-premium-entry")
-                        }
+            if isSignedIn {
+                Divider()
+                HStack(spacing: 12) {
+                    connectionMetric(
+                        "关注", value: socialStatistics.followingCount,
+                        systemImage: "person.crop.circle.badge.checkmark",
+                        identifier: "profile-following-stat", action: onFollowing
+                    )
+                    connectionMetric(
+                        "被关注", value: socialStatistics.followerCount,
+                        systemImage: "person.2",
+                        identifier: "profile-followers-stat", action: onFollowers
+                    )
+                    Spacer(minLength: 0)
+                    Button(action: onFriends) {
+                        Image(systemName: "person.2.fill")
+                            .frame(width: 36, height: 36)
+                            .background(TasteMapCoreTheme.brandSoft, in: Circle())
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("记录属于你的每一顿")
-                        .font(.headline)
-                    Text("登录后查看个人档案、统计与回味。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button(action: onSignIn) {
-                        Label("使用 Apple 登录", systemImage: "apple.logo")
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("好友 \(socialStatistics.friendCount)，查看")
+                    .accessibilityIdentifier("profile-friends-stat")
+                    Button(action: onDiscover) {
+                        Image(systemName: "person.badge.plus")
+                            .frame(width: 36, height: 36)
+                            .background(TasteMapCoreTheme.brandSoft, in: Circle())
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityIdentifier("profile-sign-in-button")
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("找人")
+                    .accessibilityIdentifier("profile-social-entry")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(14)
+        .padding(12)
         .background(
             LinearGradient(
                 colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surface],
@@ -624,40 +666,76 @@ private struct ProfileIdentityCard: View {
                 .stroke(TasteMapCoreTheme.border.opacity(0.9))
         }
         .shadow(color: TasteMapCoreTheme.cardShadow, radius: 8, y: 3)
-        .accessibilityIdentifier("profile-compact-header")
+    }
+
+    private func connectionMetric(
+        _ title: String,
+        value: Int,
+        systemImage: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label("\(value) \(title)", systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 36)
+        .accessibilityLabel("\(title) \(value)，查看")
+        .accessibilityIdentifier(identifier)
     }
 }
 
 private struct ProfileStatisticsSection: View {
     let statistics: ProfileBasicStatistics
+    let onVisited: () -> Void
+    let onWantToGo: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            statistic("去过", value: "\(statistics.visitedRestaurantCount)")
+            Button(action: onVisited) {
+                statistic(
+                    "去过", value: "\(statistics.visitedRestaurantCount)",
+                    systemImage: "checkmark.circle.fill"
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile-stat-visited")
             Divider().frame(height: 36)
-            statistic("到访", value: "\(statistics.visitCount)")
+            Button(action: onWantToGo) {
+                statistic(
+                    "想去", value: "\(statistics.wantToGoRestaurantCount)",
+                    systemImage: "bookmark.fill"
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile-stat-want")
             Divider().frame(height: 36)
             statistic(
-                "平均分",
-                value: statistics.averageRating.map { String(format: "%.1f", $0) } ?? "—"
+                "总消费",
+                value: statistics.totalSpend.map(Self.currencyString) ?? "—",
+                systemImage: "receipt.fill"
             )
-            Divider().frame(height: 36)
-            statistic(
-                "消费",
-                value: statistics.totalSpend.map(Self.currencyString) ?? "—"
-            )
+            .accessibilityIdentifier("profile-stat-spend")
         }
-        .padding(.vertical, 11)
+        .padding(.vertical, 8)
         .tasteMapCoreCard(radius: 18)
-        .accessibilityIdentifier("profile-horizontal-statistics")
     }
 
-    private func statistic(_ title: String, value: String) -> some View {
+    private func statistic(_ title: String, value: String, systemImage: String) -> some View {
         VStack(spacing: 3) {
-            Text(value)
-                .font(.subheadline.bold())
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TasteMapCoreTheme.brand)
+                    .accessibilityHidden(true)
+                Text(value)
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+            }
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 42)
@@ -669,50 +747,6 @@ private struct ProfileStatisticsSection: View {
         formatter.maximumFractionDigits = 0
         formatter.locale = .current
         return formatter.string(from: NSDecimalNumber(decimal: value)) ?? "¥\(value)"
-    }
-}
-
-private struct ProfileSocialStatisticsSection: View {
-    let statistics: ProfileSocialStatistics
-    let onFriends: () -> Void
-    let onFollowing: () -> Void
-    let onFollowers: () -> Void
-    let onDiscover: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("好友与关注").font(.headline)
-                Spacer()
-                Button("找人", systemImage: "person.badge.plus", action: onDiscover)
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("profile-social-entry")
-            }
-            HStack(spacing: 10) {
-                statistic("好友", value: statistics.friendCount, action: onFriends)
-                    .accessibilityIdentifier("profile-friends-stat")
-                statistic("关注", value: statistics.followingCount, action: onFollowing)
-                    .accessibilityIdentifier("profile-following-stat")
-                statistic("粉丝", value: statistics.followerCount, action: onFollowers)
-                    .accessibilityIdentifier("profile-followers-stat")
-            }
-        }
-        .padding(16)
-        .tasteMapCoreCard(radius: 20)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func statistic(_ title: String, value: Int, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Text("\(value)").font(.title3.bold()).foregroundStyle(.primary)
-                Text(title).font(.caption).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 54)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(title) \(value)，查看")
     }
 }
 
@@ -787,29 +821,34 @@ private struct ProfileDashboardTile: View {
     var premiumFeature: PremiumFeature?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text(emoji)
-                    .font(.title3)
-                    .frame(width: 36, height: 36)
-                    .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                Spacer(minLength: 4)
+        HStack(spacing: 10) {
+            Text(emoji)
+                .font(.title3)
+                .frame(width: 38, height: 38)
+                .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
                 if let premiumFeature {
                     PremiumFeatureInlineBadge(feature: premiumFeature)
                 }
             }
-            Text(title)
-                .font(.subheadline.bold())
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-            Text(detail)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
-        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
         .tasteMapCoreCard(radius: 17)
     }
 }
@@ -836,9 +875,9 @@ private struct ProfileCompactTile: View {
                     .scaleEffect(0.88)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 96)
+        .frame(maxWidth: .infinity, minHeight: 78)
         .padding(.horizontal, 6)
-        .padding(.vertical, 9)
+        .padding(.vertical, 7)
         .tasteMapCoreCard(radius: 16)
     }
 }
@@ -1064,11 +1103,20 @@ private struct ProfilePreviewScreen: View {
                     avatarPhoto: photo,
                     isSignedIn: true,
                     membershipStatus: .free,
+                    socialStatistics: .init(friendCount: 8, followingCount: 18, followerCount: 9),
                     onEdit: {},
                     onSignIn: {},
-                    onPremium: {}
+                    onPremium: {},
+                    onFriends: {},
+                    onFollowing: {},
+                    onFollowers: {},
+                    onDiscover: {}
                 )
-                ProfileStatisticsSection(statistics: statistics)
+                ProfileStatisticsSection(
+                    statistics: statistics,
+                    onVisited: {},
+                    onWantToGo: {}
+                )
                 ProfileContentLinks(
                     visitedCount: statistics.visitedRestaurantCount,
                     wantToGoCount: statistics.wantToGoRestaurantCount,

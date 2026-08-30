@@ -487,20 +487,12 @@ struct SocialPublicProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
-                    PresetProfileAvatarView(preset: item.profile.avatarPresetId)
-                        .frame(width: 104, height: 104).clipShape(Circle())
-                    Text(item.profile.displayName).font(.title2.bold())
-                    if let city = item.profile.city { Label(city, systemImage: "mappin.and.ellipse").foregroundStyle(.secondary) }
-                    if let bio = item.profile.bio { Text(bio).multilineTextAlignment(.center).foregroundStyle(.secondary) }
-                    HStack(spacing: 12) { friendshipButtons; followButton }
+                VStack(spacing: 14) {
+                    publicIdentityHeader
+                    HStack(spacing: 10) { friendshipButtons; followButton }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    publicMetricStrip
                     if let overview { publicOverview(overview) }
-                    if let statistics = context?.profile.statistics {
-                        HStack(spacing: 12) {
-                            statistic("去过餐厅", statistics.publicRestaurantCount)
-                            statistic("可见到访", statistics.publicVisitCount)
-                        }
-                    }
                     if communityAPI != nil {
                         Picker("公开内容", selection: $contentSection) {
                             Text("公开记录").tag(PublicContentSectionV1.visits)
@@ -520,7 +512,8 @@ struct SocialPublicProfileView: View {
                     if processing { ProgressView("处理中…") }
                     if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
                 }
-                .padding(24)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
             }
             .navigationTitle("公开主页")
             .navigationBarTitleDisplayMode(.inline)
@@ -566,6 +559,61 @@ struct SocialPublicProfileView: View {
                 Text("你们将无法在搜索、主页和社区内容中看到对方。已有好友和关注关系会解除。")
             }
         }
+    }
+
+    private var publicIdentityHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            PresetProfileAvatarView(preset: item.profile.avatarPresetId)
+                .frame(width: 80, height: 80)
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                Text(item.profile.displayName)
+                    .font(.title3.bold())
+                    .lineLimit(2)
+                if let city = item.profile.city {
+                    Label(city, systemImage: "building.2")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let bio = item.profile.bio {
+                    Text(bio)
+                        .font(.subheadline)
+                        .lineLimit(2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("public-profile-compact-header")
+    }
+
+    @ViewBuilder
+    private var publicMetricStrip: some View {
+        HStack(spacing: 0) {
+            publicMetric("关注", overview?.followingCount)
+            Divider().frame(height: 34)
+            publicMetric("被关注", overview?.followerCount)
+            Divider().frame(height: 34)
+            publicMetric("去过", context?.profile.statistics.publicRestaurantCount)
+            Divider().frame(height: 34)
+            publicMetric("公开记录", context?.profile.statistics.publicVisitCount)
+        }
+        .padding(.vertical, 8)
+        .tasteMapCoreCard(radius: 16)
+        .accessibilityIdentifier("public-profile-metric-strip")
+    }
+
+    private func publicMetric(_ title: String, _ value: Int?) -> some View {
+        VStack(spacing: 3) {
+            Text(value.map(String.init) ?? "—")
+                .font(.subheadline.bold())
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 38)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -631,17 +679,12 @@ struct SocialPublicProfileView: View {
             .buttonStyle(.bordered).tint(item.isFollowing ? .secondary : .accentColor)
     }
 
-    private func statistic(_ label: String, _ value: Int) -> some View {
-        VStack(spacing: 5) { Text("\(value)").font(.title2.bold()); Text(label).font(.caption).foregroundStyle(.secondary) }
-            .frame(maxWidth: .infinity).padding().tasteMapCoreCard(radius: 18)
-    }
-
     private func publicOverview(_ overview: PublicProfileOverviewV1) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                statistic("好友", overview.friendCount)
-                statistic("关注", overview.followingCount)
-                statistic("粉丝", overview.followerCount)
+            if overview.friendCount > 0 {
+                Label("好友 \(overview.friendCount)", systemImage: "person.2.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
             }
             if overview.commonWantToGoCount > 0 {
                 Label("你们有 \(overview.commonWantToGoCount) 家共同想吃", systemImage: "bookmark.fill")

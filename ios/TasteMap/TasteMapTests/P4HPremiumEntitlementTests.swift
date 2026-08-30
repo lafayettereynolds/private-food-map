@@ -118,6 +118,8 @@ struct P4HPremiumEntitlementTests {
         #expect(!PremiumFeature.allCases.map(\.rawValue).contains("restaurant_roulette"))
         #expect(PremiumFeatureRegistry.definition(for: .companionAnalysis).title == "最佳饭搭子")
         #expect(PremiumFeatureRegistry.definition(for: .recommendationSourceAnalysis).title == "谁最会种草")
+        #expect(PremiumBurgerAssetContract.semanticVersion == "web-approved-hamburger-v1")
+        #expect(PremiumBurgerAssetContract.viewBox == 24)
     }
 
     @Test("16-20 UI, direct navigation, analyzer and Poster operations share the same policy")
