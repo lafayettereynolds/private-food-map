@@ -1,4 +1,5 @@
 import Foundation
+import StoreKitTest
 import Testing
 @testable import TasteMap
 
@@ -66,6 +67,25 @@ struct Task08PremiumCommerceTests {
             "dev.tastemap.storekit.monthly", "dev.tastemap.storekit.yearly",
         ])
         #expect(subscriptions.allSatisfy { (($0["productID"] as? String) ?? "").hasPrefix("dev.") })
+    }
+
+    @Test("local StoreKit session opens the Development fixture and clears simulated transactions")
+    func localStoreKitSession() throws {
+        let configurationURL = try #require(Bundle(for: BundleProbe.self).url(
+            forResource: "TasteMapDevelopment", withExtension: "storekit"
+        ))
+        let session = try SKTestSession(contentsOf: configurationURL)
+        session.disableDialogs = true
+        session.clearTransactions()
+        defer {
+            session.clearTransactions()
+            session.resetToDefaultState()
+        }
+
+        #expect(session.allTransactions().isEmpty)
+        session.resetToDefaultState()
+        session.clearTransactions()
+        #expect(session.allTransactions().isEmpty)
     }
 }
 

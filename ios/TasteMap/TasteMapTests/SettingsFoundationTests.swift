@@ -10,8 +10,10 @@ struct SettingsFoundationTests {
         let values = [
             ReleaseConfiguration.developmentPrivacyKey: "https://dev.example.test/privacy",
             ReleaseConfiguration.developmentTermsKey: "https://dev.example.test/terms",
+            ReleaseConfiguration.developmentSupportKey: "https://dev.example.test/support",
             ReleaseConfiguration.productionPrivacyKey: "https://www.example.test/privacy",
             ReleaseConfiguration.productionTermsKey: "https://www.example.test/terms",
+            ReleaseConfiguration.productionSupportKey: "https://www.example.test/support",
         ]
         let development = ReleaseConfiguration.resolve(environment: .development, values: values)
         let production = ReleaseConfiguration.resolve(environment: .production, values: values)
@@ -50,6 +52,7 @@ struct SettingsFoundationTests {
         #expect(development.releaseValidationIssues.isEmpty)
         #expect(production.releaseValidationIssues.contains(.missingPrivacyPolicy))
         #expect(production.releaseValidationIssues.contains(.missingTermsOfService))
+        #expect(production.releaseValidationIssues.contains(.missingSupport))
     }
 
     @Test("Release availability exposes only implemented or configured settings")

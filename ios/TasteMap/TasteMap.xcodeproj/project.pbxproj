@@ -270,6 +270,11 @@
 					};
 					CEFC075F303FE869006C2B3B = {
 						CreatedOnToolsVersion = 26.6;
+						SystemCapabilities = {
+							com.apple.InAppPurchase = {
+								enabled = 1;
+							};
+						};
 					};
 					CEFC076C303FE86A006C2B3B = {
 						CreatedOnToolsVersion = 26.6;

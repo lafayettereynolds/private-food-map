@@ -105,6 +105,21 @@ describe('App Store commerce V1 integration', () => {
       .rejects.toMatchObject({ status: 503, code: 'app_store_server_not_configured' })
   })
 
+  it('fails closed when the Worker environment is missing or Production points at Sandbox', async () => {
+    const account = await configuration(database, 'tm_a', environment)
+    const verified = appleFetch(transaction('10008', '90008', account.appAccountToken, FUTURE))
+    const withoutAppEnvironment = { ...environment }
+    delete withoutAppEnvironment.APP_ENVIRONMENT
+
+    await expect(reconcile(database, 'tm_a', '10008', withoutAppEnvironment, verified))
+      .rejects.toMatchObject({ status: 503, code: 'app_environment_not_configured' })
+    await expect(reconcile(database, 'tm_a', '10008', {
+      ...environment,
+      APP_ENVIRONMENT: 'production',
+      APP_STORE_API_ENVIRONMENT: 'sandbox',
+    }, verified)).rejects.toMatchObject({ status: 503, code: 'unsafe_store_environment' })
+  })
+
   it('deduplicates notifications and never links an unknown token to the first user', async () => {
     const account = await configuration(database, 'tm_a', environment)
     const linked = transaction('10006', '90006', account.appAccountToken, FUTURE)

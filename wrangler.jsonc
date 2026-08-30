@@ -17,6 +17,19 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTO_STORAGE",
+      "bucket_name": "taste-map-photos"
+    }
+  ],
+  "vars": {
+    "APP_ENVIRONMENT": "production",
+    "SYNC_AUTH_MODE": "cloudflare-access",
+    "APPLE_CLIENT_IDS": "com.lafayette.tastemap",
+    "APP_STORE_BUNDLE_ID": "com.lafayette.tastemap",
+    "APP_STORE_API_ENVIRONMENT": "production"
+  },
   "observability": {
     "enabled": true
   }

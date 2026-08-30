@@ -408,8 +408,14 @@ function requireServerConfiguration(environment: AppStoreCommerceEnvironment) {
       (apiEnvironment !== 'sandbox' && apiEnvironment !== 'production')) {
     throw commerceError('App Store Server API 尚未安全配置。', 503, 'app_store_server_not_configured')
   }
+  if (environment.APP_ENVIRONMENT !== 'development' && environment.APP_ENVIRONMENT !== 'production') {
+    throw commerceError('Worker 发布环境尚未明确配置。', 503, 'app_environment_not_configured')
+  }
   if (environment.APP_ENVIRONMENT === 'development' && apiEnvironment !== 'sandbox') {
     throw commerceError('Development 只能验证 Sandbox 交易。', 503, 'unsafe_store_environment')
+  }
+  if (environment.APP_ENVIRONMENT === 'production' && apiEnvironment !== 'production') {
+    throw commerceError('Production 只能验证 Production 交易。', 503, 'unsafe_store_environment')
   }
   return { ...catalog, issuerId, keyId, privateKey, apiEnvironment }
 }

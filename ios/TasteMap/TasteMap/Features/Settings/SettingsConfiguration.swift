@@ -79,6 +79,7 @@ nonisolated enum ReleaseConfigurationValidationIssue: Equatable, Sendable {
     case invalidURL(key: String)
     case missingPrivacyPolicy
     case missingTermsOfService
+    case missingSupport
 }
 
 nonisolated struct ReleaseConfiguration: Equatable, Sendable {
@@ -150,6 +151,7 @@ nonisolated struct ReleaseConfiguration: Equatable, Sendable {
         guard environment == .production else { return issues }
         if legalLinks.privacyPolicyURL == nil { issues.append(.missingPrivacyPolicy) }
         if legalLinks.termsOfServiceURL == nil { issues.append(.missingTermsOfService) }
+        if legalLinks.supportURL == nil { issues.append(.missingSupport) }
         return issues
     }
 
