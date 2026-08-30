@@ -25,6 +25,7 @@ describe('Worker Sync API V1 integration', () => {
       SYNC_AUTH_MODE: 'development-test',
     })
     expect(developmentResponse.status).toBe(200)
+    expect(developmentResponse.headers.get('Server-Timing')).toContain('hydrate;dur=')
     expect(await database.prepare("SELECT is_test_user FROM users WHERE id = 'ios-development-user'").first())
       .toMatchObject({ is_test_user: 1 })
 
@@ -143,6 +144,46 @@ describe('Worker Sync API V1 integration', () => {
     const incremental = await pull(database, 'user-a', firstPull.nextCursor)
     expect(incremental.restaurants.map((item) => item.record.id)).toEqual([appleFixture.id])
     expect(incremental.visits.map((item) => item.record.id)).toEqual(['visit-2'])
+  })
+
+  it('hydrates a real-sized pull page with bounded batched reads and stays incremental', async () => {
+    const database = makeDatabase()
+    const records = Array.from({ length: 200 }, (_, index) => {
+      const id = `pull-sized-restaurant-${String(index).padStart(3, '0')}`
+      return {
+        ...appleFixture,
+        id,
+        userId: 'forged-owner',
+        name: `Pull sized restaurant ${index}`,
+        placeIdentities: appleFixture.placeIdentities.map((identity) => ({
+          ...identity,
+          externalId: `pull-sized-apple-${String(index).padStart(3, '0')}`,
+        })),
+      }
+    })
+    await push(database, 'pull-sized-user', ...records.slice(0, 100).map((record, index) =>
+      mutation(`pull-sized-mutation-${index}`, 'restaurant', record.id, 0, record)))
+    await push(database, 'pull-sized-user', ...records.slice(100).map((record, index) =>
+      mutation(`pull-sized-mutation-${index + 100}`, 'restaurant', record.id, 0, record)))
+
+    database.resetMetrics()
+    const startedAt = performance.now()
+    const first = await pull(database, 'pull-sized-user', '0')
+    const duration = performance.now() - startedAt
+
+    expect(first.restaurants).toHaveLength(200)
+    expect(first.hasMore).toBe(true)
+    expect(duration).toBeLessThan(2_000)
+    expect(database.batchCalls).toBe(2)
+    expect(database.queryExecutions).toBeLessThanOrEqual(10)
+
+    database.resetMetrics()
+    const incremental = await pull(database, 'pull-sized-user', first.nextCursor)
+    expect(incremental.restaurants).toEqual([])
+    expect(incremental.tombstones).toEqual([])
+    expect(incremental.hasMore).toBe(false)
+    expect(database.batchCalls).toBe(0)
+    expect(database.queryExecutions).toBe(1)
   })
 
   it('round-trips nullable party size, dining mode, and the original visit instant', async () => {
@@ -847,9 +888,19 @@ function makeDatabase() {
 }
 
 class SQLiteD1Database {
-  constructor(sqlite) { this.sqlite = sqlite }
-  prepare(sql) { return new SQLiteD1Statement(this.sqlite, sql) }
+  constructor(sqlite) {
+    this.sqlite = sqlite
+    this.queryExecutions = 0
+    this.batchCalls = 0
+    this.maxBatchSize = 0
+  }
+  prepare(sql) {
+    return new SQLiteD1Statement(this.sqlite, sql, [], () => { this.queryExecutions += 1 })
+  }
   async batch(statements) {
+    this.batchCalls += 1
+    this.maxBatchSize = Math.max(this.maxBatchSize, statements.length)
+    this.queryExecutions += statements.length
     this.sqlite.exec('BEGIN IMMEDIATE')
     try {
       const results = statements.map((statement) => statement.batchSync())
@@ -861,14 +912,33 @@ class SQLiteD1Database {
     }
   }
   get(sql, ...values) { return this.sqlite.prepare(sql).get(...values) }
+  resetMetrics() {
+    this.queryExecutions = 0
+    this.batchCalls = 0
+    this.maxBatchSize = 0
+  }
 }
 
 class SQLiteD1Statement {
-  constructor(sqlite, sql, values = []) { this.sqlite = sqlite; this.sql = sql; this.values = values }
-  bind(...values) { return new SQLiteD1Statement(this.sqlite, this.sql, values) }
-  async first() { return this.sqlite.prepare(this.sql).get(...this.values) ?? null }
-  async all() { return { results: this.sqlite.prepare(this.sql).all(...this.values), success: true, meta: {} } }
-  async run() { return this.runSync() }
+  constructor(sqlite, sql, values = [], onExecute = () => {}) {
+    this.sqlite = sqlite
+    this.sql = sql
+    this.values = values
+    this.onExecute = onExecute
+  }
+  bind(...values) { return new SQLiteD1Statement(this.sqlite, this.sql, values, this.onExecute) }
+  async first() {
+    this.onExecute()
+    return this.sqlite.prepare(this.sql).get(...this.values) ?? null
+  }
+  async all() {
+    this.onExecute()
+    return { results: this.sqlite.prepare(this.sql).all(...this.values), success: true, meta: {} }
+  }
+  async run() {
+    this.onExecute()
+    return this.runSync()
+  }
   batchSync() {
     if (/^\s*(SELECT|PRAGMA|WITH)\b/i.test(this.sql)) {
       return { success: true, results: this.sqlite.prepare(this.sql).all(...this.values), meta: {} }

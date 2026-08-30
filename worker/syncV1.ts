@@ -31,6 +31,7 @@ import {
 import { groupRestaurantPlaceIdentities, type RestaurantPlaceIdentityRow } from './restaurantIdentityMapping'
 
 const MAX_PULL_LIMIT = 200
+const PULL_ID_BATCH_SIZE = 50
 const CHANGE_LOG_TABLE = 'sync_change_log_v6'
 const RECEIPT_TABLE = 'sync_mutation_receipts_v6'
 
@@ -233,11 +234,44 @@ interface SyncRestaurantListItemRow extends VersionedEntityRow {
   updated_at: string
 }
 
+type SyncEntityDatabaseRow = SyncRestaurantRow | SyncVisitRow | SyncDishRow |
+  SyncVisitDishRow | SyncPhotoRow | SyncCompanionRow | SyncRecommendationSourceRow |
+  SyncProfileRow | SyncRestaurantListRow | SyncRestaurantListItemRow
+
+const SYNC_ENTITY_READ_SPECS: Record<SyncEntityType, {
+  table: string
+  ownerColumn: string
+  idColumn: string
+}> = {
+  restaurant: { table: 'restaurants', ownerColumn: 'user_id', idColumn: 'id' },
+  visit: { table: 'visits', ownerColumn: 'user_id', idColumn: 'id' },
+  dish: { table: 'dishes', ownerColumn: 'user_id', idColumn: 'id' },
+  visitDish: { table: 'visit_dishes', ownerColumn: 'user_id', idColumn: 'id' },
+  photo: { table: 'photos', ownerColumn: 'user_id', idColumn: 'id' },
+  companion: { table: 'dining_companions', ownerColumn: 'owner_user_id', idColumn: 'id' },
+  recommendationSource: { table: 'recommendation_sources', ownerColumn: 'user_id', idColumn: 'id' },
+  profile: { table: 'user_profiles', ownerColumn: 'user_id', idColumn: 'user_id' },
+  restaurantList: { table: 'restaurant_lists', ownerColumn: 'user_id', idColumn: 'id' },
+  restaurantListItem: { table: 'restaurant_list_items', ownerColumn: 'user_id', idColumn: 'id' },
+}
+
 export class SyncV1RequestError extends Error {
   constructor(message: string, readonly status: number) {
     super(message)
     this.name = 'SyncV1RequestError'
   }
+}
+
+export interface SyncV1PullObservation {
+  ledgerQueryDurationMs: number
+  hydrationQueryDurationMs: number
+  responseAssemblyDurationMs: number
+  changeCount: number
+  hydratedEntityCount: number
+  tombstoneCount: number
+  cursorFrom: string
+  cursorTo: string
+  hasMore: boolean
 }
 
 export async function handleSyncV1Push(
@@ -272,7 +306,9 @@ export async function handleSyncV1Pull(
   database: D1Database,
   viewerId: string,
   request: Request,
+  observation?: SyncV1PullObservation,
 ): Promise<SyncPullResponseV1> {
+  const pullStartedAt = performance.now()
   const url = new URL(request.url)
   if (url.searchParams.get('schemaVersion') !== String(SYNC_SCHEMA_VERSION)) {
     throw new SyncV1RequestError('schemaVersion=1 is required.', 400)
@@ -282,173 +318,153 @@ export async function handleSyncV1Pull(
   const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
     ? Math.min(requestedLimit, MAX_PULL_LIMIT)
     : MAX_PULL_LIMIT
+  const ledgerQueryStartedAt = performance.now()
   const result = await database.prepare(`SELECT * FROM ${CHANGE_LOG_TABLE}
     WHERE user_id = ? AND revision > ? ORDER BY revision ASC LIMIT ?`)
     .bind(viewerId, cursor, limit).all<ChangeRow>()
+  if (observation) observation.ledgerQueryDurationMs += performance.now() - ledgerQueryStartedAt
   const changes = result.results
   const latestInPage = new Map<string, ChangeRow>()
   changes.forEach((change) => latestInPage.set(`${change.entity_type}:${change.entity_id}`, change))
 
-  const restaurants = [] as SyncPullResponseV1['restaurants']
-  const visits = [] as SyncPullResponseV1['visits']
-  const dishes = [] as SyncPullResponseV1['dishes']
-  const visitDishes = [] as SyncPullResponseV1['visitDishes']
-  const photos = [] as SyncPullResponseV1['photos']
-  const companions = [] as SyncPullResponseV1['companions']
-  const recommendationSources = [] as SyncPullResponseV1['recommendationSources']
-  const profiles = [] as SyncPullResponseV1['profiles']
-  const restaurantLists = [] as SyncPullResponseV1['restaurantLists']
-  const restaurantListItems = [] as SyncPullResponseV1['restaurantListItems']
+  const pageRows = await readSyncEntityRows(
+    database, viewerId, groupChangeIDs(latestInPage.values()), observation,
+  )
+  const activeRestaurantRows: SyncRestaurantRow[] = []
+  const activeVisitRows: SyncVisitRow[] = []
+  const activeDishRows: SyncDishRow[] = []
+  const activeVisitDishRows: SyncVisitDishRow[] = []
+  const activePhotoRows: SyncPhotoRow[] = []
+  const activeCompanionRows: SyncCompanionRow[] = []
+  const activeRecommendationSourceRows: SyncRecommendationSourceRow[] = []
+  const activeProfileRows: SyncProfileRow[] = []
+  const activeRestaurantListRows: SyncRestaurantListRow[] = []
+  const activeRestaurantListItemRows: SyncRestaurantListItemRow[] = []
   const tombstones = [] as SyncPullResponseV1['tombstones']
   for (const change of latestInPage.values()) {
-    if (change.entity_type === 'restaurant') {
-      const row = await database.prepare('SELECT * FROM restaurants WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncRestaurantRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        const identities = await readPlaceIdentities(database, viewerId, row.id)
-        restaurants.push({ serverVersion: row.server_version, record: rowToRestaurant(row, identities) })
-      }
-    } else if (change.entity_type === 'visit') {
-      const row = await database.prepare('SELECT * FROM visits WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncVisitRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        visits.push({ serverVersion: row.server_version, record: rowToVisit(row) })
-      }
-    } else if (change.entity_type === 'dish') {
-      const row = await database.prepare('SELECT * FROM dishes WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncDishRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        dishes.push({ serverVersion: row.server_version, record: rowToDish(row) })
-      }
-    } else if (change.entity_type === 'visitDish') {
-      const row = await database.prepare('SELECT * FROM visit_dishes WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncVisitDishRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        visitDishes.push({ serverVersion: row.server_version, record: rowToVisitDish(row) })
-      }
-    } else if (change.entity_type === 'photo') {
-      const row = await database.prepare('SELECT * FROM photos WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncPhotoRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        photos.push({ serverVersion: row.server_version, record: rowToPhoto(row) })
-      }
-    } else if (change.entity_type === 'companion') {
-      const row = await database.prepare('SELECT * FROM dining_companions WHERE id = ? AND owner_user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncCompanionRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        companions.push({ serverVersion: row.server_version, record: rowToCompanion(row) })
-      }
-    } else if (change.entity_type === 'recommendationSource') {
-      const row = await database.prepare('SELECT * FROM recommendation_sources WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncRecommendationSourceRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        recommendationSources.push({ serverVersion: row.server_version, record: rowToRecommendationSource(row) })
-      }
-    } else if (change.entity_type === 'profile') {
-      const row = await database.prepare('SELECT * FROM user_profiles WHERE user_id = ?')
-        .bind(viewerId).first<SyncProfileRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        profiles.push({ serverVersion: row.server_version, record: rowToProfile(row) })
-      }
-    } else if (change.entity_type === 'restaurantList') {
-      const row = await database.prepare('SELECT * FROM restaurant_lists WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncRestaurantListRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        restaurantLists.push({ serverVersion: row.server_version, record: rowToRestaurantList(row) })
-      }
-    } else if (change.entity_type === 'restaurantListItem') {
-      const row = await database.prepare('SELECT * FROM restaurant_list_items WHERE id = ? AND user_id = ?')
-        .bind(change.entity_id, viewerId).first<SyncRestaurantListItemRow>()
-      if (!row || row.server_version !== change.server_version) continue
-      if (change.operation === 'delete' || row.deleted_at) {
-        tombstones.push(tombstone(change, row.deleted_at))
-      } else {
-        restaurantListItems.push({
-          serverVersion: row.server_version,
-          record: await rowToRestaurantListItem(database, viewerId, row),
-        })
-      }
+    const row = pageRows.get(change.entity_type)?.get(change.entity_id)
+    if (!row || row.server_version !== change.server_version) continue
+    if (change.operation === 'delete' || row.deleted_at) {
+      tombstones.push(tombstone(change, row.deleted_at))
+      continue
     }
-  }
-  const includedRestaurantIDs = new Set(restaurants.map((item) => item.record.id))
-  for (const visit of visits) {
-    if (includedRestaurantIDs.has(visit.record.restaurantId)) continue
-    const parent = await database.prepare('SELECT * FROM restaurants WHERE id = ? AND user_id = ?')
-      .bind(visit.record.restaurantId, viewerId).first<SyncRestaurantRow>()
-    if (!parent) throw new SyncV1RequestError(`Visit ${visit.record.id} has no Restaurant.`, 500)
-    const identities = await readPlaceIdentities(database, viewerId, parent.id)
-    restaurants.push({ serverVersion: parent.server_version, record: rowToRestaurant(parent, identities) })
-    includedRestaurantIDs.add(parent.id)
-  }
-  const includedVisitIDs = new Set(visits.map((item) => item.record.id))
-  for (const child of [...dishes, ...visitDishes, ...photos].filter((item) => item.record.visitId)) {
-    const visitId = child.record.visitId as string
-    if (includedVisitIDs.has(visitId)) continue
-    const parent = await database.prepare('SELECT * FROM visits WHERE id = ? AND user_id = ?')
-      .bind(visitId, viewerId).first<SyncVisitRow>()
-    if (!parent) throw new SyncV1RequestError(`Child entity has no Visit ${visitId}.`, 500)
-    visits.push({ serverVersion: parent.server_version, record: rowToVisit(parent) })
-    includedVisitIDs.add(parent.id)
-    if (!includedRestaurantIDs.has(parent.restaurant_id)) {
-      const restaurant = await database.prepare('SELECT * FROM restaurants WHERE id = ? AND user_id = ?')
-        .bind(parent.restaurant_id, viewerId).first<SyncRestaurantRow>()
-      if (!restaurant) throw new SyncV1RequestError(`Visit ${parent.id} has no Restaurant.`, 500)
-      restaurants.push({ serverVersion: restaurant.server_version, record: rowToRestaurant(
-        restaurant, await readPlaceIdentities(database, viewerId, restaurant.id),
-      ) })
-      includedRestaurantIDs.add(restaurant.id)
+    switch (change.entity_type) {
+      case 'restaurant': activeRestaurantRows.push(row as SyncRestaurantRow); break
+      case 'visit': activeVisitRows.push(row as SyncVisitRow); break
+      case 'dish': activeDishRows.push(row as SyncDishRow); break
+      case 'visitDish': activeVisitDishRows.push(row as SyncVisitDishRow); break
+      case 'photo': activePhotoRows.push(row as SyncPhotoRow); break
+      case 'companion': activeCompanionRows.push(row as SyncCompanionRow); break
+      case 'recommendationSource':
+        activeRecommendationSourceRows.push(row as SyncRecommendationSourceRow); break
+      case 'profile': activeProfileRows.push(row as SyncProfileRow); break
+      case 'restaurantList': activeRestaurantListRows.push(row as SyncRestaurantListRow); break
+      case 'restaurantListItem':
+        activeRestaurantListItemRows.push(row as SyncRestaurantListItemRow); break
     }
-  }
-  const includedDishIDs = new Set(dishes.map((item) => item.record.id))
-  for (const child of [...visitDishes, ...photos]) {
-    const dishId = child.record.dishId
-    if (!dishId || includedDishIDs.has(dishId)) continue
-    const parent = await database.prepare('SELECT * FROM dishes WHERE id = ? AND user_id = ?')
-      .bind(dishId, viewerId).first<SyncDishRow>()
-    if (!parent) throw new SyncV1RequestError(`Child ${child.record.id} has no Dish.`, 500)
-    dishes.push({ serverVersion: parent.server_version, record: rowToDish(parent) })
-    includedDishIDs.add(parent.id)
-  }
-  for (const photo of photos) {
-    const restaurantId = photo.record.restaurantId
-    if (!restaurantId || includedRestaurantIDs.has(restaurantId)) continue
-    const parent = await database.prepare('SELECT * FROM restaurants WHERE id = ? AND user_id = ?')
-      .bind(restaurantId, viewerId).first<SyncRestaurantRow>()
-    if (!parent) throw new SyncV1RequestError(`Photo ${photo.record.id} has no Restaurant.`, 500)
-    restaurants.push({ serverVersion: parent.server_version, record: rowToRestaurant(
-      parent, await readPlaceIdentities(database, viewerId, parent.id),
-    ) })
-    includedRestaurantIDs.add(parent.id)
   }
 
-  return {
+  const restaurantRows = new Map(activeRestaurantRows.map((row) => [row.id, row]))
+  const visitRows = new Map(activeVisitRows.map((row) => [row.id, row]))
+  const dishRows = new Map(activeDishRows.map((row) => [row.id, row]))
+  const requiredVisitIDs = new Set<string>()
+  const requiredDishIDs = new Set<string>()
+  const requiredRestaurantIDs = new Set<string>()
+  activeVisitRows.forEach((row) => requiredRestaurantIDs.add(row.restaurant_id))
+  activeDishRows.forEach((row) => requiredVisitIDs.add(row.visit_id))
+  activeVisitDishRows.forEach((row) => {
+    requiredVisitIDs.add(row.visit_id)
+    requiredDishIDs.add(row.dish_id)
+  })
+  activePhotoRows.forEach((row) => {
+    if (row.visit_id) requiredVisitIDs.add(row.visit_id)
+    if (row.dish_id) requiredDishIDs.add(row.dish_id)
+    if (row.restaurant_id) requiredRestaurantIDs.add(row.restaurant_id)
+  })
+  activeRestaurantListItemRows.forEach((row) => {
+    if (!validRestaurantListPlaceSnapshot(row.restaurant_snapshot_json)) {
+      requiredRestaurantIDs.add(row.restaurant_id)
+    }
+  })
+
+  const parentRows = await readSyncEntityRows(database, viewerId, {
+    restaurant: [...requiredRestaurantIDs].filter((id) => !restaurantRows.has(id)),
+    visit: [...requiredVisitIDs].filter((id) => !visitRows.has(id)),
+    dish: [...requiredDishIDs].filter((id) => !dishRows.has(id)),
+  }, observation)
+  for (const id of requiredVisitIDs) {
+    if (visitRows.has(id)) continue
+    const row = parentRows.get('visit')?.get(id) as SyncVisitRow | undefined
+    if (!row) throw new SyncV1RequestError(`Child entity has no Visit ${id}.`, 500)
+    visitRows.set(id, row)
+  }
+  for (const id of requiredDishIDs) {
+    if (dishRows.has(id)) continue
+    const row = parentRows.get('dish')?.get(id) as SyncDishRow | undefined
+    if (!row) throw new SyncV1RequestError(`Child entity has no Dish ${id}.`, 500)
+    dishRows.set(id, row)
+  }
+  for (const id of requiredRestaurantIDs) {
+    if (restaurantRows.has(id)) continue
+    const row = parentRows.get('restaurant')?.get(id) as SyncRestaurantRow | undefined
+    if (!row) throw new SyncV1RequestError(`Child entity has no Restaurant ${id}.`, 500)
+    restaurantRows.set(id, row)
+  }
+
+  const restaurantsRequiredByParentVisits = [...visitRows.values()]
+    .map((row) => row.restaurant_id)
+    .filter((id) => !restaurantRows.has(id))
+  const additionalRestaurants = await readSyncEntityRows(database, viewerId, {
+    restaurant: restaurantsRequiredByParentVisits,
+  }, observation)
+  for (const id of restaurantsRequiredByParentVisits) {
+    if (restaurantRows.has(id)) continue
+    const row = additionalRestaurants.get('restaurant')?.get(id) as SyncRestaurantRow | undefined
+    if (!row) throw new SyncV1RequestError(`Visit has no Restaurant ${id}.`, 500)
+    restaurantRows.set(id, row)
+  }
+
+  const identitiesByRestaurant = await readPlaceIdentitiesForRestaurants(
+    database, viewerId, [...restaurantRows.keys()], observation,
+  )
+  const restaurants = [...restaurantRows.values()].map((row) => ({
+    serverVersion: row.server_version,
+    record: rowToRestaurant(row, identitiesByRestaurant.get(row.id) ?? []),
+  }))
+  const visits = [...visitRows.values()].map((row) => ({
+    serverVersion: row.server_version, record: rowToVisit(row),
+  }))
+  const dishes = [...dishRows.values()].map((row) => ({
+    serverVersion: row.server_version, record: rowToDish(row),
+  }))
+  const visitDishes = activeVisitDishRows.map((row) => ({
+    serverVersion: row.server_version, record: rowToVisitDish(row),
+  }))
+  const photos = activePhotoRows.map((row) => ({
+    serverVersion: row.server_version, record: rowToPhoto(row),
+  }))
+  const companions = activeCompanionRows.map((row) => ({
+    serverVersion: row.server_version, record: rowToCompanion(row),
+  }))
+  const recommendationSources = activeRecommendationSourceRows.map((row) => ({
+    serverVersion: row.server_version, record: rowToRecommendationSource(row),
+  }))
+  const profiles = activeProfileRows.map((row) => ({
+    serverVersion: row.server_version, record: rowToProfile(row),
+  }))
+  const restaurantLists = activeRestaurantListRows.map((row) => ({
+    serverVersion: row.server_version, record: rowToRestaurantList(row),
+  }))
+  const restaurantListItems = activeRestaurantListItemRows.map((row) => ({
+    serverVersion: row.server_version,
+    record: rowToRestaurantListItem(
+      row,
+      restaurantRows.get(row.restaurant_id),
+      identitiesByRestaurant.get(row.restaurant_id) ?? [],
+    ),
+  }))
+
+  const response: SyncPullResponseV1 = {
     apiVersion: SYNC_API_VERSION,
     schemaVersion: SYNC_SCHEMA_VERSION,
     restaurants,
@@ -465,6 +481,104 @@ export async function handleSyncV1Pull(
     nextCursor: String(changes.at(-1)?.revision ?? cursor),
     hasMore: changes.length === limit,
     serverTime: new Date().toISOString(),
+  }
+  if (observation) {
+    observation.changeCount = changes.length
+    observation.hydratedEntityCount = restaurants.length + visits.length + dishes.length +
+      visitDishes.length + photos.length + companions.length + recommendationSources.length +
+      profiles.length + restaurantLists.length + restaurantListItems.length
+    observation.tombstoneCount = tombstones.length
+    observation.cursorFrom = String(cursor)
+    observation.cursorTo = response.nextCursor
+    observation.hasMore = response.hasMore
+    observation.responseAssemblyDurationMs = Math.max(
+      0,
+      performance.now() - pullStartedAt - observation.ledgerQueryDurationMs -
+        observation.hydrationQueryDurationMs,
+    )
+  }
+  return response
+}
+
+function groupChangeIDs(changes: Iterable<ChangeRow>) {
+  const grouped: Partial<Record<SyncEntityType, string[]>> = {}
+  for (const change of changes) {
+    const ids = grouped[change.entity_type] ?? []
+    ids.push(change.entity_id)
+    grouped[change.entity_type] = ids
+  }
+  return grouped
+}
+
+function placeholders(values: readonly unknown[]) {
+  return values.map(() => '?').join(',')
+}
+
+async function readSyncEntityRows(
+  database: D1Database,
+  viewerId: string,
+  idsByType: Partial<Record<SyncEntityType, string[]>>,
+  observation?: SyncV1PullObservation,
+) {
+  const statements: D1PreparedStatement[] = []
+  const statementTypes: SyncEntityType[] = []
+  for (const entityType of Object.keys(SYNC_ENTITY_READ_SPECS) as SyncEntityType[]) {
+    const ids = [...new Set(idsByType[entityType] ?? [])]
+    const spec = SYNC_ENTITY_READ_SPECS[entityType]
+    for (let offset = 0; offset < ids.length; offset += PULL_ID_BATCH_SIZE) {
+      const chunk = ids.slice(offset, offset + PULL_ID_BATCH_SIZE)
+      statements.push(database.prepare(`SELECT * FROM ${spec.table}
+        WHERE ${spec.ownerColumn} = ? AND ${spec.idColumn} IN (${placeholders(chunk)})`)
+        .bind(viewerId, ...chunk))
+      statementTypes.push(entityType)
+    }
+  }
+  const rowsByType = new Map<SyncEntityType, Map<string, SyncEntityDatabaseRow>>()
+  if (!statements.length) return rowsByType
+  const queryStartedAt = performance.now()
+  const results = await database.batch<SyncEntityDatabaseRow>(statements)
+  if (observation) observation.hydrationQueryDurationMs += performance.now() - queryStartedAt
+  results.forEach((result, index) => {
+    const entityType = statementTypes[index]
+    const rows = rowsByType.get(entityType) ?? new Map<string, SyncEntityDatabaseRow>()
+    for (const row of result.results ?? []) {
+      const raw = row as unknown as Record<string, unknown>
+      const id = String(raw[SYNC_ENTITY_READ_SPECS[entityType].idColumn])
+      rows.set(id, row)
+    }
+    rowsByType.set(entityType, rows)
+  })
+  return rowsByType
+}
+
+async function readPlaceIdentitiesForRestaurants(
+  database: D1Database,
+  viewerId: string,
+  restaurantIDs: string[],
+  observation?: SyncV1PullObservation,
+) {
+  const ids = [...new Set(restaurantIDs)]
+  const statements: D1PreparedStatement[] = []
+  for (let offset = 0; offset < ids.length; offset += PULL_ID_BATCH_SIZE) {
+    const chunk = ids.slice(offset, offset + PULL_ID_BATCH_SIZE)
+    statements.push(database.prepare(`SELECT * FROM restaurant_place_identities
+      WHERE user_id = ? AND restaurant_id IN (${placeholders(chunk)})
+      ORDER BY restaurant_id ASC, is_primary DESC, updated_at ASC`).bind(viewerId, ...chunk))
+  }
+  if (!statements.length) return new Map<string, RestaurantPlaceIdentity[]>()
+  const queryStartedAt = performance.now()
+  const results = await database.batch<RestaurantPlaceIdentityRow>(statements)
+  if (observation) observation.hydrationQueryDurationMs += performance.now() - queryStartedAt
+  return groupRestaurantPlaceIdentities(results.flatMap((result) => result.results ?? []))
+}
+
+function validRestaurantListPlaceSnapshot(value: string | null) {
+  if (!value) return false
+  try {
+    decodeRestaurantListPlace(JSON.parse(value))
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -1750,21 +1864,17 @@ function rowToRestaurantList(row: SyncRestaurantListRow): RestaurantListSyncCont
   }
 }
 
-async function rowToRestaurantListItem(
-  database: D1Database,
-  viewerId: string,
+function rowToRestaurantListItem(
   row: SyncRestaurantListItemRow,
-): Promise<RestaurantListItemSyncContractV1> {
+  restaurant: SyncRestaurantRow | undefined,
+  identities: RestaurantPlaceIdentity[],
+): RestaurantListItemSyncContractV1 {
   let place: RestaurantListPlaceContractV1 | null = null
   if (row.restaurant_snapshot_json) {
     try { place = decodeRestaurantListPlace(JSON.parse(row.restaurant_snapshot_json)) } catch { place = null }
   }
   if (!place) {
-    const restaurant = await database.prepare(`SELECT * FROM restaurants
-      WHERE id = ? AND user_id = ? LIMIT 1`)
-      .bind(row.restaurant_id, viewerId).first<SyncRestaurantRow>()
     if (!restaurant) throw new SyncV1RequestError(`RestaurantListItem ${row.id} has no place projection.`, 500)
-    const identities = await readPlaceIdentities(database, viewerId, restaurant.id)
     const safeIdentities = identities.length ? identities : [{
       provider: 'manual' as const,
       externalId: `tastemap:${restaurant.id}`,

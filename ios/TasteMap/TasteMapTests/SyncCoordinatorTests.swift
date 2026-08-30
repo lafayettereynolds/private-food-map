@@ -50,6 +50,33 @@ struct SyncCoordinatorTests {
         #expect(coordinator.presentation.diagnostic == nil)
     }
 
+    @Test("Per-user checkpoint resumes a paged incremental pull with an empty mutation queue")
+    func perUserCheckpointResumesIncrementalPull() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        context.insert(SyncCheckpoint(ownerUserID: "tm_checkpoint_a", cursor: "3310"))
+        context.insert(SyncCheckpoint(ownerUserID: "tm_checkpoint_b", cursor: "9000"))
+        try context.save()
+        let api = ControlledSyncAPI(pullPages: [
+            (nextCursor: "3500", hasMore: true),
+            (nextCursor: "3500", hasMore: false)
+        ])
+        let engine = SyncEngine(
+            context: context,
+            api: api,
+            ownerUserID: "tm_checkpoint_a",
+            retryBaseDelay: 0
+        )
+
+        try await engine.synchronize()
+
+        #expect(api.pushCount == 0)
+        #expect(api.receivedPullCursors == ["3310", "3500"])
+        let checkpoints = try context.fetch(FetchDescriptor<SyncCheckpoint>())
+        #expect(checkpoints.first(where: { $0.ownerUserID == "tm_checkpoint_a" })?.cursor == "3500")
+        #expect(checkpoints.first(where: { $0.ownerUserID == "tm_checkpoint_b" })?.cursor == "9000")
+    }
+
     @Test("Empty queue pull failure reports the pull stage and never remains syncing")
     func emptyQueuePullFailureHasActionableStatus() async throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -327,21 +354,25 @@ private final class ControlledSyncAPI: SyncAPI {
     private var pushFailures: [Error]
     private var pullFailures: [Error]
     private let pullDelay: Duration
+    private var pullPages: [(nextCursor: String, hasMore: Bool)]
     private var revision: Int64 = 0
     private var concurrentRequests = 0
     private(set) var maximumConcurrentRequests = 0
     private(set) var pushCount = 0
     private(set) var pullCount = 0
     private(set) var receivedMutationIDs: [String] = []
+    private(set) var receivedPullCursors: [String] = []
 
     init(
         pushFailures: [Error] = [],
         pullFailures: [Error] = [],
-        pullDelay: Duration = .zero
+        pullDelay: Duration = .zero,
+        pullPages: [(nextCursor: String, hasMore: Bool)] = []
     ) {
         self.pushFailures = pushFailures
         self.pullFailures = pullFailures
         self.pullDelay = pullDelay
+        self.pullPages = pullPages
     }
 
     func push(_ request: SyncPushRequestV1) async throws -> SyncPushResponseV1 {
@@ -372,16 +403,20 @@ private final class ControlledSyncAPI: SyncAPI {
         beginRequest()
         defer { endRequest() }
         pullCount += 1
+        receivedPullCursors.append(cursor)
         if pullDelay != .zero { try await Task.sleep(for: pullDelay) }
         if !pullFailures.isEmpty { throw pullFailures.removeFirst() }
+        let page = pullPages.isEmpty
+            ? (nextCursor: String(revision), hasMore: false)
+            : pullPages.removeFirst()
         return SyncPullResponseV1(
             apiVersion: 1,
             schemaVersion: 1,
             restaurants: [],
             visits: [],
             tombstones: [],
-            nextCursor: String(revision),
-            hasMore: false,
+            nextCursor: page.nextCursor,
+            hasMore: page.hasMore,
             serverTime: "2026-08-27T08:00:00.000Z"
         )
     }

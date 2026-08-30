@@ -52,6 +52,7 @@ import {
   handleSyncV1Push,
   recordUnversionedSyncChanges,
   SyncV1RequestError,
+  type SyncV1PullObservation,
 } from './syncV1'
 import {
   authenticateAccessToken,
@@ -677,9 +678,67 @@ export default {
         return json(await readPublicRestaurant(env.DB, publicRestaurantMatch[1]))
       }
       if (url.pathname === '/api/v1/sync/pull' && request.method === 'GET') {
+        const requestStartedAt = performance.now()
+        const authStartedAt = performance.now()
         const viewer = await resolveSyncViewer(request, env)
+        const authDurationMs = performance.now() - authStartedAt
+        const profileStartedAt = performance.now()
         await ensureUserProfile(env.DB, viewer.id)
-        return json(await handleSyncV1Pull(env.DB, viewer.id, request))
+        const profileDurationMs = performance.now() - profileStartedAt
+        const observation: SyncV1PullObservation = {
+          ledgerQueryDurationMs: 0,
+          hydrationQueryDurationMs: 0,
+          responseAssemblyDurationMs: 0,
+          changeCount: 0,
+          hydratedEntityCount: 0,
+          tombstoneCount: 0,
+          cursorFrom: '0',
+          cursorTo: '0',
+          hasMore: false,
+        }
+        const payload = await handleSyncV1Pull(env.DB, viewer.id, request, observation)
+        const encodingStartedAt = performance.now()
+        const serialized = JSON.stringify(payload)
+        const encodingDurationMs = performance.now() - encodingStartedAt
+        const responseBytes = new TextEncoder().encode(serialized).byteLength
+        const totalDurationMs = performance.now() - requestStartedAt
+        if (env.APP_ENVIRONMENT === 'development') {
+          console.info(JSON.stringify({
+            event: 'sync_v1_pull_response_ready',
+            environment: 'development',
+            status: 200,
+            authDurationMs: observedDuration(authDurationMs),
+            profileDurationMs: observedDuration(profileDurationMs),
+            ledgerQueryDurationMs: observedDuration(observation.ledgerQueryDurationMs),
+            hydrationQueryDurationMs: observedDuration(observation.hydrationQueryDurationMs),
+            responseAssemblyDurationMs: observedDuration(observation.responseAssemblyDurationMs),
+            encodingDurationMs: observedDuration(encodingDurationMs),
+            totalDurationMs: observedDuration(totalDurationMs),
+            responseBytes,
+            changeCount: observation.changeCount,
+            hydratedEntityCount: observation.hydratedEntityCount,
+            tombstoneCount: observation.tombstoneCount,
+            cursorFrom: observation.cursorFrom,
+            cursorTo: observation.cursorTo,
+            hasMore: observation.hasMore,
+          }))
+        }
+        return new Response(serialized, {
+          status: 200,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-Content-Type-Options': 'nosniff',
+            'Server-Timing': [
+              `auth;dur=${observedDuration(authDurationMs)}`,
+              `profile;dur=${observedDuration(profileDurationMs)}`,
+              `ledger;dur=${observedDuration(observation.ledgerQueryDurationMs)}`,
+              `hydrate;dur=${observedDuration(observation.hydrationQueryDurationMs)}`,
+              `assemble;dur=${observedDuration(observation.responseAssemblyDurationMs)}`,
+              `encode;dur=${observedDuration(encodingDurationMs)}`,
+            ].join(', '),
+          },
+        })
       }
       if (url.pathname === '/api/v1/sync/push' && request.method === 'POST') {
         const viewer = await resolveSyncViewer(request, env)
@@ -2932,6 +2991,10 @@ function isSameOriginRequest(request: Request, url: URL) {
   } catch {
     return false
   }
+}
+
+function observedDuration(value: number) {
+  return Math.round(Math.max(0, value) * 100) / 100
 }
 
 function json(value: unknown, status = 200) {
