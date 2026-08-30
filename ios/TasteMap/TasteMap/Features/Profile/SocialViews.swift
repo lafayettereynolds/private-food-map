@@ -845,7 +845,9 @@ struct SocialPublicProfileView: View {
         guard content.viewerState == .none else { return }
         do {
             _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
-                projection: content.restaurant.discoveryProjection, among: restaurants
+                projection: content.restaurant.discoveryProjection,
+                among: restaurants,
+                currentUserID: currentUserID
             )
             for index in contentItems.indices where contentItems[index].restaurant.globalKey == content.restaurant.globalKey {
                 contentItems[index].viewerState = .wantToGo

@@ -54,7 +54,10 @@ struct AccountDeletionView: View {
                     Label("建议先导出 Backup v1", systemImage: "externaldrive.badge.plus")
                 }
                 if let preview {
-                    LabeledContent("此设备待同步变更", value: "\(localSyncMutations.count)")
+                    LabeledContent(
+                        "此设备待同步变更",
+                        value: "\(localSyncMutations.filter { $0.ownerUserID == currentUserID }.count)"
+                    )
                     LabeledContent("服务器同步冲突", value: "\(preview.pendingMutationCount)")
                     LabeledContent("服务器照片对象", value: "\(preview.photoObjectCount)")
                     LabeledContent("餐厅", value: "\(preview.entityCounts["restaurants"] ?? 0)")

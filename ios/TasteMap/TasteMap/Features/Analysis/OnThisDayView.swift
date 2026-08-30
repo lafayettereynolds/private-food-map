@@ -39,15 +39,24 @@ struct OnThisDayScreen: View {
             + ":\(context.calendar.timeZone.identifier):\(currentUserID)"
     }
 
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: currentUserID,
+            restaurants: restaurants, visits: visits, photos: photos,
+            dishes: dishes, visitDishes: visitDishes,
+            companions: companions, recommendationSources: recommendationSources
+        )
+    }
+
     private var activePhotosByID: [UUID: PhotoAsset] {
-        photos.filter { $0.deletedAt == nil && $0.binaryDeletedAt == nil }.reduce(into: [:]) {
+        owned.photos.filter { $0.deletedAt == nil && $0.binaryDeletedAt == nil }.reduce(into: [:]) {
             $0[$1.id] = $1
         }
     }
 
     private var activeRestaurantsByID: [UUID: Restaurant] {
-        let projection = AnalysisRestaurantIdentity.projection(for: restaurants)
-        return restaurants.filter {
+        let projection = AnalysisRestaurantIdentity.projection(for: owned.restaurants)
+        return owned.restaurants.filter {
             $0.deletedAt == nil && projection.representativeIDs.contains($0.id)
         }.reduce(into: [:]) { $0[$1.id] = $1 }
     }
@@ -68,13 +77,13 @@ struct OnThisDayScreen: View {
         .task(id: dataRevision) {
             let input = OnThisDayInput.capture(
                 currentUserID: currentUserID,
-                restaurants: restaurants,
-                visits: visits,
-                dishes: dishes,
-                visitDishes: visitDishes,
-                photos: photos,
-                companions: companions,
-                recommendationSources: recommendationSources
+                restaurants: owned.restaurants,
+                visits: owned.visits,
+                dishes: owned.dishes,
+                visitDishes: owned.visitDishes,
+                photos: owned.photos,
+                companions: owned.companions,
+                recommendationSources: owned.recommendationSources
             )
             let context = context
             report = await Task.detached(priority: .userInitiated) {

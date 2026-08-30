@@ -358,7 +358,16 @@ struct BackupImportMergeEngineTests {
     private func ownedRestaurant(userID: String, id: UUID) throws -> Restaurant {
         let place = try RestaurantPlaceIdentityContract(provider: .manual, externalId: "tastemap:\(id.uuidString)", isPrimary: true, createdAt: SyncRecordMapper.dateString(.distantPast), updatedAt: SyncRecordMapper.dateString(.distantPast))
         let contract = try RestaurantJSONContractV1(id: id.uuidString.lowercased(), userId: userID, placeIdentities: [place], name: "Owned", address: "", city: "", latitude: 0, longitude: 0, status: .visited, preferenceLevel: .normal, overallRating: nil, foodRating: nil, environmentRating: nil, serviceRating: nil, valueRating: nil, tags: [], longTermNote: "", pricePerPerson: nil, phone: nil, openingHours: nil, markerType: .emoji, markerPhotoId: nil, merchantImageUrl: nil, markerEmoji: "🍽️", createdAt: SyncRecordMapper.dateString(.distantPast), updatedAt: SyncRecordMapper.dateString(.distantPast), deletedAt: nil)
-        return Restaurant(id: id, name: "Owned", address: "", latitude: 0, longitude: 0, remoteID: id.uuidString.lowercased(), remoteRecordData: try JSONEncoder().encode(contract))
+        return Restaurant(
+            id: id,
+            ownerUserID: userID,
+            name: "Owned",
+            address: "",
+            latitude: 0,
+            longitude: 0,
+            remoteID: id.uuidString.lowercased(),
+            remoteRecordData: try JSONEncoder().encode(contract)
+        )
     }
 }
 

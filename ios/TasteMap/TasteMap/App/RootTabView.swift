@@ -5,6 +5,7 @@ struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Environment(NativeAuthServices.self) private var authServices
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @State private var selectedTab: AppTab = .map
     @State private var isShowingSearch = false
@@ -13,6 +14,10 @@ struct RootTabView: View {
     @State private var isBottomNavigationHidden = false
     @State private var pendingSharedImport: PendingRestaurantImport?
     @State private var publicShareRoute: PublicShareRouteSelection?
+
+    private var scopedRestaurants: [Restaurant] {
+        restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
+    }
 
     var body: some View {
         activeView
@@ -37,7 +42,8 @@ struct RootTabView: View {
                     case .wantToGo:
                         _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
                             candidate: candidate,
-                            among: restaurants
+                            among: scopedRestaurants,
+                            actorUserID: accountScope.ownerUserID
                         )
                         selectedTab = .map
                     case .recordVisit:
@@ -56,7 +62,8 @@ struct RootTabView: View {
                     case .wantToGo:
                         _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
                             candidate: candidate,
-                            among: restaurants
+                            among: scopedRestaurants,
+                            actorUserID: accountScope.ownerUserID
                         )
                         selectedTab = .map
                     case .recordVisit:

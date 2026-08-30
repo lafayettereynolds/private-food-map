@@ -290,6 +290,7 @@ struct BackupImportFlowTests {
         )
         return Restaurant(
             id: id,
+            ownerUserID: userID,
             name: contract.name,
             address: contract.address,
             latitude: contract.latitude,

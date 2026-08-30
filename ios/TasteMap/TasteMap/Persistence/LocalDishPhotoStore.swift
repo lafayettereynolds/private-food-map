@@ -31,6 +31,7 @@ struct LocalDishPhotoStore {
     ) throws -> Dish {
         let parents = try activeParents(restaurantId: restaurantId, visitId: visitId)
         let dish = Dish(
+            ownerUserID: parents.restaurant.ownerUserID,
             restaurantId: restaurantId,
             visitId: visitId,
             name: name,
@@ -65,7 +66,7 @@ struct LocalDishPhotoStore {
     }
 
     func delete(_ dish: Dish) throws {
-        let queue = SwiftDataSyncQueue(context: context)
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: dish.ownerUserID)
         let remoteID = dish.remoteID ?? dish.id.uuidString.lowercased()
         if dish.serverVersion == 0 {
             try queue.removeMutations(entityType: .dish, entityID: remoteID)
@@ -96,7 +97,8 @@ struct LocalDishPhotoStore {
         width: Int? = nil,
         height: Int? = nil,
         sortOrder: Int = 0,
-        visibility: PhotoVisibility = .private
+        visibility: PhotoVisibility = .private,
+        ownerUserID explicitOwnerUserID: String? = nil
     ) async throws -> PhotoAsset {
         try validatePhotoRelationship(
             kind: kind,
@@ -108,6 +110,12 @@ struct LocalDishPhotoStore {
         let relativePath = try await photoFiles.save(data, photoID: photoID, mimeType: mimeType)
         let photo = PhotoAsset(
             id: photoID,
+            ownerUserID: try ownerUserID(
+                restaurantId: restaurantId,
+                visitId: visitId,
+                dishId: dishId,
+                explicitOwnerUserID: explicitOwnerUserID
+            ),
             restaurantId: restaurantId,
             visitId: visitId,
             dishId: dishId,
@@ -145,7 +153,8 @@ struct LocalDishPhotoStore {
         sortOrder: Int = 0,
         visibility: PhotoVisibility = .private,
         queueForUpload: Bool = false,
-        draftSessionID: UUID? = nil
+        draftSessionID: UUID? = nil,
+        ownerUserID explicitOwnerUserID: String? = nil
     ) throws -> PhotoAsset {
         try validatePhotoRelationship(
             kind: kind,
@@ -155,6 +164,12 @@ struct LocalDishPhotoStore {
         )
         let photo = PhotoAsset(
             id: prepared.id,
+            ownerUserID: try ownerUserID(
+                restaurantId: restaurantId,
+                visitId: visitId,
+                dishId: dishId,
+                explicitOwnerUserID: explicitOwnerUserID
+            ),
             restaurantId: restaurantId,
             visitId: visitId,
             dishId: dishId,
@@ -242,7 +257,7 @@ struct LocalDishPhotoStore {
             return
         }
         let paths = localPaths(photo)
-        try SwiftDataSyncQueue(context: context).removeMutations(
+        try SwiftDataSyncQueue(context: context, ownerUserID: photo.ownerUserID).removeMutations(
             entityType: .photo,
             entityID: photo.remoteID ?? photo.id.uuidString.lowercased()
         )
@@ -254,7 +269,7 @@ struct LocalDishPhotoStore {
 
     func delete(_ photo: PhotoAsset) throws {
         let remoteID = photo.remoteID ?? photo.id.uuidString.lowercased()
-        let queue = SwiftDataSyncQueue(context: context)
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: photo.ownerUserID)
         photo.deletedAt = .now
         photo.updatedAt = photo.deletedAt ?? .now
         photo.uploadState = .deleted
@@ -325,7 +340,7 @@ struct LocalDishPhotoStore {
         let remoteID = dish.remoteID ?? dish.id.uuidString.lowercased()
         dish.remoteID = remoteID
         dish.syncStatus = .pending
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: dish.ownerUserID).enqueueUpsert(
             entityType: .dish,
             entityID: remoteID,
             baseVersion: dish.serverVersion,
@@ -343,7 +358,7 @@ struct LocalDishPhotoStore {
         let remoteID = photo.remoteID ?? photo.id.uuidString.lowercased()
         photo.remoteID = remoteID
         photo.syncStatus = .pending
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: photo.ownerUserID).enqueueUpsert(
             entityType: .photo,
             entityID: remoteID,
             baseVersion: photo.serverVersion,
@@ -367,7 +382,31 @@ struct LocalDishPhotoStore {
             throw LocalDishPhotoStoreError.visitNotFound
         }
         guard visit.restaurantId == restaurant.id else { throw LocalDishPhotoStoreError.relationshipMismatch }
+        guard visit.ownerUserID == restaurant.ownerUserID else {
+            throw LocalDishPhotoStoreError.relationshipMismatch
+        }
         return (restaurant, visit)
+    }
+
+    private func ownerUserID(
+        restaurantId: UUID?,
+        visitId: UUID?,
+        dishId: UUID?,
+        explicitOwnerUserID: String?
+    ) throws -> String {
+        if let visitId,
+           let visit = try context.fetch(FetchDescriptor<Visit>()).first(where: { $0.id == visitId }) {
+            return visit.ownerUserID
+        }
+        if let dishId,
+           let dish = try context.fetch(FetchDescriptor<Dish>()).first(where: { $0.id == dishId }) {
+            return dish.ownerUserID
+        }
+        if let restaurantId,
+           let restaurant = try context.fetch(FetchDescriptor<Restaurant>()).first(where: { $0.id == restaurantId }) {
+            return restaurant.ownerUserID
+        }
+        return LocalAccountOwner.normalized(explicitOwnerUserID ?? LocalAccountOwner.guest)
     }
 
     private func validatePhotoRelationship(

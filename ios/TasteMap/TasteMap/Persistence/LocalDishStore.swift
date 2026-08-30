@@ -42,6 +42,7 @@ struct LocalDishStore {
                   let dishRemoteID = dish.remoteID,
                   let visitRemoteID = visit.remoteID else { continue }
             let association = VisitDish(
+                ownerUserID: dish.ownerUserID,
                 restaurantId: dish.restaurantId,
                 visitId: visit.id,
                 dishId: dish.id,
@@ -92,7 +93,7 @@ struct LocalDishStore {
 
     func remove(_ association: VisitDish, saveChanges: Bool = true) throws {
         let remoteID = association.remoteID ?? association.id.uuidString.lowercased()
-        let queue = SwiftDataSyncQueue(context: context)
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: association.ownerUserID)
         if association.serverVersion == 0 {
             try queue.removeMutations(entityType: .visitDish, entityID: remoteID)
             context.delete(association)
@@ -140,6 +141,7 @@ struct LocalDishStore {
             ? DishIdentity.fallbackDishRemoteID()
             : preferredRemoteID
         let dish = Dish(
+            ownerUserID: parents.restaurant.ownerUserID,
             restaurantId: parents.restaurant.id,
             visitId: parents.visit.id,
             name: draft.name,
@@ -193,6 +195,7 @@ struct LocalDishStore {
                 dishRemoteID: dishRemoteID
             )
         let association = VisitDish(
+            ownerUserID: visit.ownerUserID,
             restaurantId: restaurant.id,
             visitId: visit.id,
             dishId: dish.id,
@@ -208,7 +211,7 @@ struct LocalDishStore {
         guard let restaurantRemoteID = restaurant.remoteID, let visitRemoteID = originVisit.remoteID,
               let remoteID = dish.remoteID else { throw LocalDishStoreError.missingRemoteMapping }
         dish.syncStatus = .pending
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: dish.ownerUserID).enqueueUpsert(
             entityType: .dish,
             entityID: remoteID,
             baseVersion: dish.serverVersion,
@@ -233,7 +236,7 @@ struct LocalDishStore {
         )
         association.remoteID = remoteID
         association.syncStatus = .pending
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: association.ownerUserID).enqueueUpsert(
             entityType: .visitDish,
             entityID: remoteID,
             baseVersion: association.serverVersion,
@@ -257,6 +260,9 @@ struct LocalDishStore {
         }
         guard let visit = try context.fetch(FetchDescriptor<Visit>())
             .first(where: { $0.id == visitID && $0.restaurantId == restaurantID && $0.deletedAt == nil }) else {
+            throw LocalDishStoreError.visitNotFound
+        }
+        guard restaurant.ownerUserID == visit.ownerUserID else {
             throw LocalDishStoreError.visitNotFound
         }
         return (restaurant, visit)

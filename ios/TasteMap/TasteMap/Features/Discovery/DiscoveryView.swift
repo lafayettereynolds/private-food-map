@@ -8,6 +8,7 @@ struct DiscoveryView: View {
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(SyncCoordinator.self) private var syncCoordinator
     @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @Query private var profiles: [UserProfile]
 
@@ -33,11 +34,15 @@ struct DiscoveryView: View {
     @State private var distanceAnchorDescription: String?
     @StateObject private var locationManager = LocationPermissionManager()
 
+    private var ownedRestaurants: [Restaurant] {
+        restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
+    }
+
     private var defaultCity: String {
         if let userID = authenticatedUser?.id,
            let profileCity = profiles.first(where: { $0.tasteMapUserID == userID && $0.deletedAt == nil })?.city,
            !profileCity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return profileCity }
-        return restaurants.filter { $0.deletedAt == nil && !$0.city.isEmpty }
+        return ownedRestaurants.filter { $0.deletedAt == nil && !$0.city.isEmpty }
             .sorted { $0.updatedAt > $1.updatedAt }.first?.city ?? ""
     }
 
@@ -45,7 +50,7 @@ struct DiscoveryView: View {
 
     private var availableCities: [String] {
         Set(
-            restaurants.filter { $0.deletedAt == nil }.map(\.city) +
+            ownedRestaurants.filter { $0.deletedAt == nil }.map(\.city) +
                 profiles.filter { $0.deletedAt == nil }.compactMap(\.city) +
                 cards.map(\.restaurant.city)
         )
@@ -106,7 +111,7 @@ struct DiscoveryView: View {
             }
             .sheet(item: $selectedCard) { card in
                 DiscoveryRestaurantDestination(
-                    card: card, restaurants: restaurants,
+                    card: card, restaurants: ownedRestaurants,
                     onWantToGo: { addToWantToGo(card) },
                     onViewerStateChange: { updateViewerState(for: card.restaurant.globalKey, state: $0) },
                     photoAPI: authServices.photoAPI
@@ -270,7 +275,12 @@ struct DiscoveryView: View {
         guard card.viewerState == .none, authenticatedUser != nil else { return }
         do {
             let store = LocalDiscoveryStore(context: modelContext)
-            let restaurant = try store.addToWantToGo(projection: card.restaurant, among: restaurants)
+            guard let userID = authenticatedUser?.id else { return }
+            let restaurant = try store.addToWantToGo(
+                projection: card.restaurant,
+                among: ownedRestaurants,
+                currentUserID: userID
+            )
             let state: DiscoveryViewerRestaurantStateV1 = restaurant.status == .visited ? .visited : .wantToGo
             updateViewerState(for: card.restaurant.globalKey, state: state)
             Task { await syncCoordinator.synchronizeNow() }
@@ -280,8 +290,13 @@ struct DiscoveryView: View {
     @MainActor
     private func addToRoulette(_ card: DiscoveryCardV1) {
         do {
+            guard let userID = authenticatedUser?.id else { return }
             let restaurant = try LocalDiscoveryStore(context: modelContext)
-                .addToWantToGo(projection: card.restaurant, among: restaurants)
+                .addToWantToGo(
+                    projection: card.restaurant,
+                    among: ownedRestaurants,
+                    currentUserID: userID
+                )
             let state: DiscoveryViewerRestaurantStateV1 = restaurant.status == .visited ? .visited : .wantToGo
             updateViewerState(for: card.restaurant.globalKey, state: state)
             selectedRouletteRestaurantID = restaurant.id
@@ -863,6 +878,7 @@ struct DiscoveryRestaurantDestination: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(SyncCoordinator.self) private var syncCoordinator
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var profiles: [UserProfile]
     let card: DiscoveryCardV1
     let restaurants: [Restaurant]
@@ -875,12 +891,16 @@ struct DiscoveryRestaurantDestination: View {
     @State private var actionMessage: String?
 
     private var currentUserID: String? {
-        profiles.first { $0.deletedAt == nil }?.tasteMapUserID
+        accountScope.authenticatedUserID
+    }
+
+    private var ownedRestaurants: [Restaurant] {
+        restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
     }
 
     var body: some View {
         if let local = LocalDiscoveryStore(context: modelContext)
-            .localRestaurant(for: card.restaurant, among: restaurants) {
+            .localRestaurant(for: card.restaurant, among: ownedRestaurants) {
             RestaurantDetailView(restaurant: local)
         } else {
             NavigationStack {
@@ -966,7 +986,8 @@ struct DiscoveryRestaurantDestination: View {
         do {
             let restaurant = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
                 projection: card.restaurant,
-                among: restaurants
+                among: ownedRestaurants,
+                currentUserID: currentUserID ?? LocalAccountOwner.guest
             )
             let state: DiscoveryViewerRestaurantStateV1 = restaurant.status == .visited ? .visited : .wantToGo
             onViewerStateChange(state)

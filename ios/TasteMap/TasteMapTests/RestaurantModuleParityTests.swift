@@ -12,6 +12,7 @@ struct RestaurantModuleParityTests {
         let context = container.mainContext
         let restaurant = try makeRestaurant(serverVersion: 4)
         let marker = PhotoAsset(
+            ownerUserID: "tm_owner",
             restaurantId: restaurant.id,
             kind: .restaurantMarker,
             mimeType: "image/jpeg",
@@ -63,6 +64,7 @@ struct RestaurantModuleParityTests {
         let context = container.mainContext
         let restaurant = try makeRestaurant()
         let visitPhoto = PhotoAsset(
+            ownerUserID: "tm_owner",
             restaurantId: restaurant.id,
             kind: .visit,
             mimeType: "image/jpeg",
@@ -103,12 +105,14 @@ struct RestaurantModuleParityTests {
         let context = container.mainContext
         let restaurant = try makeRestaurant(serverVersion: 8)
         let visit = Visit(
+            ownerUserID: "tm_owner",
             restaurantId: restaurant.id,
             remoteID: "visit-task03",
             serverVersion: 7,
             syncStatus: .synced
         )
         let dish = Dish(
+            ownerUserID: "tm_owner",
             restaurantId: restaurant.id,
             visitId: visit.id,
             name: "代表菜",
@@ -117,6 +121,7 @@ struct RestaurantModuleParityTests {
             syncStatus: .synced
         )
         let association = VisitDish(
+            ownerUserID: "tm_owner",
             restaurantId: restaurant.id,
             visitId: visit.id,
             dishId: dish.id,
@@ -125,6 +130,7 @@ struct RestaurantModuleParityTests {
             syncStatus: .synced
         )
         let photo = PhotoAsset(
+            ownerUserID: "tm_owner",
             restaurantId: restaurant.id,
             visitId: visit.id,
             dishId: dish.id,
@@ -156,7 +162,7 @@ struct RestaurantModuleParityTests {
         #expect(visit.restaurantId == restaurant.id)
         #expect(dish.restaurantId == restaurant.id)
 
-        let queue = SwiftDataSyncQueue(context: context)
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: "tm_owner")
         var orderedTypes: [SyncEntityType] = []
         while let mutation = try queue.nextReadyMutation() {
             #expect(mutation.operation == .delete)
@@ -172,8 +178,9 @@ struct RestaurantModuleParityTests {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
         let context = container.mainContext
         let restaurant = try makeRestaurant(serverVersion: 0)
-        let visit = Visit(restaurantId: restaurant.id)
+        let visit = Visit(ownerUserID: "tm_owner", restaurantId: restaurant.id)
         let photo = PhotoAsset(
+            ownerUserID: "tm_owner",
             restaurantId: restaurant.id,
             visitId: visit.id,
             kind: .visit,
@@ -184,7 +191,7 @@ struct RestaurantModuleParityTests {
         context.insert(restaurant)
         context.insert(visit)
         context.insert(photo)
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: "tm_owner").enqueueUpsert(
             entityType: .restaurant,
             entityID: restaurant.remoteID!,
             baseVersion: 0,
@@ -233,6 +240,7 @@ struct RestaurantModuleParityTests {
 
     private func makeRestaurant(serverVersion: Int64 = 0) throws -> Restaurant {
         let restaurant = Restaurant(
+            ownerUserID: "tm_owner",
             name: "Task 03 餐厅",
             address: "湖滨路 18 号",
             latitude: 30.25,

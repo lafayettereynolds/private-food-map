@@ -95,6 +95,7 @@ struct P3AProfileTests {
         let profile = try store.ensureProfile(tasteMapUserID: "tm_avatar_test")
         for mutation in try profileMutations(in: context) { context.delete(mutation) }
         let avatar = PhotoAsset(
+            ownerUserID: "tm_avatar_test",
             kind: .avatar,
             storageProvider: .r2,
             storageKey: "users/tm_avatar_test/avatar.jpg",
@@ -195,13 +196,21 @@ struct P3AProfileTests {
             avatarPhotoID: nil, avatarPreset: .panda, visibility: .public
         )
 
-        try await SyncEngine(context: source.mainContext, api: api).synchronize()
+        try await SyncEngine(
+            context: source.mainContext,
+            api: api,
+            ownerUserID: "tm_sync_profile"
+        ).synchronize()
         #expect(profile.serverVersion == 1)
         #expect(profile.syncStatus == .synced)
         #expect(try profileMutations(in: source.mainContext).isEmpty)
 
         let fresh = try TasteMapPersistence.makeContainer(inMemory: true)
-        try await SyncEngine(context: fresh.mainContext, api: api).synchronize()
+        try await SyncEngine(
+            context: fresh.mainContext,
+            api: api,
+            ownerUserID: "tm_sync_profile"
+        ).synchronize()
         let pulled = try #require(fresh.mainContext.fetch(FetchDescriptor<UserProfile>()).first)
         #expect(pulled.tasteMapUserID == "tm_sync_profile")
         #expect(pulled.displayName == "同步小林")
@@ -231,7 +240,11 @@ struct P3AProfileTests {
             avatarPhotoID: nil, avatarPreset: .otter, visibility: .friends
         )
 
-        try await SyncEngine(context: context, api: api).synchronize()
+        try await SyncEngine(
+            context: context,
+            api: api,
+            ownerUserID: "tm_conflict"
+        ).synchronize()
 
         #expect(local.displayName == "我的离线修改")
         #expect(local.bio == "local")

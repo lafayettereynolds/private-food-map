@@ -458,6 +458,8 @@ struct ProfileView: View {
                 email: "private-ui-fixture@example.test"
             )
             authenticatedUser = fixture
+            authServices.activateLocalAccount(fixture)
+            try? LocalAccountOwnershipMigrator(context: modelContext).activate(userID: fixture.id)
             ensureLocalProfile(for: fixture)
             if let override = TasteMapUITestFixtures.premiumOverride {
                 _ = premiumEntitlementService.setDevelopmentOverride(override)
@@ -469,7 +471,9 @@ struct ProfileView: View {
 #endif
         authenticatedUser = await authServices.sessionManager.restoredUser()
         guard let authenticatedUser else { return }
-        await syncCoordinator.sessionDidBecomeAvailable()
+        authServices.activateLocalAccount(authenticatedUser)
+        try? LocalAccountOwnershipMigrator(context: modelContext).activate(userID: authenticatedUser.id)
+        await syncCoordinator.sessionDidBecomeAvailable(userID: authenticatedUser.id)
         await premiumEntitlementService.activate(userID: authenticatedUser.id)
         ensureLocalProfile(for: authenticatedUser)
         await loadSocialStatistics()
@@ -495,7 +499,9 @@ struct ProfileView: View {
         await performAuthOperation {
             let user = try await authServices.appleSignIn.signIn(presentationAnchor: anchor)
             authenticatedUser = user
-            await syncCoordinator.sessionDidBecomeAvailable()
+            authServices.activateLocalAccount(user)
+            try LocalAccountOwnershipMigrator(context: modelContext).activate(userID: user.id)
+            await syncCoordinator.sessionDidBecomeAvailable(userID: user.id)
             await premiumEntitlementService.activate(userID: user.id)
             ensureLocalProfile(for: user)
             await loadSocialStatistics()
@@ -517,6 +523,7 @@ struct ProfileView: View {
         try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
         try? LocalRestaurantListStore(context: modelContext).purgePublicCache()
         authenticatedUser = nil
+        authServices.endLocalAccountSession()
         socialStatistics = .zero
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
@@ -529,6 +536,7 @@ struct ProfileView: View {
         try? LocalSocialStore(context: modelContext).purgeAllSocialDerivedCaches()
         try? LocalRestaurantListStore(context: modelContext).purgePublicCache()
         authenticatedUser = nil
+        authServices.endLocalAccountSession()
         socialStatistics = .zero
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
@@ -988,7 +996,10 @@ struct ProfileEditorSheet: View {
                 guard let photoTransferCoordinator else { throw PhotoImportError.encodingFailed }
                 let prepared = try await photoTransferCoordinator.preparePhoto(data: selectedImageData)
                 do {
-                    let photo = try photoTransferCoordinator.attachPreparedAvatar(prepared)
+                    let photo = try photoTransferCoordinator.attachPreparedAvatar(
+                        prepared,
+                        ownerUserID: profile.tasteMapUserID
+                    )
                     newAvatarPhotoID = photo.remoteID ?? photo.id.uuidString.lowercased()
                 } catch {
                     await photoTransferCoordinator.discardPrepared(prepared)

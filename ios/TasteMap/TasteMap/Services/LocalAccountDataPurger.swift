@@ -22,7 +22,9 @@ struct LocalAccountDataPurger {
     }
 
     func purgeCurrentAccount(userID: String) async throws -> AccountDeletionLocalPurgeResult {
-        let photos = try context.fetch(FetchDescriptor<PhotoAsset>())
+        let photos = try context.fetch(FetchDescriptor<PhotoAsset>()).filter {
+            $0.ownerUserID == userID
+        }
         let photoPaths = Set(photos.flatMap {
             [$0.localFileRelativePath, $0.displayFileRelativePath, $0.thumbnailFileRelativePath]
                 .compactMap { $0 }
@@ -36,11 +38,12 @@ struct LocalAccountDataPurger {
         }
 
         var deletedRecordCount = 0
-        deletedRecordCount += try deleteAll(VisitDish.self)
-        deletedRecordCount += try deleteAll(Dish.self)
-        deletedRecordCount += try deleteAll(PhotoAsset.self)
-        deletedRecordCount += try deleteAll(Visit.self)
-        deletedRecordCount += try deleteAll(Restaurant.self)
+        deletedRecordCount += try deleteOwned(VisitDish.self, userID: userID) { $0.ownerUserID }
+        deletedRecordCount += try deleteOwned(Dish.self, userID: userID) { $0.ownerUserID }
+        photos.forEach(context.delete)
+        deletedRecordCount += photos.count
+        deletedRecordCount += try deleteOwned(Visit.self, userID: userID) { $0.ownerUserID }
+        deletedRecordCount += try deleteOwned(Restaurant.self, userID: userID) { $0.ownerUserID }
         let companions = try context.fetch(FetchDescriptor<DiningCompanion>(
             predicate: #Predicate { $0.ownerUserId == userID }
         ))
@@ -69,11 +72,12 @@ struct LocalAccountDataPurger {
         profiles.forEach(context.delete)
         deletedRecordCount += profiles.count
 
-        deletedRecordCount += try deleteAll(SyncMutation.self)
-        deletedRecordCount += try deleteAll(SyncCheckpoint.self)
-        deletedRecordCount += try deleteAll(SocialMutation.self)
-        try LocalSocialStore(context: context).purgeAllSocialDerivedCaches()
-        try LocalRestaurantListStore(context: context).purgePublicCache()
+        deletedRecordCount += try deleteOwned(SyncMutation.self, userID: userID) { $0.ownerUserID }
+        deletedRecordCount += try deleteOwned(SyncCheckpoint.self, userID: userID) { $0.ownerUserID }
+        deletedRecordCount += try context.fetch(FetchDescriptor<SocialMutation>())
+            .filter { $0.currentUserID == userID }.count
+        try LocalSocialStore(context: context).purgeSocialDerivedCaches(currentUserID: userID)
+        try LocalRestaurantListStore(context: context).purgePublicCache(viewerUserID: userID)
         try context.save()
         return AccountDeletionLocalPurgeResult(
             deletedRecordCount: deletedRecordCount,
@@ -81,9 +85,14 @@ struct LocalAccountDataPurger {
         )
     }
 
-    private func deleteAll<Model: PersistentModel>(_ type: Model.Type) throws -> Int {
+    private func deleteOwned<Model: PersistentModel>(
+        _ type: Model.Type,
+        userID: String,
+        owner: (Model) -> String
+    ) throws -> Int {
         let values = try context.fetch(FetchDescriptor<Model>())
-        values.forEach(context.delete)
-        return values.count
+        let owned = values.filter { owner($0) == userID }
+        owned.forEach(context.delete)
+        return owned.count
     }
 }

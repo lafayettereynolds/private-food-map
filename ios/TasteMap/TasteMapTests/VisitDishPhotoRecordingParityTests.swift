@@ -25,6 +25,7 @@ struct VisitDishPhotoRecordingParityTests {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
         let context = container.mainContext
         let restaurant = Restaurant(
+            ownerUserID: "tm_task04_owner",
             name: "Task 04 Apple 餐厅",
             address: "Apple Maps only",
             latitude: 30.25,
@@ -114,6 +115,7 @@ struct VisitDishPhotoRecordingParityTests {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
         let context = container.mainContext
         let restaurant = Restaurant(
+            ownerUserID: "tm_owner",
             name: "Rollback 餐厅", address: "杭州", latitude: 30, longitude: 120
         )
         context.insert(restaurant)
@@ -201,6 +203,7 @@ struct VisitDishPhotoRecordingParityTests {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
         let context = container.mainContext
         let restaurant = Restaurant(
+            ownerUserID: "tm_user_a",
             name: "Owner A 餐厅", address: "杭州", latitude: 30, longitude: 120,
             appleMapItemIdentifier: "apple-owner-a"
         )

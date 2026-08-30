@@ -174,11 +174,11 @@ struct P4FRestaurantListTests {
             projection: try sharedProjection(), to: list, actorUserID: "tm_a", localRestaurants: []
         )
         let api = P4FMemorySyncAPI()
-        try await SyncEngine(context: source, api: api).synchronize()
+        try await SyncEngine(context: source, api: api, ownerUserID: "tm_a").synchronize()
 
         let freshContainer = try TasteMapPersistence.makeContainer(inMemory: true)
         let fresh = freshContainer.mainContext
-        try await SyncEngine(context: fresh, api: api).synchronize()
+        try await SyncEngine(context: fresh, api: api, ownerUserID: "tm_a").synchronize()
         let pulledList = try #require(fresh.fetch(FetchDescriptor<RestaurantList>()).first)
         let pulledItem = try #require(fresh.fetch(FetchDescriptor<RestaurantListItem>()).first)
 

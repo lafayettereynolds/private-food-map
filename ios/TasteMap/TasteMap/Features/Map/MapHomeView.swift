@@ -13,6 +13,7 @@ struct MapHomeView: View {
     @Query private var recommendationSources: [RecommendationSource]
 
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
+    @Environment(\.localAccountScope) private var accountScope
     @StateObject private var locationPermission = LocationPermissionManager()
     @State private var selectedSegment: RestaurantBrowseSegment = .visited
     @State private var browseMode: MapBrowseMode = .map
@@ -27,15 +28,29 @@ struct MapHomeView: View {
     @State private var mapReloadID = UUID()
     @State private var mapRenderState: RestaurantMapRenderState = .loading
 
+    private var scopedPhotos: [PhotoAsset] {
+        photos.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
+    }
+
     var body: some View {
-        let snapshot = RestaurantBrowseBuilder.build(
+        let owned = ProfileOwnedContentScope.capture(
+            currentUserID: accountScope.ownerUserID,
             restaurants: restaurants,
             visits: visits,
-            photos: photos,
+            photos: scopedPhotos,
             dishes: dishes,
             visitDishes: visitDishes,
             companions: companions,
             recommendationSources: recommendationSources
+        )
+        let snapshot = RestaurantBrowseBuilder.build(
+            restaurants: owned.restaurants,
+            visits: owned.visits,
+            photos: owned.photos,
+            dishes: owned.dishes,
+            visitDishes: owned.visitDishes,
+            companions: owned.companions,
+            recommendationSources: owned.recommendationSources
         )
         let filterResult = PersonalRestaurantFilterEngine.resolve(
             snapshot: snapshot,
@@ -102,7 +117,7 @@ struct MapHomeView: View {
             .sheet(item: $detailDestination, onDismiss: {
                 selectedRestaurantID = nil
             }) { destination in
-                if let restaurant = restaurants.first(where: {
+                if let restaurant = owned.restaurants.first(where: {
                     $0.id == destination.id && $0.deletedAt == nil
                 }) {
                     RestaurantDetailView(restaurant: restaurant)
@@ -203,13 +218,13 @@ struct MapHomeView: View {
     ) -> some View {
         let markers = RestaurantMapMarkerBuilder.build(
             items: items,
-            photos: photos,
+            photos: scopedPhotos,
             segment: selectedSegment,
             currentLocation: locationPermission.isDeniedOrRestricted
                 ? nil
                 : locationPermission.currentLocation
         )
-        let photosByID = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) })
+        let photosByID = Dictionary(uniqueKeysWithValues: scopedPhotos.map { ($0.id, $0) })
 
         return ZStack(alignment: .top) {
             ClusteredRestaurantMapView(

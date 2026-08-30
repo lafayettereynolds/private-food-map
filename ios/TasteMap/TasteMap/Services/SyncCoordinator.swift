@@ -98,7 +98,7 @@ final class SyncCoordinator {
 
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let api: any SyncAPI
-    @ObservationIgnored private let hasAuthenticatedSession: @Sendable () async -> Bool
+    @ObservationIgnored private let authenticatedUserIDProvider: @Sendable () async -> String?
     @ObservationIgnored private let networkObserver: NetworkPathObserver?
     @ObservationIgnored private let now: @MainActor () -> Date
     @ObservationIgnored private let automaticSyncInterval: TimeInterval
@@ -111,6 +111,7 @@ final class SyncCoordinator {
     @ObservationIgnored private var networkDebounceTask: Task<Void, Never>?
     @ObservationIgnored private var isStarted = false
     @ObservationIgnored private var isAuthenticated = false
+    @ObservationIgnored private var currentOwnerUserID: String?
     @ObservationIgnored private var isNetworkAvailable = true
     @ObservationIgnored private var rerunAfterCurrentPass = false
     @ObservationIgnored private var forceRetryAfterCurrentPass = false
@@ -127,7 +128,7 @@ final class SyncCoordinator {
         self.context = context
         self.api = api
         self.networkObserver = networkObserver
-        hasAuthenticatedSession = { await sessionManager.restoredUser() != nil }
+        authenticatedUserIDProvider = { await sessionManager.restoredUser()?.id }
         now = { .now }
         automaticSyncInterval = 15
         networkRecoveryDelay = .milliseconds(350)
@@ -138,6 +139,7 @@ final class SyncCoordinator {
         context: ModelContext,
         api: any SyncAPI,
         hasAuthenticatedSession: @escaping @Sendable () async -> Bool,
+        ownerUserID: String = LocalAccountOwner.guest,
         now: @escaping @MainActor () -> Date = { .now },
         automaticSyncInterval: TimeInterval = 0,
         networkRecoveryDelay: Duration = .zero,
@@ -145,7 +147,9 @@ final class SyncCoordinator {
     ) {
         self.context = context
         self.api = api
-        self.hasAuthenticatedSession = hasAuthenticatedSession
+        authenticatedUserIDProvider = {
+            await hasAuthenticatedSession() ? ownerUserID : nil
+        }
         networkObserver = nil
         self.now = now
         self.automaticSyncInterval = automaticSyncInterval
@@ -191,11 +195,20 @@ final class SyncCoordinator {
         }
     }
 
-    func sessionDidBecomeAvailable() async {
-        isAuthenticated = true
+    func sessionDidBecomeAvailable(userID: String? = nil) async {
+        if let userID {
+            currentOwnerUserID = userID
+        } else {
+            currentOwnerUserID = await authenticatedUserIDProvider()
+        }
+        isAuthenticated = currentOwnerUserID != nil
+        guard let currentOwnerUserID else {
+            refreshPresentation()
+            return
+        }
         NotificationCenter.default.post(name: .tasteMapAuthSessionAvailable, object: nil)
         do {
-            let queue = SwiftDataSyncQueue(context: context)
+            let queue = SwiftDataSyncQueue(context: context, ownerUserID: currentOwnerUserID)
             try queue.resetAuthenticationFailures()
             try context.save()
         } catch {
@@ -206,6 +219,7 @@ final class SyncCoordinator {
 
     func sessionDidEnd() {
         isAuthenticated = false
+        currentOwnerUserID = nil
         retryTask?.cancel()
         retryTask = nil
         networkDebounceTask?.cancel()
@@ -243,7 +257,7 @@ final class SyncCoordinator {
     }
 
     func refreshPresentation() {
-        let mutations = (try? SwiftDataSyncQueue(context: context).allMutations()) ?? []
+        let mutations = (try? scopedQueue().allMutations()) ?? []
         let conflictCount = mutations.filter { $0.state == .conflicted }.count
         let failedCount = mutations.filter { $0.state == .failed }.count
         let pendingCount = mutations.filter {
@@ -277,9 +291,11 @@ final class SyncCoordinator {
     }
 
     private func restoreSessionAndSync() async {
-        isAuthenticated = await hasAuthenticatedSession()
+        currentOwnerUserID = await authenticatedUserIDProvider()
+        isAuthenticated = currentOwnerUserID != nil
         refreshPresentation()
         guard isAuthenticated else { return }
+        recoverInterruptedQueue()
         await requestSync(trigger: .launch)
     }
 
@@ -293,7 +309,10 @@ final class SyncCoordinator {
             return
         }
 
-        if !isAuthenticated { isAuthenticated = await hasAuthenticatedSession() }
+        if !isAuthenticated {
+            currentOwnerUserID = await authenticatedUserIDProvider()
+            isAuthenticated = currentOwnerUserID != nil
+        }
         guard isAuthenticated else {
             refreshPresentation()
             return
@@ -312,7 +331,7 @@ final class SyncCoordinator {
 
         if forceRetry {
             do {
-                try SwiftDataSyncQueue(context: context).prepareManualRetry()
+                try scopedQueue().prepareManualRetry()
                 try context.save()
                 lastFailureDisposition = nil
             } catch {
@@ -342,7 +361,7 @@ final class SyncCoordinator {
                 && (succeeded || forceRetryAfterCurrentPass)
             guard canRerun else { break }
             if forceRetryAfterCurrentPass {
-                try? SwiftDataSyncQueue(context: context).prepareManualRetry()
+                try? scopedQueue().prepareManualRetry()
                 try? context.save()
                 forceRetryAfterCurrentPass = false
             }
@@ -360,6 +379,7 @@ final class SyncCoordinator {
             try await SyncEngine(
                 context: context,
                 api: api,
+                ownerUserID: currentOwnerUserID ?? LocalAccountOwner.legacyQuarantine,
                 retryBaseDelay: retryBaseDelay
             ).synchronize()
             lastFailureDisposition = nil
@@ -390,7 +410,7 @@ final class SyncCoordinator {
             pow(2, Double(max(0, consecutiveRetryableFailures - 1))) * retryBaseDelay,
             60 * 60
         )
-        let mutationRetryDate = try? SwiftDataSyncQueue(context: context).earliestRetryDate()
+        let mutationRetryDate = try? scopedQueue().earliestRetryDate()
         let desiredDate = max(
             mutationRetryDate ?? now().addingTimeInterval(exponentialSeconds),
             now().addingTimeInterval(exponentialSeconds)
@@ -404,7 +424,8 @@ final class SyncCoordinator {
 
     private func recoverInterruptedQueue() {
         do {
-            try SwiftDataSyncQueue(context: context).resetInterruptedUploads()
+            guard currentOwnerUserID != nil else { return }
+            try scopedQueue().resetInterruptedUploads()
             try context.save()
         } catch {
             lastFailureDisposition = .permanent
@@ -413,7 +434,7 @@ final class SyncCoordinator {
     }
 
     private func pendingMutationCount() -> Int {
-        ((try? SwiftDataSyncQueue(context: context).allMutations()) ?? []).filter {
+        ((try? scopedQueue().allMutations()) ?? []).filter {
             $0.state == .queued || $0.state == .uploading || $0.state == .failed
         }.count
     }
@@ -425,9 +446,11 @@ final class SyncCoordinator {
         failedPhotoCount: Int? = nil,
         conflictCount: Int? = nil
     ) -> SyncPresentation {
-        let mutations = (try? SwiftDataSyncQueue(context: context).allMutations()) ?? []
+        let mutations = (try? scopedQueue().allMutations()) ?? []
         let photoCounts = photoTransferCounts()
-        let checkpoint = try? context.fetch(FetchDescriptor<SyncCheckpoint>()).first
+        let checkpoint = try? context.fetch(FetchDescriptor<SyncCheckpoint>()).first(where: {
+            $0.ownerUserID == currentOwnerUserID
+        })
         return SyncPresentation(
             phase: phase,
             pendingCount: pendingCount ?? mutations.filter {
@@ -441,7 +464,9 @@ final class SyncCoordinator {
     }
 
     private func photoTransferCounts() -> (pending: Int, failed: Int) {
-        let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
+        let photos = ((try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
+            $0.ownerUserID == currentOwnerUserID
+        }
         var pending = 0
         var failed = 0
         for photo in photos where photo.draftSessionID == nil {
@@ -458,6 +483,13 @@ final class SyncCoordinator {
             if photo.uploadState == .failed { failed += 1 }
         }
         return (pending, failed)
+    }
+
+    private func scopedQueue() -> SwiftDataSyncQueue {
+        SwiftDataSyncQueue(
+            context: context,
+            ownerUserID: currentOwnerUserID ?? LocalAccountOwner.legacyQuarantine
+        )
     }
 }
 

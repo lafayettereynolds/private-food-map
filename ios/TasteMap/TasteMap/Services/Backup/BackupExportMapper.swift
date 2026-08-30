@@ -57,7 +57,7 @@ struct BackupExportMapper {
                 addOrphan(.visit, id: stableID, field: "restaurantId", referenceID: model.restaurantId.uuidString)
                 continue
             }
-            let belongs = restaurantScope[model.restaurantId] == true
+            let belongs = restaurantScope[model.restaurantId] == true && model.ownerUserID == currentUserID
             visitScope[model.id] = belongs
             guard belongs else { continue }
             if let deletedAt = model.deletedAt {
@@ -85,7 +85,7 @@ struct BackupExportMapper {
                 addOrphan(.dish, id: stableID, field: "restaurantId", referenceID: model.restaurantId.uuidString)
                 continue
             }
-            let belongs = restaurantScope[model.restaurantId] == true
+            let belongs = restaurantScope[model.restaurantId] == true && model.ownerUserID == currentUserID
             dishScope[model.id] = belongs
             guard belongs else { continue }
             guard allVisitLocalIDs.contains(model.visitId) else {
@@ -114,7 +114,8 @@ struct BackupExportMapper {
         var visitDishes: [BackupVisitDishV1] = []
         for model in input.visitDishes {
             let stableID = try stableID(model.remoteID, fallback: model.id, entityType: .visitDish)
-            guard allRestaurantLocalIDs.contains(model.restaurantId),
+            guard model.ownerUserID == currentUserID,
+                  allRestaurantLocalIDs.contains(model.restaurantId),
                   allVisitLocalIDs.contains(model.visitId),
                   allDishLocalIDs.contains(model.dishId) else {
                 addOrphan(.visitDish, id: stableID, field: "relationship", referenceID: nil)
@@ -248,6 +249,7 @@ struct BackupExportMapper {
             $0.tasteMapUserID == currentUserID ? nil : $0.avatarPhotoID
         })
         for model in input.photos {
+            guard model.ownerUserID == currentUserID else { continue }
             let stableID = try stableID(model.remoteID, fallback: model.id, entityType: .photo)
             let scope = photoScope(
                 model,

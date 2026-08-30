@@ -249,7 +249,7 @@ struct LocalCompanionSourceStore {
         let remoteID = companion.remoteID ?? companion.id.uuidString.lowercased()
         companion.remoteID = remoteID
         companion.syncStatus = .pending
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: companion.ownerUserId).enqueueUpsert(
             entityType: .companion,
             entityID: remoteID,
             baseVersion: companion.serverVersion,
@@ -262,7 +262,7 @@ struct LocalCompanionSourceStore {
         let remoteID = source.remoteID ?? source.id.uuidString.lowercased()
         source.remoteID = remoteID
         source.syncStatus = .pending
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: source.ownerUserId).enqueueUpsert(
             entityType: .recommendationSource,
             entityID: remoteID,
             baseVersion: source.serverVersion,
@@ -290,7 +290,18 @@ struct LocalCompanionSourceStore {
         deleteLocal: () -> Void,
         markDeleted: () -> Void
     ) throws {
-        let queue = SwiftDataSyncQueue(context: context)
+        let ownerUserID: String
+        switch entityType {
+        case .companion:
+            ownerUserID = ((try? companions())?.first { $0.remoteID == remoteID })?.ownerUserId
+                ?? LocalAccountOwner.legacyQuarantine
+        case .recommendationSource:
+            ownerUserID = ((try? recommendationSources())?.first { $0.remoteID == remoteID })?.ownerUserId
+                ?? LocalAccountOwner.legacyQuarantine
+        default:
+            ownerUserID = LocalAccountOwner.legacyQuarantine
+        }
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: ownerUserID)
         guard let remoteID else {
             deleteLocal()
             try context.save()

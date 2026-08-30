@@ -4,6 +4,7 @@ import Observation
 @Observable
 @MainActor
 final class NativeAuthServices {
+    private(set) var localAccountScope: LocalAccountScope = .restoring
     let authAPI: URLSessionAuthAPIClient
     let sessionManager: AuthSessionManager
     let syncAPI: URLSessionSyncAPIClient
@@ -102,5 +103,20 @@ final class NativeAuthServices {
             session: session
         )
         appleSignIn = AppleSignInService(api: authAPI, sessionManager: sessionManager)
+    }
+
+    @discardableResult
+    func restoreLocalAccountScope() async -> AuthenticatedUserV1? {
+        let user = await sessionManager.restoredUser()
+        localAccountScope = user.map { .authenticated($0.id) } ?? .guest
+        return user
+    }
+
+    func activateLocalAccount(_ user: AuthenticatedUserV1) {
+        localAccountScope = .authenticated(user.id)
+    }
+
+    func endLocalAccountSession() {
+        localAccountScope = .guest
     }
 }

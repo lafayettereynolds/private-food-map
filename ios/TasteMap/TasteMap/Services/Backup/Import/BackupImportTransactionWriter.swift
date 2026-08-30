@@ -218,7 +218,8 @@ struct BackupImportTransactionWriter {
                 let companions = value.companionSourceIDs.compactMap { state.companions[$0] }
                 let recommendation = value.recommendationSourceID.flatMap { state.recommendationSources[$0] }
                 let model = Visit(
-                    id: id, restaurantId: restaurant.id, visitedAt: value.visitedAt,
+                    id: id, ownerUserID: currentUserID,
+                    restaurantId: restaurant.id, visitedAt: value.visitedAt,
                     rating: value.rating, valueRating: value.valueRating,
                     environmentRating: value.environmentRating, serviceRating: value.serviceRating,
                     note: value.note, myActualSpend: value.myActualSpend, totalPrice: value.totalPrice,
@@ -268,7 +269,8 @@ struct BackupImportTransactionWriter {
             if action.action == .create {
                 let id = try targetUUID(action)
                 let model = Dish(
-                    id: id, restaurantId: restaurant.id, visitId: visit.id, name: value.name,
+                    id: id, ownerUserID: currentUserID,
+                    restaurantId: restaurant.id, visitId: visit.id, name: value.name,
                     taste: value.taste, rating: value.rating, price: value.price,
                     photoRemoteID: nil, sortOrder: value.sortOrder,
                     createdAt: value.createdAt, updatedAt: value.updatedAt,
@@ -313,7 +315,8 @@ struct BackupImportTransactionWriter {
             if action.action == .create {
                 let id = try targetUUID(action)
                 let model = VisitDish(
-                    id: id, restaurantId: restaurant.id, visitId: visit.id, dishId: dish.id,
+                    id: id, ownerUserID: currentUserID,
+                    restaurantId: restaurant.id, visitId: visit.id, dishId: dish.id,
                     sortOrder: value.sortOrder, createdAt: value.createdAt, updatedAt: value.updatedAt,
                     remoteID: id.uuidString.lowercased(), serverVersion: 0, syncStatus: .pending
                 )
@@ -324,7 +327,7 @@ struct BackupImportTransactionWriter {
         }
 
         try failIfRequested(.beforeMutations)
-        let queue = SwiftDataSyncQueue(context: context)
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: currentUserID)
         var mutationCount = 0
         for mutation in state.mutations.sorted(by: { $0.priority < $1.priority }) {
             try mutation.enqueue(queue)
@@ -358,7 +361,8 @@ struct BackupImportTransactionWriter {
             updatedAt: SyncRecordMapper.dateString(value.updatedAt), deletedAt: nil
         )
         let model = Restaurant(
-            id: id, name: value.name, address: value.address, latitude: value.latitude,
+            id: id, ownerUserID: currentUserID,
+            name: value.name, address: value.address, latitude: value.latitude,
             longitude: value.longitude,
             appleMapItemIdentifier: identities.first(where: { $0.provider == .appleMaps })?.externalId,
             city: value.city,

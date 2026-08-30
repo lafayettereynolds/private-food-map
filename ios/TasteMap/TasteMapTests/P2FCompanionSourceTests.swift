@@ -54,7 +54,11 @@ struct P2FCompanionSourceTests {
         let server = P2FMemorySyncAPI()
         try server.seedLegacyWebVisit()
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
-        try await SyncEngine(context: container.mainContext, api: server).synchronize()
+        try await SyncEngine(
+            context: container.mainContext,
+            api: server,
+            ownerUserID: "legacy-owner"
+        ).synchronize()
 
         let visit = try #require(container.mainContext.fetch(FetchDescriptor<Visit>()).first)
         #expect(visit.companionIDs == ["legacy-web-companion"])
@@ -70,7 +74,11 @@ struct P2FCompanionSourceTests {
 
         var edit = VisitDraft(visit: visit)
         edit.note = "原生端可以继续编辑"
-        try LocalTasteMapStore(context: container.mainContext).update(visit, draft: edit)
+        try LocalTasteMapStore(context: container.mainContext).update(
+            visit,
+            draft: edit,
+            actorUserID: "legacy-owner"
+        )
         #expect(visit.note == "原生端可以继续编辑")
     }
 

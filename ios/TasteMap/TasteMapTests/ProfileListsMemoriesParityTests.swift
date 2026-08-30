@@ -10,8 +10,8 @@ struct ProfileListsMemoriesParityTests {
     func profileOwnerSwitching() throws {
         let owned = try restaurant(name: "A 的餐厅", owner: "tm_a", index: 1)
         let other = try restaurant(name: "B 的餐厅", owner: "tm_b", index: 2)
-        let ownVisit = Visit(restaurantId: owned.id, rating: 4.5, myActualSpend: 88)
-        let otherVisit = Visit(restaurantId: other.id, rating: 1, myActualSpend: 999)
+        let ownVisit = Visit(ownerUserID: "tm_a", restaurantId: owned.id, rating: 4.5, myActualSpend: 88)
+        let otherVisit = Visit(ownerUserID: "tm_b", restaurantId: other.id, rating: 1, myActualSpend: 999)
 
         let a = ProfileOwnedContentScope.capture(
             currentUserID: "tm_a",
@@ -128,7 +128,8 @@ struct ProfileListsMemoriesParityTests {
             markerEmoji: "🍽️", createdAt: timestamp, updatedAt: timestamp, deletedAt: nil
         )
         return Restaurant(
-            id: id, name: name, address: "测试路", latitude: 30, longitude: 120,
+            id: id, ownerUserID: owner,
+            name: name, address: "测试路", latitude: 30, longitude: 120,
             city: "杭州", status: .visited, remoteID: id.uuidString.lowercased(),
             syncStatus: .synced, remoteRecordData: try JSONEncoder().encode(contract)
         )
@@ -147,7 +148,8 @@ struct ProfileListsMemoriesParityTests {
             createdAt: timestamp, updatedAt: timestamp, deletedAt: nil
         )
         return PhotoAsset(
-            id: id, restaurantId: restaurant.id, kind: .restaurantMarker,
+            id: id, ownerUserID: owner,
+            restaurantId: restaurant.id, kind: .restaurantMarker,
             storageProvider: .r2, storageKey: contract.storageKey,
             thumbnailStorageKey: contract.thumbnailStorageKey, fileName: contract.fileName,
             mimeType: contract.mimeType, byteSize: contract.byteSize,

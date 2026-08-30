@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MonthlyRecapAnalysisScreen: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var dishes: [Dish]
@@ -16,17 +17,26 @@ struct MonthlyRecapAnalysisScreen: View {
     @State private var report: MonthlyRecapAnalysis?
     @State private var fixtureMessage: String?
 
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: accountScope.ownerUserID,
+            restaurants: restaurants, visits: visits, photos: photos,
+            dishes: dishes, visitDishes: visitDishes,
+            companions: companions, recommendationSources: recommendationSources
+        )
+    }
+
     private var photosByID: [UUID: PhotoAsset] {
-        Dictionary(uniqueKeysWithValues: photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: owned.photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
     }
 
     private var restaurantsByID: [UUID: Restaurant] {
-        Dictionary(uniqueKeysWithValues: restaurants.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: owned.restaurants.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
     }
 
     private var availablePeriods: [MonthlyPeriod] {
         let calendar = selectedPeriod.calendar
-        let periods = visits.filter { $0.deletedAt == nil }.map {
+        let periods = owned.visits.filter { $0.deletedAt == nil }.map {
             MonthlyPeriod(date: $0.visitedAt, calendar: calendar)
         } + [MonthlyPeriod.current(calendar: calendar)]
         return Dictionary(grouping: periods, by: \.id).compactMap { $0.value.first }.sorted {
@@ -76,10 +86,12 @@ struct MonthlyRecapAnalysisScreen: View {
         .task(id: dataRevision) {
             let period = selectedPeriod
             let input = MonthlyRecapInput.capture(
-                restaurants: restaurants, visits: visits, dishes: dishes,
-                visitDishes: visitDishes, photos: photos, companions: companions,
-                recommendationSources: recommendationSources,
-                profile: profiles.first(where: { $0.deletedAt == nil })
+                restaurants: owned.restaurants, visits: owned.visits, dishes: owned.dishes,
+                visitDishes: owned.visitDishes, photos: owned.photos, companions: owned.companions,
+                recommendationSources: owned.recommendationSources,
+                profile: profiles.first(where: {
+                    $0.tasteMapUserID == accountScope.ownerUserID && $0.deletedAt == nil
+                })
             )
             report = await Task.detached(priority: .userInitiated) {
                 MonthlyRecapAnalyzer.analyze(input, period: period)

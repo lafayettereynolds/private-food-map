@@ -140,6 +140,33 @@ struct LocalSocialStore {
         try context.save()
     }
 
+    /// Removes only one viewer's private projections. Public profile summaries
+    /// are shared derived cache and are retained for other signed-in accounts.
+    func purgeSocialDerivedCaches(currentUserID: String) throws {
+        for value in try friendships() where value.currentUserID == currentUserID {
+            context.delete(value)
+        }
+        for value in try follows() where value.currentUserID == currentUserID {
+            context.delete(value)
+        }
+        for value in try mutations() where value.currentUserID == currentUserID {
+            context.delete(value)
+        }
+        for value in try context.fetch(FetchDescriptor<CachedCommunityContent>())
+        where value.currentUserID == currentUserID {
+            context.delete(value)
+        }
+        for value in try context.fetch(FetchDescriptor<CachedDiscoveryPlacement>())
+        where value.currentUserID == currentUserID {
+            context.delete(value)
+        }
+        for value in try context.fetch(FetchDescriptor<CachedDiscoveryRestaurant>())
+        where value.currentUserID == currentUserID {
+            context.delete(value)
+        }
+        try context.save()
+    }
+
     func invalidateProfile(_ tasteMapUserID: String) throws {
         for value in try profiles() where value.tasteMapUserID == tasteMapUserID {
             context.delete(value)

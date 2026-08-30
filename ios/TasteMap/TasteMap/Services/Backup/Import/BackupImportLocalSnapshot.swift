@@ -98,6 +98,7 @@ struct BackupImportLocalSnapshotBuilder {
         let allVisits = try context.fetch(FetchDescriptor<Visit>())
         var visitRemoteIDs: [UUID: String] = [:]
         let visits = allVisits.compactMap { model -> BackupImportLocalRecord<BackupImportSourceVisit>? in
+            guard model.ownerUserID == currentTasteMapUserID else { return nil }
             guard let restaurantRemoteID = restaurantRemoteIDs[model.restaurantId] else { return nil }
             let remoteID = model.remoteID ?? model.id.uuidString.lowercased()
             visitRemoteIDs[model.id] = remoteID
@@ -145,6 +146,7 @@ struct BackupImportLocalSnapshotBuilder {
         let allDishes = try context.fetch(FetchDescriptor<Dish>())
         var dishRemoteIDs: [UUID: String] = [:]
         let dishes = allDishes.compactMap { model -> BackupImportLocalRecord<BackupImportSourceDish>? in
+            guard model.ownerUserID == currentTasteMapUserID else { return nil }
             guard let restaurantRemoteID = restaurantRemoteIDs[model.restaurantId],
                   let visitRemoteID = visitRemoteIDs[model.visitId] else { return nil }
             let remoteID = model.remoteID ?? model.id.uuidString.lowercased()
@@ -171,6 +173,7 @@ struct BackupImportLocalSnapshotBuilder {
 
         let visitDishes = try context.fetch(FetchDescriptor<VisitDish>()).compactMap {
             model -> BackupImportLocalRecord<BackupImportSourceVisitDish>? in
+            guard model.ownerUserID == currentTasteMapUserID else { return nil }
             guard let restaurantRemoteID = restaurantRemoteIDs[model.restaurantId],
                   let visitRemoteID = visitRemoteIDs[model.visitId],
                   let dishRemoteID = dishRemoteIDs[model.dishId] else { return nil }
@@ -306,6 +309,7 @@ struct BackupImportLocalSnapshotBuilder {
         let currentProfilePhotoIDs = Set(profiles.compactMap(\.value.avatarPhotoSourceID))
         let photos = try context.fetch(FetchDescriptor<PhotoAsset>()).compactMap {
             model -> BackupImportLocalRecord<BackupImportSourcePhoto>? in
+            guard model.ownerUserID == currentTasteMapUserID else { return nil }
             let belongs = model.restaurantId.flatMap { restaurantRemoteIDs[$0] } != nil
                 || model.visitId.flatMap { visitRemoteIDs[$0] } != nil
                 || model.dishId.flatMap { dishRemoteIDs[$0] } != nil

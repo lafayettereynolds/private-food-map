@@ -26,6 +26,7 @@ enum PhotoUploadState: String, Codable, CaseIterable, Sendable {
 @Model
 final class PhotoAsset {
     @Attribute(.unique) var id: UUID
+    var ownerUserID: String = LocalAccountOwner.legacyQuarantine
     var restaurantId: UUID?
     var visitId: UUID?
     var dishId: UUID?
@@ -57,7 +58,7 @@ final class PhotoAsset {
     var draftSessionID: UUID?
     var createdAt: Date
     var updatedAt: Date
-    @Attribute(.unique) var remoteID: String?
+    var remoteID: String?
     var deletedAt: Date?
     var serverVersion: Int64
     var lastSyncedAt: Date?
@@ -91,6 +92,7 @@ final class PhotoAsset {
 
     init(
         id: UUID = UUID(),
+        ownerUserID: String = LocalAccountOwner.guest,
         restaurantId: UUID? = nil,
         visitId: UUID? = nil,
         dishId: UUID? = nil,
@@ -130,6 +132,7 @@ final class PhotoAsset {
         remoteRecordData: Data? = nil
     ) {
         self.id = id
+        self.ownerUserID = LocalAccountOwner.normalized(ownerUserID)
         self.restaurantId = restaurantId
         self.visitId = visitId
         self.dishId = dishId

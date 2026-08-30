@@ -170,7 +170,7 @@ struct SocialCollaborationInboxView: View {
 
     private func localVisit(for invitation: SharedMealInvitationV1) -> Visit? {
         for visit in visits {
-            guard visit.deletedAt == nil else { continue }
+            guard visit.ownerUserID == currentUserID, visit.deletedAt == nil else { continue }
             if visit.sharedMealID == invitation.mealId { return visit }
         }
         return nil

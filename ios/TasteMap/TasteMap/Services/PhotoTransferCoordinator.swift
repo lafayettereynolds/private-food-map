@@ -12,7 +12,7 @@ final class PhotoTransferCoordinator {
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let api: any PhotoBinaryAPI
     @ObservationIgnored private let files: any LocalPhotoFileStoring
-    @ObservationIgnored private let hasAuthenticatedSession: @Sendable () async -> Bool
+    @ObservationIgnored private let authenticatedUserIDProvider: @Sendable () async -> String?
     @ObservationIgnored private let synchronizeMetadata: @MainActor () async -> Void
     @ObservationIgnored private let networkObserver: NetworkPathObserver?
     @ObservationIgnored private var networkAvailable = true
@@ -36,7 +36,7 @@ final class PhotoTransferCoordinator {
         self.api = api
         self.files = files
         self.networkObserver = networkObserver
-        hasAuthenticatedSession = { await sessionManager.restoredUser() != nil }
+        authenticatedUserIDProvider = { await sessionManager.restoredUser()?.id }
         synchronizeMetadata = { await syncCoordinator.synchronizeNow() }
     }
 
@@ -51,7 +51,9 @@ final class PhotoTransferCoordinator {
         self.context = context
         self.api = api
         self.files = files
-        self.hasAuthenticatedSession = hasAuthenticatedSession
+        authenticatedUserIDProvider = {
+            await hasAuthenticatedSession() ? LocalAccountOwner.guest : nil
+        }
         self.synchronizeMetadata = synchronizeMetadata
         self.networkObserver = networkObserver
     }
@@ -59,14 +61,13 @@ final class PhotoTransferCoordinator {
     func start() {
         guard !started else { return }
         started = true
-        recoverInterruptedUploads()
         authObserver = NotificationCenter.default.addObserver(
             forName: .tasteMapAuthSessionAvailable,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.prepareAuthenticationRetry()
+                await self?.prepareAuthenticationRetry()
                 self?.scheduleProcessing()
             }
         }
@@ -76,7 +77,7 @@ final class PhotoTransferCoordinator {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.prepareManualRetry()
+                await self?.prepareManualRetry()
                 self?.scheduleProcessing()
             }
         }
@@ -87,9 +88,11 @@ final class PhotoTransferCoordinator {
             }
         }
         Task { @MainActor [weak self] in
-            await self?.cleanupAbandonedDraftPhotos()
-            await self?.cleanupOrphanedFiles()
-            self?.scheduleProcessing()
+            guard let self, let ownerUserID = await self.authenticatedUserIDProvider() else { return }
+            self.recoverInterruptedUploads(ownerUserID: ownerUserID)
+            await self.cleanupAbandonedDraftPhotos(ownerUserID: ownerUserID)
+            await self.cleanupOrphanedFiles()
+            self.scheduleProcessing()
         }
     }
 
@@ -157,13 +160,15 @@ final class PhotoTransferCoordinator {
     @discardableResult
     func attachPreparedAvatar(
         _ prepared: PreparedLocalPhoto,
-        queueForUpload: Bool = true
+        queueForUpload: Bool = true,
+        ownerUserID: String = LocalAccountOwner.guest
     ) throws -> PhotoAsset {
         try LocalDishPhotoStore(context: context, photoFiles: files).createLocalPhoto(
             prepared: prepared,
             kind: .avatar,
             visibility: .private,
-            queueForUpload: queueForUpload
+            queueForUpload: queueForUpload,
+            ownerUserID: ownerUserID
         )
     }
 
@@ -236,13 +241,14 @@ final class PhotoTransferCoordinator {
     }
 
     private func processPending() async {
-        guard await hasAuthenticatedSession() else { return }
+        guard let ownerUserID = await authenticatedUserIDProvider() else { return }
         isProcessing = true
         defer { isProcessing = false }
         let now = Date()
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         let pending = photos
             .filter {
+                $0.ownerUserID == ownerUserID &&
                 $0.deletedAt == nil &&
                 ($0.uploadState == .queued || $0.uploadState == .failed) &&
                 automaticRetryAllowed($0) &&
@@ -269,10 +275,11 @@ final class PhotoTransferCoordinator {
             }
         }
         if uploadedAny { await synchronizeMetadata() }
-        for photo in photos where photo.deletedAt != nil && photo.binaryDeletedAt == nil {
+        for photo in photos where photo.ownerUserID == ownerUserID &&
+            photo.deletedAt != nil && photo.binaryDeletedAt == nil {
             await cleanupDeletedBinary(photo)
         }
-        scheduleRetryIfNeeded()
+        scheduleRetryIfNeeded(ownerUserID: ownerUserID)
     }
 
     private func upload(_ photo: PhotoAsset) async throws {
@@ -338,9 +345,9 @@ final class PhotoTransferCoordinator {
         }
     }
 
-    private func recoverInterruptedUploads() {
+    private func recoverInterruptedUploads(ownerUserID: String) {
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
-        for photo in photos where photo.uploadState == .uploading {
+        for photo in photos where photo.ownerUserID == ownerUserID && photo.uploadState == .uploading {
             photo.uploadState = .queued
             photo.uploadRetryAfter = nil
         }
@@ -355,19 +362,21 @@ final class PhotoTransferCoordinator {
         try? await files.cleanupOrphans(retaining: referenced)
     }
 
-    private func cleanupAbandonedDraftPhotos() async {
+    private func cleanupAbandonedDraftPhotos(ownerUserID: String) async {
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         let store = LocalDishPhotoStore(context: context, photoFiles: files)
-        for photo in photos where photo.draftSessionID != nil && photo.serverVersion == 0 {
+        for photo in photos where photo.ownerUserID == ownerUserID &&
+            photo.draftSessionID != nil && photo.serverVersion == 0 {
             try? await store.discardLocalPhoto(photo)
         }
     }
 
-    private func scheduleRetryIfNeeded() {
+    private func scheduleRetryIfNeeded(ownerUserID: String) {
         retryTask?.cancel()
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         guard let date = photos.compactMap({ photo in
-            photo.deletedAt == nil && photo.uploadState == .failed && automaticRetryAllowed(photo)
+            photo.ownerUserID == ownerUserID && photo.deletedAt == nil &&
+                photo.uploadState == .failed && automaticRetryAllowed(photo)
                 ? photo.uploadRetryAfter
                 : nil
         }).min() else { return }
@@ -392,20 +401,23 @@ final class PhotoTransferCoordinator {
             && photo.uploadLastError?.hasPrefix("authentication:") != true
     }
 
-    private func prepareAuthenticationRetry() {
+    private func prepareAuthenticationRetry() async {
+        guard let ownerUserID = await authenticatedUserIDProvider() else { return }
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         let store = LocalDishPhotoStore(context: context, photoFiles: files)
-        for photo in photos where photo.deletedAt == nil
+        for photo in photos where photo.ownerUserID == ownerUserID && photo.deletedAt == nil
             && photo.uploadState == .failed
             && photo.uploadLastError?.hasPrefix("authentication:") == true {
             try? store.queueUpload(photo)
         }
     }
 
-    private func prepareManualRetry() {
+    private func prepareManualRetry() async {
+        guard let ownerUserID = await authenticatedUserIDProvider() else { return }
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         let store = LocalDishPhotoStore(context: context, photoFiles: files)
-        for photo in photos where photo.deletedAt == nil && photo.uploadState == .failed {
+        for photo in photos where photo.ownerUserID == ownerUserID &&
+            photo.deletedAt == nil && photo.uploadState == .failed {
             try? store.queueUpload(photo)
         }
     }

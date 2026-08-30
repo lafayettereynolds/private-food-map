@@ -42,9 +42,13 @@ struct ReleaseSafetyTests {
         let otherID = "tm_other"
         let currentProfile = UserProfile(tasteMapUserID: currentID, displayName: "Current")
         let otherProfile = UserProfile(tasteMapUserID: otherID, displayName: "Other")
-        let restaurant = Restaurant(name: "Local", address: "Road", latitude: 30, longitude: 120)
-        let visit = Visit(restaurantId: restaurant.id)
+        let restaurant = Restaurant(
+            ownerUserID: currentID,
+            name: "Local", address: "Road", latitude: 30, longitude: 120
+        )
+        let visit = Visit(ownerUserID: currentID, restaurantId: restaurant.id)
         let photo = PhotoAsset(
+            ownerUserID: currentID,
             restaurantId: restaurant.id,
             visitId: visit.id,
             kind: .visit,
@@ -56,6 +60,7 @@ struct ReleaseSafetyTests {
         let currentCompanion = DiningCompanion(ownerUserId: currentID, displayName: "Current Friend")
         let otherCompanion = DiningCompanion(ownerUserId: otherID, displayName: "Other Friend")
         let mutation = SyncMutation(
+            ownerUserID: currentID,
             entityType: .visit, entityID: visit.remoteID!, operation: .upsert,
             payload: Data("{}".utf8), baseVersion: 0
         )

@@ -31,7 +31,9 @@ enum RestaurantListStoreError: Error, Equatable, LocalizedError {
 @MainActor
 struct LocalRestaurantListStore {
     let context: ModelContext
-    private var queue: SwiftDataSyncQueue { SwiftDataSyncQueue(context: context) }
+    private func queue(ownerUserID: String) -> SwiftDataSyncQueue {
+        SwiftDataSyncQueue(context: context, ownerUserID: ownerUserID)
+    }
 
     @discardableResult
     func create(
@@ -91,7 +93,7 @@ struct LocalRestaurantListStore {
             item.deletedAt = now
             item.updatedAt = now
             item.syncStatus = .pending
-            try queue.enqueueDelete(
+            try queue(ownerUserID: actorUserID).enqueueDelete(
                 entityType: .restaurantListItem,
                 entityID: item.remoteID ?? item.id.uuidString.lowercased(),
                 baseVersion: item.serverVersion,
@@ -104,7 +106,7 @@ struct LocalRestaurantListStore {
         list.previewRestaurantIDs = []
         list.previewRestaurants = []
         list.syncStatus = .pending
-        try queue.enqueueDelete(
+        try queue(ownerUserID: actorUserID).enqueueDelete(
             entityType: .restaurantList,
             entityID: list.remoteID ?? list.id.uuidString.lowercased(),
             baseVersion: list.serverVersion,
@@ -246,7 +248,7 @@ struct LocalRestaurantListStore {
         item.deletedAt = now
         item.updatedAt = now
         item.syncStatus = .pending
-        try queue.enqueueDelete(
+        try queue(ownerUserID: actorUserID).enqueueDelete(
             entityType: .restaurantListItem,
             entityID: item.remoteID ?? item.id.uuidString.lowercased(),
             baseVersion: item.serverVersion,
@@ -412,7 +414,7 @@ struct LocalRestaurantListStore {
     }
 
     private func enqueue(_ list: RestaurantList) throws {
-        try queue.enqueueUpsert(
+        try queue(ownerUserID: list.ownerUserID).enqueueUpsert(
             entityType: .restaurantList,
             entityID: list.remoteID ?? list.id.uuidString.lowercased(),
             baseVersion: list.serverVersion,
@@ -422,7 +424,7 @@ struct LocalRestaurantListStore {
     }
 
     private func enqueue(_ item: RestaurantListItem) throws {
-        try queue.enqueueUpsert(
+        try queue(ownerUserID: item.ownerUserID).enqueueUpsert(
             entityType: .restaurantListItem,
             entityID: item.remoteID ?? item.id.uuidString.lowercased(),
             baseVersion: item.serverVersion,

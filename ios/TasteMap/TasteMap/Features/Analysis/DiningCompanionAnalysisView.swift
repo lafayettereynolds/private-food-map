@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct DiningCompanionAnalysisScreen: View {
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var dishes: [Dish]
@@ -14,12 +15,21 @@ struct DiningCompanionAnalysisScreen: View {
 
     @State private var overview: DiningCompanionOverview?
 
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: accountScope.ownerUserID,
+            restaurants: restaurants, visits: visits, photos: photos,
+            dishes: dishes, visitDishes: visitDishes,
+            companions: companions
+        )
+    }
+
     private var photosByID: [UUID: PhotoAsset] {
-        Dictionary(uniqueKeysWithValues: photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: owned.photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
     }
 
     private var restaurantsByID: [UUID: Restaurant] {
-        Dictionary(uniqueKeysWithValues: restaurants.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: owned.restaurants.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
     }
 
     private var dataRevision: String {
@@ -60,15 +70,15 @@ struct DiningCompanionAnalysisScreen: View {
         }
         .task(id: dataRevision) {
             let input = DiningCompanionInput.capture(
-                restaurants: restaurants,
-                visits: visits,
-                dishes: dishes,
-                visitDishes: visitDishes,
-                photos: photos,
-                companions: companions,
-                profiles: profiles,
+                restaurants: owned.restaurants,
+                visits: owned.visits,
+                dishes: owned.dishes,
+                visitDishes: owned.visitDishes,
+                photos: owned.photos,
+                companions: owned.companions,
+                profiles: profiles.filter { $0.tasteMapUserID == accountScope.ownerUserID },
                 socialProfiles: socialProfiles,
-                friendships: friendships
+                friendships: friendships.filter { $0.currentUserID == accountScope.ownerUserID }
             )
             overview = await Task.detached(priority: .userInitiated) {
                 DiningCompanionAnalyzer.analyze(input)

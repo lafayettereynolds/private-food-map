@@ -127,7 +127,7 @@ struct CompanionPickerSheet: View {
 
     private var usageByID: [String: (count: Int, latest: Date)] {
         var result: [String: (Int, Date)] = [:]
-        for visit in visits where visit.deletedAt == nil {
+        for visit in visits where visit.ownerUserID == ownerUserID && visit.deletedAt == nil {
             for id in visit.companionIDs {
                 let current = result[id] ?? (0, .distantPast)
                 result[id] = (current.0 + 1, max(current.1, visit.visitedAt))
@@ -284,7 +284,7 @@ struct RecommendationSourcePickerSheet: View {
 
     private var usageByID: [String: (count: Int, latest: Date)] {
         var result: [String: (Int, Date)] = [:]
-        for visit in visits where visit.deletedAt == nil {
+        for visit in visits where visit.ownerUserID == ownerUserID && visit.deletedAt == nil {
             guard let id = visit.recommendationSourceID else { continue }
             let current = result[id] ?? (0, .distantPast)
             result[id] = (current.0 + 1, max(current.1, visit.visitedAt))

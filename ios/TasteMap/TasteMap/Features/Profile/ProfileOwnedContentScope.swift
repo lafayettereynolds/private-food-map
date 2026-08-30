@@ -1,13 +1,9 @@
 import Foundation
 
-/// Read-only presentation scoping for local-first records whose owner is carried by
-/// the sync contract rather than duplicated onto every SwiftData model.
-///
-/// A record without a remote contract remains device-local legacy content. It can be
-/// displayed to the active account for compatibility, but this helper never claims,
-/// rewrites, or uploads that ownership.
+/// Current-account projection shared by every local business surface. Core
+/// entities carry a first-class owner; quarantined legacy rows are fail-closed.
 nonisolated enum ProfileOwnedContentScope {
-    static let localOwnerID = "local"
+    static let localOwnerID = LocalAccountOwner.guest
 
     struct Snapshot {
         let restaurants: [Restaurant]
@@ -33,24 +29,30 @@ nonisolated enum ProfileOwnedContentScope {
         recommendationSources: [RecommendationSource] = []
     ) -> Snapshot {
         let owner = normalized(currentUserID)
-        let ownedRestaurants = restaurants.filter { isRestaurant($0, ownedBy: owner) }
+        let ownedRestaurants = restaurants.filter { isOwned($0.ownerUserID, by: owner) }
         let restaurantIDs = Set(ownedRestaurants.map(\.id))
-        let ownedVisits = visits.filter { restaurantIDs.contains($0.restaurantId) }
+        let ownedVisits = visits.filter {
+            isOwned($0.ownerUserID, by: owner) && restaurantIDs.contains($0.restaurantId)
+        }
         let visitIDs = Set(ownedVisits.map(\.id))
-        let ownedDishes = dishes.filter { restaurantIDs.contains($0.restaurantId) }
+        let ownedDishes = dishes.filter {
+            isOwned($0.ownerUserID, by: owner) && restaurantIDs.contains($0.restaurantId)
+        }
         let dishIDs = Set(ownedDishes.map(\.id))
 
         return Snapshot(
             restaurants: ownedRestaurants,
             visits: ownedVisits,
             photos: photos.filter { photo in
-                if photo.kind == .avatar { return photoOwner(photo) == owner }
+                guard isOwned(photo.ownerUserID, by: owner) else { return false }
+                if photo.kind == .avatar { return true }
                 guard let restaurantID = photo.restaurantId else { return false }
                 return restaurantIDs.contains(restaurantID)
             },
             dishes: ownedDishes,
             visitDishes: visitDishes.filter {
-                visitIDs.contains($0.visitId) && dishIDs.contains($0.dishId)
+                isOwned($0.ownerUserID, by: owner) &&
+                    visitIDs.contains($0.visitId) && dishIDs.contains($0.dishId)
             },
             companions: companions.filter { isOwned($0.ownerUserId, by: owner) },
             recommendationSources: recommendationSources.filter {
@@ -61,11 +63,7 @@ nonisolated enum ProfileOwnedContentScope {
 
     @MainActor
     static func isRestaurant(_ restaurant: Restaurant, ownedBy currentUserID: String?) -> Bool {
-        let current = normalized(currentUserID)
-        let owner = restaurant.remoteRecordData
-            .flatMap { try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0) }
-            .map(\.userId) ?? localOwnerID
-        return isOwned(owner, by: current)
+        isOwned(restaurant.ownerUserID, by: normalized(currentUserID))
     }
 
     @MainActor
@@ -76,19 +74,12 @@ nonisolated enum ProfileOwnedContentScope {
               photo.visibility == .public,
               photo.kind != .avatar,
               photo.restaurantId != nil else { return false }
-        return isOwned(photoOwner(photo), by: normalized(currentUserID))
+        return isOwned(photo.ownerUserID, by: normalized(currentUserID))
     }
 
     static func isOwned(_ ownerUserID: String, by currentUserID: String) -> Bool {
         let owner = normalized(ownerUserID)
-        return owner == currentUserID || owner == localOwnerID
-    }
-
-    @MainActor
-    private static func photoOwner(_ photo: PhotoAsset) -> String {
-        photo.remoteRecordData
-            .flatMap { try? JSONDecoder().decode(PhotoSyncContractV1.self, from: $0) }
-            .map(\.userId) ?? localOwnerID
+        return owner == currentUserID
     }
 
     private static func normalized(_ value: String?) -> String {

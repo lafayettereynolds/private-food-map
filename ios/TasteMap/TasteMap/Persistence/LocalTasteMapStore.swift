@@ -8,9 +8,12 @@ struct LocalTasteMapStore {
     func restaurant(
         for candidate: RestaurantCandidate,
         among restaurants: [Restaurant],
-        status: RestaurantStatus = .visited
+        status: RestaurantStatus = .visited,
+        actorUserID: String? = nil
     ) throws -> Restaurant {
-        if let existing = RestaurantDeduplicator.match(for: candidate, in: restaurants) {
+        let ownerUserID = LocalAccountOwner.normalized(actorUserID ?? LocalAccountOwner.guest)
+        let ownedRestaurants = restaurants.filter { $0.ownerUserID == ownerUserID }
+        if let existing = RestaurantDeduplicator.match(for: candidate, in: ownedRestaurants) {
             if try merge(candidate: candidate, into: existing) {
                 existing.updatedAt = .now
                 try enqueue(existing)
@@ -19,6 +22,7 @@ struct LocalTasteMapStore {
         }
 
         let restaurant = Restaurant(
+            ownerUserID: ownerUserID,
             name: candidate.name,
             address: candidate.address,
             latitude: candidate.latitude,
@@ -49,9 +53,15 @@ struct LocalTasteMapStore {
     @discardableResult
     func addToWantToGo(
         candidate: RestaurantCandidate,
-        among restaurants: [Restaurant]
+        among restaurants: [Restaurant],
+        actorUserID: String? = nil
     ) throws -> Restaurant {
-        let restaurant = try restaurant(for: candidate, among: restaurants, status: .wantToGo)
+        let restaurant = try restaurant(
+            for: candidate,
+            among: restaurants,
+            status: .wantToGo,
+            actorUserID: actorUserID
+        )
         try context.save()
         return restaurant
     }
@@ -132,6 +142,7 @@ struct LocalTasteMapStore {
             try enqueue(restaurant)
         }
         let visit = Visit(
+            ownerUserID: ownerUserID,
             restaurantId: restaurantId,
             visitedAt: draft.visitedAt,
             rating: draft.rating,
@@ -178,7 +189,7 @@ struct LocalTasteMapStore {
         guard let restaurantRemoteID = restaurant.remoteID else {
             throw LocalTasteMapStoreError.restaurantRemoteIDMissing
         }
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: ownerUserID).enqueueUpsert(
             entityType: .visit,
             entityID: visit.remoteID ?? visit.id.uuidString,
             baseVersion: visit.serverVersion,
@@ -264,7 +275,7 @@ struct LocalTasteMapStore {
         guard let restaurantRemoteID = restaurant.remoteID else {
             throw LocalTasteMapStoreError.restaurantRemoteIDMissing
         }
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: visit.ownerUserID).enqueueUpsert(
             entityType: .visit,
             entityID: visit.remoteID ?? visit.id.uuidString,
             baseVersion: visit.serverVersion,
@@ -273,9 +284,13 @@ struct LocalTasteMapStore {
         )
     }
 
-    func delete(_ visit: Visit) throws {
+    func delete(_ visit: Visit, actorUserID: String? = nil) throws {
+        if let actorUserID = Self.normalizedOptional(actorUserID),
+           visit.ownerUserID != actorUserID {
+            throw LocalTasteMapStoreError.restaurantOwnershipMismatch
+        }
         try LocalDishStore(context: context).removeAssociations(for: visit.id)
-        let queue = SwiftDataSyncQueue(context: context)
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: visit.ownerUserID)
         guard let remoteID = visit.remoteID else {
             context.delete(visit)
             try context.save()
@@ -361,7 +376,12 @@ struct LocalTasteMapStore {
         )
     }
 
-    func updateDetails(_ restaurant: Restaurant, update: RestaurantDetailsUpdate) throws {
+    func updateDetails(
+        _ restaurant: Restaurant,
+        update: RestaurantDetailsUpdate,
+        actorUserID: String? = nil
+    ) throws {
+        _ = try ownerUserID(for: restaurant, actorUserID: actorUserID)
         let trimmedName = update.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw LocalTasteMapStoreError.restaurantNameRequired
@@ -436,7 +456,7 @@ struct LocalTasteMapStore {
         try context.save()
     }
 
-    func markWantToGo(_ restaurant: Restaurant) throws {
+    func markWantToGo(_ restaurant: Restaurant, actorUserID: String? = nil) throws {
         let base = try SyncRecordMapper.restaurantRecord(restaurant)
         try updateDetails(
             restaurant,
@@ -452,12 +472,13 @@ struct LocalTasteMapStore {
                 markerType: base.markerType,
                 markerPhotoID: base.markerPhotoId,
                 markerEmoji: base.markerEmoji
-            )
+            ),
+            actorUserID: actorUserID
         )
     }
 
     func delete(_ restaurant: Restaurant, actorUserID: String? = nil) throws {
-        let queue = SwiftDataSyncQueue(context: context)
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: restaurant.ownerUserID)
         let record = try? SyncRecordMapper.restaurantRecord(restaurant)
         if let actorUserID,
            let ownerUserID = record?.userId.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -595,7 +616,7 @@ struct LocalTasteMapStore {
         let remoteID = restaurant.remoteID ?? restaurant.id.uuidString
         restaurant.remoteID = remoteID
         restaurant.syncStatus = .pending
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: restaurant.ownerUserID).enqueueUpsert(
             entityType: .restaurant,
             entityID: remoteID,
             baseVersion: restaurant.serverVersion,
@@ -708,8 +729,7 @@ struct LocalTasteMapStore {
     }
 
     private func ownerUserID(for restaurant: Restaurant, actorUserID: String?) throws -> String {
-        let recordOwner = (try? SyncRecordMapper.restaurantRecord(restaurant).userId)
-            .flatMap(Self.normalizedOptional) ?? "local"
+        let recordOwner = restaurant.ownerUserID
         if let actorUserID = Self.normalizedOptional(actorUserID),
            recordOwner.hasPrefix("tm_"),
            recordOwner != actorUserID {

@@ -329,6 +329,7 @@ struct BackupExportServiceTests {
         let restaurants = (0 ..< restaurantCount).map { index in
             Restaurant(
                 id: stableUUID(index + 1),
+                ownerUserID: userA,
                 name: "Restaurant \(index)",
                 address: "Address \(index)",
                 latitude: 30,
@@ -339,6 +340,7 @@ struct BackupExportServiceTests {
         let visits = (0 ..< visitCount).map { index in
             Visit(
                 id: stableUUID(20_000 + index),
+                ownerUserID: userA,
                 restaurantId: restaurants[index % restaurantCount].id,
                 visitedAt: exportedAt,
                 remoteID: "large-visit-\(String(format: "%05d", index))"
@@ -348,6 +350,7 @@ struct BackupExportServiceTests {
             let visit = visits[index]
             return Dish(
                 id: stableUUID(40_000 + index),
+                ownerUserID: userA,
                 restaurantId: visit.restaurantId,
                 visitId: visit.id,
                 name: "Dish \(index)",
@@ -357,6 +360,7 @@ struct BackupExportServiceTests {
         let associations = dishes.enumerated().map { index, dish in
             VisitDish(
                 id: stableUUID(60_000 + index),
+                ownerUserID: userA,
                 restaurantId: dish.restaurantId,
                 visitId: dish.visitId,
                 dishId: dish.id,
@@ -366,6 +370,7 @@ struct BackupExportServiceTests {
         let photos = dishes.prefix(1_000).enumerated().map { index, dish in
             PhotoAsset(
                 id: stableUUID(80_000 + index),
+                ownerUserID: userA,
                 restaurantId: dish.restaurantId,
                 visitId: dish.visitId,
                 dishId: dish.id,
@@ -470,7 +475,8 @@ struct BackupExportServiceTests {
             name: "AMap Noodles", provider: .amap, externalID: "B0AMAP1"
         )
         let manual = Restaurant(
-            id: stableUUID(3), name: "Manual Cafe", address: "Manual Address", latitude: 30.3,
+            id: stableUUID(3), ownerUserID: userID,
+            name: "Manual Cafe", address: "Manual Address", latitude: 30.3,
             longitude: 120.3, remoteID: "restaurant-manual"
         )
         let companion = DiningCompanion(
@@ -487,12 +493,14 @@ struct BackupExportServiceTests {
             remoteID: "source-1"
         )
         let nilVisit = Visit(
-            id: stableUUID(20), restaurantId: amap.id, visitedAt: exportedAt,
+            id: stableUUID(20), ownerUserID: userID,
+            restaurantId: amap.id, visitedAt: exportedAt,
             rating: nil, note: nil, myActualSpend: nil, partySize: nil,
             remoteID: "visit-nil"
         )
         let richVisit = Visit(
-            id: stableUUID(21), restaurantId: apple.id, visitedAt: exportedAt,
+            id: stableUUID(21), ownerUserID: userID,
+            restaurantId: apple.id, visitedAt: exportedAt,
             rating: 4.5, valueRating: 4, environmentRating: 4.5, serviceRating: 5,
             note: "真实私人备注", myActualSpend: Decimal(string: "128.50"),
             totalPrice: Decimal(string: "257.00"), pricePerPerson: Decimal(string: "128.50"),
@@ -508,17 +516,20 @@ struct BackupExportServiceTests {
             partySize: 2, remoteID: "visit-rich"
         )
         let dish = Dish(
-            id: stableUUID(30), restaurantId: apple.id, visitId: richVisit.id,
+            id: stableUUID(30), ownerUserID: userID,
+            restaurantId: apple.id, visitId: richVisit.id,
             name: "金枪鱼寿司", taste: "鲜", rating: 5,
             price: Decimal(string: "68.00"), photoRemoteID: "photo-1",
             remoteID: "dish-1"
         )
         let visitDish = VisitDish(
-            id: stableUUID(31), restaurantId: apple.id, visitId: richVisit.id,
+            id: stableUUID(31), ownerUserID: userID,
+            restaurantId: apple.id, visitId: richVisit.id,
             dishId: dish.id, remoteID: "visit-dish-1"
         )
         let photo = PhotoAsset(
-            id: stableUUID(40), restaurantId: apple.id, visitId: richVisit.id, dishId: dish.id,
+            id: stableUUID(40), ownerUserID: userID,
+            restaurantId: apple.id, visitId: richVisit.id, dishId: dish.id,
             kind: .dish, storageProvider: .r2,
             storageKey: "r2/private/storage-key", providerAccountId: "drive-account-private",
             thumbnailStorageKey: "r2/private/thumb", fileName: "sushi.heic",
@@ -575,8 +586,8 @@ struct BackupExportServiceTests {
         return BackupExportInput(
             restaurants: [restaurantA, restaurantB],
             visits: [
-                Visit(restaurantId: restaurantA.id, note: "A_PRIVATE_NOTE", remoteID: "visit-a"),
-                Visit(restaurantId: restaurantB.id, note: "B_PRIVATE_NOTE", remoteID: "visit-b"),
+                Visit(ownerUserID: userA, restaurantId: restaurantA.id, note: "A_PRIVATE_NOTE", remoteID: "visit-a"),
+                Visit(ownerUserID: userB, restaurantId: restaurantB.id, note: "B_PRIVATE_NOTE", remoteID: "visit-b"),
             ],
             dishes: [], visitDishes: [], photos: [],
             companions: [
@@ -599,6 +610,7 @@ struct BackupExportServiceTests {
     ) throws -> Restaurant {
         let restaurant = Restaurant(
             id: localID,
+            ownerUserID: owner,
             name: name,
             address: "杭州测试地址",
             latitude: 30.2,

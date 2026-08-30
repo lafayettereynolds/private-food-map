@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct RecommendationSourceAnalysisScreen: View {
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var sources: [RecommendationSource]
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
@@ -10,12 +11,20 @@ struct RecommendationSourceAnalysisScreen: View {
 
     @State private var overview: RecommendationSourceOverview?
 
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: accountScope.ownerUserID,
+            restaurants: restaurants, visits: visits, photos: photos,
+            recommendationSources: sources
+        )
+    }
+
     private var photosByID: [UUID: PhotoAsset] {
-        Dictionary(uniqueKeysWithValues: photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: owned.photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
     }
 
     private var restaurantsByID: [UUID: Restaurant] {
-        Dictionary(uniqueKeysWithValues: restaurants.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: owned.restaurants.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
     }
 
     private var dataRevision: String {
@@ -50,11 +59,13 @@ struct RecommendationSourceAnalysisScreen: View {
         }
         .task(id: dataRevision) {
             let input = RecommendationSourceInput.capture(
-                sources: sources,
-                restaurants: restaurants,
-                visits: visits,
-                photos: photos,
-                profile: profiles.first(where: { $0.deletedAt == nil })
+                sources: owned.recommendationSources,
+                restaurants: owned.restaurants,
+                visits: owned.visits,
+                photos: owned.photos,
+                profile: profiles.first(where: {
+                    $0.tasteMapUserID == accountScope.ownerUserID && $0.deletedAt == nil
+                })
             )
             overview = await Task.detached(priority: .userInitiated) {
                 RecommendationSourceAnalyzer.analyze(input)
@@ -585,7 +596,11 @@ struct RecommendationSourceDetailView: View {
             }
             var draft = VisitDraft(visit: visit)
             draft.rating = visit.rating == 1.5 ? 5 : 1.5
-            try LocalTasteMapStore(context: modelContext).update(visit, draft: draft)
+            try LocalTasteMapStore(context: modelContext).update(
+                visit,
+                draft: draft,
+                actorUserID: visit.ownerUserID
+            )
             fixtureMessage = "已修改一条 Visit 评分"
         } catch {
             fixtureMessage = "测试评分修改失败"

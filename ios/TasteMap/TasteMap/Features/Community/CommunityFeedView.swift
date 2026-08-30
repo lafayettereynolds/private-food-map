@@ -21,6 +21,11 @@ struct CommunityFeedView: View {
     @State private var selectedListItem: PublicContentItemV1?
     @State private var selectedRouletteRestaurantID: UUID?
 
+    private var ownedRestaurants: [Restaurant] {
+        guard let currentUserID else { return [] }
+        return restaurants.filter { $0.ownerUserID == currentUserID }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -95,7 +100,7 @@ struct CommunityFeedView: View {
             .onChange(of: scope) { _, _ in Task { await load(reset: true, preferCache: true) } }
             .sheet(item: $selectedItem) { item in
                 DiscoveryRestaurantDestination(
-                    card: item.discoveryCard, restaurants: restaurants,
+                    card: item.discoveryCard, restaurants: ownedRestaurants,
                     onWantToGo: { addToWantToGo(item) },
                     onViewerStateChange: {
                         updateViewerState(globalKey: item.restaurant.globalKey, state: $0)
@@ -226,10 +231,12 @@ struct CommunityFeedView: View {
 
     @MainActor
     private func addToWantToGo(_ item: PublicContentItemV1) {
-        guard item.viewerState == .none else { return }
+        guard item.viewerState == .none, let currentUserID else { return }
         do {
             let restaurant = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
-                projection: item.restaurant.discoveryProjection, among: restaurants
+                projection: item.restaurant.discoveryProjection,
+                among: ownedRestaurants,
+                currentUserID: currentUserID
             )
             updateViewerState(
                 globalKey: item.restaurant.globalKey,
@@ -241,10 +248,12 @@ struct CommunityFeedView: View {
 
     @MainActor
     private func addToRoulette(_ item: PublicContentItemV1) {
+        guard let currentUserID else { return }
         do {
             let restaurant = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
                 projection: item.restaurant.discoveryProjection,
-                among: restaurants
+                among: ownedRestaurants,
+                currentUserID: currentUserID
             )
             updateViewerState(
                 globalKey: item.restaurant.globalKey,

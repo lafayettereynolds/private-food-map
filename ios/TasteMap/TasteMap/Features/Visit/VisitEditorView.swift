@@ -8,6 +8,7 @@ struct VisitEditorView: View {
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
     @Environment(NativeAuthServices.self) private var authServices
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var allRestaurants: [Restaurant]
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
@@ -46,6 +47,18 @@ struct VisitEditorView: View {
     @State private var isChoosingCompanions = false
     @State private var isChoosingRecommendationSource = false
     @State private var invitedUserIDs: Set<String> = []
+
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: currentUserID,
+            restaurants: allRestaurants,
+            visits: allVisits,
+            photos: allPhotos,
+            dishes: allDishes,
+            visitDishes: allVisitDishes,
+            companions: companions
+        )
+    }
 
     @MainActor
     init(
@@ -769,7 +782,7 @@ struct VisitEditorView: View {
                 restaurant: restaurant,
                 candidate: candidate,
                 existingVisit: visit,
-                allRestaurants: allRestaurants,
+                allRestaurants: owned.restaurants,
                 draft: validatedDraft,
                 dishDrafts: dishDrafts,
                 actorUserID: currentUserID
@@ -838,7 +851,7 @@ struct VisitEditorView: View {
 
     private var visibleVisitPhotos: [PhotoAsset] {
         guard let visitID = visit?.id else { return [] }
-        return allPhotos
+        return owned.photos
             .filter { $0.visitId == visitID && $0.deletedAt == nil && ($0.kind == .visit || $0.kind == .dish) }
             .sorted { left, right in
                 left.sortOrder == right.sortOrder
@@ -956,7 +969,10 @@ struct VisitEditorView: View {
         guard let visit, submissionGate.begin() else { return }
         defer { submissionGate.finish() }
         do {
-            try LocalTasteMapStore(context: modelContext).delete(visit)
+            try LocalTasteMapStore(context: modelContext).delete(
+                visit,
+                actorUserID: currentUserID
+            )
             dismiss()
         } catch {
             saveError = "这条到访记录没有删除成功，请重试。"
@@ -967,7 +983,7 @@ struct VisitEditorView: View {
         guard let restaurantID = restaurant?.id else { return [] }
         return DishReuseResolver.orderedUniqueDishes(
             restaurantID: restaurantID,
-            dishes: allDishes,
+            dishes: owned.dishes,
             usageByDishID: dishUsageByID
         )
     }
@@ -976,9 +992,9 @@ struct VisitEditorView: View {
         guard let restaurantID = restaurant?.id else { return [:] }
         return DishReuseResolver.usage(
             restaurantID: restaurantID,
-            dishes: allDishes,
-            associations: allVisitDishes,
-            visits: allVisits
+            dishes: owned.dishes,
+            associations: owned.visitDishes,
+            visits: owned.visits
         )
     }
 
@@ -987,12 +1003,12 @@ struct VisitEditorView: View {
         didLoadDishes = true
         guard let visit else { return }
         try? LocalDishStore(context: modelContext).bootstrapLegacyAssociations()
-        let associations = ((try? modelContext.fetch(FetchDescriptor<VisitDish>())) ?? [])
+        let associations = owned.visitDishes
             .filter { $0.visitId == visit.id && $0.deletedAt == nil }
             .sorted { $0.sortOrder < $1.sortOrder }
         dishDrafts = associations.compactMap { association in
-            guard let dish = allDishes.first(where: { $0.id == association.dishId && $0.deletedAt == nil }) else { return nil }
-            let photoID = allPhotos.first(where: {
+            guard let dish = owned.dishes.first(where: { $0.id == association.dishId && $0.deletedAt == nil }) else { return nil }
+            let photoID = owned.photos.first(where: {
                 $0.visitId == visit.id && $0.dishId == dish.id && $0.deletedAt == nil
             })?.id
             return DishDraft(dish: dish, photoID: photoID)
@@ -1008,14 +1024,12 @@ struct VisitEditorView: View {
     }
 
     private var currentUserID: String? {
-        if let activeUserID = premiumEntitlementService.activeUserID { return activeUserID }
-        let activeProfiles = profiles.filter { $0.deletedAt == nil }
-        return activeProfiles.count == 1 ? activeProfiles[0].tasteMapUserID : nil
+        accountScope.ownerUserID
     }
 
     private var linkedSelectedCompanions: [DiningCompanion] {
-        companions.filter { companion in
-            companion.deletedAt == nil && companion.ownerUserId == (currentUserID ?? "local") &&
+        owned.companions.filter { companion in
+            companion.deletedAt == nil && companion.ownerUserId == currentUserID &&
                 companion.remoteID.map(draft.companionIDs.contains) == true &&
                 companion.linkedTasteMapUserId != nil
         }

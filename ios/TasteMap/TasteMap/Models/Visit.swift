@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class Visit {
     @Attribute(.unique) var id: UUID
+    var ownerUserID: String = LocalAccountOwner.legacyQuarantine
     var restaurantId: UUID
     var visitedAt: Date
     var rating: Double?
@@ -38,7 +39,7 @@ final class Visit {
     var partySize: Int?
     var createdAt: Date
     var updatedAt: Date
-    @Attribute(.unique) var remoteID: String?
+    var remoteID: String?
     var deletedAt: Date?
     var serverVersion: Int64 = 0
     var lastSyncedAt: Date?
@@ -169,6 +170,7 @@ final class Visit {
 
     init(
         id: UUID = UUID(),
+        ownerUserID: String = LocalAccountOwner.guest,
         restaurantId: UUID,
         visitedAt: Date = .now,
         rating: Double? = nil,
@@ -210,6 +212,7 @@ final class Visit {
         syncStatus: SyncStatus = .pending
     ) {
         self.id = id
+        self.ownerUserID = LocalAccountOwner.normalized(ownerUserID)
         self.restaurantId = restaurantId
         self.visitedAt = visitedAt
         self.rating = Self.validatedRating(rating)

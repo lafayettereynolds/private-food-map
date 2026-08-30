@@ -142,7 +142,7 @@ enum SyncRecordMapper {
         }
         return try RestaurantJSONContractV1(
             id: remoteID,
-            userId: previous?.userId ?? "local",
+            userId: restaurant.ownerUserID,
             placeIdentities: identities,
             amapPoiId: previous?.amapPoiId,
             name: restaurant.name,
@@ -177,7 +177,7 @@ enum SyncRecordMapper {
         VisitSyncContractV1(
             schemaVersion: SyncV1Contract.schemaVersion,
             id: visit.remoteID ?? visit.id.uuidString,
-            userId: "local",
+            userId: visit.ownerUserID,
             restaurantId: restaurantRemoteID,
             visitedAt: dateString(visit.visitedAt),
             diningMode: visit.diningMode,
@@ -258,7 +258,7 @@ enum SyncRecordMapper {
     ) throws -> DishSyncContractV1 {
         try DishSyncContractV1(
             id: dish.remoteID ?? dish.id.uuidString.lowercased(),
-            userId: "local",
+            userId: dish.ownerUserID,
             restaurantId: restaurantRemoteID,
             visitId: visitRemoteID,
             name: dish.name,
@@ -281,7 +281,7 @@ enum SyncRecordMapper {
     ) throws -> VisitDishSyncContractV1 {
         try VisitDishSyncContractV1(
             id: association.remoteID ?? association.id.uuidString.lowercased(),
-            userId: "local",
+            userId: association.ownerUserID,
             restaurantId: restaurantRemoteID,
             visitId: visitRemoteID,
             dishId: dishRemoteID,
@@ -304,7 +304,7 @@ enum SyncRecordMapper {
         }
         return try PhotoSyncContractV1(
             id: photo.remoteID ?? photo.id.uuidString.lowercased(),
-            userId: "local",
+            userId: photo.ownerUserID,
             restaurantId: restaurantRemoteID,
             visitId: visitRemoteID,
             dishId: dishRemoteID,

@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct TasteProfileAnalysisScreen: View {
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var dishes: [Dish]
@@ -13,8 +14,17 @@ struct TasteProfileAnalysisScreen: View {
 
     @State private var report: TasteProfileAnalysis?
 
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: accountScope.ownerUserID,
+            restaurants: restaurants, visits: visits, photos: photos,
+            dishes: dishes, visitDishes: visitDishes,
+            companions: companions, recommendationSources: recommendationSources
+        )
+    }
+
     private var photosByID: [UUID: PhotoAsset] {
-        Dictionary(uniqueKeysWithValues: photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: owned.photos.filter { $0.deletedAt == nil }.map { ($0.id, $0) })
     }
 
     private var dataRevision: String {
@@ -47,14 +57,16 @@ struct TasteProfileAnalysisScreen: View {
         }
         .task(id: dataRevision) {
             let input = TasteProfileInput.capture(
-                restaurants: restaurants,
-                visits: visits,
-                dishes: dishes,
-                visitDishes: visitDishes,
-                photos: photos,
-                companions: companions,
-                recommendationSources: recommendationSources,
-                profile: profiles.first(where: { $0.deletedAt == nil })
+                restaurants: owned.restaurants,
+                visits: owned.visits,
+                dishes: owned.dishes,
+                visitDishes: owned.visitDishes,
+                photos: owned.photos,
+                companions: owned.companions,
+                recommendationSources: owned.recommendationSources,
+                profile: profiles.first(where: {
+                    $0.tasteMapUserID == accountScope.ownerUserID && $0.deletedAt == nil
+                })
             )
             report = await Task.detached(priority: .userInitiated) {
                 TasteProfileAnalyzer.analyze(input)

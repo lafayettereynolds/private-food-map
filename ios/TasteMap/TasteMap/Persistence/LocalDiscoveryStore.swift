@@ -43,9 +43,11 @@ struct LocalDiscoveryStore {
     @discardableResult
     func addToWantToGo(
         projection: DiscoveryRestaurantProjectionV1,
-        among restaurants: [Restaurant]
+        among restaurants: [Restaurant],
+        currentUserID: String = LocalAccountOwner.guest
     ) throws -> Restaurant {
-        if let existing = localRestaurant(for: projection, among: restaurants) {
+        let ownedRestaurants = restaurants.filter { $0.ownerUserID == currentUserID }
+        if let existing = localRestaurant(for: projection, among: ownedRestaurants) {
             // A recorded visit always wins. Discovery must never regress it to WantToGo.
             if existing.status == .visited { return existing }
             let knownIdentities = identityKeys(for: existing)
@@ -57,7 +59,7 @@ struct LocalDiscoveryStore {
                 existing.updatedAt = .now
                 existing.syncStatus = .pending
                 existing.remoteRecordData = try discoveryRecordData(for: existing, projection: projection)
-                try SwiftDataSyncQueue(context: context).enqueueUpsert(
+                try SwiftDataSyncQueue(context: context, ownerUserID: currentUserID).enqueueUpsert(
                     entityType: .restaurant,
                     entityID: existing.remoteID ?? existing.id.uuidString,
                     baseVersion: existing.serverVersion,
@@ -70,11 +72,15 @@ struct LocalDiscoveryStore {
         }
         let candidate = projection.restaurantCandidate
         let restaurant = try LocalTasteMapStore(context: context)
-            .addToWantToGo(candidate: candidate, among: restaurants)
+            .addToWantToGo(
+                candidate: candidate,
+                among: ownedRestaurants,
+                actorUserID: currentUserID
+            )
         restaurant.city = projection.city
         restaurant.updatedAt = .now
         restaurant.remoteRecordData = try discoveryRecordData(for: restaurant, projection: projection)
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(context: context, ownerUserID: currentUserID).enqueueUpsert(
             entityType: .restaurant,
             entityID: restaurant.remoteID ?? restaurant.id.uuidString,
             baseVersion: restaurant.serverVersion,
@@ -187,7 +193,8 @@ struct LocalDiscoveryStore {
             )
         }
         let record = try RestaurantJSONContractV1(
-            id: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(), userId: "local",
+            id: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
+            userId: restaurant.ownerUserID,
             placeIdentities: identities, amapPoiId: identities.first { $0.provider == .amap }?.externalId,
             name: projection.name, address: projection.address, city: projection.city,
             latitude: projection.latitude, longitude: projection.longitude, status: .wantToGo,

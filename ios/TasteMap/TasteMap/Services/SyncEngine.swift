@@ -7,6 +7,7 @@ enum SyncEngineError: Error, Equatable {
     case missingRestaurantMapping
     case missingAcknowledgement
     case cursorDidNotAdvance
+    case ownershipMismatch
 }
 
 @MainActor
@@ -14,18 +15,21 @@ final class SyncEngine {
     private let context: ModelContext
     private let api: any SyncAPI
     private let queue: SwiftDataSyncQueue
+    private let ownerUserID: String
     private let now: @MainActor () -> Date
     private let retryBaseDelay: TimeInterval
 
     init(
         context: ModelContext,
         api: any SyncAPI,
+        ownerUserID: String = LocalAccountOwner.guest,
         now: @escaping @MainActor () -> Date = { .now },
         retryBaseDelay: TimeInterval = 5
     ) {
         self.context = context
         self.api = api
-        self.queue = SwiftDataSyncQueue(context: context)
+        self.ownerUserID = LocalAccountOwner.normalized(ownerUserID)
+        self.queue = SwiftDataSyncQueue(context: context, ownerUserID: ownerUserID)
         self.now = now
         self.retryBaseDelay = retryBaseDelay
     }
@@ -413,6 +417,7 @@ final class SyncEngine {
 
     private func applyRestaurant(_ envelope: RestaurantSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         let snapshot = try JSONEncoder().encode(record)
         if let restaurant = try restaurants().first(where: { $0.remoteID == record.id }) {
             if try queue.hasConflict(entityType: .restaurant, entityID: record.id) {
@@ -445,7 +450,8 @@ final class SyncEngine {
             return
         }
         let restaurant = Restaurant(
-            id: UUID(uuidString: record.id) ?? UUID(),
+            id: availableLocalID(preferred: UUID(uuidString: record.id)),
+            ownerUserID: ownerUserID,
             name: record.name,
             address: record.address,
             latitude: record.latitude,
@@ -467,6 +473,7 @@ final class SyncEngine {
 
     private func applyVisit(_ envelope: VisitSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         guard let restaurant = try restaurants().first(where: { $0.remoteID == record.restaurantId }) else {
             throw SyncEngineError.missingRestaurantMapping
         }
@@ -520,7 +527,8 @@ final class SyncEngine {
             return
         }
         let visit = Visit(
-            id: UUID(uuidString: record.id) ?? UUID(),
+            id: availableLocalID(preferred: UUID(uuidString: record.id)),
+            ownerUserID: ownerUserID,
             restaurantId: restaurant.id,
             visitedAt: SyncRecordMapper.date(record.visitedAt) ?? now(),
             rating: record.rating,
@@ -573,6 +581,7 @@ final class SyncEngine {
 
     private func applyCompanion(_ envelope: DiningCompanionSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         let snapshot = try JSONEncoder().encode(record)
         if let companion = try companions().first(where: { $0.remoteID == record.id }) {
             if try queue.hasConflict(entityType: .companion, entityID: record.id) {
@@ -613,6 +622,7 @@ final class SyncEngine {
 
     private func applyRecommendationSource(_ envelope: RecommendationSourceSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         let snapshot = try JSONEncoder().encode(record)
         if let source = try recommendationSources().first(where: { $0.remoteID == record.id }) {
             if try queue.hasConflict(entityType: .recommendationSource, entityID: record.id) {
@@ -654,6 +664,7 @@ final class SyncEngine {
 
     private func applyDish(_ envelope: DishSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         guard let restaurant = try restaurants().first(where: { $0.remoteID == record.restaurantId }),
               let visit = try visits().first(where: { $0.remoteID == record.visitId }) else {
             throw SyncEngineError.missingRestaurantMapping
@@ -681,7 +692,8 @@ final class SyncEngine {
             return
         }
         context.insert(Dish(
-            id: UUID(uuidString: record.id) ?? UUID(),
+            id: availableLocalID(preferred: UUID(uuidString: record.id)),
+            ownerUserID: ownerUserID,
             restaurantId: restaurant.id,
             visitId: visit.id,
             name: record.name,
@@ -703,6 +715,7 @@ final class SyncEngine {
 
     private func applyVisitDish(_ envelope: VisitDishSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         guard let restaurant = try restaurants().first(where: { $0.remoteID == record.restaurantId }),
               let visit = try visits().first(where: { $0.remoteID == record.visitId }),
               let dish = try dishes().first(where: { $0.remoteID == record.dishId }) else {
@@ -747,7 +760,8 @@ final class SyncEngine {
             return
         }
         context.insert(VisitDish(
-            id: UUID(uuidString: record.id) ?? UUID(),
+            id: availableLocalID(preferred: UUID(uuidString: record.id)),
+            ownerUserID: ownerUserID,
             restaurantId: restaurant.id,
             visitId: visit.id,
             dishId: dish.id,
@@ -765,6 +779,7 @@ final class SyncEngine {
 
     private func applyPhoto(_ envelope: PhotoSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         let restaurantID = try record.restaurantId.map { remoteID in
             guard let restaurant = try restaurants().first(where: { $0.remoteID == remoteID }) else {
                 throw SyncEngineError.missingRestaurantMapping
@@ -806,7 +821,8 @@ final class SyncEngine {
             return
         }
         context.insert(PhotoAsset(
-            id: UUID(uuidString: record.id) ?? UUID(),
+            id: availableLocalID(preferred: UUID(uuidString: record.id)),
+            ownerUserID: ownerUserID,
             restaurantId: restaurantID,
             visitId: visitID,
             dishId: dishID,
@@ -836,6 +852,7 @@ final class SyncEngine {
 
     private func applyProfile(_ envelope: ProfileSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         let snapshot = try JSONEncoder().encode(record)
         if let profile = try profiles().first(where: { $0.tasteMapUserID == record.userId }) {
             if try queue.hasConflict(entityType: .profile, entityID: record.userId) {
@@ -889,6 +906,7 @@ final class SyncEngine {
 
     private func applyRestaurantList(_ envelope: RestaurantListSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         let snapshot = try JSONEncoder().encode(record)
         if let list = try restaurantLists().first(where: { $0.remoteID == record.id }) {
             if try queue.hasConflict(entityType: .restaurantList, entityID: record.id) {
@@ -941,6 +959,7 @@ final class SyncEngine {
 
     private func applyRestaurantListItem(_ envelope: RestaurantListItemSyncRecordEnvelopeV1) throws {
         let record = envelope.record
+        try validateOwner(record.userId)
         guard let list = try restaurantLists().first(where: { $0.remoteID == record.listId }) else {
             throw SyncEngineError.missingRestaurantMapping
         }
@@ -1121,6 +1140,7 @@ final class SyncEngine {
         serverVersion: Int64,
         snapshot: Data
     ) {
+        restaurant.ownerUserID = ownerUserID
         restaurant.name = record.name
         restaurant.address = record.address
         restaurant.city = record.city
@@ -1146,6 +1166,7 @@ final class SyncEngine {
         recommendationSourceID: String?,
         serverVersion: Int64
     ) {
+        visit.ownerUserID = ownerUserID
         visit.restaurantId = restaurantID
         visit.visitedAt = SyncRecordMapper.date(record.visitedAt) ?? visit.visitedAt
         visit.rating = Visit.validatedRating(record.rating)
@@ -1231,6 +1252,7 @@ final class SyncEngine {
         serverVersion: Int64,
         snapshot: Data
     ) {
+        dish.ownerUserID = ownerUserID
         dish.restaurantId = restaurantID
         dish.visitId = visitID
         dish.name = record.name
@@ -1257,6 +1279,7 @@ final class SyncEngine {
         serverVersion: Int64,
         snapshot: Data
     ) {
+        photo.ownerUserID = ownerUserID
         if photo.storageKey != record.storageKey {
             photo.displayFileRelativePath = nil
             photo.cachedStorageKey = nil
@@ -1299,6 +1322,7 @@ final class SyncEngine {
         serverVersion: Int64,
         snapshot: Data
     ) {
+        association.ownerUserID = ownerUserID
         association.restaurantId = restaurantID
         association.visitId = visitID
         association.dishId = dishID
@@ -1449,50 +1473,52 @@ final class SyncEngine {
     }
 
     private func checkpoint() throws -> SyncCheckpoint {
-        if let existing = try context.fetch(FetchDescriptor<SyncCheckpoint>()).first { return existing }
-        let checkpoint = SyncCheckpoint()
+        if let existing = try context.fetch(FetchDescriptor<SyncCheckpoint>()).first(where: {
+            $0.ownerUserID == ownerUserID
+        }) { return existing }
+        let checkpoint = SyncCheckpoint(ownerUserID: ownerUserID)
         context.insert(checkpoint)
         return checkpoint
     }
 
     private func restaurants() throws -> [Restaurant] {
-        try context.fetch(FetchDescriptor<Restaurant>())
+        try context.fetch(FetchDescriptor<Restaurant>()).filter { $0.ownerUserID == ownerUserID }
     }
 
     private func visits() throws -> [Visit] {
-        try context.fetch(FetchDescriptor<Visit>())
+        try context.fetch(FetchDescriptor<Visit>()).filter { $0.ownerUserID == ownerUserID }
     }
 
     private func dishes() throws -> [Dish] {
-        try context.fetch(FetchDescriptor<Dish>())
+        try context.fetch(FetchDescriptor<Dish>()).filter { $0.ownerUserID == ownerUserID }
     }
 
     private func visitDishes() throws -> [VisitDish] {
-        try context.fetch(FetchDescriptor<VisitDish>())
+        try context.fetch(FetchDescriptor<VisitDish>()).filter { $0.ownerUserID == ownerUserID }
     }
 
     private func photos() throws -> [PhotoAsset] {
-        try context.fetch(FetchDescriptor<PhotoAsset>())
+        try context.fetch(FetchDescriptor<PhotoAsset>()).filter { $0.ownerUserID == ownerUserID }
     }
 
     private func companions() throws -> [DiningCompanion] {
-        try context.fetch(FetchDescriptor<DiningCompanion>())
+        try context.fetch(FetchDescriptor<DiningCompanion>()).filter { $0.ownerUserId == ownerUserID }
     }
 
     private func recommendationSources() throws -> [RecommendationSource] {
-        try context.fetch(FetchDescriptor<RecommendationSource>())
+        try context.fetch(FetchDescriptor<RecommendationSource>()).filter { $0.ownerUserId == ownerUserID }
     }
 
     private func profiles() throws -> [UserProfile] {
-        try context.fetch(FetchDescriptor<UserProfile>())
+        try context.fetch(FetchDescriptor<UserProfile>()).filter { $0.tasteMapUserID == ownerUserID }
     }
 
     private func restaurantLists() throws -> [RestaurantList] {
-        try context.fetch(FetchDescriptor<RestaurantList>())
+        try context.fetch(FetchDescriptor<RestaurantList>()).filter { $0.ownerUserID == ownerUserID }
     }
 
     private func restaurantListItems() throws -> [RestaurantListItem] {
-        try context.fetch(FetchDescriptor<RestaurantListItem>())
+        try context.fetch(FetchDescriptor<RestaurantListItem>()).filter { $0.ownerUserID == ownerUserID }
     }
 
     private func parentRemoteIDs(for photo: PhotoAsset) throws -> (restaurant: String?, visit: String?, dish: String?) {
@@ -1509,6 +1535,22 @@ final class SyncEngine {
         if photo.visitId != nil && visit == nil { throw SyncEngineError.missingRestaurantMapping }
         if photo.dishId != nil && dish == nil { throw SyncEngineError.missingRestaurantMapping }
         return (restaurant, visit, dish)
+    }
+
+    private func validateOwner(_ recordOwner: String) throws {
+        guard LocalAccountOwner.normalized(recordOwner) == ownerUserID else {
+            throw SyncEngineError.ownershipMismatch
+        }
+    }
+
+    private func availableLocalID(preferred: UUID?) -> UUID {
+        guard let preferred else { return UUID() }
+        let isUsed = ((try? context.fetch(FetchDescriptor<Restaurant>())) ?? []).contains { $0.id == preferred }
+            || ((try? context.fetch(FetchDescriptor<Visit>())) ?? []).contains { $0.id == preferred }
+            || ((try? context.fetch(FetchDescriptor<Dish>())) ?? []).contains { $0.id == preferred }
+            || ((try? context.fetch(FetchDescriptor<VisitDish>())) ?? []).contains { $0.id == preferred }
+            || ((try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []).contains { $0.id == preferred }
+        return isUsed ? UUID() : preferred
     }
 
     private func retryDate(retryCount: Int) -> Date {

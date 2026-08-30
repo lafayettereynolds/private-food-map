@@ -11,6 +11,12 @@ extension Notification.Name {
 @MainActor
 struct SwiftDataSyncQueue {
     let context: ModelContext
+    let ownerUserID: String
+
+    init(context: ModelContext, ownerUserID: String = LocalAccountOwner.guest) {
+        self.context = context
+        self.ownerUserID = LocalAccountOwner.normalized(ownerUserID)
+    }
 
     @discardableResult
     func enqueueUpsert(
@@ -30,6 +36,7 @@ struct SwiftDataSyncQueue {
             return pending
         }
         let mutation = SyncMutation(
+            ownerUserID: ownerUserID,
             entityType: entityType,
             entityID: entityID,
             operation: .upsert,
@@ -59,6 +66,7 @@ struct SwiftDataSyncQueue {
             return pending
         }
         let mutation = SyncMutation(
+            ownerUserID: ownerUserID,
             entityType: entityType,
             entityID: entityID,
             operation: .delete,
@@ -154,7 +162,9 @@ struct SwiftDataSyncQueue {
     }
 
     func allMutations() throws -> [SyncMutation] {
-        try context.fetch(FetchDescriptor<SyncMutation>())
+        try context.fetch(FetchDescriptor<SyncMutation>()).filter {
+            $0.ownerUserID == ownerUserID
+        }
     }
 
     private func pendingMutation(entityType: SyncEntityType, entityID: String) throws -> SyncMutation? {

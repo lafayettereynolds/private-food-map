@@ -20,11 +20,16 @@ struct ContentView: View {
         @Bindable var premiumEntitlementService = premiumEntitlementService
         RootTabView()
             .tint(TasteMapCoreTheme.brand)
+            .environment(\.localAccountScope, authServices.localAccountScope)
             .task {
                 await recoverCompletedAccountDeletionIfNeeded()
+                let user = await authServices.restoreLocalAccountScope()
+                if let user {
+                    try? LocalAccountOwnershipMigrator(context: modelContext).activate(userID: user.id)
+                }
                 syncCoordinator.start()
                 photoTransferCoordinator?.start()
-                if let user = await authServices.sessionManager.restoredUser() {
+                if let user {
                     await premiumEntitlementService.activate(userID: user.id)
                 } else {
                     premiumEntitlementService.sessionDidEnd()
@@ -60,6 +65,7 @@ struct ContentView: View {
             _ = try await LocalAccountDataPurger(context: modelContext)
                 .purgeCurrentAccount(userID: pending.userID)
             try await authServices.sessionManager.clearLocalSessionAfterAccountDeletion()
+            authServices.endLocalAccountSession()
             try store.delete()
             premiumEntitlementService.sessionDidEnd()
         } catch {

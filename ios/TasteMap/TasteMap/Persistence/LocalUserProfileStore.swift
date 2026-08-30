@@ -102,10 +102,14 @@ struct LocalUserProfileStore {
         if let avatarPhotoID = profile.avatarPhotoID {
             guard let avatar = try photos().first(where: {
                 ($0.remoteID ?? $0.id.uuidString.lowercased()) == avatarPhotoID &&
+                    $0.ownerUserID == profile.tasteMapUserID &&
                     $0.deletedAt == nil && $0.kind == .avatar
             }), avatar.uploadState == .uploaded else { return }
         }
-        try SwiftDataSyncQueue(context: context).enqueueUpsert(
+        try SwiftDataSyncQueue(
+            context: context,
+            ownerUserID: profile.tasteMapUserID
+        ).enqueueUpsert(
             entityType: .profile,
             entityID: profile.tasteMapUserID,
             baseVersion: profile.serverVersion,

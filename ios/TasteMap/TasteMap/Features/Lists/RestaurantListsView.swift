@@ -256,7 +256,9 @@ struct RestaurantListDetailView: View {
     private func addToWantToGo(_ place: RestaurantListPlaceContractV1) {
         do {
             _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
-                projection: place.discoveryProjection, among: restaurants
+                projection: place.discoveryProjection,
+                among: restaurants,
+                currentUserID: currentUserID
             )
         } catch { message = "暂时无法加入想吃，请稍后重试。" }
     }
@@ -867,7 +869,13 @@ struct PublicRestaurantListDetailView: View {
     }
 
     private func addToWantToGo(_ place: RestaurantListPlaceContractV1) {
-        do { _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(projection: place.discoveryProjection, among: restaurants) }
+        do {
+            _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+                projection: place.discoveryProjection,
+                among: restaurants,
+                currentUserID: currentUserID
+            )
+        }
         catch { message = "暂时无法加入想吃，请稍后重试。" }
     }
 }

@@ -20,6 +20,7 @@ struct RestaurantAcquisitionDependencies {
 
 struct AddRestaurantView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @StateObject private var viewModel: RestaurantAcquisitionViewModel
     @AppStorage("taste-map-last-search-city") private var city = ""
@@ -31,6 +32,10 @@ struct AddRestaurantView: View {
 
     private let initialSharedText: String?
     let onAction: (RestaurantCandidate, RestaurantSearchAction) throws -> Void
+
+    private var scopedRestaurants: [Restaurant] {
+        restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
+    }
 
     init(
         dependencies: RestaurantAcquisitionDependencies,
@@ -90,7 +95,7 @@ struct AddRestaurantView: View {
                 RestaurantLinkImportView(
                     viewModel: viewModel,
                     city: city,
-                    restaurants: restaurants,
+                    restaurants: scopedRestaurants,
                     initialValue: initialSharedText ?? "",
                     onAction: perform
                 )
@@ -99,7 +104,7 @@ struct AddRestaurantView: View {
                 ManualRestaurantAddView(
                     viewModel: viewModel,
                     initialCity: city,
-                    restaurants: restaurants,
+                    restaurants: scopedRestaurants,
                     onCityChanged: { city = $0 },
                     onAction: perform
                 )
@@ -186,7 +191,7 @@ struct AddRestaurantView: View {
                     ForEach(viewModel.nearbyResults.prefix(5)) { candidate in
                         RestaurantAcquisitionCandidateRow(
                             candidate: candidate,
-                            existing: RestaurantDeduplicator.match(for: candidate, in: restaurants),
+                            existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
                             onAction: perform
                         )
                     }
@@ -261,7 +266,7 @@ struct AddRestaurantView: View {
             ForEach(viewModel.searchResults) { candidate in
                 RestaurantAcquisitionCandidateRow(
                     candidate: candidate,
-                    existing: RestaurantDeduplicator.match(for: candidate, in: restaurants),
+                    existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
                     onAction: perform
                 )
             }

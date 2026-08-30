@@ -4,6 +4,7 @@ import UIKit
 
 struct RestaurantRouletteScreen: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var photos: [PhotoAsset]
@@ -17,19 +18,28 @@ struct RestaurantRouletteScreen: View {
         self.initialRestaurantID = initialRestaurantID
     }
 
-    private var candidates: [RouletteCandidate] {
-        RestaurantRouletteEngine.candidates(from: RouletteRestaurantRecord.capture(
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: accountScope.ownerUserID,
             restaurants: restaurants,
             visits: visits,
             photos: photos
+        )
+    }
+
+    private var candidates: [RouletteCandidate] {
+        RestaurantRouletteEngine.candidates(from: RouletteRestaurantRecord.capture(
+            restaurants: owned.restaurants,
+            visits: owned.visits,
+            photos: owned.photos
         ))
     }
 
     var body: some View {
         RestaurantRouletteExperienceView(
             candidates: candidates,
-            restaurants: restaurants,
-            photos: photos,
+            restaurants: owned.restaurants,
+            photos: owned.photos,
             preferredCity: preferredCity,
             initialResultGlobalKey: initialResultGlobalKey,
             onSearch: { isShowingSearch = true }
@@ -40,13 +50,15 @@ struct RestaurantRouletteScreen: View {
                 case .wantToGo:
                     _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
                         candidate: candidate,
-                        among: restaurants
+                        among: owned.restaurants,
+                        actorUserID: accountScope.ownerUserID
                     )
                 case .recordVisit:
                     _ = try LocalTasteMapStore(context: modelContext).restaurant(
                         for: candidate,
-                        among: restaurants,
-                        status: .visited
+                        among: owned.restaurants,
+                        status: .visited,
+                        actorUserID: accountScope.ownerUserID
                     )
                     try modelContext.save()
                 }

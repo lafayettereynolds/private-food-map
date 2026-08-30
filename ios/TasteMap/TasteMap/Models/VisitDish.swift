@@ -7,13 +7,14 @@ import SwiftData
 @Model
 final class VisitDish {
     @Attribute(.unique) var id: UUID
+    var ownerUserID: String = LocalAccountOwner.legacyQuarantine
     var restaurantId: UUID
     var visitId: UUID
     var dishId: UUID
     var sortOrder: Int
     var createdAt: Date
     var updatedAt: Date
-    @Attribute(.unique) var remoteID: String?
+    var remoteID: String?
     var deletedAt: Date?
     var serverVersion: Int64
     var lastSyncedAt: Date?
@@ -27,6 +28,7 @@ final class VisitDish {
 
     init(
         id: UUID = UUID(),
+        ownerUserID: String = LocalAccountOwner.guest,
         restaurantId: UUID,
         visitId: UUID,
         dishId: UUID,
@@ -41,6 +43,7 @@ final class VisitDish {
         remoteRecordData: Data? = nil
     ) {
         self.id = id
+        self.ownerUserID = LocalAccountOwner.normalized(ownerUserID)
         self.restaurantId = restaurantId
         self.visitId = visitId
         self.dishId = dishId

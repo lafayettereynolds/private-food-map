@@ -4,6 +4,7 @@ import SwiftUI
 struct RestaurantEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var allPhotos: [PhotoAsset]
 
     let restaurant: Restaurant
@@ -192,7 +193,8 @@ struct RestaurantEditView: View {
                     markerType: markerType,
                     markerPhotoID: markerType == .image ? markerPhotoID : nil,
                     markerEmoji: markerEmoji
-                )
+                ),
+                actorUserID: accountScope.ownerUserID
             )
             dismiss()
         } catch {

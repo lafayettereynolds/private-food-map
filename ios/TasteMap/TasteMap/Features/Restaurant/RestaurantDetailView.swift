@@ -7,6 +7,7 @@ struct RestaurantDetailView: View {
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.localAccountScope) private var accountScope
     @Query private var allVisits: [Visit]
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
@@ -45,7 +46,20 @@ struct RestaurantDetailView: View {
     }
 
     private var presentation: RestaurantDetailPresentation {
-        RestaurantDetailPresentation(restaurantID: restaurant.id, visits: allVisits)
+        RestaurantDetailPresentation(restaurantID: restaurant.id, visits: owned.visits)
+    }
+
+    private var owned: ProfileOwnedContentScope.Snapshot {
+        ProfileOwnedContentScope.capture(
+            currentUserID: currentUserID,
+            restaurants: [restaurant],
+            visits: allVisits,
+            photos: allPhotos,
+            dishes: allDishes,
+            visitDishes: allVisitDishes,
+            companions: allCompanions,
+            recommendationSources: allRecommendationSources
+        )
     }
 
     private var metadata: RestaurantDetailMetadata {
@@ -278,7 +292,10 @@ struct RestaurantDetailView: View {
 
     private func delete(_ visit: Visit) {
         do {
-            try LocalTasteMapStore(context: modelContext).delete(visit)
+            try LocalTasteMapStore(context: modelContext).delete(
+                visit,
+                actorUserID: currentUserID
+            )
         } catch {
             deleteError = "这条到访记录没有删除成功。"
         }
@@ -286,7 +303,10 @@ struct RestaurantDetailView: View {
 
     private func markWantToGo() {
         do {
-            try LocalTasteMapStore(context: modelContext).markWantToGo(restaurant)
+            try LocalTasteMapStore(context: modelContext).markWantToGo(
+                restaurant,
+                actorUserID: currentUserID
+            )
         } catch {
             actionError = "想吃状态没有保存成功。"
         }
@@ -309,7 +329,7 @@ struct RestaurantDetailView: View {
     private var activePhotos: [PhotoAsset] {
         let activeVisitIDs = Set(presentation.activeVisits.map(\.id))
         let photos = RestaurantDetailImageResolver.visibleRestaurantPhotos(
-            allPhotos,
+            owned.photos,
             restaurantID: restaurant.id,
             activeVisitIDs: activeVisitIDs
         )
@@ -323,10 +343,10 @@ struct RestaurantDetailView: View {
     private var dishSummaries: [RestaurantDishSummary] {
         RestaurantDishPresentation.summaries(
             restaurantID: restaurant.id,
-            dishes: allDishes,
-            associations: allVisitDishes,
-            visits: allVisits,
-            photos: allPhotos
+            dishes: owned.dishes,
+            associations: owned.visitDishes,
+            visits: owned.visits,
+            photos: owned.photos
         )
     }
 
@@ -335,26 +355,25 @@ struct RestaurantDetailView: View {
     }
 
     private var companionNamesByID: [String: String] {
-        Dictionary(uniqueKeysWithValues: allCompanions.compactMap { companion in
+        Dictionary(uniqueKeysWithValues: owned.companions.compactMap { companion in
             guard companion.deletedAt == nil, let remoteID = companion.remoteID else { return nil }
             return (remoteID, companion.displayName)
         })
     }
 
     private var sourceNamesByID: [String: String] {
-        Dictionary(uniqueKeysWithValues: allRecommendationSources.compactMap { source in
+        Dictionary(uniqueKeysWithValues: owned.recommendationSources.compactMap { source in
             guard source.deletedAt == nil, let remoteID = source.remoteID else { return nil }
             return (remoteID, source.displayName)
         })
     }
 
     private var currentUserID: String? {
-        profiles.first { $0.deletedAt == nil }?.tasteMapUserID
+        accountScope.authenticatedUserID
     }
 
     private var canMutateRestaurant: Bool {
-        guard let owner = metadata.ownerUserID, owner.hasPrefix("tm_") else { return true }
-        return owner == currentUserID
+        accountScope.contains(ownerUserID: restaurant.ownerUserID)
     }
 
     private var canPublicShareRestaurant: Bool {

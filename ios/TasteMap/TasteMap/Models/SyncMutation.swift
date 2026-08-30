@@ -44,6 +44,7 @@ enum SyncMutationState: String, Codable, Sendable {
 @Model
 final class SyncMutation {
     @Attribute(.unique) var mutationID: UUID
+    var ownerUserID: String = LocalAccountOwner.legacyQuarantine
     private var entityTypeValue: String
     var entityID: String
     private var operationValue: String
@@ -72,6 +73,7 @@ final class SyncMutation {
 
     init(
         mutationID: UUID = UUID(),
+        ownerUserID: String = LocalAccountOwner.guest,
         entityType: SyncEntityType,
         entityID: String,
         operation: SyncMutationOperation,
@@ -84,6 +86,7 @@ final class SyncMutation {
         lastError: String? = nil
     ) {
         self.mutationID = mutationID
+        self.ownerUserID = LocalAccountOwner.normalized(ownerUserID)
         self.entityTypeValue = entityType.rawValue
         self.entityID = entityID
         self.operationValue = operation.rawValue
