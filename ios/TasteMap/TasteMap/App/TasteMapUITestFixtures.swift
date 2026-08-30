@@ -1421,6 +1421,7 @@ private struct RestaurantAcquisitionFixtureLinkResolver: ExternalRestaurantLinkR
 @MainActor
 private final class RestaurantAcquisitionFixtureLocation: RestaurantLocationProviding {
     let authorizationStatus: CLAuthorizationStatus
+    let accuracyAuthorization: CLAccuracyAuthorization = .fullAccuracy
     private let denied: Bool
 
     init(denied: Bool) {
@@ -1430,7 +1431,13 @@ private final class RestaurantAcquisitionFixtureLocation: RestaurantLocationProv
 
     func requestCurrentLocation() async throws -> CLLocation {
         if denied { throw RestaurantLocationError.permissionDenied }
-        return CLLocation(latitude: 30.2741, longitude: 120.1551)
+        return CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 30.2741, longitude: 120.1551),
+            altitude: 0,
+            horizontalAccuracy: 8,
+            verticalAccuracy: 10,
+            timestamp: Date()
+        )
     }
 }
 #endif
