@@ -973,8 +973,9 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["restaurant-detail-add-to-list"].exists)
         XCTAssertTrue(app.buttons["restaurant-action-roulette"].exists)
         XCTAssertTrue(app.buttons["restaurant-action-copy"].exists)
+        XCTAssertFalse(share.isEnabled)
         XCTAssertTrue(app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS %@", "公开网页链接将在分享服务接通后提供")
+            NSPredicate(format: "label CONTAINS %@", "至少公开一次到访后，才可生成餐厅公开链接")
         ).firstMatch.exists)
 
         app.buttons["restaurant-action-copy"].tap()
@@ -2523,7 +2524,10 @@ final class TasteMapUITests: XCTestCase {
         // rather than the keyboard, receives the drag.
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.56))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.22))
-        for _ in 0..<30 where !element.isHittable {
+        // `isHittable` may still be true when only a thin strip sits beneath
+        // the app's custom bottom navigation. Keep a real tap-safe margin so
+        // long Profile/Settings cards do not absorb a no-op tap at the edge.
+        for _ in 0..<30 where !element.isHittable || element.frame.maxY > app.frame.maxY - 92 {
             start.press(forDuration: 0.05, thenDragTo: end)
         }
     }
