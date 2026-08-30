@@ -36,6 +36,12 @@ struct TasteMapApp: App {
                     .appendingPathComponent("shared-meal-invitations-v1.json")
                 : nil
         )
+        // Isolated UI/unit runtimes intentionally have no persisted credential.
+        // Resolve that state to the explicit signed-out workspace so fixtures
+        // can exercise local mutations without ever reading the real Keychain.
+        if runtime.isolatesPersistentState {
+            authServices.endLocalAccountSession()
+        }
         let container: ModelContainer
         do {
             #if DEBUG

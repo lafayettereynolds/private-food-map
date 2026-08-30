@@ -28,6 +28,8 @@ struct MapHomeView: View {
     @State private var mapReloadID = UUID()
     @State private var mapRenderState: RestaurantMapRenderState = .loading
 
+    private let compactControlsHeight: CGFloat = 104
+
     private var scopedPhotos: [PhotoAsset] {
         photos.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
     }
@@ -61,11 +63,7 @@ struct MapHomeView: View {
         let displayedItems = RestaurantBrowseSearch.filter(personalItems, query: browseQuery)
 
         NavigationStack {
-            VStack(spacing: 0) {
-                controls(
-                    resultCount: displayedItems.count,
-                    activeFilterCount: filterResult.activeFilterCount
-                )
+            ZStack(alignment: .top) {
                 if browseMode == .map {
                     mapContent(
                         items: displayedItems,
@@ -81,13 +79,19 @@ struct MapHomeView: View {
                         onClearFilters: clearFilters,
                         onSelect: {
                             detailDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
-                        }
+                        },
+                        usesSystemSearch: false,
+                        contentTopInset: compactControlsHeight
                     )
                 }
+
+                controls(
+                    resultCount: displayedItems.count,
+                    activeFilterCount: filterResult.activeFilterCount
+                )
             }
             .background(TasteMapCoreTheme.page)
-            .navigationTitle("Taste Map")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .task {
                 locationPermission.requestWhenInUseAuthorizationIfNeeded()
             }
@@ -146,7 +150,7 @@ struct MapHomeView: View {
     }
 
     private func controls(resultCount: Int, activeFilterCount: Int) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             TasteMapSegmentedControl(
                 selection: $selectedSegment,
                 items: RestaurantBrowseSegment.allCases.map {
@@ -155,60 +159,129 @@ struct MapHomeView: View {
                 accessibilityIdentifier: "map-content-segment"
             )
 
-            TasteMapSegmentedControl(
-                selection: $browseMode,
-                items: MapBrowseMode.allCases.map {
-                    .init($0, title: $0.title, systemImage: $0.systemImage)
-                },
-                accessibilityIdentifier: "map-list-mode-picker"
-            )
+            HStack(spacing: 7) {
+                compactModeControl
 
-            if selectedSegment != .forYou {
-                HStack(spacing: 10) {
+                if browseMode == .list {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                            .accessibilityHidden(true)
+                        TextField("搜索餐厅", text: $browseQuery)
+                            .font(.subheadline)
+                            .textInputAutocapitalization(.never)
+                            .submitLabel(.search)
+                            .accessibilityIdentifier("restaurant-list-search-field")
+                        if !browseQuery.isEmpty {
+                            Button {
+                                browseQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("清除搜索")
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 36)
+                    .background(TasteMapCoreTheme.surface, in: Capsule())
+                    .overlay { Capsule().stroke(TasteMapCoreTheme.border) }
+                } else {
+                    Spacer(minLength: 0)
+                }
+
+                if selectedSegment != .forYou {
                     Button {
                         isShowingFilters = true
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                            Text("筛选")
+                        HStack(spacing: 5) {
+                            Image(systemName: "line.3.horizontal.decrease")
+                            Text(activeFilterCount > 0 ? "筛选后 \(resultCount) 家" : filterState.sort.title)
+                                .lineLimit(1)
                             if activeFilterCount > 0 {
                                 Text("\(activeFilterCount)")
                                     .font(.caption2.bold())
                                     .foregroundStyle(.white)
-                                    .frame(minWidth: 20, minHeight: 20)
-                                    .background(Color.accentColor, in: Circle())
+                                    .frame(minWidth: 18, minHeight: 18)
+                                    .background(TasteMapCoreTheme.brand, in: Circle())
                             }
                         }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                        .padding(.horizontal, 10)
+                        .frame(height: 36)
+                        .background(TasteMapCoreTheme.surface, in: Capsule())
+                        .overlay { Capsule().stroke(TasteMapCoreTheme.border) }
                     }
-                    .buttonStyle(.bordered)
-                    .tint(TasteMapCoreTheme.brand)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        activeFilterCount > 0
+                            ? "筛选后 \(resultCount) 家，排序\(filterState.sort.title)"
+                            : "筛选与排序，当前\(filterState.sort.title)"
+                    )
                     .accessibilityIdentifier("personal-filter-button")
-
-                    Text(filterState.sort.title)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
 
                     if activeFilterCount > 0 {
                         Text("筛选后 \(resultCount) 家")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
                             .accessibilityIdentifier("personal-filter-result-count")
-                        Button("清除", action: clearFilters)
-                            .font(.caption.weight(.semibold))
-                            .accessibilityIdentifier("personal-filter-clear")
+                            .accessibilityHidden(true)
+                        Button(action: clearFilters) {
+                            Image(systemName: "xmark")
+                                .font(.caption.bold())
+                                .frame(width: 32, height: 32)
+                                .background(TasteMapCoreTheme.surface, in: Circle())
+                                .overlay { Circle().stroke(TasteMapCoreTheme.border) }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("清除筛选")
+                        .accessibilityIdentifier("personal-filter-clear")
                     }
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 11)
-        .background(TasteMapCoreTheme.page)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(TasteMapCoreTheme.border.opacity(0.75)).frame(height: 1)
+        .padding(7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(TasteMapCoreTheme.border.opacity(0.82))
         }
+        .shadow(color: TasteMapCoreTheme.cardShadow, radius: 10, y: 4)
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("map-home-compact-controls")
+    }
+
+    private var compactModeControl: some View {
+        HStack(spacing: 2) {
+            ForEach(MapBrowseMode.allCases) { mode in
+                Button {
+                    browseMode = mode
+                } label: {
+                    Image(systemName: mode.systemImage)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(width: 34, height: 32)
+                        .foregroundStyle(
+                            browseMode == mode
+                                ? TasteMapCoreTheme.brandDeep
+                                : TasteMapCoreTheme.textSecondary
+                        )
+                        .background(
+                            browseMode == mode ? TasteMapCoreTheme.surface : .clear,
+                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mode.title)
+                .accessibilityAddTraits(browseMode == mode ? .isSelected : [])
+                .accessibilityIdentifier("map-list-mode-picker-\(mode.title)")
+            }
+        }
+        .padding(2)
+        .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 11))
+        .overlay { RoundedRectangle(cornerRadius: 11).stroke(TasteMapCoreTheme.border.opacity(0.75)) }
     }
 
     private func mapContent(
@@ -237,7 +310,7 @@ struct MapHomeView: View {
                 onRenderStateChange: { mapRenderState = $0 }
             )
             .id(mapReloadID)
-            .ignoresSafeArea(edges: .bottom)
+            .ignoresSafeArea(edges: [.top, .bottom])
             .onChange(of: markers) { _, _ in requestCameraFit() }
 
             if locationPermission.isDeniedOrRestricted {
@@ -247,7 +320,7 @@ struct MapHomeView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
-                    .padding(.top, 10)
+                    .padding(.top, compactControlsHeight + 8)
             }
 
             if case .loading = mapRenderState, !items.isEmpty {
@@ -257,7 +330,7 @@ struct MapHomeView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
-                    .padding(.top, locationPermission.isDeniedOrRestricted ? 54 : 10)
+                    .padding(.top, compactControlsHeight + (locationPermission.isDeniedOrRestricted ? 50 : 8))
                     .accessibilityIdentifier("restaurant-map-loading")
             }
 
@@ -282,7 +355,7 @@ struct MapHomeView: View {
                         .stroke(TasteMapCoreTheme.border)
                 }
                 .padding(.horizontal, 32)
-                .padding(.vertical, 60)
+                .padding(.top, compactControlsHeight + 34)
                 .accessibilityIdentifier("restaurant-map-error")
             } else if items.isEmpty {
                 VStack(spacing: 10) {
@@ -304,7 +377,7 @@ struct MapHomeView: View {
                 .padding(20)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .padding(.horizontal, 32)
-                .padding(.vertical, 60)
+                .padding(.top, compactControlsHeight + 34)
             } else if markers.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "mappin.slash.circle")
@@ -319,7 +392,7 @@ struct MapHomeView: View {
                 .padding(20)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .padding(.horizontal, 32)
-                .padding(.vertical, 60)
+                .padding(.top, compactControlsHeight + 34)
                 .accessibilityIdentifier("restaurant-map-no-coordinates")
             }
 

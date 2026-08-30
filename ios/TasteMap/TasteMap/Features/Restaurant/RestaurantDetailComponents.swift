@@ -5,16 +5,16 @@ struct RestaurantDetailHeader: View {
     let restaurant: Restaurant
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 7) {
                     if !restaurant.city.isEmpty {
-                        Text(restaurant.city)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
+                        Label(restaurant.city, systemImage: "location.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(TasteMapCoreTheme.textSecondary)
                     }
                     Text(restaurant.name)
-                        .font(.largeTitle.bold())
+                        .font(.title.bold())
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 4)
@@ -29,8 +29,8 @@ struct RestaurantDetailHeader: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .tasteMapCoreCard(radius: 22)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-detail-header")
     }
@@ -61,32 +61,47 @@ struct RestaurantPhotoGallerySection: View {
     let onRetry: (PhotoAsset) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("照片")
-                    .font(.title3.bold())
-                Spacer()
-                Text(photos.isEmpty ? (merchantImageURL == nil ? "餐厅图标" : "商家图片") : "\(photos.count) 张")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
+        VStack(alignment: .leading, spacing: 10) {
             if photos.isEmpty {
                 RestaurantPhotoFallback(
                     merchantImageURL: merchantImageURL,
                     markerEmoji: markerEmoji
                 )
             } else {
-                ScrollView(.horizontal) {
-                    LazyHStack(spacing: 12) {
-                        ForEach(photos) { photo in
+                if let primaryPhoto = photos.first {
+                    Button { onSelect(primaryPhoto) } label: {
+                        PhotoAssetImageView(photo: primaryPhoto)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 216)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay(alignment: .bottomLeading) {
+                                PhotoUploadStatusBadge(photo: primaryPhoto)
+                                    .padding(8)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("restaurant-photo-\(primaryPhoto.id.uuidString)")
+                    .overlay(alignment: .bottomTrailing) {
+                        if primaryPhoto.uploadState == .failed {
+                            Button("重试") { onRetry(primaryPhoto) }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                                .padding(8)
+                        }
+                    }
+                }
+
+                if photos.count > 1 {
+                    ScrollView(.horizontal) {
+                        LazyHStack(spacing: 8) {
+                            ForEach(Array(photos.dropFirst())) { photo in
                             Button { onSelect(photo) } label: {
                                 PhotoAssetImageView(photo: photo)
-                                    .frame(width: 132, height: 104)
-                                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                                    .frame(width: 92, height: 68)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
                                     .overlay(alignment: .bottomLeading) {
                                         PhotoUploadStatusBadge(photo: photo)
-                                            .padding(6)
+                                            .padding(4)
                                     }
                             }
                             .buttonStyle(.plain)
@@ -96,18 +111,27 @@ struct RestaurantPhotoGallerySection: View {
                                     Button("重试") { onRetry(photo) }
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.mini)
-                                        .padding(5)
+                                        .padding(4)
+                                    }
                                 }
                             }
                         }
                     }
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .tasteMapCoreCard(radius: 22)
+        .overlay(alignment: .topTrailing) {
+            Text(photos.isEmpty ? (merchantImageURL == nil ? "餐厅图标" : "商家图片") : "\(photos.count) 张")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .padding(10)
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-photo-gallery")
     }
 }
@@ -137,9 +161,9 @@ private struct RestaurantPhotoFallback: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 176)
+        .frame(height: 216)
         .background(Color.accentColor.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .clipped()
         .accessibilityIdentifier(merchantImageURL == nil ? "restaurant-brand-fallback" : "restaurant-merchant-image")
     }
@@ -167,8 +191,8 @@ struct RestaurantBusinessInformationSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("餐厅信息")
-                .font(.title3.bold())
-                .padding(.bottom, 14)
+                .font(.headline)
+                .padding(.bottom, 8)
                 .accessibilityIdentifier("restaurant-business-information")
 
             if let phone = metadata.callablePhone {
@@ -208,8 +232,8 @@ struct RestaurantBusinessInformationSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .tasteMapCoreCard(radius: 22)
+        .padding(14)
+        .tasteMapCoreCard(radius: 16)
     }
 
     @ViewBuilder private var dividerAfterPhone: some View {
@@ -253,7 +277,7 @@ struct RestaurantBusinessInformationSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 11)
+        .padding(.vertical, 7)
         .contentShape(Rectangle())
     }
 }
@@ -312,31 +336,49 @@ struct RestaurantRatingReferencesSection: View {
     let references: [RestaurantRatingReference]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("评分参考")
-                .font(.title3.bold())
-            ForEach(references) { reference in
-                HStack(spacing: 12) {
-                    Image(systemName: reference.systemImage)
-                        .foregroundStyle(.tint)
-                        .frame(width: 26)
-                        .accessibilityHidden(true)
-                    Text(reference.title).font(.subheadline.weight(.medium))
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(String(format: "%.1f / 5", reference.value))
-                            .font(.subheadline.bold())
-                        Text("\(reference.sampleCount) 个样本")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                .font(.headline)
+            ScrollView(.horizontal) {
+                HStack(spacing: 18) {
+                    ForEach(references) { reference in
+                        VStack(spacing: 7) {
+                            ZStack {
+                                Circle()
+                                    .fill(TasteMapCoreTheme.surfaceSubtle)
+                                    .overlay {
+                                        Circle().stroke(TasteMapCoreTheme.brand.opacity(0.36), lineWidth: 2)
+                                    }
+                                Text(String(format: "%.1f", reference.value))
+                                    .font(.title3.bold())
+                                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                            }
+                            .frame(width: 70, height: 70)
+                            .overlay(alignment: .bottomTrailing) {
+                                Text("\(reference.sampleCount)")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .frame(width: 24, height: 24)
+                                    .background(TasteMapCoreTheme.brand, in: Circle())
+                                    .overlay { Circle().stroke(TasteMapCoreTheme.surface, lineWidth: 2) }
+                                    .accessibilityLabel("\(reference.sampleCount) 个样本")
+                            }
+                            Text(reference.title)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(reference.title)，评分 \(String(format: "%.1f", reference.value))，\(reference.sampleCount) 个样本"
+                        )
                     }
                 }
-                .accessibilityElement(children: .combine)
             }
+            .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .tasteMapCoreCard(radius: 22)
+        .padding(14)
+        .tasteMapCoreCard(radius: 16)
         .accessibilityIdentifier("restaurant-rating-references")
     }
 }

@@ -69,12 +69,24 @@ struct RestaurantBrowseList: View {
     let isFiltered: Bool
     let onClearFilters: () -> Void
     let onSelect: (RestaurantBrowseItem) -> Void
+    var usesSystemSearch = true
+    var contentTopInset: CGFloat = 0
 
     private var filteredItems: [RestaurantBrowseItem] {
         RestaurantBrowseSearch.filter(items, query: query)
     }
 
     var body: some View {
+        if usesSystemSearch {
+            content
+                .searchable(text: $query, prompt: "搜索餐厅、城市、饭搭子或菜品")
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         Group {
             if items.isEmpty, isFiltered {
                 ContentUnavailableView {
@@ -98,21 +110,24 @@ struct RestaurantBrowseList: View {
                 .accessibilityIdentifier("restaurant-list-search-empty")
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(filteredItems) { item in
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
                             RestaurantBrowseCard(item: item, segment: segment) {
                                 onSelect(item)
                             }
+                            if index < filteredItems.count - 1 {
+                                Divider().padding(.leading, 66)
+                            }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 6)
                     .padding(.bottom, 28)
                 }
                 .background(TasteMapCoreTheme.page)
             }
         }
-        .searchable(text: $query, prompt: "搜索餐厅、城市、饭搭子或菜品")
+        .padding(.top, contentTopInset)
     }
 }
 
@@ -123,15 +138,15 @@ private struct RestaurantBrowseCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
                 RestaurantBrowsePhoto(photo: item.photo, restaurantID: item.restaurant.id)
-                    .frame(width: 92, height: 92)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(width: 52, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.restaurant.name)
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(TasteMapCoreTheme.textPrimary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
@@ -140,8 +155,6 @@ private struct RestaurantBrowseCard: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
-
-                    locationLine
 
                     if segment == .visited {
                         visitedSummary
@@ -153,11 +166,13 @@ private struct RestaurantBrowseCard: View {
                         .font(.caption)
                         .foregroundStyle(TasteMapCoreTheme.brand)
                     }
+
+                    locationLine
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(12)
-            .tasteMapCoreCard(showsShadow: true)
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("restaurant-list-item-\(item.restaurant.id.uuidString)")
@@ -170,32 +185,23 @@ private struct RestaurantBrowseCard: View {
             .joined(separator: " · ")
         if !location.isEmpty {
             Label(location, systemImage: "mappin.and.ellipse")
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
+                .lineLimit(1)
                 .multilineTextAlignment(.leading)
         }
     }
 
     private var visitedSummary: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Label("\(item.visitCount) 次到访", systemImage: "clock.arrow.circlepath")
                 if let averageRating = item.averageRating {
                     Label(String(format: "%.1f", averageRating), systemImage: "star.fill")
                         .foregroundStyle(.orange)
                 }
             }
-            .font(.caption.weight(.medium))
-            if let latestVisitAt = item.latestVisitAt {
-                Text("最近到访 \(latestVisitAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("暂无有效到访记录")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            .font(.caption2.weight(.medium))
         }
     }
 }

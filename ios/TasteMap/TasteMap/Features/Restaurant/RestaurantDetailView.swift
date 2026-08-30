@@ -86,8 +86,7 @@ struct RestaurantDetailView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 18) {
-                    RestaurantDetailHeader(restaurant: restaurant)
+                LazyVStack(spacing: 14) {
                     RestaurantPhotoGallerySection(
                         photos: activePhotos,
                         merchantImageURL: metadata.merchantImageURL,
@@ -95,6 +94,10 @@ struct RestaurantDetailView: View {
                         onSelect: { selectedPhoto = $0 },
                         onRetry: retryPhoto
                     )
+                    RestaurantDetailHeader(restaurant: restaurant)
+                    if !ratingReferences.isEmpty {
+                        RestaurantRatingReferencesSection(references: ratingReferences)
+                    }
                     RestaurantQuickActionsSection(
                         restaurant: restaurant,
                         publicShareEntityID: restaurant.remoteID ?? "",
@@ -116,19 +119,16 @@ struct RestaurantDetailView: View {
                             onCall: callRestaurant
                         )
                     }
-                    RestaurantLocationSection(
-                        restaurant: restaurant,
-                        onOpenAppleMaps: openAppleMaps
-                    )
-                    RestaurantDishSection(summaries: dishSummaries)
                     RestaurantDetailStatsSection(presentation: presentation)
+                    RestaurantDishSection(summaries: dishSummaries)
                     if presentation.queueSummary != nil || !presentation.tagGroups.isEmpty {
                         RestaurantExperienceSummarySection(presentation: presentation)
                     }
                     RestaurantDetailedRatingsSection(summaries: detailedRatingSummaries)
-                    if !ratingReferences.isEmpty {
-                        RestaurantRatingReferencesSection(references: ratingReferences)
-                    }
+                    RestaurantLocationSection(
+                        restaurant: restaurant,
+                        onOpenAppleMaps: openAppleMaps
+                    )
                     RestaurantVisitHistorySection(
                         visits: presentation.activeVisits,
                         companionNamesByID: companionNamesByID,
@@ -137,8 +137,8 @@ struct RestaurantDetailView: View {
                         onDelete: { visitPendingDeletion = $0 }
                     )
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
                 .padding(.bottom, 28)
             }
             .background(TasteMapCoreTheme.page)

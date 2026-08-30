@@ -74,6 +74,71 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testTask04CoreLayoutParityEvidence() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
+        app.launch()
+
+        let map = app.maps.firstMatch
+        let controls = app.descendants(matching: .any)["map-home-compact-controls"]
+        let visitedTab = segmentedOption("去过", in: app)
+        let mapMode = segmentedOption("地图", in: app)
+        XCTAssertTrue(map.waitForExistence(timeout: 8))
+        XCTAssertTrue(controls.waitForExistence(timeout: 5))
+        XCTAssertTrue(visitedTab.exists)
+        XCTAssertTrue(mapMode.exists)
+        XCTAssertLessThanOrEqual(mapMode.frame.maxY - visitedTab.frame.minY, 112)
+        XCTAssertGreaterThan(map.frame.height, app.frame.height * 0.72)
+        XCTAssertLessThanOrEqual(mapMode.frame.maxY, map.frame.minY + 170)
+
+        let addRestaurant = app.buttons["addRestaurantButton"]
+        let mapTab = app.buttons["地图"].firstMatch
+        XCTAssertTrue(addRestaurant.exists)
+        XCTAssertTrue(mapTab.exists)
+        XCTAssertLessThan(addRestaurant.frame.midY, mapTab.frame.midY)
+        keepScreenshot(named: "Task 04 Map After", of: app)
+
+        segmentedOption("列表", in: app).tap()
+        let search = app.textFields["restaurant-list-search-field"]
+        let restaurantName = "F2-A 很长但仍需完整可读的江南季节料理餐厅"
+        let row = app.buttons.containing(.staticText, identifier: restaurantName).firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(row.frame.height, 96)
+        XCTAssertEqual(row.frame.minX, 14, accuracy: 2)
+        keepScreenshot(named: "Task 04 List After", of: app)
+
+        row.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
+        let hero = app.descendants(matching: .any)["restaurant-photo-gallery"]
+        let header = app.descendants(matching: .any)["restaurant-detail-header"]
+        let actions = app.descendants(matching: .any)["restaurant-detail-quick-actions"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        XCTAssertTrue(header.exists)
+        XCTAssertTrue(actions.exists)
+        XCTAssertLessThan(hero.frame.minY, header.frame.minY)
+        XCTAssertLessThanOrEqual(actions.frame.height, 190)
+        keepScreenshot(named: "Task 04 Restaurant Detail After", of: app)
+    }
+
+    @MainActor
+    func testTask04DarkLayoutKeepsCompactMapControls() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Dark"]
+        app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
+        app.launch()
+
+        let map = app.maps.firstMatch
+        let controls = app.descendants(matching: .any)["map-home-compact-controls"]
+        XCTAssertTrue(map.waitForExistence(timeout: 8))
+        XCTAssertTrue(controls.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(controls.frame.height, 112)
+        XCTAssertGreaterThan(map.frame.height, app.frame.height * 0.72)
+        XCTAssertTrue(app.buttons["addRestaurantButton"].isHittable)
+        keepScreenshot(named: "Task 04 Map Dark After", of: app)
+    }
+
+    @MainActor
     func testMapMarkerSelectionUsesSharedRestaurantDetail() throws {
         let app = XCUIApplication()
         app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
@@ -141,7 +206,8 @@ final class TasteMapUITests: XCTestCase {
         takeout.tap()
         app.buttons["personal-filter-apply"].tap()
 
-        XCTAssertTrue(app.staticTexts["筛选后 1 家"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["personal-filter-button"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["personal-filter-button"].label.contains("筛选后 1 家"))
         segmentedOption("列表", in: app).tap()
         XCTAssertTrue(app.staticTexts["F2-B 命中外卖餐厅"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["F2-B 排除到店餐厅"].exists)
@@ -928,7 +994,9 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-reference-price"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["restaurant-long-term-note"].exists)
 
-        app.buttons["编辑"].firstMatch.tap()
+        let edit = app.navigationBars["餐厅详情"].buttons["编辑"]
+        XCTAssertTrue(edit.isHittable)
+        edit.tap()
         XCTAssertTrue(app.navigationBars["编辑餐厅"].waitForExistence(timeout: 5))
         let address = app.textFields["restaurant-edit-address"]
         XCTAssertTrue(address.waitForExistence(timeout: 3))
@@ -974,19 +1042,19 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["restaurant-action-edit"].exists)
         XCTAssertTrue(app.buttons["restaurant-detail-add-to-list"].exists)
         XCTAssertTrue(app.buttons["restaurant-action-roulette"].exists)
-        XCTAssertTrue(app.buttons["restaurant-action-copy"].exists)
+        XCTAssertTrue(app.buttons["restaurant-action-more"].exists)
         XCTAssertFalse(share.isEnabled)
         XCTAssertTrue(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "至少公开一次到访后，才可生成餐厅公开链接")
         ).firstMatch.exists)
 
-        app.buttons["restaurant-action-copy"].tap()
+        app.buttons["restaurant-action-more"].tap()
         XCTAssertTrue(app.buttons["复制餐厅名"].waitForExistence(timeout: 2))
         app.buttons["复制餐厅名"].tap()
 
-        let delete = app.buttons["restaurant-action-delete"]
-        scrollUntilVisible(delete, in: app)
-        XCTAssertTrue(delete.isHittable)
+        app.buttons["restaurant-action-more"].tap()
+        let delete = app.buttons["删除餐厅"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 2))
         delete.tap()
         let confirm = app.buttons["restaurant-delete-confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
