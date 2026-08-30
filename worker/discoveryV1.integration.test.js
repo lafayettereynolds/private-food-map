@@ -42,6 +42,11 @@ describe('Discovery API V1 integration', () => {
       community: expect.objectContaining({ sampleCount: expect.any(Number) }),
       friends: expect.any(Object), similarTaste: expect.any(Object),
     }))
+    expect(page.items.filter((item) => item.sourceUser).every((item) =>
+      typeof item.activity?.visitId === 'string' &&
+      typeof item.activity?.visitedAt === 'string' &&
+      Object.hasOwn(item.activity, 'rating'),
+    )).toBe(true)
     expect(page.items.flatMap((item) => item.reasons).every((reason) => reason.text && reason.code)).toBe(true)
     expect(JSON.stringify(page)).not.toContain('note')
     expect(JSON.stringify(page)).not.toContain('storageKey')
@@ -75,6 +80,9 @@ describe('Discovery API V1 integration', () => {
     const page = await jsonAPI(database, 'tm_a', '/api/v1/discovery/for-you?city=杭州')
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('nil-rating')
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('deleted-rating')
+    const trending = await jsonAPI(database, 'tm_a', '/api/v1/discovery/trending?city=杭州&window=7')
+    const nilActivity = trending.items.find((item) => item.restaurant.name === 'nil-rating')
+    expect(nilActivity?.activity).toEqual(expect.objectContaining({ rating: null }))
   })
 
   it('uses 7/30-day windows, unique users, stable tie breaks, and excludes old/private/tombstoned activity', async () => {

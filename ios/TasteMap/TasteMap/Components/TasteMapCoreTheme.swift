@@ -116,6 +116,20 @@ extension View {
         background(TasteMapCoreTheme.page.ignoresSafeArea())
             .tint(TasteMapCoreTheme.brand)
     }
+
+    /// Shared compact filtering language used by Map/List and Discovery.
+    /// Keeping this token here prevents each feature from inventing a second
+    /// pill height, border, active color, or touch target.
+    func tasteMapFilterChipStyle(isActive: Bool) -> some View {
+        self
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isActive ? Color.white : TasteMapCoreTheme.brandDeep)
+            .padding(.horizontal, 11)
+            .frame(height: 34)
+            .background(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.surface, in: Capsule())
+            .overlay { Capsule().stroke(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.border) }
+            .buttonStyle(.plain)
+    }
 }
 
 struct TasteMapSectionHeader: View {

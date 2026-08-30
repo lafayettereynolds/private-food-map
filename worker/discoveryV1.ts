@@ -530,6 +530,11 @@ function card(
     },
     reasons: reasons.slice(0, 3),
     sourceUser: source ? publicUser(source, friendIDs, relationships, following) : null,
+    activity: source ? {
+      visitId: source.visit_id,
+      visitedAt: source.visited_at,
+      rating: source.rating,
+    } : null,
     similarity,
     trend: null,
     cacheScope,

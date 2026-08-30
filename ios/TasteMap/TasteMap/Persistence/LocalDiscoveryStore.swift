@@ -100,7 +100,8 @@ struct LocalDiscoveryStore {
             guard let value = placement.context else { continue }
             let updated = DiscoveryCachedCardContext(
                 id: value.id, mode: value.mode, viewerState: state, ratings: value.ratings,
-                reasons: value.reasons, sourceUser: value.sourceUser, similarity: value.similarity,
+                reasons: value.reasons, sourceUser: value.sourceUser, activity: value.activity,
+                similarity: value.similarity,
                 trend: value.trend, cacheScope: value.cacheScope, rank: value.rank, score: value.score
             )
             placement.contextData = try JSONEncoder().encode(updated)
@@ -237,11 +238,13 @@ struct LocalDiscoveryStore {
 private extension DiscoveryCachedCardContext {
     init(id: String, mode: DiscoveryModeV1, viewerState: DiscoveryViewerRestaurantStateV1,
          ratings: DiscoveryRatingsV1, reasons: [DiscoveryReasonV1],
-         sourceUser: DiscoveryPublicUserProjectionV1?, similarity: DiscoverySimilarityContextV1?,
+         sourceUser: DiscoveryPublicUserProjectionV1?, activity: DiscoveryActivityProjectionV1?,
+         similarity: DiscoverySimilarityContextV1?,
          trend: DiscoveryTrendContextV1?, cacheScope: DiscoveryCacheScopeV1,
          rank: Int, score: Double) {
         self.id = id; self.mode = mode; self.viewerState = viewerState; self.ratings = ratings
-        self.reasons = reasons; self.sourceUser = sourceUser; self.similarity = similarity
+        self.reasons = reasons; self.sourceUser = sourceUser; self.activity = activity
+        self.similarity = similarity
         self.trend = trend; self.cacheScope = cacheScope; self.rank = rank; self.score = score
     }
 }

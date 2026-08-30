@@ -14,6 +14,17 @@ struct P3CDiscoveryTests {
             DiscoveryPlaceIdentityV1(provider: .appleMaps, externalId: "apple-only", isPrimary: true),
         ])
         #expect(page.items[0].sourceUser?.friendshipState == .friends)
+        #expect(page.items[0].activity?.visitId == "visit-source")
+        #expect(page.items[0].activity?.rating == 3.5)
+    }
+
+    @Test func discoveryContractStillDecodesLegacyPayloadWithoutActivity() throws {
+        let legacyJSON = Self.pageJSON.replacingOccurrences(
+            of: "\"activity\":{\"visitId\":\"visit-source\",\"visitedAt\":\"2026-08-28T10:00:00.000Z\",\"rating\":3.5},",
+            with: ""
+        )
+        let page = try JSONDecoder().decode(DiscoveryPageV1.self, from: Data(legacyJSON.utf8))
+        #expect(page.items[0].activity == nil)
     }
 
     @Test func cacheSharesOneRestaurantAcrossModulesAndSeparatesUsers() throws {
@@ -61,6 +72,7 @@ struct P3CDiscoveryTests {
         let cached = try LocalDiscoveryStore(context: reopened.mainContext)
             .cachedPage(mode: .forYou, city: "杭州", currentUserID: "tm_a", trendWindowDays: 7)
         #expect(cached?.cards.first?.restaurant.globalKey == "place:shared")
+        #expect(cached?.cards.first?.activity?.rating == 3.5)
     }
 
     @Test func discoveryWantToGoIsOfflineFirstIdempotentAndPreservesProviderIdentity() throws {
@@ -127,7 +139,7 @@ struct P3CDiscoveryTests {
     }
 
     private static let pageJSON = """
-    {"apiVersion":1,"mode":"for_you","city":"杭州","personalizationConfidence":"high","generatedAt":"2026-08-28T12:00:00.000Z","items":[{"id":"for_you:place:one","mode":"for_you","restaurant":{"globalKey":"place:one","placeIdentities":[{"provider":"apple_maps","externalId":"apple-only","isPrimary":true}],"name":"餐厅","address":"地址","city":"杭州","latitude":30.2,"longitude":120.1,"tags":[],"pricePerPerson":null,"merchantImageUrl":null,"markerEmoji":"🍜","photo":null},"viewerState":"none","ratings":{"mine":{"value":null,"sampleCount":0},"community":{"value":4.5,"sampleCount":2},"friends":{"value":5,"sampleCount":1},"similarTaste":{"value":4.5,"sampleCount":1}},"reasons":[{"code":"FRIEND_HIGH_RATING","text":"好友最近给过高分"}],"sourceUser":{"userId":"tm_b","displayName":"Bob","bio":null,"city":"杭州","avatarPhotoId":null,"avatarPresetId":"penguin","friendshipId":"friend","friendshipState":"friends","isFollowing":false},"similarity":null,"trend":null,"cacheScope":"public","rank":1,"score":99}],"nextCursor":null}
+    {"apiVersion":1,"mode":"for_you","city":"杭州","personalizationConfidence":"high","generatedAt":"2026-08-28T12:00:00.000Z","items":[{"id":"for_you:place:one","mode":"for_you","restaurant":{"globalKey":"place:one","placeIdentities":[{"provider":"apple_maps","externalId":"apple-only","isPrimary":true}],"name":"餐厅","address":"地址","city":"杭州","latitude":30.2,"longitude":120.1,"tags":[],"pricePerPerson":null,"merchantImageUrl":null,"markerEmoji":"🍜","photo":null},"viewerState":"none","ratings":{"mine":{"value":null,"sampleCount":0},"community":{"value":4.5,"sampleCount":2},"friends":{"value":5,"sampleCount":1},"similarTaste":{"value":4.5,"sampleCount":1}},"reasons":[{"code":"FRIEND_HIGH_RATING","text":"好友最近给过高分"}],"sourceUser":{"userId":"tm_b","displayName":"Bob","bio":null,"city":"杭州","avatarPhotoId":null,"avatarPresetId":"penguin","friendshipId":"friend","friendshipState":"friends","isFollowing":false},"activity":{"visitId":"visit-source","visitedAt":"2026-08-28T10:00:00.000Z","rating":3.5},"similarity":null,"trend":null,"cacheScope":"public","rank":1,"score":99}],"nextCursor":null}
     """
 
     private func page(mode: DiscoveryModeV1) -> DiscoveryPageV1 {
@@ -143,7 +155,11 @@ struct P3CDiscoveryTests {
             ratings: .init(mine: .init(value: nil, sampleCount: 0), community: .init(value: 4.5, sampleCount: 3),
                            friends: .init(value: nil, sampleCount: 0), similarTaste: .init(value: nil, sampleCount: 0)),
             reasons: [.init(code: "COMMUNITY_QUALITY", text: "当前城市有稳定的公开高分记录")],
-            sourceUser: nil, similarity: nil,
+            sourceUser: nil,
+            activity: .init(
+                visitId: "visit:shared", visitedAt: "2026-08-28T10:00:00.000Z", rating: 3.5
+            ),
+            similarity: nil,
             trend: mode == .trending ? .init(windowDays: 7, uniqueVisitorCount: 3, wantToGoCount: 2) : nil,
             cacheScope: .public, rank: 1, score: 50
         )

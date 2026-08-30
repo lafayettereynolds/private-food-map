@@ -228,7 +228,7 @@ struct MapHomeView: View {
                             }
                         }
                     }
-                    .mapFilterChipStyle(isActive: activeFilterCount > 0)
+                    .tasteMapFilterChipStyle(isActive: activeFilterCount > 0)
                     .accessibilityLabel(activeFilterCount == 0 ? "筛选" : "已启用 \(activeFilterCount) 项筛选")
                     .accessibilityIdentifier("personal-filter-button")
 
@@ -289,14 +289,14 @@ struct MapHomeView: View {
                     } label: {
                         Label(filterState.sort.title, systemImage: "arrow.up.arrow.down")
                     }
-                    .mapFilterChipStyle(isActive: filterState.sort != .comprehensive)
+                    .tasteMapFilterChipStyle(isActive: filterState.sort != .comprehensive)
                     .accessibilityIdentifier("map-filter-chip-sort")
 
                     if activeFilterCount > 0 {
                         Button(action: clearFilters) {
                             Label("清除", systemImage: "xmark")
                         }
-                        .mapFilterChipStyle(isActive: false)
+                        .tasteMapFilterChipStyle(isActive: false)
                         .accessibilityIdentifier("personal-filter-clear")
 
                         Text("筛选后 \(resultCount) 家")
@@ -410,7 +410,7 @@ struct MapHomeView: View {
             } label: {
                 Label(filterState.city ?? "城市", systemImage: "mappin.and.ellipse")
             }
-            .mapFilterChipStyle(isActive: filterState.city != nil)
+            .tasteMapFilterChipStyle(isActive: filterState.city != nil)
             .accessibilityIdentifier("map-filter-chip-city")
         }
     }
@@ -425,7 +425,7 @@ struct MapHomeView: View {
                     .font(.system(size: 8, weight: .bold))
             }
         }
-        .mapFilterChipStyle(isActive: isActive)
+        .tasteMapFilterChipStyle(isActive: isActive)
         .accessibilityIdentifier(identifier)
     }
 
@@ -681,19 +681,6 @@ private enum MapBrowseMode: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String { self == .map ? "地图" : "列表" }
     var systemImage: String { self == .map ? "map" : "list.bullet" }
-}
-
-private extension View {
-    func mapFilterChipStyle(isActive: Bool) -> some View {
-        self
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isActive ? Color.white : TasteMapCoreTheme.brandDeep)
-            .padding(.horizontal, 11)
-            .frame(height: 34)
-            .background(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.surface, in: Capsule())
-            .overlay { Capsule().stroke(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.border) }
-            .buttonStyle(.plain)
-    }
 }
 
 #Preview("地图 / 列表双模式") {

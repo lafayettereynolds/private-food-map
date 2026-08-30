@@ -842,6 +842,11 @@ enum TasteMapUITestFixtures {
                     reason,
                     .init(code: "COMMUNITY_QUALITY", text: "当前城市的公开评分样本稳定"),
                 ], sourceUser: mode == .trending ? nil : source,
+                activity: .init(
+                    visitId: "visit:p3c-ui-\(index)",
+                    visitedAt: "2026-08-30T12:00:00.000Z",
+                    rating: index == 1 ? nil : 3.5
+                ),
                 similarity: mode == .similarTaste ? .init(percent: 91, sharedRestaurantCount: 5) : nil,
                 trend: mode == .trending ? .init(windowDays: window, uniqueVisitorCount: 8, wantToGoCount: 3) : nil,
                 cacheScope: .public, rank: index + 1, score: Double(100 - index)
@@ -892,7 +897,7 @@ enum TasteMapUITestFixtures {
             let visit = PublicVisitV1(
                 id: "visit-p3d-ui-\(index)", ownerUserId: user.userId,
                 restaurantGlobalKey: restaurant.globalKey, visitedAt: eventAt,
-                rating: index == 1 ? nil : 4.5,
+                rating: index == 1 || index == 2 ? nil : 4.5,
                 note: index == 2
                     ? "这是一段用于验证较长内容的真实到访备注。菜的火候很稳，朋友们都愿意下次再来；即使文字变长，卡片也应该保持清楚、自然，并且不能泄露消费、饭搭子或推荐来源。"
                     : "热气腾腾，味道很稳，适合和朋友慢慢吃。",

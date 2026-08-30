@@ -204,10 +204,22 @@ final class TasteMapUITests: XCTestCase {
         ] {
             XCTAssertTrue(app.buttons[identifier].exists, "Missing primary Discovery tab \(identifier)")
         }
+        let discoveryTitle = app.staticTexts["discovery-header"]
+        XCTAssertTrue(discoveryTitle.exists)
+        XCTAssertEqual(discoveryTitle.frame.midX, app.frame.midX, accuracy: 3)
+        let primaryTabs = [
+            "discovery-primary-following", "discovery-primary-forYou",
+            "discovery-primary-similarTaste", "discovery-primary-latest",
+            "discovery-primary-trending",
+        ].map { app.buttons[$0] }
+        let tabWidths = primaryTabs.map(\.frame.width)
+        XCTAssertLessThan((tabWidths.max() ?? 0) - (tabWidths.min() ?? 0), 3)
         XCTAssertFalse(app.buttons["发现餐厅"].exists)
         XCTAssertFalse(app.buttons["社区动态"].exists)
         XCTAssertTrue(app.buttons["discovery-city-menu"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["discovery-filters"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["discovery-filter-chip-strip"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["discovery-activity-rating-place:p3c-ui-0"].exists)
         keepScreenshot(named: "Core Parity Discovery After", of: app)
 
         app.terminate()
@@ -559,8 +571,8 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["完成"].tap()
 
         app.buttons["discovery-primary-trending"].tap()
-        XCTAssertTrue(segmentedOption("近 7 天", in: app).waitForExistence(timeout: 5))
-        segmentedOption("近 30 天", in: app).tap()
+        XCTAssertTrue(app.buttons["discovery-trend-window-7"].waitForExistence(timeout: 5))
+        app.buttons["discovery-trend-window-30"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "近 30 天有 8 位用户到访")).firstMatch.waitForExistence(timeout: 5))
         app.swipeDown()
         XCTAssertTrue(app.staticTexts["P3-C 发现寿司店"].waitForExistence(timeout: 5))
@@ -580,6 +592,35 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(want.waitForExistence(timeout: 5))
         want.tap()
         XCTAssertTrue(app.staticTexts["已想吃"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testDiscoveryAndCommunityCardsUseConcreteVisitRating() throws {
+        let discovery = XCUIApplication()
+        discovery.launchEnvironment = ["TASTEMAP_P3C_DISCOVERY_UI_TEST": "1"]
+        discovery.launch()
+        discovery.buttons["发现"].tap()
+
+        let rated = discovery.staticTexts["discovery-activity-rating-place:p3c-ui-0"]
+        XCTAssertTrue(rated.waitForExistence(timeout: 5))
+        XCTAssertTrue(rated.label.contains("3.5"))
+        let unrated = discovery.staticTexts["discovery-activity-rating-place:p3c-ui-1"]
+        if !unrated.exists { discovery.swipeUp() }
+        XCTAssertTrue(unrated.waitForExistence(timeout: 5))
+        XCTAssertTrue(unrated.label.contains("未评分"))
+        XCTAssertFalse(discovery.staticTexts["社区 4.6"].exists)
+
+        discovery.terminate()
+        let community = XCUIApplication()
+        community.launchEnvironment = ["TASTEMAP_P3D_COMMUNITY_UI_TEST": "1"]
+        community.launch()
+        community.buttons["发现"].tap()
+        community.buttons["discovery-primary-latest"].tap()
+        let communityUnrated = community.staticTexts["community-activity-rating-visit-p3d-ui-2"]
+        if !communityUnrated.exists { community.swipeUp() }
+        if !communityUnrated.exists { community.swipeUp() }
+        XCTAssertTrue(communityUnrated.waitForExistence(timeout: 5))
+        XCTAssertTrue(communityUnrated.label.contains("未评分"))
     }
 
     @MainActor

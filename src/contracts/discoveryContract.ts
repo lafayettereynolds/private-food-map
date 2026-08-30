@@ -59,6 +59,18 @@ export interface DiscoveryPublicUserProjectionV1 {
   isFollowing: boolean
 }
 
+/**
+ * The concrete public/friends-visible visit that caused this placement.
+ * This is intentionally separate from restaurant-level rating aggregates:
+ * cards tell the story of one real activity, while aggregate ratings belong
+ * to the restaurant detail context.
+ */
+export interface DiscoveryActivityProjectionV1 {
+  visitId: string
+  visitedAt: string
+  rating: number | null
+}
+
 export interface DiscoveryRatingProjectionV1 {
   value: number | null
   sampleCount: number
@@ -95,6 +107,7 @@ export interface DiscoveryCardV1 {
   ratings: DiscoveryRatingsV1
   reasons: DiscoveryReasonV1[]
   sourceUser: DiscoveryPublicUserProjectionV1 | null
+  activity: DiscoveryActivityProjectionV1 | null
   similarity: DiscoverySimilarityContextV1 | null
   trend: DiscoveryTrendContextV1 | null
   cacheScope: DiscoveryCacheScopeV1

@@ -450,34 +450,51 @@ struct DiscoveryContentView: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                HStack(spacing: 10) {
-                    DiscoveryCityMenu(
-                        city: city,
-                        availableCities: availableCities,
-                        onSelect: onSelectCity,
-                        onEnterAnother: { enteringCity = true }
-                    )
-                    if mode == .forYou {
-                        Button {
-                            showingFilters = true
-                        } label: {
-                            Label(
-                                filters.activeCount == 0 ? "筛选" : "筛选 \(filters.activeCount)",
-                                systemImage: "slider.horizontal.3"
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        DiscoveryCityMenu(
+                            city: city,
+                            availableCities: availableCities,
+                            onSelect: onSelectCity,
+                            onEnterAnother: { enteringCity = true }
+                        )
+                        if mode == .forYou {
+                            Button {
+                                showingFilters = true
+                            } label: {
+                                Label(
+                                    filters.activeCount == 0 ? "筛选" : "筛选 \(filters.activeCount)",
+                                    systemImage: "slider.horizontal.3"
+                                )
+                            }
+                            .tasteMapFilterChipStyle(isActive: filters.activeCount > 0)
+                            .accessibilityIdentifier("discovery-filters")
+
+                            discoveryFilterChip(
+                                title: filters.sort.title,
+                                isActive: filters.sort != .recommended,
+                                identifier: "discovery-sort-chip"
+                            )
+                            discoveryFilterChip(
+                                title: distanceChipTitle,
+                                isActive: filters.maximumDistanceKilometers != nil,
+                                identifier: "discovery-distance-chip"
+                            )
+                            discoveryFilterChip(
+                                title: ratingChipTitle,
+                                isActive: filters.minimumRating != nil,
+                                identifier: "discovery-rating-chip"
                             )
                         }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("discovery-filters")
+                        if mode == .trending {
+                            trendWindowChip(days: 7)
+                            trendWindowChip(days: 30)
+                        }
                     }
-                    Spacer()
+                    .padding(.horizontal, 16)
                 }
-                if mode == .trending {
-                    Picker("趋势窗口", selection: $trendWindowDays) {
-                        Text("近 7 天").tag(7); Text("近 30 天").tag(30)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 220)
-                }
+                .scrollClipDisabled()
+                .accessibilityIdentifier("discovery-filter-chip-strip")
                 if showingCache, let cacheDate {
                     Label("离线内容 · 更新于 \(cacheDate.formatted(.relative(presentation: .named)))",
                           systemImage: "wifi.slash")
@@ -489,7 +506,7 @@ struct DiscoveryContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
+            .padding(.top, 8).padding(.bottom, 10)
 
             if !isSignedIn {
                 ContentUnavailableView("登录后发现", systemImage: "person.crop.circle.badge.checkmark",
@@ -574,6 +591,26 @@ struct DiscoveryContentView: View {
         case nil: message ?? "换个时间再来看看。"
         }
     }
+
+    private var distanceChipTitle: String {
+        filters.maximumDistanceKilometers.map { "距离 \(Int($0)) km" } ?? "距离"
+    }
+
+    private var ratingChipTitle: String {
+        filters.minimumRating.map { String(format: "餐厅评分 %.1f+", $0) } ?? "餐厅评分"
+    }
+
+    private func discoveryFilterChip(title: String, isActive: Bool, identifier: String) -> some View {
+        Button(title) { showingFilters = true }
+            .tasteMapFilterChipStyle(isActive: isActive)
+            .accessibilityIdentifier(identifier)
+    }
+
+    private func trendWindowChip(days: Int) -> some View {
+        Button("近 \(days) 天") { trendWindowDays = days }
+            .tasteMapFilterChipStyle(isActive: trendWindowDays == days)
+            .accessibilityIdentifier("discovery-trend-window-\(days)")
+    }
 }
 
 private struct DiscoveryCityMenu: View {
@@ -602,7 +639,7 @@ private struct DiscoveryCityMenu: View {
             Label(city.isEmpty ? "自动范围" : city, systemImage: "mappin.and.ellipse")
                 .lineLimit(1)
         }
-        .buttonStyle(.bordered)
+        .tasteMapFilterChipStyle(isActive: !city.isEmpty)
         .accessibilityIdentifier("discovery-city-menu")
     }
 }
@@ -763,24 +800,23 @@ private struct DiscoveryRestaurantCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     DiscoveryRestaurantImage(restaurant: card.restaurant, photoAPI: photoAPI)
-                        .frame(height: 178).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .frame(height: 142).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(card.restaurant.name).font(.title3.bold()).foregroundStyle(.primary).lineLimit(2)
+                            Text(card.restaurant.name).font(.headline).foregroundStyle(.primary).lineLimit(2)
                             Text([card.restaurant.city, card.restaurant.address].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
                         Spacer()
-                        Text(card.restaurant.markerEmoji).font(.title2)
+                        Text(card.restaurant.markerEmoji).font(.title3)
                     }
                 }
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("discovery-open-\(card.restaurant.globalKey)")
             recommendationReasons
-            ratingRow
             if let similarity = card.displayableSimilarity {
                 Label(
                     "同味度 \(similarity.percent)% · 基于 \(similarity.sharedRestaurantCount) 家共同评分餐厅",
@@ -788,7 +824,7 @@ private struct DiscoveryRestaurantCard: View {
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
-            HStack {
+            HStack(spacing: 10) {
                 if let source = card.sourceUser {
                     Button { onOpenUser(source) } label: {
                         HStack(spacing: 7) {
@@ -799,6 +835,24 @@ private struct DiscoveryRestaurantCard: View {
                     }.buttonStyle(.plain)
                 }
                 Spacer()
+                if let activity = card.activity {
+                    Label(
+                        activity.rating.map { String(format: "这次到访 %.1f", $0) } ?? "这次到访 · 未评分",
+                        systemImage: activity.rating == nil ? "star.slash" : "star.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(activity.rating == nil ? TasteMapCoreTheme.textSecondary : .orange)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("discovery-activity-rating-\(card.restaurant.globalKey)")
+                }
+            }
+            if let trend = card.trend {
+                Label(
+                    "近 \(trend.windowDays) 天 · \(trend.uniqueVisitorCount) 人到访",
+                    systemImage: "flame.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(TasteMapCoreTheme.textSecondary)
             }
             DiscoveryRestaurantQuickActions(
                 viewerState: card.viewerState,
@@ -810,25 +864,8 @@ private struct DiscoveryRestaurantCard: View {
                 restaurantKey: card.restaurant.globalKey
             )
         }
-        .padding(14)
-        .tasteMapCoreCard(radius: 24, showsShadow: true)
-    }
-
-    private var ratingRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { ratingValues }
-            VStack(alignment: .leading, spacing: 5) { ratingValues }
-        }
-    }
-
-    @ViewBuilder private var ratingValues: some View {
-        rating("社区", card.ratings.community)
-        if card.ratings.friends.sampleCount > 0 { rating("好友", card.ratings.friends) }
-        if card.ratings.similarTaste.sampleCount > 0 { rating("同味", card.ratings.similarTaste) }
-        if let trend = card.trend {
-            Text("\(trend.windowDays)天 · \(trend.uniqueVisitorCount)人到访")
-                .font(.caption2).foregroundStyle(.secondary)
-        }
+        .padding(12)
+        .tasteMapCoreCard(radius: 20, showsShadow: true)
     }
 
     @ViewBuilder private var recommendationReasons: some View {
@@ -849,14 +886,6 @@ private struct DiscoveryRestaurantCard: View {
                 .accessibilityIdentifier("discovery-reasons-\(card.restaurant.globalKey)")
             }
         }
-    }
-
-    private func rating(_ label: String, _ rating: DiscoveryRatingProjectionV1) -> some View {
-        HStack(spacing: 3) {
-            Text(label); Image(systemName: "star.fill").foregroundStyle(.orange)
-            Text(rating.value.map { String(format: "%.1f", $0) } ?? "—")
-            Text("(\(rating.sampleCount))").foregroundStyle(.tertiary)
-        }.font(.caption2)
     }
 
     private var reasonIcon: String {
