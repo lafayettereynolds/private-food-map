@@ -69,6 +69,8 @@ nonisolated struct RouletteRestaurantRecord: Equatable, Sendable {
 }
 
 nonisolated enum RestaurantRouletteEngine {
+    static let maximumActiveCandidateCount = 10
+
     static func candidates(from records: [RouletteRestaurantRecord]) -> [RouletteCandidate] {
         let valid = records.filter { record in
             record.deletedAt == nil
@@ -179,10 +181,29 @@ nonisolated enum RestaurantRouletteEngine {
         )
     }
 
+    static func defaultActiveGlobalKeys(
+        from candidates: [RouletteCandidate],
+        preferredGlobalKey: String? = nil
+    ) -> Set<String> {
+        var ordered = candidates
+        if let preferredGlobalKey,
+           let preferredIndex = ordered.firstIndex(where: { $0.globalKey == preferredGlobalKey }) {
+            let preferred = ordered.remove(at: preferredIndex)
+            ordered.insert(preferred, at: 0)
+        }
+        return Set(ordered.prefix(maximumActiveCandidateCount).map(\.globalKey))
+    }
+
+    static func activeCandidates(
+        from candidates: [RouletteCandidate],
+        selectedGlobalKeys: Set<String>
+    ) -> [RouletteCandidate] {
+        Array(candidates.filter { selectedGlobalKeys.contains($0.globalKey) }
+            .prefix(maximumActiveCandidateCount))
+    }
+
     static func visualSegmentCount(candidateCount: Int) -> Int {
-        guard candidateCount > 0 else { return 0 }
-        if candidateCount <= 30 { return candidateCount }
-        return 12
+        max(0, candidateCount)
     }
 
     static func visualIndex(selectedIndex: Int, candidateCount: Int) -> Int {
@@ -222,7 +243,7 @@ nonisolated enum RestaurantRouletteEngine {
             options: .regularExpression
         ).trimmingCharacters(in: .whitespacesAndNewlines)
         let value = withoutBranch.isEmpty ? trimmed : withoutBranch
-        let limit = candidateCount <= 12 ? 6 : 3
+        let limit = candidateCount <= 6 ? 6 : 4
         let characters = Array(value)
         return characters.count > limit
             ? String(characters.prefix(limit)) + "…"

@@ -33,7 +33,8 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 - 正式名称 override：`最佳饭搭子`、`谁最会种草` 已完成并独立提交。
 - Module 4 Profile / Public Profile / Premium badge：已完成；证据与测试见 [FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md](reports/FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md)。
 - Module 5 Global Restaurant Detail single source：已完成；本地与远程 projection 共用同一有序主体，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_5_GLOBAL_RESTAURANT_DETAIL.md](reports/FULL_PRODUCT_PARITY_MODULE_5_GLOBAL_RESTAURANT_DETAIL.md)。
-- 下一项：Module 6 Roulette 历史体验恢复。
+- Module 6 Roulette / 今天吃什么：已完成；候选池、可见扇区与抽取结果一一对应，已恢复 Web 已认可的真实餐厅 Wheel 视觉，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_6_ROULETTE.md](reports/FULL_PRODUCT_PARITY_MODULE_6_ROULETTE.md)。
+- 下一项：Module 7 Analytics / 数据分析与分享海报。
 
 ## 1. Executive conclusion
 
@@ -113,7 +114,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 | Public Profile | 紧凑身份头、关系动作、公开统计、公开记录/想吃、公开食单 | 大头像纵向居中、动作、2 个统计、segmented、feed/list | 信息存在但拓扑明显重新组织；restaurant click 走 remote duplicate | 使用 `SocialPublicProfileView`，与本人 Profile tokens 未共享 | S1 | 复用 compact identity/stat components；详情接唯一组件 |
 | Social / Friends | 搜索、好友、请求、关注、隐私说明 | 原生 segmented destinations 与 API flow | 业务完整，NavigationStack/keyboard 为允许的平台差异 | 单一 social service | S3 | 仅核对顺序、空态、长用户名 |
 | Lists | Web dashboard card/grid、封面、榜单顺序/备注/visibility | native inset grouped List + cover + item rows + sheets | 功能完整；公开/本人列表布局更系统化，信息密度和卡片结构不完全一致 | local/public 两套 list screen合理；餐厅详情不应重复 | S2 | 保留系统编辑交互；统一封面/row tokens与 Restaurant Detail 路由 |
-| Roulette | 条件 → 候选 → 已认可 Wheel → 均匀抽签 → 结果 → 餐厅详情 | native engine/view 流程存在，但 Wheel 视觉已被人工确认与历史正确版本不一致 | 需恢复旧 wheel diameter/segments/colors/pointer/center/border/shadow/animation/result；视觉 segment 和 candidate pool 必须一一对应 | engine 单一；历史正确 `RouletteWheelView` / asset 应优先恢复 | S1 | 独立历史审计 + 视觉恢复 + candidate consistency tests，不改推荐算法 |
+| Roulette | 条件 → 候选 → 已认可 Wheel → 均匀抽签 → 结果 → 餐厅详情 | Module 6 后 active pool 最多 10 家；每家具名 Restaurant 对应且仅对应一个可见扇区，结果来自同一集合 | 已恢复照片/城市/真实评分、固定指针、中央 CTA、离线与重抽；120/1000 家库不再造成视觉/结果集合错位 | 单一 engine/view；详情进入全局唯一标准主体 | PASS | 见 Module 6 报告；最终只需真机触觉/动画 smoke |
 | Settings | Account/Data/Sync/Privacy/Permissions/Storage/Premium/Help/About | 原生 Settings navigation | 原生 List/Form 是允许差异；真实能力与隐藏未实现入口符合要求 | services 均复用现有实现 | S3 | 不重构；做入口/返回一致性验证 |
 | Premium / Paywall / badge | Web membership presentation/paywall；历史测试版有已认可 hamburger badge | StoreKit 2 abstraction + native paywall；当前汉堡存在视觉回退 | 正式 Product ID 仍是 release gate；本轮只恢复历史 badge，并保证所有入口同一 asset，不改 commerce | entitlement 单一；badge 必须单一 | S1 | Profile/Premium模块中搜索历史 asset/commit并恢复；不触碰 App Store配置 |
 | On This Day | Profile 回味入口 → 记忆列表/详情/分享 | native analyzer/view/poster | 入口与能力存在 | 餐厅点击为 local detail | S3 | 增加统一详情标识断言 |
@@ -188,10 +189,9 @@ RestaurantDetailView(
 | 4 | Profile / My + Public Profile + Premium badge | 重构布局 + 历史资产恢复 | compact header；关注/被关注；去过/想去/总消费真实口径；主入口/回味/食单/洞察恢复 Web密度；恢复唯一已认可 Premium hamburger | `Restore Profile product parity` |
 | 5 | Global Restaurant Detail | **核心重构** | local/remote使用同一主体；固定 section contract；entrySource只管导航；全部入口验证 | `Unify global Restaurant Detail` |
 | 6 | Roulette | 历史视觉恢复 + 数据一致性 | 找回已认可 wheel；候选数/segments/selected result一致；均匀随机不偷换；统一详情 | `Restore approved Roulette experience` |
-| 7 | Remaining core pages | 调整 | Visit section order、Lists tokens、Social/Share landing cross-entry consistency | `Close remaining core product parity gaps` |
-| 8 | Food & Dining Visual Language | 视觉系统 + 有限接入 | 复用既有正确资产；统一 food/drink/tableware/receipt/menu/takeaway/generic dining；稳定 seed；近距独立 marker；极远 Food/Dining cluster；空态/Profile/Lists/Roulette 的克制 Decorative 示例 | `Establish Food and Dining visual language` |
-| 9 | Analytics + Share Posters | **独立完整模块** | 先核对五类 analyzer 的统计口径，再复用已确认 Analysis Theme；动态中心 Food Hero、四周分析、代表餐厅图文、五类统一竖版海报；所有 Data-linked visual 有真实证据 | `Restore Analytics and poster product parity` |
-| 10 | Closure | 验收 | 全量 tests/build；Web/iOS after screenshots；全入口 Detail contract；Food/Dining Decorative/Data-linked证据；Analytics 页面/海报证据；剩余 gap诚实列出 | `Document full product parity closure` |
+| 7 | Analytics + Share Posters | **独立完整模块** | 先核对五类 analyzer 的统计口径，再复用已确认 Analysis Theme；动态中心 Food Hero、四周分析、代表餐厅图文、五类统一竖版海报；所有 Data-linked visual 有真实证据 | `Restore Analytics and poster product parity` |
+| 8 | Remaining core parity + Food & Dining Visual Language | 调整 + 视觉系统 | Visit section order、Lists/Social/Share landing consistency；统一 food/drink/tableware/receipt/menu/takeaway/generic dining；稳定 seed；近距独立 marker；极远 Food/Dining cluster；Core 场景克制 Decorative 示例 | `Close remaining product parity gaps` |
+| 9 | Closure | 验收 | 全量 tests/build；Web/iOS after screenshots；全入口 Detail contract；Food/Dining Decorative/Data-linked证据；Analytics 页面/海报证据；剩余 gap诚实列出 | `Document full product parity closure` |
 
 ## 8. Pages requiring refactor vs adjustment
 

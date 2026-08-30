@@ -2587,12 +2587,19 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testP4GRouletteLargePoolKeepsAllCandidatesEligible() throws {
+    func testP4GRouletteLargeLibraryUsesTenRealOneToOneSegments() throws {
         let app = launchP4GRouletteFixture(environmentKey: "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST")
         openP4GRoulette(in: app)
-        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("120"))
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("10"))
         XCTAssertTrue(app.buttons["roulette-spin"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["完整候选池参与随机，轮盘仅做简化展示"].exists)
+        XCTAssertTrue(app.staticTexts["候选库 120 家 · 最多选择 10 家"].exists)
+        XCTAssertFalse(app.staticTexts["完整候选池参与随机，轮盘仅做简化展示"].exists)
+        XCTAssertEqual(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH 'roulette-candidate-chip-'")
+            ).count,
+            10
+        )
         keepScreenshot(named: "P4-G Large Candidate Pool", of: app)
     }
 
