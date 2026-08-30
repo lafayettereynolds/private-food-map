@@ -32,8 +32,8 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["发现"].exists)
         XCTAssertTrue(app.buttons["我的"].exists)
         XCTAssertTrue(app.buttons["添加餐厅"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["去过"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["想吃"].exists)
+        XCTAssertTrue(segmentedOption("去过", in: app).exists)
+        XCTAssertTrue(segmentedOption("想吃", in: app).exists)
 
         app.buttons["添加餐厅"].tap()
         XCTAssertTrue(app.navigationBars["添加餐厅"].waitForExistence(timeout: 5))
@@ -47,7 +47,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
         app.launch()
 
-        let listMode = app.segmentedControls.buttons["列表"]
+        let listMode = segmentedOption("列表", in: app)
         XCTAssertTrue(listMode.waitForExistence(timeout: 5))
         listMode.tap()
         let restaurantName = "F2-A 很长但仍需完整可读的江南季节料理餐厅"
@@ -58,7 +58,7 @@ final class TasteMapUITests: XCTestCase {
             identifier: "restaurant-photo-fallback-00000000-0000-0000-0000-000000010001"
         ).firstMatch.exists)
 
-        let mapMode = app.segmentedControls.buttons["地图"]
+        let mapMode = segmentedOption("地图", in: app)
         XCTAssertTrue(mapMode.exists)
         mapMode.tap()
         XCTAssertTrue(mapMode.isSelected)
@@ -141,7 +141,7 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["personal-filter-apply"].tap()
 
         XCTAssertTrue(app.staticTexts["筛选后 1 家"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["列表"].tap()
+        segmentedOption("列表", in: app).tap()
         XCTAssertTrue(app.staticTexts["F2-B 命中外卖餐厅"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["F2-B 排除到店餐厅"].exists)
 
@@ -170,7 +170,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(want.waitForExistence(timeout: 3))
         want.tap()
         XCTAssertFalse(app.navigationBars["添加餐厅"].waitForExistence(timeout: 3))
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         XCTAssertTrue(app.staticTexts["V1 附近小馆"].waitForExistence(timeout: 5))
         openWantToGoDetail(named: "V1 附近小馆", in: app)
     }
@@ -204,7 +204,7 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(want, in: app)
         XCTAssertTrue(want.isHittable)
         want.tap()
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         XCTAssertTrue(app.staticTexts["上海 · 外滩餐厅"].waitForExistence(timeout: 5))
         openWantToGoDetail(named: "上海 · 外滩餐厅", in: app)
 
@@ -233,7 +233,7 @@ final class TasteMapUITests: XCTestCase {
         let want = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "加入想吃")).firstMatch
         XCTAssertTrue(want.waitForExistence(timeout: 3))
         want.tap()
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         XCTAssertTrue(app.staticTexts["V1 Apple 链接餐厅"].waitForExistence(timeout: 5))
         openWantToGoDetail(named: "V1 Apple 链接餐厅", in: app)
     }
@@ -266,7 +266,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(want.waitForExistence(timeout: 5))
         want.tap()
 
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         XCTAssertTrue(app.staticTexts["地图外的小摊"].waitForExistence(timeout: 5))
         openWantToGoDetail(named: "地图外的小摊", in: app)
     }
@@ -290,7 +290,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
 
         app.buttons["地图"].tap()
-        XCTAssertTrue(app.segmentedControls.buttons["去过"].waitForExistence(timeout: 5))
+        XCTAssertTrue(segmentedOption("去过", in: app).waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -301,9 +301,9 @@ final class TasteMapUITests: XCTestCase {
 
         app.buttons["发现"].tap()
         XCTAssertTrue(app.navigationBars["发现"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.segmentedControls.buttons["适合你"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["同味"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["趋势"].exists)
+        XCTAssertTrue(segmentedOption("适合你", in: app).exists)
+        XCTAssertTrue(segmentedOption("同味", in: app).exists)
+        XCTAssertTrue(segmentedOption("趋势", in: app).exists)
         let restaurant = app.staticTexts["P3-C 发现寿司店"]
         XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
         restaurant.tap()
@@ -316,16 +316,16 @@ final class TasteMapUITests: XCTestCase {
         want.tap()
         XCTAssertTrue(app.staticTexts["已想吃"].waitForExistence(timeout: 5))
 
-        app.segmentedControls.buttons["同味"].tap()
+        segmentedOption("同味", in: app).tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "基于 5 家共同评分餐厅")).firstMatch.waitForExistence(timeout: 5))
         app.buttons["同味小林"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["公开主页"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["同味小林"].exists)
         app.buttons["完成"].tap()
 
-        app.segmentedControls.buttons["趋势"].tap()
-        XCTAssertTrue(app.segmentedControls.buttons["近 7 天"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["近 30 天"].tap()
+        segmentedOption("趋势", in: app).tap()
+        XCTAssertTrue(segmentedOption("近 7 天", in: app).waitForExistence(timeout: 5))
+        segmentedOption("近 30 天", in: app).tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "近 30 天有 8 位用户到访")).firstMatch.waitForExistence(timeout: 5))
         app.swipeDown()
         XCTAssertTrue(app.staticTexts["P3-C 发现寿司店"].waitForExistence(timeout: 5))
@@ -393,11 +393,11 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_P3D_COMMUNITY_UI_TEST": "1"]
         app.launch()
         app.buttons["发现"].tap()
-        XCTAssertTrue(app.segmentedControls.buttons["社区动态"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["社区动态"].tap()
+        XCTAssertTrue(segmentedOption("社区动态", in: app).waitForExistence(timeout: 5))
+        segmentedOption("社区动态", in: app).tap()
         XCTAssertTrue(app.navigationBars["社区"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.segmentedControls.buttons["关注"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["最新"].exists)
+        XCTAssertTrue(segmentedOption("关注", in: app).exists)
+        XCTAssertTrue(segmentedOption("最新", in: app).exists)
         XCTAssertTrue(app.staticTexts["云边小馆·湖滨店"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["community-like-visit-p3d-ui-0"].exists)
         let comments = app.buttons["community-comments-visit-p3d-ui-0"]
@@ -432,7 +432,7 @@ final class TasteMapUITests: XCTestCase {
         ]
         app.launch()
         app.buttons["发现"].tap()
-        app.segmentedControls.buttons["社区动态"].tap()
+        segmentedOption("社区动态", in: app).tap()
         XCTAssertTrue(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "当前显示最近缓存")
         ).firstMatch.waitForExistence(timeout: 5))
@@ -446,7 +446,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_P3D_COMMUNITY_UI_TEST": "1"]
         app.launch()
         app.buttons["发现"].tap()
-        app.segmentedControls.buttons["社区动态"].tap()
+        segmentedOption("社区动态", in: app).tap()
         app.swipeUp()
         XCTAssertTrue(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "加入了想吃")
@@ -838,10 +838,10 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(entry.waitForExistence(timeout: 5))
         entry.tap()
         XCTAssertTrue(app.navigationBars["好友与关注"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.segmentedControls.buttons["找人"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["好友"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["请求"].exists)
-        XCTAssertTrue(app.segmentedControls.buttons["关注"].exists)
+        XCTAssertTrue(segmentedOption("找人", in: app).exists)
+        XCTAssertTrue(segmentedOption("好友", in: app).exists)
+        XCTAssertTrue(segmentedOption("请求", in: app).exists)
+        XCTAssertTrue(segmentedOption("关注", in: app).exists)
         XCTAssertTrue(app.textFields["social-search-field"].exists)
         let inbox = app.buttons["social-collaboration-inbox"]
         XCTAssertTrue(inbox.exists)
@@ -861,7 +861,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchArguments = ["-p1b-restaurant-detail-fixture"]
         app.launch()
 
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         card.tap()
@@ -881,7 +881,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchArguments = ["-p1b-restaurant-detail-fixture"]
         app.launch()
 
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         card.tap()
@@ -912,7 +912,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_F3A_DETAIL_UI_TEST": "1"]
         app.launch()
 
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         card.tap()
@@ -958,7 +958,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_F3A_DETAIL_UI_TEST": "1"]
         app.launch()
 
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         card.tap()
@@ -1058,7 +1058,7 @@ final class TasteMapUITests: XCTestCase {
         ]
         app.launch()
 
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         card.tap()
@@ -1156,7 +1156,7 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(overall, in: app)
         overall.tap()
 
-        app.segmentedControls.buttons["外卖"].tap()
+        segmentedOption("外卖", in: app).tap()
         app.textFields["visit-editor-party-size"].tap()
         app.textFields["visit-editor-party-size"].typeText("3")
 
@@ -2166,7 +2166,7 @@ final class TasteMapUITests: XCTestCase {
         ]
         app.launch()
         app.buttons["发现"].tap()
-        app.segmentedControls.buttons["社区动态"].tap()
+        segmentedOption("社区动态", in: app).tap()
         XCTAssertTrue(app.staticTexts["常去小馆的阿岚"].firstMatch.waitForExistence(timeout: 5))
         app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
         let publicList = app.buttons["public-restaurant-list-p4f-public-ui-list"]
@@ -2188,7 +2188,7 @@ final class TasteMapUITests: XCTestCase {
         ]
         app.launch()
         app.buttons["发现"].tap()
-        app.segmentedControls.buttons["社区动态"].tap()
+        segmentedOption("社区动态", in: app).tap()
         app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
         let revoked = app.staticTexts["这些榜单已经不可查看。"]
         scrollUntilVisible(revoked, in: app)
@@ -2212,7 +2212,7 @@ final class TasteMapUITests: XCTestCase {
 
         app.buttons["roulette-filter-open"].tap()
         XCTAssertTrue(app.navigationBars["候选条件"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["想吃"].tap()
+        segmentedOption("想吃", in: app).tap()
         app.navigationBars["候选条件"].buttons["完成"].tap()
         XCTAssertTrue(app.staticTexts["roulette-candidate-count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("4"))
@@ -2433,7 +2433,7 @@ final class TasteMapUITests: XCTestCase {
 
     @MainActor
     private func openP1DDetail(in app: XCUIApplication, tab: String) {
-        app.segmentedControls.buttons[tab].tap()
+        segmentedOption(tab, in: app).tap()
         let card = app.buttons["restaurant-card-11111111-2222-3333-4444-555555555555"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         card.tap()
@@ -2444,7 +2444,7 @@ final class TasteMapUITests: XCTestCase {
     private func addCompleteVisit(in app: XCUIApplication) {
         app.buttons["restaurant-detail-add-visit"].tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["外卖"].tap()
+        segmentedOption("外卖", in: app).tap()
         app.textFields["visit-editor-party-size"].tap()
         app.textFields["visit-editor-party-size"].typeText("2")
         let rating = app.buttons["4.5 星"]
@@ -2549,6 +2549,18 @@ final class TasteMapUITests: XCTestCase {
         let choice = scopedChoice.waitForExistence(timeout: 1) ? scopedChoice : app.buttons[option]
         XCTAssertTrue(choice.waitForExistence(timeout: 3))
         choice.tap()
+    }
+
+    /// Supports both native segmented pickers and Taste Map's visually restored
+    /// segmented buttons without coupling product behavior tests to one renderer.
+    @MainActor
+    private func segmentedOption(_ label: String, in app: XCUIApplication) -> XCUIElement {
+        for prefix in ["map-content-segment", "map-list-mode-picker", "discover-hub-segment"] {
+            let restoredOption = app.buttons["\(prefix)-\(label)"]
+            if restoredOption.exists { return restoredOption }
+        }
+        let nativeOption = app.segmentedControls.buttons[label]
+        return nativeOption.exists ? nativeOption : app.buttons[label]
     }
 
     @MainActor

@@ -129,6 +129,9 @@ struct RestaurantEditView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(TasteMapCoreTheme.page)
+            .tint(TasteMapCoreTheme.brand)
             .navigationTitle("编辑餐厅")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isSaving)

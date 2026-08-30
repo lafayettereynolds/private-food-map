@@ -298,7 +298,7 @@ struct PremiumPaywallView: View {
                         }
                         .padding(15)
                         .background(
-                            selectedProductID == product.id ? PremiumTheme.brandSoft : Color(uiColor: .secondarySystemGroupedBackground),
+                            selectedProductID == product.id ? PremiumTheme.brandSoft : TasteMapCoreTheme.surfaceSubtle,
                             in: RoundedRectangle(cornerRadius: 18)
                         )
                     }
@@ -532,16 +532,16 @@ private struct PremiumFoodMotif: View {
 }
 
 private enum PremiumTheme {
-    static let brand = Color(red: 80 / 255, green: 108 / 255, blue: 140 / 255)
-    static let brandDeep = Color(red: 52 / 255, green: 79 / 255, blue: 105 / 255)
-    static let brandSoft = Color(red: 232 / 255, green: 240 / 255, blue: 246 / 255)
-    static let canvas = Color(red: 249 / 255, green: 248 / 255, blue: 244 / 255)
+    static let brand = TasteMapCoreTheme.brand
+    static let brandDeep = TasteMapCoreTheme.brandDeep
+    static let brandSoft = TasteMapCoreTheme.brandSoft
+    static let canvas = TasteMapCoreTheme.page
     static let cream = Color(red: 247 / 255, green: 240 / 255, blue: 224 / 255)
     static let bun = Color(red: 231 / 255, green: 184 / 255, blue: 94 / 255)
     static let leaf = Color(red: 121 / 255, green: 166 / 255, blue: 110 / 255)
     static let patty = Color(red: 164 / 255, green: 93 / 255, blue: 66 / 255)
     static let caramel = Color(red: 173 / 255, green: 117 / 255, blue: 60 / 255)
-    static let ink = Color(red: 35 / 255, green: 44 / 255, blue: 50 / 255)
+    static let ink = TasteMapCoreTheme.textPrimary
 }
 
 private extension View {
@@ -549,6 +549,10 @@ private extension View {
         self
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(TasteMapCoreTheme.border)
+            }
     }
 }

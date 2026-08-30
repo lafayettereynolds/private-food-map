@@ -192,6 +192,8 @@ struct TasteMapSettingsView: View {
 #endif
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.large)
         .tasteMapBottomNavigationHidden()
@@ -277,6 +279,8 @@ struct AccountSettingsView: View {
                 Section { Text(message).font(.footnote).foregroundStyle(.secondary) }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("账户")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isEditingProfile) {
@@ -397,6 +401,8 @@ struct DataBackupSettingsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("数据与备份")
         .navigationBarTitleDisplayMode(.inline)
         .alert("导出 Backup v1", isPresented: $isShowingConfirmation) {
@@ -524,6 +530,8 @@ struct SyncSettingsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("同步")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings-sync-page")
@@ -568,6 +576,8 @@ struct PrivacySettingsView: View {
             }
 #endif
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("隐私")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isEditingProfile) {
@@ -635,6 +645,8 @@ struct PremiumSettingsView: View {
 
             if let message { Section { Text(message).font(.footnote) } }
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("Premium")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -655,9 +667,9 @@ struct SettingsDestinationLabel: View {
         HStack(spacing: 13) {
             Image(systemName: systemImage)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color(red: 74 / 255, green: 103 / 255, blue: 133 / 255))
+                .foregroundStyle(TasteMapCoreTheme.brand)
                 .frame(width: 32, height: 32)
-                .background(Color(red: 235 / 255, green: 241 / 255, blue: 246 / 255), in: RoundedRectangle(cornerRadius: 9))
+                .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 9))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).foregroundStyle(.primary)

@@ -92,7 +92,7 @@ struct RestaurantDishSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
         .accessibilityIdentifier("restaurant-dish-section")
         .sheet(item: $selected) { DishDetailSheet(summary: $0) }
     }

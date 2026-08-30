@@ -53,7 +53,7 @@ struct RestaurantListsOverviewView: View {
                     }
                     .padding(16)
                 }
-                .background(Color(uiColor: .systemGroupedBackground))
+                .background(TasteMapCoreTheme.page)
             }
         }
         .navigationTitle("我的榜单")
@@ -115,8 +115,7 @@ struct RestaurantListSummaryCard: View {
             }
         }
         .padding(12)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22).stroke(.quaternary))
+        .tasteMapCoreCard(radius: 22, showsShadow: true)
     }
 }
 
@@ -701,7 +700,7 @@ struct PublicRestaurantListsSection: View {
             }
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20))
+        .tasteMapCoreCard(radius: 20)
         .task { await load() }
         .sheet(item: $selected) { summary in
             PublicRestaurantListDetailView(

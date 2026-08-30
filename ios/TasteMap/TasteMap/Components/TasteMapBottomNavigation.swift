@@ -17,7 +17,11 @@ struct TasteMapBottomNavigation: View {
                             Text(tab.title)
                                 .font(.caption2.weight(.semibold))
                         }
-                        .foregroundStyle(selection == tab ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(
+                            selection == tab
+                                ? TasteMapCoreTheme.brand
+                                : TasteMapCoreTheme.textSecondary
+                        )
                         .frame(maxWidth: .infinity, minHeight: 50)
                         .contentShape(Rectangle())
                     }
@@ -28,10 +32,13 @@ struct TasteMapBottomNavigation: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 58)
-            .background(.ultraThinMaterial)
+            .background(TasteMapCoreTheme.surface.opacity(0.95))
             .overlay(alignment: .top) {
-                Divider()
+                Rectangle()
+                    .fill(TasteMapCoreTheme.border.opacity(0.85))
+                    .frame(height: 1)
             }
+            .shadow(color: TasteMapCoreTheme.cardShadow, radius: 14, y: -5)
             .padding(.top, 30)
 
             Button(action: onAddRestaurant) {
@@ -40,8 +47,8 @@ struct TasteMapBottomNavigation: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .frame(height: 38)
-                    .background(Color.accentColor, in: Capsule())
-                    .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                    .background(TasteMapCoreTheme.brand, in: Capsule())
+                    .shadow(color: TasteMapCoreTheme.brand.opacity(0.24), radius: 9, y: 4)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("addRestaurantButton")

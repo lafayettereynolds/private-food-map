@@ -89,7 +89,7 @@ struct DiscoveryView: View {
                 photoAPI: authServices.photoAPI
             )
             .navigationTitle("发现")
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
             .refreshable { await load(reset: true, preferCache: false) }
             .task { await restoreAndLoad() }
             .onChange(of: mode) { _, _ in Task { await load(reset: true, preferCache: true) } }
@@ -777,7 +777,7 @@ private struct DiscoveryRestaurantCard: View {
             )
         }
         .padding(14)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .tasteMapCoreCard(radius: 24, showsShadow: true)
     }
 
     private var ratingRow: some View {

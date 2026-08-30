@@ -109,7 +109,7 @@ struct RestaurantBrowseList: View {
                     .padding(.top, 12)
                     .padding(.bottom, 28)
                 }
-                .background(Color(uiColor: .systemGroupedBackground))
+                .background(TasteMapCoreTheme.page)
             }
         }
         .searchable(text: $query, prompt: "搜索餐厅、城市、饭搭子或菜品")
@@ -132,7 +132,7 @@ private struct RestaurantBrowseCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(item.restaurant.name)
                             .font(.headline)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(TasteMapCoreTheme.textPrimary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 4)
@@ -151,17 +151,13 @@ private struct RestaurantBrowseCard: View {
                             systemImage: "bookmark.fill"
                         )
                         .font(.caption)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(TasteMapCoreTheme.brand)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
-            .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color(uiColor: .separator).opacity(0.16))
-            }
+            .tasteMapCoreCard(showsShadow: true)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("restaurant-list-item-\(item.restaurant.id.uuidString)")
@@ -214,13 +210,13 @@ struct RestaurantBrowsePhoto: View {
         } else {
             ZStack {
                 LinearGradient(
-                    colors: [Color.accentColor.opacity(0.16), Color(uiColor: .secondarySystemBackground)],
+                    colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surfaceSubtle],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 Image(systemName: "fork.knife")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(Color.accentColor.opacity(0.75))
+                    .foregroundStyle(TasteMapCoreTheme.brand.opacity(0.82))
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("餐厅暂无照片")
@@ -233,13 +229,14 @@ struct RestaurantBrowseEmptyState: View {
     let segment: RestaurantBrowseSegment
 
     var body: some View {
-        ContentUnavailableView(
-            segment.emptyTitle,
-            systemImage: segment.systemImage,
-            description: Text(segment.emptyMessage)
+        TasteMapEmptyState(
+            title: segment.emptyTitle,
+            message: segment.emptyMessage,
+            systemImage: segment.systemImage
         )
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(TasteMapCoreTheme.page)
         .accessibilityIdentifier("restaurant-list-empty-\(segment.rawValue)")
     }
 }

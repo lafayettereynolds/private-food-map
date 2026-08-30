@@ -51,6 +51,8 @@ struct PermissionsSettingsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("权限")
         .navigationBarTitleDisplayMode(.inline)
         .task { refresh() }
@@ -168,6 +170,8 @@ struct StorageSettingsView: View {
                 Section { Text(errorMessage).font(.footnote).foregroundStyle(.red) }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("存储")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -229,6 +233,8 @@ struct HelpSettingsView: View {
             }
 #endif
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("帮助")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -296,6 +302,8 @@ struct AboutSettingsView: View {
             }
 #endif
         }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings-about-page")

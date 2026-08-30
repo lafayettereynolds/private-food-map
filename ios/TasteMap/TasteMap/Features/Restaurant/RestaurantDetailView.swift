@@ -127,7 +127,7 @@ struct RestaurantDetailView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 28)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
             .navigationTitle("餐厅详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

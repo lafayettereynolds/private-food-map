@@ -99,6 +99,8 @@ struct DishManagerSheet: View {
                     .accessibilityIdentifier("visit-dish-add-new")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(TasteMapCoreTheme.page)
             .searchable(text: $searchText, prompt: "搜索以前吃过的菜")
             .navigationTitle("本次吃了什么")
             .navigationBarTitleDisplayMode(.inline)

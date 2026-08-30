@@ -70,7 +70,7 @@ struct MapHomeView: View {
                     )
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
             .navigationTitle("Taste Map")
             .navigationBarTitleDisplayMode(.inline)
             .task {
@@ -131,21 +131,22 @@ struct MapHomeView: View {
     }
 
     private func controls(resultCount: Int, activeFilterCount: Int) -> some View {
-        VStack(spacing: 9) {
-            Picker("地图内容", selection: $selectedSegment) {
-                ForEach(RestaurantBrowseSegment.allCases) { segment in
-                    Text(segment.title).tag(segment)
-                }
-            }
-            .pickerStyle(.segmented)
+        VStack(spacing: 10) {
+            TasteMapSegmentedControl(
+                selection: $selectedSegment,
+                items: RestaurantBrowseSegment.allCases.map {
+                    .init($0, title: $0.title, systemImage: $0.systemImage)
+                },
+                accessibilityIdentifier: "map-content-segment"
+            )
 
-            Picker("浏览方式", selection: $browseMode) {
-                ForEach(MapBrowseMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.systemImage).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("map-list-mode-picker")
+            TasteMapSegmentedControl(
+                selection: $browseMode,
+                items: MapBrowseMode.allCases.map {
+                    .init($0, title: $0.title, systemImage: $0.systemImage)
+                },
+                accessibilityIdentifier: "map-list-mode-picker"
+            )
 
             if selectedSegment != .forYou {
                 HStack(spacing: 10) {
@@ -165,6 +166,7 @@ struct MapHomeView: View {
                         }
                     }
                     .buttonStyle(.bordered)
+                    .tint(TasteMapCoreTheme.brand)
                     .accessibilityIdentifier("personal-filter-button")
 
                     Text(filterState.sort.title)
@@ -186,8 +188,12 @@ struct MapHomeView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.bar)
+        .padding(.top, 10)
+        .padding(.bottom, 11)
+        .background(TasteMapCoreTheme.page)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(TasteMapCoreTheme.border.opacity(0.75)).frame(height: 1)
+        }
     }
 
     private func mapContent(
@@ -244,7 +250,7 @@ struct MapHomeView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "arrow.clockwise.circle")
                         .font(.title2)
-                        .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(TasteMapCoreTheme.brand)
                     Text("地图暂时没有加载出来").font(.headline)
                     Text(message)
                         .font(.subheadline)
@@ -255,7 +261,11 @@ struct MapHomeView: View {
                         .accessibilityIdentifier("restaurant-map-retry")
                 }
                 .padding(20)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(TasteMapCoreTheme.border)
+                }
                 .padding(.horizontal, 32)
                 .padding(.vertical, 60)
                 .accessibilityIdentifier("restaurant-map-error")

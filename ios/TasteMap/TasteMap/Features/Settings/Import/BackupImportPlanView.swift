@@ -130,7 +130,7 @@ struct BackupImportReviewSection: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func safeDetail(_ value: String) -> String {

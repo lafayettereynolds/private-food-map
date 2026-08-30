@@ -117,6 +117,9 @@ struct VisitEditorView: View {
                 privacySection
                 if visit != nil { deleteSection }
             }
+            .scrollContentBackground(.hidden)
+            .background(TasteMapCoreTheme.page)
+            .tint(TasteMapCoreTheme.brand)
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle(visit == nil ? "新增到访" : "编辑到访")
             .navigationBarTitleDisplayMode(.inline)

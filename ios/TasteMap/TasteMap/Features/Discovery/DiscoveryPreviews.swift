@@ -26,7 +26,7 @@ private struct DiscoveryPreviewHost: View {
                 onOpenUser: { _ in }, onLoadMore: {}, photoAPI: nil
             )
             .navigationTitle("发现")
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
         }
     }
 }

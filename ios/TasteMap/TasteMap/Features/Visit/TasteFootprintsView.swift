@@ -64,7 +64,7 @@ struct TasteFootprintsView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 32)
                 }
-                .background(Color(uiColor: .systemGroupedBackground))
+                .background(TasteMapCoreTheme.page)
             }
         }
         .navigationTitle("味觉足迹")
@@ -117,7 +117,7 @@ private struct TasteFootprintRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
-                .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .tasteMapCoreCard(radius: 20)
                 .overlay {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(Color(uiColor: .separator).opacity(0.16))

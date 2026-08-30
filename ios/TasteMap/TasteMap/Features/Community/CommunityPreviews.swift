@@ -30,7 +30,7 @@ private struct CommunityPreviewStateView: View {
                 }
                 .padding(16)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
             .navigationTitle(title)
         }
     }

@@ -75,7 +75,7 @@ struct RestaurantQuickActionsSection: View {
             }
         }
         .padding(15)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .tasteMapCoreCard(radius: 18)
     }
 
     private func action(
@@ -106,7 +106,7 @@ struct RestaurantQuickActionsSection: View {
         }
         .frame(maxWidth: .infinity, minHeight: 62)
         .padding(.horizontal, 4)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13))
+        .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 13))
         .contentShape(Rectangle())
     }
 }

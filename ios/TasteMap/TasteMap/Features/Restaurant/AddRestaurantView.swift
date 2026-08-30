@@ -332,7 +332,7 @@ private struct RestaurantLinkImportView: View {
                     TextEditor(text: $value)
                         .frame(minHeight: 110)
                         .padding(12)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                        .background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 14))
                         .overlay { RoundedRectangle(cornerRadius: 14).stroke(AcquisitionPalette.border) }
                         .accessibilityLabel("餐厅链接或分享文字")
                         .accessibilityIdentifier("restaurant-link-field")
@@ -792,26 +792,27 @@ private struct AcquisitionMethodButton: View {
 }
 
 private enum AcquisitionPalette {
-    static let brand = Color(red: 80 / 255, green: 108 / 255, blue: 140 / 255)
-    static let brandDeep = Color(red: 52 / 255, green: 79 / 255, blue: 105 / 255)
-    static let brandSoft = Color(red: 237 / 255, green: 242 / 255, blue: 246 / 255)
-    static let page = Color(red: 247 / 255, green: 249 / 255, blue: 251 / 255)
-    static let surfaceSubtle = Color(red: 248 / 255, green: 250 / 255, blue: 252 / 255)
-    static let ink = Color(red: 23 / 255, green: 42 / 255, blue: 58 / 255)
-    static let muted = Color(red: 101 / 255, green: 116 / 255, blue: 128 / 255)
-    static let border = Color(red: 220 / 255, green: 229 / 255, blue: 236 / 255)
+    static let brand = TasteMapCoreTheme.brand
+    static let brandDeep = TasteMapCoreTheme.brandDeep
+    static let brandSoft = TasteMapCoreTheme.brandSoft
+    static let page = TasteMapCoreTheme.page
+    static let surfaceSubtle = TasteMapCoreTheme.surfaceSubtle
+    static let ink = TasteMapCoreTheme.textPrimary
+    static let muted = TasteMapCoreTheme.textSecondary
+    static let border = TasteMapCoreTheme.border
+    static let surface = TasteMapCoreTheme.surface
 }
 
 private extension View {
     func acquisitionCard() -> some View {
-        background(.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(AcquisitionPalette.border) }
     }
 
     func acquisitionInput() -> some View {
         padding(.horizontal, 12)
             .frame(minHeight: 48)
-            .background(.white, in: RoundedRectangle(cornerRadius: 14))
+            .background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 14))
             .overlay { RoundedRectangle(cornerRadius: 14).stroke(AcquisitionPalette.border) }
     }
 }

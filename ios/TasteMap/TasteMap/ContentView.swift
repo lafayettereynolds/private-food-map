@@ -17,6 +17,7 @@ struct ContentView: View {
     var body: some View {
         @Bindable var premiumEntitlementService = premiumEntitlementService
         RootTabView()
+            .tint(TasteMapCoreTheme.brand)
             .task {
                 syncCoordinator.start()
                 photoTransferCoordinator?.start()

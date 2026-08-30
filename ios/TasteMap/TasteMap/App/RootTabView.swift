@@ -152,16 +152,21 @@ struct DiscoverHubView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("发现与社区", selection: $section) {
-                ForEach(DiscoverHubSection.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
+            TasteMapSegmentedControl(
+                selection: $section,
+                items: [
+                    .init(.discovery, title: "发现餐厅", systemImage: "sparkles"),
+                    .init(.community, title: "社区动态", systemImage: "person.2.fill"),
+                ],
+                accessibilityIdentifier: "discover-hub-segment"
+            )
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.bar)
+            .padding(.vertical, 10)
+            .background(TasteMapCoreTheme.page)
             if section == .discovery { DiscoveryView() }
             else { CommunityFeedView() }
         }
+        .tasteMapCorePage()
     }
 }
 

@@ -105,7 +105,7 @@ private struct PublicShareActionsView: View {
                     .textSelection(.enabled)
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 14))
                 Button {
                     isShowingSystemShare = true
                 } label: {
@@ -172,7 +172,7 @@ struct PublicShareLandingView: View {
                 }
                 .padding(18)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
             .navigationTitle("Taste Map 分享")
             .navigationBarTitleDisplayMode(.inline)
             .task { await load() }
@@ -210,7 +210,7 @@ struct PublicShareLandingView: View {
                         Spacer()
                     }
                     .padding(12)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 14))
                 }
             }
         }

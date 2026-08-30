@@ -118,7 +118,7 @@ struct SocialHubView: View {
                 }
             }
             .padding(12)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 14))
             .padding(.horizontal)
             .padding(.bottom, 10)
             if query.count < 2 && items.isEmpty {
@@ -590,7 +590,7 @@ struct SocialPublicProfileView: View {
 
     private func statistic(_ label: String, _ value: Int) -> some View {
         VStack(spacing: 5) { Text("\(value)").font(.title2.bold()); Text(label).font(.caption).foregroundStyle(.secondary) }
-            .frame(maxWidth: .infinity).padding().background(.background, in: RoundedRectangle(cornerRadius: 18))
+            .frame(maxWidth: .infinity).padding().tasteMapCoreCard(radius: 18)
     }
 
     private func publicOverview(_ overview: PublicProfileOverviewV1) -> some View {
@@ -633,7 +633,7 @@ struct SocialPublicProfileView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .tasteMapCoreCard(radius: 18)
     }
 
     @MainActor

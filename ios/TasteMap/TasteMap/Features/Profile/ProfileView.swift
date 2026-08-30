@@ -119,7 +119,7 @@ struct ProfileView: View {
                                 .foregroundStyle(RouletteTheme.brand)
                         }
                         .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .tasteMapCoreCard(radius: 20)
                         .overlay {
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .stroke(RouletteTheme.brand.opacity(0.12))
@@ -152,7 +152,7 @@ struct ProfileView: View {
                                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                             }
                             .padding(16)
-                            .background(.background, in: RoundedRectangle(cornerRadius: 20))
+                            .tasteMapCoreCard(radius: 20)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("profile-restaurant-lists-entry")
@@ -182,7 +182,7 @@ struct ProfileView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .tasteMapCoreCard(radius: 20)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-taste-analysis-entry")
@@ -211,7 +211,7 @@ struct ProfileView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .tasteMapCoreCard(radius: 20)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-companion-analysis-entry")
@@ -240,7 +240,7 @@ struct ProfileView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .tasteMapCoreCard(radius: 20)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-recommendation-source-analysis-entry")
@@ -269,7 +269,7 @@ struct ProfileView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .tasteMapCoreCard(radius: 20)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-monthly-recap-entry")
@@ -292,7 +292,7 @@ struct ProfileView: View {
                             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                         }
                         .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .tasteMapCoreCard(radius: 20)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-annual-recap-entry")
@@ -317,7 +317,7 @@ struct ProfileView: View {
                             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                         }
                         .padding(16)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .tasteMapCoreCard(radius: 20)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile-on-this-day-entry")
@@ -357,7 +357,7 @@ struct ProfileView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 110)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
             .navigationTitle("我的")
             .toolbar {
                 if let user = authenticatedUser, activeProfile?.visibility == .public {
@@ -417,7 +417,7 @@ struct ProfileView: View {
                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
             .padding(16)
-            .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .tasteMapCoreCard(radius: 20)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("profile-settings-entry")
@@ -672,12 +672,17 @@ private struct ProfileIdentityCard: View {
         .padding(.horizontal, 18)
         .background(
             LinearGradient(
-                colors: [Color.accentColor.opacity(0.12), .white],
+                colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surface],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
             in: RoundedRectangle(cornerRadius: 28, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(TasteMapCoreTheme.border.opacity(0.9))
+        }
+        .shadow(color: TasteMapCoreTheme.cardShadow, radius: 14, y: 5)
     }
 }
 
@@ -713,7 +718,7 @@ private struct ProfileStatisticsSection: View {
         }
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
         .padding(15)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .tasteMapCoreCard(radius: 18)
     }
 
     nonisolated private static func currencyString(_ value: Decimal) -> String {
@@ -751,7 +756,7 @@ private struct ProfileSocialStatisticsSection: View {
             }
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .tasteMapCoreCard(radius: 20)
         .accessibilityElement(children: .contain)
     }
 
@@ -796,7 +801,7 @@ private struct ProfileContentLinks: View {
             .accessibilityIdentifier("profile-taste-footprints-entry")
         }
         .padding(.horizontal, 16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .tasteMapCoreCard(radius: 20)
     }
 
     private func row(_ title: String, value: String, icon: String) -> some View {
@@ -1021,11 +1026,11 @@ private struct ProfilePreviewScreen: View {
                 )
                 SyncStatusView(presentation: sync)
                     .padding(18)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 20))
+                    .tasteMapCoreCard(radius: 20)
             }
             .padding(18)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(TasteMapCoreTheme.page)
     }
 }
 

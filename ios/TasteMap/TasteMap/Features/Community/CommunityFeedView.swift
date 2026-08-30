@@ -87,7 +87,7 @@ struct CommunityFeedView: View {
                     }.pickerStyle(.segmented).frame(width: 190)
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(TasteMapCoreTheme.page)
             .refreshable { await load(reset: true, preferCache: false) }
             .task { await restoreAndLoad() }
             .onChange(of: scope) { _, _ in Task { await load(reset: true, preferCache: true) } }
@@ -357,7 +357,7 @@ struct PublicContentCard: View {
                 .font(.subheadline)
         }
         .padding(14)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .tasteMapCoreCard(radius: 24, showsShadow: true)
     }
 
     private var eventText: String {

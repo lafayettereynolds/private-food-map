@@ -30,7 +30,7 @@ struct RestaurantDetailHeader: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-detail-header")
     }
@@ -107,7 +107,7 @@ struct RestaurantPhotoGallerySection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
         .accessibilityIdentifier("restaurant-photo-gallery")
     }
 }
@@ -209,7 +209,7 @@ struct RestaurantBusinessInformationSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
     }
 
     @ViewBuilder private var dividerAfterPhone: some View {
@@ -303,7 +303,7 @@ struct RestaurantExperienceSummarySection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
         .accessibilityIdentifier("restaurant-experience-summary")
     }
 }
@@ -336,7 +336,7 @@ struct RestaurantRatingReferencesSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
         .accessibilityIdentifier("restaurant-rating-references")
     }
 }
@@ -382,7 +382,7 @@ struct RestaurantLocationSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
     }
 }
 
@@ -431,7 +431,7 @@ struct RestaurantDetailStatsSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
         .accessibilityIdentifier("restaurant-detail-statistics")
     }
 }
@@ -505,7 +505,7 @@ struct RestaurantVisitHistorySection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22))
+        .tasteMapCoreCard(radius: 22)
         .accessibilityIdentifier("restaurant-visit-history")
     }
 }
