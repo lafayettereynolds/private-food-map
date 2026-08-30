@@ -26,7 +26,8 @@ final class NativeAuthServices {
     init(
         configuration: APIConfiguration,
         session: URLSession = .shared,
-        credentialStore: any AuthCredentialStoring = KeychainCredentialStore()
+        credentialStore: any AuthCredentialStoring = KeychainCredentialStore(),
+        socialOutboxFileURL: URL? = nil
     ) {
         let authAPI = URLSessionAuthAPIClient(configuration: configuration, session: session)
         let sessionManager = AuthSessionManager(api: authAPI, credentialStore: credentialStore)
@@ -70,7 +71,8 @@ final class NativeAuthServices {
         self.socialCollaborationAPI = socialCollaborationAPI
         socialCollaborationOutbox = SocialCollaborationOutbox(
             api: socialCollaborationAPI,
-            sessionManager: sessionManager
+            sessionManager: sessionManager,
+            fileURL: socialOutboxFileURL
         )
         restaurantListAPI = URLSessionRestaurantListAPIClient(
             configuration: configuration,

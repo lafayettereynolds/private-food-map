@@ -1,8 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPublicShareV1, PublicSharingV1Error, readPublicShareV1 } from './publicSharingV1'
+import { applyAllMigrations } from './testSupport/migrations.js'
 
 const at = '2026-08-30T00:00:00.000Z'
 let database
@@ -141,9 +140,7 @@ function seedList(user, listID, visibility) {
 function makeDatabase() {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON;')
-  for (const file of readdirSync(resolve('migrations')).filter((value) => /^\d{4}.*\.sql$/.test(value)).sort()) {
-    sqlite.exec(readFileSync(resolve('migrations', file), 'utf8'))
-  }
+  applyAllMigrations(sqlite)
   return new SQLiteD1Database(sqlite)
 }
 

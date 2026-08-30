@@ -1,15 +1,14 @@
 // @ts-nocheck -- Vitest executes this Node-only D1 adapter; the Worker tsconfig
 // intentionally excludes Node type declarations.
 import { generateKeyPairSync } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   AppStoreCommerceV1Error,
   handleAppStoreCommerceV1,
   handleAppStoreServerNotificationV1,
 } from './appStoreCommerceV1'
+import { applyAllMigrations } from './testSupport/migrations.js'
 
 const BUNDLE_ID = 'com.lafayette.tastemap'
 const MONTHLY = 'dev.tastemap.storekit.monthly'
@@ -189,9 +188,7 @@ function seedUser(database: SQLiteD1Database, id: string) {
 function makeDatabase() {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON;')
-  for (const file of readdirSync(resolve('migrations')).filter((item) => /^\d{4}.*\.sql$/.test(item)).sort()) {
-    sqlite.exec(readFileSync(resolve('migrations', file), 'utf8'))
-  }
+  applyAllMigrations(sqlite)
   return new SQLiteD1Database(sqlite)
 }
 

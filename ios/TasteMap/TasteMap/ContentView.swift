@@ -9,6 +9,8 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
+    let automaticServicesEnabled: Bool
+
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncCoordinator.self) private var syncCoordinator
@@ -16,12 +18,17 @@ struct ContentView: View {
     @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
 
+    init(automaticServicesEnabled: Bool = true) {
+        self.automaticServicesEnabled = automaticServicesEnabled
+    }
+
     var body: some View {
         @Bindable var premiumEntitlementService = premiumEntitlementService
         RootTabView()
             .tint(TasteMapCoreTheme.brand)
             .environment(\.localAccountScope, authServices.localAccountScope)
             .task {
+                guard automaticServicesEnabled else { return }
                 await recoverCompletedAccountDeletionIfNeeded()
                 let user = await authServices.restoreLocalAccountScope()
                 if let user {
@@ -36,7 +43,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
+                if automaticServicesEnabled, newPhase == .active {
                     syncCoordinator.handleAppBecameActive()
                     photoTransferCoordinator?.handleAppBecameActive()
                     if premiumEntitlementService.activeUserID != nil {

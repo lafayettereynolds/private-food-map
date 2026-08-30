@@ -26,6 +26,7 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     func testMapHomeLaunchesWithoutBlockingOnLocation() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["TASTEMAP_UI_TEST_RUNTIME"] = "1"
         app.launch()
 
         XCTAssertTrue(app.buttons["地图"].waitForExistence(timeout: 5))
@@ -281,6 +282,7 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     func testBottomNavigationSwitchesBetweenThreeMainTabs() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["TASTEMAP_UI_TEST_RUNTIME"] = "1"
         app.launch()
 
         app.buttons["发现"].tap()

@@ -4,17 +4,19 @@ import Testing
 
 @Suite("Native Auth Session", .serialized)
 struct AuthSessionManagerTests {
-    @Test("Keychain session survives a new store instance")
-    func keychainRestoresAfterRelaunch() throws {
-        let service = "com.lafayette.tastemap.tests.\(UUID().uuidString)"
-        let firstStore = KeychainCredentialStore(service: service)
-        defer { try? firstStore.delete() }
+    @Test("An isolated credential session survives a new manager instance")
+    func isolatedCredentialRestoresAfterRelaunch() async throws {
+        let store = IsolatedAuthCredentialStore()
         let credential = sampleCredential(accessToken: "tm_access_restart")
 
-        try firstStore.save(credential)
-        let relaunchedStore = KeychainCredentialStore(service: service)
+        try store.save(credential)
+        let relaunchedManager = AuthSessionManager(
+            api: MockAuthAPI(),
+            credentialStore: store
+        )
 
-        #expect(try relaunchedStore.load() == credential)
+        #expect(await relaunchedManager.restoredUser() == credential.user)
+        #expect(try await relaunchedManager.headers()["Authorization"] == "Bearer tm_access_restart")
     }
 
     @Test("Concurrent 401 recovery performs one refresh")

@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import appleFixture from '../contracts/fixtures/restaurant.v1.valid.json'
 import legacyFixture from '../contracts/fixtures/restaurant.v0.legacy.json'
@@ -12,6 +10,7 @@ import {
   SyncV1RequestError,
 } from './syncV1'
 import { ensureUserProfile, readPublicProfile } from './profileV1'
+import { applyAllMigrations } from './testSupport/migrations.js'
 
 describe('Worker Sync API V1 integration', () => {
   it('allows explicit test identities only in a configured Development deployment', async () => {
@@ -843,27 +842,8 @@ async function pull(database, viewerId, cursor) {
 function makeDatabase() {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON;')
-  for (const migration of migrationFiles()) sqlite.exec(readFileSync(resolve('migrations', migration), 'utf8'))
+  applyAllMigrations(sqlite)
   return new SQLiteD1Database(sqlite)
-}
-
-function migrationFiles() {
-  return [
-    '0001_initial.sql', '0002_add_google_drive_photos.sql', '0003_social_visit_fields.sql',
-    '0004_user_avatar_thumbnail.sql', '0005_visit_tags_and_map_privacy.sql',
-    '0006_avatar_presets_and_membership.sql', '0007_multi_dining_occasions.sql',
-    '0008_dining_companion_links.sql', '0009_discovery_follows_and_test_markers.sql',
-    '0010_membership_entitlements.sql', '0011_photo_storage_metadata.sql',
-    '0012_recommendation_events.sql', '0013_restaurant_lists.sql',
-    '0014_restaurant_contact_details.sql', '0015_restaurant_place_identities.sql',
-    '0016_sync_v1.sql', '0017_native_auth.sql', '0018_visit_core_fields.sql',
-    '0019_dish_photo_sync.sql', '0020_visit_dish_associations.sql',
-    '0021_companions_recommendation_sources_sync.sql',
-    '0022_user_profiles_sync.sql', '0023_social_relationships_v1.sql',
-    '0024_social_legacy_write_compat.sql', '0025_discovery_v1_indexes.sql',
-    '0026_public_community_v1_indexes.sql', '0027_social_hardening.sql',
-    '0028_restaurant_lists_v1.sql',
-  ]
 }
 
 class SQLiteD1Database {

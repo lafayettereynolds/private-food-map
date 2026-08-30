@@ -15,12 +15,27 @@ struct TasteMapApp: App {
     private let syncCoordinator: SyncCoordinator
     private let photoTransferCoordinator: PhotoTransferCoordinator
     private let premiumEntitlementService: PremiumEntitlementService
+    private let automaticServicesEnabled: Bool
 
     init() {
+        let runtime = TasteMapRuntimeConfiguration.current
         // Backup exports live in their own protected temporary directory. A
         // bounded startup cleanup removes only files created by that subsystem.
-        try? BackupExportTemporaryFileStore().cleanup()
-        let authServices = NativeAuthServices(configuration: .current())
+        if runtime.allowsAutomaticServices {
+            try? BackupExportTemporaryFileStore().cleanup()
+        }
+        let credentialStore: any AuthCredentialStoring = runtime.isolatesPersistentState
+            ? IsolatedAuthCredentialStore()
+            : KeychainCredentialStore()
+        let authServices = NativeAuthServices(
+            configuration: .current(),
+            session: TasteMapTestRuntimeResources.networkSession(for: runtime),
+            credentialStore: credentialStore,
+            socialOutboxFileURL: runtime.isolatesPersistentState
+                ? TasteMapTestRuntimeResources.temporaryRoot(component: "social-outbox")
+                    .appendingPathComponent("shared-meal-invitations-v1.json")
+                : nil
+        )
         let container: ModelContainer
         do {
             #if DEBUG
@@ -57,7 +72,8 @@ struct TasteMapApp: App {
             let persistenceStorageURL: URL? = nil
             #endif
             container = try TasteMapPersistence.makeContainer(
-                inMemory: useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture
+                inMemory: (runtime.isolatesPersistentState && !usePersistentOfflineFixture)
+                    || useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture
                     || useAnalysisFixture || useRestaurantAcquisitionFixture || useF2ABrowsingFixture
                     || useF2BFiltersFixture || useOnThisDayFixture,
                 configurationName: persistenceConfigurationName,
@@ -105,6 +121,7 @@ struct TasteMapApp: App {
             fatalError("Unable to initialize local Taste Map storage: \(error)")
         }
         nativeAuthServices = authServices
+        automaticServicesEnabled = runtime.allowsAutomaticServices
         let premiumService = PremiumEntitlementService(
             api: authServices.premiumAPI,
             purchaseProvider: StoreKitMembershipPurchaseProvider(
@@ -127,7 +144,11 @@ struct TasteMapApp: App {
         )
         let photoFiles: LocalPhotoFileStore
         do {
-            photoFiles = try LocalPhotoFileStore()
+            photoFiles = try LocalPhotoFileStore(
+                rootURL: runtime.isolatesPersistentState
+                    ? TasteMapTestRuntimeResources.temporaryRoot(component: "photos")
+                    : nil
+            )
         } catch {
             fatalError("Unable to initialize local photo storage: \(error)")
         }
@@ -144,7 +165,7 @@ struct TasteMapApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(automaticServicesEnabled: automaticServicesEnabled)
                 .environment(nativeAuthServices)
                 .environment(syncCoordinator)
                 .environment(premiumEntitlementService)
