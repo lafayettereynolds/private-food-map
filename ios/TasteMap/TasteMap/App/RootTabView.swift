@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct RootTabView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Environment(NativeAuthServices.self) private var authServices
     @Query private var restaurants: [Restaurant]
@@ -10,6 +11,8 @@ struct RootTabView: View {
     @State private var requestedVisitCandidate: RestaurantCandidate?
     @State private var visitCandidate: RestaurantCandidate?
     @State private var isBottomNavigationHidden = false
+    @State private var pendingSharedImport: PendingRestaurantImport?
+    @State private var publicShareRoute: PublicShareRouteSelection?
 
     var body: some View {
         activeView
@@ -25,17 +28,7 @@ struct RootTabView: View {
                 }
             }
             .sheet(isPresented: $isShowingSearch, onDismiss: {
-                if let requestedVisitCandidate {
-                    // Let the acquisition sheet finish its dismissal before presenting
-                    // VisitEditor. Presenting both in the same transaction is ignored on
-                    // some iOS versions and leaves the user back on the map.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(200))
-                        guard self.requestedVisitCandidate?.id == requestedVisitCandidate.id else { return }
-                        self.requestedVisitCandidate = nil
-                        visitCandidate = requestedVisitCandidate
-                    }
-                }
+                presentRequestedVisitAfterAcquisitionDismissal()
             }) {
                 AddRestaurantView(
                     dependencies: acquisitionDependencies
@@ -52,10 +45,47 @@ struct RootTabView: View {
                     }
                 }
             }
+            .sheet(item: $pendingSharedImport, onDismiss: {
+                presentRequestedVisitAfterAcquisitionDismissal()
+            }) { pending in
+                AddRestaurantView(
+                    dependencies: acquisitionDependencies,
+                    initialSharedText: pending.acquisitionText
+                ) { candidate, action in
+                    switch action {
+                    case .wantToGo:
+                        _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
+                            candidate: candidate,
+                            among: restaurants
+                        )
+                        selectedTab = .map
+                    case .recordVisit:
+                        requestedVisitCandidate = candidate
+                    }
+                    try PendingRestaurantImportStore.live().consume(id: pending.id)
+                }
+            }
             .sheet(item: $visitCandidate) { candidate in
                 VisitEditorView(candidate: candidate, onSaved: { _ in
                     selectedTab = .map
                 })
+            }
+            .sheet(item: $publicShareRoute) { route in
+                PublicShareLandingView(shareID: route.shareID, api: authServices.publicSharingAPI)
+            }
+            .task { loadPendingSharedImportIfNeeded() }
+            .onChange(of: scenePhase) { _, value in
+                if value == .active { loadPendingSharedImportIfNeeded() }
+            }
+            .onOpenURL { url in
+                if let shareID = PublicShareRoute.shareID(from: url) {
+                    publicShareRoute = PublicShareRouteSelection(shareID: shareID)
+                    return
+                }
+                if url.path.hasPrefix("/share/") { return }
+                if let pending = try? PendingRestaurantImportStore.live().enqueue(text: nil, url: url) {
+                    pendingSharedImport = pending
+                }
             }
     }
 
@@ -66,6 +96,22 @@ struct RootTabView: View {
         }
 #endif
         return .live(linkResolver: authServices.externalRestaurantLinkAPI)
+    }
+
+    private func loadPendingSharedImportIfNeeded() {
+        guard pendingSharedImport == nil,
+              let store = try? PendingRestaurantImportStore.live() else { return }
+        pendingSharedImport = try? store.pending().first
+    }
+
+    private func presentRequestedVisitAfterAcquisitionDismissal() {
+        guard let requestedVisitCandidate else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard self.requestedVisitCandidate?.id == requestedVisitCandidate.id else { return }
+            self.requestedVisitCandidate = nil
+            visitCandidate = requestedVisitCandidate
+        }
     }
 
     @ViewBuilder

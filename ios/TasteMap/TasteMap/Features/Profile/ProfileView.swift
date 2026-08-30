@@ -359,6 +359,16 @@ struct ProfileView: View {
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("我的")
+            .toolbar {
+                if let user = authenticatedUser, activeProfile?.visibility == .public {
+                    ToolbarItem(placement: .primaryAction) {
+                        PublicShareButton(entityType: .profile, entityID: user.id) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .accessibilityLabel("分享我的公开主页")
+                    }
+                }
+            }
             .navigationDestination(item: $browseDestination) { destination in
                 switch destination {
                 case .visited:

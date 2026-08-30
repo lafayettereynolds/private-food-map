@@ -6,7 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A90000013050000000000001 /* TasteMapShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A90000023050000000000002 /* TasteMapShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		A90000033050000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CEFC0758303FE869006C2B3B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A90000043050000000000004;
+			remoteInfo = TasteMapShareExtension;
+		};
 		CEFC076E303FE86A006C2B3B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = CEFC0758303FE869006C2B3B /* Project object */;
@@ -23,13 +34,51 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		A90000053050000000000005 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A90000013050000000000001 /* TasteMapShareExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		A90000023050000000000002 /* TasteMapShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TasteMapShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEFC0760303FE869006C2B3B /* TasteMap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TasteMap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEFC076D303FE86A006C2B3B /* TasteMapTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TasteMapTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEFC0777303FE86A006C2B3B /* TasteMapUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TasteMapUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A900000F305000000000000F /* Exceptions for "TasteMapShareExtension" folder in "TasteMapShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A90000043050000000000004 /* TasteMapShareExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A90000063050000000000006 /* TasteMapShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TasteMapShared;
+			sourceTree = "<group>";
+		};
+		A90000073050000000000007 /* TasteMapShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A900000F305000000000000F /* Exceptions for "TasteMapShareExtension" folder in "TasteMapShareExtension" target */,
+			);
+			path = TasteMapShareExtension;
+			sourceTree = "<group>";
+		};
 		CEFC0762303FE869006C2B3B /* TasteMap */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = TasteMap;
@@ -53,6 +102,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A90000083050000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CEFC075D303FE869006C2B3B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -81,6 +137,8 @@
 			isa = PBXGroup;
 			children = (
 				CEFC0762303FE869006C2B3B /* TasteMap */,
+				A90000063050000000000006 /* TasteMapShared */,
+				A90000073050000000000007 /* TasteMapShareExtension */,
 				CEFC0770303FE86A006C2B3B /* TasteMapTests */,
 				CEFC077A303FE86A006C2B3B /* TasteMapUITests */,
 				A100001A303FE86A006C2B3B /* SharedContracts */,
@@ -92,6 +150,7 @@
 			isa = PBXGroup;
 			children = (
 				CEFC0760303FE869006C2B3B /* TasteMap.app */,
+				A90000023050000000000002 /* TasteMapShareExtension.appex */,
 				CEFC076D303FE86A006C2B3B /* TasteMapTests.xctest */,
 				CEFC0777303FE86A006C2B3B /* TasteMapUITests.xctest */,
 			);
@@ -101,6 +160,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A90000043050000000000004 /* TasteMapShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A900000E305000000000000E /* Build configuration list for PBXNativeTarget "TasteMapShareExtension" */;
+			buildPhases = (
+				A90000093050000000000009 /* Sources */,
+				A90000083050000000000008 /* Frameworks */,
+				A900000A305000000000000A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A90000063050000000000006 /* TasteMapShared */,
+				A90000073050000000000007 /* TasteMapShareExtension */,
+			);
+			name = TasteMapShareExtension;
+			packageProductDependencies = (
+			);
+			productName = TasteMapShareExtension;
+			productReference = A90000023050000000000002 /* TasteMapShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		CEFC075F303FE869006C2B3B /* TasteMap */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CEFC0781303FE86A006C2B3B /* Build configuration list for PBXNativeTarget "TasteMap" */;
@@ -108,12 +190,15 @@
 				CEFC075C303FE869006C2B3B /* Sources */,
 				CEFC075D303FE869006C2B3B /* Frameworks */,
 				CEFC075E303FE869006C2B3B /* Resources */,
+				A90000053050000000000005 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A900000B305000000000000B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				A90000063050000000000006 /* TasteMapShared */,
 				CEFC0762303FE869006C2B3B /* TasteMap */,
 			);
 			name = TasteMap;
@@ -180,6 +265,9 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					A90000043050000000000004 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					CEFC075F303FE869006C2B3B = {
 						CreatedOnToolsVersion = 26.6;
 					};
@@ -208,6 +296,7 @@
 			projectRoot = "";
 			targets = (
 				CEFC075F303FE869006C2B3B /* TasteMap */,
+				A90000043050000000000004 /* TasteMapShareExtension */,
 				CEFC076C303FE86A006C2B3B /* TasteMapTests */,
 				CEFC0776303FE86A006C2B3B /* TasteMapUITests */,
 			);
@@ -215,6 +304,13 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A900000A305000000000000A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CEFC075E303FE869006C2B3B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -239,6 +335,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A90000093050000000000009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CEFC075C303FE869006C2B3B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -263,6 +366,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		A900000B305000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A90000043050000000000004 /* TasteMapShareExtension */;
+			targetProxy = A90000033050000000000003 /* PBXContainerItemProxy */;
+		};
 		CEFC076F303FE86A006C2B3B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = CEFC075F303FE869006C2B3B /* TasteMap */;
@@ -276,6 +384,64 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		A900000C305000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = TasteMapShareExtension/TasteMapShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7G5J9MJX88;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TasteMapShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lafayette.tastemap.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A900000D305000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = TasteMapShareExtension/TasteMapShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7G5J9MJX88;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TasteMapShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lafayette.tastemap.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		CEFC077F303FE86A006C2B3B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -558,6 +724,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A900000E305000000000000E /* Build configuration list for PBXNativeTarget "TasteMapShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A900000C305000000000000C /* Debug */,
+				A900000D305000000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		CEFC075B303FE869006C2B3B /* Build configuration list for PBXProject "TasteMap" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

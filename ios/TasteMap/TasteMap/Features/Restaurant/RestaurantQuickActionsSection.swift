@@ -2,7 +2,8 @@ import SwiftUI
 
 struct RestaurantQuickActionsSection: View {
     let restaurant: Restaurant
-    let sharePayload: RestaurantSharePayload
+    let publicShareEntityID: String
+    let canPublicShare: Bool
     let canMutate: Bool
     let canAddToList: Bool
     let onRecordVisit: () -> Void
@@ -40,7 +41,11 @@ struct RestaurantQuickActionsSection: View {
                     .accessibilityIdentifier("restaurant-detail-add-to-list")
                 action("加入抽签", systemImage: "circle.hexagongrid.fill", action: onAddToRoulette)
                     .accessibilityIdentifier("restaurant-action-roulette")
-                ShareLink(item: sharePayload.activityText, subject: Text(sharePayload.subject)) {
+                PublicShareButton(
+                    entityType: .restaurant,
+                    entityID: publicShareEntityID,
+                    enabled: canPublicShare
+                ) {
                     actionLabel("分享", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.plain)
@@ -62,8 +67,8 @@ struct RestaurantQuickActionsSection: View {
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .accessibilityIdentifier("restaurant-action-delete")
             }
-            if sharePayload.publicURL == nil {
-                Label("当前分享只包含餐厅公开资料；公开网页链接将在分享服务接通后提供。", systemImage: "hand.raised.fill")
+            if !canPublicShare {
+                Label("将本人主页设为公开，并至少公开一次到访后，才可生成餐厅公开链接。", systemImage: "hand.raised.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

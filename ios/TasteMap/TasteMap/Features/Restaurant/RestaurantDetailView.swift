@@ -52,10 +52,6 @@ struct RestaurantDetailView: View {
         RestaurantDetailMetadata(restaurant: restaurant)
     }
 
-    private var sharePayload: RestaurantSharePayload {
-        RestaurantSharingService.payload(restaurant: restaurant, metadata: metadata)
-    }
-
     private var ratingReferences: [RestaurantRatingReference] {
         var values = RestaurantRatingReferenceResolver.resolve(
             metadata: metadata,
@@ -87,7 +83,8 @@ struct RestaurantDetailView: View {
                     )
                     RestaurantQuickActionsSection(
                         restaurant: restaurant,
-                        sharePayload: sharePayload,
+                        publicShareEntityID: restaurant.remoteID ?? "",
+                        canPublicShare: canPublicShareRestaurant,
                         canMutate: canMutateRestaurant,
                         canAddToList: currentUserID != nil,
                         onRecordVisit: { isAddingVisit = true },
@@ -358,5 +355,14 @@ struct RestaurantDetailView: View {
     private var canMutateRestaurant: Bool {
         guard let owner = metadata.ownerUserID, owner.hasPrefix("tm_") else { return true }
         return owner == currentUserID
+    }
+
+    private var canPublicShareRestaurant: Bool {
+        guard canMutateRestaurant,
+              let currentUserID,
+              profiles.contains(where: {
+                  $0.tasteMapUserID == currentUserID && $0.deletedAt == nil && $0.visibility == .public
+              }) else { return false }
+        return presentation.activeVisits.contains { $0.visibility == .public }
     }
 }

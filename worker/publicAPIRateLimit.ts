@@ -3,6 +3,7 @@ const RETENTION = 24 * 60 * MINUTE
 
 export type PublicAPIRateBucket =
   | 'public-profile-read'
+  | 'public-share-read'
   | 'social-read'
   | 'social-mutation'
   | 'community-read'

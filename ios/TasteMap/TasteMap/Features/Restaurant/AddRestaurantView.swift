@@ -27,11 +27,14 @@ struct AddRestaurantView: View {
     @State private var linkPresented = false
     @State private var manualPresented = false
     @State private var actionError: String?
+    @State private var didPresentSharedImport = false
 
+    private let initialSharedText: String?
     let onAction: (RestaurantCandidate, RestaurantSearchAction) throws -> Void
 
     init(
         dependencies: RestaurantAcquisitionDependencies,
+        initialSharedText: String? = nil,
         onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) throws -> Void
     ) {
         _viewModel = StateObject(wrappedValue: RestaurantAcquisitionViewModel(
@@ -39,6 +42,7 @@ struct AddRestaurantView: View {
             linkResolver: dependencies.linkResolver,
             locationProvider: dependencies.locationProvider
         ))
+        self.initialSharedText = initialSharedText
         self.onAction = onAction
     }
 
@@ -70,6 +74,11 @@ struct AddRestaurantView: View {
                    let detectedCity = viewModel.detectedCity {
                     city = detectedCity
                 }
+                if !didPresentSharedImport,
+                   !(initialSharedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+                    didPresentSharedImport = true
+                    linkPresented = true
+                }
             }
             .onChange(of: viewModel.detectedCity) { _, detectedCity in
                 if city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -82,6 +91,7 @@ struct AddRestaurantView: View {
                     viewModel: viewModel,
                     city: city,
                     restaurants: restaurants,
+                    initialValue: initialSharedText ?? "",
                     onAction: perform
                 )
             }
@@ -292,7 +302,21 @@ private struct RestaurantLinkImportView: View {
     let city: String
     let restaurants: [Restaurant]
     let onAction: (RestaurantCandidate, RestaurantSearchAction) -> Void
-    @State private var value = ""
+    @State private var value: String
+
+    init(
+        viewModel: RestaurantAcquisitionViewModel,
+        city: String,
+        restaurants: [Restaurant],
+        initialValue: String = "",
+        onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) -> Void
+    ) {
+        self.viewModel = viewModel
+        self.city = city
+        self.restaurants = restaurants
+        self.onAction = onAction
+        _value = State(initialValue: initialValue)
+    }
 
     var body: some View {
         NavigationStack {
@@ -349,6 +373,12 @@ private struct RestaurantLinkImportView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+            }
+            .task {
+                guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      viewModel.linkResults.isEmpty,
+                      viewModel.linkMessage == nil else { return }
+                await viewModel.resolveLink(value, city: city)
             }
         }
         .tint(AcquisitionPalette.brand)

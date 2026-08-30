@@ -197,9 +197,9 @@ struct RestaurantListDetailView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 if list.visibility == .public {
-                    ShareLink(
-                        item: "Taste Map · \(list.title) · \(items.count) 家餐厅",
-                        subject: Text(list.title)
+                    PublicShareButton(
+                        entityType: .list,
+                        entityID: list.remoteID ?? ""
                     ) { Image(systemName: "square.and.arrow.up") }
                     .accessibilityLabel("分享榜单")
                 }

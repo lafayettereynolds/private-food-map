@@ -96,6 +96,11 @@ import {
   handleAppStoreCommerceV1,
   handleAppStoreServerNotificationV1,
 } from './appStoreCommerceV1'
+import {
+  PublicSharingV1Error,
+  createPublicShareV1,
+  readPublicShareV1,
+} from './publicSharingV1'
 
 interface Env {
   DB: D1Database
@@ -112,6 +117,7 @@ interface Env {
   APP_STORE_ISSUER_ID?: string
   APP_STORE_KEY_ID?: string
   APP_STORE_PRIVATE_KEY?: string
+  PUBLIC_SHARE_ORIGIN?: string
 }
 
 interface RestaurantRow {
@@ -598,6 +604,16 @@ const RESTAURANT_LIST_ITEM_UPSERT = `
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/.well-known/apple-app-site-association' && request.method === 'GET') {
+      return new Response(JSON.stringify({
+        applinks: {
+          details: [{
+            appIDs: ['7G5J9MJX88.com.lafayette.tastemap'],
+            components: [{ '/': '/share/*', comment: 'Taste Map public sharing' }],
+          }],
+        },
+      }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' } })
+    }
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request)
     if (!isSameOriginRequest(request, url)) return json({ error: '不允许跨站访问同步 API。' }, 403)
 
@@ -626,6 +642,15 @@ export default {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
         return json(await handleAppStoreCommerceV1(request, env.DB, viewer.id, env))
+      }
+      const publicShareMatch = url.pathname.match(/^\/api\/public\/shares\/([A-Za-z0-9_-]+)$/)
+      if (publicShareMatch) {
+        return json(await readPublicShareV1(request, env.DB, publicShareMatch[1]))
+      }
+      if (url.pathname === '/api/v1/public-shares') {
+        const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
+        return json(await createPublicShareV1(request, env.DB, viewer.id, env))
       }
       const publicRestaurantMatch = url.pathname.match(/^\/api\/public\/restaurants\/([a-f0-9]{24})$/)
       if (publicRestaurantMatch && request.method === 'GET') {
@@ -797,8 +822,8 @@ export default {
         status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
       })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error ? error.status : 500
-      const code = error instanceof AuthV1RequestError || error instanceof AppStoreCommerceV1Error ? error.code : undefined
+      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error ? error.status : 500
+      const code = error instanceof AuthV1RequestError || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
   },
