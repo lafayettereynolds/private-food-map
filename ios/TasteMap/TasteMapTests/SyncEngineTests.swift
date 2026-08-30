@@ -126,8 +126,14 @@ struct SyncEngineTests {
         let api = ResponseLostOnceAPI()
         let firstAttempt = Date(timeIntervalSince1970: 1_800_000_000)
 
-        await #expect(throws: ResponseLostOnceAPI.ExpectedFailure.self) {
+        do {
             try await SyncEngine(context: context, api: api, now: { firstAttempt }).synchronize()
+            Issue.record("Expected the simulated lost push response to fail")
+        } catch let failure as SyncStageFailure {
+            #expect(failure.stage == .mutationPush)
+            #expect(failure.underlyingError is ResponseLostOnceAPI.ExpectedFailure)
+        } catch {
+            Issue.record("Expected a stage-aware Sync failure, got \(type(of: error))")
         }
         let retainedID = try #require(
             context.fetch(FetchDescriptor<SyncMutation>()).first(where: { $0.retryCount == 1 })?.mutationID

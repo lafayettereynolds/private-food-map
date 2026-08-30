@@ -26,6 +26,88 @@ struct SyncCoordinatorTests {
             for: PhotoBinaryAPIError.server(status: 422, message: "secret")
         ) == .permanent)
         #expect(SyncErrorClassifier.disposition(for: PhotoImportError.invalidImage) == .permanent)
+        #expect(SyncErrorClassifier.disposition(for: SyncStageFailure(
+            stage: .pull,
+            underlyingError: URLError(.timedOut)
+        )) == .retryable)
+        #expect(SyncErrorClassifier.disposition(for: SyncStageFailure(
+            stage: .reconciliation,
+            underlyingError: SyncEngineError.missingRestaurantMapping
+        )) == .permanent)
+    }
+
+    @Test("Empty queue and successful pull finishes synced")
+    func emptyQueueSuccessfulPullIsSynced() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let api = ControlledSyncAPI()
+        let coordinator = coordinator(context: container.mainContext, api: api)
+
+        await coordinator.sessionDidBecomeAvailable()
+
+        #expect(api.pushCount == 0)
+        #expect(api.pullCount == 1)
+        #expect(coordinator.presentation.phase == .synced)
+        #expect(coordinator.presentation.diagnostic == nil)
+    }
+
+    @Test("Empty queue pull failure reports the pull stage and never remains syncing")
+    func emptyQueuePullFailureHasActionableStatus() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let api = ControlledSyncAPI(
+            pullFailures: [SyncAPIError.server(status: 503, message: "do-not-display")]
+        )
+        let coordinator = coordinator(
+            context: container.mainContext,
+            api: api,
+            retryBaseDelay: 60
+        )
+
+        await coordinator.sessionDidBecomeAvailable()
+
+        #expect(coordinator.presentation.phase == .failed)
+        #expect(coordinator.presentation.pendingCount == 0)
+        #expect(coordinator.presentation.diagnostic?.stage == .pull)
+        #expect(coordinator.presentation.diagnostic?.requestCategory == "pull")
+        #expect(coordinator.presentation.diagnostic?.category == .server)
+        #expect(coordinator.presentation.diagnostic?.httpStatus == 503)
+        #expect(coordinator.presentation.diagnostic?.finalDisposition == .retryable)
+    }
+
+    @Test("Acknowledged push is removed even if the following pull fails")
+    func pushAcknowledgedThenPullFailureDoesNotRestoreMutation() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let restaurant = try LocalTasteMapStore(context: context).addToWantToGo(candidate: candidate(), among: [])
+        let api = ControlledSyncAPI(pullFailures: [URLError(.networkConnectionLost)])
+        let coordinator = coordinator(context: context, api: api, retryBaseDelay: 60)
+
+        await coordinator.sessionDidBecomeAvailable()
+
+        #expect(api.pushCount == 1)
+        #expect(try context.fetch(FetchDescriptor<SyncMutation>()).isEmpty)
+        #expect(restaurant.serverVersion == 1)
+        #expect(restaurant.syncStatus == .synced)
+        #expect(coordinator.presentation.phase == .failed)
+        #expect(coordinator.presentation.pendingCount == 0)
+        #expect(coordinator.presentation.diagnostic?.stage == .pull)
+    }
+
+    @Test("Manual retry clears a pull-only failure")
+    func manualRetryClearsPullFailure() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let api = ControlledSyncAPI(
+            pullFailures: [SyncAPIError.server(status: 503, message: "temporary")]
+        )
+        let coordinator = coordinator(context: container.mainContext, api: api, retryBaseDelay: 60)
+
+        await coordinator.sessionDidBecomeAvailable()
+        #expect(coordinator.presentation.phase == .failed)
+
+        await coordinator.retryNow()
+
+        #expect(api.pullCount == 2)
+        #expect(coordinator.presentation.phase == .synced)
+        #expect(coordinator.presentation.diagnostic == nil)
     }
 
     @Test("Photo binary failures participate in the unified sync status")
@@ -90,6 +172,69 @@ struct SyncCoordinatorTests {
         #expect(coordinator.presentation.phase == .synced)
     }
 
+    @Test("Foreground-style and manual requests never overlap")
+    func automaticAndManualRequestsAreSingleFlight() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let api = ControlledSyncAPI(pullDelay: .milliseconds(80))
+        let coordinator = coordinator(context: container.mainContext, api: api)
+
+        async let automatic: Void = coordinator.sessionDidBecomeAvailable()
+        try await Task.sleep(for: .milliseconds(10))
+        async let manual: Void = coordinator.retryNow()
+        _ = await (automatic, manual)
+
+        #expect(api.maximumConcurrentRequests == 1)
+        #expect(api.pullCount == 2)
+        #expect(coordinator.presentation.phase == .synced)
+    }
+
+    @Test("Request timeout, pull budget, and automatic backoff are bounded")
+    func retryPolicyIsBounded() {
+        #expect(SyncRetryPolicy.requestTimeout == 15)
+        #expect(SyncRetryPolicy.requestTimeout <= 30)
+        #expect(SyncRetryPolicy.maximumBackoff == 60)
+        #expect(SyncRetryPolicy.maximumPullPagesPerPass == 20)
+    }
+
+    @Test("Sync HTTP requests carry the bounded timeout")
+    func syncRequestUsesBoundedTimeout() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [Task02SyncURLProtocol.self]
+        Task02SyncURLProtocol.handler = { request in
+            #expect(request.timeoutInterval == SyncRetryPolicy.requestTimeout)
+            let body = #"{"apiVersion":1,"schemaVersion":1,"restaurants":[],"visits":[],"dishes":[],"visitDishes":[],"photos":[],"companions":[],"recommendationSources":[],"profiles":[],"restaurantLists":[],"restaurantListItems":[],"tombstones":[],"nextCursor":"0","hasMore":false,"serverTime":"2026-08-30T08:00:00.000Z"}"#
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(body.utf8)
+            )
+        }
+        defer { Task02SyncURLProtocol.handler = nil }
+        let api = URLSessionSyncAPIClient(
+            configuration: APIConfiguration(
+                environment: .development,
+                baseURL: URL(string: "https://sync.example.test")!
+            ),
+            session: URLSession(configuration: configuration)
+        )
+
+        _ = try await api.pull(cursor: "0", limit: 200)
+    }
+
+    @Test("Changing accounts clears the previous account failure state")
+    func userSwitchClearsFailureState() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let api = ControlledSyncAPI(pullFailures: [URLError(.timedOut)])
+        let coordinator = coordinator(context: container.mainContext, api: api, retryBaseDelay: 60)
+
+        await coordinator.sessionDidBecomeAvailable(userID: "tm_task02_a")
+        #expect(coordinator.presentation.phase == .failed)
+
+        await coordinator.sessionDidBecomeAvailable(userID: "tm_task02_b")
+
+        #expect(coordinator.presentation.phase == .synced)
+        #expect(coordinator.presentation.diagnostic == nil)
+    }
+
     @Test("Permanent 4xx failure stops automatic retry and remains manually retryable")
     func permanentFailureDoesNotLoop() async throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -151,13 +296,18 @@ struct SyncCoordinatorTests {
         #expect(try context.fetch(FetchDescriptor<SyncMutation>()).count == 1)
     }
 
-    private func coordinator(context: ModelContext, api: any SyncAPI) -> SyncCoordinator {
+    private func coordinator(
+        context: ModelContext,
+        api: any SyncAPI,
+        retryBaseDelay: TimeInterval = 0.01
+    ) -> SyncCoordinator {
         SyncCoordinator(
             context: context,
             api: api,
             hasAuthenticatedSession: { true },
             automaticSyncInterval: 0,
-            networkRecoveryDelay: .zero
+            networkRecoveryDelay: .zero,
+            retryBaseDelay: retryBaseDelay
         )
     }
 
@@ -175,6 +325,7 @@ struct SyncCoordinatorTests {
 @MainActor
 private final class ControlledSyncAPI: SyncAPI {
     private var pushFailures: [Error]
+    private var pullFailures: [Error]
     private let pullDelay: Duration
     private var revision: Int64 = 0
     private var concurrentRequests = 0
@@ -183,8 +334,13 @@ private final class ControlledSyncAPI: SyncAPI {
     private(set) var pullCount = 0
     private(set) var receivedMutationIDs: [String] = []
 
-    init(pushFailures: [Error] = [], pullDelay: Duration = .zero) {
+    init(
+        pushFailures: [Error] = [],
+        pullFailures: [Error] = [],
+        pullDelay: Duration = .zero
+    ) {
         self.pushFailures = pushFailures
+        self.pullFailures = pullFailures
         self.pullDelay = pullDelay
     }
 
@@ -217,6 +373,7 @@ private final class ControlledSyncAPI: SyncAPI {
         defer { endRequest() }
         pullCount += 1
         if pullDelay != .zero { try await Task.sleep(for: pullDelay) }
+        if !pullFailures.isEmpty { throw pullFailures.removeFirst() }
         return SyncPullResponseV1(
             apiVersion: 1,
             schemaVersion: 1,
@@ -237,4 +394,25 @@ private final class ControlledSyncAPI: SyncAPI {
     private func endRequest() {
         concurrentRequests -= 1
     }
+}
+
+private final class Task02SyncURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            let handler = try Self.handler ?? { _ in throw URLError(.badServerResponse) }
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }

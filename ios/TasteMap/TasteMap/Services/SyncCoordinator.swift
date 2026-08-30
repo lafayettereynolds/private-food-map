@@ -21,6 +21,7 @@ struct SyncPresentation: Equatable, Sendable {
     var failedPhotoCount: Int
     var conflictCount: Int
     var lastSyncedAt: Date?
+    var diagnostic: SyncFailureDiagnostic? = nil
 
     static let signedOut = SyncPresentation(
         phase: .signedOut,
@@ -117,6 +118,7 @@ final class SyncCoordinator {
     @ObservationIgnored private var forceRetryAfterCurrentPass = false
     @ObservationIgnored private var lastAutomaticSyncAt: Date?
     @ObservationIgnored private var lastFailureDisposition: SyncFailureDisposition?
+    @ObservationIgnored private var lastFailureDiagnostic: SyncFailureDiagnostic?
     @ObservationIgnored private var consecutiveRetryableFailures = 0
 
     init(
@@ -196,10 +198,16 @@ final class SyncCoordinator {
     }
 
     func sessionDidBecomeAvailable(userID: String? = nil) async {
+        let previousOwnerUserID = currentOwnerUserID
         if let userID {
             currentOwnerUserID = userID
         } else {
             currentOwnerUserID = await authenticatedUserIDProvider()
+        }
+        if currentOwnerUserID != previousOwnerUserID {
+            lastFailureDisposition = nil
+            lastFailureDiagnostic = nil
+            consecutiveRetryableFailures = 0
         }
         isAuthenticated = currentOwnerUserID != nil
         guard let currentOwnerUserID else {
@@ -220,6 +228,9 @@ final class SyncCoordinator {
     func sessionDidEnd() {
         isAuthenticated = false
         currentOwnerUserID = nil
+        lastFailureDisposition = nil
+        lastFailureDiagnostic = nil
+        consecutiveRetryableFailures = 0
         retryTask?.cancel()
         retryTask = nil
         networkDebounceTask?.cancel()
@@ -291,7 +302,13 @@ final class SyncCoordinator {
     }
 
     private func restoreSessionAndSync() async {
+        let previousOwnerUserID = currentOwnerUserID
         currentOwnerUserID = await authenticatedUserIDProvider()
+        if currentOwnerUserID != previousOwnerUserID {
+            lastFailureDisposition = nil
+            lastFailureDiagnostic = nil
+            consecutiveRetryableFailures = 0
+        }
         isAuthenticated = currentOwnerUserID != nil
         refreshPresentation()
         guard isAuthenticated else { return }
@@ -334,6 +351,7 @@ final class SyncCoordinator {
                 try scopedQueue().prepareManualRetry()
                 try context.save()
                 lastFailureDisposition = nil
+                lastFailureDiagnostic = nil
             } catch {
                 lastFailureDisposition = .permanent
                 refreshPresentation()
@@ -375,6 +393,7 @@ final class SyncCoordinator {
 
     private func performSinglePass(trigger: SyncTrigger) async -> Bool {
         syncDebug("Sync requested: \(trigger.rawValue)")
+        let startedAt = Date()
         do {
             try await SyncEngine(
                 context: context,
@@ -383,6 +402,7 @@ final class SyncCoordinator {
                 retryBaseDelay: retryBaseDelay
             ).synchronize()
             lastFailureDisposition = nil
+            lastFailureDiagnostic = nil
             consecutiveRetryableFailures = 0
             lastAutomaticSyncAt = now()
             NotificationCenter.default.post(name: .tasteMapSyncDidComplete, object: nil)
@@ -398,7 +418,19 @@ final class SyncCoordinator {
                 consecutiveRetryableFailures += 1
                 scheduleRetry()
             }
-            syncDebug("Sync failed (\(disposition.rawValue)): \(String(describing: type(of: error)))")
+            lastFailureDiagnostic = SyncErrorClassifier.diagnostic(
+                for: error,
+                duration: Date().timeIntervalSince(startedAt),
+                retryCount: consecutiveRetryableFailures
+            )
+            if let diagnostic = lastFailureDiagnostic {
+                syncDebug(
+                    "Sync failed stage=\(diagnostic.stage.rawValue) request=\(diagnostic.requestCategory) "
+                        + "category=\(diagnostic.category.rawValue) status=\(diagnostic.httpStatus ?? 0) "
+                        + "duration_ms=\(diagnostic.durationMilliseconds) retry=\(diagnostic.retryCount) "
+                        + "final=\(diagnostic.finalDisposition.rawValue)"
+                )
+            }
             return false
         }
     }
@@ -408,7 +440,7 @@ final class SyncCoordinator {
         guard isAuthenticated, isNetworkAvailable else { return }
         let exponentialSeconds = min(
             pow(2, Double(max(0, consecutiveRetryableFailures - 1))) * retryBaseDelay,
-            60 * 60
+            SyncRetryPolicy.maximumBackoff
         )
         let mutationRetryDate = try? scopedQueue().earliestRetryDate()
         let desiredDate = max(
@@ -459,7 +491,8 @@ final class SyncCoordinator {
             pendingPhotoCount: pendingPhotoCount ?? photoCounts.pending,
             failedPhotoCount: failedPhotoCount ?? photoCounts.failed,
             conflictCount: conflictCount ?? mutations.filter { $0.state == .conflicted }.count,
-            lastSyncedAt: checkpoint?.lastSyncedAt
+            lastSyncedAt: checkpoint?.lastSyncedAt,
+            diagnostic: phase == .failed ? lastFailureDiagnostic : nil
         )
     }
 

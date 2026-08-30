@@ -7,7 +7,25 @@ enum SyncEngineError: Error, Equatable {
     case missingRestaurantMapping
     case missingAcknowledgement
     case cursorDidNotAdvance
+    case pullPageLimitReached
     case ownershipMismatch
+}
+
+enum SyncStage: String, Equatable, Sendable {
+    case reconciliation
+    case mutationPush
+    case pull
+}
+
+struct SyncStageFailure: Error {
+    let stage: SyncStage
+    let underlyingError: any Error
+}
+
+enum SyncRetryPolicy {
+    static let requestTimeout: TimeInterval = 15
+    static let maximumBackoff: TimeInterval = 60
+    static let maximumPullPagesPerPass = 20
 }
 
 @MainActor
@@ -36,12 +54,31 @@ final class SyncEngine {
 
     func synchronize() async throws {
         engineDebug("Sync pass started")
-        try prepareLocalState()
-        try queue.resetInterruptedUploads()
-        try context.save()
-        try await pushPendingMutations()
-        try await pullChanges()
+        try await perform(stage: .reconciliation) {
+            try prepareLocalState()
+            try queue.resetInterruptedUploads()
+            try context.save()
+        }
+        try await perform(stage: .mutationPush) {
+            try await pushPendingMutations()
+        }
+        try await perform(stage: .pull) {
+            try await pullChanges()
+        }
         engineDebug("Sync pass completed")
+    }
+
+    private func perform(
+        stage: SyncStage,
+        operation: () async throws -> Void
+    ) async throws {
+        do {
+            try await operation()
+        } catch let failure as SyncStageFailure {
+            throw failure
+        } catch {
+            throw SyncStageFailure(stage: stage, underlyingError: error)
+        }
     }
 
     private func prepareLocalState() throws {
@@ -391,6 +428,7 @@ final class SyncEngine {
 
     private func pullChanges() async throws {
         let checkpoint = try checkpoint()
+        var completedPages = 0
         repeat {
             let previousCursor = checkpoint.cursor
             engineDebug("Pull started cursor=\(previousCursor)")
@@ -409,9 +447,13 @@ final class SyncEngine {
             checkpoint.cursor = response.nextCursor
             checkpoint.lastSyncedAt = now()
             try context.save()
+            completedPages += 1
             engineDebug("Pull completed nextCursor=\(response.nextCursor) hasMore=\(response.hasMore)")
             if !response.hasMore { break }
             if response.nextCursor == previousCursor { throw SyncEngineError.cursorDidNotAdvance }
+            if completedPages >= SyncRetryPolicy.maximumPullPagesPerPass {
+                throw SyncEngineError.pullPageLimitReached
+            }
         } while true
     }
 
@@ -1556,7 +1598,7 @@ final class SyncEngine {
     private func retryDate(retryCount: Int) -> Date {
         let seconds = min(
             pow(2, Double(max(0, retryCount - 1))) * retryBaseDelay,
-            60 * 60
+            SyncRetryPolicy.maximumBackoff
         )
         return now().addingTimeInterval(seconds)
     }

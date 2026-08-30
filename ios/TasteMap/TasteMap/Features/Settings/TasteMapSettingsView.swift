@@ -530,6 +530,18 @@ struct SyncSettingsView: View {
                     "最近成功同步",
                     value: presentation.lastSyncedAt?.formatted(date: .abbreviated, time: .shortened) ?? "暂无"
                 )
+#if DEBUG
+                if let diagnostic = presentation.diagnostic {
+                    LabeledContent("失败阶段", value: diagnostic.stage.rawValue)
+                    LabeledContent("请求类别", value: diagnostic.requestCategory)
+                    LabeledContent("失败类别", value: diagnostic.category.rawValue)
+                    if let httpStatus = diagnostic.httpStatus {
+                        LabeledContent("HTTP 状态", value: "\(httpStatus)")
+                    }
+                    LabeledContent("耗时", value: "\(diagnostic.durationMilliseconds) ms")
+                    LabeledContent("重试次数", value: "\(diagnostic.retryCount)")
+                }
+#endif
             }
 
             if presentationOverride == nil {

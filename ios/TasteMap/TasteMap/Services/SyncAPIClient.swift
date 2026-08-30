@@ -39,15 +39,18 @@ final class URLSessionSyncAPIClient: SyncAPI {
     private let session: URLSession
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let requestTimeout: TimeInterval
 
     init(
         configuration: APIConfiguration = .current(),
         authorization: any SyncAuthorizationProviding = MissingSyncAuthorization(),
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        requestTimeout: TimeInterval = SyncRetryPolicy.requestTimeout
     ) {
         self.configuration = configuration
         self.authorization = authorization
         self.session = session
+        self.requestTimeout = max(1, min(requestTimeout, 30))
         encoder = JSONEncoder()
         decoder = JSONDecoder()
     }
@@ -80,6 +83,7 @@ final class URLSessionSyncAPIClient: SyncAPI {
     private func makeRequest(path: String, method: String) async throws -> URLRequest {
         var request = URLRequest(url: try configuration.url(for: path))
         request.httpMethod = method
+        request.timeoutInterval = requestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         for (name, value) in try await authorization.headers() {

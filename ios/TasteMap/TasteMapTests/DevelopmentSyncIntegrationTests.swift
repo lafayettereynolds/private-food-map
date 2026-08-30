@@ -567,9 +567,10 @@ struct DevelopmentSyncIntegrationTests {
         let environment = ProcessInfo.processInfo.environment
         guard environment["TASTEMAP_RUN_DEV_SYNC_TESTS"] == "1" else { return }
         let runID = UUID().uuidString.lowercased()
+        let userID = "ios-p1d:\(runID)"
         let client = URLSessionSyncAPIClient(
             configuration: .current(),
-            authorization: DevelopmentSyncAuthorization(testUserID: "ios-p1d:\(runID)")
+            authorization: DevelopmentSyncAuthorization(testUserID: userID)
         )
         let containerA = try TasteMapPersistence.makeContainer(inMemory: true)
         let containerB = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -584,46 +585,53 @@ struct DevelopmentSyncIntegrationTests {
                 longitude: 120.168,
                 appleMapItemIdentifier: "apple-p1d-\(runID)"
             ),
-            among: []
+            among: [],
+            actorUserID: userID
         )
 
-        try await SyncEngine(context: contextA, api: client).synchronize()
-        try await SyncEngine(context: contextB, api: client).synchronize()
+        try await SyncEngine(context: contextA, api: client, ownerUserID: userID).synchronize()
+        try await SyncEngine(context: contextB, api: client, ownerUserID: userID).synchronize()
         let restaurantB = try #require(contextB.fetch(FetchDescriptor<Restaurant>()).first)
         #expect(restaurantB.status == .wantToGo)
         #expect(restaurantB.appleMapItemIdentifier == "apple-p1d-\(runID)")
 
         let visitA = try storeA.createVisit(
             restaurantId: restaurantA.id,
-            draft: VisitDraft(rating: nil, note: "P1-D first visit")
+            draft: VisitDraft(rating: nil, note: "P1-D first visit"),
+            actorUserID: userID
         )
-        try await SyncEngine(context: contextA, api: client).synchronize()
-        try await SyncEngine(context: contextB, api: client).synchronize()
+        try await SyncEngine(context: contextA, api: client, ownerUserID: userID).synchronize()
+        try await SyncEngine(context: contextB, api: client, ownerUserID: userID).synchronize()
         let visitB = try #require(contextB.fetch(FetchDescriptor<Visit>()).first)
         #expect(restaurantB.status == .visited)
         #expect(visitB.restaurantId == restaurantB.id)
 
-        try storeA.update(visitA, draft: VisitDraft(rating: 4.5, note: "P1-D server edit"))
-        try await SyncEngine(context: contextA, api: client).synchronize()
+        try storeA.update(
+            visitA,
+            draft: VisitDraft(rating: 4.5, note: "P1-D server edit"),
+            actorUserID: userID
+        )
+        try await SyncEngine(context: contextA, api: client, ownerUserID: userID).synchronize()
         try LocalTasteMapStore(context: contextB).update(
             visitB,
-            draft: VisitDraft(diningMode: .takeout, rating: 5, note: "P1-D offline edit")
+            draft: VisitDraft(diningMode: .takeout, rating: 5, note: "P1-D offline edit"),
+            actorUserID: userID
         )
-        try await SyncEngine(context: contextB, api: client).synchronize()
+        try await SyncEngine(context: contextB, api: client, ownerUserID: userID).synchronize()
 
         #expect(try contextB.fetch(FetchDescriptor<SyncMutation>()).first?.state == .conflicted)
         #expect(visitB.note == "P1-D offline edit")
         #expect(visitB.rating == 5)
 
-        try storeA.delete(visitA)
-        try await SyncEngine(context: contextA, api: client).synchronize()
-        try await SyncEngine(context: contextB, api: client).synchronize()
+        try storeA.delete(visitA, actorUserID: userID)
+        try await SyncEngine(context: contextA, api: client, ownerUserID: userID).synchronize()
+        try await SyncEngine(context: contextB, api: client, ownerUserID: userID).synchronize()
         #expect(visitB.deletedAt != nil)
         #expect(visitB.serverVersion == 3)
 
-        try storeA.delete(restaurantA)
-        try await SyncEngine(context: contextA, api: client).synchronize()
-        try await SyncEngine(context: contextB, api: client).synchronize()
+        try storeA.delete(restaurantA, actorUserID: userID)
+        try await SyncEngine(context: contextA, api: client, ownerUserID: userID).synchronize()
+        try await SyncEngine(context: contextB, api: client, ownerUserID: userID).synchronize()
         #expect(restaurantB.deletedAt != nil)
 
         let remote = try await client.pull(cursor: "0", limit: 200)
