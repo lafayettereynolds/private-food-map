@@ -63,7 +63,9 @@ struct ExternalRestaurantCandidateV1: Codable, Equatable, Sendable {
             longitude: longitude,
             appleMapItemIdentifier: identities.first(where: { $0.provider == .appleMaps })?.externalID,
             placeIdentities: identities,
-            photoURL: merchantImageUrl.flatMap(URL.init(string:))
+            photoURL: merchantImageUrl.flatMap(URL.init(string:)),
+            phone: phone,
+            openingHours: openingHours
         )
     }
 }

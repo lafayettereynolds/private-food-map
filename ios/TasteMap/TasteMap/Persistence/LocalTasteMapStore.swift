@@ -756,13 +756,30 @@ enum LocalTasteMapStoreError: Error {
 }
 
 enum RestaurantDeduplicator {
+    enum MatchKind: Equatable {
+        case exactProviderIdentity
+        case probableCrossProvider
+    }
+
+    struct Match {
+        let restaurant: Restaurant
+        let kind: MatchKind
+    }
+
     static func match(for candidate: RestaurantCandidate, in restaurants: [Restaurant]) -> Restaurant? {
+        classifiedMatch(for: candidate, in: restaurants)?.restaurant
+    }
+
+    static func classifiedMatch(
+        for candidate: RestaurantCandidate,
+        in restaurants: [Restaurant]
+    ) -> Match? {
         let candidateIdentityKeys = Set(candidate.placeIdentities.map(identityKey))
         if !candidateIdentityKeys.isEmpty,
            let match = restaurants.first(where: {
                $0.deletedAt == nil && !candidateIdentityKeys.isDisjoint(with: identityKeys(for: $0))
            }) {
-            return match
+            return Match(restaurant: match, kind: .exactProviderIdentity)
         }
 
         let candidateName = normalized(candidate.name)
@@ -783,7 +800,7 @@ enum RestaurantDeduplicator {
                     latitudeB: candidate.latitude,
                     longitudeB: candidate.longitude
                 ) < 80
-        }
+        }.map { Match(restaurant: $0, kind: .probableCrossProvider) }
     }
 
     private static func identityKeys(for restaurant: Restaurant) -> Set<String> {

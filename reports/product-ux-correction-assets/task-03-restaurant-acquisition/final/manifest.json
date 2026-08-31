@@ -1,0 +1,89 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "A416F425-6F13-43BD-9074-767D943B2350.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX Restaurant Search Preview_0_B29EFD2A-6130-41A0-9D54-9BDA7D5D19AC.png",
+        "timestamp" : 1788165277.34
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testRestaurantAcquisitionCitySearchNoResultAndVisitEntry()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testRestaurantAcquisitionCitySearchNoResultAndVisitEntry"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "989DF6AE-2BAB-4330-89D4-1E10465FE400.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX Manual Restaurant Preview_0_96B5308F-E557-4BAD-B7B8-05F2700BFE8C.png",
+        "timestamp" : 1788165313.891
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "7CA61B6A-6A90-42D3-84AD-7D57841C9AD8.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX Manual Restaurant_0_87E53174-A802-43DB-8A75-78ECC6DDDD6C.png",
+        "timestamp" : 1788165298.982
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testRestaurantAcquisitionDeniedLocationStillAllowsManualRestaurant()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testRestaurantAcquisitionDeniedLocationStillAllowsManualRestaurant"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "DDECD770-A90C-4452-BF6D-E6897FCE65DC.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX External Share Preview_0_3CFFDD61-DE49-4826-BA5C-24059C8A8659.png",
+        "timestamp" : 1788165338.425
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "6E8EF4CE-7E9C-43D5-8A03-D4A277C68BA6.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX External Share Recognition_0_B13A9CFD-51CE-45F3-9C5F-21876298E8AC.png",
+        "timestamp" : 1788165331.485
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testRestaurantAcquisitionLinkImportIsConfirmedBeforeCreation()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testRestaurantAcquisitionLinkImportIsConfirmedBeforeCreation"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "A339D6EE-F75D-4527-AEB1-E43376ABA095.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX Restaurant Candidate Preview_0_FD2DB44E-13D6-4468-8AE9-4FEC38CB100F.png",
+        "timestamp" : 1788165358.813
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "52E29F06-B92F-416B-93BE-8CF28DDE195B.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Full Parity Add Restaurant Nearby After_0_0972B02A-48D8-40F6-8708-4DF592F0AA32.png",
+        "timestamp" : 1788165355.333
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testRestaurantAcquisitionNearbyRequiresExplicitWantToGoAction()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testRestaurantAcquisitionNearbyRequiresExplicitWantToGoAction"
+  }
+]

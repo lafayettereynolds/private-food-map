@@ -75,7 +75,9 @@ enum RestaurantDistanceOrdering {
                 appleMapItemIdentifier: candidate.appleMapItemIdentifier,
                 placeIdentities: candidate.placeIdentities,
                 distanceMeters: distance(from: origin, to: candidate.coordinate),
-                photoURL: candidate.photoURL
+                photoURL: candidate.photoURL,
+                phone: candidate.phone,
+                openingHours: candidate.openingHours
             )
         }
         .sorted {
@@ -260,7 +262,8 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
                 city: city,
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude,
-                appleMapItemIdentifier: externalID
+                appleMapItemIdentifier: externalID,
+                phone: mapItem.phoneNumber
             )
         }
     }

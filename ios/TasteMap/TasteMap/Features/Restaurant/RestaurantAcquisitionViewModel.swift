@@ -174,19 +174,20 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
                     )
                 )
             }
+            if candidates.isEmpty, let parsed {
+                candidates = try await fallbackCandidates(for: parsed, originalText: text, city: city)
+            }
             linkResults = candidates
             linkMessage = candidates.isEmpty
                 ? "已读取链接，但还不能确定具体门店。请改用名称搜索或手动添加。"
                 : response.message
         } catch {
-            if let parsed, !parsed.name.isEmpty {
+            if let parsed {
                 do {
-                    let candidates = try await searchService.search(
-                        query: parsed.name,
-                        scope: RestaurantSearchScope(
-                            city: parsed.city.nilIfBlank ?? city,
-                            center: parsed.coordinate ?? currentCoordinate
-                        )
+                    let candidates = try await fallbackCandidates(
+                        for: parsed,
+                        originalText: text,
+                        city: city
                     )
                     linkResults = candidates
                     linkMessage = candidates.isEmpty
@@ -199,6 +200,33 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
             }
             linkMessage = "餐厅链接暂时无法解析。你仍可按名称搜索或手动添加。"
         }
+    }
+
+    private func fallbackCandidates(
+        for parsed: ParsedExternalRestaurantLink,
+        originalText: String,
+        city: String
+    ) async throws -> [RestaurantCandidate] {
+        let semanticQuery = parsed.name.nilIfBlank ?? parsed.address.nilIfBlank
+        if semanticQuery == nil, let coordinate = parsed.coordinate {
+            return try await searchService.nearby(center: coordinate, radiusMeters: 3_000)
+        }
+        let query = semanticQuery
+            ?? originalText.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        if let query {
+            return try await searchService.search(
+                query: query,
+                scope: RestaurantSearchScope(
+                    city: parsed.city.nilIfBlank ?? city,
+                    center: parsed.coordinate ?? currentCoordinate,
+                    radiusMeters: parsed.coordinate == nil ? 20_000 : 3_000
+                )
+            )
+        }
+        if let coordinate = parsed.coordinate {
+            return try await searchService.nearby(center: coordinate, radiusMeters: 3_000)
+        }
+        return []
     }
 
     func resolveManualCoordinate(address: String, city: String) async throws -> RestaurantCoordinate {

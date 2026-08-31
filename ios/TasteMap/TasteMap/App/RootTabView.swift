@@ -44,7 +44,8 @@ struct RootTabView: View {
                 presentRequestedVisitAfterAcquisitionDismissal()
             }) {
                 AddRestaurantView(
-                    dependencies: acquisitionDependencies
+                    dependencies: acquisitionDependencies,
+                    initialSharedText: acquisitionInitialSharedText
                 ) { candidate, action in
                     switch action {
                     case .wantToGo:
@@ -111,6 +112,14 @@ struct RootTabView: View {
         }
 #endif
         return .live(linkResolver: authServices.externalRestaurantLinkAPI)
+    }
+
+    private var acquisitionInitialSharedText: String? {
+#if DEBUG
+        TasteMapUITestFixtures.restaurantAcquisitionInitialSharedText
+#else
+        nil
+#endif
     }
 
     private func loadPendingSharedImportIfNeeded() {

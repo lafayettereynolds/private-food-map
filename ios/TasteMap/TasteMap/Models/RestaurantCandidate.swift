@@ -33,6 +33,8 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
     let placeIdentities: [RestaurantCandidatePlaceIdentity]
     let distanceMeters: Double?
     let photoURL: URL?
+    let phone: String?
+    let openingHours: String?
 
     var coordinate: RestaurantCoordinate {
         RestaurantCoordinate(latitude: latitude, longitude: longitude)
@@ -49,7 +51,9 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         appleMapItemIdentifier: String? = nil,
         placeIdentities: [RestaurantCandidatePlaceIdentity] = [],
         distanceMeters: Double? = nil,
-        photoURL: URL? = nil
+        photoURL: URL? = nil,
+        phone: String? = nil,
+        openingHours: String? = nil
     ) {
         self.id = id
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -66,6 +70,8 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         )
         self.distanceMeters = distanceMeters
         self.photoURL = photoURL
+        self.phone = Self.normalizedOptional(phone)
+        self.openingHours = Self.normalizedOptional(openingHours)
     }
 
     static func manual(
@@ -123,6 +129,12 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
                 isPrimary: index == primaryIndex
             )
         }
+    }
+
+    private static func normalizedOptional(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 }
 

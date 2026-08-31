@@ -639,6 +639,16 @@ struct RestaurantLocationSection: View {
         self.onOpenAppleMaps = onOpenAppleMaps
     }
 
+    init(
+        candidate: RestaurantCandidate,
+        onOpenAppleMaps: @escaping () -> Void
+    ) {
+        name = candidate.name
+        latitude = candidate.latitude
+        longitude = candidate.longitude
+        self.onOpenAppleMaps = onOpenAppleMaps
+    }
+
     private var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(
             latitude: latitude,

@@ -26,9 +26,8 @@ struct AddRestaurantView: View {
     @StateObject private var viewModel: RestaurantAcquisitionViewModel
     @AppStorage("taste-map-last-search-city") private var city = ""
     @State private var query = ""
-    @State private var linkValue: String
     @State private var manualPresented = false
-    @State private var selectedCandidate: RestaurantCandidate?
+    @State private var selectedCandidate: RestaurantAcquisitionSelection?
     @State private var pendingManualCandidate: RestaurantCandidate?
     @State private var cityEdited = false
     @State private var actionError: String?
@@ -51,7 +50,6 @@ struct AddRestaurantView: View {
             locationProvider: dependencies.locationProvider
         ))
         self.initialSharedText = initialSharedText
-        _linkValue = State(initialValue: initialSharedText ?? "")
         self.onAction = onAction
     }
 
@@ -59,8 +57,8 @@ struct AddRestaurantView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
+                    if hasSharedImport { sharedImportSection }
                     searchSection
-                    linkImportSection
                     if !viewModel.hasSearched { nearbySection }
                     manualEntry
                 }
@@ -86,7 +84,7 @@ struct AddRestaurantView: View {
                 if !(initialSharedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
                    viewModel.linkResults.isEmpty,
                    viewModel.linkMessage == nil {
-                    await viewModel.resolveLink(linkValue, city: city)
+                    await viewModel.resolveLink(initialSharedText ?? "", city: city)
                 }
             }
             .onChange(of: viewModel.detectedCity) { _, detectedCity in
@@ -111,7 +109,7 @@ struct AddRestaurantView: View {
                 )
             }
             .sheet(item: $selectedCandidate) { candidate in
-                RestaurantCandidateConfirmationView(candidate: candidate, onAction: perform)
+                RestaurantCandidateConfirmationView(acquisition: candidate, onAction: perform)
             }
             .alert("无法添加餐厅", isPresented: Binding(
                 get: { actionError != nil },
@@ -123,6 +121,10 @@ struct AddRestaurantView: View {
             }
         }
         .tint(AcquisitionPalette.brand)
+    }
+
+    private var hasSharedImport: Bool {
+        !(initialSharedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     private var nearbySection: some View {
@@ -175,7 +177,7 @@ struct AddRestaurantView: View {
                     ForEach(viewModel.nearbyResults.prefix(8)) { candidate in
                         RestaurantAcquisitionCandidateRow(
                             candidate: candidate,
-                            existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
+                            match: RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants),
                             onSelect: select
                         )
                     }
@@ -271,45 +273,25 @@ struct AddRestaurantView: View {
             ForEach(viewModel.searchResults) { candidate in
                 RestaurantAcquisitionCandidateRow(
                     candidate: candidate,
-                    existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
+                    match: RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants),
                     onSelect: select
                 )
             }
         }
     }
 
-    private var linkImportSection: some View {
-        AcquisitionSection(title: "粘贴餐厅链接", subtitle: "Apple 地图、高德、普通网页或分享文字", systemImage: "link") {
-            HStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "link")
-                        .foregroundStyle(AcquisitionPalette.brand)
-                    TextField("粘贴链接或分享文字", text: $linkValue)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .accessibilityIdentifier("restaurant-link-field")
-                        .onChange(of: linkValue) { _, _ in
-                            viewModel.clearLinkResolution()
-                        }
+    private var sharedImportSection: some View {
+        AcquisitionSection(title: "来自外部分享", subtitle: "Taste Map 正在识别餐厅与位置", systemImage: "square.and.arrow.down") {
+            if viewModel.isResolvingLink {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("正在读取分享内容…")
+                        .font(.subheadline)
+                        .foregroundStyle(AcquisitionPalette.muted)
                 }
-                .acquisitionInput()
-
-                Button {
-                    Task { await viewModel.resolveLink(linkValue, city: city) }
-                } label: {
-                    Group {
-                        if viewModel.isResolvingLink { ProgressView().tint(.white) }
-                        else { Text("识别") }
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .frame(width: 58, height: 42)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AcquisitionPalette.brand)
-                .disabled(viewModel.isResolvingLink || linkValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityIdentifier("resolve-restaurant-link")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
             }
-
             if let message = viewModel.linkMessage {
                 Text(message)
                     .font(.subheadline)
@@ -319,36 +301,33 @@ struct AddRestaurantView: View {
             ForEach(viewModel.linkResults) { candidate in
                 RestaurantAcquisitionCandidateRow(
                     candidate: candidate,
-                    existing: RestaurantDeduplicator.match(for: candidate, in: scopedRestaurants),
+                    match: RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants),
                     onSelect: select
                 )
             }
         }
+        .accessibilityIdentifier("shared-restaurant-import")
     }
 
     private var manualEntry: some View {
-        AcquisitionSection(title: "地图上搜不到？", subtitle: "小摊、快闪店、私房店和新开门店", systemImage: "storefront") {
-            AcquisitionMethodButton(
-                icon: "storefront",
-                title: "手动添加",
-                subtitle: "输入名称并确认真实位置"
-            ) { manualPresented = true }
-            .accessibilityIdentifier("open-manual-restaurant")
-        }
+        AcquisitionMethodButton(
+            icon: "storefront",
+            title: "手动添加餐厅",
+            subtitle: "适合地图上搜不到的小摊、快闪店、私房店和新开门店"
+        ) { manualPresented = true }
+        .padding(12)
+        .acquisitionCard()
+        .accessibilityIdentifier("open-manual-restaurant")
     }
 
-    private func select(_ candidate: RestaurantCandidate, existing: Restaurant?) {
-        if existing != nil {
-            perform(candidate, .recordVisit)
-        } else {
-            selectedCandidate = candidate
-        }
+    private func select(_ candidate: RestaurantCandidate, match: RestaurantDeduplicator.Match?) {
+        selectedCandidate = RestaurantAcquisitionSelection(candidate: candidate, match: match)
     }
 
     private func presentPendingManualCandidate() {
         guard let pendingManualCandidate else { return }
         self.pendingManualCandidate = nil
-        selectedCandidate = pendingManualCandidate
+        selectedCandidate = RestaurantAcquisitionSelection(candidate: pendingManualCandidate, match: nil)
     }
 
     private func perform(_ candidate: RestaurantCandidate, _ action: RestaurantSearchAction) {
@@ -361,11 +340,21 @@ struct AddRestaurantView: View {
     }
 }
 
+private struct RestaurantAcquisitionSelection: Identifiable {
+    let candidate: RestaurantCandidate
+    let match: RestaurantDeduplicator.Match?
+    var id: UUID { candidate.id }
+}
+
 private struct RestaurantCandidateConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
-    let candidate: RestaurantCandidate
+    let acquisition: RestaurantAcquisitionSelection
     let onAction: (RestaurantCandidate, RestaurantSearchAction) -> Void
     @State private var selection: Selection = .visited
+    @State private var confirmedProbableMatch = false
+
+    private var candidate: RestaurantCandidate { acquisition.candidate }
+    private var dedupeMatch: RestaurantDeduplicator.Match? { acquisition.match }
 
     private enum Selection: String, CaseIterable, Identifiable {
         case visited = "我去过"
@@ -376,64 +365,89 @@ private struct RestaurantCandidateConfirmationView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(candidate.name)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(AcquisitionPalette.ink)
-                        if !candidate.address.isEmpty {
-                            Label(candidate.address, systemImage: "mappin.and.ellipse")
-                                .font(.subheadline)
-                                .foregroundStyle(AcquisitionPalette.muted)
-                        }
-                        let location = [candidate.city, candidate.district]
-                            .filter { !$0.isEmpty }
-                            .joined(separator: " · ")
-                        if !location.isEmpty {
-                            Text(location)
-                                .font(.caption)
-                                .foregroundStyle(AcquisitionPalette.muted)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .acquisitionCard()
+                RestaurantDetailStandardBody {
+                    RestaurantCandidateHero(candidate: candidate)
+                } header: {
+                    RestaurantDetailHeader(identity: RestaurantDetailIdentityPresentation(
+                        name: candidate.name,
+                        address: candidate.address,
+                        city: candidate.city,
+                        status: nil
+                    ))
+                } actions: {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("保存到 Taste Map")
+                            .font(.headline)
 
-                    Picker("餐厅状态", selection: $selection) {
-                        ForEach(Selection.allCases) { value in
-                            Text(value.rawValue).tag(value)
+                        if let dedupeMatch {
+                            RestaurantCandidateDedupeNotice(
+                                restaurant: dedupeMatch.restaurant,
+                                kind: dedupeMatch.kind,
+                                confirmed: $confirmedProbableMatch
+                            )
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("restaurant-status-selection")
 
-                    AcquisitionMessage(
-                        icon: selection == .visited ? "fork.knife" : "bookmark",
-                        title: selection == .visited ? "记录这次体验" : "加入想吃清单",
-                        message: selection == .visited
-                            ? "继续后填写日期、评分、消费、菜品和照片。"
-                            : "先保存餐厅，之后到访时再补充完整记录。",
-                        retryTitle: nil,
-                        retry: nil
-                    )
+                        Picker("餐厅状态", selection: $selection) {
+                            ForEach(Selection.allCases) { value in
+                                Text(value.rawValue).tag(value)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("restaurant-status-selection")
 
-                    Button {
-                        onAction(candidate, selection == .visited ? .recordVisit : .wantToGo)
-                    } label: {
-                        Label(
-                            selection == .visited ? "继续记录到访" : "保存到我的地图",
-                            systemImage: selection == .visited ? "fork.knife" : "bookmark.fill"
+                        AcquisitionMessage(
+                            icon: selection == .visited ? "fork.knife" : "bookmark",
+                            title: selection == .visited ? "记录这次体验" : "加入想吃清单",
+                            message: selection == .visited
+                                ? "继续后填写日期、评分、消费、菜品和照片。"
+                                : "先保存餐厅，之后到访时再补充完整记录。",
+                            retryTitle: nil,
+                            retry: nil
                         )
-                        .frame(maxWidth: .infinity, minHeight: 50)
+
+                        Button {
+                            onAction(candidate, selection == .visited ? .recordVisit : .wantToGo)
+                        } label: {
+                            Label(
+                                actionTitle,
+                                systemImage: selection == .visited ? "fork.knife" : "bookmark.fill"
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AcquisitionPalette.brand)
+                        .disabled(requiresProbableMatchConfirmation && !confirmedProbableMatch)
+                        .accessibilityIdentifier("confirm-restaurant-selection")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AcquisitionPalette.brand)
-                    .accessibilityIdentifier("confirm-restaurant-selection")
+                    .padding(18)
+                    .tasteMapCoreCard(radius: 22)
+                } business: {
+                    RestaurantCandidateBusinessSection(candidate: candidate)
+                } location: {
+                    RestaurantLocationSection(candidate: candidate, onOpenAppleMaps: openAppleMaps)
+                } ratings: {
+                    RestaurantCandidateUnavailableSection(
+                        title: "评分参考",
+                        systemImage: "star.circle",
+                        message: "地图来源暂未提供可信评分；Taste Map 不会用假评分填充。"
+                    )
+                } userPhotos: {
+                    RestaurantUserPhotosSection(hasPhotos: false) { EmptyView() }
+                } personalOverview: {
+                    EmptyView()
+                } history: {
+                    EmptyView()
+                } context: {
+                    EmptyView()
+                } extended: {
+                    EmptyView()
                 }
-                .padding(16)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .padding(.bottom, 28)
             }
             .background(AcquisitionPalette.page.ignoresSafeArea())
-            .navigationTitle("写下这家餐厅")
+            .navigationTitle("确认餐厅")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -442,6 +456,153 @@ private struct RestaurantCandidateConfirmationView: View {
             }
         }
         .tint(AcquisitionPalette.brand)
+        .accessibilityIdentifier("restaurant-acquisition-preview")
+    }
+
+    private var requiresProbableMatchConfirmation: Bool {
+        dedupeMatch?.kind == .probableCrossProvider
+    }
+
+    private var actionTitle: String {
+        let prefix = requiresProbableMatchConfirmation ? "确认合并并" : ""
+        return prefix + (selection == .visited ? "继续记录到访" : "保存到我的地图")
+    }
+
+    private func openAppleMaps() {
+        let coordinate = CLLocationCoordinate2D(
+            latitude: candidate.latitude,
+            longitude: candidate.longitude
+        )
+        let mapItem: MKMapItem
+        if #available(iOS 26.0, *) {
+            mapItem = MKMapItem(location: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude), address: nil)
+        } else {
+            mapItem = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
+        }
+        mapItem.name = candidate.name
+        mapItem.openInMaps()
+    }
+}
+
+private struct RestaurantCandidateHero: View {
+    let candidate: RestaurantCandidate
+
+    var body: some View {
+        Group {
+            if let photoURL = candidate.photoURL {
+                AsyncImage(url: photoURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else if phase.error != nil {
+                        fallback
+                    } else {
+                        ProgressView()
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 216)
+        .background(AcquisitionPalette.brandSoft)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipped()
+        .accessibilityIdentifier("restaurant-photo-gallery")
+    }
+
+    private var fallback: some View {
+        VStack(spacing: 10) {
+            FoodDiningVisualIcon(
+                kind: .genericDining,
+                usage: .decorative,
+                size: 62,
+                foregroundColor: AcquisitionPalette.brandDeep,
+                backgroundColor: AcquisitionPalette.brandSoft
+            )
+            Text("先确认餐厅，再开始记录")
+                .font(.headline)
+                .foregroundStyle(AcquisitionPalette.muted)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct RestaurantCandidateBusinessSection: View {
+    let candidate: RestaurantCandidate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("餐厅信息")
+                .font(.headline)
+                .accessibilityIdentifier("restaurant-business-information")
+            candidateRow(title: "参考人均", value: "地图来源暂未提供", icon: "yensign.circle")
+            Divider()
+            candidateRow(title: "电话", value: candidate.phone ?? "地图来源暂未提供", icon: "phone")
+            Divider()
+            candidateRow(title: "营业时间", value: candidate.openingHours ?? "地图来源暂未提供", icon: "clock")
+        }
+        .padding(18)
+        .tasteMapCoreCard(radius: 22)
+    }
+
+    private func candidateRow(title: String, value: String, icon: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(AcquisitionPalette.brand)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.caption).foregroundStyle(AcquisitionPalette.muted)
+                Text(value).font(.subheadline).foregroundStyle(AcquisitionPalette.ink)
+            }
+        }
+    }
+}
+
+private struct RestaurantCandidateUnavailableSection: View {
+    let title: String
+    let systemImage: String
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .foregroundStyle(AcquisitionPalette.brand)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title).font(.headline)
+                Text(message).font(.subheadline).foregroundStyle(AcquisitionPalette.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .tasteMapCoreCard(radius: 22)
+        .accessibilityIdentifier("restaurant-rating-references")
+    }
+}
+
+private struct RestaurantCandidateDedupeNotice: View {
+    let restaurant: Restaurant
+    let kind: RestaurantDeduplicator.MatchKind
+    @Binding var confirmed: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(
+                kind == .exactProviderIdentity ? "已匹配现有餐厅" : "可能是同一家餐厅",
+                systemImage: kind == .exactProviderIdentity ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
+            )
+            .font(.subheadline.weight(.semibold))
+            Text("Taste Map 中已有：\(restaurant.name)")
+                .font(.caption)
+                .foregroundStyle(AcquisitionPalette.muted)
+            if kind == .probableCrossProvider {
+                Toggle("我确认这是同一家餐厅", isOn: $confirmed)
+                    .font(.subheadline)
+                    .accessibilityIdentifier("confirm-probable-restaurant-match")
+            }
+        }
+        .padding(12)
+        .background(AcquisitionPalette.brandSoft, in: RoundedRectangle(cornerRadius: 13))
     }
 }
 
@@ -660,8 +821,8 @@ private struct ManualRestaurantAddView: View {
 
 private struct RestaurantAcquisitionCandidateRow: View {
     let candidate: RestaurantCandidate
-    let existing: Restaurant?
-    let onSelect: (RestaurantCandidate, Restaurant?) -> Void
+    let match: RestaurantDeduplicator.Match?
+    let onSelect: (RestaurantCandidate, RestaurantDeduplicator.Match?) -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -685,8 +846,8 @@ private struct RestaurantAcquisitionCandidateRow: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(AcquisitionPalette.ink)
                         .lineLimit(2)
-                    if existing != nil {
-                        Text("已在地图")
+                    if let match {
+                        Text(match.kind == .exactProviderIdentity ? "已在地图" : "可能重复")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(AcquisitionPalette.brandDeep)
                             .padding(.horizontal, 6)
@@ -714,16 +875,16 @@ private struct RestaurantAcquisitionCandidateRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
-                onSelect(candidate, existing)
+                onSelect(candidate, match)
             } label: {
-                Text(existing == nil ? "选择" : "记录")
+                Text("查看")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 58, height: 34)
                     .background(AcquisitionPalette.brand, in: RoundedRectangle(cornerRadius: 9))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(existing == nil ? "选择 \(candidate.name)" : "再次记录到访 \(candidate.name)")
+            .accessibilityLabel("查看并确认 \(candidate.name)")
             .accessibilityIdentifier("candidate-select-\(candidate.id.uuidString)")
         }
         .padding(.vertical, 8)

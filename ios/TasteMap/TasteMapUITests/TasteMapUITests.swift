@@ -460,7 +460,8 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["V1 附近小馆"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["147 米"].exists)
         XCTAssertTrue(app.textFields["restaurant-query-field"].exists)
-        XCTAssertTrue(app.textFields["restaurant-link-field"].exists)
+        XCTAssertFalse(app.textFields["restaurant-link-field"].exists)
+        XCTAssertTrue(app.buttons["open-manual-restaurant"].exists)
 
         let candidate = app.descendants(matching: .any)[
             "restaurant-candidate-AC000001-0000-0000-0000-000000000001"
@@ -473,9 +474,15 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(select.waitForExistence(timeout: 3))
         XCTAssertLessThanOrEqual(select.frame.width, 64)
         select.tap()
-        XCTAssertTrue(app.navigationBars["写下这家餐厅"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["确认餐厅"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-acquisition-preview"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-detail-header"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-detail-location"].exists)
+        keepScreenshot(named: "Product UX Restaurant Candidate Preview", of: app)
         segmentedOption("我想去", in: app).tap()
-        app.buttons["confirm-restaurant-selection"].tap()
+        let confirm = app.buttons["confirm-restaurant-selection"]
+        scrollUntilVisible(confirm, in: app)
+        confirm.tap()
         XCTAssertFalse(app.navigationBars["添加餐厅"].waitForExistence(timeout: 3))
         segmentedOption("想吃", in: app).tap()
         XCTAssertTrue(app.staticTexts["V1 附近小馆"].waitForExistence(timeout: 5))
@@ -511,8 +518,11 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(select, in: app)
         XCTAssertTrue(select.isHittable)
         select.tap()
-        XCTAssertTrue(app.navigationBars["写下这家餐厅"].waitForExistence(timeout: 3))
-        app.buttons["confirm-restaurant-selection"].tap()
+        XCTAssertTrue(app.navigationBars["确认餐厅"].waitForExistence(timeout: 3))
+        keepScreenshot(named: "Product UX Restaurant Search Preview", of: app)
+        let confirm = app.buttons["confirm-restaurant-selection"]
+        scrollUntilVisible(confirm, in: app)
+        confirm.tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
         app.navigationBars["新增到访"].buttons["取消"].tap()
     }
@@ -520,16 +530,14 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     func testRestaurantAcquisitionLinkImportIsConfirmedBeforeCreation() throws {
         let app = XCUIApplication()
-        app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST": "1"]
+        app.launchEnvironment = ["TASTEMAP_RESTAURANT_ACQUISITION_SHARED_UI_TEST": "1"]
         app.launch()
         app.buttons["添加餐厅"].tap()
 
-        let field = app.textFields["restaurant-link-field"]
-        scrollUntilVisible(field, in: app)
-        field.tap()
-        field.typeText("https://example.com/restaurants/apple")
-        app.buttons["resolve-restaurant-link"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["shared-restaurant-import"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["restaurant-link-field"].exists)
         XCTAssertTrue(app.staticTexts["V1 Apple 链接餐厅"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Product UX External Share Recognition", of: app)
 
         let select = app.buttons.matching(NSPredicate(
             format: "identifier BEGINSWITH %@",
@@ -538,8 +546,12 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(select, in: app)
         XCTAssertTrue(select.waitForExistence(timeout: 3))
         select.tap()
+        XCTAssertTrue(app.navigationBars["确认餐厅"].waitForExistence(timeout: 3))
+        keepScreenshot(named: "Product UX External Share Preview", of: app)
         segmentedOption("我想去", in: app).tap()
-        app.buttons["confirm-restaurant-selection"].tap()
+        let confirm = app.buttons["confirm-restaurant-selection"]
+        scrollUntilVisible(confirm, in: app)
+        confirm.tap()
         segmentedOption("想吃", in: app).tap()
         XCTAssertTrue(app.staticTexts["V1 Apple 链接餐厅"].waitForExistence(timeout: 5))
         openWantToGoDetail(named: "V1 Apple 链接餐厅", in: app)
@@ -560,6 +572,7 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(entry, in: app)
         entry.tap()
         XCTAssertTrue(app.navigationBars["手动添加餐厅"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Product UX Manual Restaurant", of: app)
 
         app.textFields["manual-restaurant-name"].tap()
         app.textFields["manual-restaurant-name"].typeText("地图外的小摊")
@@ -572,9 +585,12 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(confirmManual, in: app)
         XCTAssertTrue(confirmManual.waitForExistence(timeout: 5))
         confirmManual.tap()
-        XCTAssertTrue(app.navigationBars["写下这家餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["确认餐厅"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Product UX Manual Restaurant Preview", of: app)
         segmentedOption("我想去", in: app).tap()
-        app.buttons["confirm-restaurant-selection"].tap()
+        let confirm = app.buttons["confirm-restaurant-selection"]
+        scrollUntilVisible(confirm, in: app)
+        confirm.tap()
 
         segmentedOption("想吃", in: app).tap()
         XCTAssertTrue(app.staticTexts["地图外的小摊"].waitForExistence(timeout: 5))

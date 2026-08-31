@@ -44,7 +44,7 @@ enum ExternalRestaurantLinkParser {
             if input.localizedCaseInsensitiveContains("http://") {
                 throw ExternalRestaurantLinkParserError.insecureURL
             }
-            return nil
+            return sharedTextEvidence(input, currentCity: currentCity)
         }
 
         let source: ExternalRestaurantLinkSource
@@ -117,6 +117,42 @@ enum ExternalRestaurantLinkParser {
         guard let match = expression.firstMatch(in: value, range: range), match.numberOfRanges > 1,
               let valueRange = Range(match.range(at: 1), in: value) else { return nil }
         return String(value[valueRange])
+    }
+
+    private static func sharedTextEvidence(
+        _ input: String,
+        currentCity: String
+    ) -> ParsedExternalRestaurantLink {
+        let coordinate = firstCoordinate(in: input)
+        let lines = input
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && parseCoordinate($0) == nil }
+        let first = lines.first ?? ""
+        let looksLikeAddress = first.range(
+            of: #"(路|街|巷|道|号|road|street|avenue|lane|district)"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+        let name = looksLikeAddress ? "" : first
+        let address = looksLikeAddress ? first : (lines.dropFirst().first ?? "")
+        return ParsedExternalRestaurantLink(
+            source: .sharedText,
+            name: name,
+            address: address,
+            city: currentCity,
+            coordinate: coordinate,
+            identity: nil
+        )
+    }
+
+    private static func firstCoordinate(in input: String) -> RestaurantCoordinate? {
+        guard let expression = try? NSRegularExpression(
+            pattern: #"(-?\d{1,3}(?:\.\d+)?)\s*[,，]\s*(-?\d{1,3}(?:\.\d+)?)"#
+        ) else { return nil }
+        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        guard let match = expression.firstMatch(in: input, range: range),
+              let matchRange = Range(match.range, in: input) else { return nil }
+        return parseCoordinate(String(input[matchRange]))
     }
 }
 

@@ -36,6 +36,7 @@ enum TasteMapUITestFixtures {
     static let settingsEnvironmentKey = "TASTEMAP_F1B3_SETTINGS_UI_TEST"
     static let restaurantAcquisitionEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST"
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
+    static let restaurantAcquisitionSharedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_SHARED_UI_TEST"
     static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
     static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
     static let module8MapClusterEnvironmentKey = "TASTEMAP_MODULE8_MAP_CLUSTER_UI_TEST"
@@ -83,6 +84,14 @@ enum TasteMapUITestFixtures {
     static var usesRestaurantAcquisitionFixture: Bool {
         ProcessInfo.processInfo.environment[restaurantAcquisitionEnvironmentKey] == "1"
             || ProcessInfo.processInfo.environment[restaurantAcquisitionDeniedEnvironmentKey] == "1"
+            || ProcessInfo.processInfo.environment[restaurantAcquisitionSharedEnvironmentKey] == "1"
+    }
+
+    static var restaurantAcquisitionInitialSharedText: String? {
+        guard ProcessInfo.processInfo.environment[restaurantAcquisitionSharedEnvironmentKey] == "1" else {
+            return nil
+        }
+        return "看看这家 https://maps.apple.com/?q=V1%20Apple%20链接餐厅"
     }
 
     static var restaurantAcquisitionDependencies: RestaurantAcquisitionDependencies {

@@ -322,6 +322,37 @@ struct RestaurantAcquisitionTests {
         }
     }
 
+    @Test("Address-only and coordinate-only shares remain useful without a URL")
+    func plainShareEvidence() async throws {
+        let address = try #require(try ExternalRestaurantLinkParser.parse(
+            "杭州市西湖区满觉陇路 2 号",
+            currentCity: "杭州"
+        ))
+        #expect(address.source == .sharedText)
+        #expect(address.address == "杭州市西湖区满觉陇路 2 号")
+        #expect(address.city == "杭州")
+
+        let coordinate = try #require(try ExternalRestaurantLinkParser.parse(
+            "30.2741,120.1551",
+            currentCity: "杭州"
+        ))
+        #expect(coordinate.source == .sharedText)
+        #expect(coordinate.coordinate == RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551))
+
+        let search = AcquisitionSearchSpy()
+        let viewModel = RestaurantAcquisitionViewModel(
+            searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(throwsError: true),
+            locationProvider: AcquisitionLocationStub()
+        )
+        await viewModel.resolveLink("杭州市西湖区满觉陇路 2 号", city: "杭州")
+        #expect(search.lastQuery == "杭州市西湖区满觉陇路 2 号")
+        #expect(viewModel.linkResults.isEmpty == false)
+
+        await viewModel.resolveLink("30.2741,120.1551", city: "杭州")
+        #expect(search.nearbyCenters.last == RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551))
+    }
+
     @Test("Partial shared link falls back to authenticated resolver then MapKit candidates")
     func partialLinkFallback() async {
         let search = AcquisitionSearchSpy()
@@ -434,6 +465,34 @@ struct RestaurantAcquisitionTests {
         #expect(result.id == saved.id)
         #expect(Set(record.placeIdentities.map(\.provider)) == [.appleMaps, .amap])
         #expect(try container.mainContext.fetch(FetchDescriptor<Restaurant>()).count == 1)
+    }
+
+    @Test("Dedupe classifies exact provider matches separately from probable cross-provider matches")
+    func dedupeClassification() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let store = LocalTasteMapStore(context: container.mainContext)
+        let apple = RestaurantCandidate(
+            name: "桂语山房",
+            address: "满觉陇路 2 号",
+            city: "杭州",
+            latitude: 30.245,
+            longitude: 120.126,
+            appleMapItemIdentifier: "apple-guiyu"
+        )
+        let saved = try store.addToWantToGo(candidate: apple, among: [])
+        let exact = RestaurantDeduplicator.classifiedMatch(for: apple, in: [saved])
+        #expect(exact?.kind == .exactProviderIdentity)
+
+        let amap = RestaurantCandidate(
+            name: "桂语山房",
+            address: "满觉陇路 2 号",
+            city: "杭州市",
+            latitude: 30.2451,
+            longitude: 120.1261,
+            placeIdentities: [.init(provider: .amap, externalID: "B0GUIYU", isPrimary: true)]
+        )
+        let probable = RestaurantDeduplicator.classifiedMatch(for: amap, in: [saved])
+        #expect(probable?.kind == .probableCrossProvider)
     }
 
     @Test("Amap-only and manual Restaurants encode provider-neutral sync contracts")
@@ -615,14 +674,17 @@ private func acquisitionLocation(
 @MainActor
 private final class AcquisitionLinkResolverStub: ExternalRestaurantLinkResolving {
     let useSearchFallback: Bool
+    let throwsError: Bool
     var receivedText: String?
 
-    init(useSearchFallback: Bool = false) {
+    init(useSearchFallback: Bool = false, throwsError: Bool = false) {
         self.useSearchFallback = useSearchFallback
+        self.throwsError = throwsError
     }
 
     func resolve(text: String, currentCity: String) async throws -> ExternalRestaurantLinkResponseV1 {
         receivedText = text
+        if throwsError { throw URLError(.cannotConnectToHost) }
         return ExternalRestaurantLinkResponseV1(
             apiVersion: 1,
             sourceType: .genericURL,
