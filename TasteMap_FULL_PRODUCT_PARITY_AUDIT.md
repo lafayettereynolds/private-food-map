@@ -36,25 +36,34 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 - Module 6 Roulette / 今天吃什么：已完成；候选池、可见扇区与抽取结果一一对应，已恢复 Web 已认可的真实餐厅 Wheel 视觉，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_6_ROULETTE.md](reports/FULL_PRODUCT_PARITY_MODULE_6_ROULETTE.md)。
 - Module 7 Analytics / 数据分析与分享海报：已完成；五类 analyzer 语义保持、已认可中心 Food Hero / 四周解析结构与五张独立 9:16 海报均完成回归，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_7_ANALYTICS.md](reports/FULL_PRODUCT_PARITY_MODULE_7_ANALYTICS.md)。
 - Module 8 Remaining Product Parity + Core App Food & Dining Visual Language：已完成；最新版「我的地图」四层 hierarchy、同级 filter icon、近距独立 Marker、极远餐饮视觉聚合、Core fallback 和公开分享详情均已收口，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_8_REMAINING_CORE.md](reports/FULL_PRODUCT_PARITY_MODULE_8_REMAINING_CORE.md)。
-- 下一项：Module 9 Final Full Product Parity Closure。
+- Module 9 Final Full Product Parity Closure：已完成；全量 Web/Worker、iOS unit、关键 UI E2E、Debug/Release/device build 与最终差异处置见 [TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md](TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md)。
+
+### Final disposition amendment｜2026-08-31
+
+本文件第 4 节的逐页矩阵保留的是 `main@510f3b4` 审计基线及修复过程中的历史判断，便于追溯“为什么要改”；它不再代表 Modules 1–9 完成后的最终状态。最终处置以各模块报告和 Closure Report 为准：
+
+- 已知 Product Parity S0 blocker：0；
+- 已知 Product Parity S1 blocker：0；
+- Map/List、Add/Nearby、Discovery/Community、Profile/Public Profile、唯一 Restaurant Detail、Roulette、五类 Analytics/海报和 Remaining Core 均已按最终 override 收口；
+- 发布、Production、真实 App Store Connect、最终真机 GPS/触觉/视觉 smoke 与已挂起的 F1-C4 重复导入问题仍是独立 Release Gate，不能被 Product Parity 的 PASS 混同为发布完成。
 
 ## 1. Executive conclusion
 
-当前 iOS 已经具备很完整的数据和业务能力，Map、Discovery、Profile 也在前一轮修复中恢复了大部分顶层信息架构，但仍未达到本轮定义的 Product Parity。
+在审计基线时，iOS 已具备大部分数据和业务能力，但页面拓扑、部分功能语义、跨入口详情复用和已认可视觉出现明显回退。Modules 1–9 已完成对应修复；当前代码在本轮定义的 Product Parity 范围内达到 PASS，独立发布 Gate 仍按本报告和 Closure Report 诚实保留。
 
 最重要的结论：
 
 1. **Map 顶部产品结构已按最新决定完成重排**：独立居中「我的地图」标题、icon-only Map/List、去过 / 想吃 / 适合你和横向 compact chips 依次成层，仍共享同一 projection。
 2. **List 高信息密度结构已恢复**：标题/数量、搜索、筛选、紧凑餐厅行及三类快捷动作均在同一浏览上下文中，Map/List 状态保持同源。
-3. **Discovery 一级导航已恢复正确**：关注 / 为你推荐 / 同味之选 / 最新 / 趋势均为同一级；没有错误的“发现餐厅 / 社区动态”中间层。但城市/筛选控件和内容卡仍比 Web 更大、更卡片化。
-4. **Profile 分组拓扑已恢复，但密度和统计语义仍不一致**：Web 头部统计是关注、粉丝、去过、想吃；iOS 当前头部统计是去过、到访、平均分、消费，社交统计被移出同级关系。iOS 头像头部、统计和入口卡高度也明显更大。
-5. **Add Restaurant 的功能入口顺序已接近 Web，但 iOS 组件尺寸显著偏大**。Nearby 的 fresh-location 校验、3 km query、`CLLocation.distance` 排序已在代码中存在；真实 GPS 结果仍需用同一坐标做最终真机验收，不能只凭 fixture 宣称通过。
+3. **Discovery 一级导航及数据语义已恢复正确**：关注 / 为你推荐 / 同味之选 / 最新 / 趋势均为同一级，没有错误的中间层；Activity optional rating 与 Restaurant aggregate rating 已分离，城市/筛选与 Map 共用紧凑交互语言。
+4. **Profile / Public Profile 拓扑和统计语义已经收口**：身份、关注/被关注、去过/想去/总消费、主要入口、回味、食单、洞察与 Settings 恢复为高密度 dashboard；统计继续读取真实 owner-scoped projection。
+5. **Add Restaurant / Nearby 已按 Web 功能语义和紧凑结构恢复**：Search、City、Apple Maps、AMap、URL、Nearby、Manual、WantToGo/Visited 和显式确认保持同一 acquisition flow；fresh-location、精度/时间、3 km 与距离排序有自动化覆盖。真实 GPS provider 结果仍保留一次最终真机 smoke，不以 fixture 冒充硬件验收。
 6. **Restaurant Detail 的 S0 结构问题已经在 Module 5 关闭**：本地 Restaurant 与远程公开 projection 现在共用 `RestaurantDetailStandardBody`，`entrySource` 只表达入口来源，不再决定主体 UI。
 7. **Restaurant Detail 固定顺序已经落地并可测试**：Hero → 城市/状态/名称/地址 → Actions → 人均/电话/营业时间/路线 → 评分参考 → 用户实拍 → 我的到访概览 → 到访历史；无值的 optional 字段不会制造假数据。
 8. Visit、Dish、Photo、Settings、Premium、分析页与回顾页的业务闭环已完成语义回归；Public Restaurant share 也已进入统一 Restaurant Detail 主体，不需要重做 P0–P4 数据架构。
 9. `FoodDiningVisualLibrary` 已覆盖 Analysis / Poster 与克制的 Core 场景；Map 极远 cluster 已由纯数字圆点升级为稳定 Food/Dining visual + auxiliary count，正常/近距离 Restaurant 继续优先独立 Marker。
-10. Discovery 内容卡必须逐 mode 审计 rating 来源；“有一个分数”不等于语义正确。Activity rating 与 Restaurant aggregate rating 的混用属于 Function Migration Bug。
-11. Roulette 和 Premium badge 都存在历史视觉回退风险。两个模块必须以仓库历史、截图和既有资产作为证据，不得把当前样式直接认定为通过。
+10. Discovery / Community 内容卡已逐 mode 使用具体 Activity 的 optional rating；Restaurant aggregate rating 仅在统一 Restaurant Detail 中按样本展示，没有继续混用。
+11. Roulette 已从历史证据恢复真实 candidate/segment/result 一致的 Wheel；Premium 在 Profile、Premium 与状态入口继续复用同一枚已认可 Hamburger asset，没有被通用 Food/Dining library 重绘。
 
 ## 2. Evidence and method
 
@@ -91,6 +100,8 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 | S3 | 平台允许差异或仅需补充验证；不应重写架构 |
 
 ## 4. Full page audit matrix
+
+> 说明：本矩阵保留审计基线和当时的 severity，作为 before evidence。最终 PASS/remaining gate 请读取各 Module Report 与 [TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md](TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md)，不要把这里的历史 S1/S2 行误读为当前未修复项。
 
 | 页面 / 模块 | Web structure | iOS current structure | Missing / misplaced / interaction gap | Reuse problem | Severity | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -278,6 +289,6 @@ remote detail 必须验证：浏览不会创建本地 Restaurant；显式 WantTo
 
 ## 11. Audit disposition
 
-Audit 结论：**FAIL — implementation required**。
+审计基线结论：**FAIL — implementation was required**。
 
-不能以当前 Map/Discovery/Profile UI tests 已通过为由关闭 Product Parity；这些测试只证明上一轮指定结构存在，无法证明全页面 Web topology、remote/local Restaurant Detail 单一主体和跨入口一致性。本报告完成后将直接进入上述模块化修复，并为每个大模块独立 commit/push。
+最终处置：**PASS — Modules 1–9 completed**。该 PASS 仅表示本报告定义的 Web → iOS Product Parity、全局 Restaurant Detail 单一主体、Food & Dining Visual Language 与 Analytics/Poster 视觉恢复已经完成自动化和截图验收；它不代表 Production、App Store Connect、真实商店购买、最终硬件 smoke 或其他 Release Gate 已完成。完整证据与剩余事项见 [TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md](TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md)。

@@ -204,7 +204,10 @@ final class TasteMapUITests: XCTestCase {
 
         let controls = app.descendants(matching: .any)["map-home-compact-controls"]
         XCTAssertTrue(controls.waitForExistence(timeout: 8))
-        XCTAssertLessThanOrEqual(controls.frame.maxY, app.frame.height * 0.24)
+        // The final parity contract deliberately includes a visible top breathing
+        // area, centred title, mode controls, scope and one compact filter row.
+        // Keep this aligned with the dedicated light/dark compact-layout checks.
+        XCTAssertLessThanOrEqual(controls.frame.maxY, app.frame.height * 0.30)
         XCTAssertTrue(app.staticTexts["map-home-title"].exists)
         XCTAssertTrue(app.buttons["map-header-view-map"].isHittable)
         XCTAssertTrue(app.buttons["map-header-view-list"].isHittable)
@@ -1282,15 +1285,26 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["restaurant-edit-save"].tap()
 
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
-        let updatedPhone = app.staticTexts["+86 571 8765 4321"]
-        scrollUntilVisible(updatedPhone, in: app)
-        XCTAssertTrue(updatedPhone.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["杭州市上城区任务三新地址 88 号"].exists)
+        // Re-open the editor to verify the persisted model values directly.
+        // The read-only detail body is lazy, so one field can legitimately be
+        // removed from the accessibility tree while the other is on screen.
+        app.navigationBars["餐厅详情"].buttons["编辑"].tap()
+        XCTAssertTrue(app.navigationBars["编辑餐厅"].waitForExistence(timeout: 5))
+        let persistedAddress = app.textFields["restaurant-edit-address"]
+        let persistedPhone = app.textFields["restaurant-edit-phone"]
+        XCTAssertTrue(persistedAddress.waitForExistence(timeout: 3))
+        XCTAssertTrue(persistedPhone.waitForExistence(timeout: 3))
+        XCTAssertEqual(persistedAddress.value as? String, "杭州市上城区任务三新地址 88 号")
+        XCTAssertEqual(persistedPhone.value as? String, "+86 571 8765 4321")
+        app.buttons["取消"].tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
 
         app.buttons["restaurant-detail-add-visit"].tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
         app.buttons["visit-editor-save"].tap()
-        XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
+        let visitedStatus = app.staticTexts["restaurant-status-visited"]
+        scrollTowardTopUntilReadable(visitedStatus, in: app)
+        XCTAssertTrue(visitedStatus.waitForExistence(timeout: 5))
         let visitCount = app.staticTexts["1 次"]
         scrollUntilVisible(visitCount, in: app)
         XCTAssertTrue(visitCount.waitForExistence(timeout: 3))
@@ -2919,6 +2933,27 @@ final class TasteMapUITests: XCTestCase {
     private func scrollUntilReadable(_ element: XCUIElement, in app: XCUIApplication) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.68))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.24))
+        let readableViewport = CGRect(
+            x: app.frame.minX,
+            y: app.frame.minY + 72,
+            width: app.frame.width,
+            height: max(1, app.frame.height - 164)
+        )
+
+        for _ in 0..<16 {
+            if element.exists, element.frame.intersects(readableViewport) {
+                return
+            }
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+    }
+
+    /// Returns toward the beginning of a lazy detail body until a read-only
+    /// element is materialized and inside the visible viewport.
+    @MainActor
+    private func scrollTowardTopUntilReadable(_ element: XCUIElement, in app: XCUIApplication) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.26))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
         let readableViewport = CGRect(
             x: app.frame.minX,
             y: app.frame.minY + 72,
