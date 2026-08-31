@@ -222,8 +222,23 @@ struct RestaurantMapClusterPresentation: Equatable {
     let members: [RestaurantMapMarkerPresentation]
 
     var count: Int { members.count }
+    var visualKind: FoodDiningVisualKind {
+        let seed = members.map { $0.id.uuidString.lowercased() }.sorted().joined(separator: "|")
+        return FoodDiningVisualLibrary.decorativeKind(stableSeed: seed)
+    }
     var expansionTarget: RestaurantMapCameraTarget {
         RestaurantMapCameraPolicy.target(for: members)
+    }
+}
+
+enum RestaurantMapClusteringPolicy {
+    /// Normal neighbourhood browsing keeps every Restaurant independent. Only
+    /// a city/region-scale camera can opt into Food/Dining clusters.
+    static let minimumFarSpan = 0.18
+
+    static func allowsClustering(latitudeDelta: Double, longitudeDelta: Double) -> Bool {
+        guard latitudeDelta.isFinite, longitudeDelta.isFinite else { return false }
+        return max(latitudeDelta, longitudeDelta) >= minimumFarSpan
     }
 }
 

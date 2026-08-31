@@ -460,7 +460,15 @@ private struct PublicContentPhotoTile: View {
                 LinearGradient(
                     colors: [Color.accentColor.opacity(0.15), .orange.opacity(0.12)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
-                ).overlay(Text(restaurant.markerEmoji).font(.system(size: 42)))
+                ).overlay {
+                    FoodDiningVisualIcon(
+                        kind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
+                        usage: .decorative,
+                        size: 48,
+                        foregroundColor: TasteMapCoreTheme.brandDeep,
+                        backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -501,7 +509,15 @@ struct PublicContentThumbnail: View {
         LinearGradient(
             colors: [Color.accentColor.opacity(0.15), .orange.opacity(0.12)],
             startPoint: .topLeading, endPoint: .bottomTrailing
-        ).overlay(Text(restaurant.markerEmoji).font(.system(size: 54)))
+        ).overlay {
+            FoodDiningVisualIcon(
+                kind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
+                usage: .decorative,
+                size: 62,
+                foregroundColor: TasteMapCoreTheme.brandDeep,
+                backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
+            )
+        }
     }
 }
 

@@ -57,6 +57,25 @@ struct Task09PublicSharingTests {
         #expect(PublicShareRoute.shareID(from: URL(string: "https://api-dev.tastemap.cn/api/public/shares/12345678901234567890123456789012")!) == nil)
     }
 
+    @Test("A public Restaurant share projects into the standard detail identity")
+    func restaurantShareDetailProjection() {
+        let shared = PublicRestaurantShareV1(
+            shareId: "12345678901234567890123456789012",
+            name: "公开餐厅",
+            address: "湖滨路 8 号",
+            city: "杭州",
+            cuisines: ["杭帮菜"],
+            pricePerPerson: 168,
+            merchantImageUrl: nil
+        )
+        let identity = shared.restaurantDetailIdentity
+        #expect(identity.name == "公开餐厅")
+        #expect(identity.address == "湖滨路 8 号")
+        #expect(identity.city == "杭州")
+        #expect(identity.status == nil)
+        #expect(RestaurantDetailEntrySource.share.rawValue == "share")
+    }
+
     @Test("unsupported versions and malformed IDs fail closed")
     func failures() async {
         let configuration = URLSessionConfiguration.ephemeral

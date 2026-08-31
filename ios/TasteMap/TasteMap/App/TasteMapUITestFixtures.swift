@@ -38,6 +38,7 @@ enum TasteMapUITestFixtures {
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
     static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
     static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
+    static let module8MapClusterEnvironmentKey = "TASTEMAP_MODULE8_MAP_CLUSTER_UI_TEST"
     static let f3ADetailEnvironmentKey = "TASTEMAP_F3A_DETAIL_UI_TEST"
     static let onThisDayEnvironmentKey = "TASTEMAP_F7A_ON_THIS_DAY_UI_TEST"
     static let coreParityInitialTabEnvironmentKey = "TASTEMAP_CORE_PARITY_INITIAL_TAB"
@@ -73,6 +74,10 @@ enum TasteMapUITestFixtures {
 
     static var usesF2BFiltersFixture: Bool {
         ProcessInfo.processInfo.environment[f2BFiltersEnvironmentKey] == "1"
+    }
+
+    static var usesModule8MapClusterFixture: Bool {
+        ProcessInfo.processInfo.environment[module8MapClusterEnvironmentKey] == "1"
     }
 
     static var usesRestaurantAcquisitionFixture: Bool {
@@ -198,6 +203,7 @@ enum TasteMapUITestFixtures {
             || usesRestaurantRouletteFixture
             || usesF2ABrowsingFixture
             || usesF2BFiltersFixture
+            || usesModule8MapClusterFixture
             || usesOnThisDayFixture
     }
 
@@ -663,6 +669,50 @@ enum TasteMapUITestFixtures {
             restaurantId: recentID,
             visitId: firstVisit.id,
             dishId: dish.id,
+            syncStatus: .synced
+        ))
+        try context.save()
+    }
+
+    /// A deterministic, development-only fixture that proves the far-zoom map
+    /// uses a dining visual with a secondary count badge while close browsing
+    /// continues to render individual restaurant markers.
+    static func insertModule8MapClusterFixture(into container: ModelContainer) throws {
+        guard usesModule8MapClusterFixture else { return }
+        let context = container.mainContext
+        let baseLatitude = 30.2741
+        let baseLongitude = 120.1551
+
+        for index in 0..<18 {
+            let row = index / 6
+            let column = index % 6
+            context.insert(Restaurant(
+                id: uuid(18_000 + index),
+                name: "餐饮视觉聚合样本 \(index + 1)",
+                address: "杭州聚合样本 \(index + 1) 号",
+                latitude: baseLatitude + Double(row) * 0.00035,
+                longitude: baseLongitude + Double(column) * 0.00035,
+                city: "杭州",
+                status: .visited,
+                createdAt: Date(timeIntervalSince1970: 1_788_100_000 + Double(index)),
+                updatedAt: Date(timeIntervalSince1970: 1_788_100_000 + Double(index)),
+                syncStatus: .synced
+            ))
+        }
+
+        // A distant visited restaurant forces the initial fitted region into
+        // the explicit far-zoom clustering policy without changing production
+        // camera behavior.
+        context.insert(Restaurant(
+            id: uuid(18_100),
+            name: "上海远距离样本",
+            address: "上海市静安区",
+            latitude: 31.2304,
+            longitude: 121.4737,
+            city: "上海",
+            status: .visited,
+            createdAt: Date(timeIntervalSince1970: 1_788_100_100),
+            updatedAt: Date(timeIntervalSince1970: 1_788_100_100),
             syncStatus: .synced
         ))
         try context.save()

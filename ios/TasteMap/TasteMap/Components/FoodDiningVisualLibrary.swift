@@ -11,7 +11,7 @@ enum FoodDiningVisualUsage: Sendable {
     case dataLinked
 }
 
-enum FoodDiningVisualKind: String, CaseIterable, Sendable {
+enum FoodDiningVisualKind: String, CaseIterable, Equatable, Hashable, Sendable {
     case genericDining
     case food
     case drink
@@ -78,25 +78,33 @@ enum FoodDiningVisualKind: String, CaseIterable, Sendable {
 }
 
 enum FoodDiningVisualLibrary {
+    /// The bounded Core App decorative set. These visuals deliberately avoid
+    /// claiming a cuisine preference and are selected with a stable seed.
+    static let decorativeCoreKinds: [FoodDiningVisualKind] = [
+        .genericDining, .drink, .tableware, .menu, .takeaway, .receipt,
+    ]
+
     /// Maps stable product semantics first, then legacy presentation symbols.
     /// Legacy emoji remain accepted as input while older analysis payloads are
     /// migrated; they are never rendered directly by the formal UI.
     static func kind(semanticID: String? = nil, legacySymbol: String? = nil) -> FoodDiningVisualKind {
         let normalizedID = semanticID?.lowercased() ?? ""
 
-        if normalizedID.contains("spend") || normalizedID.contains("expense") || normalizedID.contains("receipt") {
+        if normalizedID.contains("spend") || normalizedID.contains("expense") || normalizedID.contains("receipt")
+            || normalizedID.contains("消费") || normalizedID.contains("账单") {
             return .receipt
         }
-        if normalizedID.contains("rating") || normalizedID.contains("favorite") {
+        if normalizedID.contains("rating") || normalizedID.contains("favorite") || normalizedID.contains("评分") {
             return .rating
         }
-        if normalizedID.contains("repeat") || normalizedID.contains("return") {
+        if normalizedID.contains("repeat") || normalizedID.contains("return") || normalizedID.contains("回头") {
             return .repeatVisit
         }
-        if normalizedID.contains("companion") || normalizedID.contains("friend") || normalizedID.contains("together") {
+        if normalizedID.contains("companion") || normalizedID.contains("friend") || normalizedID.contains("together")
+            || normalizedID.contains("饭搭子") {
             return .sharedMeal
         }
-        if normalizedID.contains("restaurant") || normalizedID.contains("place") {
+        if normalizedID.contains("restaurant") || normalizedID.contains("place") || normalizedID.contains("餐厅") {
             return .restaurant
         }
         if normalizedID.contains("photo") || normalizedID.contains("image") {
@@ -108,10 +116,13 @@ enum FoodDiningVisualLibrary {
         if normalizedID.contains("time") || normalizedID.contains("evening") {
             return .time
         }
-        if normalizedID.contains("date") || normalizedID.contains("calendar") || normalizedID.contains("recent") {
+        if normalizedID.contains("date") || normalizedID.contains("calendar") || normalizedID.contains("recent")
+            || normalizedID.contains("月回顾") || normalizedID.contains("年度回顾")
+            || normalizedID.contains("那年今日") {
             return .calendar
         }
-        if normalizedID.contains("source") || normalizedID.contains("discover") {
+        if normalizedID.contains("source") || normalizedID.contains("discover")
+            || normalizedID.contains("种草") || normalizedID.contains("推荐来源") {
             return .discovery
         }
         if normalizedID.contains("trend") || normalizedID.contains("change") {
@@ -120,7 +131,12 @@ enum FoodDiningVisualLibrary {
         if normalizedID.contains("visit") {
             return .tableware
         }
-        if normalizedID.contains("food") || normalizedID.contains("cuisine") || normalizedID.contains("taste") {
+        if normalizedID.contains("menu") || normalizedID.contains("list")
+            || normalizedID.contains("食单") || normalizedID.contains("榜单") {
+            return .menu
+        }
+        if normalizedID.contains("food") || normalizedID.contains("cuisine") || normalizedID.contains("taste")
+            || normalizedID.contains("口味") || normalizedID.contains("吃什么") {
             return .food
         }
 
@@ -141,6 +157,17 @@ enum FoodDiningVisualLibrary {
         case "📈": return .trend
         default: return .genericDining
         }
+    }
+
+    /// Stable across process launches; unlike Swift's randomized `hashValue`,
+    /// this mapping will not make a cluster change icon after every render.
+    static func decorativeKind(stableSeed: String) -> FoodDiningVisualKind {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in stableSeed.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return decorativeCoreKinds[Int(hash % UInt64(decorativeCoreKinds.count))]
     }
 }
 

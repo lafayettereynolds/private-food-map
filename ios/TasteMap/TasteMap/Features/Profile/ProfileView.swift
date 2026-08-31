@@ -822,11 +822,13 @@ private struct ProfileDashboardTile: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(emoji)
-                .font(.title3)
-                .frame(width: 38, height: 38)
-                .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .accessibilityHidden(true)
+            FoodDiningVisualIcon(
+                kind: FoodDiningVisualLibrary.kind(semanticID: title, legacySymbol: emoji),
+                usage: .decorative,
+                size: 38,
+                foregroundColor: TasteMapCoreTheme.brandDeep,
+                backgroundColor: tint
+            )
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline.bold())
@@ -861,10 +863,13 @@ private struct ProfileCompactTile: View {
 
     var body: some View {
         VStack(spacing: 7) {
-            Text(emoji)
-                .font(.title3)
-                .frame(width: 36, height: 36)
-                .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            FoodDiningVisualIcon(
+                kind: FoodDiningVisualLibrary.kind(semanticID: title, legacySymbol: emoji),
+                usage: .decorative,
+                size: 36,
+                foregroundColor: TasteMapCoreTheme.brandDeep,
+                backgroundColor: tint
+            )
             Text(title)
                 .font(.caption.bold())
                 .foregroundStyle(.primary)
@@ -889,10 +894,13 @@ private struct ProfileCompactRow: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            Text(emoji)
-                .font(.body)
-                .frame(width: 34, height: 34)
-                .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 10))
+            FoodDiningVisualIcon(
+                kind: FoodDiningVisualLibrary.kind(semanticID: title, legacySymbol: emoji),
+                usage: .decorative,
+                size: 34,
+                foregroundColor: TasteMapCoreTheme.brandDeep,
+                backgroundColor: TasteMapCoreTheme.brandSoft
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                 Text(detail).font(.caption2).foregroundStyle(.secondary)

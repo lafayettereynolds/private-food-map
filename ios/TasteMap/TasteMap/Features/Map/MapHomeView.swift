@@ -32,7 +32,7 @@ struct MapHomeView: View {
     @State private var mapReloadID = UUID()
     @State private var mapRenderState: RestaurantMapRenderState = .loading
 
-    private let compactControlsHeight: CGFloat = 148
+    private let compactControlsHeight: CGFloat = 190
 
     private var scopedPhotos: [PhotoAsset] {
         photos.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
@@ -196,21 +196,20 @@ struct MapHomeView: View {
             Text("我的地图")
                 .font(.title2.weight(.bold))
                 .foregroundStyle(TasteMapCoreTheme.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("map-home-title")
 
-            HStack(spacing: 8) {
-                TasteMapSegmentedControl(
-                    selection: $selectedSegment,
-                    items: RestaurantBrowseSegment.allCases.map {
-                        .init($0, title: $0.title, systemImage: $0.systemImage)
-                    },
-                    accessibilityIdentifier: "map-content-segment"
-                )
+            mapListModeControl
+                .frame(maxWidth: .infinity, alignment: .center)
 
-                mapListModeControl
-            }
+            TasteMapSegmentedControl(
+                selection: $selectedSegment,
+                items: RestaurantBrowseSegment.allCases.map {
+                    .init($0, title: $0.title, systemImage: $0.systemImage)
+                },
+                accessibilityIdentifier: "map-content-segment"
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
@@ -243,6 +242,7 @@ struct MapHomeView: View {
                             ? "评分"
                             : filterState.ratingBands.sorted { $0.rawValue > $1.rawValue }
                                 .map(\.title).joined(separator: "、"),
+                        systemImage: MapFilterChipSemantic.rating.systemImage,
                         isActive: !filterState.ratingBands.isEmpty,
                         identifier: "map-filter-chip-rating"
                     )
@@ -250,17 +250,20 @@ struct MapHomeView: View {
                     if filterState.appliesVisitScopedFilters {
                         filterSummaryChip(
                             title: filterState.priceRange?.title ?? "消费",
+                            systemImage: MapFilterChipSemantic.price.systemImage,
                             isActive: filterState.priceRange != nil,
                             identifier: "map-filter-chip-price"
                         )
                         filterSummaryChip(
                             title: filterState.visitCount.map { "到访 \($0.title)" } ?? "到访次数",
+                            systemImage: MapFilterChipSemantic.visits.systemImage,
                             isActive: filterState.visitCount != nil,
                             identifier: "map-filter-chip-visits"
                         )
                         if !options.companions.isEmpty {
                             filterSummaryChip(
                                 title: selectedOptionTitle(id: filterState.companionID, in: options.companions) ?? "饭搭子",
+                                systemImage: MapFilterChipSemantic.companion.systemImage,
                                 isActive: filterState.companionID != nil,
                                 identifier: "map-filter-chip-companion"
                             )
@@ -268,6 +271,7 @@ struct MapHomeView: View {
                         if !options.sources.isEmpty {
                             filterSummaryChip(
                                 title: selectedOptionTitle(id: filterState.sourceID, in: options.sources) ?? "推荐来源",
+                                systemImage: MapFilterChipSemantic.source.systemImage,
                                 isActive: filterState.sourceID != nil,
                                 identifier: "map-filter-chip-source"
                             )
@@ -311,7 +315,7 @@ struct MapHomeView: View {
             .accessibilityIdentifier("map-filter-chip-strip")
         }
         .padding(.horizontal, 12)
-        .padding(.top, 14)
+        .padding(.top, 18)
         .padding(.bottom, 8)
         .background(TasteMapCoreTheme.page.opacity(0.97))
         .accessibilityElement(children: .contain)
@@ -390,7 +394,12 @@ struct MapHomeView: View {
     @ViewBuilder
     private func cityChip(options: PersonalRestaurantFilterOptions) -> some View {
         if options.cities.isEmpty {
-            filterSummaryChip(title: "城市", isActive: false, identifier: "map-filter-chip-city")
+            filterSummaryChip(
+                title: "城市",
+                systemImage: MapFilterChipSemantic.city.systemImage,
+                isActive: false,
+                identifier: "map-filter-chip-city"
+            )
         } else {
             Menu {
                 Button {
@@ -408,18 +417,25 @@ struct MapHomeView: View {
                     }
                 }
             } label: {
-                Label(filterState.city ?? "城市", systemImage: "mappin.and.ellipse")
+                Label(filterState.city ?? "城市", systemImage: MapFilterChipSemantic.city.systemImage)
             }
             .tasteMapFilterChipStyle(isActive: filterState.city != nil)
             .accessibilityIdentifier("map-filter-chip-city")
         }
     }
 
-    private func filterSummaryChip(title: String, isActive: Bool, identifier: String) -> some View {
+    private func filterSummaryChip(
+        title: String,
+        systemImage: String,
+        isActive: Bool,
+        identifier: String
+    ) -> some View {
         Button {
             isShowingFilters = true
         } label: {
             HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.semibold))
                 Text(title).lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
@@ -509,9 +525,17 @@ struct MapHomeView: View {
                 .accessibilityIdentifier("restaurant-map-error")
             } else if items.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: activeFilterCount > 0 ? "line.3.horizontal.decrease.circle" : "fork.knife.circle")
-                        .font(.title2)
-                        .foregroundStyle(Color.accentColor)
+                    if activeFilterCount > 0 && hasUnfilteredItems {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                    } else {
+                        FoodDiningVisualIcon(
+                            kind: .genericDining,
+                            usage: .decorative,
+                            size: 44
+                        )
+                    }
                     Text(activeFilterCount > 0 && hasUnfilteredItems ? "当前无符合条件的餐厅" : selectedSegment.emptyTitle)
                         .font(.headline)
                     Text(activeFilterCount > 0 && hasUnfilteredItems ? "可以清除筛选，重新查看你的餐厅。" : selectedSegment.emptyMessage)
@@ -671,6 +695,36 @@ struct MapHomeView: View {
             }
         }
         .padding(.bottom, 12)
+    }
+}
+
+/// Testable semantic contract for the chips shown together in the Map header.
+/// Every data dimension in this group has an icon; city intentionally uses a
+/// building symbol because it is a city filter, not current GPS location.
+enum MapHomeControlLayer: String, CaseIterable, Sendable {
+    case title
+    case displayMode
+    case restaurantScope
+    case filters
+}
+
+enum MapFilterChipSemantic: String, CaseIterable, Sendable {
+    case city
+    case rating
+    case price
+    case visits
+    case companion
+    case source
+
+    var systemImage: String {
+        switch self {
+        case .city: "building.2"
+        case .rating: FoodDiningVisualKind.rating.systemImageName
+        case .price: FoodDiningVisualKind.receipt.systemImageName
+        case .visits: FoodDiningVisualKind.tableware.systemImageName
+        case .companion: FoodDiningVisualKind.sharedMeal.systemImageName
+        case .source: FoodDiningVisualKind.discovery.systemImageName
+        }
     }
 }
 

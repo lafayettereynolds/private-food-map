@@ -810,7 +810,13 @@ private struct DiscoveryRestaurantCard: View {
                                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
                         Spacer()
-                        Text(card.restaurant.markerEmoji).font(.title3)
+                        FoodDiningVisualIcon(
+                            kind: FoodDiningVisualLibrary.kind(
+                                legacySymbol: card.restaurant.markerEmoji
+                            ),
+                            usage: .decorative,
+                            size: 34
+                        )
                     }
                 }
             }
@@ -920,7 +926,15 @@ struct DiscoveryRestaurantImage: View {
     private var placeholder: some View {
         LinearGradient(colors: [Color.accentColor.opacity(0.16), .orange.opacity(0.12)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
-            .overlay(Text(restaurant.markerEmoji).font(.system(size: 56)))
+            .overlay {
+                FoodDiningVisualIcon(
+                    kind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
+                    usage: .decorative,
+                    size: 64,
+                    foregroundColor: TasteMapCoreTheme.brandDeep,
+                    backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
+                )
+            }
     }
 }
 

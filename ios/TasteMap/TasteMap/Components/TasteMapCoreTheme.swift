@@ -236,6 +236,8 @@ struct TasteMapSegmentedControl<Option: Hashable>: View {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(TasteMapCoreTheme.border.opacity(0.72))
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-segment")
     }
 }
 

@@ -893,7 +893,15 @@ struct RestaurantListCoverGrid: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
         } else if places.isEmpty {
             LinearGradient(colors: [Color.accentColor.opacity(0.16), .orange.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(Text("🍽️").font(.system(size: 54)))
+                .overlay {
+                    FoodDiningVisualIcon(
+                        kind: .menu,
+                        usage: .decorative,
+                        size: 58,
+                        foregroundColor: TasteMapCoreTheme.brandDeep,
+                        backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
+                    )
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 18))
         } else {
             PublicListPreviewGrid(
@@ -955,7 +963,17 @@ private struct RestaurantListPhotoIDImage: View {
 
     private var placeholder: some View {
         LinearGradient(colors: [Color.accentColor.opacity(0.18), .orange.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            .overlay(Text(fallbackEmoji.isEmpty ? "🍽️" : fallbackEmoji).font(.system(size: 34)))
+            .overlay {
+                FoodDiningVisualIcon(
+                    kind: FoodDiningVisualLibrary.kind(
+                        legacySymbol: fallbackEmoji.isEmpty ? nil : fallbackEmoji
+                    ),
+                    usage: .decorative,
+                    size: 42,
+                    foregroundColor: TasteMapCoreTheme.brandDeep,
+                    backgroundColor: TasteMapCoreTheme.surface.opacity(0.8)
+                )
+            }
     }
 }
 

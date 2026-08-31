@@ -101,14 +101,27 @@ final class TasteMapUITests: XCTestCase {
         let controls = app.descendants(matching: .any)["map-home-compact-controls"]
         let visitedTab = segmentedOption("去过", in: app)
         let listMode = app.buttons["map-header-view-list"]
+        let modeControl = app.descendants(matching: .any)["map-list-mode-control"]
+        let scopeControl = app.descendants(matching: .any)["map-content-segment"]
+        let filterStrip = app.descendants(matching: .any)["map-filter-chip-strip"]
+        let title = app.staticTexts["map-home-title"]
         XCTAssertTrue(map.waitForExistence(timeout: 8))
         XCTAssertTrue(controls.waitForExistence(timeout: 5))
         XCTAssertTrue(visitedTab.exists)
         XCTAssertTrue(listMode.exists)
-        XCTAssertTrue(app.staticTexts["map-home-title"].exists)
-        XCTAssertEqual(app.staticTexts["map-home-title"].label, "我的地图")
-        XCTAssertTrue(app.descendants(matching: .any)["map-list-mode-control"].exists)
-        XCTAssertLessThanOrEqual(controls.frame.maxY, app.frame.height * 0.24)
+        XCTAssertTrue(title.exists)
+        XCTAssertEqual(title.label, "我的地图")
+        XCTAssertTrue(modeControl.exists)
+        XCTAssertTrue(scopeControl.exists)
+        XCTAssertTrue(filterStrip.exists)
+        XCTAssertEqual(title.frame.midX, app.frame.midX, accuracy: 6)
+        XCTAssertLessThan(title.frame.maxY, modeControl.frame.minY)
+        XCTAssertLessThan(modeControl.frame.maxY, scopeControl.frame.minY)
+        XCTAssertLessThan(scopeControl.frame.maxY, filterStrip.frame.minY)
+        // The restored hierarchy intentionally gives the centered title its own
+        // breathing room above three independent compact control rows. Keep the
+        // complete header bounded to the upper 30% while the map remains full-bleed.
+        XCTAssertLessThanOrEqual(controls.frame.maxY, app.frame.height * 0.30)
         XCTAssertGreaterThan(map.frame.height, app.frame.height * 0.72)
         XCTAssertLessThan(listMode.frame.minY, controls.frame.maxY)
 
@@ -148,6 +161,21 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testModule8FarMapUsesFoodDiningCluster() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_MODULE8_MAP_CLUSTER_UI_TEST": "1"]
+        app.launch()
+
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 8))
+        let cluster = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "restaurant-map-cluster-")
+        ).firstMatch
+        XCTAssertTrue(cluster.waitForExistence(timeout: 8))
+        XCTAssertTrue(cluster.label.contains("餐饮聚合"))
+        keepScreenshot(named: "Module 8 Food Dining Cluster After", of: app)
+    }
+
+    @MainActor
     func testTask04DarkLayoutKeepsCompactMapControls() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleInterfaceStyle", "Dark"]
@@ -158,7 +186,7 @@ final class TasteMapUITests: XCTestCase {
         let controls = app.descendants(matching: .any)["map-home-compact-controls"]
         XCTAssertTrue(map.waitForExistence(timeout: 8))
         XCTAssertTrue(controls.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(controls.frame.maxY, app.frame.height * 0.24)
+        XCTAssertLessThanOrEqual(controls.frame.maxY, app.frame.height * 0.30)
         XCTAssertGreaterThan(map.frame.height, app.frame.height * 0.72)
         XCTAssertTrue(app.buttons["addRestaurantButton"].isHittable)
         keepScreenshot(named: "Task 04 Map Dark After", of: app)

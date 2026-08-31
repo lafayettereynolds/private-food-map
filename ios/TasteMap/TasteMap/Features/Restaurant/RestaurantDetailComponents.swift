@@ -28,6 +28,13 @@ struct RestaurantDetailIdentityPresentation: Equatable {
         case .visited: status = .visited
         }
     }
+
+    init(name: String, address: String, city: String, status: RestaurantStatus? = nil) {
+        self.name = name
+        self.address = address
+        self.city = city
+        self.status = status
+    }
 }
 
 struct RestaurantDetailHeader: View {
@@ -361,9 +368,13 @@ private struct RestaurantPhotoFallback: View {
 
     private var brandFallback: some View {
         VStack(spacing: 10) {
-            Text(markerEmoji)
-                .font(.system(size: 52))
-                .accessibilityHidden(true)
+            FoodDiningVisualIcon(
+                kind: FoodDiningVisualLibrary.kind(legacySymbol: markerEmoji),
+                usage: .decorative,
+                size: 62,
+                foregroundColor: TasteMapCoreTheme.brandDeep,
+                backgroundColor: TasteMapCoreTheme.brandSoft
+            )
             Text("Taste Map")
                 .font(.headline)
                 .foregroundStyle(.secondary)

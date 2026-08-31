@@ -176,6 +176,28 @@ struct MapBrowsingParityTests {
         let cluster = RestaurantMapClusterPresentation(members: members)
         #expect(cluster.count == 100)
         #expect(cluster.expansionTarget != .unchanged)
+        #expect(FoodDiningVisualLibrary.decorativeCoreKinds.contains(cluster.visualKind))
+        #expect(RestaurantMapClusterPresentation(members: Array(members.reversed())).visualKind == cluster.visualKind)
+    }
+
+    @Test("Clustering is limited to far camera spans")
+    func farZoomClusteringPolicy() {
+        #expect(!RestaurantMapClusteringPolicy.allowsClustering(
+            latitudeDelta: 0.04,
+            longitudeDelta: 0.04
+        ))
+        #expect(!RestaurantMapClusteringPolicy.allowsClustering(
+            latitudeDelta: 0.12,
+            longitudeDelta: 0.17
+        ))
+        #expect(RestaurantMapClusteringPolicy.allowsClustering(
+            latitudeDelta: 0.18,
+            longitudeDelta: 0.12
+        ))
+        #expect(!RestaurantMapClusteringPolicy.allowsClustering(
+            latitudeDelta: .nan,
+            longitudeDelta: 1
+        ))
     }
 
     @Test("One thousand marker presentations build without repeated global scans")

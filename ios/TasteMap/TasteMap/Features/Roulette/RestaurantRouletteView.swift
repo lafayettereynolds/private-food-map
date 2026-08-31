@@ -489,9 +489,14 @@ struct RestaurantRouletteExperienceView: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-                Text(candidate.markerEmoji)
-                    .font(.system(size: 70))
-                    .shadow(color: .white.opacity(0.8), radius: 12)
+                FoodDiningVisualIcon(
+                    kind: FoodDiningVisualLibrary.kind(legacySymbol: candidate.markerEmoji),
+                    usage: .decorative,
+                    size: 82,
+                    foregroundColor: RouletteTheme.brandDeep,
+                    backgroundColor: .white.opacity(0.76)
+                )
+                .shadow(color: .white.opacity(0.8), radius: 12)
             }
             .accessibilityLabel("餐厅暂无照片")
         }

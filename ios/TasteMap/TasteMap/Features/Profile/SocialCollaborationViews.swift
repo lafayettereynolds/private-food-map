@@ -114,7 +114,13 @@ struct SocialCollaborationInboxView: View {
     private func sharedMealRow(_ invitation: SharedMealInvitationV1, scope: SharedMealScopeV1) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
-                Text(invitation.restaurant.markerEmoji).font(.title2)
+                FoodDiningVisualIcon(
+                    kind: FoodDiningVisualLibrary.kind(
+                        legacySymbol: invitation.restaurant.markerEmoji
+                    ),
+                    usage: .decorative,
+                    size: 38
+                )
                 VStack(alignment: .leading, spacing: 3) {
                     Text(invitation.restaurant.name).font(.headline)
                     Text(invitation.restaurant.address).font(.caption).foregroundStyle(.secondary).lineLimit(2)
