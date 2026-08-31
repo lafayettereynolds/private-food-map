@@ -22,6 +22,33 @@ struct CoreProductLayoutParityTests {
         #expect(RestaurantBrowseSegment.allCases.map(\.title) == ["去过", "想吃", "适合你"])
     }
 
+    @Test("My Map control layers follow the confirmed independent hierarchy")
+    func mapControlHierarchy() {
+        #expect(MapHomeControlLayer.allCases == [
+            .title, .displayMode, .restaurantScope, .filters,
+        ])
+    }
+
+    @Test("Map filter chips use one semantic icon strategy and city is not GPS")
+    func mapFilterIconContract() {
+        let symbols = MapFilterChipSemantic.allCases.map(\.systemImage)
+        #expect(symbols.count == MapFilterChipSemantic.allCases.count)
+        #expect(symbols.allSatisfy { !$0.isEmpty })
+        #expect(MapFilterChipSemantic.city.systemImage == "building.2")
+        #expect(!MapFilterChipSemantic.city.systemImage.localizedCaseInsensitiveContains("location"))
+        #expect(!MapFilterChipSemantic.city.systemImage.localizedCaseInsensitiveContains("mappin"))
+    }
+
+    @Test("Core Food and Dining decorative selection is stable and bounded")
+    func stableCoreDiningVisuals() {
+        let seed = "cluster|restaurant-a|restaurant-b"
+        let first = FoodDiningVisualLibrary.decorativeKind(stableSeed: seed)
+        let repeated = FoodDiningVisualLibrary.decorativeKind(stableSeed: seed)
+        #expect(first == repeated)
+        #expect(FoodDiningVisualLibrary.decorativeCoreKinds.contains(first))
+        #expect(!FoodDiningVisualLibrary.decorativeCoreKinds.isEmpty)
+    }
+
     @Test("Profile dashboard statistics keep one shared horizontal data source")
     func profileStatisticsContract() {
         let statistics = ProfileBasicStatistics(

@@ -29,6 +29,7 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
     func updateUIView(_ mapView: MKMapView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.updateAnnotations(on: mapView)
+        context.coordinator.updateClustering(on: mapView)
         context.coordinator.applySelection(on: mapView)
         context.coordinator.fitIfRequested(on: mapView)
         context.coordinator.centerOnUserIfRequested(on: mapView)
@@ -139,7 +140,9 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
                     as? RestaurantClusterAnnotationView)
                     ?? RestaurantClusterAnnotationView(annotation: cluster, reuseIdentifier: identifier)
                 view.annotation = cluster
-                view.configure(count: cluster.memberAnnotations.count)
+                let members = cluster.memberAnnotations.compactMap { $0 as? RestaurantMapAnnotation }
+                    .map(\.presentation)
+                view.configure(RestaurantMapClusterPresentation(members: members))
                 return view
             }
             guard let restaurant = annotation as? RestaurantMapAnnotation else { return nil }
@@ -148,8 +151,12 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
                 as? RestaurantMarkerAnnotationView)
                 ?? RestaurantMarkerAnnotationView(annotation: restaurant, reuseIdentifier: identifier)
             view.annotation = restaurant
-            view.clusteringIdentifier = "taste-map-restaurants"
-            view.displayPriority = .defaultHigh
+            let clusteringAllowed = RestaurantMapClusteringPolicy.allowsClustering(
+                latitudeDelta: mapView.region.span.latitudeDelta,
+                longitudeDelta: mapView.region.span.longitudeDelta
+            )
+            view.clusteringIdentifier = clusteringAllowed ? "taste-map-restaurants" : nil
+            view.displayPriority = clusteringAllowed ? .defaultHigh : .required
             view.collisionMode = .circle
             configure(view, for: restaurant)
             return view
@@ -192,6 +199,7 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            updateClustering(on: mapView)
             guard isUserInteracting else { return }
             let stillInteracting = mapView.gestureRecognizers?.contains(where: {
                 $0.state == .began || $0.state == .changed
@@ -199,6 +207,20 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
             guard !stillInteracting else { return }
             isUserInteracting = false
             if hasDeferredFit { fitIfRequested(on: mapView) }
+        }
+
+        func updateClustering(on mapView: MKMapView) {
+            let allowsClustering = RestaurantMapClusteringPolicy.allowsClustering(
+                latitudeDelta: mapView.region.span.latitudeDelta,
+                longitudeDelta: mapView.region.span.longitudeDelta
+            )
+            for annotation in annotationsByID.values {
+                guard let view = mapView.view(for: annotation) as? RestaurantMarkerAnnotationView else {
+                    continue
+                }
+                view.clusteringIdentifier = allowsClustering ? "taste-map-restaurants" : nil
+                view.displayPriority = allowsClustering ? .defaultHigh : .required
+            }
         }
 
         func setRenderState(_ state: RestaurantMapRenderState) {
@@ -296,10 +318,10 @@ private extension RestaurantMapMarkerPresentation {
 private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     private let visualContainer = UIView()
     private let imageView = UIImageView()
-    private let emojiLabel = UILabel()
+    private let fallbackImageView = UIImageView()
     private let statusBadge = UIImageView()
     private var representedRestaurantID: UUID?
-    private var fallbackEmoji = "🍽️"
+    private var fallbackKind: FoodDiningVisualKind = .genericDining
     private var markerStatus: RestaurantMapMarkerStatus = .visited
     private var distanceKilometers: Double?
 
@@ -316,14 +338,14 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         visualContainer.backgroundColor = .secondarySystemBackground
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
-        emojiLabel.textAlignment = .center
-        emojiLabel.adjustsFontSizeToFitWidth = true
+        fallbackImageView.contentMode = .scaleAspectFit
+        fallbackImageView.tintColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
         statusBadge.contentMode = .center
         statusBadge.tintColor = .white
 
         addSubview(visualContainer)
         visualContainer.addSubview(imageView)
-        visualContainer.addSubview(emojiLabel)
+        visualContainer.addSubview(fallbackImageView)
         addSubview(statusBadge)
         isAccessibilityElement = true
     }
@@ -334,7 +356,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         super.prepareForReuse()
         representedRestaurantID = nil
         imageView.image = nil
-        emojiLabel.text = nil
+        fallbackImageView.image = nil
     }
 
     override var isSelected: Bool {
@@ -359,8 +381,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         visualContainer.layer.borderWidth = isSelected ? 4 : 3
         imageView.frame = visualContainer.bounds.insetBy(dx: 3, dy: 3)
         imageView.layer.cornerRadius = max(0, (diameter - 6) / 2)
-        emojiLabel.frame = visualContainer.bounds.insetBy(dx: 7, dy: 7)
-        emojiLabel.font = .systemFont(ofSize: isSelected ? 27 : 23)
+        fallbackImageView.frame = visualContainer.bounds.insetBy(dx: 10, dy: 10)
         statusBadge.frame = CGRect(x: diameter - 8, y: diameter - 10, width: 18, height: 18)
         statusBadge.layer.cornerRadius = 9
     }
@@ -369,9 +390,11 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         representedRestaurantID = marker.id
         markerStatus = marker.status
         distanceKilometers = marker.distanceKilometers
-        fallbackEmoji = {
-            if case let .emoji(value) = marker.visual { return value }
-            return "🍽️"
+        fallbackKind = {
+            if case let .emoji(value) = marker.visual {
+                return FoodDiningVisualLibrary.kind(legacySymbol: value)
+            }
+            return .genericDining
         }()
         visualContainer.layer.borderColor = statusColor(marker.status).cgColor
         statusBadge.backgroundColor = statusColor(marker.status)
@@ -380,7 +403,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .bold)
         )
         imageView.image = nil
-        emojiLabel.text = fallbackEmoji
+        showFallback()
         accessibilityIdentifier = "restaurant-map-marker-\(marker.id.uuidString)"
         let rating = marker.averageRating.map { String(format: "，评分 %.1f", $0) } ?? "，未评分"
         accessibilityLabel = "\(marker.name)，\(marker.status.accessibilityTitle)，\(marker.visitCount) 次到访\(rating)"
@@ -390,12 +413,16 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     func show(image: UIImage, for restaurantID: UUID) {
         guard representedRestaurantID == restaurantID else { return }
         imageView.image = image
-        emojiLabel.text = nil
+        fallbackImageView.isHidden = true
     }
 
     func showFallback() {
         imageView.image = nil
-        emojiLabel.text = fallbackEmoji
+        fallbackImageView.isHidden = false
+        fallbackImageView.image = UIImage(
+            systemName: fallbackKind.systemImageName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        )
     }
 
     private func statusColor(_ status: RestaurantMapMarkerStatus) -> UIColor {
@@ -417,36 +444,61 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
 
 @MainActor
 private final class RestaurantClusterAnnotationView: MKAnnotationView {
+    private let visualContainer = UIView()
+    private let visualImageView = UIImageView()
+    private let countBadge = UIView()
     private let countLabel = UILabel()
 
     override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 48, height: 48)
-        backgroundColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 0.94)
-        layer.cornerRadius = 24
-        layer.borderWidth = 3
-        layer.borderColor = UIColor.white.withAlphaComponent(0.9).cgColor
+        frame = CGRect(x: 0, y: 0, width: 58, height: 58)
+        backgroundColor = .clear
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.18
         layer.shadowRadius = 5
         layer.shadowOffset = CGSize(width: 0, height: 2)
         collisionMode = .circle
         displayPriority = .defaultHigh
-        countLabel.frame = bounds
+
+        visualContainer.frame = CGRect(x: 2, y: 2, width: 50, height: 50)
+        visualContainer.backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.96)
+        visualContainer.layer.cornerRadius = 25
+        visualContainer.layer.borderWidth = 3
+        visualContainer.layer.borderColor = UIColor.white.withAlphaComponent(0.92).cgColor
+        visualImageView.frame = visualContainer.bounds.insetBy(dx: 13, dy: 13)
+        visualImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        visualImageView.contentMode = .scaleAspectFit
+        visualImageView.tintColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
+        visualContainer.addSubview(visualImageView)
+        addSubview(visualContainer)
+
+        countBadge.frame = CGRect(x: 34, y: 34, width: 24, height: 20)
+        countBadge.backgroundColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
+        countBadge.layer.cornerRadius = 10
+        countBadge.layer.borderWidth = 2
+        countBadge.layer.borderColor = UIColor.white.cgColor
+        countLabel.frame = countBadge.bounds
         countLabel.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         countLabel.textAlignment = .center
         countLabel.textColor = .white
-        countLabel.font = .systemFont(ofSize: 15, weight: .bold)
-        addSubview(countLabel)
+        countLabel.adjustsFontSizeToFitWidth = true
+        countLabel.minimumScaleFactor = 0.7
+        countLabel.font = .systemFont(ofSize: 10, weight: .bold)
+        countBadge.addSubview(countLabel)
+        addSubview(countBadge)
         isAccessibilityElement = true
     }
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(count: Int) {
-        countLabel.text = String(count)
-        accessibilityLabel = "附近 \(count) 家餐厅"
-        accessibilityIdentifier = "restaurant-map-cluster-\(count)"
+    func configure(_ presentation: RestaurantMapClusterPresentation) {
+        visualImageView.image = UIImage(
+            systemName: presentation.visualKind.systemImageName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        )
+        countLabel.text = String(presentation.count)
+        accessibilityLabel = "餐饮聚合，附近 \(presentation.count) 家餐厅"
+        accessibilityIdentifier = "restaurant-map-cluster-\(presentation.count)"
     }
 }
 

@@ -377,11 +377,10 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
 }) {
   const [showFullAnalysis, setShowFullAnalysis] = useState(false)
   const wanted = item.viewerRestaurantStatus === 'wantToGo'
-  const score = item.restaurant.scoreOutOfTen ?? (item.visit.rating ? item.visit.rating * 2 : null)
+  const activityRating = item.visit.rating
   const selected = candidateRestaurantIds.includes(item.restaurant.id)
   const media = recommendationMedia(item)
   const fitLabel = recommendationFitLabel(item.recommendationFitLevel)
-  const publicRating = publicRatingPresentation(item.publicRating)
   const reasonFallback = item.recommendationReasons?.map((text) => ({ text })) ?? (item.recommendationReason ? [{ text: item.recommendationReason }] : [])
   const allReasons = dedupeRecommendationReasons([...(item.primaryReasons?.length ? item.primaryReasons : reasonFallback), ...(item.secondaryReasons ?? [])])
   const highValueReasons = allReasons.filter(isHighValueRecommendationReason)
@@ -404,8 +403,8 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
 
   return <article className={`community-card discovery-feed-card is-${mode}`} onClick={onOpen}>
     {mode !== 'for_you' ? <header><button className="user-avatar-small" onClick={(event) => stopAndRun(event, () => onViewProfile(item.user))} type="button"><UserAvatar alt="" avatarImageData={item.user.avatarImageData} avatarPhotoId={item.user.avatarPhotoId} avatarPresetId={item.user.avatarPresetId} membershipTier={item.user.membershipTier} /></button><button className="community-user-link" onClick={(event) => stopAndRun(event, () => onViewProfile(item.user))} type="button"><strong><span>{item.user.nickname}</span>{item.user.membershipTier === 'member' ? <PremiumBurgerBadge /> : null}</strong><time>{formatVisitDateTime(item.visit.visitedAt)}</time></button>{mode === 'similar' && item.similarity !== null && item.similarity !== undefined ? <span className="similarity-pill">口味相似 {item.similarity}%</span> : null}</header> : null}
-    <button className="community-restaurant" onClick={(event) => stopAndRun(event, onOpen)} type="button"><RestaurantAvatar restaurant={item.restaurant} /><div className="community-restaurant__body"><strong>{item.restaurant.name}</strong>{mode === 'for_you' && metadata.length ? <small>{metadata.join(' · ')}</small> : null}<span><MapPin size={12} /> {item.restaurant.city} · {item.restaurant.address}</span></div>{mode === 'for_you' ? <span className={`recommendation-fit-badge is-${item.recommendationFitLevel?.toLowerCase() ?? 'good_match'}`}>{fitLabel}</span> : score !== null ? <span className="community-score-orb" style={{ borderColor: scoreColor(score), color: scoreColor(score) }}>{score.toFixed(1)}</span> : null}</button>
-    {mode === 'for_you' && item.publicRating ? <div className={`recommendation-public-rating is-${publicRating.confidence}`}><span>大家评分</span><strong style={publicRating.value !== null ? { color: scoreColor(publicRating.value) } : undefined}>{publicRating.value === null ? '—' : publicRating.value.toFixed(1)}</strong><small>{publicRating.note}</small></div> : null}
+    <button className="community-restaurant" onClick={(event) => stopAndRun(event, onOpen)} type="button"><RestaurantAvatar restaurant={item.restaurant} /><div className="community-restaurant__body"><strong>{item.restaurant.name}</strong>{mode === 'for_you' && metadata.length ? <small>{metadata.join(' · ')}</small> : null}<span><MapPin size={12} /> {item.restaurant.city} · {item.restaurant.address}</span></div>{mode === 'for_you' ? <span className={`recommendation-fit-badge is-${item.recommendationFitLevel?.toLowerCase() ?? 'good_match'}`}>{fitLabel}</span> : <span className={`community-score-orb${activityRating === null ? ' is-unrated' : ''}`} style={activityRating !== null ? { borderColor: scoreColor(activityRating * 2), color: scoreColor(activityRating * 2) } : undefined}>{activityRating === null ? '未评分' : activityRating.toFixed(1)}</span>}</button>
+    {mode === 'for_you' ? <div className={`discovery-activity-rating${activityRating === null ? ' is-unrated' : ''}`}><span>这次到访</span><strong>{activityRating === null ? '未评分' : `${activityRating.toFixed(1)} ★`}</strong></div> : null}
     {media.length ? <button className={`community-media count-${media.length}`} aria-label={`查看 ${item.restaurant.name} 详情`} onClick={(event) => stopAndRun(event, onOpen)} type="button">{media.map((photo, index) => <SyncedImage alt={`${item.restaurant.name} 图片 ${index + 1}`} key={`${item.visit.id}-media-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</button> : null}
     {mode !== 'for_you' && item.visit.note ? <p className="community-note"><strong>笔记</strong>{item.visit.note}</p> : null}
     {mode === 'for_you' && primaryReasons.length ? <section className="recommendation-evidence"><strong>{evidenceTitle}</strong><ul>{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul>{cautionReason ? <div className="recommendation-evidence__caution"><strong>需要注意</strong><span>{cautionReason.text}</span></div> : null}<small>{recommendationEvidenceHint(item.recommendationConfidence)}</small>{canShowFullAnalysis ? <><button aria-expanded={showFullAnalysis} onClick={(event) => stopAndRun(event, () => setShowFullAnalysis((current) => !current))} type="button">查看完整分析 <ChevronDown className={showFullAnalysis ? 'is-open' : ''} size={15} /></button>{showFullAnalysis ? <ul className="recommendation-evidence__more">{secondaryReasons.map((reason, index) => <li key={`${reason.text}-detail-${index}`}>{reason.text}</li>)}</ul> : null}</> : null}</section> : primaryReasons.length ? <ul className="discovery-reasons">{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul> : null}
@@ -464,14 +463,6 @@ function recommendationEvidenceHint(confidence: CommunityVisit['recommendationCo
   if (confidence === 'high') return '基于较充分的历史记录与相关到访'
   if (confidence === 'medium') return '基于现有历史记录，证据仍在积累'
   return '当前相关记录较少，推荐仅供探索参考'
-}
-
-function publicRatingPresentation(rating: CommunityVisit['publicRating']) {
-  const sampleCount = rating?.sampleCount ?? 0
-  if (!sampleCount) return { value: null, note: '暂无评分', confidence: 'no-data' }
-  if (sampleCount < 5) return { value: null, note: `${sampleCount} 人 · 样本不足`, confidence: 'insufficient' }
-  if (sampleCount < 10) return { value: rating?.value ?? null, note: `${sampleCount} 人 · 样本较少`, confidence: 'low' }
-  return { value: rating?.value ?? null, note: `${sampleCount} 人`, confidence: 'normal' }
 }
 
 function recommendationMedia(item: FeedItem) {

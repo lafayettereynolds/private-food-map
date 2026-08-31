@@ -1,0 +1,294 @@
+# Taste Map｜Full Product Parity Audit
+
+审计日期：2026-08-30  
+审计基线：`main@510f3b4e72fce785154ab5517e79a6f78d11092c`  
+执行分支：`fix/full-product-parity-restoration`  
+审计对象：当前 React/Web 移动端与当前原生 iOS / SwiftUI App  
+审计标准：功能、交互、布局、页面结构、数据语义和组件复用必须同时成立；仅“能打开”或“已有类似功能”不算通过。
+
+## 0. Source-of-truth amendment｜2026-08-30
+
+Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖本报告初版中冲突的局部结论，并直接进入对应模块的验收合同：
+
+1. Map 顶部需要明确留白与标题「我的地图」；标题下使用紧凑的图标式「地图 / 列表」切换。旧结论中“只能使用右下浮动 Map/List 切换”的限制已废止。
+2. Map 的去过 / 想吃 / 适合你状态、筛选结果与 Map/List 必须继续共享同一个 projection；横向 compact chips 保留。
+3. Discovery 标题「发现」居中；关注 / 为你推荐 / 同味之选 / 最新 / 趋势等宽分布；筛选与 Map 使用同源视觉和交互 token。
+4. Profile 身份区展示关注 / 被关注；顶部业务统计改为去过 / 想去 / 总消费。统计必须复用真实 Web 口径对应的数据来源，不允许只替换标题。
+5. 自本修订起，每个页面先完成 Step A（Web 功能语义、数据来源、入口与状态审计），再完成 Step B（SwiftUI 布局/交互还原）。功能搬错按 parity bug 修复，不归为视觉差异。
+6. Analytics 是独立完整模块：口味档案、饭搭子、推荐来源、本月回顾、年度回顾及各自竖版分享海报必须恢复已经确认的 Analysis Theme。仅有普通卡片、统计列表或图表不算通过；先检查 Git 历史/现有分支中的既有实现并优先复用，不得凭感觉设计第三套。
+7. 全 App 建立统一 `Food & Dining Visual Language`：Food、Drink、Tableware、Receipt、Menu、Takeaway 与 Generic Dining 使用同一资产/组件系统。Core App 中只作为克制的辅助视觉；Analytics / Poster 中可以更突出。任何视觉必须标明是 Decorative 还是 Data-linked，后者只能来自真实数据。Premium 历史汉堡资产不受该系统覆盖。
+8. Discovery / Latest / Trending / Same Taste / Community 的 Visit/Activity 卡片必须显示该条 Activity 自己的 optional rating；不能用 Restaurant aggregate rating 冒充。只有进入统一 Restaurant Detail 后才展示我的/全部/好友/同味 Restaurant-level ratings 与样本数。
+9. Roulette 页面与 Wheel 本体需要先审计 Git 历史、旧截图、旧资产和已认可测试版；恢复已确认版本，不凭感觉创建第四套。Wheel segments 必须与真实 candidate pool 一一对应，禁止复制餐厅、placeholder segment 或视觉/结果集合不一致。
+10. Premium badge 必须恢复历史测试版已经认可的同一枚 hamburger asset，并在 Profile、Premium 与会员状态入口复用；禁止重新设计或出现第三种汉堡。
+11. Marker 规则按最新时间顺序合并：正常/近距离每家 Restaurant 优先独立 Marker；禁止纯数字 `38 / 12 / 7` 气泡。只有极远缩放才允许 `Food/Dining visual + auxiliary count` 的稳定聚合；这覆盖早期“任何层级绝不聚合”的要求，但不允许数字成为唯一主体。
+12. 全局 Icon / Label 规则：图标必须具有真实语义；同一层级组件组要么全部使用语义 icon，要么全部不用。City Filter 使用城市/建筑语义，不得用 GPS 图标冒充；定位图标只表示真实 current location。熟悉的系统动作可使用 icon-only，但必须有明确 accessibility label；筛选与数据维度需要时使用 icon + 短文字/当前值，禁止冗余长说明。
+
+该修订不会创建第二套 Map、Discovery 或 Profile；现有正式页面就地收口。
+
+### Module execution status
+
+- Module 1 Map / List：已完成并独立提交。
+- Module 2 Add Restaurant / Nearby：已完成并独立提交。
+- Module 3 Discovery / Community：已完成并独立提交。
+- 正式名称 override：`最佳饭搭子`、`谁最会种草` 已完成并独立提交。
+- Module 4 Profile / Public Profile / Premium badge：已完成；证据与测试见 [FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md](reports/FULL_PRODUCT_PARITY_MODULE_4_PROFILE_PUBLIC_PROFILE.md)。
+- Module 5 Global Restaurant Detail single source：已完成；本地与远程 projection 共用同一有序主体，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_5_GLOBAL_RESTAURANT_DETAIL.md](reports/FULL_PRODUCT_PARITY_MODULE_5_GLOBAL_RESTAURANT_DETAIL.md)。
+- Module 6 Roulette / 今天吃什么：已完成；候选池、可见扇区与抽取结果一一对应，已恢复 Web 已认可的真实餐厅 Wheel 视觉，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_6_ROULETTE.md](reports/FULL_PRODUCT_PARITY_MODULE_6_ROULETTE.md)。
+- Module 7 Analytics / 数据分析与分享海报：已完成；五类 analyzer 语义保持、已认可中心 Food Hero / 四周解析结构与五张独立 9:16 海报均完成回归，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_7_ANALYTICS.md](reports/FULL_PRODUCT_PARITY_MODULE_7_ANALYTICS.md)。
+- Module 8 Remaining Product Parity + Core App Food & Dining Visual Language：已完成；最新版「我的地图」四层 hierarchy、同级 filter icon、近距独立 Marker、极远餐饮视觉聚合、Core fallback 和公开分享详情均已收口，证据与测试见 [FULL_PRODUCT_PARITY_MODULE_8_REMAINING_CORE.md](reports/FULL_PRODUCT_PARITY_MODULE_8_REMAINING_CORE.md)。
+- Module 9 Final Full Product Parity Closure：已完成；全量 Web/Worker、iOS unit、关键 UI E2E、Debug/Release/device build 与最终差异处置见 [TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md](TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md)。
+
+### Final disposition amendment｜2026-08-31
+
+本文件第 4 节的逐页矩阵保留的是 `main@510f3b4` 审计基线及修复过程中的历史判断，便于追溯“为什么要改”；它不再代表 Modules 1–9 完成后的最终状态。最终处置以各模块报告和 Closure Report 为准：
+
+- 已知 Product Parity S0 blocker：0；
+- 已知 Product Parity S1 blocker：0；
+- Map/List、Add/Nearby、Discovery/Community、Profile/Public Profile、唯一 Restaurant Detail、Roulette、五类 Analytics/海报和 Remaining Core 均已按最终 override 收口；
+- 发布、Production、真实 App Store Connect 与最终真机 GPS/触觉/视觉 smoke 仍是独立 Release Gate，不能被 Product Parity 的 PASS 混同为发布完成。F1-C4 重复 Visit 风险已经由精确 fixture regression 覆盖并在最终组合代码上再次通过，现已关闭。
+
+## 1. Executive conclusion
+
+在审计基线时，iOS 已具备大部分数据和业务能力，但页面拓扑、部分功能语义、跨入口详情复用和已认可视觉出现明显回退。Modules 1–9 已完成对应修复；当前代码在本轮定义的 Product Parity 范围内达到 PASS，独立发布 Gate 仍按本报告和 Closure Report 诚实保留。
+
+最重要的结论：
+
+1. **Map 顶部产品结构已按最新决定完成重排**：独立居中「我的地图」标题、icon-only Map/List、去过 / 想吃 / 适合你和横向 compact chips 依次成层，仍共享同一 projection。
+2. **List 高信息密度结构已恢复**：标题/数量、搜索、筛选、紧凑餐厅行及三类快捷动作均在同一浏览上下文中，Map/List 状态保持同源。
+3. **Discovery 一级导航及数据语义已恢复正确**：关注 / 为你推荐 / 同味之选 / 最新 / 趋势均为同一级，没有错误的中间层；Activity optional rating 与 Restaurant aggregate rating 已分离，城市/筛选与 Map 共用紧凑交互语言。
+4. **Profile / Public Profile 拓扑和统计语义已经收口**：身份、关注/被关注、去过/想去/总消费、主要入口、回味、食单、洞察与 Settings 恢复为高密度 dashboard；统计继续读取真实 owner-scoped projection。
+5. **Add Restaurant / Nearby 已按 Web 功能语义和紧凑结构恢复**：Search、City、Apple Maps、AMap、URL、Nearby、Manual、WantToGo/Visited 和显式确认保持同一 acquisition flow；fresh-location、精度/时间、3 km 与距离排序有自动化覆盖。真实 GPS provider 结果仍保留一次最终真机 smoke，不以 fixture 冒充硬件验收。
+6. **Restaurant Detail 的 S0 结构问题已经在 Module 5 关闭**：本地 Restaurant 与远程公开 projection 现在共用 `RestaurantDetailStandardBody`，`entrySource` 只表达入口来源，不再决定主体 UI。
+7. **Restaurant Detail 固定顺序已经落地并可测试**：Hero → 城市/状态/名称/地址 → Actions → 人均/电话/营业时间/路线 → 评分参考 → 用户实拍 → 我的到访概览 → 到访历史；无值的 optional 字段不会制造假数据。
+8. Visit、Dish、Photo、Settings、Premium、分析页与回顾页的业务闭环已完成语义回归；Public Restaurant share 也已进入统一 Restaurant Detail 主体，不需要重做 P0–P4 数据架构。
+9. `FoodDiningVisualLibrary` 已覆盖 Analysis / Poster 与克制的 Core 场景；Map 极远 cluster 已由纯数字圆点升级为稳定 Food/Dining visual + auxiliary count，正常/近距离 Restaurant 继续优先独立 Marker。
+10. Discovery / Community 内容卡已逐 mode 使用具体 Activity 的 optional rating；Restaurant aggregate rating 仅在统一 Restaurant Detail 中按样本展示，没有继续混用。
+11. Roulette 已从历史证据恢复真实 candidate/segment/result 一致的 Wheel；Premium 在 Profile、Premium 与状态入口继续复用同一枚已认可 Hamburger asset，没有被通用 Food/Dining library 重绘。
+
+## 2. Evidence and method
+
+本报告不是沿用旧 Feature Parity 报告的状态结论，而是基于以下当前证据重新判断：
+
+- 实际启动当前 Web Vite mobile view（430 × 932），Development seed 共 76 家餐厅；
+- 实际读取 Web DOM 语义结构并操作 Map、List、Discovery、Profile、Add Restaurant、Restaurant Detail；
+- 在 iPhone 17 Pro Max Simulator 上运行当前 `main` 的 UI fixtures；
+- 当前 iOS UI test：`testCoreProductLayoutParityMapDiscoveryProfileEvidence` 通过；
+- 当前 iOS UI test：`testRestaurantAcquisitionNearbyRequiresExplicitWantToGoAction` 通过；
+- 当前 iOS UI test：`testTask04CoreLayoutParityEvidence` 通过；
+- 逐项扫描 `src/`、`ios/TasteMap/TasteMap/Features/`、导航入口、sheet、NavigationLink 与所有 Restaurant Detail 入口。
+
+代表性证据：
+
+| 页面 | Web reference | iOS current / before |
+| --- | --- | --- |
+| Map | [web-map-before.jpg](reports/full-product-parity-assets/web-map-before.jpg) | [ios-map-before.png](reports/full-product-parity-assets/ios-map-before.png) |
+| List | [web-list-before.jpg](reports/full-product-parity-assets/web-list-before.jpg) | [ios-list-before.png](reports/full-product-parity-assets/ios-list-before.png) |
+| Add Restaurant / Nearby | [web-add-restaurant-before.jpg](reports/full-product-parity-assets/web-add-restaurant-before.jpg) | [ios-add-restaurant-before.png](reports/full-product-parity-assets/ios-add-restaurant-before.png) |
+| Discovery | [web-discovery-before.jpg](reports/full-product-parity-assets/web-discovery-before.jpg) | [ios-discovery-before.png](reports/full-product-parity-assets/ios-discovery-before.png) |
+| Profile | [web-profile-before.jpg](reports/full-product-parity-assets/web-profile-before.jpg) | [ios-profile-before.png](reports/full-product-parity-assets/ios-profile-before.png) |
+| Restaurant Detail | [web-restaurant-detail-before.jpg](reports/full-product-parity-assets/web-restaurant-detail-before.jpg) | [ios-restaurant-detail-before.png](reports/full-product-parity-assets/ios-restaurant-detail-before.png) |
+
+限制说明：本地 Web 没有注入高德 Key，因此 Web Map 背景显示配置态；这不影响页面层级、控件位置、List/Profile/Detail 结构的审计。Discovery 的真实 Development API 在本地 Web 返回 500，因此该页数据卡细节同时以当前组件源码和 iOS deterministic fixture 校验，不能把本地 500 误判成 iOS 缺失。
+
+## 3. Severity definition
+
+| Severity | 含义 |
+| --- | --- |
+| S0 | 入口导致不同业务主体、数据/身份语义或核心页面结构不一致；必须重构后才能关闭 parity |
+| S1 | 页面核心信息架构、同级关系或关键交互形式错误；必须在本轮修复 |
+| S2 | 核心功能存在，但密度、位置、卡片尺寸、空态或局部交互与 Web 不一致；本轮调整 |
+| S3 | 平台允许差异或仅需补充验证；不应重写架构 |
+
+## 4. Full page audit matrix
+
+> 说明：本矩阵保留审计基线和当时的 severity，作为 before evidence。最终 PASS/remaining gate 请读取各 Module Report 与 [TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md](TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md)，不要把这里的历史 S1/S2 行误读为当前未修复项。
+
+| 页面 / 模块 | Web structure | iOS current structure | Missing / misplaced / interaction gap | Reuse problem | Severity | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| Map | 品牌头；去过/想吃/推荐；地图主体；筛选；底部添加餐厅；最新产品决定要求「我的地图」与图标式模式切换 | 去过/想吃/适合你；单排 chips；地图主体；右下查看列表；底部添加餐厅 | 需加入顶部留白和「我的地图」，把模式切换迁到标题下的紧凑图标组；保证 chips、active count、安全区和小屏 | Map/List 已共用 filter state | S1 | 按执行期最新决定重排现有唯一 Map 页面，不创建第二套页面 |
+| Personal List | MY TASTE MAP 标题、总数、分类计数、搜索、筛选、紧凑行、每行记录/想吃/抽签动作 | 顶部分类 + 搜索/chips + 紧凑餐厅行；浮动查看地图 | 缺列表上下文标题/数量；行内快捷动作缺失；地址/到访/评分虽有但层级不同 | 与 Map 共用数据，但行组件未复用 Web quick-action semantics | S1 | 重构 List header/row；使用标题下同一模式切换，不保留重复浮动切换 |
+| Map filters | Web 入口打开完整筛选，当前产品决定要求单排 compact chips + More | 已有城市/评分/消费/到访次数/饭搭子等横向 chips 和完整 sheet | 需核对菜系/更多、active 文案、计数、横向可达性；当前视觉 pill 偏高 | `PersonalRestaurantFilterState` 为单一状态，正确 | S2 | 调整 chip token 和覆盖测试，不改筛选引擎 |
+| Map markers / far zoom | 正常缩放每店独立 marker；最新 override 只允许极远距离 Food/Dining visual + count | 当前 clustering 在密集区域可能直接显示纯数字圆点 | 纯数字 cluster 是 visual regression；近距离不能过早聚合；极远聚合的 icon 必须稳定，count 只是 badge | clustering 与 marker visual 需要共享稳定 policy，不得页面临时决定 | S1 | 在 Food/Dining module 建立 zoom policy、stable seed、individual/spiderfy边界和无纯数字断言 |
+| Add Restaurant | 搜索餐厅 → 城市 → 搜索；粘贴链接；Nearby；Manual | 同一能力顺序，但以多个超大卡片/按钮纵向堆叠 | 首屏只能看到搜索、链接和一条 Nearby；信息密度低于 Web；确认页另起一步可接受 | 同一 `AddRestaurantView`，无第二套 acquisition | S2 | 压缩 section/header/row；保留显式确认 |
+| Nearby / GPS | 当前 GPS → 3 km provider query → 距离排序 → 紧凑结果 | fresh CLLocation validator、精度/时间校验、3 km filter、`CLLocation.distance`、foreground refresh | fixture 147 m 通过，但真实同坐标 provider 结果尚无本轮证据；Reduced Accuracy 必须诚实显示 | query center 已集中在 ViewModel | S1 | 不重写定位；新增同坐标与 stale/reduced/foreground regression，最终真机一次验收 |
+| Restaurant Search | Web 高德名称+城市；链接解析；无结果/错误 | Apple Maps 搜索 + AMap/link Worker；无结果/错误/重试 | provider 结果可不同；页面密度不同但功能语义完整 | acquisition flow 统一 | S3 | 仅布局收口与回归 |
+| Restaurant Detail — local | Hero；城市/状态；名称；地址；动作；人均/电话/营业时间/路线；四类评分；用户实拍；我的概览；历史 | Module 5 后使用 `RestaurantDetailStandardBody` 与固定 `RestaurantDetailSectionOrderContract` | 标准主体和相对顺序已恢复；扩展记录保留在标准主体之后 | local wrapper 只提供本地数据和 actions | PASS | 见 Module 5 报告；后续只做全局视觉 token 回归 |
+| Restaurant Detail — remote/public | 与 local 同一主体；无我的私有记录时显示安全空态；用户显式保存后才创建本地数据 | Module 5 后 remote projection 进入同一 `RestaurantDetailStandardBody` | 主体一致；缺失 optional 字段隐藏；打开不落本地；私有段落显示安全空态 | `DiscoveryRestaurantDestination` 仅为数据/导航适配器 | PASS | 见 Module 5 跨入口矩阵与截图 |
+| Visit create/edit | Web modal：餐厅、日期、评分、丰富上下文、Dish/Photo、保存 | SwiftUI editor：同字段、local-first、nullable、分组/Disclosure | 字段闭环完整；部分 section 顺序与 Web 不完全一致；系统 keyboard/sheet 差异允许 | create/edit 共用 `VisitEditorView` | S2 | 调整 section order/labels；不改模型或保存语义 |
+| Dish | Visit 内 Dish editor；可复用历史菜品、价格/评分/备注/图 | Dish manager sheet + reuse presentation | 功能完整；卡片密度和操作按钮层级需视觉核对 | 本地/详情统计共用 Dish model | S3 | 只做剩余布局与入口验证 |
+| Photo | Visit 照片选择、排序、上传状态、实拍展示 | PhotosPicker/local-first/upload/retry/gallery；Module 5 后详情中有固定用户实拍段落 | 上传业务完整；详情顺序问题已关闭；公开 projection 没有图片时保持诚实空态 | 本地/远程共用 `RestaurantUserPhotosSection` 容器，不改上传架构 | PASS | 后续仅在 Food & Dining / 全局 token 阶段做视觉回归 |
+| Discovery shell | DISCOVER/发现/描述；城市；关注/为你推荐/同味之选/最新/趋势；筛选 | 同一五个一级 tab；城市和筛选下一行 | 顶层 parity 已恢复；iOS 城市/筛选 pill 过大，卡片起点更低 | `DiscoverHubView` 已统一入口 | S2 | 收紧 header、pill 高度和间距；保持五个一级 tab |
+| For You / Same Taste / Trending | 推荐/Activity内容卡、理由、该条 Visit rating、动作、用户来源 | 大图大卡、理由/评分/动作存在，但 rating source 必须逐 mode 追踪 | 除密度外，任何使用 Restaurant aggregate rating 替代 Activity rating 的路径都是功能错误；无 rating 必须诚实显示未评分 | Card 共用，但详情点击进入 remote duplicate | S1 | 先修 rating projection/data contract，再调整密度，最后接唯一详情 |
+| Community following/latest | 同一 Discovery 一级 tab 下的动态 feed；头像、餐厅、内容、Activity rating、照片、点赞/评论/分享/动作 | 同一一级 tab，`CommunityFeedView` feed card | 信息能力完整；需确认 rating 是该 Activity；卡片视觉与 Discovery cards 有割裂；点击餐厅仍走 remote duplicate | feed 与 discovery 各有卡组件，详情应共享 | S1 | 先回归 Activity rating，再统一详情和共同 action tokens |
+| Profile / My header | 头像、用户名、加入时间、编辑/Premium；关注、粉丝、去过、想吃同级横排 | 大导航标题；大头像卡；统计为去过、到访、平均分、消费 | 社交统计被移出同级；统计语义不一致；头部高度约为 Web 两倍 | profile summary 和 social stats 未合成 Web topology | S1 | 重构 compact header 和同级统计，不改变 auth/profile service |
+| Profile primary actions | 今天吃什么 + 我的口味档案并排紧凑 | 两张大方卡并排 | 拓扑正确，尺寸/留白过大 | 已有统一 entry card | S2 | 收紧高度、icon和文案层级 |
+| Profile memories | 回味：本月/年度/那年今日横向同组 | 三列同组大卡 | 拓扑正确，尺寸偏大；小屏/长文字需保证横向可读 | 共用 section | S2 | 收紧并测试 Dynamic Type |
+| Profile lists / insights | 我的食单；发现与洞察；Settings 次级入口 | 我的食单/榜单/洞察/Settings 都存在，但当前截图首屏被大卡挤占 | 入口顺序基本正确；密度使发现与洞察下移过多 | 入口各自独立但无重复业务服务 | S2 | 收紧上半页并恢复 Web 一屏信息密度 |
+| Public Profile | 紧凑身份头、关系动作、公开统计、公开记录/想吃、公开食单 | 大头像纵向居中、动作、2 个统计、segmented、feed/list | 信息存在但拓扑明显重新组织；restaurant click 走 remote duplicate | 使用 `SocialPublicProfileView`，与本人 Profile tokens 未共享 | S1 | 复用 compact identity/stat components；详情接唯一组件 |
+| Social / Friends | 搜索、好友、请求、关注、隐私说明 | 原生 segmented destinations 与 API flow | 业务完整，NavigationStack/keyboard 为允许的平台差异 | 单一 social service | S3 | 仅核对顺序、空态、长用户名 |
+| Lists | Web dashboard card/grid、封面、榜单顺序/备注/visibility | native inset grouped List + cover + item rows + sheets | 功能完整；公开/本人列表布局更系统化，信息密度和卡片结构不完全一致 | local/public 两套 list screen合理；餐厅详情不应重复 | S2 | 保留系统编辑交互；统一封面/row tokens与 Restaurant Detail 路由 |
+| Roulette | 条件 → 候选 → 已认可 Wheel → 均匀抽签 → 结果 → 餐厅详情 | Module 6 后 active pool 最多 10 家；每家具名 Restaurant 对应且仅对应一个可见扇区，结果来自同一集合 | 已恢复照片/城市/真实评分、固定指针、中央 CTA、离线与重抽；120/1000 家库不再造成视觉/结果集合错位 | 单一 engine/view；详情进入全局唯一标准主体 | PASS | 见 Module 6 报告；最终只需真机触觉/动画 smoke |
+| Settings | Account/Data/Sync/Privacy/Permissions/Storage/Premium/Help/About | 原生 Settings navigation | 原生 List/Form 是允许差异；真实能力与隐藏未实现入口符合要求 | services 均复用现有实现 | S3 | 不重构；做入口/返回一致性验证 |
+| Premium / Paywall / badge | Web membership presentation/paywall；历史测试版有已认可 hamburger badge | StoreKit 2 abstraction + native paywall；当前汉堡存在视觉回退 | 正式 Product ID 仍是 release gate；本轮只恢复历史 badge，并保证所有入口同一 asset，不改 commerce | entitlement 单一；badge 必须单一 | S1 | Profile/Premium模块中搜索历史 asset/commit并恢复；不触碰 App Store配置 |
+| On This Day | Profile 回味入口 → 记忆列表/详情/分享 | native analyzer/view/poster | 入口与能力存在 | 餐厅点击为 local detail | S3 | 增加统一详情标识断言 |
+| Taste / Companion / Source / Monthly / Annual analytics | Web 统计语义与已确认的独立 Analysis Theme：中心食物、四周引导线/标签/卡片、代表餐厅图文、统一竖版海报 | Module 7 已恢复历史认可的暖白 Analysis palette、中心 Food Hero、四周解析、真实餐厅证据与五张独立 9:16 海报 | 偏好、价位、氛围、来源、饭搭子、评分、回头率、关键词、时间、消费和代表餐厅均继续来自 owner-scoped 真实数据；无数据不伪造 | 复用既有五类 analyzer、poster services 与 `codex/taste-analysis-visuals` 历史实现；新增唯一 `FoodDiningVisualLibrary`，没有第三套主题 | PASS | 见 Module 7 报告与十张 before/after 页面/海报证据；暖白主题保持在 Analysis，不扩散到 Core App |
+| Monthly / Annual recap | 回味入口 → recap → 代表餐厅 → 海报 | native equivalent | 主要能力完整；入口/详情一致性需回归 | local detail 共用 | S3 | cross-entry contract tests |
+| Share link landing | Web public route按 visibility返回公开投影 | `PublicRestaurantShareV1` 投影进入 `RestaurantDetailStandardBody` | 只显示 allowlisted public data；浏览不创建本地 Restaurant/Visit；个人信息以诚实空态呈现 | 与 Discovery remote 共用标准详情主体，`.share` 只表达入口 | PASS | 见 Module 8 报告与 public share projection regression |
+| Food & Dining visual language | 已确认的品牌覆盖范围包括 Map/cluster、空态、Profile、Lists、Roulette、Discovery、Community、Analytics/Poster 等；Core App 克制，Analysis 更大胆 | 唯一 `FoodDiningVisualLibrary` 已同时覆盖 Analysis/Poster 与高价值 Core fallback；近距独立 Marker，极远 cluster 为稳定 visual + auxiliary count | Decorative/Data-linked 使用边界明确；同场景 stable seed；Premium 历史汉堡继续排除于 library 重绘 | 单一 library，没有按页面创建新画风 | PASS | 见 Module 7/8 报告、近距/极远截图与稳定性测试 |
+
+## 5. Navigation and reusable component audit
+
+### 5.1 Correctly shared today
+
+- 本人 Map marker、Map list、Profile 去过/想吃、味觉足迹、Roulette、On This Day、月度/年度回顾、最佳饭搭子与谁最会种草中的**本地 Restaurant**，最终都调用 `RestaurantDetailView(restaurant:)`。
+- `VisitEditorView` 同时负责新增和编辑，不存在第二套保存逻辑。
+- Map/List 使用同一 `PersonalRestaurantFilterState` 和同一 browse snapshot。
+- Auth、Sync、Backup、Premium 均使用单一 service，不应在 parity 修复中重做。
+
+### 5.2 Duplicate or misleading reuse that must be removed
+
+1. `DiscoveryRestaurantDestination` 的重复主体已在 Module 5 删除；它现在只适配 local/remote 数据与导航，并进入同一个 `RestaurantDetailStandardBody`。
+2. `CommunityFeedView`、`SocialPublicProfileView`、`RestaurantListDetailView`、`PublicRestaurantListDetailView` 已接入同一主体和明确的 `RestaurantDetailEntrySource`。
+3. `CompanionRestaurantDetailSheet` 与 `RecommendationSourceRestaurantDetailSheet` 是允许存在的**导航 wrapper**，但应只负责 close/back，不得拥有详情主体。
+4. Restaurant Detail 已建立可测试的 `RestaurantDetailSectionOrderContract`；后续入口不得绕开该 contract。
+
+### 5.3 Target architecture
+
+目标不是把 remote Restaurant 偷偷保存为本地记录，而是建立一个全局唯一详情容器：
+
+```swift
+RestaurantDetailView(
+    restaurant: RestaurantDetailSource,
+    entrySource: RestaurantDetailEntrySource
+)
+```
+
+- `RestaurantDetailSource.local(Restaurant)`：显示标准主体 + 本人的到访概览/历史/编辑能力。
+- `RestaurantDetailSource.remote(RestaurantDetailRemoteProjection)`：显示同一标准主体；私有“我的记录”段落显示安全空态；只有用户点击“想吃”或“记录到访”才创建自己的本地 Restaurant。
+- `entrySource` 只能影响 dismiss/back、analytics、恢复滚动/来源，不得决定 section 顺序、Hero、标题、业务信息或评分组件。
+
+## 6. Locked Restaurant Detail layout contract
+
+所有入口必须按以下稳定顺序渲染；可选字段没有值时隐藏该字段或显示诚实空态，但不能改变剩余 section 的相对顺序：
+
+1. Restaurant Cover / Hero
+2. 城市 / 去过或想吃状态
+3. Restaurant Name
+4. 地址
+5. Restaurant Actions
+6. 参考人均
+7. 电话
+8. 营业时间
+9. 到这里去
+10. 评分参考
+11. 我的评分
+12. 全部用户评分
+13. 好友评分
+14. 同味评分
+15. 用户实拍
+16. 我的到访概览
+17. 到访历史
+18. 菜品、体验标签、多维评分等扩展信息在基础合同之后按固定位置展示
+
+评分视觉合同继续保持：大圆 = 评分；小圆 = 样本数。`nil` / 无样本不得显示假 0 分。
+
+## 7. Repair plan by complete module
+
+| 顺序 | Module | Type | Required result | Independent commit |
+| ---: | --- | --- | --- | --- |
+| 1 | Map + Filter + Map/List | 调整 + List重构 | 保持最新 Map topology；补 List header/数量/行快捷动作；收紧 chips；Map/List状态同源 | `Restore Map and List product parity` |
+| 2 | Add Restaurant + Nearby + GPS | 调整 + regression | 压缩 IA；保持 search/link/Nearby/manual顺序；验证 fresh/stale/reduced/3km/distance/foreground | `Restore restaurant acquisition parity` |
+| 3 | Discovery + Community | 功能语义修复 + 调整 | 五个一级 tab；Activity optional rating 与 aggregate rating严格分离；收紧居中 header/统一 filter/card；Community仍在相同一级结构 | `Restore Discovery and Community parity` |
+| 4 | Profile / My + Public Profile + Premium badge | 重构布局 + 历史资产恢复 | compact header；关注/被关注；去过/想去/总消费真实口径；主入口/回味/食单/洞察恢复 Web密度；恢复唯一已认可 Premium hamburger | `Restore Profile product parity` |
+| 5 | Global Restaurant Detail | **核心重构** | local/remote使用同一主体；固定 section contract；entrySource只管导航；全部入口验证 | `Unify global Restaurant Detail` |
+| 6 | Roulette | 历史视觉恢复 + 数据一致性 | 找回已认可 wheel；候选数/segments/selected result一致；均匀随机不偷换；统一详情 | `Restore approved Roulette experience` |
+| 7 | Analytics + Share Posters | **独立完整模块** | 先核对五类 analyzer 的统计口径，再复用已确认 Analysis Theme；动态中心 Food Hero、四周分析、代表餐厅图文、五类统一竖版海报；所有 Data-linked visual 有真实证据 | `Restore Analytics and poster product parity` |
+| 8 | Remaining core parity + Food & Dining Visual Language | 调整 + 视觉系统 | Visit section order、Lists/Social/Share landing consistency；统一 food/drink/tableware/receipt/menu/takeaway/generic dining；稳定 seed；近距独立 marker；极远 Food/Dining cluster；Core 场景克制 Decorative 示例 | `Close remaining product parity gaps` |
+| 9 | Closure | 验收 | 全量 tests/build；Web/iOS after screenshots；全入口 Detail contract；Food/Dining Decorative/Data-linked证据；Analytics 页面/海报证据；剩余 gap诚实列出 | `Document full product parity closure` |
+
+## 8. Pages requiring refactor vs adjustment
+
+### Must refactor
+
+- Restaurant Detail local/remote source architecture and section order.
+- Profile compact identity/stat topology.
+- Public Profile identity/stat topology.
+- Personal List header and row action structure.
+
+### Adjust without business refactor
+
+- Map chips height/spacing/small-screen overflow.
+- Add Restaurant card/row density.
+- Discovery header, city/filter controls and result card density.
+- Community card tokens and actions.
+- Visit section ordering、Lists rows/covers。
+
+### Must restore as a separate visual/data module
+
+- Taste Profile、Companion、Recommendation Source、Monthly、Annual 的统计语义、页面和分享海报。
+- Food Hero 必须由高频菜系/代表餐厅/真实分析结论驱动；数据不足时才使用明确的 Decorative composition，不得伪装成用户偏好。
+- 页面阅读布局与竖版海报共享 Design Tokens 和 presentation model，但不强行共享完全相同的布局。
+- Core App 的 Food/Dining 装饰与 Analysis Theme 分层：前者低强度，后者可以更具故事感。
+
+### Verify only; do not rewrite
+
+- Auth / Sign in with Apple / Keychain.
+- SyncEngine / cursor / queue / user isolation.
+- SwiftData schema and current ownership model.
+- Backup/Import architecture.
+- StoreKit/Premium entitlement architecture.
+- Worker/D1/Production.
+
+## 9. Test contract for closure
+
+### Map / List
+
+- visited / wantToGo / suitable；compact horizontal chips；active count；small iPhone；dark mode；Map→List→Map；filter/sort preservation；Add Restaurant不重叠；row quick actions不误触详情。
+
+### Add / Nearby
+
+- fresh precise location；stale rejection；reduced accuracy honest state；future timestamp；invalid horizontal accuracy；foreground/movement refresh；same query center；3 km bound；distance ascending；provider error/empty/retry；explicit want/visit confirmation。
+
+### Discovery / Community / Profile
+
+- 五个一级 tab；city/filter；loading/empty/error/cache；community interaction；Activity optional rating 不被 aggregate 覆盖；logged-in/logged-out；long username；missing avatar；Free/Premium；去过/想去/总消费真实口径；全部入口顺序；light/dark/Dynamic Type。
+
+### Restaurant Detail global entry matrix
+
+必须自动验证下列入口都出现同一组 section identifiers，顺序相同：Map、List、Search/Nearby saved result、Discovery local、Discovery remote、Community、Public Profile、Companion、Recommendation Source、Monthly、Annual、Lists、Visited、WantToGo、On This Day、Roulette、Public Share。
+
+remote detail 必须验证：浏览不会创建本地 Restaurant；显式 WantToGo/Visit 后才创建；随后重开显示同一主体且状态更新。
+
+### Food & Dining visual language
+
+- 近距离每家 Restaurant 优先独立 Marker；远距离 cluster 使用 Food/Dining visual + count，不能只剩纯数字圆点。
+- cluster visual 根据稳定 cluster coordinate/identifier seed 选择，轻微拖动或 rerender 不应无意义跳变。
+- Decorative visual 不附会数据；Data-linked visual 必须有明确 analyzer/provider 证据，并覆盖无数据/多元偏好降级。
+- Light/Dark、Dynamic Type、Reduce Motion、small iPhone 下不遮挡内容、不成为无标签交互控件。
+- 覆盖 Map、空态、Profile/Lists/Roulette 的代表性 Core 场景以及全部 Analytics/Poster；验收目标不是“每页都有图标”。
+
+### Analytics and posters
+
+- 五类 analyzer 的日期区间、nullable rating、消费、饭搭子、推荐来源、回头率、代表餐厅口径与 Web/已锁定合同一致。
+- 口味档案覆盖偏好排行、价位、氛围、推荐来源、饭搭子、评分风格、回头率、关键词、用餐时间、消费和代表餐厅图文。
+- Taste / Companion / Recommendation Source / Monthly / Annual 页面均有独立竖版 poster renderer，不是页面截图；共享同一 Analysis token 和 Food/Dining asset language。
+- “最坑推荐来源”等已锁定产品文案不得改名；无真实数据时显示诚实空态，不生成假结论。
+
+### Roulette and Premium badge
+
+- Wheel segment count、candidate identity、selected result 必须来自同一个 pool；没有 placeholder、复制 Restaurant 或暗中评分加权。
+- 覆盖 Reduce Motion、重试、空候选、单候选、长餐厅名和 small iPhone。
+- Premium hamburger 在 Profile、Premium、Settings/会员状态等实际入口渲染同一个历史已认可 asset；没有第三种汉堡。
+
+## 10. Safety boundary
+
+- 本轮不修改 Production Worker、Production D1、Production R2、Production secrets 或 App Store Connect。
+- 本轮不改变 Bundle ID、Team、Signing、Capabilities、SwiftData schema、Auth、Sync 或现有 ownership。
+- Development Web seed 只存在于本地浏览器 IndexedDB；没有写入 Production。
+- F1-C4 duplicate Visit 风险未通过真实用户数据做危险复测；既有精确 fixture regression 已验证第二次相同 Legacy v4 source 在 cross-provider manual merge 后得到 `exactDuplicate`、零新增 Visit、零额外 mutation，并在最终组合代码上通过，因此状态为 CLOSED。
+
+## 11. Audit disposition
+
+审计基线结论：**FAIL — implementation was required**。
+
+最终处置：**PASS — Modules 1–9 completed**。该 PASS 仅表示本报告定义的 Web → iOS Product Parity、全局 Restaurant Detail 单一主体、Food & Dining Visual Language 与 Analytics/Poster 视觉恢复已经完成自动化和截图验收；它不代表 Production、App Store Connect、真实商店购买、最终硬件 smoke 或其他 Release Gate 已完成。完整证据与剩余事项见 [TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md](TasteMap_FULL_PRODUCT_PARITY_CLOSURE_REPORT.md)。

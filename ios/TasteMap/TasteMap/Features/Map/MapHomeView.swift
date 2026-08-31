@@ -14,6 +14,7 @@ struct MapHomeView: View {
 
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Environment(\.localAccountScope) private var accountScope
+    @Environment(\.modelContext) private var modelContext
     @StateObject private var locationPermission = LocationPermissionManager()
     @State private var selectedSegment: RestaurantBrowseSegment = .visited
     @State private var browseMode: MapBrowseMode = .map
@@ -23,12 +24,15 @@ struct MapHomeView: View {
     @State private var locationFilterMessage: String?
     @State private var selectedRestaurantID: UUID?
     @State private var detailDestination: RestaurantBrowseSelection?
+    @State private var visitEditorDestination: RestaurantBrowseSelection?
+    @State private var rouletteDestination: RestaurantBrowseSelection?
+    @State private var quickActionMessage: String?
     @State private var cameraFitRequestID = UUID()
     @State private var locationRequestID: UUID?
     @State private var mapReloadID = UUID()
     @State private var mapRenderState: RestaurantMapRenderState = .loading
 
-    private let compactControlsHeight: CGFloat = 96
+    private let compactControlsHeight: CGFloat = 190
 
     private var scopedPhotos: [PhotoAsset] {
         photos.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
@@ -80,7 +84,17 @@ struct MapHomeView: View {
                         onSelect: {
                             detailDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
                         },
+                        onRecordVisit: {
+                            visitEditorDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
+                        },
+                        onToggleWantToGo: {
+                            toggleWantToGo($0.restaurant)
+                        },
+                        onOpenRoulette: {
+                            rouletteDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
+                        },
                         usesSystemSearch: false,
+                        showsContextHeader: true,
                         contentTopInset: compactControlsHeight,
                         contentBottomInset: 84
                     )
@@ -91,8 +105,6 @@ struct MapHomeView: View {
                     activeFilterCount: filterResult.activeFilterCount,
                     options: snapshot.filterOptions
                 )
-
-                floatingBrowseModeButton
             }
             .background(TasteMapCoreTheme.page)
             .toolbar(.hidden, for: .navigationBar)
@@ -128,9 +140,23 @@ struct MapHomeView: View {
                 if let restaurant = owned.restaurants.first(where: {
                     $0.id == destination.id && $0.deletedAt == nil
                 }) {
-                    RestaurantDetailView(restaurant: restaurant)
+                    RestaurantDetailView(restaurant: restaurant, entrySource: .map)
                 } else {
                     ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
+                }
+            }
+            .sheet(item: $visitEditorDestination) { destination in
+                if let restaurant = owned.restaurants.first(where: {
+                    $0.id == destination.id && $0.deletedAt == nil
+                }) {
+                    VisitEditorView(restaurant: restaurant)
+                } else {
+                    ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
+                }
+            }
+            .sheet(item: $rouletteDestination) { destination in
+                NavigationStack {
+                    RestaurantRouletteScreen(initialRestaurantID: destination.id)
                 }
             }
             .sheet(isPresented: $isShowingFilters) {
@@ -150,6 +176,14 @@ struct MapHomeView: View {
             } message: {
                 Text(locationFilterMessage ?? "")
             }
+            .alert("餐厅快捷操作", isPresented: Binding(
+                get: { quickActionMessage != nil },
+                set: { if !$0 { quickActionMessage = nil } }
+            )) {
+                Button("知道了", role: .cancel) { quickActionMessage = nil }
+            } message: {
+                Text(quickActionMessage ?? "")
+            }
         }
     }
 
@@ -159,6 +193,16 @@ struct MapHomeView: View {
         options: PersonalRestaurantFilterOptions
     ) -> some View {
         VStack(spacing: 7) {
+            Text("我的地图")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("map-home-title")
+
+            mapListModeControl
+                .frame(maxWidth: .infinity, alignment: .center)
+
             TasteMapSegmentedControl(
                 selection: $selectedSegment,
                 items: RestaurantBrowseSegment.allCases.map {
@@ -183,7 +227,7 @@ struct MapHomeView: View {
                             }
                         }
                     }
-                    .mapFilterChipStyle(isActive: activeFilterCount > 0)
+                    .tasteMapFilterChipStyle(isActive: activeFilterCount > 0)
                     .accessibilityLabel(activeFilterCount == 0 ? "筛选" : "已启用 \(activeFilterCount) 项筛选")
                     .accessibilityIdentifier("personal-filter-button")
 
@@ -198,6 +242,7 @@ struct MapHomeView: View {
                             ? "评分"
                             : filterState.ratingBands.sorted { $0.rawValue > $1.rawValue }
                                 .map(\.title).joined(separator: "、"),
+                        systemImage: MapFilterChipSemantic.rating.systemImage,
                         isActive: !filterState.ratingBands.isEmpty,
                         identifier: "map-filter-chip-rating"
                     )
@@ -205,17 +250,20 @@ struct MapHomeView: View {
                     if filterState.appliesVisitScopedFilters {
                         filterSummaryChip(
                             title: filterState.priceRange?.title ?? "消费",
+                            systemImage: MapFilterChipSemantic.price.systemImage,
                             isActive: filterState.priceRange != nil,
                             identifier: "map-filter-chip-price"
                         )
                         filterSummaryChip(
                             title: filterState.visitCount.map { "到访 \($0.title)" } ?? "到访次数",
+                            systemImage: MapFilterChipSemantic.visits.systemImage,
                             isActive: filterState.visitCount != nil,
                             identifier: "map-filter-chip-visits"
                         )
                         if !options.companions.isEmpty {
                             filterSummaryChip(
                                 title: selectedOptionTitle(id: filterState.companionID, in: options.companions) ?? "饭搭子",
+                                systemImage: MapFilterChipSemantic.companion.systemImage,
                                 isActive: filterState.companionID != nil,
                                 identifier: "map-filter-chip-companion"
                             )
@@ -223,6 +271,7 @@ struct MapHomeView: View {
                         if !options.sources.isEmpty {
                             filterSummaryChip(
                                 title: selectedOptionTitle(id: filterState.sourceID, in: options.sources) ?? "推荐来源",
+                                systemImage: MapFilterChipSemantic.source.systemImage,
                                 isActive: filterState.sourceID != nil,
                                 identifier: "map-filter-chip-source"
                             )
@@ -244,14 +293,14 @@ struct MapHomeView: View {
                     } label: {
                         Label(filterState.sort.title, systemImage: "arrow.up.arrow.down")
                     }
-                    .mapFilterChipStyle(isActive: filterState.sort != .comprehensive)
+                    .tasteMapFilterChipStyle(isActive: filterState.sort != .comprehensive)
                     .accessibilityIdentifier("map-filter-chip-sort")
 
                     if activeFilterCount > 0 {
                         Button(action: clearFilters) {
                             Label("清除", systemImage: "xmark")
                         }
-                        .mapFilterChipStyle(isActive: false)
+                        .tasteMapFilterChipStyle(isActive: false)
                         .accessibilityIdentifier("personal-filter-clear")
 
                         Text("筛选后 \(resultCount) 家")
@@ -265,10 +314,52 @@ struct MapHomeView: View {
             .scrollClipDisabled()
             .accessibilityIdentifier("map-filter-chip-strip")
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
+        .padding(.horizontal, 12)
+        .padding(.top, 18)
+        .padding(.bottom, 8)
+        .background(TasteMapCoreTheme.page.opacity(0.97))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("map-home-compact-controls")
+    }
+
+    private var mapListModeControl: some View {
+        HStack(spacing: 2) {
+            mapListModeButton(.map, title: "地图", systemImage: "map")
+            mapListModeButton(.list, title: "列表", systemImage: "list.bullet")
+        }
+        .padding(2)
+        .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(TasteMapCoreTheme.border)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("map-list-mode-control")
+    }
+
+    private func mapListModeButton(
+        _ mode: MapBrowseMode,
+        title: String,
+        systemImage: String
+    ) -> some View {
+        let isSelected = browseMode == mode
+        return Button {
+            browseMode = mode
+        } label: {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.white : TasteMapCoreTheme.textSecondary)
+                .frame(width: 36, height: 34)
+                .background(
+                    isSelected ? TasteMapCoreTheme.brand : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .accessibilityIdentifier(mode == .map ? "map-header-view-map" : "map-header-view-list")
     }
 
     private var listSearchChip: some View {
@@ -303,7 +394,12 @@ struct MapHomeView: View {
     @ViewBuilder
     private func cityChip(options: PersonalRestaurantFilterOptions) -> some View {
         if options.cities.isEmpty {
-            filterSummaryChip(title: "城市", isActive: false, identifier: "map-filter-chip-city")
+            filterSummaryChip(
+                title: "城市",
+                systemImage: MapFilterChipSemantic.city.systemImage,
+                isActive: false,
+                identifier: "map-filter-chip-city"
+            )
         } else {
             Menu {
                 Button {
@@ -321,64 +417,37 @@ struct MapHomeView: View {
                     }
                 }
             } label: {
-                Label(filterState.city ?? "城市", systemImage: "mappin.and.ellipse")
+                Label(filterState.city ?? "城市", systemImage: MapFilterChipSemantic.city.systemImage)
             }
-            .mapFilterChipStyle(isActive: filterState.city != nil)
+            .tasteMapFilterChipStyle(isActive: filterState.city != nil)
             .accessibilityIdentifier("map-filter-chip-city")
         }
     }
 
-    private func filterSummaryChip(title: String, isActive: Bool, identifier: String) -> some View {
+    private func filterSummaryChip(
+        title: String,
+        systemImage: String,
+        isActive: Bool,
+        identifier: String
+    ) -> some View {
         Button {
             isShowingFilters = true
         } label: {
             HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.semibold))
                 Text(title).lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
             }
         }
-        .mapFilterChipStyle(isActive: isActive)
+        .tasteMapFilterChipStyle(isActive: isActive)
         .accessibilityIdentifier(identifier)
     }
 
     private func selectedOptionTitle(id: String?, in options: [PersonalFilterOption]) -> String? {
         guard let id else { return nil }
         return options.first(where: { $0.id == id })?.title
-    }
-
-    private var floatingBrowseModeButton: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Button {
-                    browseMode = browseMode == .map ? .list : .map
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: browseMode == .map ? "list.bullet" : "map")
-                        Text(browseMode == .map ? "查看列表" : "查看地图")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .frame(height: 40)
-                    .background(TasteMapCoreTheme.brand, in: Capsule())
-                    .shadow(color: TasteMapCoreTheme.brand.opacity(0.25), radius: 8, y: 3)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(browseMode == .map ? "查看列表" : "查看地图")
-                .accessibilityIdentifier(
-                    browseMode == .map ? "map-floating-view-list" : "map-floating-view-map"
-                )
-            }
-            .padding(.trailing, 14)
-            // MapKit extends below the app's custom safe-area inset. Keep the
-            // mode control explicitly above the bottom navigation instead of
-            // letting it become visible-but-untappable underneath that bar.
-            .padding(.bottom, 78)
-        }
-        .allowsHitTesting(true)
     }
 
     private func mapContent(
@@ -456,9 +525,17 @@ struct MapHomeView: View {
                 .accessibilityIdentifier("restaurant-map-error")
             } else if items.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: activeFilterCount > 0 ? "line.3.horizontal.decrease.circle" : "fork.knife.circle")
-                        .font(.title2)
-                        .foregroundStyle(Color.accentColor)
+                    if activeFilterCount > 0 && hasUnfilteredItems {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                    } else {
+                        FoodDiningVisualIcon(
+                            kind: .genericDining,
+                            usage: .decorative,
+                            size: 44
+                        )
+                    }
                     Text(activeFilterCount > 0 && hasUnfilteredItems ? "当前无符合条件的餐厅" : selectedSegment.emptyTitle)
                         .font(.headline)
                     Text(activeFilterCount > 0 && hasUnfilteredItems ? "可以清除筛选，重新查看你的餐厅。" : selectedSegment.emptyMessage)
@@ -535,6 +612,22 @@ struct MapHomeView: View {
         filterState.resetKeepingStatus()
     }
 
+    private func toggleWantToGo(_ restaurant: Restaurant) {
+        if restaurant.status == .visited {
+            quickActionMessage = "「\(restaurant.name)」已经在去过清单里，可以继续记录到访。"
+            return
+        }
+        do {
+            try LocalTasteMapStore(context: modelContext).delete(
+                restaurant,
+                actorUserID: accountScope.ownerUserID
+            )
+            quickActionMessage = "「\(restaurant.name)」已移出想吃。"
+        } catch {
+            quickActionMessage = "暂时无法更新想吃状态，请稍后重试。"
+        }
+    }
+
     private func applyFilters(_ proposedState: PersonalRestaurantFilterState) {
         guard proposedState.distance != nil else {
             filterState = proposedState
@@ -605,6 +698,36 @@ struct MapHomeView: View {
     }
 }
 
+/// Testable semantic contract for the chips shown together in the Map header.
+/// Every data dimension in this group has an icon; city intentionally uses a
+/// building symbol because it is a city filter, not current GPS location.
+enum MapHomeControlLayer: String, CaseIterable, Sendable {
+    case title
+    case displayMode
+    case restaurantScope
+    case filters
+}
+
+enum MapFilterChipSemantic: String, CaseIterable, Sendable {
+    case city
+    case rating
+    case price
+    case visits
+    case companion
+    case source
+
+    var systemImage: String {
+        switch self {
+        case .city: "building.2"
+        case .rating: FoodDiningVisualKind.rating.systemImageName
+        case .price: FoodDiningVisualKind.receipt.systemImageName
+        case .visits: FoodDiningVisualKind.tableware.systemImageName
+        case .companion: FoodDiningVisualKind.sharedMeal.systemImageName
+        case .source: FoodDiningVisualKind.discovery.systemImageName
+        }
+    }
+}
+
 private enum MapBrowseMode: String, CaseIterable, Identifiable {
     case map
     case list
@@ -612,19 +735,6 @@ private enum MapBrowseMode: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String { self == .map ? "地图" : "列表" }
     var systemImage: String { self == .map ? "map" : "list.bullet" }
-}
-
-private extension View {
-    func mapFilterChipStyle(isActive: Bool) -> some View {
-        self
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isActive ? Color.white : TasteMapCoreTheme.brandDeep)
-            .padding(.horizontal, 11)
-            .frame(height: 34)
-            .background(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.surface, in: Capsule())
-            .overlay { Capsule().stroke(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.border) }
-            .buttonStyle(.plain)
-    }
 }
 
 #Preview("地图 / 列表双模式") {

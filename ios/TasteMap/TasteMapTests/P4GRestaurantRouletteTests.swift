@@ -118,11 +118,11 @@ struct P4GRestaurantRouletteTests {
         #expect(seen.contains(pool[pool.count - 1].globalKey))
     }
 
-    @Test("Selected index maps exactly to the pointer for 2, 3, 8, 12 and large pools")
+    @Test("Selected index maps exactly to the pointer and every candidate owns one segment")
     func animationGeometry() {
         for candidateCount in [2, 3, 8, 12, 30, 100, 1_000] {
             let visualCount = RestaurantRouletteEngine.visualSegmentCount(candidateCount: candidateCount)
-            #expect(visualCount == (candidateCount <= 30 ? candidateCount : 12))
+            #expect(visualCount == candidateCount)
             for selectedIndex in 0..<candidateCount {
                 let rotation = RestaurantRouletteEngine.targetRotation(
                     currentRotation: 137,
@@ -142,7 +142,7 @@ struct P4GRestaurantRouletteTests {
         }
     }
 
-    @Test("Large candidate pool filters all 1,000 records while rendering only 12 visual slices")
+    @Test("Large library keeps all records searchable while active wheel stays exact and bounded")
     func largePool() {
         let records = (0..<1_000).map { index in
             record(
@@ -158,7 +158,34 @@ struct P4GRestaurantRouletteTests {
         )
         #expect(candidates.count == 1_000)
         #expect(hangzhou.count == 500)
-        #expect(RestaurantRouletteEngine.visualSegmentCount(candidateCount: candidates.count) == 12)
+        let selectedKeys = RestaurantRouletteEngine.defaultActiveGlobalKeys(from: hangzhou)
+        let active = RestaurantRouletteEngine.activeCandidates(
+            from: hangzhou,
+            selectedGlobalKeys: selectedKeys
+        )
+        #expect(active.count == RestaurantRouletteEngine.maximumActiveCandidateCount)
+        #expect(Set(active.map(\.globalKey)).count == active.count)
+        #expect(RestaurantRouletteEngine.visualSegmentCount(candidateCount: active.count) == active.count)
+    }
+
+    @Test("Preferred entry is seeded once and selection never invents or duplicates Restaurants")
+    func preferredCandidateSelection() throws {
+        let candidates = (0..<30).map { candidate($0) }
+        let preferred = try #require(candidates.last)
+        let selectedKeys = RestaurantRouletteEngine.defaultActiveGlobalKeys(
+            from: candidates,
+            preferredGlobalKey: preferred.globalKey
+        )
+        let active = RestaurantRouletteEngine.activeCandidates(
+            from: candidates,
+            selectedGlobalKeys: selectedKeys
+        )
+
+        #expect(selectedKeys.count == RestaurantRouletteEngine.maximumActiveCandidateCount)
+        #expect(active.contains(preferred))
+        #expect(active.allSatisfy(candidates.contains))
+        #expect(Set(active.map(\.globalKey)).count == active.count)
+        #expect(RestaurantRouletteEngine.visualSegmentCount(candidateCount: active.count) == active.count)
     }
 
     @Test("Result metadata uses active Visits, user Photo and factual state")

@@ -222,68 +222,59 @@ struct DiscoverHubView: View {
     }
 
     private var discoveryHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("DISCOVER")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.2)
-                    .foregroundStyle(TasteMapCoreTheme.brand)
-                Text("发现")
-                    .font(.title2.bold())
-                    .foregroundStyle(TasteMapCoreTheme.textPrimary)
-                Text("按照你的口味，找到更值得参考的人和下一家餐厅。")
-                    .font(.caption)
-                    .foregroundStyle(TasteMapCoreTheme.textSecondary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "globe.asia.australia.fill")
-                .font(.title2)
-                .foregroundStyle(TasteMapCoreTheme.brand)
-                .accessibilityHidden(true)
+        VStack(spacing: 3) {
+            Text("发现")
+                .font(.title2.bold())
+                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                .accessibilityIdentifier("discovery-header")
+            Text("按照你的口味，找到更值得参考的人和下一家餐厅。")
+                .font(.caption)
+                .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 5)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
         .background(TasteMapCoreTheme.page)
-        .accessibilityIdentifier("discovery-header")
     }
 
     private var discoveryNavigation: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 18) {
-                ForEach(DiscoverHubSection.allCases) { item in
-                    Button {
-                        section = item
-                    } label: {
-                        VStack(spacing: 7) {
-                            Text(item.title)
-                                .font(.subheadline.weight(section == item ? .bold : .medium))
-                                .foregroundStyle(
-                                    section == item
-                                        ? TasteMapCoreTheme.brandDeep
-                                        : TasteMapCoreTheme.textSecondary
-                                )
-                                .fixedSize(horizontal: true, vertical: false)
-                            Capsule()
-                                .fill(section == item ? TasteMapCoreTheme.brand : .clear)
-                                .frame(height: 3)
-                        }
+        HStack(spacing: 0) {
+            ForEach(DiscoverHubSection.allCases) { item in
+                Button {
+                    section = item
+                } label: {
+                    VStack(spacing: 7) {
+                        Text(item.title)
+                            .font(.caption.weight(section == item ? .bold : .medium))
+                            .foregroundStyle(
+                                section == item
+                                    ? TasteMapCoreTheme.brandDeep
+                                    : TasteMapCoreTheme.textSecondary
+                            )
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                        Capsule()
+                            .fill(section == item ? TasteMapCoreTheme.brand : .clear)
+                            .frame(height: 3)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(section == item ? .isSelected : [])
-                    .accessibilityIdentifier("discovery-primary-\(item.rawValue)")
+                    .frame(maxWidth: .infinity, minHeight: 42)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .accessibilityAddTraits(section == item ? .isSelected : [])
+                .accessibilityIdentifier("discovery-primary-\(item.rawValue)")
             }
-            .padding(.horizontal, 16)
         }
-        .scrollClipDisabled()
+        .padding(.horizontal, 8)
         .padding(.top, 2)
         .overlay(alignment: .bottom) {
             Rectangle().fill(TasteMapCoreTheme.border).frame(height: 1)
         }
         .background(TasteMapCoreTheme.page)
-        .accessibilityIdentifier("discovery-primary-navigation")
     }
 }
 

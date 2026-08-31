@@ -32,8 +32,8 @@ nonisolated struct PremiumFeatureDefinition: Equatable, Sendable {
 nonisolated enum PremiumFeatureRegistry {
     static let definitions: [PremiumFeatureDefinition] = [
         .init(feature: .fullTasteProfile, title: "完整口味档案", valueDescription: "看懂长期偏好、预算、场景与评分风格", symbol: "fork.knife", posterProtected: true),
-        .init(feature: .companionAnalysis, title: "饭搭子分析", valueDescription: "回看你和谁最常吃、最合拍", symbol: "person.2.fill", posterProtected: true),
-        .init(feature: .recommendationSourceAnalysis, title: "推荐来源分析", valueDescription: "验证谁的推荐真正适合你", symbol: "text.bubble.fill", posterProtected: true),
+        .init(feature: .companionAnalysis, title: "最佳饭搭子", valueDescription: "回看你和谁最常吃、最合拍", symbol: "person.2.fill", posterProtected: true),
+        .init(feature: .recommendationSourceAnalysis, title: "谁最会种草", valueDescription: "验证谁的推荐真正适合你", symbol: "text.bubble.fill", posterProtected: true),
         .init(feature: .similarTaste, title: "同味能力", valueDescription: "查看同味之选、同味评分与相似口味线索", symbol: "person.2.wave.2", posterProtected: false),
         .init(feature: .deepRecommendation, title: "深度个性化推荐", valueDescription: "看到更完整的推荐依据与解释", symbol: "sparkles", posterProtected: false),
         .init(feature: .advancedRecommendationFilters, title: "高级推荐筛选", valueDescription: "按推荐来源、场景和饭搭子继续筛选", symbol: "line.3.horizontal.decrease.circle", posterProtected: false),

@@ -54,7 +54,7 @@ struct RestaurantCollectionView: View {
             if let restaurant = owned.restaurants.first(where: {
                 $0.id == selection.id && $0.deletedAt == nil
             }) {
-                RestaurantDetailView(restaurant: restaurant)
+                RestaurantDetailView(restaurant: restaurant, entrySource: .list)
             } else {
                 ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
             }
@@ -69,7 +69,11 @@ struct RestaurantBrowseList: View {
     let isFiltered: Bool
     let onClearFilters: () -> Void
     let onSelect: (RestaurantBrowseItem) -> Void
+    var onRecordVisit: ((RestaurantBrowseItem) -> Void)?
+    var onToggleWantToGo: ((RestaurantBrowseItem) -> Void)?
+    var onOpenRoulette: ((RestaurantBrowseItem) -> Void)?
     var usesSystemSearch = true
+    var showsContextHeader = false
     var contentTopInset: CGFloat = 0
     var contentBottomInset: CGFloat = 28
 
@@ -112,10 +116,23 @@ struct RestaurantBrowseList: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
+                        if showsContextHeader {
+                            RestaurantBrowseListContext(
+                                segment: segment,
+                                resultCount: filteredItems.count,
+                                isFiltered: isFiltered,
+                                hasQuery: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            )
+                        }
                         ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                            RestaurantBrowseCard(item: item, segment: segment) {
-                                onSelect(item)
-                            }
+                            RestaurantBrowseCard(
+                                item: item,
+                                segment: segment,
+                                onSelect: { onSelect(item) },
+                                onRecordVisit: onRecordVisit.map { action in { action(item) } },
+                                onToggleWantToGo: onToggleWantToGo.map { action in { action(item) } },
+                                onOpenRoulette: onOpenRoulette.map { action in { action(item) } }
+                            )
                             if index < filteredItems.count - 1 {
                                 Divider().padding(.leading, 66)
                             }
@@ -132,51 +149,163 @@ struct RestaurantBrowseList: View {
     }
 }
 
+private struct RestaurantBrowseListContext: View {
+    let segment: RestaurantBrowseSegment
+    let resultCount: Int
+    let isFiltered: Bool
+    let hasQuery: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("MY TASTE MAP")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .tracking(1.1)
+                    .foregroundStyle(TasteMapCoreTheme.brand)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(TasteMapCoreTheme.textPrimary)
+            }
+            Spacer(minLength: 8)
+            Text("\(resultCount) 家")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .background(TasteMapCoreTheme.surfaceSubtle, in: Capsule())
+                .accessibilityIdentifier("restaurant-list-result-count")
+        }
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("restaurant-list-context")
+    }
+
+    private var title: String {
+        let base: String
+        switch segment {
+        case .visited: base = "去过的餐厅"
+        case .wantToGo: base = "想吃的餐厅"
+        case .forYou: base = "适合你的餐厅"
+        }
+        if hasQuery { return "\(base) · 搜索结果" }
+        if isFiltered { return "\(base) · 已筛选" }
+        return base
+    }
+}
+
 private struct RestaurantBrowseCard: View {
     let item: RestaurantBrowseItem
     let segment: RestaurantBrowseSegment
-    let action: () -> Void
+    let onSelect: () -> Void
+    let onRecordVisit: (() -> Void)?
+    let onToggleWantToGo: (() -> Void)?
+    let onOpenRoulette: (() -> Void)?
 
     var body: some View {
-        Button(action: action) {
-            HStack(alignment: .center, spacing: 12) {
-                RestaurantBrowsePhoto(photo: item.photo, restaurantID: item.restaurant.id)
-                    .frame(width: 52, height: 52)
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        HStack(alignment: .top, spacing: 11) {
+            RestaurantBrowsePhoto(photo: item.photo, restaurantID: item.restaurant.id)
+                .frame(width: 54, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .padding(.top, 1)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(item.restaurant.name)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(TasteMapCoreTheme.textPrimary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 4)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+            VStack(alignment: .leading, spacing: 5) {
+                Button(action: onSelect) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(item.restaurant.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        if segment == .visited {
+                            visitedSummary
+                        } else if segment == .wantToGo {
+                            Label(
+                                "加入于 \(item.restaurant.createdAt.formatted(date: .abbreviated, time: .omitted))",
+                                systemImage: "bookmark.fill"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(TasteMapCoreTheme.brand)
+                        }
+
+                        locationLine
                     }
-
-                    if segment == .visited {
-                        visitedSummary
-                    } else if segment == .wantToGo {
-                        Label(
-                            "加入于 \(item.restaurant.createdAt.formatted(date: .abbreviated, time: .omitted))",
-                            systemImage: "bookmark.fill"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(TasteMapCoreTheme.brand)
-                    }
-
-                    locationLine
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("restaurant-list-item-\(item.restaurant.id.uuidString)")
+
+                if hasQuickActions {
+                    HStack(spacing: 5) {
+                        if let onRecordVisit {
+                            quickAction(
+                                title: item.visitCount > 0 ? "再次记录" : "记录到访",
+                                systemImage: "plus.circle.fill",
+                                identifier: "restaurant-list-record-\(item.restaurant.id.uuidString)",
+                                action: onRecordVisit
+                            )
+                        }
+                        if let onToggleWantToGo {
+                            quickAction(
+                                title: item.restaurant.status == .wantToGo ? "移出想吃" : "想吃",
+                                systemImage: item.restaurant.status == .wantToGo ? "bookmark.fill" : "bookmark",
+                                identifier: "restaurant-list-want-\(item.restaurant.id.uuidString)",
+                                isSelected: item.restaurant.status == .wantToGo,
+                                action: onToggleWantToGo
+                            )
+                        }
+                        if let onOpenRoulette {
+                            quickAction(
+                                title: "今天吃",
+                                systemImage: "dice",
+                                identifier: "restaurant-list-roulette-\(item.restaurant.id.uuidString)",
+                                action: onOpenRoulette
+                            )
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("\(item.restaurant.name) 快捷操作")
+                    .accessibilityIdentifier("restaurant-list-actions-\(item.restaurant.id.uuidString)")
+                }
             }
-            .padding(.vertical, 9)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("restaurant-list-row-\(item.restaurant.id.uuidString)")
+    }
+
+    private var hasQuickActions: Bool {
+        onRecordVisit != nil || onToggleWantToGo != nil || onOpenRoulette != nil
+    }
+
+    private func quickAction(
+        title: String,
+        systemImage: String,
+        identifier: String,
+        isSelected: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+                .foregroundStyle(isSelected ? TasteMapCoreTheme.brand : TasteMapCoreTheme.textSecondary)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 28)
+                .background(
+                    isSelected ? TasteMapCoreTheme.brandSoft : TasteMapCoreTheme.surfaceSubtle,
+                    in: Capsule()
+                )
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("restaurant-list-item-\(item.restaurant.id.uuidString)")
+        .accessibilityIdentifier(identifier)
     }
 
     @ViewBuilder

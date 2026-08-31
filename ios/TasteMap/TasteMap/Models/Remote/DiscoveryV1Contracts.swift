@@ -77,6 +77,14 @@ struct DiscoveryPublicUserProjectionV1: Codable, Equatable, Identifiable, Sendab
     }
 }
 
+/// One concrete, authorization-filtered activity behind a Discovery card.
+/// Restaurant aggregate ratings remain a separate detail-level projection.
+struct DiscoveryActivityProjectionV1: Codable, Equatable, Sendable {
+    let visitId: String
+    let visitedAt: String
+    let rating: Double?
+}
+
 struct DiscoveryRatingProjectionV1: Codable, Equatable, Sendable {
     let value: Double?
     let sampleCount: Int
@@ -114,11 +122,42 @@ struct DiscoveryCardV1: Codable, Equatable, Identifiable, Sendable {
     let ratings: DiscoveryRatingsV1
     let reasons: [DiscoveryReasonV1]
     let sourceUser: DiscoveryPublicUserProjectionV1?
+    let activity: DiscoveryActivityProjectionV1?
     let similarity: DiscoverySimilarityContextV1?
     let trend: DiscoveryTrendContextV1?
     let cacheScope: DiscoveryCacheScopeV1
     let rank: Int
     let score: Double
+
+    init(
+        id: String,
+        mode: DiscoveryModeV1,
+        restaurant: DiscoveryRestaurantProjectionV1,
+        viewerState: DiscoveryViewerRestaurantStateV1,
+        ratings: DiscoveryRatingsV1,
+        reasons: [DiscoveryReasonV1],
+        sourceUser: DiscoveryPublicUserProjectionV1?,
+        activity: DiscoveryActivityProjectionV1? = nil,
+        similarity: DiscoverySimilarityContextV1?,
+        trend: DiscoveryTrendContextV1?,
+        cacheScope: DiscoveryCacheScopeV1,
+        rank: Int,
+        score: Double
+    ) {
+        self.id = id
+        self.mode = mode
+        self.restaurant = restaurant
+        self.viewerState = viewerState
+        self.ratings = ratings
+        self.reasons = reasons
+        self.sourceUser = sourceUser
+        self.activity = activity
+        self.similarity = similarity
+        self.trend = trend
+        self.cacheScope = cacheScope
+        self.rank = rank
+        self.score = score
+    }
 }
 
 struct DiscoveryPageV1: Codable, Equatable, Sendable {
@@ -138,6 +177,7 @@ struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
     let ratings: DiscoveryRatingsV1
     let reasons: [DiscoveryReasonV1]
     let sourceUser: DiscoveryPublicUserProjectionV1?
+    let activity: DiscoveryActivityProjectionV1?
     let similarity: DiscoverySimilarityContextV1?
     let trend: DiscoveryTrendContextV1?
     let cacheScope: DiscoveryCacheScopeV1
@@ -147,13 +187,14 @@ struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
     init(card: DiscoveryCardV1) {
         id = card.id; mode = card.mode; viewerState = card.viewerState
         ratings = card.ratings; reasons = card.reasons; sourceUser = card.sourceUser
+        activity = card.activity
         similarity = card.similarity; trend = card.trend; cacheScope = card.cacheScope
         rank = card.rank; score = card.score
     }
 
     func card(restaurant: DiscoveryRestaurantProjectionV1) -> DiscoveryCardV1 {
         .init(id: id, mode: mode, restaurant: restaurant, viewerState: viewerState,
-              ratings: ratings, reasons: reasons, sourceUser: sourceUser,
+              ratings: ratings, reasons: reasons, sourceUser: sourceUser, activity: activity,
               similarity: similarity, trend: trend, cacheScope: cacheScope,
               rank: rank, score: score)
     }

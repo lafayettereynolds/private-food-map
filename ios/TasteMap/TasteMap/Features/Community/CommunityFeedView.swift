@@ -121,7 +121,8 @@ struct CommunityFeedView: View {
                     onViewerStateChange: {
                         updateViewerState(globalKey: item.restaurant.globalKey, state: $0)
                     },
-                    photoAPI: authServices.photoAPI
+                    photoAPI: authServices.photoAPI,
+                    entrySource: .community
                 )
             }
             .sheet(item: $selectedVisitItem) { item in
@@ -354,8 +355,8 @@ struct PublicContentCard: View {
             Button(action: onOpenRestaurant) {
                 VStack(alignment: .leading, spacing: 10) {
                     PublicContentMedia(item: item, photoAPI: photoAPI)
-                        .frame(height: (item.visit?.photos.count ?? 0) > 1 ? 220 : 176)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .frame(height: (item.visit?.photos.count ?? 0) > 1 ? 176 : 148)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.restaurant.name).font(.title3.bold()).foregroundStyle(.primary)
@@ -363,9 +364,15 @@ struct PublicContentCard: View {
                                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
                         Spacer()
-                        if let rating = item.visit?.rating {
-                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                .font(.subheadline.bold()).foregroundStyle(.orange)
+                        if item.kind == .visit, let visit = item.visit {
+                            Label(
+                                visit.rating.map { String(format: "%.1f", $0) } ?? "未评分",
+                                systemImage: visit.rating == nil ? "star.slash" : "star.fill"
+                            )
+                            .font(.subheadline.bold())
+                            .foregroundStyle(visit.rating == nil ? TasteMapCoreTheme.textSecondary : .orange)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("community-activity-rating-\(visit.id)")
                         }
                     }
                     if let note = item.visit?.note {
@@ -453,7 +460,15 @@ private struct PublicContentPhotoTile: View {
                 LinearGradient(
                     colors: [Color.accentColor.opacity(0.15), .orange.opacity(0.12)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
-                ).overlay(Text(restaurant.markerEmoji).font(.system(size: 42)))
+                ).overlay {
+                    FoodDiningVisualIcon(
+                        kind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
+                        usage: .decorative,
+                        size: 48,
+                        foregroundColor: TasteMapCoreTheme.brandDeep,
+                        backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -494,7 +509,15 @@ struct PublicContentThumbnail: View {
         LinearGradient(
             colors: [Color.accentColor.opacity(0.15), .orange.opacity(0.12)],
             startPoint: .topLeading, endPoint: .bottomTrailing
-        ).overlay(Text(restaurant.markerEmoji).font(.system(size: 54)))
+        ).overlay {
+            FoodDiningVisualIcon(
+                kind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
+                usage: .decorative,
+                size: 62,
+                foregroundColor: TasteMapCoreTheme.brandDeep,
+                backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
+            )
+        }
     }
 }
 

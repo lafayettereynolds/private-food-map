@@ -53,7 +53,7 @@ struct DiningCompanionPosterView: View {
             }
             .foregroundStyle(TasteMapAnalysisTheme.brand)
 
-            Text("我和 \(report.companionDisplayName) 的饭搭子档案")
+            Text("最佳饭搭子 · 我和 \(report.companionDisplayName)")
                 .font(.system(size: 56, weight: .heavy, design: .rounded))
                 .foregroundStyle(TasteMapAnalysisTheme.ink)
                 .lineLimit(2)
@@ -129,11 +129,13 @@ struct DiningCompanionPosterView: View {
                     size: 112
                 )
             } else {
-                Text(symbol)
-                    .font(.system(size: 46))
-                    .frame(width: 112, height: 112)
-                    .background(TasteMapAnalysisTheme.softColor(for: tone), in: Circle())
-                    .overlay { Circle().stroke(.white, lineWidth: 6) }
+                AnalysisFoodGlyph(
+                    symbol: symbol,
+                    tone: tone,
+                    size: 112,
+                    semanticID: "shared-companion"
+                )
+                .overlay { Circle().stroke(.white, lineWidth: 6) }
             }
             Text(name)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -192,7 +194,13 @@ struct DiningCompanionPosterView: View {
             }
             if report.representativeRestaurants.isEmpty {
                 HStack(spacing: 14) {
-                    Text("🍽️").font(.system(size: 42))
+                    FoodDiningVisualIcon(
+                        kind: .genericDining,
+                        usage: .decorative,
+                        size: 58,
+                        foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                        backgroundColor: TasteMapAnalysisTheme.brandSoft
+                    )
                     VStack(alignment: .leading, spacing: 4) {
                         Text("代表餐厅正在形成")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -221,7 +229,14 @@ struct DiningCompanionPosterView: View {
     private var nextMeal: some View {
         if let recommendation = report.recommendations.first {
             HStack(spacing: 16) {
-                Text("🗺️").font(.system(size: 38))
+                FoodDiningVisualIcon(
+                    kind: .location,
+                    usage: .dataLinked,
+                    size: 52,
+                    foregroundColor: TasteMapAnalysisTheme.brand,
+                    backgroundColor: TasteMapAnalysisTheme.brandSoft,
+                    accessibilityLabel: "下次餐厅推荐"
+                )
                 VStack(alignment: .leading, spacing: 5) {
                     Text("下次和 TA 吃")
                         .font(.system(size: 15, weight: .bold, design: .rounded))

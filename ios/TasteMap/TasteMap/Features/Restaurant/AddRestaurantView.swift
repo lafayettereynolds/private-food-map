@@ -58,14 +58,15 @@ struct AddRestaurantView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     searchSection
                     linkImportSection
                     if !viewModel.hasSearched { nearbySection }
                     manualEntry
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 28)
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+                .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
             .background(AcquisitionPalette.page.ignoresSafeArea())
@@ -257,7 +258,7 @@ struct AddRestaurantView: View {
                     else { Image(systemName: "magnifyingglass") }
                     Text(viewModel.isSearching ? "正在搜索" : "搜索餐厅")
                 }
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .frame(maxWidth: .infinity, minHeight: 42)
             }
             .buttonStyle(.borderedProminent)
             .tint(AcquisitionPalette.brand)
@@ -279,33 +280,35 @@ struct AddRestaurantView: View {
 
     private var linkImportSection: some View {
         AcquisitionSection(title: "粘贴餐厅链接", subtitle: "Apple 地图、高德、普通网页或分享文字", systemImage: "link") {
-            HStack(spacing: 10) {
-                Image(systemName: "link")
-                    .foregroundStyle(AcquisitionPalette.brand)
-                TextField("粘贴链接或分享文字", text: $linkValue)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    .accessibilityIdentifier("restaurant-link-field")
-                    .onChange(of: linkValue) { _, _ in
-                        viewModel.clearLinkResolution()
-                    }
-            }
-            .acquisitionInput()
-
-            Button {
-                Task { await viewModel.resolveLink(linkValue, city: city) }
-            } label: {
-                HStack {
-                    if viewModel.isResolvingLink { ProgressView().tint(.white) }
-                    else { Image(systemName: "wand.and.stars") }
-                    Text(viewModel.isResolvingLink ? "正在识别" : "识别餐厅")
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "link")
+                        .foregroundStyle(AcquisitionPalette.brand)
+                    TextField("粘贴链接或分享文字", text: $linkValue)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .accessibilityIdentifier("restaurant-link-field")
+                        .onChange(of: linkValue) { _, _ in
+                            viewModel.clearLinkResolution()
+                        }
                 }
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .acquisitionInput()
+
+                Button {
+                    Task { await viewModel.resolveLink(linkValue, city: city) }
+                } label: {
+                    Group {
+                        if viewModel.isResolvingLink { ProgressView().tint(.white) }
+                        else { Text("识别") }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 58, height: 42)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AcquisitionPalette.brand)
+                .disabled(viewModel.isResolvingLink || linkValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("resolve-restaurant-link")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(AcquisitionPalette.brand)
-            .disabled(viewModel.isResolvingLink || linkValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .accessibilityIdentifier("resolve-restaurant-link")
 
             if let message = viewModel.linkMessage {
                 Text(message)
@@ -661,67 +664,72 @@ private struct RestaurantAcquisitionCandidateRow: View {
     let onSelect: (RestaurantCandidate, Restaurant?) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Group {
-                    if let photoURL = candidate.photoURL {
-                        AsyncImage(url: photoURL) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            candidatePlaceholder
-                        }
-                    } else {
+        HStack(alignment: .center, spacing: 10) {
+            Group {
+                if let photoURL = candidate.photoURL {
+                    AsyncImage(url: photoURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
                         candidatePlaceholder
                     }
-                }
-                .frame(width: 58, height: 58)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(candidate.name)
-                            .font(.headline)
-                            .foregroundStyle(AcquisitionPalette.ink)
-                            .lineLimit(2)
-                        Spacer(minLength: 4)
-                        if existing != nil {
-                            Text("已在地图")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(AcquisitionPalette.brandDeep)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(AcquisitionPalette.brandSoft, in: Capsule())
-                        }
-                    }
-                    if !candidate.address.isEmpty {
-                        Text(candidate.address)
-                            .font(.caption)
-                            .foregroundStyle(AcquisitionPalette.muted)
-                            .lineLimit(2)
-                    }
-                    let location = [candidate.city, candidate.district].filter { !$0.isEmpty }.joined(separator: " · ")
-                    HStack(spacing: 8) {
-                        if !location.isEmpty { Text(location) }
-                        if let distance = candidate.distanceMeters { Text(Self.distanceText(distance)) }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(AcquisitionPalette.muted)
+                } else {
+                    candidatePlaceholder
                 }
             }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 11))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(candidate.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AcquisitionPalette.ink)
+                        .lineLimit(2)
+                    if existing != nil {
+                        Text("已在地图")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(AcquisitionPalette.brandDeep)
+                            .padding(.horizontal, 6)
+                            .frame(height: 18)
+                            .background(AcquisitionPalette.brandSoft, in: Capsule())
+                    }
+                }
+                if !candidate.address.isEmpty {
+                    Text(candidate.address)
+                        .font(.caption)
+                        .foregroundStyle(AcquisitionPalette.muted)
+                        .lineLimit(1)
+                }
+                let location = [candidate.city, candidate.district].filter { !$0.isEmpty }.joined(separator: " · ")
+                HStack(spacing: 6) {
+                    if !location.isEmpty { Text(location) }
+                    if let distance = candidate.distanceMeters {
+                        Text(Self.distanceText(distance))
+                            .foregroundStyle(AcquisitionPalette.brandDeep)
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(AcquisitionPalette.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
                 onSelect(candidate, existing)
             } label: {
-                Label(existing == nil ? "选择" : "再次记录到访", systemImage: existing == nil ? "checkmark" : "fork.knife")
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                Text(existing == nil ? "选择" : "记录")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 58, height: 34)
+                    .background(AcquisitionPalette.brand, in: RoundedRectangle(cornerRadius: 9))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(AcquisitionPalette.brand)
+            .buttonStyle(.plain)
+            .accessibilityLabel(existing == nil ? "选择 \(candidate.name)" : "再次记录到访 \(candidate.name)")
             .accessibilityIdentifier("candidate-select-\(candidate.id.uuidString)")
         }
-        .padding(14)
-        .background(AcquisitionPalette.surfaceSubtle, in: RoundedRectangle(cornerRadius: 18))
-        .overlay { RoundedRectangle(cornerRadius: 18).stroke(AcquisitionPalette.border) }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 9)
+        .background(AcquisitionPalette.surfaceSubtle, in: RoundedRectangle(cornerRadius: 12))
+        .overlay { RoundedRectangle(cornerRadius: 12).stroke(AcquisitionPalette.border) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-candidate-\(candidate.id.uuidString)")
     }
@@ -758,20 +766,21 @@ private struct AcquisitionSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: systemImage)
                     .foregroundStyle(AcquisitionPalette.brand)
-                    .frame(width: 30, height: 30)
-                    .background(AcquisitionPalette.brandSoft, in: RoundedRectangle(cornerRadius: 10))
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 24, height: 24)
+                    .background(AcquisitionPalette.brandSoft, in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline).foregroundStyle(AcquisitionPalette.ink)
-                    Text(subtitle).font(.caption).foregroundStyle(AcquisitionPalette.muted)
+                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(AcquisitionPalette.ink)
+                    Text(subtitle).font(.caption2).foregroundStyle(AcquisitionPalette.muted)
                 }
             }
             content
         }
-        .padding(16)
+        .padding(12)
         .acquisitionCard()
     }
 }
@@ -787,7 +796,8 @@ private struct AcquisitionMessage: View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: icon)
                 .foregroundStyle(AcquisitionPalette.brand)
-                .frame(width: 32, height: 32)
+                .font(.caption.weight(.semibold))
+                .frame(width: 26, height: 26)
                 .background(AcquisitionPalette.brandSoft, in: Circle())
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(AcquisitionPalette.ink)
@@ -798,8 +808,8 @@ private struct AcquisitionMessage: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(AcquisitionPalette.surfaceSubtle, in: RoundedRectangle(cornerRadius: 14))
+        .padding(9)
+        .background(AcquisitionPalette.surfaceSubtle, in: RoundedRectangle(cornerRadius: 11))
     }
 }
 
@@ -815,8 +825,8 @@ private struct AcquisitionMethodButton: View {
                 Image(systemName: icon)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(AcquisitionPalette.brand)
-                    .frame(width: 42, height: 42)
-                    .background(AcquisitionPalette.brandSoft, in: RoundedRectangle(cornerRadius: 13))
+                    .frame(width: 34, height: 34)
+                    .background(AcquisitionPalette.brandSoft, in: RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(AcquisitionPalette.ink)
                     Text(subtitle).font(.caption).foregroundStyle(AcquisitionPalette.muted).multilineTextAlignment(.leading)
@@ -824,7 +834,7 @@ private struct AcquisitionMethodButton: View {
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(AcquisitionPalette.muted)
             }
-            .frame(minHeight: 52)
+            .frame(minHeight: 42)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -845,14 +855,14 @@ private enum AcquisitionPalette {
 
 private extension View {
     func acquisitionCard() -> some View {
-        background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(AcquisitionPalette.border) }
+        background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(AcquisitionPalette.border) }
     }
 
     func acquisitionInput() -> some View {
         padding(.horizontal, 12)
-            .frame(minHeight: 48)
-            .background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).stroke(AcquisitionPalette.border) }
+            .frame(minHeight: 42)
+            .background(AcquisitionPalette.surface, in: RoundedRectangle(cornerRadius: 11))
+            .overlay { RoundedRectangle(cornerRadius: 11).stroke(AcquisitionPalette.border) }
     }
 }

@@ -116,7 +116,7 @@ struct DiningCompanionOverviewView: View {
         }
         .background(TasteMapAnalysisTheme.canvas.ignoresSafeArea())
         .tasteMapBottomNavigationHidden()
-        .navigationTitle("饭搭子分析")
+        .navigationTitle("最佳饭搭子")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("companion-analysis-overview")
     }
@@ -242,7 +242,7 @@ struct DiningCompanionOverviewView: View {
 
     private var privacyNote: some View {
         Label(
-            "饭搭子分析只存在于你的个人分析页；不会自动进入 Public Profile。",
+            "最佳饭搭子只存在于你的个人分析页；不会自动进入 Public Profile。",
             systemImage: "lock.shield"
         )
         .font(.caption)
@@ -715,7 +715,7 @@ private struct CompanionRestaurantDetailSheet: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RestaurantDetailView(restaurant: restaurant)
+            RestaurantDetailView(restaurant: restaurant, entrySource: .analysis)
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.headline.weight(.bold))

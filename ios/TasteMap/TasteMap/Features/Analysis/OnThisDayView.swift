@@ -208,7 +208,7 @@ struct OnThisDayAnalysisView: View {
     private func memoryDestination(_ memory: OnThisDayMemory) -> some View {
         let card = OnThisDayMemoryCard(memory: memory, photosByID: photosByID)
         if let restaurant = restaurantsByID[memory.restaurantID] {
-            NavigationLink { RestaurantDetailView(restaurant: restaurant) } label: { card }
+            NavigationLink { RestaurantDetailView(restaurant: restaurant, entrySource: .onThisDay) } label: { card }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("on-this-day-memory-\(memory.id.uuidString)")
         } else {

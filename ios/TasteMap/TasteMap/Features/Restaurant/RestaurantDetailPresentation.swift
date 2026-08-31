@@ -151,6 +151,25 @@ struct RestaurantDetailMetadata: Equatable {
         globalIdentityKeys = keys
     }
 
+    init(projection: DiscoveryRestaurantProjectionV1) {
+        ownerUserID = nil
+        storedPhone = nil
+        openingHours = nil
+        if let price = projection.pricePerPerson, price.isFinite, price > 0 {
+            referencePrice = Decimal(price)
+        } else {
+            referencePrice = nil
+        }
+        longTermNote = nil
+        merchantImageURL = Self.safeHTTPSURL(projection.merchantImageUrl)
+        markerPhotoID = projection.photo?.photoId
+        markerEmoji = Self.trimmed(projection.markerEmoji) ?? "🍽️"
+        markerType = .emoji
+        globalIdentityKeys = Set(
+            projection.placeIdentities.map { "\($0.provider.rawValue):\($0.externalId)" }
+        )
+    }
+
     var callablePhone: String? {
         guard let storedPhone, RestaurantPhoneDialing.url(for: storedPhone) != nil else { return nil }
         return storedPhone
@@ -223,7 +242,7 @@ enum RestaurantRatingReferenceResolver {
         guard let context = contexts.first else { return [] }
 
         return [
-            reference(title: "大家评分", rating: context.ratings.community, systemImage: "person.3.fill"),
+            reference(title: "全部用户评分", rating: context.ratings.community, systemImage: "person.3.fill"),
             reference(title: "好友评分", rating: context.ratings.friends, systemImage: "person.2.fill"),
             reference(title: "同味评分", rating: context.ratings.similarTaste, systemImage: "person.2.wave.2.fill"),
         ].compactMap { $0 }

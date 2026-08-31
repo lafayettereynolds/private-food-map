@@ -38,6 +38,7 @@ enum TasteMapUITestFixtures {
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
     static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
     static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
+    static let module8MapClusterEnvironmentKey = "TASTEMAP_MODULE8_MAP_CLUSTER_UI_TEST"
     static let f3ADetailEnvironmentKey = "TASTEMAP_F3A_DETAIL_UI_TEST"
     static let onThisDayEnvironmentKey = "TASTEMAP_F7A_ON_THIS_DAY_UI_TEST"
     static let coreParityInitialTabEnvironmentKey = "TASTEMAP_CORE_PARITY_INITIAL_TAB"
@@ -73,6 +74,10 @@ enum TasteMapUITestFixtures {
 
     static var usesF2BFiltersFixture: Bool {
         ProcessInfo.processInfo.environment[f2BFiltersEnvironmentKey] == "1"
+    }
+
+    static var usesModule8MapClusterFixture: Bool {
+        ProcessInfo.processInfo.environment[module8MapClusterEnvironmentKey] == "1"
     }
 
     static var usesRestaurantAcquisitionFixture: Bool {
@@ -198,6 +203,7 @@ enum TasteMapUITestFixtures {
             || usesRestaurantRouletteFixture
             || usesF2ABrowsingFixture
             || usesF2BFiltersFixture
+            || usesModule8MapClusterFixture
             || usesOnThisDayFixture
     }
 
@@ -668,6 +674,50 @@ enum TasteMapUITestFixtures {
         try context.save()
     }
 
+    /// A deterministic, development-only fixture that proves the far-zoom map
+    /// uses a dining visual with a secondary count badge while close browsing
+    /// continues to render individual restaurant markers.
+    static func insertModule8MapClusterFixture(into container: ModelContainer) throws {
+        guard usesModule8MapClusterFixture else { return }
+        let context = container.mainContext
+        let baseLatitude = 30.2741
+        let baseLongitude = 120.1551
+
+        for index in 0..<18 {
+            let row = index / 6
+            let column = index % 6
+            context.insert(Restaurant(
+                id: uuid(18_000 + index),
+                name: "餐饮视觉聚合样本 \(index + 1)",
+                address: "杭州聚合样本 \(index + 1) 号",
+                latitude: baseLatitude + Double(row) * 0.00035,
+                longitude: baseLongitude + Double(column) * 0.00035,
+                city: "杭州",
+                status: .visited,
+                createdAt: Date(timeIntervalSince1970: 1_788_100_000 + Double(index)),
+                updatedAt: Date(timeIntervalSince1970: 1_788_100_000 + Double(index)),
+                syncStatus: .synced
+            ))
+        }
+
+        // A distant visited restaurant forces the initial fitted region into
+        // the explicit far-zoom clustering policy without changing production
+        // camera behavior.
+        context.insert(Restaurant(
+            id: uuid(18_100),
+            name: "上海远距离样本",
+            address: "上海市静安区",
+            latitude: 31.2304,
+            longitude: 121.4737,
+            city: "上海",
+            status: .visited,
+            createdAt: Date(timeIntervalSince1970: 1_788_100_100),
+            updatedAt: Date(timeIntervalSince1970: 1_788_100_100),
+            syncStatus: .synced
+        ))
+        try context.save()
+    }
+
     static func insertF2BFiltersFixture(into container: ModelContainer) throws {
         guard usesF2BFiltersFixture else { return }
         let context = container.mainContext
@@ -842,6 +892,11 @@ enum TasteMapUITestFixtures {
                     reason,
                     .init(code: "COMMUNITY_QUALITY", text: "当前城市的公开评分样本稳定"),
                 ], sourceUser: mode == .trending ? nil : source,
+                activity: .init(
+                    visitId: "visit:p3c-ui-\(index)",
+                    visitedAt: "2026-08-30T12:00:00.000Z",
+                    rating: index == 1 ? nil : 3.5
+                ),
                 similarity: mode == .similarTaste ? .init(percent: 91, sharedRestaurantCount: 5) : nil,
                 trend: mode == .trending ? .init(windowDays: window, uniqueVisitorCount: 8, wantToGoCount: 3) : nil,
                 cacheScope: .public, rank: index + 1, score: Double(100 - index)
@@ -892,7 +947,7 @@ enum TasteMapUITestFixtures {
             let visit = PublicVisitV1(
                 id: "visit-p3d-ui-\(index)", ownerUserId: user.userId,
                 restaurantGlobalKey: restaurant.globalKey, visitedAt: eventAt,
-                rating: index == 1 ? nil : 4.5,
+                rating: index == 1 || index == 2 ? nil : 4.5,
                 note: index == 2
                     ? "这是一段用于验证较长内容的真实到访备注。菜的火候很稳，朋友们都愿意下次再来；即使文字变长，卡片也应该保持清楚、自然，并且不能泄露消费、饭搭子或推荐来源。"
                     : "热气腾腾，味道很稳，适合和朋友慢慢吃。",
@@ -1161,7 +1216,8 @@ enum TasteMapUITestFixtures {
         guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
             .first(where: { $0.id == uuid(7_101) }) else { return }
         context.insert(Visit(
-            id: visitID, restaurantId: restaurant.id, visitedAt: .now,
+            id: visitID, ownerUserID: profileUserID,
+            restaurantId: restaurant.id, visitedAt: .now,
             rating: 4.5, note: "P4-E UI 新增年度到访", myActualSpend: 188,
             createdAt: .now, updatedAt: .now, syncStatus: .pending
         ))
@@ -1248,7 +1304,8 @@ enum TasteMapUITestFixtures {
         guard try context.fetch(FetchDescriptor<Visit>()).allSatisfy({ $0.id != visitID }) else { return }
         let restaurantID = uuid(6_000)
         context.insert(Visit(
-            id: visitID, restaurantId: restaurantID, visitedAt: .now,
+            id: visitID, ownerUserID: profileUserID,
+            restaurantId: restaurantID, visitedAt: .now,
             rating: 4.5, note: "P4-D UI 新增到访",
             myActualSpend: 198, createdAt: .now, updatedAt: .now,
             syncStatus: .pending

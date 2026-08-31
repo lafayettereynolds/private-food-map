@@ -85,6 +85,33 @@ enum RestaurantDistanceOrdering {
     }
 }
 
+enum RestaurantNearbySearchPolicy {
+    static let keywords = ["餐厅", "美食", "饭店"]
+
+    static func merge(
+        _ batches: [[RestaurantCandidate]],
+        from origin: RestaurantCoordinate,
+        radiusMeters: Double
+    ) -> [RestaurantCandidate] {
+        var seen = Set<String>()
+        let unique = batches.flatMap { $0 }.filter { candidate in
+            seen.insert(identityKey(for: candidate)).inserted
+        }
+        return RestaurantDistanceOrdering.measuringAndSorting(unique, from: origin)
+            .filter { ($0.distanceMeters ?? .greatestFiniteMagnitude) <= radiusMeters }
+    }
+
+    private static func identityKey(for candidate: RestaurantCandidate) -> String {
+        if let identity = candidate.placeIdentities.first {
+            return "\(identity.provider.rawValue):\(identity.externalID)"
+        }
+        let normalizedName = candidate.name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        return "coordinate:\(normalizedName):\(candidate.latitude.rounded(toPlaces: 5)):\(candidate.longitude.rounded(toPlaces: 5))"
+    }
+}
+
 struct MapKitRestaurantSearchService: RestaurantSearching {
     nonisolated init() {}
 
@@ -120,20 +147,46 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
 
     func nearby(center: RestaurantCoordinate, radiusMeters: Double = 3_000) async throws -> [RestaurantCandidate] {
         guard center.isValid else { throw RestaurantSearchError.invalidCoordinate }
+        async let restaurantBatch = nearbyCandidates(
+            matching: RestaurantNearbySearchPolicy.keywords[0],
+            center: center,
+            radiusMeters: radiusMeters
+        )
+        async let foodBatch = nearbyCandidates(
+            matching: RestaurantNearbySearchPolicy.keywords[1],
+            center: center,
+            radiusMeters: radiusMeters
+        )
+        async let diningBatch = nearbyCandidates(
+            matching: RestaurantNearbySearchPolicy.keywords[2],
+            center: center,
+            radiusMeters: radiusMeters
+        )
+        let outcomes = await [restaurantBatch, foodBatch, diningBatch]
+        let successfulBatches = outcomes.compactMap { $0 }
+        guard !successfulBatches.isEmpty else { throw RestaurantSearchError.locationNotFound }
+        return RestaurantNearbySearchPolicy.merge(
+            successfulBatches,
+            from: center,
+            radiusMeters: radiusMeters
+        )
+    }
+
+    private func nearbyCandidates(
+        matching query: String,
+        center: RestaurantCoordinate,
+        radiusMeters: Double
+    ) async -> [RestaurantCandidate]? {
         let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "餐厅"
+        request.naturalLanguageQuery = query
         request.resultTypes = .pointOfInterest
         request.region = MKCoordinateRegion(
             center: center.clLocationCoordinate,
             latitudinalMeters: radiusMeters * 2,
             longitudinalMeters: radiusMeters * 2
         )
-        let response = try await MKLocalSearch(request: request).start()
-        return RestaurantDistanceOrdering.measuringAndSorting(
-            candidates(from: response.mapItems, city: ""),
-            from: center
-        )
-            .filter { ($0.distanceMeters ?? .greatestFiniteMagnitude) <= radiusMeters }
+        guard let response = try? await MKLocalSearch(request: request).start() else { return nil }
+        return candidates(from: response.mapItems, city: "")
     }
 
     func locationContext(for coordinate: RestaurantCoordinate) async throws -> RestaurantLocationContext {
@@ -241,6 +294,13 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+}
+
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let scale = pow(10, Double(places))
+        return (self * scale).rounded() / scale
     }
 }
 

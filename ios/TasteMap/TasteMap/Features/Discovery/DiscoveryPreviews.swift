@@ -71,6 +71,11 @@ private enum DiscoveryPreviewFixtures {
                     reason,
                     .init(code: "COMMUNITY_QUALITY", text: "当前城市的公开评分样本稳定"),
                 ], sourceUser: mode == .trending ? nil : user,
+                activity: .init(
+                    visitId: "preview-visit-\(index)",
+                    visitedAt: "2026-08-30T12:00:00.000Z",
+                    rating: index == 1 ? nil : 3.5
+                ),
                 similarity: mode == .similarTaste ? .init(percent: 91, sharedRestaurantCount: 5) : nil,
                 trend: mode == .trending ? .init(windowDays: 7, uniqueVisitorCount: 8, wantToGoCount: 4) : nil,
                 cacheScope: .public, rank: index + 1, score: Double(100 - index)

@@ -46,7 +46,7 @@ struct RecommendationSourcePosterView: View {
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
             }
             .foregroundStyle(TasteMapAnalysisTheme.brand)
-            Text("我的推荐来源档案")
+            Text("谁最会种草")
                 .font(.system(size: 60, weight: .heavy, design: .rounded))
                 .foregroundStyle(TasteMapAnalysisTheme.ink)
             Text("\(overview.userDisplayName) · 谁真正带我吃到了好店")
@@ -67,7 +67,11 @@ struct RecommendationSourcePosterView: View {
             ZStack {
                 Circle().fill(TasteMapAnalysisTheme.caramelSoft).frame(width: 300, height: 300)
                 Circle().stroke(.white, lineWidth: 12).frame(width: 270, height: 270)
-                Text("🍲").font(.system(size: 132))
+                Image("FoodHeroMixed")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 260, height: 260)
+                    .accessibilityHidden(true)
             }
             .offset(y: 8)
             ForEach(Array(overview.sources.filter(\.hasUsage).prefix(4).enumerated()), id: \.element.id) { index, source in
@@ -88,7 +92,14 @@ struct RecommendationSourcePosterView: View {
     private func sourceTicket(_ source: RecommendationSourceAnalysis) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(source.sourceType.analysisSymbol).font(.system(size: 27))
+                FoodDiningVisualIcon(
+                    kind: source.sourceType.analysisVisualKind,
+                    usage: .dataLinked,
+                    size: 38,
+                    foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                    backgroundColor: TasteMapAnalysisTheme.brandSoft,
+                    accessibilityLabel: source.sourceType.title
+                )
                 Spacer()
                 Text("\(source.restaurantCount) 家")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -135,7 +146,7 @@ struct RecommendationSourcePosterView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
-                Text(symbol).font(.system(size: 25))
+                AnalysisFoodGlyph(symbol: symbol, tone: tone, size: 36, semanticID: "source-\(title)")
                 Text(title)
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(TasteMapAnalysisTheme.color(for: tone))
@@ -168,7 +179,13 @@ struct RecommendationSourcePosterView: View {
             }
             if overview.representativeRestaurants.isEmpty {
                 HStack(spacing: 15) {
-                    Text("🍽️").font(.system(size: 40))
+                    FoodDiningVisualIcon(
+                        kind: .genericDining,
+                        usage: .decorative,
+                        size: 56,
+                        foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                        backgroundColor: TasteMapAnalysisTheme.brandSoft
+                    )
                     VStack(alignment: .leading, spacing: 4) {
                         Text("餐厅证据正在形成")
                             .font(.system(size: 21, weight: .bold, design: .rounded))

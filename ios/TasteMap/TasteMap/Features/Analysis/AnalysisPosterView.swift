@@ -119,7 +119,12 @@ struct AnalysisPosterView: View {
                 ForEach(Array(posterInsights.prefix(4))) { insight in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
-                            Text(insight.icon).font(.system(size: 22))
+                            AnalysisFoodGlyph(
+                                symbol: insight.icon,
+                                tone: insight.tone,
+                                size: 32,
+                                semanticID: insight.id
+                            )
                             Text(insight.title)
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .foregroundStyle(TasteMapAnalysisTheme.color(for: insight.tone))
@@ -143,7 +148,14 @@ struct AnalysisPosterView: View {
     private var keywordStrip: some View {
         if report.keywords.isEmpty {
             HStack(spacing: 12) {
-                Text("🏷️")
+                FoodDiningVisualIcon(
+                    kind: .tag,
+                    usage: .dataLinked,
+                    size: 34,
+                    foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                    backgroundColor: TasteMapAnalysisTheme.brandSoft,
+                    accessibilityLabel: "口味关键词"
+                )
                 Text("口味关键词正在形成")
             }
             .font(.system(size: 20, weight: .semibold, design: .rounded))
@@ -182,7 +194,13 @@ struct AnalysisPosterView: View {
 
             if report.restaurants.isEmpty {
                 HStack(spacing: 16) {
-                    Text("🍽️").font(.system(size: 34))
+                    FoodDiningVisualIcon(
+                        kind: .genericDining,
+                        usage: .decorative,
+                        size: 52,
+                        foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                        backgroundColor: TasteMapAnalysisTheme.brandSoft
+                    )
                     VStack(alignment: .leading, spacing: 4) {
                         Text("代表餐厅还在形成")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -307,7 +325,12 @@ struct PosterCalloutCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
-                Text(callout.icon).font(.system(size: 25))
+                AnalysisFoodGlyph(
+                    symbol: callout.icon,
+                    tone: callout.tone,
+                    size: 36,
+                    semanticID: callout.id
+                )
                 Text(callout.title)
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
@@ -349,7 +372,13 @@ struct PosterRestaurantCard: View {
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
-                        Text("🍽️").font(.system(size: 44))
+                        FoodDiningVisualIcon(
+                            kind: .genericDining,
+                            usage: .decorative,
+                            size: 62,
+                            foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                            backgroundColor: .white.opacity(0.7)
+                        )
                     }
                 }
             }

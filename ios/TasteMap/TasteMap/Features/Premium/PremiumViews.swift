@@ -487,19 +487,120 @@ struct PremiumFeatureInlineBadge: View {
 
 struct PremiumBurgerBadge: View {
     var body: some View {
-        GeometryReader { proxy in
-            let size = min(proxy.size.width, proxy.size.height)
-            VStack(spacing: size * 0.035) {
-                Capsule().fill(PremiumTheme.bun).frame(height: size * 0.3)
-                Capsule().fill(PremiumTheme.leaf).frame(height: size * 0.13)
-                Capsule().fill(PremiumTheme.patty).frame(height: size * 0.17)
-                Capsule().fill(PremiumTheme.bun).frame(height: size * 0.22)
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / PremiumBurgerAssetContract.viewBox
+            context.translateBy(
+                x: (size.width - PremiumBurgerAssetContract.viewBox * scale) / 2,
+                y: (size.height - PremiumBurgerAssetContract.viewBox * scale) / 2
+            )
+            context.scaleBy(x: scale, y: scale)
+
+            draw(
+                Self.bunPath, fill: Self.bun, stroke: Self.bunStroke,
+                in: &context
+            )
+            draw(
+                Self.greensPath, fill: Self.greens, stroke: Self.greensStroke,
+                in: &context
+            )
+            draw(
+                Self.pattyPath, fill: Self.patty, stroke: Self.pattyStroke,
+                in: &context
+            )
+            draw(
+                Self.bottomPath, fill: Self.bun, stroke: Self.bunStroke,
+                in: &context
+            )
+            for point in [CGPoint(x: 8.75, y: 7.6), .init(x: 12.05, y: 6.7), .init(x: 15.25, y: 7.6)] {
+                context.fill(
+                    Path(ellipseIn: CGRect(x: point.x - 0.45, y: point.y - 0.45, width: 0.9, height: 0.9)),
+                    with: .color(Self.seed)
+                )
             }
-            .padding(size * 0.12)
         }
         .aspectRatio(1, contentMode: .fit)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Taste Map Premium")
+        .accessibilityIdentifier("premium-burger-approved-asset")
     }
+
+    private static let bun = Color(red: 231 / 255, green: 184 / 255, blue: 94 / 255)
+    private static let bunStroke = Color(red: 184 / 255, green: 120 / 255, blue: 37 / 255)
+    private static let greens = Color(red: 121 / 255, green: 166 / 255, blue: 110 / 255)
+    private static let greensStroke = Color(red: 85 / 255, green: 125 / 255, blue: 79 / 255)
+    private static let patty = Color(red: 164 / 255, green: 93 / 255, blue: 66 / 255)
+    private static let pattyStroke = Color(red: 119 / 255, green: 64 / 255, blue: 47 / 255)
+    private static let seed = Color(red: 255 / 255, green: 244 / 255, blue: 203 / 255)
+
+    private static let bunPath: Path = {
+        var path = Path()
+        path.move(to: CGPoint(x: 4.7, y: 10.2))
+        path.addCurve(
+            to: CGPoint(x: 12, y: 4.5),
+            control1: CGPoint(x: 5.1, y: 6.8), control2: CGPoint(x: 7.9, y: 4.5)
+        )
+        path.addCurve(
+            to: CGPoint(x: 19.3, y: 10.2),
+            control1: CGPoint(x: 16.1, y: 4.5), control2: CGPoint(x: 18.9, y: 6.8)
+        )
+        path.closeSubpath()
+        return path
+    }()
+
+    private static let greensPath: Path = {
+        var path = Path()
+        path.move(to: CGPoint(x: 4.5, y: 12))
+        path.addLine(to: CGPoint(x: 19.5, y: 12))
+        path.addLine(to: CGPoint(x: 17.5, y: 14.2))
+        path.addLine(to: CGPoint(x: 15, y: 12.9))
+        path.addLine(to: CGPoint(x: 12.2, y: 14.4))
+        path.addLine(to: CGPoint(x: 9.6, y: 12.9))
+        path.addLine(to: CGPoint(x: 7.2, y: 14.2))
+        path.closeSubpath()
+        return path
+    }()
+
+    private static let pattyPath = Path(
+        roundedRect: CGRect(x: 5.2, y: 15.2, width: 13.6, height: 2.1),
+        cornerRadius: 0.25
+    )
+
+    private static let bottomPath: Path = {
+        var path = Path()
+        path.move(to: CGPoint(x: 5.5, y: 18.2))
+        path.addLine(to: CGPoint(x: 18.5, y: 18.2))
+        path.addLine(to: CGPoint(x: 18.5, y: 18.5))
+        path.addCurve(
+            to: CGPoint(x: 16.8, y: 20.2),
+            control1: CGPoint(x: 18.5, y: 19.45), control2: CGPoint(x: 17.75, y: 20.2)
+        )
+        path.addLine(to: CGPoint(x: 7.2, y: 20.2))
+        path.addCurve(
+            to: CGPoint(x: 5.5, y: 18.5),
+            control1: CGPoint(x: 6.25, y: 20.2), control2: CGPoint(x: 5.5, y: 19.45)
+        )
+        path.closeSubpath()
+        return path
+    }()
+
+    private func draw(
+        _ path: Path,
+        fill: Color,
+        stroke: Color,
+        in context: inout GraphicsContext
+    ) {
+        context.fill(path, with: .color(fill))
+        context.stroke(
+            path,
+            with: .color(stroke),
+            style: StrokeStyle(lineWidth: 1.15, lineCap: .round, lineJoin: .round)
+        )
+    }
+}
+
+nonisolated enum PremiumBurgerAssetContract {
+    static let semanticVersion = "web-approved-hamburger-v1"
+    static let viewBox: CGFloat = 24
 }
 
 private struct PremiumFoodMotif: View {

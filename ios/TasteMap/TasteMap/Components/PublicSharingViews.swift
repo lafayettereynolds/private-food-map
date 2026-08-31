@@ -183,9 +183,7 @@ struct PublicShareLandingView: View {
     private func content(_ entity: PublicShareEntityV1) -> some View {
         switch entity {
         case .restaurant(let value):
-            shareCard(title: value.name, subtitle: [value.city, value.address].filter { !$0.isEmpty }.joined(separator: " · "), imageURL: value.merchantImageUrl) {
-                if !value.cuisines.isEmpty { Text(value.cuisines.joined(separator: " · ")).foregroundStyle(.secondary) }
-            }
+            PublicSharedRestaurantDetailBody(value: value)
         case .profile(let value):
             shareCard(title: value.displayName, subtitle: value.city ?? "Taste Map 用户", imageURL: nil) {
                 if let bio = value.bio { Text(bio).foregroundStyle(.secondary) }
@@ -245,5 +243,145 @@ struct PublicShareLandingView: View {
     private func load() async {
         do { response = try await api.read(shareID: shareID) }
         catch { errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+    }
+}
+
+/// A public share is another Restaurant entry source, not a separate card-only
+/// product. The public contract intentionally omits private fields, so this
+/// wrapper supplies honest empty states to the same ordered detail body.
+private struct PublicSharedRestaurantDetailBody: View {
+    let value: PublicRestaurantShareV1
+
+    private var identity: RestaurantDetailIdentityPresentation {
+        value.restaurantDetailIdentity
+    }
+
+    var body: some View {
+        RestaurantDetailStandardBody {
+            hero
+        } header: {
+            RestaurantDetailHeader(identity: identity)
+        } actions: {
+            publicActions
+        } business: {
+            if let price = value.pricePerPerson, price.isFinite, price > 0 {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("餐厅信息").font(.headline)
+                    Label(
+                        RestaurantDetailFormatting.referencePrice(Decimal(price)),
+                        systemImage: FoodDiningVisualKind.receipt.systemImageName
+                    )
+                    .font(.subheadline)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+                .tasteMapCoreCard(radius: 22)
+                .accessibilityIdentifier("restaurant-business-information")
+            }
+        } location: {
+            EmptyView()
+        } ratings: {
+            EmptyView()
+        } userPhotos: {
+            RestaurantUserPhotosSection(hasPhotos: false) { EmptyView() }
+        } personalOverview: {
+            RestaurantDetailStatsSection(
+                remoteMessage: "公开分享不会暴露任何人的私人到访；登录后明确记录，才会显示你的记录。"
+            )
+        } history: {
+            RestaurantVisitHistorySection(
+                visits: [],
+                companionNamesByID: [:],
+                sourceNamesByID: [:],
+                onEdit: { _ in },
+                onDelete: { _ in }
+            )
+        } context: {
+            if !value.cuisines.isEmpty {
+                Label(value.cuisines.joined(separator: " · "), systemImage: FoodDiningVisualKind.menu.systemImageName)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .tasteMapCoreCard(radius: 22)
+            }
+        } extended: {
+            Label("公开状态发生变化后，这个链接会立即停止展示内容。", systemImage: "hand.raised.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityIdentifier("restaurant-detail-standard-body-share")
+    }
+
+    private var hero: some View {
+        Group {
+            if let url = value.merchantImageUrl {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        heroFallback
+                    }
+                }
+            } else {
+                heroFallback
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 216)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipped()
+        .accessibilityIdentifier("restaurant-photo-gallery")
+    }
+
+    private var heroFallback: some View {
+        LinearGradient(
+            colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surfaceSubtle],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay {
+            FoodDiningVisualIcon(
+                kind: .restaurant,
+                usage: .decorative,
+                size: 72,
+                foregroundColor: TasteMapCoreTheme.brandDeep,
+                backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
+            )
+        }
+    }
+
+    private var publicActions: some View {
+        HStack(spacing: 10) {
+            Button {
+                UIPasteboard.general.string = value.name
+            } label: {
+                Label("复制餐厅名", systemImage: "doc.on.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            if !value.address.isEmpty {
+                Button {
+                    UIPasteboard.general.string = value.address
+                } label: {
+                    Label("复制地址", systemImage: "mappin.and.ellipse")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(14)
+        .tasteMapCoreCard(radius: 16)
+        .accessibilityIdentifier("restaurant-detail-quick-actions")
+    }
+}
+
+extension PublicRestaurantShareV1 {
+    var restaurantDetailIdentity: RestaurantDetailIdentityPresentation {
+        RestaurantDetailIdentityPresentation(
+            name: name,
+            address: address,
+            city: city
+        )
     }
 }
