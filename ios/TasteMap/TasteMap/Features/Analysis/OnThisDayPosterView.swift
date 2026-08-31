@@ -154,7 +154,13 @@ struct OnThisDayPosterView: View {
             )
             .overlay {
                 VStack(spacing: 12) {
-                    Text("🍲").font(.system(size: 92))
+                    FoodDiningVisualIcon(
+                        kind: .genericDining,
+                        usage: .decorative,
+                        size: 104,
+                        foregroundColor: ink,
+                        backgroundColor: .white.opacity(0.55)
+                    )
                     Text("一顿值得记住的饭")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundStyle(ink.opacity(0.68))

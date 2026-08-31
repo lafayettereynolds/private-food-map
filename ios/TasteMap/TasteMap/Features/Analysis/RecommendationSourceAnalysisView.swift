@@ -134,7 +134,14 @@ struct RecommendationSourceOverviewView: View {
                 .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
             Button { isShowingPoster = true } label: {
                 HStack(spacing: 10) {
-                    Text("🧾")
+                    FoodDiningVisualIcon(
+                        kind: .receipt,
+                        usage: .dataLinked,
+                        size: 38,
+                        foregroundColor: .white,
+                        backgroundColor: .white.opacity(0.16),
+                        accessibilityLabel: "推荐来源海报"
+                    )
                     VStack(alignment: .leading, spacing: 2) {
                         Text("生成推荐来源分享海报").font(.subheadline.weight(.bold))
                         Text("包含“最坑推荐来源”，但不会暴露私人备注").font(.caption).opacity(0.84)
@@ -219,7 +226,14 @@ struct RecommendationSourceOverviewView: View {
                             .font(.title2.weight(.heavy))
                     }
                     Spacer()
-                    Text("🧾").font(.largeTitle)
+                    FoodDiningVisualIcon(
+                        kind: .receipt,
+                        usage: .dataLinked,
+                        size: 50,
+                        foregroundColor: TasteMapAnalysisTheme.caramel,
+                        backgroundColor: TasteMapAnalysisTheme.caramelSoft,
+                        accessibilityLabel: "来源统计小票"
+                    )
                 }
                 Divider().overlay(TasteMapAnalysisTheme.hairline)
                 receiptRow("来源目录", value: "\(overview.sourceCount) 个")
@@ -372,7 +386,7 @@ private struct RecommendationSourceSummaryCard: View {
             }
             Spacer(minLength: 5)
             VStack(alignment: .trailing, spacing: 5) {
-                Text(source.averageRating.map { "\($0.formatted(.number.precision(.fractionLength(1)))) ⭐️" } ?? "未评分")
+                Text(source.averageRating.map { "\($0.formatted(.number.precision(.fractionLength(1)))) / 5" } ?? "未评分")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(TasteMapAnalysisTheme.caramel)
                 Image(systemName: "chevron.right").foregroundStyle(TasteMapAnalysisTheme.brand)
@@ -483,7 +497,7 @@ struct RecommendationSourceDetailView: View {
 
     private func detailMetric(_ icon: String, _ title: String, _ value: String, _ tone: AnalysisTone) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(icon).font(.title3)
+            AnalysisFoodGlyph(symbol: icon, tone: tone, size: 38, semanticID: title)
             Text(title).font(.caption.weight(.bold)).foregroundStyle(TasteMapAnalysisTheme.color(for: tone))
             Text(value).font(.headline.weight(.heavy)).foregroundStyle(TasteMapAnalysisTheme.ink)
                 .lineLimit(2).minimumScaleFactor(0.72)
@@ -629,7 +643,11 @@ private struct RecommendationSourceTrailHero: View {
                     .padding(68)
                 ZStack {
                     Circle().fill(TasteMapAnalysisTheme.caramelSoft).frame(width: 176, height: 176)
-                    Text("🍲").font(.system(size: 78))
+                    Image("FoodHeroMixed")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 158, height: 158)
+                        .accessibilityHidden(true)
                 }
                 .position(x: width / 2, y: 185)
                 ForEach(Array(overview.sources.filter(\.hasUsage).prefix(4).enumerated()), id: \.element.id) { index, source in
@@ -651,7 +669,14 @@ private struct RecommendationSourceTrailHero: View {
 
     private func sourceTicket(_ source: RecommendationSourceAnalysis, index: Int) -> some View {
         VStack(spacing: 3) {
-            Text(source.sourceType.analysisSymbol).font(.title3)
+            FoodDiningVisualIcon(
+                kind: source.sourceType.analysisVisualKind,
+                usage: .dataLinked,
+                size: 32,
+                foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                backgroundColor: TasteMapAnalysisTheme.brandSoft,
+                accessibilityLabel: source.sourceType.title
+            )
             Text(source.displayName).font(.caption2.weight(.bold)).lineLimit(2).minimumScaleFactor(0.68)
             Text("\(source.restaurantCount) 家").font(.caption2).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
         }
@@ -695,6 +720,17 @@ private struct RecommendationSourceRestaurantDetailSheet: View {
 }
 
 extension RecommendationSourceType {
+    nonisolated var analysisVisualKind: FoodDiningVisualKind {
+        switch self {
+        case .friend: .sharedMeal
+        case .xiaohongshu, .douyin: .discovery
+        case .dianping: .receipt
+        case .blogger: .menu
+        case .self: .location
+        case .other: .discovery
+        }
+    }
+
     nonisolated var analysisSymbol: String {
         switch self {
         case .friend: "🥢"

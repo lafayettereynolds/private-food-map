@@ -97,7 +97,20 @@ struct AnnualRecapAnalysisScreen: View {
         return {
             do {
                 try TasteMapUITestFixtures.addAnnualRecapFixtureVisit(in: modelContext)
-                fixtureMessage = "已新增 1 次本年度到访，年度回顾已刷新。"
+                let period = selectedPeriod
+                let input = try AnalysisFixtureRefreshInput.capture(
+                    in: modelContext,
+                    currentUserID: accountScope.ownerUserID
+                )
+                fixtureMessage = nil
+                Task {
+                    let updated = await Task.detached(priority: .userInitiated) {
+                        AnnualRecapAnalyzer.analyze(input, period: period)
+                    }.value
+                    guard selectedPeriod.id == period.id else { return }
+                    report = updated
+                    fixtureMessage = "已新增 1 次本年度到访，年度回顾已刷新。"
+                }
             } catch { fixtureMessage = "测试到访新增失败。" }
         }
 #else
@@ -493,7 +506,7 @@ private struct AnnualMetricTile: View {
     let tone: AnalysisTone
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(symbol).font(.title2)
+            AnalysisFoodGlyph(symbol: symbol, tone: tone, size: 40, semanticID: title)
             Text(title).font(.caption.weight(.bold)).foregroundStyle(TasteMapAnalysisTheme.color(for: tone))
             Text(value).font(.title2.weight(.heavy)).foregroundStyle(TasteMapAnalysisTheme.ink)
                 .lineLimit(1).minimumScaleFactor(0.62)
@@ -557,7 +570,13 @@ private struct AnnualPhotoCollage: View {
             } else {
                 ZStack {
                     LinearGradient(colors: [TasteMapAnalysisTheme.creamSoft, TasteMapAnalysisTheme.brandSoft], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Text("🍽️").font(.system(size: 74))
+                    FoodDiningVisualIcon(
+                        kind: .genericDining,
+                        usage: .decorative,
+                        size: 88,
+                        foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                        backgroundColor: .white.opacity(0.72)
+                    )
                 }
             }
         }

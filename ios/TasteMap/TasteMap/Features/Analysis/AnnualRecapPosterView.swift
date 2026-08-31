@@ -219,7 +219,13 @@ struct AnnualRecapPosterView: View {
     private var posterFallback: some View {
         ZStack {
             LinearGradient(colors: [TasteMapAnalysisTheme.creamSoft, TasteMapAnalysisTheme.brandSoft], startPoint: .topLeading, endPoint: .bottomTrailing)
-            Text("🍽️").font(.system(size: 82))
+            FoodDiningVisualIcon(
+                kind: .genericDining,
+                usage: .decorative,
+                size: 94,
+                foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                backgroundColor: .white.opacity(0.72)
+            )
         }
     }
 }

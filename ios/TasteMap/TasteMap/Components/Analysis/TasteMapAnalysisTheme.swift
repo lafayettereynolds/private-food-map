@@ -1,17 +1,33 @@
 import SwiftUI
 import UIKit
 
+/// Testable light-mode values from the previously approved Analysis visual system.
+/// Keeping this contract separate from `TasteMapCorePaletteContract` protects the
+/// intended Analysis/Core theme boundary from future global restyling.
+enum TasteMapAnalysisPaletteContract {
+    static let brand = CoreRGB(80, 108, 140)
+    static let brandDeep = CoreRGB(52, 79, 105)
+    static let canvas = CoreRGB(251, 250, 247)
+    static let card = CoreRGB(255, 255, 255)
+    static let ink = CoreRGB(36, 49, 60)
+    static let secondaryInk = CoreRGB(102, 113, 121)
+    static let hairline = CoreRGB(226, 229, 226)
+}
+
 /// Shared visual language for in-app analysis and share-first poster compositions.
 /// In-app surfaces resolve semantically in Dark Mode. Exported poster roots explicitly
 /// force Light Mode, so their established warm-white composition remains deterministic.
 enum TasteMapAnalysisTheme {
-    static let brand = Color(red: 0.03, green: 0.56, blue: 0.97)
-    static let brandDeep = Color(red: 0.02, green: 0.35, blue: 0.69)
-    static let brandSoft = dynamic(light: .init(232, 247, 255), dark: .init(28, 48, 62))
-    static let canvas = TasteMapCoreTheme.page
-    static let card = TasteMapCoreTheme.surface
-    static let ink = TasteMapCoreTheme.textPrimary
-    static let secondaryInk = TasteMapCoreTheme.textSecondary
+    // Analysis deliberately has its own warm-white editorial palette. It shares
+    // Taste Map's established grey-blue brand, but does not inherit the Core App
+    // canvas wholesale; posters and story-led analysis need a distinct identity.
+    static let brand = dynamic(light: TasteMapAnalysisPaletteContract.brand, dark: .init(151, 183, 218))
+    static let brandDeep = dynamic(light: TasteMapAnalysisPaletteContract.brandDeep, dark: .init(193, 214, 236))
+    static let brandSoft = dynamic(light: .init(237, 242, 246), dark: .init(28, 48, 62))
+    static let canvas = dynamic(light: TasteMapAnalysisPaletteContract.canvas, dark: .init(18, 20, 22))
+    static let card = dynamic(light: TasteMapAnalysisPaletteContract.card, dark: .init(29, 32, 35))
+    static let ink = dynamic(light: TasteMapAnalysisPaletteContract.ink, dark: .init(238, 241, 243))
+    static let secondaryInk = dynamic(light: TasteMapAnalysisPaletteContract.secondaryInk, dark: .init(173, 181, 187))
     static let ingredientRed = Color(red: 0.88, green: 0.30, blue: 0.27)
     static let ingredientRedSoft = dynamic(light: .init(255, 235, 230), dark: .init(64, 38, 37))
     static let leafGreen = Color(red: 0.25, green: 0.60, blue: 0.38)
@@ -20,7 +36,7 @@ enum TasteMapAnalysisTheme {
     static let creamSoft = dynamic(light: .init(255, 247, 227), dark: .init(58, 50, 34))
     static let caramel = Color(red: 0.70, green: 0.43, blue: 0.25)
     static let caramelSoft = dynamic(light: .init(247, 232, 217), dark: .init(60, 46, 37))
-    static let hairline = TasteMapCoreTheme.border
+    static let hairline = dynamic(light: TasteMapAnalysisPaletteContract.hairline, dark: .init(58, 63, 67))
 
     private static func dynamic(light: CoreRGB, dark: CoreRGB) -> Color {
         Color(uiColor: UIColor { traits in
@@ -93,16 +109,17 @@ struct AnalysisFoodGlyph: View {
     let symbol: String
     let tone: AnalysisTone
     var size: CGFloat = 44
+    var semanticID: String? = nil
+    var usage: FoodDiningVisualUsage = .dataLinked
 
     var body: some View {
-        Text(symbol)
-            .font(.system(size: size * 0.48))
-            .frame(width: size, height: size)
-            .background(TasteMapAnalysisTheme.softColor(for: tone), in: Circle())
-            .overlay {
-                Circle().stroke(TasteMapAnalysisTheme.color(for: tone).opacity(0.14), lineWidth: 1)
-            }
-            .accessibilityHidden(true)
+        FoodDiningVisualIcon(
+            kind: FoodDiningVisualLibrary.kind(semanticID: semanticID, legacySymbol: symbol),
+            usage: usage,
+            size: size,
+            foregroundColor: TasteMapAnalysisTheme.color(for: tone),
+            backgroundColor: TasteMapAnalysisTheme.softColor(for: tone)
+        )
     }
 }
 
@@ -325,7 +342,13 @@ struct RestaurantEvidenceImage: View {
                 endPoint: .bottomTrailing
             )
             VStack(spacing: 5) {
-                Text("🍽️").font(.title2)
+                FoodDiningVisualIcon(
+                    kind: .genericDining,
+                    usage: .decorative,
+                    size: 42,
+                    foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                    backgroundColor: .white.opacity(0.72)
+                )
                 Text("暂无真实图片")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
@@ -395,7 +418,7 @@ struct SharedDiningTableHero: View {
                 AnalysisHeroMedia(hero: hero, photosByID: photosByID, size: min(218, width * 0.56))
                     .offset(y: 20)
 
-                placeSetting(symbol: "🥢", label: shortName(userDisplayName), tone: .brand)
+                placeSetting(label: shortName(userDisplayName), tone: .brand)
                     .position(x: width * 0.19, y: 94)
 
                 VStack(spacing: 7) {
@@ -430,13 +453,17 @@ struct SharedDiningTableHero: View {
         .accessibilityLabel("\(userDisplayName)和\(companionDisplayName)的共同餐桌")
     }
 
-    private func placeSetting(symbol: String, label: String, tone: AnalysisTone) -> some View {
+    private func placeSetting(label: String, tone: AnalysisTone) -> some View {
         VStack(spacing: 7) {
-            Text(symbol)
-                .font(.system(size: 30))
-                .frame(width: 68, height: 68)
-                .background(TasteMapAnalysisTheme.softColor(for: tone), in: Circle())
-                .overlay { Circle().stroke(.white, lineWidth: 3) }
+            FoodDiningVisualIcon(
+                kind: .tableware,
+                usage: .dataLinked,
+                size: 68,
+                foregroundColor: TasteMapAnalysisTheme.color(for: tone),
+                backgroundColor: TasteMapAnalysisTheme.softColor(for: tone),
+                accessibilityLabel: "你的餐具"
+            )
+            .overlay { Circle().stroke(.white, lineWidth: 3) }
             Text(label)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(TasteMapAnalysisTheme.ink)

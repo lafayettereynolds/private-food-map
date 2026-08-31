@@ -105,7 +105,20 @@ struct MonthlyRecapAnalysisScreen: View {
         return {
             do {
                 try TasteMapUITestFixtures.addMonthlyRecapFixtureVisit(in: modelContext)
-                fixtureMessage = "已新增 1 次本月到访，回顾已刷新。"
+                let period = selectedPeriod
+                let input = try AnalysisFixtureRefreshInput.capture(
+                    in: modelContext,
+                    currentUserID: accountScope.ownerUserID
+                )
+                fixtureMessage = nil
+                Task {
+                    let updated = await Task.detached(priority: .userInitiated) {
+                        MonthlyRecapAnalyzer.analyze(input, period: period)
+                    }.value
+                    guard selectedPeriod.id == period.id else { return }
+                    report = updated
+                    fixtureMessage = "已新增 1 次本月到访，回顾已刷新。"
+                }
             } catch {
                 fixtureMessage = "测试到访新增失败。"
             }
@@ -115,6 +128,44 @@ struct MonthlyRecapAnalysisScreen: View {
 #endif
     }
 }
+
+#if DEBUG
+@MainActor
+enum AnalysisFixtureRefreshInput {
+    static func capture(in context: ModelContext, currentUserID: String?) throws -> MonthlyRecapInput {
+        let restaurants = try context.fetch(FetchDescriptor<Restaurant>())
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let dishes = try context.fetch(FetchDescriptor<Dish>())
+        let visitDishes = try context.fetch(FetchDescriptor<VisitDish>())
+        let photos = try context.fetch(FetchDescriptor<PhotoAsset>())
+        let companions = try context.fetch(FetchDescriptor<DiningCompanion>())
+        let sources = try context.fetch(FetchDescriptor<RecommendationSource>())
+        let profiles = try context.fetch(FetchDescriptor<UserProfile>())
+        let owned = ProfileOwnedContentScope.capture(
+            currentUserID: currentUserID,
+            restaurants: restaurants,
+            visits: visits,
+            photos: photos,
+            dishes: dishes,
+            visitDishes: visitDishes,
+            companions: companions,
+            recommendationSources: sources
+        )
+        return MonthlyRecapInput.capture(
+            restaurants: owned.restaurants,
+            visits: owned.visits,
+            dishes: owned.dishes,
+            visitDishes: owned.visitDishes,
+            photos: owned.photos,
+            companions: owned.companions,
+            recommendationSources: owned.recommendationSources,
+            profile: profiles.first(where: {
+                $0.tasteMapUserID == currentUserID && $0.deletedAt == nil
+            })
+        )
+    }
+}
+#endif
 
 struct MonthlyRecapAnalysisView: View {
     let report: MonthlyRecapAnalysis
@@ -535,7 +586,7 @@ private struct MonthlyMetricTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(symbol).font(.title2)
+            AnalysisFoodGlyph(symbol: symbol, tone: tone, size: 40, semanticID: title)
             Text(title).font(.caption.weight(.bold)).foregroundStyle(TasteMapAnalysisTheme.color(for: tone))
             Text(value).font(.title2.weight(.heavy)).foregroundStyle(TasteMapAnalysisTheme.ink)
                 .lineLimit(1).minimumScaleFactor(0.68)

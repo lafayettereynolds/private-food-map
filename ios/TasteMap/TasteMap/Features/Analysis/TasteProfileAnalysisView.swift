@@ -287,7 +287,13 @@ struct TasteProfileAnalysisView: View {
 
     private var closingNote: some View {
         VStack(spacing: 10) {
-            Text("🍽️").font(.title)
+            FoodDiningVisualIcon(
+                kind: .genericDining,
+                usage: .decorative,
+                size: 44,
+                foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                backgroundColor: TasteMapAnalysisTheme.brandSoft
+            )
             Text("口味档案会随真实记录持续更新")
                 .font(.headline).foregroundStyle(TasteMapAnalysisTheme.ink)
             Text(report.dataNote)
@@ -366,7 +372,12 @@ struct AnalysisCalloutCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
-                Text(callout.icon)
+                AnalysisFoodGlyph(
+                    symbol: callout.icon,
+                    tone: callout.tone,
+                    size: 24,
+                    semanticID: callout.id
+                )
                 Text(callout.title)
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
@@ -398,7 +409,12 @@ struct AnalysisInsightStoryCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            AnalysisFoodGlyph(symbol: insight.icon, tone: insight.tone, size: 50)
+            AnalysisFoodGlyph(
+                symbol: insight.icon,
+                tone: insight.tone,
+                size: 50,
+                semanticID: insight.id
+            )
             VStack(alignment: .leading, spacing: 6) {
                 Text(insight.title)
                     .font(.caption.weight(.bold))
@@ -453,7 +469,14 @@ private struct SpendReceiptCard: View {
                         .font(.title2.weight(.heavy))
                 }
                 Spacer()
-                Text("🧾").font(.largeTitle)
+                FoodDiningVisualIcon(
+                    kind: .receipt,
+                    usage: .dataLinked,
+                    size: 48,
+                    foregroundColor: TasteMapAnalysisTheme.caramel,
+                    backgroundColor: TasteMapAnalysisTheme.caramelSoft,
+                    accessibilityLabel: "我的消费分布"
+                )
             }
             .foregroundStyle(TasteMapAnalysisTheme.ink)
 

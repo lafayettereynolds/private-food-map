@@ -1166,7 +1166,8 @@ enum TasteMapUITestFixtures {
         guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
             .first(where: { $0.id == uuid(7_101) }) else { return }
         context.insert(Visit(
-            id: visitID, restaurantId: restaurant.id, visitedAt: .now,
+            id: visitID, ownerUserID: profileUserID,
+            restaurantId: restaurant.id, visitedAt: .now,
             rating: 4.5, note: "P4-E UI 新增年度到访", myActualSpend: 188,
             createdAt: .now, updatedAt: .now, syncStatus: .pending
         ))
@@ -1253,7 +1254,8 @@ enum TasteMapUITestFixtures {
         guard try context.fetch(FetchDescriptor<Visit>()).allSatisfy({ $0.id != visitID }) else { return }
         let restaurantID = uuid(6_000)
         context.insert(Visit(
-            id: visitID, restaurantId: restaurantID, visitedAt: .now,
+            id: visitID, ownerUserID: profileUserID,
+            restaurantId: restaurantID, visitedAt: .now,
             rating: 4.5, note: "P4-D UI 新增到访",
             myActualSpend: 198, createdAt: .now, updatedAt: .now,
             syncStatus: .pending

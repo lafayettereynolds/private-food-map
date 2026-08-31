@@ -281,7 +281,12 @@ struct MonthlyRecapPosterView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(symbol).font(.system(size: 36))
+                AnalysisFoodGlyph(
+                    symbol: symbol,
+                    tone: tone,
+                    size: 48,
+                    semanticID: eyebrow
+                )
                 Spacer()
                 Circle().fill(TasteMapAnalysisTheme.color(for: tone)).frame(width: 10, height: 10)
             }
@@ -318,7 +323,13 @@ struct MonthlyRecapPosterView: View {
                 colors: [TasteMapAnalysisTheme.creamSoft, TasteMapAnalysisTheme.brandSoft],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
-            Text("🍽️").font(.system(size: 86))
+            FoodDiningVisualIcon(
+                kind: .genericDining,
+                usage: .decorative,
+                size: 96,
+                foregroundColor: TasteMapAnalysisTheme.brandDeep,
+                backgroundColor: .white.opacity(0.72)
+            )
         }
     }
 }
