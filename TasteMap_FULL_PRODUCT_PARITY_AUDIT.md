@@ -45,7 +45,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 - 已知 Product Parity S0 blocker：0；
 - 已知 Product Parity S1 blocker：0；
 - Map/List、Add/Nearby、Discovery/Community、Profile/Public Profile、唯一 Restaurant Detail、Roulette、五类 Analytics/海报和 Remaining Core 均已按最终 override 收口；
-- 发布、Production、真实 App Store Connect、最终真机 GPS/触觉/视觉 smoke 与已挂起的 F1-C4 重复导入问题仍是独立 Release Gate，不能被 Product Parity 的 PASS 混同为发布完成。
+- 发布、Production、真实 App Store Connect 与最终真机 GPS/触觉/视觉 smoke 仍是独立 Release Gate，不能被 Product Parity 的 PASS 混同为发布完成。F1-C4 重复 Visit 风险已经由精确 fixture regression 覆盖并在最终组合代码上再次通过，现已关闭。
 
 ## 1. Executive conclusion
 
@@ -285,7 +285,7 @@ remote detail 必须验证：浏览不会创建本地 Restaurant；显式 WantTo
 - 本轮不修改 Production Worker、Production D1、Production R2、Production secrets 或 App Store Connect。
 - 本轮不改变 Bundle ID、Team、Signing、Capabilities、SwiftData schema、Auth、Sync 或现有 ownership。
 - Development Web seed 只存在于本地浏览器 IndexedDB；没有写入 Production。
-- 当前已知 F1-C4 duplicate Visit Import bug 仍是独立已知问题，不在本轮借 parity 名义扩大处理。
+- F1-C4 duplicate Visit 风险未通过真实用户数据做危险复测；既有精确 fixture regression 已验证第二次相同 Legacy v4 source 在 cross-provider manual merge 后得到 `exactDuplicate`、零新增 Visit、零额外 mutation，并在最终组合代码上通过，因此状态为 CLOSED。
 
 ## 11. Audit disposition
 

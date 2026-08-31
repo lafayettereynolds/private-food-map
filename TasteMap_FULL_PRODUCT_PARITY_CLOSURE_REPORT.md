@@ -21,7 +21,7 @@ Production：未访问、未部署、未迁移、未写入
 - 五类 Analytics 页面和五类独立 9:16 海报恢复已认可的 Analysis Theme，不是普通报表或页面截图；
 - 全量 Web/Worker 与 iOS unit、关键 UI E2E、Debug/Release/device build 均通过。
 
-本报告的 PASS **不等同于 App Store 发布完成**。真实 StoreKit 商品、Production 部署、最终硬件 smoke，以及已挂起的 F1-C4 重复导入问题仍在第 15 节单独列出。
+本报告的 PASS **不等同于 App Store 发布完成**。真实 StoreKit 商品、Production 部署和最终硬件 smoke 仍在第 15 节单独列出。F1-C4 重复 Visit 风险已经由 Release Candidate 阶段的精确 fixture regression 覆盖，并在最终组合代码上再次通过，现已正式关闭。
 
 ## 2. Module 与 Git 追溯
 
@@ -395,11 +395,11 @@ generic device build 只验证 device SDK 编译，没有修改 Team、Bundle ID
 
 以下项目不会把本轮 Product Parity 判回 FAIL，但在正式发布前必须继续管理，且本报告没有伪报完成。
 
-### 15.1 P0 data-integrity gate
+### 15.1 F1-C4 repeated-import integrity（CLOSED）
 
-- **F1-C4：同一备份第二次真实导入可能产生重复 Visit。**
-- 本任务遵守既有指令，没有再次执行第二次真实 Import，也没有借 parity scope 修改 Import/Restore。
-- 发布前需要用纯 fixture 锁定 stable identity / merge regression，再修复并完成一次受控验收。
+- 精确自动化用例 `repeatedLegacyManualMergeIsIdempotent()` 已存在于 `BackupImportMergeEngineTests`，覆盖 Legacy v4 首次导入、第二次相同来源、cross-provider Restaurant candidate、manual merge、dependent Visit re-resolve、`exactDuplicate`、第二次写入为 0、额外 mutation 为 0。
+- 最终组合代码上已分别通过该 targeted regression 和 581-test 串行 iOS unit/integration 全集。
+- 因此不再把 duplicate Visit 列为 known blocker，也不要求用真实用户备份进行危险的第二次 Import；未来仍由隔离 fixture regression 持续防回归。
 
 ### 15.2 App Store Connect / StoreKit gate
 
@@ -450,6 +450,6 @@ generic device build 只验证 device SDK 编译，没有修改 Team、Bundle ID
 | Automated tests and builds | PASS |
 | Production readiness | PENDING EXPLICIT RELEASE GATES |
 | App Store sale readiness | PENDING APP STORE CONNECT / SANDBOX / TESTFLIGHT |
-| F1-C4 repeated-import integrity | KNOWN BLOCKER OUTSIDE THIS PARITY SCOPE |
+| F1-C4 repeated-import integrity | PASS / CLOSED BY EXACT AUTOMATED REGRESSION |
 
-**结论：Full Product Parity Restoration 可以正式关闭；不要自动开始 Production、App Store 发布或 F1-C4 修复。**
+**结论：Full Product Parity Restoration 可以正式关闭；F1-C4 duplicate Visit 已关闭。不要自动开始 Production 或 App Store 发布。**
