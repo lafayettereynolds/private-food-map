@@ -34,6 +34,32 @@ struct ProfileListsMemoriesParityTests {
         #expect(bStats.totalSpend == 999)
     }
 
+    @Test("Profile 去过 is unique Restaurant count, not Visit count, and spend only sums recorded actual spend")
+    func profileTopStatisticsSemantics() throws {
+        let visited = try restaurant(name: "多次到访", owner: "tm_a", index: 4)
+        let wanted = try restaurant(name: "想去", owner: "tm_a", index: 5)
+        wanted.status = .wantToGo
+        let visits = [
+            Visit(ownerUserID: "tm_a", restaurantId: visited.id, myActualSpend: 80),
+            Visit(ownerUserID: "tm_a", restaurantId: visited.id, myActualSpend: nil),
+            Visit(ownerUserID: "tm_a", restaurantId: visited.id, myActualSpend: 120),
+        ]
+
+        let statistics = ProfileBasicStatistics(restaurants: [visited, wanted], visits: visits)
+
+        #expect(statistics.visitedRestaurantCount == 1)
+        #expect(statistics.wantToGoRestaurantCount == 1)
+        #expect(statistics.visitCount == 3)
+        #expect(statistics.totalSpend == 200)
+    }
+
+    @Test("Premium hero uses the shared dining library while preserving the approved hamburger contract")
+    func premiumVisualContracts() {
+        #expect(PremiumBurgerAssetContract.semanticVersion == "web-approved-hamburger-v1")
+        #expect(PremiumFoodMotifContract.kinds == [.food, .drink, .tableware, .menu, .receipt])
+        #expect(PremiumFoodMotifContract.kinds.allSatisfy { FoodDiningVisualKind.allCases.contains($0) })
+    }
+
     @Test("Social statistics follow every cursor and deduplicate users")
     func socialStatisticsPagination() async throws {
         let api = ProfileStatisticsSocialAPI()

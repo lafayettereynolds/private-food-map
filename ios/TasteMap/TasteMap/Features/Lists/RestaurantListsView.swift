@@ -23,12 +23,21 @@ struct RestaurantListsOverviewView: View {
         Group {
             if lists.isEmpty && query.isEmpty {
                 ContentUnavailableView {
-                    Label("还没有榜单", systemImage: "list.number")
+                    VStack(spacing: 10) {
+                        FoodDiningVisualIcon(
+                            kind: .menu,
+                            usage: .decorative,
+                            size: 58
+                        )
+                        Text("还没有榜单")
+                            .font(.title3.bold())
+                    }
                 } description: {
                     Text("创建一份有主题的餐厅榜单，空榜单也可以先保存。")
                 } actions: {
                     Button("新建榜单") { creating = true }.buttonStyle(.borderedProminent)
                 }
+                .accessibilityIdentifier("restaurant-lists-empty-state")
             } else if lists.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {

@@ -603,6 +603,12 @@ nonisolated enum PremiumBurgerAssetContract {
     static let viewBox: CGFloat = 24
 }
 
+nonisolated enum PremiumFoodMotifContract {
+    static let kinds: [FoodDiningVisualKind] = [
+        .food, .drink, .tableware, .menu, .receipt,
+    ]
+}
+
 private struct PremiumFoodMotif: View {
     var body: some View {
         GeometryReader { proxy in
@@ -611,10 +617,27 @@ private struct PremiumFoodMotif: View {
                     .fill(PremiumTheme.cream)
                 Circle().fill(TasteMapCoreTheme.surface).frame(width: min(proxy.size.width, proxy.size.height) * 0.68)
                     .shadow(color: PremiumTheme.brand.opacity(0.1), radius: 16, y: 8)
-                Text("🍣  🥗\n  🍲  🍰")
-                    .font(.system(size: min(proxy.size.width, proxy.size.height) * 0.19))
-                    .multilineTextAlignment(.center)
-                    .rotationEffect(.degrees(-4))
+                FoodDiningVisualIcon(
+                    kind: PremiumFoodMotifContract.kinds[0], usage: .decorative,
+                    size: min(proxy.size.width, proxy.size.height) * 0.42,
+                    foregroundColor: PremiumTheme.brandDeep,
+                    backgroundColor: TasteMapCoreTheme.surface
+                )
+                FoodDiningVisualIcon(
+                    kind: PremiumFoodMotifContract.kinds[1], usage: .decorative,
+                    size: min(proxy.size.width, proxy.size.height) * 0.24
+                )
+                .position(x: proxy.size.width * 0.30, y: proxy.size.height * 0.28)
+                FoodDiningVisualIcon(
+                    kind: PremiumFoodMotifContract.kinds[2], usage: .decorative,
+                    size: min(proxy.size.width, proxy.size.height) * 0.23
+                )
+                .position(x: proxy.size.width * 0.69, y: proxy.size.height * 0.72)
+                FoodDiningVisualIcon(
+                    kind: PremiumFoodMotifContract.kinds[3], usage: .decorative,
+                    size: min(proxy.size.width, proxy.size.height) * 0.20
+                )
+                .position(x: proxy.size.width * 0.72, y: proxy.size.height * 0.25)
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.title3.bold()).foregroundStyle(PremiumTheme.brand)
                     .padding(10).background(TasteMapCoreTheme.surface, in: Circle())

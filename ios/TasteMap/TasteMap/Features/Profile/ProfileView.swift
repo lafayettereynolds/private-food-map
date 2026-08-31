@@ -95,6 +95,7 @@ struct ProfileView: View {
                         memoriesSection
                         listsSection
                         insightsSection
+                        tasteFootprintsSection
                     }
                     if authenticatedUser != nil, activeRestaurants.isEmpty {
                         ContentUnavailableView(
@@ -240,31 +241,24 @@ struct ProfileView: View {
 
     private var listsSection: some View {
         ProfileDashboardSection(title: "我的食单") {
-            VStack(spacing: 10) {
-                ProfileContentLinks(
-                    visitedCount: statistics.visitedRestaurantCount,
-                    wantToGoCount: statistics.wantToGoRestaurantCount,
-                    footprintCount: statistics.visitCount,
-                    onSelect: { browseDestination = $0 }
-                )
-                if let userID = authenticatedUser?.id {
-                    NavigationLink {
-                        RestaurantListsOverviewView(
-                            currentUserID: userID,
-                            photoAPI: authServices.photoAPI
-                        )
-                    } label: {
-                        ProfileCompactRow(
-                            emoji: "📋",
-                            title: "我的榜单",
-                            detail: activeListCount == 0 ? "整理主题餐厅清单" : "\(activeListCount) 份榜单"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile-restaurant-lists-entry")
+            if let userID = authenticatedUser?.id {
+                NavigationLink {
+                    RestaurantListsOverviewView(
+                        currentUserID: userID,
+                        photoAPI: authServices.photoAPI
+                    )
+                } label: {
+                    ProfileCompactRow(
+                        emoji: "📋",
+                        title: "我的榜单",
+                        detail: activeListCount == 0 ? "整理主题餐厅清单" : "\(activeListCount) 份榜单"
+                    )
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-restaurant-lists-entry")
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile-lists-section")
     }
 
@@ -297,6 +291,22 @@ struct ProfileView: View {
             }
         }
         .accessibilityIdentifier("profile-insights-section")
+    }
+
+    private var tasteFootprintsSection: some View {
+        ProfileDashboardSection(title: "味觉足迹") {
+            Button { browseDestination = .footprints } label: {
+                ProfileCompactRow(
+                    emoji: "🗺️",
+                    title: "查看到访时间线",
+                    detail: statistics.visitCount == 0 ? "从第一次到访开始记录" : "\(statistics.visitCount) 次独立到访"
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile-taste-footprints-entry")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile-taste-footprints-section")
     }
 
     private var settingsEntry: some View {
@@ -750,52 +760,6 @@ private struct ProfileStatisticsSection: View {
     }
 }
 
-private struct ProfileContentLinks: View {
-    let visitedCount: Int
-    let wantToGoCount: Int
-    let footprintCount: Int
-    let onSelect: (ProfileBrowseDestination) -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Button { onSelect(.visited) } label: {
-                row("去过的餐厅", value: "\(visitedCount)", icon: "checkmark.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("profile-visited-list-entry")
-            Divider().padding(.leading, 48)
-            Button { onSelect(.wantToGo) } label: {
-                row("想吃的餐厅", value: "\(wantToGoCount)", icon: "bookmark.fill")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("profile-want-list-entry")
-            Divider().padding(.leading, 48)
-            Button { onSelect(.footprints) } label: {
-                row("味觉足迹", value: "\(footprintCount)", icon: "point.bottomleft.forward.to.point.topright.scurvepath")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("profile-taste-footprints-entry")
-        }
-        .padding(.horizontal, 14)
-        .tasteMapCoreCard(radius: 16)
-    }
-
-    private func row(_ title: String, value: String, icon: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).frame(width: 22).foregroundStyle(Color.accentColor)
-            Text(title)
-            Spacer()
-            Text(value).foregroundStyle(.secondary)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
-    }
-}
-
 private struct ProfileDashboardSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
@@ -1126,11 +1090,10 @@ private struct ProfilePreviewScreen: View {
                     onVisited: {},
                     onWantToGo: {}
                 )
-                ProfileContentLinks(
-                    visitedCount: statistics.visitedRestaurantCount,
-                    wantToGoCount: statistics.wantToGoRestaurantCount,
-                    footprintCount: statistics.visitCount,
-                    onSelect: { _ in }
+                ProfileCompactRow(
+                    emoji: "🗺️",
+                    title: "查看到访时间线",
+                    detail: "\(statistics.visitCount) 次独立到访"
                 )
                 SyncStatusView(presentation: sync)
                     .padding(18)

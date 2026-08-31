@@ -390,14 +390,14 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["我的"].tap()
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
 
-        let visitedEntry = app.buttons["profile-visited-list-entry"]
+        let visitedEntry = app.buttons["profile-stat-visited"]
         scrollUntilVisible(visitedEntry, in: app)
         visitedEntry.tap()
         XCTAssertTrue(app.navigationBars["去过的餐厅"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["F2-A 很长但仍需完整可读的江南季节料理餐厅"].exists)
         app.navigationBars["去过的餐厅"].buttons.firstMatch.tap()
 
-        let wantedEntry = app.buttons["profile-want-list-entry"]
+        let wantedEntry = app.buttons["profile-stat-want"]
         scrollUntilVisible(wantedEntry, in: app)
         wantedEntry.tap()
         XCTAssertTrue(app.navigationBars["想吃的餐厅"].waitForExistence(timeout: 5))
