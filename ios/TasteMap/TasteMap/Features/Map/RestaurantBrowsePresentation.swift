@@ -11,7 +11,7 @@ enum RestaurantBrowseSegment: String, CaseIterable, Identifiable {
         switch self {
         case .visited: "去过"
         case .wantToGo: "想吃"
-        case .forYou: "适合你"
+        case .forYou: "推荐"
         }
     }
 
@@ -27,7 +27,7 @@ enum RestaurantBrowseSegment: String, CaseIterable, Identifiable {
         switch self {
         case .visited: "还没有去过的餐厅"
         case .wantToGo: "还没有想吃的餐厅"
-        case .forYou: "暂无适合你的本地结果"
+        case .forYou: "暂无推荐结果"
         }
     }
 
@@ -35,7 +35,7 @@ enum RestaurantBrowseSegment: String, CaseIterable, Identifiable {
         switch self {
         case .visited: "搜索一家真实餐厅，保存第一次到访后就会出现在这里。"
         case .wantToGo: "搜索一家真实餐厅，把它加入你的想吃清单。"
-        case .forYou: "个性推荐仍由现有发现能力提供，这里不会生成虚构内容。"
+        case .forYou: "推荐使用真实发现数据；更多推荐可在发现页查看。"
         }
     }
 }

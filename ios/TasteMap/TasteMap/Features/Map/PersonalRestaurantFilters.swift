@@ -154,10 +154,13 @@ struct PersonalVisitFilterFacet {
 
 struct PersonalRestaurantFilterOptions {
     let cities: [String]
+    let cuisines: [String]
     let companions: [PersonalFilterOption]
     let sources: [PersonalFilterOption]
 
-    static let empty = PersonalRestaurantFilterOptions(cities: [], companions: [], sources: [])
+    static let empty = PersonalRestaurantFilterOptions(
+        cities: [], cuisines: [], companions: [], sources: []
+    )
 }
 
 struct PersonalRestaurantFilterState: Equatable {
@@ -172,6 +175,7 @@ struct PersonalRestaurantFilterState: Equatable {
     var visitPeriod: PersonalVisitPeriod?
     var companionID: String?
     var city: String?
+    var cuisine: String?
     var distance: PersonalDistanceFilter?
     var sort: PersonalRestaurantSort = .comprehensive
 
@@ -180,6 +184,7 @@ struct PersonalRestaurantFilterState: Equatable {
     var activeFilterCount: Int {
         (ratingBands.isEmpty ? 0 : 1)
             + (city == nil ? 0 : 1)
+            + (cuisine == nil ? 0 : 1)
             + (distance == nil ? 0 : 1)
             + (appliesVisitScopedFilters && diningMode != nil ? 1 : 0)
             + (appliesVisitScopedFilters && visitCount != nil ? 1 : 0)
@@ -226,6 +231,8 @@ enum PersonalRestaurantFilterEngine {
                       state.ratingBands.contains(band) else { return false }
             }
             if let city = state.city, item.restaurant.city != city { return false }
+            if let cuisine = state.cuisine,
+               !restaurantTags(item.restaurant).contains(cuisine) { return false }
             if let distance = state.distance {
                 guard let currentLocation,
                       let restaurantLocation = validLocation(for: item.restaurant),
@@ -331,14 +338,32 @@ enum PersonalRestaurantFilterEngine {
               !(latitude == 0 && longitude == 0) else { return nil }
         return CLLocation(latitude: latitude, longitude: longitude)
     }
+
+    private static func restaurantTags(_ restaurant: Restaurant) -> Set<String> {
+        guard let data = restaurant.remoteRecordData,
+              let record = try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: data) else {
+            return []
+        }
+        return Set(record.tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    }
 }
 
 enum PersonalRestaurantFilterProjection {
     static func options(from items: [RestaurantBrowseItem]) -> PersonalRestaurantFilterOptions {
         let cities = Set(items.map(\.restaurant.city).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let cuisines = Set(items.flatMap { item -> [String] in
+            guard let data = item.restaurant.remoteRecordData,
+                  let record = try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: data) else {
+                return []
+            }
+            return record.tags
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        })
         let facets = items.flatMap(\.visitFacets)
         return PersonalRestaurantFilterOptions(
             cities: cities.sorted { $0.localizedStandardCompare($1) == .orderedAscending },
+            cuisines: cuisines.sorted { $0.localizedStandardCompare($1) == .orderedAscending },
             companions: stableOptions(facets.flatMap(\.companionOptions)),
             sources: stableOptions(facets.flatMap(\.sourceOptions))
         )

@@ -185,7 +185,7 @@ private struct RestaurantBrowseListContext: View {
         switch segment {
         case .visited: base = "去过的餐厅"
         case .wantToGo: base = "想吃的餐厅"
-        case .forYou: base = "适合你的餐厅"
+        case .forYou: base = "推荐餐厅"
         }
         if hasQuery { return "\(base) · 搜索结果" }
         if isFiltered { return "\(base) · 已筛选" }

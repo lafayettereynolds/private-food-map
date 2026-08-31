@@ -408,6 +408,23 @@ private enum LocalDiscoveryStoreDate {
     }
 }
 
+private enum DiscoveryFilterFocus: String, Identifiable {
+    case all
+    case sort
+    case distance
+    case rating
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: "筛选推荐"
+        case .sort: "排序"
+        case .distance: "距离"
+        case .rating: "社区评分"
+        }
+    }
+}
+
 struct DiscoveryContentView: View {
     @Binding var mode: DiscoveryModeV1
     @Binding var trendWindowDays: Int
@@ -438,7 +455,7 @@ struct DiscoveryContentView: View {
     let onLoadMore: () -> Void
     let photoAPI: (any PhotoBinaryAPI)?
     var showsModePicker = true
-    @State private var showingFilters = false
+    @State private var filterFocus: DiscoveryFilterFocus?
     @State private var enteringCity = false
 
     var body: some View {
@@ -450,7 +467,7 @@ struct DiscoveryContentView: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                ScrollView(.horizontal, showsIndicators: false) {
+                TasteMapFilterBar(accessibilityIdentifier: "discovery-filter-chip-strip") {
                     HStack(spacing: 8) {
                         DiscoveryCityMenu(
                             city: city,
@@ -459,29 +476,32 @@ struct DiscoveryContentView: View {
                             onEnterAnother: { enteringCity = true }
                         )
                         if mode == .forYou {
-                            Button {
-                                showingFilters = true
-                            } label: {
-                                Label(
-                                    filters.activeCount == 0 ? "筛选" : "筛选 \(filters.activeCount)",
-                                    systemImage: "slider.horizontal.3"
-                                )
-                            }
-                            .tasteMapFilterChipStyle(isActive: filters.activeCount > 0)
-                            .accessibilityIdentifier("discovery-filters")
+                            TasteMapFilterChip(
+                                title: "筛选",
+                                semantic: .allFilters,
+                                isActive: filters.activeCount > 0,
+                                count: filters.activeCount,
+                                accessibilityIdentifier: "discovery-filters"
+                            ) { filterFocus = .all }
 
                             discoveryFilterChip(
+                                focus: .sort,
                                 title: filters.sort.title,
+                                semantic: .sort,
                                 isActive: filters.sort != .recommended,
                                 identifier: "discovery-sort-chip"
                             )
                             discoveryFilterChip(
+                                focus: .distance,
                                 title: distanceChipTitle,
+                                semantic: .distance,
                                 isActive: filters.maximumDistanceKilometers != nil,
                                 identifier: "discovery-distance-chip"
                             )
                             discoveryFilterChip(
+                                focus: .rating,
                                 title: ratingChipTitle,
+                                semantic: .rating,
                                 isActive: filters.minimumRating != nil,
                                 identifier: "discovery-rating-chip"
                             )
@@ -491,10 +511,7 @@ struct DiscoveryContentView: View {
                             trendWindowChip(days: 30)
                         }
                     }
-                    .padding(.horizontal, 16)
                 }
-                .scrollClipDisabled()
-                .accessibilityIdentifier("discovery-filter-chip-strip")
                 if showingCache, let cacheDate {
                     Label("离线内容 · 更新于 \(cacheDate.formatted(.relative(presentation: .named)))",
                           systemImage: "wifi.slash")
@@ -568,8 +585,8 @@ struct DiscoveryContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingFilters) {
-            DiscoveryFilterSheet(filters: $filters)
+        .sheet(item: $filterFocus) { focus in
+            DiscoveryFilterSheet(filters: $filters, focus: focus)
         }
         .sheet(isPresented: $enteringCity) {
             DiscoveryCityEntrySheet(initialCity: city, onSelect: onSelectCity)
@@ -600,16 +617,28 @@ struct DiscoveryContentView: View {
         filters.minimumRating.map { String(format: "餐厅评分 %.1f+", $0) } ?? "餐厅评分"
     }
 
-    private func discoveryFilterChip(title: String, isActive: Bool, identifier: String) -> some View {
-        Button(title) { showingFilters = true }
-            .tasteMapFilterChipStyle(isActive: isActive)
-            .accessibilityIdentifier(identifier)
+    private func discoveryFilterChip(
+        focus: DiscoveryFilterFocus,
+        title: String,
+        semantic: TasteMapFilterSemantic,
+        isActive: Bool,
+        identifier: String
+    ) -> some View {
+        TasteMapFilterChip(
+            title: title,
+            semantic: semantic,
+            isActive: isActive,
+            accessibilityIdentifier: identifier
+        ) { filterFocus = focus }
     }
 
     private func trendWindowChip(days: Int) -> some View {
-        Button("近 \(days) 天") { trendWindowDays = days }
-            .tasteMapFilterChipStyle(isActive: trendWindowDays == days)
-            .accessibilityIdentifier("discovery-trend-window-\(days)")
+        TasteMapFilterChip(
+            title: "近 \(days) 天",
+            semantic: .timeWindow,
+            isActive: trendWindowDays == days,
+            accessibilityIdentifier: "discovery-trend-window-\(days)"
+        ) { trendWindowDays = days }
     }
 }
 
@@ -621,7 +650,7 @@ private struct DiscoveryCityMenu: View {
 
     var body: some View {
         Menu {
-            Button("自动选择范围", systemImage: city.isEmpty ? "checkmark" : "location") {
+            Button("自动选择范围", systemImage: city.isEmpty ? "checkmark" : "sparkles") {
                 onSelect("")
             }
             if !availableCities.isEmpty { Divider() }
@@ -636,10 +665,14 @@ private struct DiscoveryCityMenu: View {
             Divider()
             Button("输入其他城市…", systemImage: "square.and.pencil", action: onEnterAnother)
         } label: {
-            Label(city.isEmpty ? "自动范围" : city, systemImage: "mappin.and.ellipse")
-                .lineLimit(1)
+            TasteMapFilterChipLabel(
+                title: city.isEmpty ? "自动范围" : city,
+                semantic: .city,
+                isActive: !city.isEmpty
+            )
         }
-        .tasteMapFilterChipStyle(isActive: !city.isEmpty)
+        .buttonStyle(.plain)
+        .frame(minHeight: 44)
         .accessibilityIdentifier("discovery-city-menu")
     }
 }
@@ -686,11 +719,13 @@ private struct DiscoveryCityEntrySheet: View {
 private struct DiscoveryFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var filters: DiscoveryBrowseFilters
+    let focus: DiscoveryFilterFocus
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("排序") {
+                if focus == .all || focus == .sort {
+                    Section("排序") {
                     Picker("推荐排序", selection: $filters.sort) {
                         ForEach(DiscoveryBrowseSort.allCases) { option in
                             Text(option.title).tag(option)
@@ -699,8 +734,10 @@ private struct DiscoveryFilterSheet: View {
                     .pickerStyle(.inline)
                     .labelsHidden()
                     .accessibilityIdentifier("discovery-sort")
+                    }
                 }
-                Section {
+                if focus == .all || focus == .distance {
+                    Section {
                     Picker("最远距离", selection: $filters.maximumDistanceKilometers) {
                         Text("不限").tag(Double?.none)
                         ForEach([1.0, 3.0, 5.0, 10.0], id: \.self) { value in
@@ -712,8 +749,10 @@ private struct DiscoveryFilterSheet: View {
                     Text("距离")
                 } footer: {
                     Text("距离排序会优先使用当前位置；定位不可用时，使用当前城市已加载餐厅的中心位置估算。")
+                    }
                 }
-                Section {
+                if focus == .all || focus == .rating {
+                    Section {
                     Picker("最低评分", selection: $filters.minimumRating) {
                         Text("不限").tag(Double?.none)
                         Text("3.5 分以上").tag(Double?.some(3.5))
@@ -725,14 +764,15 @@ private struct DiscoveryFilterSheet: View {
                     Text("社区评分")
                 } footer: {
                     Text("评分来自当前可见的真实社区样本；没有评分的餐厅不会通过最低评分筛选。")
+                    }
                 }
             }
-            .navigationTitle("筛选推荐")
+            .navigationTitle(focus.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("重置") { filters.reset() }
-                        .disabled(filters.activeCount == 0)
+                    Button("重置", action: resetFocusedValue)
+                        .disabled(!focusedValueIsActive)
                         .accessibilityIdentifier("discovery-filter-reset")
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -740,6 +780,24 @@ private struct DiscoveryFilterSheet: View {
                         .accessibilityIdentifier("discovery-filter-done")
                 }
             }
+        }
+    }
+
+    private var focusedValueIsActive: Bool {
+        switch focus {
+        case .all: filters.activeCount > 0
+        case .sort: filters.sort != .recommended
+        case .distance: filters.maximumDistanceKilometers != nil
+        case .rating: filters.minimumRating != nil
+        }
+    }
+
+    private func resetFocusedValue() {
+        switch focus {
+        case .all: filters.reset()
+        case .sort: filters.sort = .recommended
+        case .distance: filters.maximumDistanceKilometers = nil
+        case .rating: filters.minimumRating = nil
         }
     }
 }
@@ -798,7 +856,8 @@ private struct DiscoveryRestaurantCard: View {
     let photoAPI: (any PhotoBinaryAPI)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        TasteMapActivityCard {
+            VStack(alignment: .leading, spacing: 13) {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 10) {
                     DiscoveryRestaurantImage(restaurant: card.restaurant, photoAPI: photoAPI)
@@ -842,14 +901,10 @@ private struct DiscoveryRestaurantCard: View {
                 }
                 Spacer()
                 if let activity = card.activity {
-                    Label(
-                        activity.rating.map { String(format: "这次到访 %.1f", $0) } ?? "这次到访 · 未评分",
-                        systemImage: activity.rating == nil ? "star.slash" : "star.fill"
+                    TasteMapActivityRatingBadge(
+                        rating: activity.rating,
+                        accessibilityIdentifier: "discovery-activity-rating-\(card.restaurant.globalKey)"
                     )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(activity.rating == nil ? TasteMapCoreTheme.textSecondary : .orange)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("discovery-activity-rating-\(card.restaurant.globalKey)")
                 }
             }
             if let trend = card.trend {
@@ -869,9 +924,8 @@ private struct DiscoveryRestaurantCard: View {
                 identifierPrefix: "discovery",
                 restaurantKey: card.restaurant.globalKey
             )
+            }
         }
-        .padding(12)
-        .tasteMapCoreCard(radius: 20, showsShadow: true)
     }
 
     @ViewBuilder private var recommendationReasons: some View {

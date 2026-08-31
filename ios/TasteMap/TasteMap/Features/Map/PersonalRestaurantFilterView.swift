@@ -1,10 +1,39 @@
 import SwiftUI
 
+enum PersonalRestaurantFilterFocus: String, Identifiable, Sendable {
+    case all
+    case sort
+    case city
+    case rating
+    case price
+    case visitCount
+    case companion
+    case cuisine
+    case recommendationSource
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "筛选与排序"
+        case .sort: "排序"
+        case .city: "城市"
+        case .rating: "评分"
+        case .price: "消费"
+        case .visitCount: "到访次数"
+        case .companion: "饭搭子"
+        case .cuisine: "菜系"
+        case .recommendationSource: "推荐来源"
+        }
+    }
+}
+
 struct PersonalRestaurantFilterSheet: View {
     let options: PersonalRestaurantFilterOptions
     let locationDenied: Bool
     let hasCurrentLocation: Bool
     let onApply: (PersonalRestaurantFilterState) -> Void
+    let focus: PersonalRestaurantFilterFocus
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft: PersonalRestaurantFilterState
@@ -14,11 +43,13 @@ struct PersonalRestaurantFilterSheet: View {
         options: PersonalRestaurantFilterOptions,
         locationDenied: Bool,
         hasCurrentLocation: Bool,
+        focus: PersonalRestaurantFilterFocus = .all,
         onApply: @escaping (PersonalRestaurantFilterState) -> Void
     ) {
         self.options = options
         self.locationDenied = locationDenied
         self.hasCurrentLocation = hasCurrentLocation
+        self.focus = focus
         self.onApply = onApply
         _draft = State(initialValue: state)
     }
@@ -26,30 +57,35 @@ struct PersonalRestaurantFilterSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                sortSection
-                ratingSection
+                if focus == .all || focus == .sort { sortSection }
+                if focus == .all || focus == .rating { ratingSection }
                 if draft.appliesVisitScopedFilters {
-                    diningModeSection
-                    visitCountSection
-                    priceSection
-                    queueSection
-                    occasionSection
-                    sourceSection
-                    periodSection
-                    companionSection
+                    if focus == .all { diningModeSection }
+                    if focus == .all || focus == .visitCount { visitCountSection }
+                    if focus == .all || focus == .price { priceSection }
+                    if focus == .all { queueSection }
+                    if focus == .all { occasionSection }
+                    if focus == .all || focus == .recommendationSource { sourceSection }
+                    if focus == .all { periodSection }
+                    if focus == .all || focus == .companion { companionSection }
                 }
-                citySection
-                distanceSection
+                if focus == .all || focus == .cuisine { cuisineSection }
+                if focus == .all || focus == .city { citySection }
+                if focus == .all { distanceSection }
             }
-            .navigationTitle(draft.activeFilterCount == 0 ? "筛选与排序" : "筛选（\(draft.activeFilterCount)）")
+            .navigationTitle(
+                focus == .all && draft.activeFilterCount > 0
+                    ? "筛选（\(draft.activeFilterCount)）"
+                    : focus.title
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("重置") { draft.resetKeepingStatus() }
-                        .disabled(draft.activeFilterCount == 0 && draft.sort == .comprehensive)
+                    Button("重置") { resetFocusedValue() }
+                        .disabled(!focusedValueIsActive)
                         .accessibilityIdentifier("personal-filter-reset")
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -244,6 +280,19 @@ struct PersonalRestaurantFilterSheet: View {
     }
 
     @ViewBuilder
+    private var cuisineSection: some View {
+        if !options.cuisines.isEmpty {
+            Section("菜系") {
+                Picker("菜系", selection: optionalString($draft.cuisine)) {
+                    Text("全部菜系").tag("")
+                    ForEach(options.cuisines, id: \.self) { Text($0).tag($0) }
+                }
+                .accessibilityIdentifier("personal-filter-cuisine")
+            }
+        }
+    }
+
+    @ViewBuilder
     private var citySection: some View {
         if !options.cities.isEmpty {
             Section("城市") {
@@ -305,6 +354,34 @@ struct PersonalRestaurantFilterSheet: View {
         )
     }
 
+    private var focusedValueIsActive: Bool {
+        switch focus {
+        case .all: draft.activeFilterCount > 0 || draft.sort != .comprehensive
+        case .sort: draft.sort != .comprehensive
+        case .city: draft.city != nil
+        case .rating: !draft.ratingBands.isEmpty
+        case .price: draft.priceRange != nil
+        case .visitCount: draft.visitCount != nil
+        case .companion: draft.companionID != nil
+        case .cuisine: draft.cuisine != nil
+        case .recommendationSource: draft.sourceID != nil
+        }
+    }
+
+    private func resetFocusedValue() {
+        switch focus {
+        case .all: draft.resetKeepingStatus()
+        case .sort: draft.sort = .comprehensive
+        case .city: draft.city = nil
+        case .rating: draft.ratingBands.removeAll()
+        case .price: draft.priceRange = nil
+        case .visitCount: draft.visitCount = nil
+        case .companion: draft.companionID = nil
+        case .cuisine: draft.cuisine = nil
+        case .recommendationSource: draft.sourceID = nil
+        }
+    }
+
     private func filterChip(
         _ title: String,
         selected: Bool,
@@ -353,6 +430,7 @@ private struct PersonalFilterChipGrid<Content: View>: View {
         state: PersonalRestaurantFilterState(status: .visited),
         options: PersonalRestaurantFilterOptions(
             cities: ["杭州", "上海"],
+            cuisines: ["日料", "江浙菜"],
             companions: [.init(id: "companion:小林", title: "小林")],
             sources: [.init(id: "source:朋友推荐", title: "朋友推荐")]
         ),

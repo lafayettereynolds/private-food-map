@@ -137,6 +137,7 @@ extension View {
 nonisolated enum TasteMapFilterSemantic: String, CaseIterable, Sendable {
     case allFilters
     case city
+    case distance
     case rating
     case price
     case visitCount
@@ -145,12 +146,15 @@ nonisolated enum TasteMapFilterSemantic: String, CaseIterable, Sendable {
     case recommendationSource
     case openNow
     case timeWindow
+    case sort
+    case clear
     case more
 
     var systemImage: String {
         switch self {
         case .allFilters: "line.3.horizontal.decrease"
         case .city: "building.2.fill"
+        case .distance: "ruler"
         case .rating: "star.fill"
         case .price: "receipt"
         case .visitCount: "fork.knife.circle.fill"
@@ -159,8 +163,40 @@ nonisolated enum TasteMapFilterSemantic: String, CaseIterable, Sendable {
         case .recommendationSource: "sparkles"
         case .openNow: "clock.badge.checkmark"
         case .timeWindow: "calendar"
+        case .sort: "arrow.up.arrow.down"
+        case .clear: "xmark"
         case .more: "ellipsis"
         }
+    }
+}
+
+struct TasteMapFilterChipLabel: View {
+    let title: String
+    let semantic: TasteMapFilterSemantic
+    let isActive: Bool
+    var count: Int?
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: semantic.systemImage)
+                .accessibilityHidden(true)
+            Text(title)
+                .lineLimit(1)
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .padding(.horizontal, 5)
+                    .frame(minHeight: 18)
+                    .foregroundStyle(isActive ? TasteMapCoreTheme.brandDeep : TasteMapCoreTheme.textSecondary)
+                    .background(
+                        (isActive ? Color.white : TasteMapCoreTheme.brandSoft).opacity(0.92),
+                        in: Capsule()
+                    )
+                    .accessibilityLabel("\(count) 项")
+            }
+        }
+        .tasteMapFilterChipStyle(isActive: isActive)
+        .contentShape(Capsule())
     }
 }
 
@@ -177,26 +213,12 @@ struct TasteMapFilterChip: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: semantic.systemImage)
-                    .accessibilityHidden(true)
-                Text(title)
-                    .lineLimit(1)
-                if let count, count > 0 {
-                    Text("\(count)")
-                        .font(.caption2.monospacedDigit().weight(.bold))
-                        .padding(.horizontal, 5)
-                        .frame(minHeight: 18)
-                        .foregroundStyle(isActive ? TasteMapCoreTheme.brandDeep : TasteMapCoreTheme.textSecondary)
-                        .background(
-                            (isActive ? Color.white : TasteMapCoreTheme.brandSoft).opacity(0.92),
-                            in: Capsule()
-                        )
-                        .accessibilityLabel("\(count) 项")
-                }
-            }
-            .tasteMapFilterChipStyle(isActive: isActive)
-            .contentShape(Capsule())
+            TasteMapFilterChipLabel(
+                title: title,
+                semantic: semantic,
+                isActive: isActive,
+                count: count
+            )
         }
         .buttonStyle(TasteMapFilterChipButtonStyle())
         .frame(minHeight: 44)
@@ -252,7 +274,14 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
     struct Item: Identifiable {
         let option: Option
         let title: String
+        var accessibilityIdentifier: String?
         var id: String { String(describing: option) }
+
+        init(_ option: Option, title: String, accessibilityIdentifier: String? = nil) {
+            self.option = option
+            self.title = title
+            self.accessibilityIdentifier = accessibilityIdentifier
+        }
     }
 
     @Binding var selection: Option
@@ -285,11 +314,50 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(item.title)
                 .accessibilityAddTraits(selection == item.option ? .isSelected : [])
-                .accessibilityIdentifier("\(accessibilityIdentifier)-\(item.title)")
+                .accessibilityIdentifier(
+                    item.accessibilityIdentifier ?? "\(accessibilityIdentifier)-\(item.title)"
+                )
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
+/// Shared Visit/Activity rating presentation. It never falls back to a
+/// Restaurant aggregate rating; callers must pass the activity's own rating.
+struct TasteMapActivityRatingBadge: View {
+    let rating: Double?
+    var prefix = "这次到访"
+    var accessibilityIdentifier: String?
+
+    var body: some View {
+        Label(
+            rating.map { String(format: "\(prefix) %.1f", $0) } ?? "\(prefix) · 未评分",
+            systemImage: rating == nil ? "star.slash" : "star.fill"
+        )
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(rating == nil ? TasteMapCoreTheme.textSecondary : .orange)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-activity-rating")
+    }
+}
+
+/// Canonical surface shared by recommendation Activity cards and Community
+/// Activity cards. Features supply their authorized content and actions while
+/// padding, radius, border and elevation remain one product component.
+struct TasteMapActivityCard<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(14)
+            .tasteMapCoreCard(radius: 22, showsShadow: true)
+            .accessibilityElement(children: .contain)
     }
 }
 
@@ -459,7 +527,7 @@ struct TasteMapEmptyState: View {
             items: [
                 .init("visited", title: "去过"),
                 .init("wishlist", title: "想吃"),
-                .init("for-you", title: "适合你"),
+                .init("for-you", title: "推荐"),
             ]
         )
         TasteMapEmptyState(

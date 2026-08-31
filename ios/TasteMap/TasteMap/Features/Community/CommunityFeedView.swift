@@ -335,7 +335,8 @@ struct PublicContentCard: View {
     var onBlocked: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        TasteMapActivityCard {
+            VStack(alignment: .leading, spacing: 12) {
             Button(action: onOpenUser) {
                 HStack(spacing: 10) {
                     PresetProfileAvatarView(preset: item.user.avatarPresetId)
@@ -365,14 +366,10 @@ struct PublicContentCard: View {
                         }
                         Spacer()
                         if item.kind == .visit, let visit = item.visit {
-                            Label(
-                                visit.rating.map { String(format: "%.1f", $0) } ?? "未评分",
-                                systemImage: visit.rating == nil ? "star.slash" : "star.fill"
+                            TasteMapActivityRatingBadge(
+                                rating: visit.rating,
+                                accessibilityIdentifier: "community-activity-rating-\(visit.id)"
                             )
-                            .font(.subheadline.bold())
-                            .foregroundStyle(visit.rating == nil ? TasteMapCoreTheme.textSecondary : .orange)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityIdentifier("community-activity-rating-\(visit.id)")
                         }
                     }
                     if let note = item.visit?.note {
@@ -405,9 +402,8 @@ struct PublicContentCard: View {
             )
             ShareLink(item: shareText) { Label("分享动态", systemImage: "square.and.arrow.up") }
                 .font(.subheadline)
+            }
         }
-        .padding(14)
-        .tasteMapCoreCard(radius: 24, showsShadow: true)
     }
 
     private var eventText: String {

@@ -1,0 +1,17 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "E9311C74-E62D-4DDA-80EF-F56F6A3A6A37.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX Specific City Filter After_0_103D0D18-A53F-46B1-84AF-5D7147A22178.png",
+        "timestamp" : 1788161186.235
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testProductUXMapFilterChipsOpenTheirOwnDimension()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testProductUXMapFilterChipsOpenTheirOwnDimension"
+  }
+]

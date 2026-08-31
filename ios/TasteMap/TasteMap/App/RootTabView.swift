@@ -241,34 +241,17 @@ struct DiscoverHubView: View {
     }
 
     private var discoveryNavigation: some View {
-        HStack(spacing: 0) {
-            ForEach(DiscoverHubSection.allCases) { item in
-                Button {
-                    section = item
-                } label: {
-                    VStack(spacing: 7) {
-                        Text(item.title)
-                            .font(.caption.weight(section == item ? .bold : .medium))
-                            .foregroundStyle(
-                                section == item
-                                    ? TasteMapCoreTheme.brandDeep
-                                    : TasteMapCoreTheme.textSecondary
-                            )
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-                        Capsule()
-                            .fill(section == item ? TasteMapCoreTheme.brand : .clear)
-                            .frame(height: 3)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 42)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-                .accessibilityAddTraits(section == item ? .isSelected : [])
-                .accessibilityIdentifier("discovery-primary-\(item.rawValue)")
-            }
-        }
+        TasteMapPrimaryTabBar(
+            selection: $section,
+            items: DiscoverHubSection.allCases.map {
+                .init(
+                    $0,
+                    title: $0.title,
+                    accessibilityIdentifier: "discovery-primary-\($0.rawValue)"
+                )
+            },
+            accessibilityIdentifier: "discovery-primary-tabs"
+        )
         .padding(.horizontal, 8)
         .padding(.top, 2)
         .overlay(alignment: .bottom) {

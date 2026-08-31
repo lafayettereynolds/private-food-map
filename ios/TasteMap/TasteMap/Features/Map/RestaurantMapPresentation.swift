@@ -10,7 +10,7 @@ enum RestaurantMapMarkerStatus: String, Equatable {
         switch self {
         case .visited: "去过"
         case .wantToGo: "想吃"
-        case .recommended: "适合你"
+        case .recommended: "推荐"
         }
     }
 }
@@ -50,7 +50,7 @@ enum RestaurantMapMarkerBuilder {
             }
         }
 
-        return items.compactMap { item in
+        let markers: [RestaurantMapMarkerPresentation] = items.compactMap { item in
             let restaurant = item.restaurant
             guard restaurant.deletedAt == nil,
                   RestaurantMapCoordinatePolicy.isValid(
@@ -95,6 +95,7 @@ enum RestaurantMapMarkerBuilder {
                 )
             )
         }
+        return RestaurantMapMarkerCollisionPolicy.dispersed(markers)
     }
 
     private static func status(
@@ -131,6 +132,54 @@ enum RestaurantMapMarkerBuilder {
         guard let value else { return nil }
         let result = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return result.isEmpty ? nil : result
+    }
+}
+
+/// MapKit collision avoidance without merging Restaurants into an aggregate.
+/// Restaurants that share the same map coordinate are dispersed by a tiny,
+/// deterministic offset so every Restaurant remains independently selectable
+/// at every zoom level.
+enum RestaurantMapMarkerCollisionPolicy {
+    private struct CoordinateBucket: Hashable {
+        let latitude: Int
+        let longitude: Int
+    }
+
+    static func dispersed(
+        _ markers: [RestaurantMapMarkerPresentation]
+    ) -> [RestaurantMapMarkerPresentation] {
+        let groups = Dictionary(grouping: markers) {
+            CoordinateBucket(
+                latitude: Int(($0.latitude * 100_000).rounded()),
+                longitude: Int(($0.longitude * 100_000).rounded())
+            )
+        }
+        var resolvedByID: [UUID: RestaurantMapMarkerPresentation] = [:]
+        for group in groups.values {
+            let ordered = group.sorted { $0.id.uuidString < $1.id.uuidString }
+            guard ordered.count > 1 else {
+                if let marker = ordered.first { resolvedByID[marker.id] = marker }
+                continue
+            }
+            for (index, marker) in ordered.enumerated() {
+                let angle = (Double(index) / Double(ordered.count)) * 2 * Double.pi
+                let latitudeOffset = cos(angle) * 0.000_12
+                let longitudeScale = max(0.2, cos(marker.latitude * Double.pi / 180))
+                let longitudeOffset = sin(angle) * 0.000_12 / longitudeScale
+                resolvedByID[marker.id] = RestaurantMapMarkerPresentation(
+                    id: marker.id,
+                    name: marker.name,
+                    latitude: marker.latitude + latitudeOffset,
+                    longitude: marker.longitude + longitudeOffset,
+                    status: marker.status,
+                    visual: marker.visual,
+                    visitCount: marker.visitCount,
+                    averageRating: marker.averageRating,
+                    distanceKilometers: marker.distanceKilometers
+                )
+            }
+        }
+        return markers.compactMap { resolvedByID[$0.id] }
     }
 }
 
@@ -215,30 +264,6 @@ enum RestaurantMapCameraPolicy {
             latitudeDelta: min(170, latitudeDelta),
             longitudeDelta: min(360, longitudeDelta)
         )
-    }
-}
-
-struct RestaurantMapClusterPresentation: Equatable {
-    let members: [RestaurantMapMarkerPresentation]
-
-    var count: Int { members.count }
-    var visualKind: FoodDiningVisualKind {
-        let seed = members.map { $0.id.uuidString.lowercased() }.sorted().joined(separator: "|")
-        return FoodDiningVisualLibrary.decorativeKind(stableSeed: seed)
-    }
-    var expansionTarget: RestaurantMapCameraTarget {
-        RestaurantMapCameraPolicy.target(for: members)
-    }
-}
-
-enum RestaurantMapClusteringPolicy {
-    /// Normal neighbourhood browsing keeps every Restaurant independent. Only
-    /// a city/region-scale camera can opt into Food/Dining clusters.
-    static let minimumFarSpan = 0.18
-
-    static func allowsClustering(latitudeDelta: Double, longitudeDelta: Double) -> Bool {
-        guard latitudeDelta.isFinite, longitudeDelta.isFinite else { return false }
-        return max(latitudeDelta, longitudeDelta) >= minimumFarSpan
     }
 }
 

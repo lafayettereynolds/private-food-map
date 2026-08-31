@@ -101,7 +101,7 @@ final class TasteMapUITests: XCTestCase {
         let controls = app.descendants(matching: .any)["map-home-compact-controls"]
         let visitedTab = segmentedOption("去过", in: app)
         let listMode = app.buttons["map-header-view-list"]
-        let modeControl = app.descendants(matching: .any)["map-list-mode-control"]
+        let titleSwitch = app.descendants(matching: .any)["map-title-view-switch"]
         let scopeControl = app.descendants(matching: .any)["map-content-segment"]
         let filterStrip = app.descendants(matching: .any)["map-filter-chip-strip"]
         let title = app.staticTexts["map-home-title"]
@@ -111,12 +111,13 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(listMode.exists)
         XCTAssertTrue(title.exists)
         XCTAssertEqual(title.label, "我的地图")
-        XCTAssertTrue(modeControl.exists)
+        XCTAssertTrue(titleSwitch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["map-list-mode-control"].exists)
         XCTAssertTrue(scopeControl.exists)
         XCTAssertTrue(filterStrip.exists)
-        XCTAssertEqual(title.frame.midX, app.frame.midX, accuracy: 6)
-        XCTAssertLessThan(title.frame.maxY, modeControl.frame.minY)
-        XCTAssertLessThan(modeControl.frame.maxY, scopeControl.frame.minY)
+        XCTAssertEqual(titleSwitch.frame.midX, app.frame.midX, accuracy: 6)
+        XCTAssertLessThanOrEqual(title.frame.maxX, listMode.frame.minX + 2)
+        XCTAssertLessThan(titleSwitch.frame.maxY, scopeControl.frame.minY)
         XCTAssertLessThan(scopeControl.frame.maxY, filterStrip.frame.minY)
         // The restored hierarchy intentionally gives the centered title its own
         // breathing room above three independent compact control rows. Keep the
@@ -161,18 +162,44 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testModule8FarMapUsesFoodDiningCluster() throws {
+    func testProductUXMapFilterChipsOpenTheirOwnDimension() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
+        app.launch()
+
+        let rating = app.buttons["map-filter-chip-rating"]
+        XCTAssertTrue(rating.waitForExistence(timeout: 8))
+        rating.tap()
+        XCTAssertTrue(app.navigationBars["评分"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["personal-filter-rating-5"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["personal-filter-sort"].exists)
+        app.buttons["取消"].tap()
+
+        let city = app.buttons["map-filter-chip-city"]
+        XCTAssertTrue(city.waitForExistence(timeout: 3))
+        city.tap()
+        XCTAssertTrue(app.navigationBars["城市"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["personal-filter-city"].exists)
+        XCTAssertFalse(app.buttons["personal-filter-rating-5"].exists)
+        keepScreenshot(named: "Product UX Specific City Filter After", of: app)
+    }
+
+    @MainActor
+    func testFarMapKeepsIndependentRestaurantMarkers() throws {
         let app = XCUIApplication()
         app.launchEnvironment = ["TASTEMAP_MODULE8_MAP_CLUSTER_UI_TEST": "1"]
         app.launch()
 
         XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 8))
-        let cluster = app.descendants(matching: .any).matching(
+        let clusters = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "restaurant-map-cluster-")
-        ).firstMatch
-        XCTAssertTrue(cluster.waitForExistence(timeout: 8))
-        XCTAssertTrue(cluster.label.contains("餐饮聚合"))
-        keepScreenshot(named: "Module 8 Food Dining Cluster After", of: app)
+        )
+        let markers = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "restaurant-map-marker-")
+        )
+        XCTAssertFalse(clusters.firstMatch.exists)
+        XCTAssertGreaterThanOrEqual(markers.count, 2)
+        keepScreenshot(named: "Product UX Independent Markers After", of: app)
     }
 
     @MainActor
@@ -209,8 +236,8 @@ final class TasteMapUITests: XCTestCase {
         // Keep this aligned with the dedicated light/dark compact-layout checks.
         XCTAssertLessThanOrEqual(controls.frame.maxY, app.frame.height * 0.30)
         XCTAssertTrue(app.staticTexts["map-home-title"].exists)
-        XCTAssertTrue(app.buttons["map-header-view-map"].isHittable)
         XCTAssertTrue(app.buttons["map-header-view-list"].isHittable)
+        XCTAssertFalse(app.buttons["map-header-view-map"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["map-filter-chip-strip"].exists)
         XCTAssertTrue(app.buttons["map-filter-chip-city"].exists)
         XCTAssertTrue(app.buttons["map-filter-chip-rating"].exists)
@@ -219,6 +246,7 @@ final class TasteMapUITests: XCTestCase {
 
         app.buttons["map-header-view-list"].tap()
         XCTAssertTrue(app.buttons["map-header-view-map"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["map-header-view-list"].exists)
         XCTAssertTrue(app.textFields["restaurant-list-search-field"].exists)
         keepScreenshot(named: "Core Parity List After", of: app)
 
@@ -593,7 +621,10 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
         restaurant.tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "只有你明确加入想吃")).firstMatch.exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["restaurant-detail-header"]
+                .waitForExistence(timeout: 3)
+        )
         app.buttons["完成"].tap()
 
         let want = app.buttons["discovery-want-place:p3c-ui-0"]
@@ -603,6 +634,7 @@ final class TasteMapUITests: XCTestCase {
 
         app.buttons["discovery-primary-similarTaste"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "基于 5 家共同评分餐厅")).firstMatch.waitForExistence(timeout: 5))
+        keepScreenshot(named: "Task 02 Same Taste Content After", of: app)
         app.buttons["同味小林"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["公开主页"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["同味小林"].exists)

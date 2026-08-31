@@ -8,8 +8,8 @@ enum DiscoveryModeV1: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
     var title: String {
         switch self {
-        case .forYou: "适合你"
-        case .similarTaste: "同味"
+        case .forYou: "为你推荐"
+        case .similarTaste: "同味之选"
         case .trending: "趋势"
         }
     }

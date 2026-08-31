@@ -1,0 +1,17 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "942705CE-E6F7-410F-BD97-717F0BDCC290.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Task 02 Same Taste Content After_0_0202E2A6-7AD8-4653-A658-D6680C68BCDE.png",
+        "timestamp" : 1788162077.425
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testP3CDiscoveryNativeFlowRestaurantWantSimilarProfileTrendingAndRefresh()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testP3CDiscoveryNativeFlowRestaurantWantSimilarProfileTrendingAndRefresh"
+  }
+]

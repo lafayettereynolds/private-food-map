@@ -1,0 +1,92 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "90EF7851-4853-498F-98E7-A92D617FC7B4.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Core Parity Profile After_0_22BA511F-CDFA-44EF-9B28-8AABC870E991.png",
+        "timestamp" : 1788160661.048
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "C583CC15-225B-4BCE-A13A-994A898A500E.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Core Parity Discovery After_0_98CD097D-64F4-4979-AAA9-AC2E786A7F82.png",
+        "timestamp" : 1788160654.269
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "541A4341-3540-4FFE-9C9B-E9E2793D6F98.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Core Parity List After_0_33C4B472-82F4-4E9B-AA98-F1CFF1795474.png",
+        "timestamp" : 1788160646.388
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "B82F2F2B-7D28-4292-B08A-C2C803D401CC.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Core Parity Map After_0_E206CBF8-73CD-4B3D-BD0D-64E759F1BF64.png",
+        "timestamp" : 1788160643.326
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testCoreProductLayoutParityMapDiscoveryProfileEvidence()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testCoreProductLayoutParityMapDiscoveryProfileEvidence"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "087EB42B-9476-4D3D-8855-EB3F0A212F9B.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Product UX Independent Markers After_0_038F0EED-680A-4E0C-969D-7AF0F932E9FE.png",
+        "timestamp" : 1788160668.183
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testFarMapKeepsIndependentRestaurantMarkers()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testFarMapKeepsIndependentRestaurantMarkers"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "43584C96-A02B-44D5-A4B6-1FE12C315A79.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Task 04 Restaurant Detail After_0_937AB830-40FE-45CA-815E-F5FC60A18282.png",
+        "timestamp" : 1788160682.619
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "CBD8FDDB-7544-4DB2-8682-374269B6D28B.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Task 04 List After_0_EF699217-BB10-4562-B5C5-198919909428.png",
+        "timestamp" : 1788160679.012
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "296F8110-49AF-4E39-BCCA-DF7652AEC658",
+        "deviceName" : "TasteMap Independent Audit",
+        "exportedFileName" : "3458041D-52BC-455C-B9E7-E68D2C34C423.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Task 04 Map After_0_5D1F115A-3FE1-454E-894F-F78C9F687C40.png",
+        "timestamp" : 1788160676.113
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testTask04CoreLayoutParityEvidence()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testTask04CoreLayoutParityEvidence"
+  }
+]

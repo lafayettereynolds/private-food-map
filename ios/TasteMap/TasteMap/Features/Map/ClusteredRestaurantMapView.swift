@@ -2,10 +2,12 @@ import MapKit
 import SwiftUI
 import UIKit
 
-struct ClusteredRestaurantMapView: UIViewRepresentable {
+struct RestaurantMapView: UIViewRepresentable {
     let markers: [RestaurantMapMarkerPresentation]
     let photosByID: [UUID: PhotoAsset]
     let photoCoordinator: PhotoTransferCoordinator?
+    let userAvatarPreset: ProfileAvatarPreset
+    let userAvatarPhoto: PhotoAsset?
     @Binding var selectedRestaurantID: UUID?
     let fitRequestID: UUID
     let locationRequestID: UUID?
@@ -29,7 +31,7 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
     func updateUIView(_ mapView: MKMapView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.updateAnnotations(on: mapView)
-        context.coordinator.updateClustering(on: mapView)
+        context.coordinator.updateUserLocationView(on: mapView)
         context.coordinator.applySelection(on: mapView)
         context.coordinator.fitIfRequested(on: mapView)
         context.coordinator.centerOnUserIfRequested(on: mapView)
@@ -37,21 +39,23 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, MKMapViewDelegate {
-        var parent: ClusteredRestaurantMapView
+        var parent: RestaurantMapView
         private var annotationsByID: [UUID: RestaurantMapAnnotation] = [:]
         private var imageTasks: [UUID: Task<Void, Never>] = [:]
+        private var userAvatarTask: Task<Void, Never>?
         private var lastFitRequestID: UUID?
         private var lastLocationRequestID: UUID?
         private var isUserInteracting = false
         private var hasDeferredFit = false
         private var renderState: RestaurantMapRenderState = .loading
 
-        init(parent: ClusteredRestaurantMapView) {
+        init(parent: RestaurantMapView) {
             self.parent = parent
         }
 
         deinit {
             imageTasks.values.forEach { $0.cancel() }
+            userAvatarTask?.cancel()
         }
 
         func updateAnnotations(on mapView: MKMapView) {
@@ -133,16 +137,13 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
-            if annotation is MKUserLocation { return nil }
-            if let cluster = annotation as? MKClusterAnnotation {
-                let identifier = "taste-map-cluster"
+            if annotation is MKUserLocation {
+                let identifier = "taste-map-user-location"
                 let view = (mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
-                    as? RestaurantClusterAnnotationView)
-                    ?? RestaurantClusterAnnotationView(annotation: cluster, reuseIdentifier: identifier)
-                view.annotation = cluster
-                let members = cluster.memberAnnotations.compactMap { $0 as? RestaurantMapAnnotation }
-                    .map(\.presentation)
-                view.configure(RestaurantMapClusterPresentation(members: members))
+                    as? TasteMapUserLocationAnnotationView)
+                    ?? TasteMapUserLocationAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                view.annotation = annotation
+                configureUserLocation(view)
                 return view
             }
             guard let restaurant = annotation as? RestaurantMapAnnotation else { return nil }
@@ -151,29 +152,14 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
                 as? RestaurantMarkerAnnotationView)
                 ?? RestaurantMarkerAnnotationView(annotation: restaurant, reuseIdentifier: identifier)
             view.annotation = restaurant
-            let clusteringAllowed = RestaurantMapClusteringPolicy.allowsClustering(
-                latitudeDelta: mapView.region.span.latitudeDelta,
-                longitudeDelta: mapView.region.span.longitudeDelta
-            )
-            view.clusteringIdentifier = clusteringAllowed ? "taste-map-restaurants" : nil
-            view.displayPriority = clusteringAllowed ? .defaultHigh : .required
+            view.clusteringIdentifier = nil
+            view.displayPriority = .required
             view.collisionMode = .circle
             configure(view, for: restaurant)
             return view
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            if let cluster = view.annotation as? MKClusterAnnotation {
-                let members = cluster.memberAnnotations.compactMap { $0 as? RestaurantMapAnnotation }
-                let presentations = members.map(\.presentation)
-                applyCameraTarget(
-                    RestaurantMapClusterPresentation(members: presentations).expansionTarget,
-                    on: mapView,
-                    animated: true
-                )
-                mapView.deselectAnnotation(cluster, animated: false)
-                return
-            }
             guard let annotation = view.annotation as? RestaurantMapAnnotation else { return }
             parent.selectedRestaurantID = annotation.presentation.id
         }
@@ -199,7 +185,6 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            updateClustering(on: mapView)
             guard isUserInteracting else { return }
             let stillInteracting = mapView.gestureRecognizers?.contains(where: {
                 $0.state == .began || $0.state == .changed
@@ -209,18 +194,11 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
             if hasDeferredFit { fitIfRequested(on: mapView) }
         }
 
-        func updateClustering(on mapView: MKMapView) {
-            let allowsClustering = RestaurantMapClusteringPolicy.allowsClustering(
-                latitudeDelta: mapView.region.span.latitudeDelta,
-                longitudeDelta: mapView.region.span.longitudeDelta
-            )
-            for annotation in annotationsByID.values {
-                guard let view = mapView.view(for: annotation) as? RestaurantMarkerAnnotationView else {
-                    continue
-                }
-                view.clusteringIdentifier = allowsClustering ? "taste-map-restaurants" : nil
-                view.displayPriority = allowsClustering ? .defaultHigh : .required
+        func updateUserLocationView(on mapView: MKMapView) {
+            guard let view = mapView.view(for: mapView.userLocation) as? TasteMapUserLocationAnnotationView else {
+                return
             }
+            configureUserLocation(view)
         }
 
         func setRenderState(_ state: RestaurantMapRenderState) {
@@ -269,6 +247,30 @@ struct ClusteredRestaurantMapView: UIViewRepresentable {
             }
         }
 
+        private func configureUserLocation(_ view: TasteMapUserLocationAnnotationView) {
+            view.configure(preset: parent.userAvatarPreset)
+            guard let photo = parent.userAvatarPhoto,
+                  photo.deletedAt == nil,
+                  let coordinator = parent.photoCoordinator else {
+                userAvatarTask?.cancel()
+                userAvatarTask = nil
+                view.finishPhotoLoad(reference: nil, image: nil)
+                return
+            }
+            let reference = photo.id
+            guard view.representedPhotoReference != reference else { return }
+            userAvatarTask?.cancel()
+            view.beginPhotoLoad(reference: reference)
+            userAvatarTask = Task { @MainActor [weak view] in
+                let data = try? await coordinator.imageData(for: photo, variant: .thumbnail)
+                guard !Task.isCancelled else { return }
+                view?.finishPhotoLoad(
+                    reference: reference,
+                    image: data.flatMap(UIImage.init(data:))
+                )
+            }
+        }
+
         private func applyCameraTarget(
             _ target: RestaurantMapCameraTarget,
             on mapView: MKMapView,
@@ -311,6 +313,76 @@ private final class RestaurantMapAnnotation: NSObject, MKAnnotation {
 private extension RestaurantMapMarkerPresentation {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+@MainActor
+private final class TasteMapUserLocationAnnotationView: MKAnnotationView {
+    private let haloView = UIView()
+    private let avatarView = UIImageView()
+    private(set) var representedPhotoReference: UUID?
+    private var presetImage: UIImage?
+
+    override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 54, height: 54)
+        backgroundColor = .clear
+        collisionMode = .circle
+        displayPriority = .required
+        canShowCallout = false
+
+        haloView.frame = CGRect(x: 2, y: 2, width: 50, height: 50)
+        haloView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.18)
+        haloView.layer.cornerRadius = 25
+        haloView.layer.shadowColor = UIColor.black.cgColor
+        haloView.layer.shadowOpacity = 0.14
+        haloView.layer.shadowRadius = 5
+        haloView.layer.shadowOffset = CGSize(width: 0, height: 2)
+        addSubview(haloView)
+
+        avatarView.frame = CGRect(x: 7, y: 7, width: 40, height: 40)
+        avatarView.contentMode = .scaleAspectFill
+        avatarView.clipsToBounds = true
+        avatarView.layer.cornerRadius = 20
+        avatarView.layer.borderWidth = 3
+        avatarView.layer.borderColor = UIColor.white.cgColor
+        addSubview(avatarView)
+        isAccessibilityElement = true
+        accessibilityLabel = "我的当前位置"
+        accessibilityIdentifier = "restaurant-map-user-avatar-marker"
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func configure(preset: ProfileAvatarPreset) {
+        presetImage = Self.presetImage(preset)
+        if representedPhotoReference == nil { avatarView.image = presetImage }
+    }
+
+    func beginPhotoLoad(reference: UUID) {
+        representedPhotoReference = reference
+        avatarView.image = presetImage
+    }
+
+    func finishPhotoLoad(reference: UUID?, image: UIImage?) {
+        representedPhotoReference = reference
+        avatarView.image = image ?? presetImage
+    }
+
+    private static func presetImage(_ preset: ProfileAvatarPreset) -> UIImage? {
+        guard let sheet = UIImage(named: "TasteMapAvatarPresets"),
+              let cgImage = sheet.cgImage else { return nil }
+        let cellWidth = cgImage.width / 4
+        let cellHeight = cgImage.height / 4
+        let position = preset.gridPosition
+        let rect = CGRect(
+            x: CGFloat(position.column * cellWidth),
+            y: CGFloat(position.row * cellHeight),
+            width: CGFloat(cellWidth),
+            height: CGFloat(cellHeight)
+        )
+        guard let cropped = cgImage.cropping(to: rect) else { return nil }
+        return UIImage(cgImage: cropped, scale: sheet.scale, orientation: sheet.imageOrientation)
     }
 }
 
@@ -396,6 +468,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
             }
             return .genericDining
         }()
+        fallbackImageView.tintColor = fallbackTint(fallbackKind)
         visualContainer.layer.borderColor = statusColor(marker.status).cgColor
         statusBadge.backgroundColor = statusColor(marker.status)
         statusBadge.image = UIImage(
@@ -440,65 +513,15 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         case .recommended: "sparkles"
         }
     }
-}
 
-@MainActor
-private final class RestaurantClusterAnnotationView: MKAnnotationView {
-    private let visualContainer = UIView()
-    private let visualImageView = UIImageView()
-    private let countBadge = UIView()
-    private let countLabel = UILabel()
-
-    override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
-        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 58, height: 58)
-        backgroundColor = .clear
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.18
-        layer.shadowRadius = 5
-        layer.shadowOffset = CGSize(width: 0, height: 2)
-        collisionMode = .circle
-        displayPriority = .defaultHigh
-
-        visualContainer.frame = CGRect(x: 2, y: 2, width: 50, height: 50)
-        visualContainer.backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.96)
-        visualContainer.layer.cornerRadius = 25
-        visualContainer.layer.borderWidth = 3
-        visualContainer.layer.borderColor = UIColor.white.withAlphaComponent(0.92).cgColor
-        visualImageView.frame = visualContainer.bounds.insetBy(dx: 13, dy: 13)
-        visualImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        visualImageView.contentMode = .scaleAspectFit
-        visualImageView.tintColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
-        visualContainer.addSubview(visualImageView)
-        addSubview(visualContainer)
-
-        countBadge.frame = CGRect(x: 34, y: 34, width: 24, height: 20)
-        countBadge.backgroundColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
-        countBadge.layer.cornerRadius = 10
-        countBadge.layer.borderWidth = 2
-        countBadge.layer.borderColor = UIColor.white.cgColor
-        countLabel.frame = countBadge.bounds
-        countLabel.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        countLabel.textAlignment = .center
-        countLabel.textColor = .white
-        countLabel.adjustsFontSizeToFitWidth = true
-        countLabel.minimumScaleFactor = 0.7
-        countLabel.font = .systemFont(ofSize: 10, weight: .bold)
-        countBadge.addSubview(countLabel)
-        addSubview(countBadge)
-        isAccessibilityElement = true
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    func configure(_ presentation: RestaurantMapClusterPresentation) {
-        visualImageView.image = UIImage(
-            systemName: presentation.visualKind.systemImageName,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
-        )
-        countLabel.text = String(presentation.count)
-        accessibilityLabel = "餐饮聚合，附近 \(presentation.count) 家餐厅"
-        accessibilityIdentifier = "restaurant-map-cluster-\(presentation.count)"
+    private func fallbackTint(_ kind: FoodDiningVisualKind) -> UIColor {
+        switch kind {
+        case .drink: UIColor(red: 0.34, green: 0.48, blue: 0.58, alpha: 1)
+        case .receipt, .menu, .takeaway: UIColor(red: 0.64, green: 0.45, blue: 0.29, alpha: 1)
+        case .rating, .discovery: UIColor(red: 0.82, green: 0.49, blue: 0.22, alpha: 1)
+        case .sharedMeal: UIColor(red: 0.42, green: 0.58, blue: 0.43, alpha: 1)
+        default: UIColor(red: 0.72, green: 0.36, blue: 0.31, alpha: 1)
+        }
     }
 }
 

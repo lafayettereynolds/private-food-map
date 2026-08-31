@@ -19,29 +19,33 @@ struct CoreProductLayoutParityTests {
 
     @Test("Map collection navigation remains compact and product ordered")
     func mapCollectionOrder() {
-        #expect(RestaurantBrowseSegment.allCases.map(\.title) == ["去过", "想吃", "适合你"])
+        #expect(RestaurantBrowseSegment.allCases.map(\.title) == ["去过", "想吃", "推荐"])
     }
 
     @Test("My Map control layers follow the confirmed independent hierarchy")
     func mapControlHierarchy() {
         #expect(MapHomeControlLayer.allCases == [
-            .title, .displayMode, .restaurantScope, .filters,
+            .title, .restaurantScope, .filters,
         ])
     }
 
     @Test("Map filter chips use one semantic icon strategy and city is not GPS")
     func mapFilterIconContract() {
-        let symbols = MapFilterChipSemantic.allCases.map(\.systemImage)
-        #expect(symbols.count == MapFilterChipSemantic.allCases.count)
+        let semantics: [TasteMapFilterSemantic] = [
+            .city, .rating, .price, .visitCount, .companion, .cuisine,
+            .recommendationSource, .sort,
+        ]
+        let symbols = semantics.map(\.systemImage)
+        #expect(symbols.count == semantics.count)
         #expect(symbols.allSatisfy { !$0.isEmpty })
-        #expect(MapFilterChipSemantic.city.systemImage == "building.2")
-        #expect(!MapFilterChipSemantic.city.systemImage.localizedCaseInsensitiveContains("location"))
-        #expect(!MapFilterChipSemantic.city.systemImage.localizedCaseInsensitiveContains("mappin"))
+        #expect(TasteMapFilterSemantic.city.systemImage == "building.2.fill")
+        #expect(!TasteMapFilterSemantic.city.systemImage.localizedCaseInsensitiveContains("location"))
+        #expect(!TasteMapFilterSemantic.city.systemImage.localizedCaseInsensitiveContains("mappin"))
     }
 
     @Test("Core Food and Dining decorative selection is stable and bounded")
     func stableCoreDiningVisuals() {
-        let seed = "cluster|restaurant-a|restaurant-b"
+        let seed = "empty-state|restaurant-a|restaurant-b"
         let first = FoodDiningVisualLibrary.decorativeKind(stableSeed: seed)
         let repeated = FoodDiningVisualLibrary.decorativeKind(stableSeed: seed)
         #expect(first == repeated)
