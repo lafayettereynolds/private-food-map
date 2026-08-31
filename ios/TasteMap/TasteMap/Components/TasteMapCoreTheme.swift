@@ -132,6 +132,167 @@ extension View {
     }
 }
 
+/// Canonical semantics for compact product filters. Feature screens may omit
+/// dimensions they do not support, but must not invent a conflicting symbol.
+nonisolated enum TasteMapFilterSemantic: String, CaseIterable, Sendable {
+    case allFilters
+    case city
+    case rating
+    case price
+    case visitCount
+    case companion
+    case cuisine
+    case recommendationSource
+    case openNow
+    case timeWindow
+    case more
+
+    var systemImage: String {
+        switch self {
+        case .allFilters: "line.3.horizontal.decrease"
+        case .city: "building.2.fill"
+        case .rating: "star.fill"
+        case .price: "receipt"
+        case .visitCount: "fork.knife.circle.fill"
+        case .companion: "person.2.fill"
+        case .cuisine: "menucard.fill"
+        case .recommendationSource: "sparkles"
+        case .openNow: "clock.badge.checkmark"
+        case .timeWindow: "calendar"
+        case .more: "ellipsis"
+        }
+    }
+}
+
+/// One canonical chip implementation for Map/List, Discovery and later
+/// restaurant collections. The visible pill is compact while its hit target
+/// remains at least 44 points.
+struct TasteMapFilterChip: View {
+    let title: String
+    let semantic: TasteMapFilterSemantic
+    let isActive: Bool
+    var count: Int?
+    var accessibilityIdentifier: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: semantic.systemImage)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .lineLimit(1)
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .font(.caption2.monospacedDigit().weight(.bold))
+                        .padding(.horizontal, 5)
+                        .frame(minHeight: 18)
+                        .foregroundStyle(isActive ? TasteMapCoreTheme.brandDeep : TasteMapCoreTheme.textSecondary)
+                        .background(
+                            (isActive ? Color.white : TasteMapCoreTheme.brandSoft).opacity(0.92),
+                            in: Capsule()
+                        )
+                        .accessibilityLabel("\(count) 项")
+                }
+            }
+            .tasteMapFilterChipStyle(isActive: isActive)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(TasteMapFilterChipButtonStyle())
+        .frame(minHeight: 44)
+        .accessibilityLabel(title)
+        .accessibilityValue(isActive ? "已启用" : "未启用")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-filter-\(semantic.rawValue)")
+    }
+}
+
+private struct TasteMapFilterChipButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.84 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Canonical single-row horizontally scrolling filter container.
+struct TasteMapFilterBar<Content: View>: View {
+    let content: Content
+    var horizontalPadding: CGFloat
+    var accessibilityIdentifier: String
+
+    init(
+        horizontalPadding: CGFloat = TasteMapCoreTheme.pageInset,
+        accessibilityIdentifier: String = "taste-map-filter-bar",
+        @ViewBuilder content: () -> Content
+    ) {
+        self.horizontalPadding = horizontalPadding
+        self.accessibilityIdentifier = accessibilityIdentifier
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                content
+            }
+            .padding(.horizontal, horizontalPadding)
+        }
+        .scrollClipDisabled()
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
+/// My Map's three scopes and Discovery's five scopes share this exact visual
+/// hierarchy while retaining their own data meanings.
+struct TasteMapPrimaryTabBar<Option: Hashable>: View {
+    struct Item: Identifiable {
+        let option: Option
+        let title: String
+        var id: String { String(describing: option) }
+    }
+
+    @Binding var selection: Option
+    let items: [Item]
+    var accessibilityIdentifier: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(items) { item in
+                Button {
+                    selection = item.option
+                } label: {
+                    VStack(spacing: 7) {
+                        Text(item.title)
+                            .font(.subheadline.weight(selection == item.option ? .semibold : .medium))
+                            .foregroundStyle(
+                                selection == item.option
+                                    ? TasteMapCoreTheme.textPrimary
+                                    : TasteMapCoreTheme.textSecondary
+                            )
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                        Capsule()
+                            .fill(selection == item.option ? TasteMapCoreTheme.brand : .clear)
+                            .frame(height: 2)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.title)
+                .accessibilityAddTraits(selection == item.option ? .isSelected : [])
+                .accessibilityIdentifier("\(accessibilityIdentifier)-\(item.title)")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
 struct TasteMapSectionHeader: View {
     let title: String
     let subtitle: String?
@@ -245,17 +406,26 @@ struct TasteMapEmptyState: View {
     let title: String
     let message: String
     let systemImage: String
+    var foodDiningVisualKind: FoodDiningVisualKind? = nil
     var actionTitle: String?
     var action: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 13) {
-            Image(systemName: systemImage)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(TasteMapCoreTheme.brand)
-                .frame(width: 54, height: 54)
-                .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 17))
-                .accessibilityHidden(true)
+            if let foodDiningVisualKind {
+                FoodDiningVisualIcon(
+                    kind: foodDiningVisualKind,
+                    usage: .decorative,
+                    size: 58
+                )
+            } else {
+                Image(systemName: systemImage)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(TasteMapCoreTheme.brand)
+                    .frame(width: 54, height: 54)
+                    .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 17))
+                    .accessibilityHidden(true)
+            }
             Text(title)
                 .font(.headline)
                 .foregroundStyle(TasteMapCoreTheme.textPrimary)

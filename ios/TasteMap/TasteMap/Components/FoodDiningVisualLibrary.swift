@@ -175,18 +175,18 @@ struct FoodDiningVisualIcon: View {
     let kind: FoodDiningVisualKind
     let usage: FoodDiningVisualUsage
     var size: CGFloat = 44
-    var foregroundColor: Color = TasteMapCoreTheme.brand
-    var backgroundColor: Color = TasteMapCoreTheme.brandSoft
+    var foregroundColor: Color?
+    var backgroundColor: Color?
     var accessibilityLabel: String?
 
     var body: some View {
         Image(systemName: kind.systemImageName)
             .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(foregroundColor)
+            .foregroundStyle(foregroundColor ?? kind.defaultForegroundColor)
             .frame(width: size, height: size)
-            .background(backgroundColor, in: Circle())
+            .background(backgroundColor ?? kind.defaultBackgroundColor, in: Circle())
             .overlay {
-                Circle().stroke(foregroundColor.opacity(0.14), lineWidth: 1)
+                Circle().stroke((foregroundColor ?? kind.defaultForegroundColor).opacity(0.14), lineWidth: 1)
             }
             .accessibilityElement(children: .ignore)
             .modifier(FoodDiningAccessibilityModifier(
@@ -194,6 +194,27 @@ struct FoodDiningVisualIcon: View {
                 label: accessibilityLabel ?? kind.defaultAccessibilityLabel
             ))
             .accessibilityIdentifier("food-dining-visual-\(kind.rawValue)")
+    }
+}
+
+private extension FoodDiningVisualKind {
+    var defaultForegroundColor: Color {
+        switch self {
+        case .food, .takeaway: Color(red: 0.72, green: 0.32, blue: 0.25)
+        case .drink: Color(red: 0.39, green: 0.29, blue: 0.22)
+        case .tableware, .sharedMeal: Color(red: 0.25, green: 0.48, blue: 0.45)
+        case .receipt, .menu: Color(red: 0.63, green: 0.43, blue: 0.21)
+        case .restaurant, .location: TasteMapCoreTheme.brand
+        case .rating: Color(red: 0.86, green: 0.55, blue: 0.12)
+        case .calendar, .time: Color(red: 0.43, green: 0.39, blue: 0.64)
+        case .repeatVisit, .trend: Color(red: 0.30, green: 0.53, blue: 0.37)
+        case .photo, .tag, .discovery: Color(red: 0.48, green: 0.38, blue: 0.62)
+        case .genericDining: TasteMapCoreTheme.brandDeep
+        }
+    }
+
+    var defaultBackgroundColor: Color {
+        defaultForegroundColor.opacity(0.12)
     }
 }
 
