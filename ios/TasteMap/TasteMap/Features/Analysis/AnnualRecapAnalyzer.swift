@@ -169,7 +169,8 @@ nonisolated enum AnnualRecapAnalyzer {
                 isNew: earliestVisits[restaurantID].map { period.contains($0.visitedAt) } ?? false,
                 imageReference: imageReference(
                     restaurantID: restaurantID, visitIDs: visitIDs,
-                    dishIDs: dishIDs, photos: photos
+                    dishIDs: dishIDs, photos: photos,
+                    merchantImageURL: restaurantsByID[restaurantID]?.merchantImageURL
                 ),
                 hasNote: sortedVisits.contains {
                     $0.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
@@ -731,7 +732,7 @@ nonisolated enum AnnualRecapAnalyzer {
 
     private static func imageReference(
         restaurantID: UUID, visitIDs: Set<UUID>, dishIDs: Set<UUID>,
-        photos: [MonthlyRecapInput.PhotoRecord]
+        photos: [MonthlyRecapInput.PhotoRecord], merchantImageURL: URL?
     ) -> AnalysisImageReference {
         let eligible = photos.filter {
             ($0.kind == .dish && $0.dishID.map(dishIDs.contains) == true)
@@ -745,7 +746,9 @@ nonisolated enum AnnualRecapAnalyzer {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id.uuidString < $1.id.uuidString
         }.first
-        return selected.map { .photo($0.id) } ?? .none
+        return selected.map { .photo($0.id) }
+            ?? merchantImageURL.map(AnalysisImageReference.provider)
+            ?? .none
     }
 
     private static func photoPriority(_ value: MonthlyRecapInput.PhotoRecord) -> Int {
@@ -758,7 +761,7 @@ nonisolated enum AnnualRecapAnalyzer {
     }
 
     private static func imageRank(_ value: AnalysisImageReference) -> Int {
-        switch value { case .photo: 0; case .asset: 1; case .none: 2 }
+        switch value { case .photo: 0; case .provider: 1; case .asset: 2; case .none: 3 }
     }
 
     private static func earliestVisitsByRestaurant(

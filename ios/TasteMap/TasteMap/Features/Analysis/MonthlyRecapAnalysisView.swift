@@ -231,17 +231,6 @@ struct MonthlyRecapAnalysisView: View {
         .tasteMapBottomNavigationHidden()
         .navigationTitle("本月回顾")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if report.hasData {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { isShowingPoster = true } label: {
-                        Label("分享", systemImage: "square.and.arrow.up")
-                    }
-                    .tint(TasteMapAnalysisTheme.brand)
-                    .accessibilityIdentifier("monthly-recap-share-toolbar")
-                }
-            }
-        }
         .sheet(isPresented: $isShowingPoster) {
             MonthlyRecapPosterSheet(report: report, photosByID: photosByID)
         }
@@ -510,7 +499,7 @@ struct MonthlyRecapAnalysisView: View {
             HStack(spacing: 13) {
                 AnalysisFoodGlyph(symbol: "🗓️", tone: .cream, size: 54)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("生成本月分享海报").font(.headline)
+                    Text("生成分享海报").font(.headline)
                     Text("独立 9:16 月度餐桌设计，不是页面截图").font(.caption).opacity(0.86)
                 }
                 Spacer()

@@ -6,6 +6,7 @@ struct AnnualRecapPosterView: View {
 
     let report: AnnualRecapAnalysis
     let resolvedImages: [UUID: UIImage]
+    var brandConfiguration = SharePosterBrandConfiguration.current()
 
     var body: some View {
         ZStack {
@@ -19,7 +20,14 @@ struct AnnualRecapPosterView: View {
                 annualHero.frame(height: 600).padding(.horizontal, 54)
                 metricPassport.frame(height: 250).padding(.horizontal, 54).offset(y: -28)
                 journeyBand.frame(height: 310).padding(.horizontal, 54).offset(y: -20)
-                restaurantStrip.frame(height: 430).padding(.horizontal, 54).offset(y: -8)
+                restaurantStrip.frame(height: 340).padding(.horizontal, 54).offset(y: -8)
+                SharePosterBrandFooter(
+                    supportingText: footerSupportingText,
+                    tagline: "这一年的每一口，都算数",
+                    configuration: brandConfiguration
+                )
+                .frame(height: 110)
+                .padding(.horizontal, 54)
             }
         }
         .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)
@@ -174,17 +182,6 @@ struct AnnualRecapPosterView: View {
                     .background(.white, in: RoundedRectangle(cornerRadius: 28)).clipShape(RoundedRectangle(cornerRadius: 28))
                 }
             }
-            HStack {
-                if let companion = report.topCompanion {
-                    Label("年度饭搭子 · \(companion.displayName)", systemImage: "person.2.fill")
-                }
-                Spacer()
-                if let source = posterSource {
-                    Text("\(source.title) · \(source.displayName)")
-                }
-                Text("Taste Map").fontWeight(.heavy)
-            }
-            .font(.system(size: 17, weight: .semibold)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
         }
     }
 
@@ -193,6 +190,11 @@ struct AnnualRecapPosterView: View {
     }
     private var keywordLine: String {
         report.keywords.isEmpty ? "真实记录生成" : report.keywords.prefix(4).joined(separator: " · ")
+    }
+    private var footerSupportingText: String {
+        let companion = report.topCompanion.map { "年度饭搭子 · \($0.displayName)" }
+        let source = posterSource.map { "\($0.title) · \($0.displayName)" }
+        return [companion, source, keywordLine].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func posterMetric(_ label: String, _ value: String, _ unit: String) -> some View {
@@ -212,6 +214,10 @@ struct AnnualRecapPosterView: View {
         case .photo(let id):
             if let image = resolvedImages[id] { Image(uiImage: image).resizable().scaledToFill() }
             else { posterFallback }
+        case .provider:
+            if let key = reference.resolutionKey, let image = resolvedImages[key] {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else { posterFallback }
         case .asset(let name): Image(name).resizable().scaledToFill()
         case .none: posterFallback
         }

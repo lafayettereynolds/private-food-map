@@ -360,7 +360,9 @@ enum DiningCompanionAnalyzer {
                     sharedVisitIDs: sharedVisitIDs,
                     dishes: dishes,
                     associations: associations
-                ).map { .photo($0.id) } ?? .none
+                ).map { .photo($0.id) }
+                    ?? restaurant.merchantImageURL.map(AnalysisImageReference.provider)
+                    ?? .none
             )
         }.sorted { lhs, rhs in
             if lhs.sharedVisitCount != rhs.sharedVisitCount { return lhs.sharedVisitCount > rhs.sharedVisitCount }
@@ -555,7 +557,9 @@ enum DiningCompanionAnalyzer {
                 detail: detail,
                 averageRating: rating,
                 visitCount: visits.count,
-                imageReference: photo.map { .photo($0.id) } ?? .none
+                imageReference: photo.map { .photo($0.id) }
+                    ?? restaurant.merchantImageURL.map(AnalysisImageReference.provider)
+                    ?? .none
             )
         }.prefix(3).map { $0 }
     }
@@ -632,7 +636,9 @@ enum DiningCompanionAnalyzer {
                     city: restaurant.city,
                     reason: reason,
                     score: score,
-                    imageReference: photo.map { .photo($0.id) } ?? .none
+                    imageReference: photo.map { .photo($0.id) }
+                        ?? restaurant.merchantImageURL.map(AnalysisImageReference.provider)
+                        ?? .none
                 ),
                 wantToGo: wantToGo
             )

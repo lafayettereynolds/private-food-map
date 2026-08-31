@@ -6,6 +6,7 @@ struct RecommendationSourcePosterView: View {
 
     let overview: RecommendationSourceOverview
     var resolvedImages: [UUID: UIImage] = [:]
+    var brandConfiguration = SharePosterBrandConfiguration.current()
 
     var body: some View {
         ZStack {
@@ -214,26 +215,11 @@ struct RecommendationSourcePosterView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(TasteMapAnalysisTheme.brand)
-                Image(systemName: "fork.knife")
-                    .font(.system(size: 22, weight: .bold)).foregroundStyle(.white)
-            }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Taste Map")
-                    .font(.system(size: 22, weight: .heavy, design: .rounded))
-                    .foregroundStyle(TasteMapAnalysisTheme.ink)
-                Text("真实记录生成 · 每家餐厅只给来源贡献一次评分样本")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
-            }
-            Spacer()
-            Text("谁安利，谁负责")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(TasteMapAnalysisTheme.brand)
-        }
+        SharePosterBrandFooter(
+            supportingText: "真实记录生成 · 每家餐厅只给来源贡献一次评分样本",
+            tagline: "谁安利，谁负责",
+            configuration: brandConfiguration
+        )
     }
 
     private func ticketPosition(_ index: Int) -> CGPoint {
@@ -248,6 +234,7 @@ struct RecommendationSourcePosterView: View {
     private func image(for reference: AnalysisImageReference) -> UIImage? {
         switch reference {
         case .photo(let id): resolvedImages[id]
+        case .provider: reference.resolutionKey.flatMap { resolvedImages[$0] }
         case .asset(let name): UIImage(named: name)
         case .none: nil
         }

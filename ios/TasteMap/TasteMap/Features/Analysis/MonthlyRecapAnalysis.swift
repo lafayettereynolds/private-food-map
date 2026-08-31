@@ -69,6 +69,7 @@ nonisolated struct MonthlyRecapInput: Sendable {
         let city: String
         let status: RestaurantStatus
         let tags: [String]
+        var merchantImageURL: URL? = nil
         let createdAt: Date
         let updatedAt: Date
         let deletedAt: Date?
@@ -172,6 +173,7 @@ nonisolated struct MonthlyRecapInput: Sendable {
                 return RestaurantRecord(
                     id: restaurant.id, name: restaurant.name, city: restaurant.city,
                     status: restaurant.status, tags: contract?.tags ?? [],
+                    merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(contract?.merchantImageUrl),
                     createdAt: restaurant.createdAt, updatedAt: restaurant.updatedAt,
                     deletedAt: restaurant.deletedAt
                 )

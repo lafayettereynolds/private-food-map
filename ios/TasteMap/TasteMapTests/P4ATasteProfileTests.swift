@@ -199,6 +199,48 @@ struct P4ATasteProfileTests {
         #expect(TasteProfilePreviewFixtures.empty.hero.imageReferences == [.asset("FoodHeroMixed")])
     }
 
+    @Test("Real local photos outrank provider images and provider images outrank decorative fallback")
+    func restaurantImagePriority() {
+        let providerURL = URL(string: "https://images.example.com/merchant.jpg")!
+        let source = TasteProfilePreviewFixtures.input(visitCount: 12, includePhotos: false)
+        let restaurants = source.restaurants.map { restaurant in
+            TasteProfileInput.RestaurantRecord(
+                id: restaurant.id, name: restaurant.name, address: restaurant.address,
+                city: restaurant.city, status: restaurant.status, tags: restaurant.tags,
+                merchantImageURL: providerURL,
+                createdAt: restaurant.createdAt, updatedAt: restaurant.updatedAt, deletedAt: restaurant.deletedAt
+            )
+        }
+        let providerReport = TasteProfileAnalyzer.analyze(
+            TasteProfileInput(
+                userDisplayName: source.userDisplayName, restaurants: restaurants,
+                visits: source.visits, dishes: source.dishes, visitDishes: source.visitDishes,
+                photos: [], companions: source.companions,
+                recommendationSources: source.recommendationSources
+            ),
+            now: TasteProfilePreviewFixtures.now
+        )
+        #expect(providerReport.restaurants.contains { $0.imageReference == .provider(providerURL) })
+        #expect(providerReport.hero.imageReferences.contains(.provider(providerURL)))
+
+        let realPhoto = TasteProfileInput.PhotoRecord(
+            id: UUID(), restaurantID: restaurants[0].id, visitID: nil, dishID: nil,
+            kind: "restaurant_marker", sortOrder: 0,
+            updatedAt: TasteProfilePreviewFixtures.now, deletedAt: nil
+        )
+        let localReport = TasteProfileAnalyzer.analyze(
+            TasteProfileInput(
+                userDisplayName: source.userDisplayName, restaurants: restaurants,
+                visits: source.visits, dishes: source.dishes, visitDishes: source.visitDishes,
+                photos: [realPhoto], companions: source.companions,
+                recommendationSources: source.recommendationSources
+            ),
+            now: TasteProfilePreviewFixtures.now
+        )
+        let localRepresentative = localReport.restaurants.first { $0.id == restaurants[0].id }
+        #expect(localRepresentative?.imageReference == .photo(realPhoto.id))
+    }
+
     @Test("Taste keywords are explainable, bounded and disappear when no evidence exists")
     func tasteKeywords() {
         let report = TasteProfilePreviewFixtures.rich

@@ -144,8 +144,10 @@ struct OnThisDayPosterView: View {
 
     @ViewBuilder
     private func posterImage(reference: AnalysisImageReference) -> some View {
-        if case .photo(let id) = reference, let image = resolvedImages[id] {
+        if let key = reference.resolutionKey, let image = resolvedImages[key] {
             Image(uiImage: image).resizable().scaledToFill()
+        } else if case .asset(let name) = reference {
+            Image(name).resizable().scaledToFill()
         } else {
             LinearGradient(
                 colors: [cream, leaf.opacity(0.9)],

@@ -53,7 +53,8 @@ enum RecommendationSourceAnalyzer {
                 imageReference: imageReference(
                     restaurantID: restaurant.id,
                     visitIDs: Set(restaurantVisits.map(\.id)),
-                    photos: photos
+                    photos: photos,
+                    merchantImageURL: restaurant.merchantImageURL
                 )
             )
         }
@@ -338,7 +339,8 @@ enum RecommendationSourceAnalyzer {
     private nonisolated static func imageReference(
         restaurantID: UUID,
         visitIDs: Set<UUID>,
-        photos: [RecommendationSourceInput.PhotoRecord]
+        photos: [RecommendationSourceInput.PhotoRecord],
+        merchantImageURL: URL?
     ) -> AnalysisImageReference {
         let eligible = photos.filter {
             $0.restaurantID == restaurantID || $0.visitID.map(visitIDs.contains) == true
@@ -351,7 +353,9 @@ enum RecommendationSourceAnalyzer {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id.uuidString < $1.id.uuidString
         }.first
-        return photo.map { .photo($0.id) } ?? .none
+        return photo.map { .photo($0.id) }
+            ?? merchantImageURL.map(AnalysisImageReference.provider)
+            ?? .none
     }
 
     private nonisolated static func photoPriority(_ photo: RecommendationSourceInput.PhotoRecord) -> Int {

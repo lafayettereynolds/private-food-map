@@ -3,6 +3,7 @@ import UIKit
 @testable import TasteMap
 
 @Suite("Analysis visual parity")
+@MainActor
 struct AnalysisVisualParityTests {
     @Test("Analysis retains its approved warm-white editorial palette")
     func approvedAnalysisPalette() {
@@ -37,5 +38,34 @@ struct AnalysisVisualParityTests {
         ] {
             #expect(UIImage(named: asset) != nil, "Missing approved Food Hero asset: \(asset)")
         }
+    }
+
+    @Test("Provider image references have stable non-colliding render keys")
+    func providerImageKeys() {
+        let first = AnalysisImageReference.provider(URL(string: "https://images.example.com/a.jpg")!)
+        let equivalent = AnalysisImageReference.provider(URL(string: "https://images.example.com/a.jpg")!)
+        let second = AnalysisImageReference.provider(URL(string: "https://images.example.com/b.jpg")!)
+        #expect(first.resolutionKey != nil)
+        #expect(first.resolutionKey == equivalent.resolutionKey)
+        #expect(first.resolutionKey != second.resolutionKey)
+    }
+
+    @Test("Official poster QR configuration fails closed for unsafe or missing destinations")
+    func posterQRConfiguration() {
+        #expect(SharePosterBrandConfiguration.resolve(environment: .production, rawValue: nil).qrDestinationURL == nil)
+        #expect(SharePosterBrandConfiguration.resolve(environment: .production, rawValue: "http://tastemap.cn").qrDestinationURL == nil)
+        #expect(SharePosterBrandConfiguration.resolve(environment: .production, rawValue: "https://localhost/share").qrDestinationURL == nil)
+        #expect(SharePosterBrandConfiguration.resolve(environment: .production, rawValue: "https://taste-map.workers.dev/share").qrDestinationURL == nil)
+        #expect(SharePosterBrandConfiguration.resolve(environment: .production, rawValue: "https://api-dev.tastemap.cn/share").qrDestinationURL == nil)
+        #expect(SharePosterBrandConfiguration.resolve(environment: .production, rawValue: "https://testflight.apple.com/join/example").qrDestinationURL == nil)
+        #expect(SharePosterBrandConfiguration.resolve(environment: .production, rawValue: "https://tastemap.example/share").qrDestinationURL?.absoluteString == "https://tastemap.example/share")
+    }
+
+    @Test("Configured poster destination renders a real QR image")
+    func posterQRCodeRendering() {
+        let image = SharePosterQRCodeRenderer.image(for: URL(string: "https://tastemap.example/share")!)
+        #expect(image != nil)
+        #expect((image?.cgImage?.width ?? 0) > 100)
+        #expect((image?.cgImage?.height ?? 0) > 100)
     }
 }

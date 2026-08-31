@@ -341,13 +341,6 @@ struct DiningCompanionDetailView: View {
         .navigationTitle("你和 \(report.companionDisplayName)")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { isShowingPoster = true } label: {
-                    Label("分享", systemImage: "square.and.arrow.up")
-                }
-                .tint(TasteMapAnalysisTheme.brand)
-                .accessibilityIdentifier("companion-analysis-share-toolbar")
-            }
 #if DEBUG
             if TasteMapUITestFixtures.usesCompanionAnalysisFixture {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -419,7 +412,7 @@ struct DiningCompanionDetailView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "sparkles")
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("生成你和 TA 的分享海报").font(.subheadline.weight(.bold))
+                        Text("生成分享海报").font(.subheadline.weight(.bold))
                         Text("聚合信息，不包含私人备注、内部 ID 或精确位置历史")
                             .font(.caption).opacity(0.84)
                     }

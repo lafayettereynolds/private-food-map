@@ -6,6 +6,7 @@ struct DiningCompanionPosterView: View {
 
     let report: DiningCompanionAnalysis
     var resolvedImages: [UUID: UIImage] = [:]
+    var brandConfiguration = SharePosterBrandConfiguration.current()
 
     var body: some View {
         ZStack {
@@ -266,32 +267,17 @@ struct DiningCompanionPosterView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(TasteMapAnalysisTheme.brand)
-                Image(systemName: "fork.knife")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Taste Map")
-                    .font(.system(size: 22, weight: .heavy, design: .rounded))
-                    .foregroundStyle(TasteMapAnalysisTheme.ink)
-                Text("仅基于我记录的共同到访 · 不含 TA 私人历史或私人备注")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
-            }
-            Spacer()
-            Text("一起吃过，才算数")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(TasteMapAnalysisTheme.brand)
-        }
+        SharePosterBrandFooter(
+            supportingText: "仅基于我记录的共同到访 · 不含 TA 私人历史或私人备注",
+            tagline: "一起吃过，才算数",
+            configuration: brandConfiguration
+        )
     }
 
     private func image(for reference: AnalysisImageReference) -> UIImage? {
         switch reference {
         case .photo(let id): resolvedImages[id]
+        case .provider: reference.resolutionKey.flatMap { resolvedImages[$0] }
         case .asset(let name): UIImage(named: name)
         case .none: nil
         }

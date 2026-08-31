@@ -531,7 +531,9 @@ enum TasteProfileAnalyzer {
                 detail: detail,
                 averageRating: rating,
                 visitCount: visits.count,
-                imageReference: photo.map { .photo($0.id) } ?? .none
+                imageReference: photo.map { .photo($0.id) }
+                    ?? restaurant.merchantImageURL.map(AnalysisImageReference.provider)
+                    ?? .none
             )
         }.prefix(4).map { $0 }
     }

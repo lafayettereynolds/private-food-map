@@ -6,6 +6,7 @@ struct MonthlyRecapPosterView: View {
 
     let report: MonthlyRecapAnalysis
     let resolvedImages: [UUID: UIImage]
+    var brandConfiguration = SharePosterBrandConfiguration.current()
 
     var body: some View {
         ZStack {
@@ -213,28 +214,11 @@ struct MonthlyRecapPosterView: View {
     }
 
     private var posterFooter: some View {
-        HStack(spacing: 22) {
-            if !report.keywords.isEmpty {
-                HStack(spacing: 9) {
-                    ForEach(report.keywords.prefix(4), id: \.self) { keyword in
-                        Text(keyword)
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundStyle(TasteMapAnalysisTheme.brandDeep)
-                            .padding(.horizontal, 18).padding(.vertical, 10)
-                            .background(TasteMapAnalysisTheme.brandSoft, in: Capsule())
-                    }
-                }
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 5) {
-                Text("Taste Map")
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
-                    .foregroundStyle(TasteMapAnalysisTheme.ink)
-                Text("基于我的真实记录生成")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
-            }
-        }
+        SharePosterBrandFooter(
+            supportingText: report.keywords.isEmpty ? "基于我的真实记录生成" : report.keywords.prefix(4).joined(separator: " · "),
+            tagline: "这个月，吃得有迹可循",
+            configuration: brandConfiguration
+        )
         .padding(.horizontal, 58)
     }
 
@@ -306,6 +290,12 @@ struct MonthlyRecapPosterView: View {
         switch reference {
         case .photo(let id):
             if let image = resolvedImages[id] {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                posterFallback
+            }
+        case .provider:
+            if let key = reference.resolutionKey, let image = resolvedImages[key] {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
                 posterFallback

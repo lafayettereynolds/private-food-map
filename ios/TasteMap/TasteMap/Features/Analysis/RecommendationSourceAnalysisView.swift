@@ -101,15 +101,6 @@ struct RecommendationSourceOverviewView: View {
         .tasteMapBottomNavigationHidden()
         .navigationTitle("谁最会种草")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { isShowingPoster = true } label: {
-                    Label("分享", systemImage: "square.and.arrow.up")
-                }
-                .tint(TasteMapAnalysisTheme.brand)
-                .accessibilityIdentifier("recommendation-source-share-toolbar")
-            }
-        }
         .sheet(isPresented: $isShowingPoster) {
             RecommendationSourcePosterSheet(overview: overview, photosByID: photosByID)
         }
@@ -143,7 +134,7 @@ struct RecommendationSourceOverviewView: View {
                         accessibilityLabel: "推荐来源海报"
                     )
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("生成推荐来源分享海报").font(.subheadline.weight(.bold))
+                        Text("生成分享海报").font(.subheadline.weight(.bold))
                         Text("包含“最坑推荐来源”，但不会暴露私人备注").font(.caption).opacity(0.84)
                     }
                     Spacer()

@@ -101,15 +101,6 @@ struct TasteProfileAnalysisView: View {
         .tasteMapBottomNavigationHidden()
         .navigationTitle("口味档案")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { isShowingPoster = true } label: {
-                    Label("分享", systemImage: "square.and.arrow.up")
-                }
-                .tint(TasteMapAnalysisTheme.brand)
-                .accessibilityIdentifier("taste-profile-share-toolbar")
-            }
-        }
         .sheet(isPresented: $isShowingPoster) {
             AnalysisPosterSheet(report: report, photosByID: photosByID)
         }

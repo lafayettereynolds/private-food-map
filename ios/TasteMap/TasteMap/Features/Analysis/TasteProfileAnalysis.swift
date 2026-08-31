@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 nonisolated enum AnalysisReportKind: String, Hashable, Sendable {
@@ -75,8 +76,27 @@ nonisolated enum FoodHeroTheme: String, CaseIterable, Hashable, Sendable {
 
 nonisolated enum AnalysisImageReference: Hashable, Sendable {
     case photo(UUID)
+    case provider(URL)
     case asset(String)
     case none
+
+    /// Stable dictionary key shared by page and poster image resolution.
+    /// Provider URLs use SHA-256 rather than Swift's randomized `Hasher`, so a
+    /// render never changes identity between launches.
+    nonisolated var resolutionKey: UUID? {
+        switch self {
+        case .photo(let id):
+            return id
+        case .provider(let url):
+            let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+                .map { String(format: "%02x", $0) }
+                .joined()
+            let value = "\(digest.prefix(8))-\(digest.dropFirst(8).prefix(4))-\(digest.dropFirst(12).prefix(4))-\(digest.dropFirst(16).prefix(4))-\(digest.dropFirst(20).prefix(12))"
+            return UUID(uuidString: value)
+        case .asset, .none:
+            return nil
+        }
+    }
 }
 
 nonisolated struct TasteProfileInput: Sendable {
@@ -87,6 +107,7 @@ nonisolated struct TasteProfileInput: Sendable {
         let city: String
         let status: String
         let tags: [String]
+        var merchantImageURL: URL? = nil
         let createdAt: Date
         let updatedAt: Date
         let deletedAt: Date?
@@ -190,6 +211,7 @@ nonisolated struct TasteProfileInput: Sendable {
                     city: restaurant.city,
                     status: restaurant.status.rawValue,
                     tags: contract?.tags ?? [],
+                    merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(contract?.merchantImageUrl),
                     createdAt: restaurant.createdAt,
                     updatedAt: restaurant.updatedAt,
                     deletedAt: restaurant.deletedAt

@@ -179,17 +179,6 @@ struct AnnualRecapAnalysisView: View {
         .tasteMapBottomNavigationHidden()
         .navigationTitle("年度回顾")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if report.hasData {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { isShowingPoster = true } label: {
-                        Label("分享", systemImage: "square.and.arrow.up")
-                    }
-                    .tint(TasteMapAnalysisTheme.brand)
-                    .accessibilityIdentifier("annual-recap-share-toolbar")
-                }
-            }
-        }
         .sheet(isPresented: $isShowingPoster) {
             AnnualRecapPosterSheet(report: report, photosByID: photosByID)
         }
@@ -445,7 +434,7 @@ struct AnnualRecapAnalysisView: View {
             HStack(spacing: 13) {
                 AnalysisFoodGlyph(symbol: "🧭", tone: .cream, size: 54)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("生成年度味觉旅程海报").font(.headline)
+                    Text("生成分享海报").font(.headline)
                     Text("独立年度总结名片，不是页面截图").font(.caption).opacity(0.86)
                 }
                 Spacer(); Image(systemName: "arrow.up.right")

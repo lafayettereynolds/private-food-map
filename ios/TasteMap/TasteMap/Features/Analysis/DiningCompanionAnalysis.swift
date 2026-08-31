@@ -29,6 +29,7 @@ nonisolated struct DiningCompanionInput: Sendable {
         let status: RestaurantStatus
         let preference: RestaurantJSONContractV1.RestaurantPreferenceContract
         let tags: [String]
+        var merchantImageURL: URL? = nil
         let updatedAt: Date
         let deletedAt: Date?
         let isAccessible: Bool
@@ -150,6 +151,7 @@ nonisolated struct DiningCompanionInput: Sendable {
                     status: restaurant.status,
                     preference: contract?.preferenceLevel ?? .normal,
                     tags: contract?.tags ?? [],
+                    merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(contract?.merchantImageUrl),
                     updatedAt: restaurant.updatedAt,
                     deletedAt: restaurant.deletedAt,
                     isAccessible: true

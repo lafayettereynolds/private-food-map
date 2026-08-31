@@ -289,6 +289,14 @@ struct AnalysisHeroMedia: View {
             } else {
                 fallback
             }
+        case .provider(let url):
+            AsyncImage(url: url) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFill()
+                } else {
+                    fallback
+                }
+            }
         case .asset(let name):
             Image(name).resizable().scaledToFit().padding(size * 0.025)
         case .none:
@@ -322,6 +330,14 @@ struct RestaurantEvidenceImage: View {
                     PhotoAssetImageView(photo: photo, variant: .thumbnail)
                 } else {
                     missingImage
+                }
+            case .provider(let url):
+                AsyncImage(url: url) { phase in
+                    if case .success(let image) = phase {
+                        image.resizable().scaledToFill()
+                    } else {
+                        missingImage
+                    }
                 }
             case .asset(let name):
                 Image(name).resizable().scaledToFill()

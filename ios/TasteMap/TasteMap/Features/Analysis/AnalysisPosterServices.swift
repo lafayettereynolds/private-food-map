@@ -48,18 +48,29 @@ enum AnalysisPosterImageResolver {
         photosByID: [UUID: PhotoAsset],
         coordinator: PhotoTransferCoordinator?
     ) async -> [UUID: UIImage] {
-        guard let coordinator else { return [:] }
-        var seen = Set<UUID>()
-        let ids = references.compactMap { reference -> UUID? in
-            guard case .photo(let id) = reference, seen.insert(id).inserted else { return nil }
-            return id
-        }
         var result: [UUID: UIImage] = [:]
-        for id in ids {
-            guard let photo = photosByID[id] else { continue }
-            if let data = try? await coordinator.imageData(for: photo, variant: .display),
-               let image = UIImage(data: data) {
-                result[id] = image
+        var seen = Set<UUID>()
+        for reference in references {
+            guard let key = reference.resolutionKey, seen.insert(key).inserted else { continue }
+            switch reference {
+            case .photo(let id):
+                guard let coordinator, let photo = photosByID[id] else { continue }
+                if let data = try? await coordinator.imageData(for: photo, variant: .display),
+                   let image = UIImage(data: data) {
+                    result[key] = image
+                }
+            case .provider(let url):
+                guard url.scheme?.lowercased() == "https",
+                      let host = url.host, !host.isEmpty,
+                      let (data, response) = try? await URLSession.shared.data(from: url),
+                      data.count <= 20 * 1_024 * 1_024,
+                      let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode),
+                      http.mimeType?.lowercased().hasPrefix("image/") == true,
+                      let image = UIImage(data: data) else { continue }
+                result[key] = image
+            case .asset, .none:
+                continue
             }
         }
         return result

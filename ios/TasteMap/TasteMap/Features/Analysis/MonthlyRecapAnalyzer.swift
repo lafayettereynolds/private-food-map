@@ -171,7 +171,8 @@ nonisolated enum MonthlyRecapAnalyzer {
                 latestVisitAt: sortedVisits.map(\.visitedAt).max() ?? period.start,
                 isNew: earliestVisits[restaurantID].map { period.contains($0.visitedAt) } ?? false,
                 imageReference: imageReference(
-                    restaurantID: restaurantID, visitIDs: visitIDs, dishIDs: dishIDs, photos: photos
+                    restaurantID: restaurantID, visitIDs: visitIDs, dishIDs: dishIDs, photos: photos,
+                    merchantImageURL: restaurantsByID[restaurantID]?.merchantImageURL
                 ),
                 hasNote: sortedVisits.contains { $0.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
             )
@@ -557,7 +558,8 @@ nonisolated enum MonthlyRecapAnalyzer {
         restaurantID: UUID,
         visitIDs: Set<UUID>,
         dishIDs: Set<UUID>,
-        photos: [MonthlyRecapInput.PhotoRecord]
+        photos: [MonthlyRecapInput.PhotoRecord],
+        merchantImageURL: URL?
     ) -> AnalysisImageReference {
         let eligible = photos.filter { photo in
             photo.visitID.map(visitIDs.contains) == true
@@ -572,7 +574,9 @@ nonisolated enum MonthlyRecapAnalyzer {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id.uuidString < $1.id.uuidString
         }.first
-        return selected.map { .photo($0.id) } ?? .none
+        return selected.map { .photo($0.id) }
+            ?? merchantImageURL.map(AnalysisImageReference.provider)
+            ?? .none
     }
 
     private static func photoPriority(

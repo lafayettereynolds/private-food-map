@@ -2140,7 +2140,10 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(restaurantStories, in: app)
         XCTAssertTrue(restaurantStories.exists)
 
-        let share = app.buttons["taste-profile-share-toolbar"]
+        XCTAssertFalse(app.buttons["taste-profile-share-toolbar"].exists)
+        let share = app.buttons["taste-profile-share-poster"]
+        scrollToTop(in: app)
+        scrollUntilVisible(share, in: app)
         XCTAssertTrue(share.waitForExistence(timeout: 5))
         share.tap()
         XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
@@ -2210,7 +2213,10 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(updated, in: app)
         XCTAssertTrue(updated.waitForExistence(timeout: 8))
 
-        let share = app.buttons["companion-analysis-share-toolbar"]
+        XCTAssertFalse(app.buttons["companion-analysis-share-toolbar"].exists)
+        let share = app.buttons["companion-analysis-share-poster"]
+        scrollToTop(in: app)
+        scrollUntilVisible(share, in: app)
         XCTAssertTrue(share.waitForExistence(timeout: 5))
         share.tap()
         XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
@@ -2269,7 +2275,10 @@ final class TasteMapUITests: XCTestCase {
 
         app.navigationBars["小林的私藏清单"].buttons["谁最会种草"].tap()
         XCTAssertTrue(app.navigationBars["谁最会种草"].waitForExistence(timeout: 8))
-        let share = app.buttons["recommendation-source-share-toolbar"]
+        XCTAssertFalse(app.buttons["recommendation-source-share-toolbar"].exists)
+        let share = app.buttons["recommendation-source-share-poster"]
+        scrollToTop(in: app)
+        scrollUntilVisible(share, in: app)
         XCTAssertTrue(share.waitForExistence(timeout: 5))
         share.tap()
         XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
@@ -2339,7 +2348,9 @@ final class TasteMapUITests: XCTestCase {
         app.navigationBars["餐厅详情"].buttons["本月回顾"].tap()
         XCTAssertTrue(app.navigationBars["本月回顾"].waitForExistence(timeout: 8))
 
-        let share = app.buttons["monthly-recap-share-toolbar"]
+        XCTAssertFalse(app.buttons["monthly-recap-share-toolbar"].exists)
+        let share = app.buttons["monthly-recap-share-poster"]
+        scrollUntilVisible(share, in: app)
         XCTAssertTrue(share.waitForExistence(timeout: 5))
         share.tap()
         XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
@@ -2358,6 +2369,7 @@ final class TasteMapUITests: XCTestCase {
         app.navigationBars["分享海报"].buttons["关闭"].tap()
 
         let previous = app.buttons["monthly-recap-previous-month"]
+        scrollToTop(in: app)
         XCTAssertTrue(previous.waitForExistence(timeout: 8))
         previous.tap()
         XCTAssertTrue(app.staticTexts["2026 年 7 月"].waitForExistence(timeout: 8))
@@ -2416,7 +2428,9 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(journey.waitForExistence(timeout: 6))
         XCTAssertTrue(app.staticTexts["年度味觉轨迹"].exists)
 
-        let share = app.buttons["annual-recap-share-toolbar"]
+        XCTAssertFalse(app.buttons["annual-recap-share-toolbar"].exists)
+        let share = app.buttons["annual-recap-share-poster"]
+        scrollUntilVisible(share, in: app)
         XCTAssertTrue(share.waitForExistence(timeout: 5))
         share.tap()
         XCTAssertTrue(app.navigationBars["分享海报"].waitForExistence(timeout: 8))
@@ -3010,6 +3024,15 @@ final class TasteMapUITests: XCTestCase {
         // long Profile/Settings cards do not absorb a no-op tap at the edge.
         for _ in 0..<30 where !element.isHittable || element.frame.maxY > app.frame.maxY - 92 {
             start.press(forDuration: 0.05, thenDragTo: end)
+        }
+    }
+
+    @MainActor
+    private func scrollToTop(in app: XCUIApplication) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.76))
+        for _ in 0..<12 {
+            start.press(forDuration: 0.03, thenDragTo: end)
         }
     }
 

@@ -15,6 +15,7 @@ nonisolated struct RecommendationSourceInput: Sendable {
         let name: String
         let city: String
         let status: RestaurantStatus
+        var merchantImageURL: URL? = nil
         let updatedAt: Date
         let deletedAt: Date?
     }
@@ -76,14 +77,18 @@ nonisolated struct RecommendationSourceInput: Sendable {
             },
             restaurants: restaurants.filter { restaurant in
                 restaurant.deletedAt != nil || identity.representativeIDs.contains(restaurant.id)
-            }.map {
-                RestaurantRecord(
-                    id: $0.id,
-                    name: $0.name,
-                    city: $0.city,
-                    status: $0.status,
-                    updatedAt: $0.updatedAt,
-                    deletedAt: $0.deletedAt
+            }.map { restaurant in
+                let contract = restaurant.remoteRecordData.flatMap {
+                    try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+                }
+                return RestaurantRecord(
+                    id: restaurant.id,
+                    name: restaurant.name,
+                    city: restaurant.city,
+                    status: restaurant.status,
+                    merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(contract?.merchantImageUrl),
+                    updatedAt: restaurant.updatedAt,
+                    deletedAt: restaurant.deletedAt
                 )
             },
             visits: visits.map {
