@@ -1,5 +1,7 @@
 import Foundation
+import SwiftUI
 import Testing
+import UIKit
 @testable import TasteMap
 
 @Suite("Map Discovery Profile product layout contracts")
@@ -27,6 +29,27 @@ struct CoreProductLayoutParityTests {
         #expect(MapHomeControlLayer.allCases == [
             .title, .restaurantScope, .filters,
         ])
+    }
+
+    @Test("My Map and My List title switch has locked title icon and accessibility semantics")
+    func mapTitleSwitchContract() {
+        #expect(MapBrowseMode.map.pageTitle == "我的地图")
+        #expect(MapBrowseMode.map.systemImage == "map")
+        #expect(MapBrowseMode.map.switchAccessibilityLabel == "切换到我的列表")
+        #expect(MapBrowseMode.list.pageTitle == "我的列表")
+        #expect(MapBrowseMode.list.systemImage == "list.bullet")
+        #expect(MapBrowseMode.list.switchAccessibilityLabel == "切换到我的地图")
+    }
+
+    @Test("Title and icon remain one compact group at small iPhone width")
+    func mapTitleSwitchSmallWidth() {
+        let host = UIHostingController(
+            rootView: MapBrowseTitleSwitch(browseMode: .constant(.map))
+        )
+        let size = host.sizeThatFits(in: CGSize(width: 320, height: 64))
+        #expect(size.width > 0)
+        #expect(size.width <= 320)
+        #expect(size.height <= 64)
     }
 
     @Test("Map filter chips use one semantic icon strategy and city is not GPS")

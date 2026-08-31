@@ -112,10 +112,15 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(title.exists)
         XCTAssertEqual(title.label, "我的地图")
         XCTAssertTrue(titleSwitch.exists)
+        XCTAssertEqual(app.frame.width, 402, accuracy: 1)
+        XCTAssertEqual(titleSwitch.frame.midX, app.frame.midX, accuracy: 2)
+        XCTAssertLessThan(titleSwitch.frame.width, app.frame.width * 0.52)
+        XCTAssertEqual(listMode.label, "切换到我的列表")
+        XCTAssertGreaterThanOrEqual(listMode.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(listMode.frame.height, 44)
         XCTAssertFalse(app.descendants(matching: .any)["map-list-mode-control"].exists)
         XCTAssertTrue(scopeControl.exists)
         XCTAssertTrue(filterStrip.exists)
-        XCTAssertEqual(titleSwitch.frame.midX, app.frame.midX, accuracy: 6)
         XCTAssertLessThanOrEqual(title.frame.maxX, listMode.frame.minX + 2)
         XCTAssertLessThan(titleSwitch.frame.maxY, scopeControl.frame.minY)
         XCTAssertLessThan(scopeControl.frame.maxY, filterStrip.frame.minY)
@@ -159,6 +164,57 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertLessThan(hero.frame.minY, header.frame.minY)
         XCTAssertLessThanOrEqual(actions.frame.height, 130)
         keepScreenshot(named: "Task 04 Restaurant Detail After", of: app)
+    }
+
+    @MainActor
+    func testMyMapListTitleSwitchKeepsScopeAndFilters() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
+        app.launch()
+
+        let titleGroup = app.descendants(matching: .any)["map-title-view-switch"]
+        let mapTitle = app.staticTexts["map-home-title"]
+        let listSwitch = app.buttons["map-header-view-list"]
+        XCTAssertTrue(mapTitle.waitForExistence(timeout: 8))
+        XCTAssertEqual(mapTitle.label, "我的地图")
+        XCTAssertEqual(titleGroup.frame.midX, app.frame.midX, accuracy: 2)
+        XCTAssertEqual(listSwitch.label, "切换到我的列表")
+
+        let rating = app.buttons["map-filter-chip-rating"]
+        rating.tap()
+        let highRating = app.buttons["personal-filter-rating-5"]
+        XCTAssertTrue(highRating.waitForExistence(timeout: 3))
+        highRating.tap()
+        app.buttons["personal-filter-apply"].tap()
+        XCTAssertTrue(rating.waitForExistence(timeout: 3))
+        let ratingLabelBeforeSwitch = rating.label
+
+        let wantToGo = app.buttons["map-scope-wantToGo"]
+        wantToGo.tap()
+        XCTAssertTrue(wantToGo.isSelected)
+
+        listSwitch.tap()
+        let listTitle = app.staticTexts["map-home-title"]
+        let mapSwitch = app.buttons["map-header-view-map"]
+        XCTAssertTrue(listTitle.waitForExistence(timeout: 5))
+        XCTAssertEqual(listTitle.label, "我的列表")
+        XCTAssertEqual(titleGroup.frame.midX, app.frame.midX, accuracy: 2)
+        XCTAssertEqual(mapSwitch.label, "切换到我的地图")
+        XCTAssertEqual(app.buttons["map-filter-chip-rating"].label, ratingLabelBeforeSwitch)
+        XCTAssertTrue(app.buttons["map-filter-chip-rating"].isSelected)
+        XCTAssertTrue(wantToGo.isSelected)
+        keepScreenshot(named: "My List Title Switch After", of: app)
+
+        mapSwitch.tap()
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["map-home-title"].label, "我的地图")
+        XCTAssertEqual(titleGroup.frame.midX, app.frame.midX, accuracy: 2)
+        XCTAssertEqual(app.buttons["map-header-view-list"].label, "切换到我的列表")
+        XCTAssertEqual(app.buttons["map-filter-chip-rating"].label, ratingLabelBeforeSwitch)
+        XCTAssertTrue(app.buttons["map-filter-chip-rating"].isSelected)
+        XCTAssertTrue(wantToGo.isSelected)
+        keepScreenshot(named: "My Map Title Switch After", of: app)
     }
 
     @MainActor

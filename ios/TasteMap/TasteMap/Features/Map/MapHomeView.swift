@@ -211,31 +211,8 @@ struct MapHomeView: View {
         options: PersonalRestaurantFilterOptions
     ) -> some View {
         VStack(spacing: 5) {
-            HStack(spacing: 2) {
-                Text(browseMode == .map ? "我的地图" : "我的列表")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(TasteMapCoreTheme.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("map-home-title")
-
-                Button {
-                    browseMode = browseMode == .map ? .list : .map
-                } label: {
-                    Image(systemName: browseMode == .map ? "list.bullet" : "map")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(TasteMapCoreTheme.brandDeep)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(browseMode == .map ? "切换到列表" : "切换到地图")
-                .accessibilityIdentifier(
-                    browseMode == .map ? "map-header-view-list" : "map-header-view-map"
-                )
-            }
+            MapBrowseTitleSwitch(browseMode: $browseMode)
             .frame(maxWidth: .infinity, alignment: .center)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("map-title-view-switch")
 
             TasteMapPrimaryTabBar(
                 selection: $selectedSegment,
@@ -668,13 +645,76 @@ enum MapHomeControlLayer: String, CaseIterable, Sendable {
     case filters
 }
 
-private enum MapBrowseMode: String, CaseIterable, Identifiable {
+enum MapBrowseMode: String, CaseIterable, Identifiable {
     case map
     case list
 
     var id: Self { self }
     var title: String { self == .map ? "地图" : "列表" }
     var systemImage: String { self == .map ? "map" : "list.bullet" }
+
+    var pageTitle: String { self == .map ? "我的地图" : "我的列表" }
+    var switchAccessibilityLabel: String {
+        self == .map ? "切换到我的列表" : "切换到我的地图"
+    }
+    var switchAccessibilityIdentifier: String {
+        self == .map ? "map-header-view-list" : "map-header-view-map"
+    }
+}
+
+/// The title and current-view icon form one fixed-width visual group. The
+/// parent centres this complete group instead of independently centring the
+/// text and leaving a destination icon floating on the trailing edge.
+struct MapBrowseTitleSwitch: View {
+    @Binding var browseMode: MapBrowseMode
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(browseMode.pageTitle)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("map-home-title")
+
+            Button {
+                browseMode = browseMode == .map ? .list : .map
+            } label: {
+                Image(systemName: browseMode.systemImage)
+                    .font(.subheadline.weight(.bold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(MapBrowseTitleIconButtonStyle())
+            .accessibilityLabel(browseMode.switchAccessibilityLabel)
+            .accessibilityHint("切换地图和列表视图")
+            .accessibilityValue("当前显示\(browseMode.pageTitle)")
+            .accessibilityIdentifier(browseMode.switchAccessibilityIdentifier)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("map-title-view-switch")
+        .sensoryFeedback(.selection, trigger: browseMode)
+    }
+}
+
+private struct MapBrowseTitleIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background {
+                Circle()
+                    .fill(
+                        configuration.isPressed
+                            ? TasteMapCoreTheme.brand.opacity(0.16)
+                            : TasteMapCoreTheme.brandSoft.opacity(0.62)
+                    )
+                    .frame(width: 30, height: 30)
+            }
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
 
 #Preview("地图 / 列表双模式") {
