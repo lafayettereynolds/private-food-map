@@ -424,7 +424,10 @@ private struct RestaurantCandidateConfirmationView: View {
                 } business: {
                     RestaurantCandidateBusinessSection(candidate: candidate)
                 } location: {
-                    RestaurantLocationSection(candidate: candidate, onOpenAppleMaps: openAppleMaps)
+                    RestaurantLocationSection(
+                        candidate: candidate,
+                        onOpenAppleMaps: openAppleMaps
+                    )
                 } ratings: {
                     RestaurantCandidateUnavailableSection(
                         title: "评分参考",
@@ -532,18 +535,19 @@ private struct RestaurantCandidateBusinessSection: View {
     let candidate: RestaurantCandidate
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("餐厅信息")
                 .font(.headline)
+                .padding(.bottom, 8)
                 .accessibilityIdentifier("restaurant-business-information")
             candidateRow(title: "参考人均", value: "地图来源暂未提供", icon: "yensign.circle")
-            Divider()
+            Divider().padding(.leading, 34)
             candidateRow(title: "电话", value: candidate.phone ?? "地图来源暂未提供", icon: "phone")
-            Divider()
+            Divider().padding(.leading, 34)
             candidateRow(title: "营业时间", value: candidate.openingHours ?? "地图来源暂未提供", icon: "clock")
         }
-        .padding(18)
-        .tasteMapCoreCard(radius: 22)
+        .padding(14)
+        .tasteMapCoreCard(radius: 16)
     }
 
     private func candidateRow(title: String, value: String, icon: String) -> some View {
@@ -556,6 +560,7 @@ private struct RestaurantCandidateBusinessSection: View {
                 Text(value).font(.subheadline).foregroundStyle(AcquisitionPalette.ink)
             }
         }
+        .padding(.vertical, 7)
     }
 }
 

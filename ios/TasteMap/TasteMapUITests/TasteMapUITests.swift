@@ -157,7 +157,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(header.exists)
         XCTAssertTrue(actions.exists)
         XCTAssertLessThan(hero.frame.minY, header.frame.minY)
-        XCTAssertLessThanOrEqual(actions.frame.height, 190)
+        XCTAssertLessThanOrEqual(actions.frame.height, 130)
         keepScreenshot(named: "Task 04 Restaurant Detail After", of: app)
     }
 
@@ -1309,6 +1309,8 @@ final class TasteMapUITests: XCTestCase {
         let location = app.otherElements["restaurant-detail-location"]
         scrollUntilReadable(location, in: app)
         XCTAssertTrue(location.waitForExistence(timeout: 3))
+        XCTAssertLessThanOrEqual(location.frame.height, 80)
+        XCTAssertTrue(app.buttons["open-in-apple-maps"].exists)
         let userPhotos = app.otherElements["restaurant-user-photos"]
         scrollUntilReadable(userPhotos, in: app)
         XCTAssertTrue(userPhotos.waitForExistence(timeout: 3))

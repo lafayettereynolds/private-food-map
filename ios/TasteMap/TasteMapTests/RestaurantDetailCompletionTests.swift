@@ -292,6 +292,25 @@ struct RestaurantDetailCompletionTests {
         ])
     }
 
+    @Test("所有正式入口只描述来源而不分叉 Restaurant Detail 主体")
+    func entrySourceMatrixCoversEveryProductRoute() {
+        #expect(Set(RestaurantDetailEntrySource.allCases) == Set([
+            .map,
+            .list,
+            .search,
+            .nearby,
+            .discovery,
+            .community,
+            .publicProfile,
+            .restaurantList,
+            .analysis,
+            .roulette,
+            .onThisDay,
+            .share,
+            .unknown,
+        ]))
+    }
+
     @Test("remote projection 保留 identity、参考人均和商家图但不伪造私有 metadata")
     func remoteMetadataProjectionIsSafe() {
         let projection = DiscoveryRestaurantProjectionV1(

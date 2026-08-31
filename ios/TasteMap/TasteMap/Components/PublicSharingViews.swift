@@ -274,8 +274,8 @@ private struct PublicSharedRestaurantDetailBody: View {
                     .font(.subheadline)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(18)
-                .tasteMapCoreCard(radius: 22)
+                .padding(14)
+                .tasteMapCoreCard(radius: 16)
                 .accessibilityIdentifier("restaurant-business-information")
             }
         } location: {

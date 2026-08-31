@@ -1,4 +1,3 @@
-import MapKit
 import SwiftUI
 
 struct RestaurantDetailIdentityPresentation: Equatable {
@@ -616,16 +615,10 @@ struct RestaurantDiscoveryContextSection: View {
 }
 
 struct RestaurantLocationSection: View {
-    let name: String
-    let latitude: Double
-    let longitude: Double
     let onOpenAppleMaps: () -> Void
 
     @MainActor
     init(restaurant: Restaurant, onOpenAppleMaps: @escaping () -> Void) {
-        name = restaurant.name
-        latitude = restaurant.latitude
-        longitude = restaurant.longitude
         self.onOpenAppleMaps = onOpenAppleMaps
     }
 
@@ -633,9 +626,6 @@ struct RestaurantLocationSection: View {
         projection: DiscoveryRestaurantProjectionV1,
         onOpenAppleMaps: @escaping () -> Void
     ) {
-        name = projection.name
-        latitude = projection.latitude
-        longitude = projection.longitude
         self.onOpenAppleMaps = onOpenAppleMaps
     }
 
@@ -643,50 +633,40 @@ struct RestaurantLocationSection: View {
         candidate: RestaurantCandidate,
         onOpenAppleMaps: @escaping () -> Void
     ) {
-        name = candidate.name
-        latitude = candidate.latitude
-        longitude = candidate.longitude
         self.onOpenAppleMaps = onOpenAppleMaps
     }
 
-    private var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(
-            latitude: latitude,
-            longitude: longitude
-        )
-    }
-
-    private var region: MKCoordinateRegion {
-        MKCoordinateRegion(
-            center: coordinate,
-            latitudinalMeters: 1_100,
-            longitudinalMeters: 1_100
-        )
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("到这里去")
-                .font(.title3.bold())
-
-            Map(initialPosition: .region(region), interactionModes: []) {
-                Marker(name, coordinate: coordinate)
-            }
-            .frame(height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .accessibilityHidden(true)
-
+        VStack(spacing: 0) {
             Button(action: onOpenAppleMaps) {
-                Label("用 Apple Maps 导航", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                        .foregroundStyle(.tint)
+                        .frame(width: 24, height: 24)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("到这里去")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("使用 Apple Maps 导航")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
+            .buttonStyle(.plain)
+            .padding(.vertical, 7)
             .accessibilityIdentifier("open-in-apple-maps")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .tasteMapCoreCard(radius: 22)
+        .padding(.horizontal, 14)
+        .tasteMapCoreCard(radius: 16)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-detail-location")
     }
 }

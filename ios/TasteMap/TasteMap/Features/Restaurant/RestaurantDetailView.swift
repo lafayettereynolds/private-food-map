@@ -213,24 +213,26 @@ struct RestaurantDetailView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                Button {
-                    isAddingVisit = true
-                } label: {
-                    Label(
-                        restaurant.status == .wantToGo ? "记录去过" : "再次记录",
-                        systemImage: "plus.circle.fill"
-                    )
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+                HStack {
+                    Spacer()
+                    Button {
+                        isAddingVisit = true
+                    } label: {
+                        Label(
+                            restaurant.status == .wantToGo ? "记录去过" : "再次记录",
+                            systemImage: "plus"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 16)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(!canMutateRestaurant)
+                    .accessibilityIdentifier("restaurant-detail-add-visit")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!canMutateRestaurant)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.bar)
-                .accessibilityIdentifier("restaurant-detail-add-visit")
+                .padding(.vertical, 8)
             }
             .sheet(isPresented: $isAddingVisit) {
                 VisitEditorView(restaurant: restaurant)

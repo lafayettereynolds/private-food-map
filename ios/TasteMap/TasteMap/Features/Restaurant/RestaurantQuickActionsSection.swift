@@ -46,56 +46,61 @@ struct RestaurantQuickActionsSection: View {
     let onDelete: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 8) {
-                primaryAction("记录到访", systemImage: "plus", enabled: canRecordVisit, action: onRecordVisit)
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 10) {
+                    circularAction(
+                        "记录",
+                        systemImage: "plus",
+                        enabled: canRecordVisit,
+                        action: onRecordVisit
+                    )
                     .accessibilityIdentifier(identifiers.recordVisit)
-                primaryAction(
-                    wantToGoTitle,
-                    systemImage: "bookmark.fill",
-                    enabled: canMarkWantToGo,
-                    action: onMarkWantToGo
-                )
-                .accessibilityIdentifier(identifiers.wantToGo)
-                primaryAction(
-                    "加入抽签", systemImage: "dice.fill",
-                    enabled: canAddToRoulette, action: onAddToRoulette
-                )
+                    circularAction(
+                        wantToGoTitle,
+                        systemImage: "bookmark.fill",
+                        enabled: canMarkWantToGo,
+                        action: onMarkWantToGo
+                    )
+                    .accessibilityIdentifier(identifiers.wantToGo)
+                    circularAction(
+                        "加入抽签",
+                        systemImage: "dice.fill",
+                        enabled: canAddToRoulette,
+                        action: onAddToRoulette
+                    )
                     .accessibilityIdentifier(identifiers.addToRoulette)
-            }
-
-            HStack(spacing: 8) {
-                compactAction("编辑", systemImage: "square.and.pencil", enabled: canEdit, action: onEdit)
+                    circularAction("编辑", systemImage: "square.and.pencil", enabled: canEdit, action: onEdit)
                     .accessibilityIdentifier("restaurant-action-edit")
-                compactAction("榜单", systemImage: "text.badge.plus", enabled: canAddToList, action: onAddToList)
+                    circularAction("榜单", systemImage: "text.badge.plus", enabled: canAddToList, action: onAddToList)
                     .accessibilityIdentifier(identifiers.addToList)
-                PublicShareButton(
-                    entityType: .restaurant,
-                    entityID: publicShareEntityID,
-                    enabled: canPublicShare
-                ) {
-                    compactActionLabel("分享", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("restaurant-action-share")
-                Menu {
-                    Button("复制餐厅名", systemImage: "doc.on.doc", action: onCopyName)
-                        .accessibilityIdentifier("restaurant-action-copy-name")
-                    if !restaurantAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button("复制地址", systemImage: "mappin.and.ellipse", action: onCopyAddress)
-                            .accessibilityIdentifier("restaurant-action-copy-address")
+                    PublicShareButton(
+                        entityType: .restaurant,
+                        entityID: publicShareEntityID,
+                        enabled: canPublicShare
+                    ) {
+                        circularActionLabel("分享", systemImage: "square.and.arrow.up")
                     }
-                    if canDelete {
-                        Button("删除餐厅", systemImage: "trash", role: .destructive, action: onDelete)
-                            .accessibilityIdentifier("restaurant-action-delete")
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("restaurant-action-share")
+                    Menu {
+                        Button("复制餐厅名", systemImage: "doc.on.doc", action: onCopyName)
+                            .accessibilityIdentifier("restaurant-action-copy-name")
+                        if !restaurantAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Button("复制地址", systemImage: "mappin.and.ellipse", action: onCopyAddress)
+                                .accessibilityIdentifier("restaurant-action-copy-address")
+                        }
+                        if canDelete {
+                            Button("删除餐厅", systemImage: "trash", role: .destructive, action: onDelete)
+                                .accessibilityIdentifier("restaurant-action-delete")
+                        }
+                    } label: {
+                        circularActionLabel("更多", systemImage: "ellipsis")
                     }
-                } label: {
-                    compactActionLabel("更多", systemImage: "ellipsis")
-                        .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("restaurant-action-more")
                 }
-                .accessibilityIdentifier("restaurant-action-more")
             }
+            .scrollIndicators(.hidden)
             if showsShareAvailabilityHint, !canPublicShare {
                 Label("将本人主页设为公开，并至少公开一次到访后，才可生成餐厅公开链接。", systemImage: "hand.raised.fill")
                     .font(.caption)
@@ -103,8 +108,7 @@ struct RestaurantQuickActionsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(14)
-        .tasteMapCoreCard(radius: 16)
+        .padding(.horizontal, 4)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-detail-quick-actions")
     }
@@ -117,61 +121,36 @@ struct RestaurantQuickActionsSection: View {
         }
     }
 
-    private func primaryAction(
+    private func circularAction(
         _ title: String,
         systemImage: String,
         enabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
-                    .frame(width: 44, height: 44)
-                    .background(TasteMapCoreTheme.brandSoft, in: Circle())
-                    .overlay { Circle().stroke(TasteMapCoreTheme.border) }
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-            }
-            .frame(maxWidth: .infinity)
+            circularActionLabel(title, systemImage: systemImage)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.48)
     }
 
-    private func compactAction(
-        _ title: String,
-        systemImage: String,
-        enabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            compactActionLabel(title, systemImage: systemImage)
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.48)
-    }
-
-    private func compactActionLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 6) {
+    private func circularActionLabel(_ title: String, systemImage: String) -> some View {
+        VStack(spacing: 5) {
             Image(systemName: systemImage)
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                .frame(width: 44, height: 44)
+                .background(TasteMapCoreTheme.brandSoft, in: Circle())
+                .overlay { Circle().stroke(TasteMapCoreTheme.border) }
             Text(title)
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-        .foregroundStyle(TasteMapCoreTheme.brandDeep)
-        .padding(.horizontal, 11)
-        .frame(maxWidth: .infinity)
-        .frame(height: 34)
-        .background(TasteMapCoreTheme.surfaceSubtle, in: Capsule())
-        .overlay { Capsule().stroke(TasteMapCoreTheme.border) }
+        .foregroundStyle(.primary)
+        .frame(width: 62)
+        .frame(minHeight: 64, alignment: .top)
         .contentShape(Rectangle())
     }
 }
