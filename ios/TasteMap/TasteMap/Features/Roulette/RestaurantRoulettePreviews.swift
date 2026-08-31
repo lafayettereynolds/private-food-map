@@ -84,6 +84,7 @@ private struct RoulettePreviewFixture {
                 visitCount: status == .visited ? index % 4 + 1 : 0,
                 latestVisitAt: status == .visited ? .now.addingTimeInterval(Double(-index * 86_400)) : nil,
                 photoID: photoID,
+                merchantImageURL: nil,
                 categories: index.isMultiple(of: 2) ? ["日料"] : ["中餐"],
                 markerEmoji: ["🍣", "🍲", "🍢", "🍜"][index % 4],
                 latitude: restaurant.latitude,

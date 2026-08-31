@@ -50,7 +50,7 @@ struct MapBrowsingParityTests {
         #expect(markers(snapshot.visited, segment: .forYou).first?.status == .recommended)
     }
 
-    @Test("Marker visuals follow marker photo, merchant, local photo, emoji and fallback priority")
+    @Test("Marker visuals prefer every real local photo before provider merchant and decorative fallback")
     func visualPriority() throws {
         let markerRestaurant = makeRestaurant(1, name: "正式标记照片", status: .visited)
         let markerPhoto = photo(301, restaurant: markerRestaurant, kind: .restaurantMarker, remoteID: "marker-photo")
@@ -72,6 +72,11 @@ struct MapBrowsingParityTests {
 
         let localRestaurant = makeRestaurant(3, name: "本地照片", status: .visited)
         let localOnlyPhoto = photo(303, restaurant: localRestaurant, kind: .visit, remoteID: "local-only")
+        localRestaurant.remoteRecordData = try restaurantRecord(
+            localRestaurant,
+            merchantImageURL: "https://images.example.com/provider-must-not-mask-local.jpg",
+            markerEmoji: "🍱"
+        )
 
         let emojiRestaurant = makeRestaurant(4, name: "表情", status: .visited)
         emojiRestaurant.remoteRecordData = try restaurantRecord(emojiRestaurant, markerEmoji: "🍜")
@@ -90,6 +95,7 @@ struct MapBrowsingParityTests {
         #expect(result[markerRestaurant.id] == .photo(markerPhoto.id))
         #expect(result[merchantRestaurant.id] == .merchantImage(URL(string: "https://images.example.com/merchant.jpg")!))
         #expect(result[localRestaurant.id] == .photo(localOnlyPhoto.id))
+        #expect(snapshot.visited.first(where: { $0.id == localRestaurant.id })?.merchantImageURL?.host == "images.example.com")
         #expect(result[emojiRestaurant.id] == .emoji("🍜"))
         #expect(result[fallbackRestaurant.id] == .fallback)
     }

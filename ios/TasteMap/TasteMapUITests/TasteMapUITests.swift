@@ -2696,6 +2696,44 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testP4GRouletteCandidateManagerAndOfficialCustomRestaurantFlow() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1d-persistent-offline-fixture", "-p1d-reset-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1", "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P4G_ROULETTE_UI_TEST": "1",
+            "TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST": "1",
+        ]
+        app.launch()
+
+        openP4GRoulette(in: app)
+        app.buttons["roulette-manage-candidates"].tap()
+        XCTAssertTrue(app.navigationBars["管理候选餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.searchFields["搜索我的餐厅"].exists)
+        XCTAssertTrue(app.segmentedControls["roulette-manager-source"].exists)
+        XCTAssertTrue(app.buttons["roulette-apply-candidates"].exists)
+        XCTAssertTrue(app.buttons["roulette-add-custom-restaurant"].exists)
+
+        segmentedOption("想吃", in: app).tap()
+        app.searchFields["搜索我的餐厅"].tap()
+        app.searchFields["搜索我的餐厅"].typeText("西湖")
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH 'roulette-candidate-toggle-'")
+            ).count > 0
+        )
+        dismissSearchKeyboard(in: app)
+
+        app.buttons["roulette-add-custom-restaurant"].tap()
+        XCTAssertTrue(app.navigationBars["手动添加餐厅"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["manual-restaurant-name"].exists)
+        XCTAssertTrue(app.textFields["manual-restaurant-city"].exists)
+        XCTAssertTrue(app.otherElements["manual-restaurant-map"].exists)
+        XCTAssertFalse(app.buttons["manual-confirm-restaurant"].exists)
+        keepScreenshot(named: "P4-G Candidate Manager To Manual Add", of: app)
+    }
+
+    @MainActor
     func testP4HFreeProfilePaywallFeatureGateAndDevelopmentUpgrade() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleInterfaceStyle", "Light"]

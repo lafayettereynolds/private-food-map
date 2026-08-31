@@ -33,6 +33,7 @@ nonisolated struct RouletteCandidate: Identifiable, Equatable, Hashable, Sendabl
     let visitCount: Int
     let latestVisitAt: Date?
     let photoID: UUID?
+    let merchantImageURL: URL?
     let categories: [String]
     let markerEmoji: String
     let updatedAt: Date
@@ -62,6 +63,7 @@ nonisolated struct RouletteRestaurantRecord: Equatable, Sendable {
     let visitCount: Int
     let latestVisitAt: Date?
     let photoID: UUID?
+    let merchantImageURL: URL?
     let categories: [String]
     let markerEmoji: String
     let latitude: Double
@@ -106,6 +108,7 @@ nonisolated enum RestaurantRouletteEngine {
                 visitCount: record.visitCount,
                 latestVisitAt: record.latestVisitAt,
                 photoID: record.photoID,
+                merchantImageURL: record.merchantImageURL,
                 categories: stableUnique(record.categories),
                 markerEmoji: record.markerEmoji.isEmpty ? "🍽️" : record.markerEmoji,
                 updatedAt: record.updatedAt
@@ -203,13 +206,28 @@ nonisolated enum RestaurantRouletteEngine {
     }
 
     static func visualSegmentCount(candidateCount: Int) -> Int {
-        max(0, candidateCount)
+        guard candidateCount > 0 else { return 0 }
+        return candidateCount < maximumActiveCandidateCount
+            ? maximumActiveCandidateCount
+            : candidateCount
     }
 
     static func visualIndex(selectedIndex: Int, candidateCount: Int) -> Int {
         let count = visualSegmentCount(candidateCount: candidateCount)
         guard count > 0 else { return 0 }
-        return max(0, selectedIndex) % count
+        let candidateIndex = max(0, selectedIndex) % max(1, candidateCount)
+        if candidateCount >= count { return candidateIndex }
+        return Int(floor(Double(candidateIndex) * Double(count) / Double(candidateCount)))
+    }
+
+    static func visualSlots(from candidates: [RouletteCandidate]) -> [RouletteCandidate?] {
+        let count = visualSegmentCount(candidateCount: candidates.count)
+        guard count > 0 else { return [] }
+        var slots = Array<RouletteCandidate?>(repeating: nil, count: count)
+        for (index, candidate) in candidates.enumerated() {
+            slots[visualIndex(selectedIndex: index, candidateCount: candidates.count)] = candidate
+        }
+        return slots
     }
 
     static func targetRotation(
@@ -324,6 +342,9 @@ extension RouletteRestaurantRecord {
                 visitCount: restaurantVisits.count,
                 latestVisitAt: restaurantVisits.map(\.visitedAt).max(),
                 photoID: restaurantPhotos.first?.id,
+                merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
+                    contract?.merchantImageUrl
+                ),
                 categories: contract?.tags ?? [],
                 markerEmoji: contract?.markerEmoji ?? "🍽️",
                 latitude: restaurant.latitude,

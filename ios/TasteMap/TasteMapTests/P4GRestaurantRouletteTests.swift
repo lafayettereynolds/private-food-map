@@ -118,11 +118,11 @@ struct P4GRestaurantRouletteTests {
         #expect(seen.contains(pool[pool.count - 1].globalKey))
     }
 
-    @Test("Selected index maps exactly to the pointer and every candidate owns one segment")
+    @Test("Selected index maps exactly to the pointer and unused slots are honest add-more prompts")
     func animationGeometry() {
         for candidateCount in [2, 3, 8, 12, 30, 100, 1_000] {
             let visualCount = RestaurantRouletteEngine.visualSegmentCount(candidateCount: candidateCount)
-            #expect(visualCount == candidateCount)
+            #expect(visualCount == (candidateCount < 10 ? 10 : candidateCount))
             for selectedIndex in 0..<candidateCount {
                 let rotation = RestaurantRouletteEngine.targetRotation(
                     currentRotation: 137,
@@ -140,6 +140,42 @@ struct P4GRestaurantRouletteTests {
                 ))
             }
         }
+    }
+
+    @Test("Two, five and ten candidates appear once each without placeholder Restaurants")
+    func unfilledWheelSlots() {
+        for candidateCount in [2, 5, 10] {
+            let pool = (0..<candidateCount).map { candidate($0) }
+            let slots = RestaurantRouletteEngine.visualSlots(from: pool)
+            let real = slots.compactMap { $0 }
+            #expect(slots.count == 10)
+            #expect(real == pool)
+            #expect(Set(real.map(\.globalKey)).count == candidateCount)
+            #expect(slots.filter { $0 == nil }.count == 10 - candidateCount)
+        }
+    }
+
+    @Test("Restaurant imagery is local, then public/cache, then provider, then honest fallback")
+    func restaurantImagePriority() throws {
+        let localID = uuid(777)
+        #expect(RestaurantImagePriorityPolicy.preferred(
+            localUserPhotoID: localID,
+            publicOrCachedPhotoID: "public-photo",
+            providerMerchantImageURL: "https://images.example.com/provider.jpg"
+        ) == .localUserPhoto(localID))
+        #expect(RestaurantImagePriorityPolicy.preferred(
+            localUserPhotoID: nil,
+            publicOrCachedPhotoID: "public-photo",
+            providerMerchantImageURL: "https://images.example.com/provider.jpg"
+        ) == .publicOrCachedPhoto("public-photo"))
+        #expect(RestaurantImagePriorityPolicy.preferred(
+            localUserPhotoID: nil,
+            providerMerchantImageURL: "https://images.example.com/provider.jpg"
+        ) == .providerMerchantImage(try #require(URL(string: "https://images.example.com/provider.jpg"))))
+        #expect(RestaurantImagePriorityPolicy.preferred(
+            localUserPhotoID: nil,
+            providerMerchantImageURL: "http://unsafe.example.com/provider.jpg"
+        ) == .foodDiningFallback)
     }
 
     @Test("Large library keeps all records searchable while active wheel stays exact and bounded")
@@ -196,7 +232,11 @@ struct P4GRestaurantRouletteTests {
             id: id, name: "青岚寿司", address: "西湖区 1 号", latitude: 30.25,
             longitude: 120.16, appleMapItemIdentifier: "apple-result", city: "杭州",
             status: .visited, syncStatus: .synced,
-            remoteRecordData: try contractData(id: id, tags: ["日料", "寿司", "日料"])
+            remoteRecordData: try contractData(
+                id: id,
+                tags: ["日料", "寿司", "日料"],
+                merchantImageURL: "https://images.example.com/provider.jpg"
+            )
         )
         let visits = [
             Visit(restaurantId: id, visitedAt: date(100), rating: 4, syncStatus: .synced),
@@ -216,6 +256,7 @@ struct P4GRestaurantRouletteTests {
         #expect(result.visitCount == 2)
         #expect(result.latestVisitAt == date(200))
         #expect(result.photoID == photo.id)
+        #expect(result.merchantImageURL?.absoluteString == "https://images.example.com/provider.jpg")
         #expect(result.categories == ["日料", "寿司"])
         #expect(result.statusDetail == "你已经去过 2 次")
     }
@@ -250,7 +291,8 @@ struct P4GRestaurantRouletteTests {
             status: status, averageRating: status == .visited ? 4 : nil,
             visitCount: status == .visited ? 1 : 0,
             latestVisitAt: status == .visited ? date(index) : nil,
-            photoID: nil, categories: [], markerEmoji: "🍽️", updatedAt: date(index)
+            photoID: nil, merchantImageURL: nil,
+            categories: [], markerEmoji: "🍽️", updatedAt: date(index)
         )
     }
 
@@ -270,12 +312,17 @@ struct P4GRestaurantRouletteTests {
             displayName: name ?? "餐厅 \(index)", address: "地址 \(index)", city: city,
             status: status, updatedAt: updatedAt ?? date(index), deletedAt: deletedAt,
             averageRating: nil, visitCount: 0, latestVisitAt: nil, photoID: nil,
-            categories: [], markerEmoji: "🍽️", latitude: latitude, longitude: 120.16
+            merchantImageURL: nil, categories: [], markerEmoji: "🍽️",
+            latitude: latitude, longitude: 120.16
         )
     }
 
     @MainActor
-    private func contractData(id: UUID, tags: [String]) throws -> Data {
+    private func contractData(
+        id: UUID,
+        tags: [String],
+        merchantImageURL: String? = nil
+    ) throws -> Data {
         let timestamp = "2026-08-29T00:00:00.000Z"
         let identity = try RestaurantPlaceIdentityContract(
             provider: .appleMaps, externalId: "contract-1", isPrimary: true,
@@ -289,7 +336,7 @@ struct P4GRestaurantRouletteTests {
             environmentRating: nil, serviceRating: nil, valueRating: nil,
             tags: tags, longTermNote: "", pricePerPerson: nil, phone: nil,
             openingHours: nil, markerType: .emoji, markerPhotoId: nil,
-            merchantImageUrl: nil, markerEmoji: "🍣", createdAt: timestamp,
+            merchantImageUrl: merchantImageURL, markerEmoji: "🍣", createdAt: timestamp,
             updatedAt: timestamp, deletedAt: nil
         )
         return try JSONEncoder().encode(contract)

@@ -203,7 +203,11 @@ private struct RestaurantBrowseCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
-            RestaurantBrowsePhoto(photo: item.photo, restaurantID: item.restaurant.id)
+            RestaurantBrowsePhoto(
+                photo: item.photo,
+                merchantImageURL: item.merchantImageURL,
+                restaurantID: item.restaurant.id
+            )
                 .frame(width: 54, height: 54)
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 .padding(.top, 1)
@@ -338,26 +342,48 @@ private struct RestaurantBrowseCard: View {
 
 struct RestaurantBrowsePhoto: View {
     let photo: PhotoAsset?
+    let merchantImageURL: URL?
     let restaurantID: UUID
 
     var body: some View {
         if let photo {
             PhotoAssetImageView(photo: photo, variant: .thumbnail)
-        } else {
-            ZStack {
-                LinearGradient(
-                    colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surfaceSubtle],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                Image(systemName: "fork.knife")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(TasteMapCoreTheme.brand.opacity(0.82))
+        } else if let merchantImageURL {
+            AsyncImage(url: merchantImageURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                        .accessibilityLabel("餐厅商家图片")
+                        .accessibilityIdentifier("restaurant-provider-image-\(restaurantID.uuidString)")
+                case .empty:
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .failure:
+                    fallback
+                @unknown default:
+                    fallback
+                }
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("餐厅暂无照片")
-            .accessibilityIdentifier("restaurant-photo-fallback-\(restaurantID.uuidString)")
+        } else {
+            fallback
         }
+    }
+
+    private var fallback: some View {
+        ZStack {
+            LinearGradient(
+                colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surfaceSubtle],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            FoodDiningVisualIcon(
+                kind: .genericDining,
+                usage: .decorative,
+                size: 38
+            )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("餐厅暂无照片")
+        .accessibilityIdentifier("restaurant-photo-fallback-\(restaurantID.uuidString)")
     }
 }
 

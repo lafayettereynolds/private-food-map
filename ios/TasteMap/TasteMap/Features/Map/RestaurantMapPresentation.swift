@@ -61,22 +61,33 @@ enum RestaurantMapMarkerBuilder {
             let record = restaurant.remoteRecordData.flatMap {
                 try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
             }
+            let referencedMarkerPhoto = trimmed(record?.markerPhotoId).flatMap {
+                activePhotosByReference[$0.lowercased()]
+            }.flatMap { photo in
+                photo.restaurantId == restaurant.id && photo.kind == .restaurantMarker ? photo : nil
+            }
+            let localPhoto = referencedMarkerPhoto
+                ?? item.photo.flatMap { photo in
+                    isActive(photo) && photo.restaurantId == restaurant.id ? photo : nil
+                }
             let visual: RestaurantMapMarkerVisual
-            if let markerPhotoID = trimmed(record?.markerPhotoId),
-               let photo = activePhotosByReference[markerPhotoID.lowercased()],
-               photo.restaurantId == restaurant.id,
-               photo.kind == .restaurantMarker {
-                visual = .photo(photo.id)
-            } else if let merchantURL = RestaurantDetailMetadata.safeHTTPSURL(record?.merchantImageUrl) {
-                visual = .merchantImage(merchantURL)
-            } else if let photo = item.photo,
-                      isActive(photo),
-                      photo.restaurantId == restaurant.id {
-                visual = .photo(photo.id)
-            } else if let emoji = trimmed(record?.markerEmoji) {
-                visual = .emoji(emoji)
-            } else {
+            switch RestaurantImagePriorityPolicy.preferred(
+                localUserPhotoID: localPhoto?.id,
+                providerMerchantImageURL: record?.merchantImageUrl
+            ) {
+            case .localUserPhoto(let photoID):
+                visual = .photo(photoID)
+            case .providerMerchantImage(let url):
+                visual = .merchantImage(url)
+            case .publicOrCachedPhoto:
+                // Local Map data resolves cached/public photos to PhotoAsset first.
                 visual = .fallback
+            case .foodDiningFallback:
+                if let emoji = trimmed(record?.markerEmoji) {
+                    visual = .emoji(emoji)
+                } else {
+                    visual = .fallback
+                }
             }
 
             return RestaurantMapMarkerPresentation(

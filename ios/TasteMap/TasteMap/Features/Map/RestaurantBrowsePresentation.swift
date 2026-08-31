@@ -46,6 +46,7 @@ struct RestaurantBrowseItem: Identifiable {
     let latestVisitAt: Date?
     let averageRating: Double?
     let photo: PhotoAsset?
+    let merchantImageURL: URL?
     let visitFacets: [PersonalVisitFilterFacet]
     let normalizedSearchText: String
 
@@ -56,6 +57,7 @@ struct TasteFootprintItem: Identifiable {
     let visit: Visit
     let restaurant: Restaurant
     let photo: PhotoAsset?
+    let merchantImageURL: URL?
     let dishNames: [String]
     let companionNames: [String]
     let recommendationSource: String?
@@ -176,6 +178,11 @@ enum RestaurantBrowseBuilder {
                     visit: visit,
                     restaurant: restaurant,
                     photo: photo,
+                    merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
+                        restaurant.remoteRecordData.flatMap {
+                            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+                        }?.merchantImageUrl
+                    ),
                     dishNames: stableNames(names),
                     companionNames: companionNames(for: visit, directory: companionNamesByID),
                     recommendationSource: sourceName(for: visit, directory: sourceNamesByID)
@@ -221,6 +228,9 @@ enum RestaurantBrowseBuilder {
             latestVisitAt: visits.map(\.visitedAt).max(),
             averageRating: ratings.isEmpty ? nil : ratings.reduce(0, +) / Double(ratings.count),
             photo: preferredPhoto(from: photos, preferMarker: preferMarker),
+            merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
+                restaurantRecord?.merchantImageUrl
+            ),
             visitFacets: visits.map {
                 filterFacet(
                     for: $0,

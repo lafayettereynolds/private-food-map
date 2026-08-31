@@ -4,11 +4,13 @@ import UIKit
 
 struct RestaurantRouletteScreen: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(NativeAuthServices.self) private var authServices
     @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var photos: [PhotoAsset]
     @State private var isShowingSearch = false
+    @State private var isShowingManualAdd = false
 
     let preferredCity: String?
     let initialRestaurantID: UUID?
@@ -42,28 +44,50 @@ struct RestaurantRouletteScreen: View {
             photos: owned.photos,
             preferredCity: preferredCity,
             initialResultGlobalKey: initialResultGlobalKey,
-            onSearch: { isShowingSearch = true }
+            onSearch: { isShowingSearch = true },
+            onAddCustom: { isShowingManualAdd = true }
         )
         .sheet(isPresented: $isShowingSearch) {
             RestaurantSearchView { candidate, action in
-                switch action {
-                case .wantToGo:
-                    _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
-                        candidate: candidate,
-                        among: owned.restaurants,
-                        actorUserID: accountScope.ownerUserID
-                    )
-                case .recordVisit:
-                    _ = try LocalTasteMapStore(context: modelContext).restaurant(
-                        for: candidate,
-                        among: owned.restaurants,
-                        status: .visited,
-                        actorUserID: accountScope.ownerUserID
-                    )
-                    try modelContext.save()
-                }
+                try save(candidate: candidate, action: action)
             }
         }
+        .sheet(isPresented: $isShowingManualAdd) {
+            AddRestaurantView(
+                dependencies: acquisitionDependencies,
+                startsWithManualEntry: true
+            ) { candidate, action in
+                try save(candidate: candidate, action: action)
+            }
+        }
+    }
+
+    private func save(candidate: RestaurantCandidate, action: RestaurantSearchAction) throws {
+        switch action {
+        case .wantToGo:
+            _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
+                candidate: candidate,
+                among: owned.restaurants,
+                actorUserID: accountScope.ownerUserID
+            )
+        case .recordVisit:
+            _ = try LocalTasteMapStore(context: modelContext).restaurant(
+                for: candidate,
+                among: owned.restaurants,
+                status: .visited,
+                actorUserID: accountScope.ownerUserID
+            )
+            try modelContext.save()
+        }
+    }
+
+    private var acquisitionDependencies: RestaurantAcquisitionDependencies {
+#if DEBUG
+        if TasteMapUITestFixtures.usesRestaurantAcquisitionFixture {
+            return TasteMapUITestFixtures.restaurantAcquisitionDependencies
+        }
+#endif
+        return .live(linkResolver: authServices.externalRestaurantLinkAPI)
     }
 
     private var initialResultGlobalKey: String? {
@@ -81,6 +105,7 @@ struct RestaurantRouletteExperienceView: View {
     let photos: [PhotoAsset]
     let preferredCity: String?
     let onSearch: () -> Void
+    let onAddCustom: () -> Void
     let forceReducedMotion: Bool
 
     @State private var source: RouletteCandidateSource
@@ -95,6 +120,7 @@ struct RestaurantRouletteExperienceView: View {
     @State private var isShowingCandidateManager = false
     @State private var cityWasInitialized: Bool
     @State private var spinToken = UUID()
+    @State private var presentsManualAddAfterManager = false
 
     init(
         candidates: [RouletteCandidate],
@@ -106,13 +132,15 @@ struct RestaurantRouletteExperienceView: View {
         excludedGlobalKeys: Set<String> = [],
         initialResultGlobalKey: String? = nil,
         forceReducedMotion: Bool = false,
-        onSearch: @escaping () -> Void = {}
+        onSearch: @escaping () -> Void = {},
+        onAddCustom: @escaping () -> Void = {}
     ) {
         self.candidates = candidates
         self.restaurants = restaurants
         self.photos = photos
         self.preferredCity = preferredCity
         self.onSearch = onSearch
+        self.onAddCustom = onAddCustom
         self.forceReducedMotion = forceReducedMotion
         let initialResult = candidates.first { $0.globalKey == initialResultGlobalKey }
         let resolvedInitialCity = initialCity
@@ -160,6 +188,13 @@ struct RestaurantRouletteExperienceView: View {
         RestaurantRouletteEngine.cities(in: candidates)
     }
 
+    private var candidatesForManager: [RouletteCandidate] {
+        RestaurantRouletteEngine.filtered(
+            candidates,
+            by: RouletteFilter(source: .all, city: selectedCity)
+        )
+    }
+
     private var displayedResult: RouletteCandidate? {
         filteredCandidates.count == 1 ? filteredCandidates[0] : result
     }
@@ -175,8 +210,16 @@ struct RestaurantRouletteExperienceView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("从你的餐厅里选 2～10 家，让轮盘替你决定。")
+                        .font(.subheadline)
+                        .foregroundStyle(RouletteTheme.muted)
+                    Text("候选与结果一一对应，每家机会相同。")
+                        .font(.caption)
+                        .foregroundStyle(RouletteTheme.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 candidatePool
-                conditionBar
                 if filteredCandidates.isEmpty {
                     emptyState
                 } else if filteredCandidates.count == 1 {
@@ -197,14 +240,6 @@ struct RestaurantRouletteExperienceView: View {
         .background(RouletteTheme.canvas.ignoresSafeArea())
         .navigationTitle("今天吃什么")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("筛选", systemImage: "slider.horizontal.3") {
-                    isShowingFilters = true
-                }
-                .accessibilityIdentifier("roulette-filter-open")
-            }
-        }
         .sheet(isPresented: $isShowingFilters) {
             RouletteFilterSheet(
                 source: $source,
@@ -213,10 +248,24 @@ struct RestaurantRouletteExperienceView: View {
                 onReset: resetConditions
             )
         }
-        .sheet(isPresented: $isShowingCandidateManager) {
+        .sheet(isPresented: $isShowingCandidateManager, onDismiss: {
+            guard presentsManualAddAfterManager else { return }
+            presentsManualAddAfterManager = false
+            onAddCustom()
+        }) {
             RouletteCandidateManager(
-                candidates: baseCandidates,
-                selectedGlobalKeys: $selectedGlobalKeys
+                candidates: candidatesForManager,
+                photos: photos,
+                initialSource: source,
+                initialSelectedGlobalKeys: selectedGlobalKeys,
+                onApply: { keys, selectedSource in
+                    selectedGlobalKeys = keys
+                    source = selectedSource
+                    result = nil
+                },
+                onAddCustom: {
+                    presentsManualAddAfterManager = true
+                }
             )
         }
         .task { initializeCityIfNeeded() }
@@ -235,15 +284,9 @@ struct RestaurantRouletteExperienceView: View {
     private var candidatePool: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("私人餐厅库")
-                        .font(.caption2.weight(.bold))
-                        .tracking(1)
-                        .foregroundStyle(RouletteTheme.muted)
-                    Text("候选餐厅")
-                        .font(.title3.bold())
-                        .foregroundStyle(RouletteTheme.ink)
-                }
+                Text("已选候选")
+                    .font(.headline)
+                    .foregroundStyle(RouletteTheme.ink)
                 Spacer()
                 Text("\(filteredCandidates.count) / \(RestaurantRouletteEngine.maximumActiveCandidateCount)")
                     .font(.subheadline.monospacedDigit().weight(.semibold))
@@ -253,10 +296,6 @@ struct RestaurantRouletteExperienceView: View {
                     .disabled(filteredCandidates.isEmpty || isSpinning)
                     .accessibilityIdentifier("roulette-clear-candidates")
             }
-
-            Text("从我的餐厅中随机挑选一家；每一个轮盘扇区都对应一家具名餐厅。")
-                .font(.caption)
-                .foregroundStyle(RouletteTheme.muted)
 
             if filteredCandidates.isEmpty {
                 Text(baseCandidates.isEmpty ? "当前条件下没有可选餐厅" : "从“管理候选”选择 2～10 家餐厅")
@@ -274,17 +313,8 @@ struct RestaurantRouletteExperienceView: View {
                 .scrollIndicators(.hidden)
                 .accessibilityIdentifier("roulette-candidate-chips")
             }
-        }
-        .padding(16)
-        .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(TasteMapCoreTheme.border, lineWidth: 1)
-        }
-    }
 
-    private var conditionBar: some View {
-        VStack(spacing: 12) {
+            Divider()
             HStack(spacing: 8) {
                 conditionChip(symbol: source == .all ? "fork.knife" : source == .wantToGo ? "bookmark.fill" : "checkmark.circle.fill", text: source.title)
                 if let selectedCity {
@@ -301,7 +331,9 @@ struct RestaurantRouletteExperienceView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("调整候选条件")
+                .accessibilityIdentifier("roulette-filter-open")
             }
+
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(filteredCandidates.count) 家候选餐厅")
@@ -313,8 +345,8 @@ struct RestaurantRouletteExperienceView: View {
                         .foregroundStyle(RouletteTheme.muted)
                 }
                 Spacer()
-                if !baseCandidates.isEmpty {
-                    Button("管理候选") { isShowingCandidateManager = true }
+                if !candidatesForManager.isEmpty {
+                    Button("管理候选餐厅") { isShowingCandidateManager = true }
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(RouletteTheme.brandDeep)
                         .accessibilityIdentifier("roulette-manage-candidates")
@@ -323,6 +355,10 @@ struct RestaurantRouletteExperienceView: View {
         }
         .padding(16)
         .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(TasteMapCoreTheme.border, lineWidth: 1)
+        }
     }
 
     private var rouletteStage: some View {
@@ -479,27 +515,12 @@ struct RestaurantRouletteExperienceView: View {
 
     @ViewBuilder
     private func resultImage(_ candidate: RouletteCandidate) -> some View {
-        if let photoID = candidate.photoID,
-           let photo = photos.first(where: { $0.id == photoID && $0.deletedAt == nil }) {
-            PhotoAssetImageView(photo: photo, variant: .display)
-        } else {
-            ZStack {
-                LinearGradient(
-                    colors: [RouletteTheme.brandSoft, RouletteTheme.cream, RouletteTheme.leafSoft],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                FoodDiningVisualIcon(
-                    kind: FoodDiningVisualLibrary.kind(legacySymbol: candidate.markerEmoji),
-                    usage: .decorative,
-                    size: 82,
-                    foregroundColor: RouletteTheme.brandDeep,
-                    backgroundColor: .white.opacity(0.76)
-                )
-                .shadow(color: .white.opacity(0.8), radius: 12)
-            }
-            .accessibilityLabel("餐厅暂无照片")
-        }
+        RouletteRestaurantImage(
+            candidate: candidate,
+            photos: photos,
+            variant: .display,
+            fallbackIconSize: 38
+        )
     }
 
     private func statusPill(_ candidate: RouletteCandidate) -> some View {
@@ -673,6 +694,10 @@ private struct RouletteWheelView: View {
         RestaurantRouletteEngine.visualSegmentCount(candidateCount: candidates.count)
     }
 
+    private var visualSlots: [RouletteCandidate?] {
+        RestaurantRouletteEngine.visualSlots(from: candidates)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let size = min(proxy.size.width, proxy.size.height)
@@ -692,7 +717,13 @@ private struct RouletteWheelView: View {
                     ForEach(0..<visualCount, id: \.self) { index in
                         let angle = (Double(index) + 0.5) * 360 / Double(visualCount)
                         let radians = angle * .pi / 180
-                        segmentLabel(candidates[index], size: size)
+                        Group {
+                            if let candidate = visualSlots[index] {
+                                segmentLabel(candidate, size: size)
+                            } else {
+                                addMoreSegmentLabel(size: size)
+                            }
+                        }
                             .position(
                                 x: center.x + sin(radians) * labelRadius,
                                 y: center.y - cos(radians) * labelRadius
@@ -756,6 +787,19 @@ private struct RouletteWheelView: View {
         .accessibilityIdentifier("roulette-wheel")
     }
 
+    private func addMoreSegmentLabel(size: CGFloat) -> some View {
+        VStack(spacing: 2) {
+            Image(systemName: "plus")
+                .font(.system(size: 10, weight: .bold))
+            Text("添加更多\n餐厅")
+                .font(.system(size: 6.5, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .foregroundStyle(RouletteTheme.wheelMuted)
+        .frame(width: size * 0.16)
+    }
+
     private func segmentLabel(_ candidate: RouletteCandidate, size: CGFloat) -> some View {
         let compact = candidates.count > 6
         return VStack(spacing: compact ? 1 : 2) {
@@ -771,10 +815,10 @@ private struct RouletteWheelView: View {
             .font(.system(size: compact ? 7 : 9, weight: .bold))
             .lineLimit(1)
             .minimumScaleFactor(0.72)
-            if !compact, !candidate.city.isEmpty {
+            if !candidate.city.isEmpty {
                 Text(candidate.city)
-                    .font(.system(size: 6.5, weight: .medium))
-                    .foregroundStyle(RouletteTheme.muted)
+                    .font(.system(size: compact ? 5.5 : 6.5, weight: .medium))
+                    .foregroundStyle(RouletteTheme.wheelMuted)
                     .lineLimit(1)
             }
             if let rating = candidate.averageRating {
@@ -783,7 +827,7 @@ private struct RouletteWheelView: View {
                     .foregroundStyle(RouletteTheme.caramel)
             }
         }
-        .foregroundStyle(RouletteTheme.ink)
+        .foregroundStyle(RouletteTheme.wheelInk)
         .frame(width: compact ? size * 0.15 : size * 0.22)
     }
 }
@@ -794,23 +838,66 @@ private struct RouletteCandidateAvatar: View {
     let diameter: CGFloat
 
     var body: some View {
-        Group {
-            if let photoID = candidate.photoID,
-               let photo = photos.first(where: { $0.id == photoID && $0.deletedAt == nil }) {
-                PhotoAssetImageView(photo: photo, variant: .thumbnail)
-            } else {
-                ZStack {
-                    Circle().fill(.white.opacity(0.76))
-                    Image(systemName: "fork.knife")
-                        .font(.system(size: diameter * 0.38, weight: .semibold))
-                        .foregroundStyle(RouletteTheme.brandDeep)
-                }
-            }
-        }
+        RouletteRestaurantImage(
+            candidate: candidate,
+            photos: photos,
+            variant: .thumbnail,
+            fallbackIconSize: diameter * 0.38
+        )
         .frame(width: diameter, height: diameter)
         .clipShape(Circle())
         .overlay { Circle().stroke(.white.opacity(0.96), lineWidth: 1.5) }
         .accessibilityHidden(true)
+    }
+}
+
+private struct RouletteRestaurantImage: View {
+    let candidate: RouletteCandidate
+    let photos: [PhotoAsset]
+    let variant: PhotoBinaryVariant
+    let fallbackIconSize: CGFloat
+
+    private var localPhoto: PhotoAsset? {
+        guard let photoID = candidate.photoID else { return nil }
+        return photos.first {
+            $0.id == photoID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
+        }
+    }
+
+    var body: some View {
+        if let localPhoto {
+            PhotoAssetImageView(photo: localPhoto, variant: variant)
+        } else if let providerURL = candidate.merchantImageURL {
+            AsyncImage(url: providerURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                        .accessibilityLabel("\(candidate.displayName)商家图片")
+                case .empty:
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .failure:
+                    fallback
+                @unknown default:
+                    fallback
+                }
+            }
+        } else {
+            fallback
+        }
+    }
+
+    private var fallback: some View {
+        ZStack {
+            Color.white.opacity(0.76)
+            FoodDiningVisualIcon(
+                kind: .genericDining,
+                usage: .decorative,
+                size: max(24, fallbackIconSize * 2.1),
+                foregroundColor: RouletteTheme.brandDeep,
+                backgroundColor: .white.opacity(0.72)
+            )
+        }
+        .accessibilityLabel("\(candidate.displayName)暂无真实图片")
     }
 }
 
@@ -885,12 +972,41 @@ private struct RouletteFilterSheet: View {
 private struct RouletteCandidateManager: View {
     @Environment(\.dismiss) private var dismiss
     let candidates: [RouletteCandidate]
-    @Binding var selectedGlobalKeys: Set<String>
+    let photos: [PhotoAsset]
+    let onApply: (Set<String>, RouletteCandidateSource) -> Void
+    let onAddCustom: () -> Void
     @State private var query = ""
+    @State private var source: RouletteCandidateSource
+    @State private var selectedGlobalKeys: Set<String>
+
+    init(
+        candidates: [RouletteCandidate],
+        photos: [PhotoAsset],
+        initialSource: RouletteCandidateSource,
+        initialSelectedGlobalKeys: Set<String>,
+        onApply: @escaping (Set<String>, RouletteCandidateSource) -> Void,
+        onAddCustom: @escaping () -> Void
+    ) {
+        self.candidates = candidates
+        self.photos = photos
+        self.onApply = onApply
+        self.onAddCustom = onAddCustom
+        _source = State(initialValue: initialSource)
+        _selectedGlobalKeys = State(initialValue: initialSelectedGlobalKeys)
+    }
 
     private var visible: [RouletteCandidate] {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return candidates }
-        return candidates.filter {
+        let sourceFiltered = candidates.filter {
+            switch source {
+            case .all: true
+            case .wantToGo: $0.status == .wantToGo
+            case .visited: $0.status == .visited
+            }
+        }
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return sourceFiltered
+        }
+        return sourceFiltered.filter {
             [$0.displayName, $0.city, $0.address]
                 .contains { $0.localizedCaseInsensitiveContains(query) }
         }
@@ -900,12 +1016,28 @@ private struct RouletteCandidateManager: View {
         NavigationStack {
             List {
                 Section {
+                    Picker("餐厅状态", selection: $source) {
+                        ForEach(RouletteCandidateSource.allCases) { value in
+                            Text(value.title).tag(value)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("roulette-manager-source")
+                }
+                Section {
                     ForEach(visible) { candidate in
                         Toggle(isOn: includedBinding(candidate)) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(candidate.displayName).font(.headline)
-                                Text([candidate.status.title, candidate.city].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.caption).foregroundStyle(RouletteTheme.muted)
+                            HStack(spacing: 10) {
+                                RouletteCandidateAvatar(
+                                    candidate: candidate,
+                                    photos: photos,
+                                    diameter: 38
+                                )
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(candidate.displayName).font(.headline)
+                                    Text([candidate.status.title, candidate.city].filter { !$0.isEmpty }.joined(separator: " · "))
+                                        .font(.caption).foregroundStyle(RouletteTheme.muted)
+                                }
                             }
                         }
                         .disabled(
@@ -923,23 +1055,56 @@ private struct RouletteCandidateManager: View {
                 } header: {
                     Text("已选 \(selectedCount) / \(RestaurantRouletteEngine.maximumActiveCandidateCount) · 每家对应一个轮盘扇区")
                 }
+                Section {
+                    Button("添加自定义餐厅", systemImage: "plus") {
+                        dismiss()
+                        onAddCustom()
+                    }
+                    .accessibilityIdentifier("roulette-add-custom-restaurant")
+                } footer: {
+                    Text("会进入正式的手动添加流程；保存后才能成为真实候选。")
+                }
             }
             .searchable(text: $query, prompt: "搜索我的餐厅")
-            .navigationTitle("管理候选")
+            .navigationTitle("管理候选餐厅")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(selectedCount == 0 ? "选择前 10 家" : "清空") {
-                        if selectedCount == 0 {
-                            selectedGlobalKeys = RestaurantRouletteEngine.defaultActiveGlobalKeys(from: candidates)
-                        } else {
-                            selectedGlobalKeys.subtract(candidates.map(\.globalKey))
-                        }
-                    }
+                    Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
+                    Button("应用当前结果") {
+                        onApply(selectedGlobalKeys, source)
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("roulette-apply-candidates")
                 }
+            }
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Button(selectedCount == 0 ? "选择前 10 家" : "清空选择") {
+                        if selectedCount == 0 {
+                            let sourceCandidates = candidates.filter {
+                                source == .all
+                                    || (source == .wantToGo && $0.status == .wantToGo)
+                                    || (source == .visited && $0.status == .visited)
+                            }
+                            selectedGlobalKeys = RestaurantRouletteEngine.defaultActiveGlobalKeys(
+                                from: sourceCandidates
+                            )
+                        } else {
+                            selectedGlobalKeys.removeAll()
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("最多 10 家")
+                        .font(.caption)
+                        .foregroundStyle(RouletteTheme.muted)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(.bar)
             }
         }
     }
@@ -983,6 +1148,10 @@ enum RouletteTheme {
     static let surface = TasteMapCoreTheme.surface
     static let ink = TasteMapCoreTheme.textPrimary
     static let muted = TasteMapCoreTheme.textSecondary
+    // Wheel slices deliberately remain light in both appearances. Their text
+    // therefore uses fixed dark ink instead of an adaptive label color.
+    static let wheelInk = Color(red: 0.11, green: 0.17, blue: 0.22)
+    static let wheelMuted = Color(red: 0.31, green: 0.39, blue: 0.45)
     static let leaf = Color(red: 0.27, green: 0.55, blue: 0.38)
     static let leafSoft = Color(red: 0.91, green: 0.96, blue: 0.92)
     static let cream = Color(red: 0.98, green: 0.94, blue: 0.84)

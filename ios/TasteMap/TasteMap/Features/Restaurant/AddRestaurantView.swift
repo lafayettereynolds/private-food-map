@@ -31,8 +31,10 @@ struct AddRestaurantView: View {
     @State private var pendingManualCandidate: RestaurantCandidate?
     @State private var cityEdited = false
     @State private var actionError: String?
+    @State private var initialManualEntryPresented = false
 
     private let initialSharedText: String?
+    private let startsWithManualEntry: Bool
     let onAction: (RestaurantCandidate, RestaurantSearchAction) throws -> Void
 
     private var scopedRestaurants: [Restaurant] {
@@ -42,6 +44,7 @@ struct AddRestaurantView: View {
     init(
         dependencies: RestaurantAcquisitionDependencies,
         initialSharedText: String? = nil,
+        startsWithManualEntry: Bool = false,
         onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) throws -> Void
     ) {
         _viewModel = StateObject(wrappedValue: RestaurantAcquisitionViewModel(
@@ -50,6 +53,7 @@ struct AddRestaurantView: View {
             locationProvider: dependencies.locationProvider
         ))
         self.initialSharedText = initialSharedText
+        self.startsWithManualEntry = startsWithManualEntry
         self.onAction = onAction
     }
 
@@ -76,6 +80,10 @@ struct AddRestaurantView: View {
                 }
             }
             .task {
+                if startsWithManualEntry, !initialManualEntryPresented {
+                    initialManualEntryPresented = true
+                    manualPresented = true
+                }
                 guard viewModel.nearbyState == .idle else { return }
                 await viewModel.loadNearby()
                 if !cityEdited, let detectedCity = viewModel.detectedCity {

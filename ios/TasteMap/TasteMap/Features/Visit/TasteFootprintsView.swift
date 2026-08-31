@@ -93,7 +93,11 @@ private struct TasteFootprintRow: View {
             Button(action: onSelect) {
                 VStack(alignment: .leading, spacing: 11) {
                     header
-                    RestaurantBrowsePhoto(photo: item.photo, restaurantID: item.restaurant.id)
+                    RestaurantBrowsePhoto(
+                        photo: item.photo,
+                        merchantImageURL: item.merchantImageURL,
+                        restaurantID: item.restaurant.id
+                    )
                         .frame(maxWidth: .infinity)
                         .frame(height: item.photo == nil ? 112 : 180)
                         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
