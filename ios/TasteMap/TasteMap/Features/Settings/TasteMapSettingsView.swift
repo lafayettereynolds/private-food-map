@@ -385,12 +385,19 @@ struct DataBackupSettingsView: View {
             if allowsImport {
                 Section {
                     NavigationLink {
+                        #if DEBUG
                         BackupImportPreflightView(
                             modelContainer: modelContext.container,
                             currentTasteMapUserID: currentTasteMapUserID,
                             fixtureInput: importFixtureInput,
                             injectedFailurePoint: importFailurePoint
                         )
+                        #else
+                        BackupImportPreflightView(
+                            modelContainer: modelContext.container,
+                            currentTasteMapUserID: currentTasteMapUserID
+                        )
+                        #endif
                     } label: {
                         HStack {
                             Label("导入数据", systemImage: "doc.badge.plus")
@@ -486,21 +493,15 @@ struct DataBackupSettingsView: View {
         try? service.removeTemporaryExport(artifact)
     }
 
-    private var importFixtureInput: BackupImportFixtureInput? {
 #if DEBUG
+    private var importFixtureInput: BackupImportFixtureInput? {
         BackupImportDevelopmentFixture.current?.input
-#else
-        nil
-#endif
     }
 
     private var importFailurePoint: BackupImportFailurePoint? {
-#if DEBUG
         BackupImportDevelopmentFixture.current?.injectedFailurePoint
-#else
-        nil
-#endif
     }
+#endif
 }
 
 struct SyncSettingsView: View {

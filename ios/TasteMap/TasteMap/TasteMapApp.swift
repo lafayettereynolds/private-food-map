@@ -24,17 +24,25 @@ struct TasteMapApp: App {
         if runtime.allowsAutomaticServices {
             try? BackupExportTemporaryFileStore().cleanup()
         }
+        #if DEBUG
         let credentialStore: any AuthCredentialStoring = runtime.isolatesPersistentState
             ? IsolatedAuthCredentialStore()
             : KeychainCredentialStore()
+        let networkSession = TasteMapTestRuntimeResources.networkSession(for: runtime)
+        let socialOutboxFileURL = runtime.isolatesPersistentState
+            ? TasteMapTestRuntimeResources.temporaryRoot(component: "social-outbox")
+                .appendingPathComponent("shared-meal-invitations-v1.json")
+            : nil
+        #else
+        let credentialStore: any AuthCredentialStoring = KeychainCredentialStore()
+        let networkSession = URLSession.shared
+        let socialOutboxFileURL: URL? = nil
+        #endif
         let authServices = NativeAuthServices(
             configuration: .current(),
-            session: TasteMapTestRuntimeResources.networkSession(for: runtime),
+            session: networkSession,
             credentialStore: credentialStore,
-            socialOutboxFileURL: runtime.isolatesPersistentState
-                ? TasteMapTestRuntimeResources.temporaryRoot(component: "social-outbox")
-                    .appendingPathComponent("shared-meal-invitations-v1.json")
-                : nil
+            socialOutboxFileURL: socialOutboxFileURL
         )
         // Isolated UI/unit runtimes intentionally have no persisted credential.
         // Resolve that state to the explicit signed-out workspace so fixtures
@@ -156,10 +164,15 @@ struct TasteMapApp: App {
         )
         let photoFiles: LocalPhotoFileStore
         do {
+            #if DEBUG
+            let photoRootURL = runtime.isolatesPersistentState
+                ? TasteMapTestRuntimeResources.temporaryRoot(component: "photos")
+                : nil
+            #else
+            let photoRootURL: URL? = nil
+            #endif
             photoFiles = try LocalPhotoFileStore(
-                rootURL: runtime.isolatesPersistentState
-                    ? TasteMapTestRuntimeResources.temporaryRoot(component: "photos")
-                    : nil
+                rootURL: photoRootURL
             )
         } catch {
             fatalError("Unable to initialize local photo storage: \(error)")

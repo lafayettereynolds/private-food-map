@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftData
 import SwiftUI
 
@@ -120,3 +121,4 @@ private enum P2EVisitContextPreviewFactory {
         )
     }
 }
+#endif

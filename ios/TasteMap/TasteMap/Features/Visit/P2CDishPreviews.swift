@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftData
 import SwiftUI
 
@@ -168,3 +169,4 @@ private enum P2CDishPreviewFactory {
         return (container, restaurant, visits, dishes, photos)
     }
 }
+#endif

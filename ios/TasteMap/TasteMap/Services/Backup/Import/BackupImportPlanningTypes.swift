@@ -331,7 +331,9 @@ nonisolated enum BackupImportPlanningError: Error, Equatable, LocalizedError, Se
     case userChanged
     case invalidDecision
     case transactionFailed
+    #if DEBUG
     case injectedFailure(String)
+    #endif
 
     var errorDescription: String? {
         switch self {
@@ -346,7 +348,9 @@ nonisolated enum BackupImportPlanningError: Error, Equatable, LocalizedError, Se
         case .userChanged: "当前登录账户已变化，请重新生成匹配计划。"
         case .invalidDecision: "匹配决定与当前文件或本地快照不一致。"
         case .transactionFailed: "本地导入事务失败，未保留任何部分数据。"
+        #if DEBUG
         case let .injectedFailure(stage): "测试在 \(stage) 阶段注入失败。"
+        #endif
         }
     }
 }

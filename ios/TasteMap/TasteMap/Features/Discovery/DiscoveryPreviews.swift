@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 private struct DiscoveryPreviewHost: View {
@@ -100,3 +101,4 @@ private enum DiscoveryPreviewFixtures {
 #Preview("14 已去过") { DiscoveryPreviewHost(mode: .forYou, cards: [DiscoveryPreviewFixtures.cards()[2]]) }
 #Preview("15 小屏") { DiscoveryPreviewHost(mode: .trending, cards: DiscoveryPreviewFixtures.cards(5, mode: .trending)).frame(width: 320) }
 #Preview("16 大字体") { DiscoveryPreviewHost(mode: .forYou, cards: DiscoveryPreviewFixtures.cards()).environment(\.dynamicTypeSize, .accessibility3) }
+#endif

@@ -1,12 +1,14 @@
 import Foundation
 import SwiftData
 
+#if DEBUG
 nonisolated enum BackupImportFailurePoint: String, Sendable {
     case afterRestaurants
     case afterVisits
     case beforeMutations
     case beforeSave
 }
+#endif
 
 nonisolated struct BackupImportTransactionResult: Equatable, Sendable {
     let planID: UUID
@@ -20,7 +22,9 @@ nonisolated struct BackupImportTransactionResult: Equatable, Sendable {
 @MainActor
 struct BackupImportTransactionWriter {
     let container: ModelContainer
+    #if DEBUG
     var injectedFailurePoint: BackupImportFailurePoint?
+    #endif
 
     func execute(
         _ confirmed: ConfirmedBackupImportPlan,
@@ -70,7 +74,9 @@ struct BackupImportTransactionWriter {
                     currentUserID: currentTasteMapUserID,
                     context: context
                 )
+                #if DEBUG
                 try failIfRequested(.beforeSave)
+                #endif
                 try context.save()
                 writtenCount = state.writtenCount
                 mutationCount = state.mutationCount
@@ -122,7 +128,9 @@ struct BackupImportTransactionWriter {
             default: throw BackupImportPlanningError.unresolvedReview(action.id)
             }
         }
+        #if DEBUG
         try failIfRequested(.afterRestaurants)
+        #endif
 
         for value in source.companions.sorted(by: { $0.sourceID < $1.sourceID }) {
             guard let action = actions["companion:\(value.sourceID)"] else { continue }
@@ -260,7 +268,9 @@ struct BackupImportTransactionWriter {
                 state.visits[value.sourceID] = try existing(action, context: context)
             } else if action.action != .skip { throw BackupImportPlanningError.unresolvedReview(action.id) }
         }
+        #if DEBUG
         try failIfRequested(.afterVisits)
+        #endif
 
         for value in source.dishes.sorted(by: { $0.sourceID < $1.sourceID }) {
             guard let action = actions["dish:\(value.sourceID)"],
@@ -326,7 +336,9 @@ struct BackupImportTransactionWriter {
             }
         }
 
+        #if DEBUG
         try failIfRequested(.beforeMutations)
+        #endif
         let queue = SwiftDataSyncQueue(context: context, ownerUserID: currentUserID)
         var mutationCount = 0
         for mutation in state.mutations.sorted(by: { $0.priority < $1.priority }) {
@@ -486,9 +498,11 @@ struct BackupImportTransactionWriter {
         return value
     }
 
+    #if DEBUG
     private func failIfRequested(_ point: BackupImportFailurePoint) throws {
         if injectedFailurePoint == point { throw BackupImportPlanningError.injectedFailure(point.rawValue) }
     }
+    #endif
 
     private static func seconds(_ duration: Duration) -> Double {
         let value = duration.components

@@ -2,21 +2,31 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-nonisolated struct BackupImportFixtureInput: Sendable {
-    let fileName: String
-    let data: Data
-    let delay: Duration?
-}
-
 struct BackupImportPreflightView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(SyncCoordinator.self) private var syncCoordinator
 
+    #if DEBUG
     let fixtureInput: BackupImportFixtureInput?
+    #endif
     @State private var coordinator: BackupImportFlowCoordinator
     @State private var isShowingFileImporter = false
 
+    init(
+        modelContainer: ModelContainer,
+        currentTasteMapUserID: String?
+    ) {
+        #if DEBUG
+        fixtureInput = nil
+        #endif
+        _coordinator = State(initialValue: BackupImportFlowCoordinator(
+            container: modelContainer,
+            currentTasteMapUserID: currentTasteMapUserID
+        ))
+    }
+
+    #if DEBUG
     init(
         modelContainer: ModelContainer,
         currentTasteMapUserID: String?,
@@ -30,6 +40,7 @@ struct BackupImportPreflightView: View {
             injectedFailurePoint: injectedFailurePoint
         ))
     }
+    #endif
 
     var body: some View {
         List { content }
@@ -143,7 +154,7 @@ struct BackupImportPreflightView: View {
             }
             Section {
                 Button(action: chooseFile) {
-                    Label(fixtureInput == nil ? "选择 JSON 文件" : "选择测试文件", systemImage: "doc.badge.plus")
+                    Label(chooseFileTitle, systemImage: "doc.badge.plus")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .disabled(coordinator.currentTasteMapUserID == nil)
@@ -249,11 +260,23 @@ struct BackupImportPreflightView: View {
 
     private func chooseFile() {
         coordinator.beginFileSelection()
+        #if DEBUG
         if let fixtureInput {
             coordinator.readAndPreflight(data: fixtureInput.data, fileName: fixtureInput.fileName, fixtureDelay: fixtureInput.delay)
         } else {
             isShowingFileImporter = true
         }
+        #else
+        isShowingFileImporter = true
+        #endif
+    }
+
+    private var chooseFileTitle: String {
+        #if DEBUG
+        fixtureInput == nil ? "选择 JSON 文件" : "选择测试文件"
+        #else
+        "选择 JSON 文件"
+        #endif
     }
 
     private func handleFileSelection(_ selection: Result<[URL], Error>) {

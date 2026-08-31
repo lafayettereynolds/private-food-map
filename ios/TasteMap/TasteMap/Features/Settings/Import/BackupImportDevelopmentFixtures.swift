@@ -3,6 +3,12 @@ import Foundation
 
 /// Synthetic, non-sensitive inputs used only by previews and UI automation.
 /// Production builds do not compile these fixtures.
+nonisolated struct BackupImportFixtureInput: Sendable {
+    let fileName: String
+    let data: Data
+    let delay: Duration?
+}
+
 nonisolated enum BackupImportDevelopmentFixture: String, Sendable {
     case legacyValid
     case legacyBlocking

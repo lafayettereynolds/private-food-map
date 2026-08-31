@@ -2,10 +2,12 @@ import Foundation
 
 enum TasteMapRuntimeTier: String, Equatable, Sendable {
     case application
+    #if DEBUG
     case unit
     case localIntegration = "local-integration"
     case ui
     case developmentE2E = "development-e2e"
+    #endif
 }
 
 struct TasteMapRuntimeConfiguration: Equatable, Sendable {
@@ -16,8 +18,22 @@ struct TasteMapRuntimeConfiguration: Equatable, Sendable {
 
     let tier: TasteMapRuntimeTier
 
-    var isolatesPersistentState: Bool { tier != .application }
-    var allowsNetwork: Bool { tier == .application || tier == .developmentE2E }
+    var isolatesPersistentState: Bool {
+        #if DEBUG
+        tier != .application
+        #else
+        false
+        #endif
+    }
+
+    var allowsNetwork: Bool {
+        #if DEBUG
+        tier == .application || tier == .developmentE2E
+        #else
+        true
+        #endif
+    }
+
     var allowsAutomaticServices: Bool { tier == .application }
 
     static var current: TasteMapRuntimeConfiguration {
@@ -58,6 +74,7 @@ struct TasteMapRuntimeConfiguration: Equatable, Sendable {
     #endif
 }
 
+#if DEBUG
 nonisolated final class IsolatedAuthCredentialStore: AuthCredentialStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var credential: AuthCredential?
@@ -104,3 +121,4 @@ enum TasteMapTestRuntimeResources {
             .appendingPathComponent(component, isDirectory: true)
     }
 }
+#endif

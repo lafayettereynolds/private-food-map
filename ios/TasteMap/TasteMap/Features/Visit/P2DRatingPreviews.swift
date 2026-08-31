@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftData
 import SwiftUI
 
@@ -108,3 +109,4 @@ private enum P2DRatingPreviewFactory {
         )
     }
 }
+#endif

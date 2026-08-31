@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftData
 import SwiftUI
 
@@ -194,3 +195,4 @@ private enum RestaurantDetailPreviewFactory {
         }
     }
 }
+#endif

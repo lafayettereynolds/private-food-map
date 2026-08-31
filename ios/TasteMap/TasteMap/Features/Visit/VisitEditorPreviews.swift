@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftData
 import SwiftUI
 
@@ -103,3 +104,4 @@ private enum VisitEditorPreviewFactory {
         )
     }
 }
+#endif

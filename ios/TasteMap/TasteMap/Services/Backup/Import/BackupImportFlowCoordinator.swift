@@ -111,11 +111,14 @@ final class BackupImportFlowCoordinator {
     @ObservationIgnored private let container: ModelContainer
     @ObservationIgnored private let fileReader: BackupImportFileReader
     @ObservationIgnored private let preflightService: BackupImportPreflightService
+    #if DEBUG
     @ObservationIgnored private let injectedFailurePoint: BackupImportFailurePoint?
+    #endif
     @ObservationIgnored private var operationTask: Task<Void, Never>?
 
     let currentTasteMapUserID: String?
 
+    #if DEBUG
     init(
         container: ModelContainer,
         currentTasteMapUserID: String?,
@@ -129,6 +132,19 @@ final class BackupImportFlowCoordinator {
         self.preflightService = preflightService
         self.injectedFailurePoint = injectedFailurePoint
     }
+    #else
+    init(
+        container: ModelContainer,
+        currentTasteMapUserID: String?,
+        fileReader: BackupImportFileReader = BackupImportFileReader(),
+        preflightService: BackupImportPreflightService = BackupImportPreflightService()
+    ) {
+        self.container = container
+        self.currentTasteMapUserID = currentTasteMapUserID
+        self.fileReader = fileReader
+        self.preflightService = preflightService
+    }
+    #endif
 
     var currentReviewItem: ImportPlanReviewItem? {
         plan?.reviewItems.first
@@ -167,6 +183,7 @@ final class BackupImportFlowCoordinator {
         }
     }
 
+    #if DEBUG
     func readAndPreflight(
         data: Data,
         fileName: String,
@@ -177,6 +194,7 @@ final class BackupImportFlowCoordinator {
             return try await fileReader.read(data: data, fileName: fileName)
         }
     }
+    #endif
 
     func cancelBeforeTransaction() {
         guard canCancel else { return }
@@ -279,10 +297,18 @@ final class BackupImportFlowCoordinator {
                 }
                 state = .importing(.writing)
                 await Task.yield()
-                let transaction = try BackupImportTransactionWriter(
+                #if DEBUG
+                let transactionWriter = BackupImportTransactionWriter(
                     container: container,
                     injectedFailurePoint: injectedFailurePoint
-                ).execute(confirmed, currentTasteMapUserID: currentUserIDAtConfirmation)
+                )
+                #else
+                let transactionWriter = BackupImportTransactionWriter(container: container)
+                #endif
+                let transaction = try transactionWriter.execute(
+                    confirmed,
+                    currentTasteMapUserID: currentUserIDAtConfirmation
+                )
 
                 state = .verifying
                 let verification = try BackupImportLocalVerifier(container: container).verify(
@@ -499,8 +525,10 @@ final class BackupImportFlowCoordinator {
     private static func safeErrorCode(_ error: Error) -> String {
         if let planning = error as? BackupImportPlanningError {
             switch planning {
+            #if DEBUG
             case .injectedFailure:
                 return "transaction_injected_failure"
+            #endif
             case .transactionFailed:
                 return "transaction_failed"
             case .invalidDecision, .unresolvedReview:

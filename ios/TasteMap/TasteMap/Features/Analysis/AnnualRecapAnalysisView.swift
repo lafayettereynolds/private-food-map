@@ -15,7 +15,9 @@ struct AnnualRecapAnalysisScreen: View {
 
     @State private var selectedPeriod = AnnualPeriod.current()
     @State private var report: AnnualRecapAnalysis?
+    #if DEBUG
     @State private var fixtureMessage: String?
+    #endif
 
     private var owned: ProfileOwnedContentScope.Snapshot {
         ProfileOwnedContentScope.capture(
@@ -64,12 +66,22 @@ struct AnnualRecapAnalysisScreen: View {
     private var unlockedContent: some View {
         Group {
             if let report, report.period.id == selectedPeriod.id {
+                #if DEBUG
                 AnnualRecapAnalysisView(
                     report: report, availablePeriods: availablePeriods,
                     photosByID: photosByID, restaurantsByID: restaurantsByID,
                     onSelectPeriod: { selectedPeriod = $0 }, fixtureMessage: fixtureMessage,
                     onFixtureAddVisit: annualFixtureAction
                 )
+                #else
+                AnnualRecapAnalysisView(
+                    report: report,
+                    availablePeriods: availablePeriods,
+                    photosByID: photosByID,
+                    restaurantsByID: restaurantsByID,
+                    onSelectPeriod: { selectedPeriod = $0 }
+                )
+                #endif
             } else {
                 ProgressView("正在整理这一年的味觉旅程…")
                     .tint(TasteMapAnalysisTheme.brand)
@@ -91,8 +103,8 @@ struct AnnualRecapAnalysisScreen: View {
         }
     }
 
-    private var annualFixtureAction: (() -> Void)? {
 #if DEBUG
+    private var annualFixtureAction: (() -> Void)? {
         guard TasteMapUITestFixtures.usesAnnualRecapFixture else { return nil }
         return {
             do {
@@ -113,10 +125,8 @@ struct AnnualRecapAnalysisScreen: View {
                 }
             } catch { fixtureMessage = "测试到访新增失败。" }
         }
-#else
-        nil
-#endif
     }
+#endif
 }
 
 struct AnnualRecapAnalysisView: View {
@@ -125,8 +135,10 @@ struct AnnualRecapAnalysisView: View {
     let photosByID: [UUID: PhotoAsset]
     let restaurantsByID: [UUID: Restaurant]
     let onSelectPeriod: (AnnualPeriod) -> Void
+    #if DEBUG
     var fixtureMessage: String? = nil
     var onFixtureAddVisit: (() -> Void)? = nil
+    #endif
 
     @State private var isShowingPoster = false
     private let metricColumns = [GridItem(.flexible()), GridItem(.flexible())]

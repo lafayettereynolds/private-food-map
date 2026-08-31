@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftData
 import SwiftUI
 
@@ -212,3 +213,4 @@ private struct P2FSourcePickerPreviewHost: View {
         )
     }
 }
+#endif

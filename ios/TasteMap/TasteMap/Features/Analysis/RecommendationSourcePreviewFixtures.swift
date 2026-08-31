@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 nonisolated enum RecommendationSourcePreviewFixtures {
@@ -181,3 +182,4 @@ nonisolated enum RecommendationSourcePreviewFixtures {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value))!
     }
 }
+#endif

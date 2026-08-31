@@ -404,7 +404,9 @@ struct RecommendationSourceDetailView: View {
     let restaurantsByID: [UUID: Restaurant]
 
     @State private var selectedRestaurant: Restaurant?
+    #if DEBUG
     @State private var fixtureMessage: String?
+    #endif
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {

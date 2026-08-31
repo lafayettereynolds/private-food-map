@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 @MainActor
@@ -179,3 +180,4 @@ private struct RoulettePreviewFixture {
 #Preview("18 Reduce Motion") {
     RoulettePreviewHost(fixture: .make(count: 8, reduceMotion: true))
 }
+#endif

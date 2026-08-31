@@ -15,7 +15,9 @@ struct MonthlyRecapAnalysisScreen: View {
 
     @State private var selectedPeriod = MonthlyPeriod.current()
     @State private var report: MonthlyRecapAnalysis?
+    #if DEBUG
     @State private var fixtureMessage: String?
+    #endif
 
     private var owned: ProfileOwnedContentScope.Snapshot {
         ProfileOwnedContentScope.capture(
@@ -69,6 +71,7 @@ struct MonthlyRecapAnalysisScreen: View {
     private var unlockedContent: some View {
         Group {
             if let report, report.period.id == selectedPeriod.id {
+                #if DEBUG
                 MonthlyRecapAnalysisView(
                     report: report,
                     availablePeriods: availablePeriods,
@@ -78,6 +81,15 @@ struct MonthlyRecapAnalysisScreen: View {
                     fixtureMessage: fixtureMessage,
                     onFixtureAddVisit: monthlyFixtureAction
                 )
+                #else
+                MonthlyRecapAnalysisView(
+                    report: report,
+                    availablePeriods: availablePeriods,
+                    photosByID: photosByID,
+                    restaurantsByID: restaurantsByID,
+                    onSelectPeriod: { selectedPeriod = $0 }
+                )
+                #endif
             } else {
                 ProgressView("正在翻开这个月的餐桌…")
                     .tint(TasteMapAnalysisTheme.brand)
@@ -99,8 +111,8 @@ struct MonthlyRecapAnalysisScreen: View {
         }
     }
 
-    private var monthlyFixtureAction: (() -> Void)? {
 #if DEBUG
+    private var monthlyFixtureAction: (() -> Void)? {
         guard TasteMapUITestFixtures.usesMonthlyRecapFixture else { return nil }
         return {
             do {
@@ -123,10 +135,8 @@ struct MonthlyRecapAnalysisScreen: View {
                 fixtureMessage = "测试到访新增失败。"
             }
         }
-#else
-        nil
-#endif
     }
+#endif
 }
 
 #if DEBUG
@@ -173,8 +183,10 @@ struct MonthlyRecapAnalysisView: View {
     let photosByID: [UUID: PhotoAsset]
     let restaurantsByID: [UUID: Restaurant]
     let onSelectPeriod: (MonthlyPeriod) -> Void
+    #if DEBUG
     var fixtureMessage: String? = nil
     var onFixtureAddVisit: (() -> Void)? = nil
+    #endif
 
     @State private var isShowingPoster = false
     private let metricColumns = [GridItem(.flexible()), GridItem(.flexible())]

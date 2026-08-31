@@ -1097,6 +1097,7 @@ struct ProfileEditorSheet: View {
     }
 }
 
+#if DEBUG
 private struct ProfilePreviewScreen: View {
     let profile: UserProfile
     let statistics: ProfileBasicStatistics
@@ -1255,3 +1256,4 @@ private enum ProfilePreviewFixtures {
     )
     .environment(\.dynamicTypeSize, .accessibility3)
 }
+#endif

@@ -307,7 +307,9 @@ struct DiningCompanionDetailView: View {
 
     @State private var isShowingPoster = false
     @State private var selectedRestaurant: Restaurant?
+    #if DEBUG
     @State private var fixtureMutationMessage: String?
+    #endif
     private let metricColumns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {

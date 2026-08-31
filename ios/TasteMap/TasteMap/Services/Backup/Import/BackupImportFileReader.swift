@@ -73,6 +73,7 @@ nonisolated struct BackupImportFileReader: Sendable {
         return try sourceFile(data: data, fileName: url.lastPathComponent)
     }
 
+    #if DEBUG
     func read(data: Data, fileName: String) async throws -> BackupImportSourceFile {
         do { try Task.checkCancellation() }
         catch { throw BackupImportPreflightError.cancelled }
@@ -82,6 +83,7 @@ nonisolated struct BackupImportFileReader: Sendable {
         await Task.yield()
         return try sourceFile(data: data, fileName: fileName)
     }
+    #endif
 
     private func sourceFile(data: Data, fileName: String) throws -> BackupImportSourceFile {
         guard String(data: data, encoding: .utf8) != nil else {
