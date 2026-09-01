@@ -1,22 +1,168 @@
 # Taste Map Product Design Rules
 
-This document is the canonical product and visual contract for Taste Map. A page is not parity-complete merely because a related feature exists or a SwiftUI screen opens.
+This document is the canonical, long-lived product and visual contract for Taste Map. A page is not parity-complete merely because a related feature exists or a SwiftUI screen opens. All UI/UX work must read this file before implementation and keep it synchronized when Lafayette confirms a new durable decision.
 
 ## Source of Truth
 
 When sources differ, use this priority order:
 
 1. Lafayette's latest explicit design or product override.
-2. The current production Web product and its confirmed mobile screenshots.
-3. A previously approved TestFlight/history asset or implementation.
-4. The current iOS implementation.
+2. This document.
+3. The confirmed production Web or previously approved historical/TestFlight design.
+4. The current production Web feature semantics and data behavior.
+5. The current iOS implementation.
 
-Before changing layout, establish the Web feature semantics, data source, entry point, states, and return path. Fix a semantic migration bug before restoring its presentation.
+Before changing layout, establish the Web feature semantics, data source, entry point, states, permissions, and return path. Fix a semantic migration bug before restoring its presentation. The current iOS implementation may supply working code, but it does not become the layout source of truth merely because it is native SwiftUI.
+
+## Mandatory Design Workflow
+
+Every UI/UX task follows this order:
+
+1. Read this document in full.
+2. Identify the affected Core UI components, Food & Dining visuals, and Canonical Page Template.
+3. Confirm product semantics and data behavior before changing presentation.
+4. Search the entire app for the same component or pattern.
+5. Extend or consolidate the shared implementation; do not create a third variant.
+6. Apply the correction to every affected screen inside the authorized scope.
+7. Validate the reference, state coverage, accessibility, and shared-component reuse.
+8. When the decision is durable and new, update this document in the same task.
+
+A reported defect is evidence of a possible design-system defect, not permission to patch only the visible page. Filter, tab, top-bar, image, action-row, activity-card, rating, empty-state, and Restaurant Detail changes always require a global usage audit.
+
+## Taste Map Design System Architecture
+
+Every page is built in this direction:
+
+```text
+Canonical Page Template
+        ↓
+Core UI Components + Food & Dining Visual Components
+        ↓
+SwiftUI rendering and interaction
+```
+
+Never start with default SwiftUI controls, improvise a page, and add brand color afterward. The three layers below are mandatory and have separate responsibilities.
+
+### Layer 1 — Core UI System
+
+The Core UI System defines the product's structural interface language:
+
+- typography, font size/weight, and text hierarchy;
+- spacing, padding, radius, border, shadow, and dividers;
+- cards, buttons, icon buttons, CTAs, inputs, and search;
+- filter chips, tabs, top bars, section headers, and list rows;
+- empty, loading, error, permission, and authentication states;
+- avatar, Restaurant image containers, rating components, sheets/modals, and safe-area behavior.
+
+The target is modern, compact, high-information-density, and clearly layered. Use large cards, large CTAs, default segmented controls, and oversized rounded containers sparingly and only when the canonical template calls for them. Avoid the visual signature of a default SwiftUI sample app.
+
+`TasteMapCoreTheme` uses cool white, low-saturation blue-grey, restrained borders and shadows, and native interaction behavior. Brand slate blue is primarily a structural/control color for selected state, focus, active tabs, buttons, and chips; it must not tint every icon, image placeholder, Food visual, or decoration.
+
+SwiftUI remains the implementation framework, not the visual design system. A default `Picker`, `NavigationTitle`, Card-like container, SF Symbol, tint, or control style is not automatically an approved final design.
+
+#### Core design tokens
+
+Stable visual values belong in shared tokens rather than arbitrary page-local magic numbers. Maintain a coherent scale for:
+
+- typography;
+- spacing and standard section spacing;
+- radius and border width;
+- control, chip, and tab height;
+- icon, avatar, and Restaurant image sizes/ratios;
+- shadows and safe-area offsets.
+
+Page-specific values are allowed only when a canonical composition needs them and the reason is clear.
+
+### Layer 2 — Food & Dining Visual System
+
+This is the brand layer that makes Taste Map recognizably about food, restaurants, dining memories, and social meals. Use the shared `FoodDiningVisualLibrary` (or its formal successor), never page-specific unrelated art styles.
+
+The vocabulary may include real food (for example sushi, hotpot, barbecue, noodles, burgers, steak, dumplings, bread, desserts, fruit, and vegetables), drinks (coffee, tea, milk tea, and other beverages), and dining objects (chopsticks, cutlery, bowls, plates, cups, menus, receipts, bills, napkins, takeaway bags, containers, and tables).
+
+Two modes remain strictly separate:
+
+- `decorative`: adds character without claiming the artwork represents user data;
+- `dataLinked`: is selected only from a real cuisine, spend, companion, time, Restaurant, or other supported value.
+
+Never invent data meaning to justify attractive artwork. Formal product art does not use system emoji. Use restrained natural food, coffee, produce, paper, and tableware colors; do not uniformly dye Food/Dining artwork brand blue. Keep line, corner, proportion, shadow, and light/dark behavior consistent, and use stable seeds so decorative choices do not jump on rerender.
+
+The approved historical Premium hamburger is a separately locked asset and is not replaced by the Food & Dining library.
+
+#### Restaurant image priority
+
+Every Restaurant-facing surface—Nearby, Search, Map, List, Discovery, Community, Restaurant Detail, Lists, Roulette, Analytics, and share posters—uses this priority:
+
+1. the user's real uploaded/recorded Restaurant photo;
+2. a lawful public or cached Restaurant photo;
+3. a lawful provider Merchant image;
+4. `FoodDiningVisualLibrary` only when no real Restaurant image is available.
+
+Food/Dining art must never cover a real image that the product can legitimately render. If a provider has no lawful image, fall back honestly rather than fabricating merchant imagery.
+
+### Layer 3 — Canonical Page Templates
+
+Templates define information architecture, section order, control and image placement, interaction hierarchy, content density, and component composition. Core components are not permission to freely rearrange an already approved product page.
+
+#### 1. My Map / My List Template
+
+- top breathing space;
+- centered `我的地图` / `我的列表` plus the adjacent clickable view-switch icon as one group;
+- `去过 / 想吃 / 推荐` using the shared primary tab bar;
+- shared compact horizontal FilterBar;
+- Map or List content backed by the same query/filter/sort state;
+- independent Restaurant markers at every zoom, with overlap handling rather than numeric clusters;
+- Add Restaurant CTA in its approved non-overlapping position.
+
+#### 2. Discovery Template
+
+- centered `发现` title;
+- equal primary tabs `关注 / 为你推荐 / 同味之选 / 最新 / 趋势`;
+- the shared FilterBar and icon semantics;
+- the standard Activity Card;
+- the author's Visit/Activity rating semantics, never a substituted aggregate Restaurant rating;
+- explicit loading, content, empty/insufficient-sample, authentication, and error states.
+
+#### 3. Restaurant Detail Template
+
+- Cover; city/state; Restaurant name;
+- three compact icon actions for record/add, Want to Go, and roulette/list context as approved;
+- address; reference price; phone; opening hours; directions;
+- rating reference and four circular ratings for mine/all/friends/similar taste;
+- user photos; my visit overview; visit history; dishes; detailed ratings; downstream modules.
+
+`RestaurantDetailView` and `RestaurantDetailStandardBody` remain the only body. Entry source may change navigation, dismissal, analytics, and permissions, never this composition.
+
+#### 4. Profile Dashboard Template
+
+- compact avatar/name/joined/edit/Premium header;
+- following and followers;
+- `去过 / 想去 / 总消费` using their formal calculation semantics;
+- paired `今天吃什么 / 我的口味档案`;
+- one Memories group for `本月回顾 / 年度回顾 / 那年今日`;
+- independent Lists section;
+- paired `最佳饭搭子 / 谁最会种草` Insights;
+- data and settings as a secondary later section.
+
+#### 5. Activity Card Template
+
+Discovery, Community, Latest, Trending, and similar activity surfaces share author/avatar/time/visibility, Restaurant image/name/address/context, the author's Activity rating, social actions, Restaurant actions, and separate sharing. These actions retain the approved grouping and visual weights instead of becoming one wall of identical pills.
+
+#### 6. Add Restaurant Template
+
+Formal flow: Search, Nearby, external Share ingestion, and one Manual Add card for places absent from map providers. A selected result first shows the standard Restaurant Detail foundation, then offers Want to Go or Record Visit. Manual link paste is not promoted to a primary in-app section; parsing remains available to the Share Extension.
+
+#### 7. Roulette Template
+
+The selected unique candidate pool, image/name chips, wheel segments, and result are the same data. Unfilled segments say `+ 添加更多餐厅`; do not duplicate Restaurants or present placeholders as real candidates. Random selection is uniform unless Lafayette explicitly approves weighting.
+
+#### 8. Analytics / Poster Template
+
+Taste Profile, Best Companion, Recommendation Source, Monthly, and Annual belong to one Analysis design family: warm/off-white paper, central Food Hero, infographic composition, connecting callouts, Restaurant imagery, food/dining storytelling, receipt/tape restraint, branded poster footer, and QR. Their layouts may vary with data semantics, but must not regress to ordinary card dashboards. Analysis pages provide one `生成分享海报` action; share/save belong in Poster Preview.
 
 ## Theme Boundaries
 
-- `TasteMapCoreTheme` is the Core App system: cool white, low-saturation blue-grey, restrained borders and shadows, and native interaction behavior.
-- `TasteMapAnalysisTheme` is reserved for Analytics and share posters: warm paper surfaces, a central Food Hero, callouts, receipt/tape details, and stronger food storytelling.
+- `TasteMapCoreTheme` implements the Layer 1 Core App system.
+- `TasteMapAnalysisTheme` implements the Layer 3 Analytics/Poster template with stronger Layer 2 Food/Dining storytelling.
 - Analysis styling must not leak into Map, Settings, Restaurant Detail, or other Core App surfaces.
 
 ## Icon Semantics
@@ -40,6 +186,10 @@ Use `FoodDiningVisualLibrary` and `FoodDiningVisualIcon` for a consistent dining
 - The approved historical Premium hamburger is separate and must not be replaced by this library.
 
 ## Shared Components
+
+Shared implementations are the default. Maintain or converge on repository-wide equivalents of `TasteMapTopBar`, `TasteMapFilterBar`, `TasteMapFilterChip`, `TasteMapIconActionRow`, `TasteMapRestaurantImage`, `TasteMapRatingReference`, `TasteMapInfoGroup`, `TasteMapEmptyState`, `TasteMapActivityCard`, and `RestaurantDetailStandardBody`.
+
+Changing one of these patterns requires checking every consumer. Map and Discovery do not get separate filter languages; activity surfaces do not get separate cards; entry sources do not get separate Restaurant Details; Restaurant image fallback policy does not diverge by page.
 
 ### Filters
 
@@ -138,3 +288,21 @@ Use the previously approved historical hamburger asset everywhere Premium identi
 - Do not render system emoji as formal Food/Dining artwork.
 - Do not replace the approved Premium hamburger.
 - Do not treat “the function exists” as Product Parity PASS.
+- Do not patch one instance of a repeated UI problem without globally searching and correcting the shared pattern.
+- Do not add a page-local component when a shared component or canonical template already owns the behavior.
+- Do not let pages independently choose radius, chip, tab, card, icon, Restaurant image, or empty-state styles.
+- Do not use Core UI components as permission to freely rearrange a Canonical Page Template.
+- Do not leave a newly confirmed long-term design decision only in chat or a temporary acceptance report; update this document.
+
+## Design System Acceptance
+
+Final Product Acceptance must report:
+
+- Core UI System: PASS/FAIL;
+- Food & Dining Visual System: PASS/FAIL;
+- Canonical Page Templates: PASS/FAIL;
+- duplicate/conflicting component count;
+- default-SwiftUI visual regression count;
+- remaining design-system gaps.
+
+Acceptance checks information architecture, section order, control position and visual weight, image placement, horizontal/vertical relationships, spacing, information density, accessibility, and shared-component reuse. When a Web or approved historical reference exists, compare it directly to the iOS result; structural disagreement is not PASS.
