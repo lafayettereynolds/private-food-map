@@ -30,6 +30,14 @@ For parity work, always perform these steps in order:
 
 Do not classify a migrated functional error as a cosmetic difference. A page is not accepted merely because it opens or contains a similarly named feature.
 
+## Product-rule authority and historical evidence
+
+Use the complete Source of Truth order in `docs/TASTEMAP_PRODUCT_DESIGN_RULES.md`. The current SwiftUI layout may prove that a capability exists, but it is never promoted to layout authority merely because it is already implemented. Historical task files and acceptance reports are evidence snapshots, not active rules; when they disagree with the canonical rules, the explicit supersession registry in that document controls.
+
+For any Legacy/Web comparison or restoration task, also read `docs/TASTEMAP_LEGACY_FUSION_DECISIONS.md` in full. Classify each proposal as `RESTORE`, `KEEP CURRENT`, `FUSE`, `RETIRE`, or `NEEDS LAFAYETTE APPROVAL`. Legacy evidence cannot by itself authorize deleting or downgrading a current feature, data field, interaction, Premium capability, Social capability, sharing capability, Analytics capability, or current architecture. Any such removal requires `NEEDS LAFAYETTE APPROVAL` before implementation.
+
+The current Map Marker and Restaurant-image contracts are not discretionary page details. Marker presentation must follow the deterministic overlap/layer rule recorded in the canonical design document; Restaurant-facing images must use the shared priority policy and converge on its canonical renderer. A page-local offset, spiderfy, image resolver, or fallback variant is not an acceptable substitute.
+
 ## Global correction and shared-component rule
 
 When a task exposes a UI/UX problem, never assume it is isolated to the screenshot or page that revealed it.

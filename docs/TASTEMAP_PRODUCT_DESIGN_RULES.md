@@ -8,11 +8,42 @@ When sources differ, use this priority order:
 
 1. Lafayette's latest explicit design or product override.
 2. This document.
-3. The confirmed production Web or previously approved historical/TestFlight design.
-4. The current production Web feature semantics and data behavior.
-5. The current iOS implementation.
+3. Confirmed decisions in `docs/TASTEMAP_LEGACY_FUSION_DECISIONS.md`.
+4. Confirmed current-only product capabilities and approved newer designs.
+5. Confirmed production Web or previously approved historical/TestFlight design evidence.
+6. Legacy source implementation evidence.
+7. Current iOS visual implementation when it has not yet received human product acceptance.
 
 Before changing layout, establish the Web feature semantics, data source, entry point, states, permissions, and return path. Fix a semantic migration bug before restoring its presentation. The current iOS implementation may supply working code, but it does not become the layout source of truth merely because it is native SwiftUI.
+
+### Active rules, supersession, and historical evidence
+
+This document is the only active long-term Product/UI contract. Task files, screenshots, audit reports, closure reports, and old test expectations remain useful evidence, but they never override this document. When historical text conflicts with an active rule, preserve it as history and treat it as `SUPERSEDED`; do not implement both variants.
+
+The following historical statements are explicitly `SUPERSEDED`:
+
+| Historical source or pattern | Superseded statement | Active rule |
+| --- | --- | --- |
+| `reports/FULL_PRODUCT_PARITY_MODULE_8_REMAINING_CORE.md` and earlier map reports | far-zoom Food/Dining or numeric Restaurant clusters | every Restaurant remains independent at every zoom; no cluster/count aggregate |
+| `reports/TASK_09_ACCESSIBILITY_DARK_MODE_LOCALE.md`, `reports/TASK_10_PERFORMANCE_MEMORY_LARGE_DATASET.md`, and the initial Legacy audit wording | default slight offset, collision dispersion, spiderfy, or zoom-driven separation as the normal layout | markers may overlap naturally; no default forced offset/spiderfy; optional expansion is user initiated only |
+| Earlier Map/List parity reports | `适合你`, a separate segmented row, or a floating Map/List switch | `去过 / 想吃 / 推荐` plus the centered `我的地图 / 我的列表` title-and-icon switch |
+| Legacy raw emoji marker/customizer references | raw emoji as formal Restaurant or Food/Dining artwork | real Restaurant image first; otherwise the formal `FoodDiningVisualLibrary` fallback |
+| Source-specific Restaurant Detail reports or implementations | separate Map/Discover/Friend/Recommendation detail bodies | one `RestaurantDetailView` / `RestaurantDetailStandardBody` |
+| Earlier Analytics dashboard acceptance | ordinary card dashboard or page screenshot treated as the approved analysis/poster experience | poster-like infographic pages and dedicated native share posters |
+| Earlier Activity-card projections | Restaurant aggregate rating used when an Activity rating is absent | the author's specific Visit/Activity rating; nil is `未评分` |
+| `reports/TasteMap_DESIGN_SYSTEM_COMPLIANCE.md` | infrastructure PASS interpreted as complete visual Product Acceptance | PASS is limited to its audited infrastructure baseline; current page/product rules and human visual acceptance remain controlling |
+
+### Legacy Fusion Governance
+
+Legacy comparison uses exactly these decisions:
+
+- `RESTORE`: the historical behavior was correct and is still missing;
+- `KEEP CURRENT`: the current capability or architecture is newer and must remain;
+- `FUSE`: restore historical product structure or semantics while preserving current capabilities;
+- `RETIRE`: the historical behavior is explicitly obsolete;
+- `NEEDS LAFAYETTE APPROVAL`: evidence cannot safely decide the product outcome.
+
+Legacy evidence has no authority to delete or downgrade a current feature, data field, interaction, Premium capability, Social capability, sharing capability, Analytics capability, or current architecture. Any removal of a current formal capability is automatically `NEEDS LAFAYETTE APPROVAL` and must stop before implementation.
 
 ## Mandatory Design Workflow
 
@@ -89,7 +120,7 @@ A page may retain a special composition measurement—for example a hero height 
 
 ### Layer 2 — Food & Dining Visual System
 
-This is the brand layer that makes Taste Map recognizably about food, restaurants, dining memories, and social meals. Use the shared `FoodDiningVisualLibrary` (or its formal successor), never page-specific unrelated art styles.
+This is the brand layer that makes Taste Map recognizably about food, restaurants, dining memories, and social meals. Use the shared `FoodDiningVisualLibrary` and `FoodDiningVisualIcon` (or their formal successor), never page-specific unrelated art styles.
 
 The vocabulary may include real food (for example sushi, hotpot, barbecue, noodles, burgers, steak, dumplings, bread, desserts, fruit, and vegetables), drinks (coffee, tea, milk tea, and other beverages), and dining objects (chopsticks, cutlery, bowls, plates, cups, menus, receipts, bills, napkins, takeaway bags, containers, and tables).
 
@@ -113,6 +144,10 @@ Every Restaurant-facing surface—Nearby, Search, Map, List, Discovery, Communit
 
 Food/Dining art must never cover a real image that the product can legitimately render. If a provider has no lawful image, fall back honestly rather than fabricating merchant imagery.
 
+`RestaurantImagePriorityPolicy` is the canonical **data-selection policy**. All Restaurant-facing presentation must progressively converge on one canonical renderer/presentation layer—`TasteMapRestaurantImage` or its formal successor—that consumes the policy result. Map, List, Nearby, Search, Discovery, Community, Restaurant Detail, Lists, Roulette, Analytics, and Posters may choose different approved aspect ratios or compositions, but they may not implement separate source-priority or fallback logic.
+
+A page-local URL resolver, photo lookup, provider branch, or fallback is temporary migration debt, not a new standard. Changing the policy or renderer requires a global consumer audit and contract coverage for local photo, public/cache photo, lawful provider image, revoked/deleted image, and honest fallback states.
+
 ### Layer 3 — Canonical Page Templates
 
 Templates define information architecture, section order, control and image placement, interaction hierarchy, content density, and component composition. Core components are not permission to freely rearrange an already approved product page.
@@ -124,7 +159,10 @@ Templates define information architecture, section order, control and image plac
 - `去过 / 想吃 / 推荐` using the shared primary tab bar;
 - shared compact horizontal FilterBar;
 - Map or List content backed by the same query/filter/sort state;
-- independent Restaurant markers at every zoom, with overlap handling rather than numeric clusters;
+- independent Restaurant markers at every zoom, with natural overlap and deterministic layer order rather than numeric clusters;
+- no default forced offset, spiderfy, collision dispersion, zoom-driven separation, or “coin wall” whose purpose is to expose every marker;
+- marker layer order is `selected → rating → visit count → stable Restaurant ID`; pan and zoom must not randomize it;
+- optional expand/spiderfy is allowed only after the user explicitly asks to inspect a highly overlapped area;
 - Add Restaurant CTA in its approved non-overlapping position.
 
 #### 2. Discovery Template
@@ -188,22 +226,11 @@ Taste Profile, Best Companion, Recommendation Source, Monthly, and Annual belong
 - A static city filter uses a building/city symbol, never GPS, location, or current-position imagery.
 - Decorative Food/Dining visuals are not functional icons and never imply data unless explicitly selected from real data.
 
-## Food & Dining Visual Language
-
-Use `FoodDiningVisualLibrary` and `FoodDiningVisualIcon` for a consistent dining vocabulary: food, drinks, tableware, receipts, menus, takeaway, and shared meals.
-
-- Default use is `decorative`; it adds character without claiming a preference.
-- `dataLinked` is allowed only when a real cuisine, spend, companion, time, or other value selects the visual.
-- Formal UI never renders system emoji as the product artwork.
-- Food/Dining artwork may use restrained natural food colors and must not be uniformly dyed brand blue.
-- Stable scenes use a stable seed so decorative choices do not jump on every render.
-- The approved historical Premium hamburger is separate and must not be replaced by this library.
-
 ## Shared Components
 
 Shared implementations are the default. Maintain or converge on repository-wide equivalents of `TasteMapTopBar`, `TasteMapFilterBar`, `TasteMapFilterChip`, `TasteMapIconActionRow`, `TasteMapRestaurantImage`, `TasteMapRatingReference`, `TasteMapInfoGroup`, `TasteMapEmptyState`, `TasteMapActivityCard`, and `RestaurantDetailStandardBody`.
 
-Changing one of these patterns requires checking every consumer. Map and Discovery do not get separate filter languages; activity surfaces do not get separate cards; entry sources do not get separate Restaurant Details; Restaurant image fallback policy does not diverge by page.
+Changing one of these patterns requires checking every consumer. Map and Discovery do not get separate filter languages; activity surfaces do not get separate cards; entry sources do not get separate Restaurant Details; Restaurant image selection and fallback do not diverge by page. `RestaurantImagePriorityPolicy` plus the canonical Restaurant-image renderer owns that last decision.
 
 ### Filters
 
@@ -242,7 +269,11 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - No separate Map/List segmented row.
 - Map/List switching preserves scope, filters, sort, city, and search.
 - Filters use the shared components.
-- Every Restaurant remains an independent marker at every zoom; no numeric clusters.
+- Every Restaurant remains an independent marker at every zoom; no numeric or Food/Dining count clusters.
+- Markers may overlap naturally. Ordinary rendering does not force offset, spiderfy, collision dispersion, zoom separation, or full visibility.
+- Layering is deterministic: `selected → rating → visit count → stable Restaurant ID`.
+- Selected is always topmost; higher-rated Restaurants cover lower-rated Restaurants; visit count breaks equal-rating ties; stable ID is the final tie-break.
+- Pan/zoom cannot randomly change layer order. Expand/spiderfy may exist only as an explicit user action for inspecting a highly overlapped area.
 - Current user location uses the user's circular avatar and a subtle halo, not Restaurant tableware.
 
 ## Discovery
@@ -296,10 +327,15 @@ Use the previously approved historical hamburger asset everywhere Premium identi
 - Do not let Map and Discovery create separate filter systems.
 - Do not use a GPS icon for a static city filter.
 - Do not use Restaurant aggregate rating as Activity rating.
+- Do not aggregate Restaurants into numeric or Food/Dining count clusters at any zoom.
+- Do not force ordinary Marker offset, spiderfy, collision dispersion, or zoom separation merely to reveal every Restaurant.
+- Do not let Marker overlap order drift from `selected → rating → visit count → stable Restaurant ID`.
 - Do not maintain multiple Restaurant Detail bodies.
 - Do not promote manual link pasting as Add Restaurant's main entry.
 - Do not use city center, map camera center, or stale coordinates as Nearby GPS.
 - Do not render system emoji as formal Food/Dining artwork.
+- Do not let Food/Dining fallback cover an available lawful real Restaurant image.
+- Do not let Restaurant-facing pages invent independent image-source resolvers instead of the canonical policy and renderer.
 - Do not replace the approved Premium hamburger.
 - Do not treat “the function exists” as Product Parity PASS.
 - Do not patch one instance of a repeated UI problem without globally searching and correcting the shared pattern.
@@ -320,4 +356,17 @@ Final Product Acceptance must report:
 - default-SwiftUI visual regression count;
 - remaining design-system gaps.
 
-Acceptance checks information architecture, section order, control position and visual weight, image placement, horizontal/vertical relationships, spacing, information density, accessibility, and shared-component reuse. When a Web or approved historical reference exists, compare it directly to the iOS result; structural disagreement is not PASS.
+Acceptance checks information architecture, section order, control position and visual weight, image placement, horizontal/vertical relationships, spacing, information density, accessibility, and shared-component reuse. When a Web or approved historical reference exists, compare it directly to the iOS result; structural disagreement is not PASS. Automated tests, builds, snapshots, and an earlier compliance report cannot by themselves declare visual Product Acceptance PASS.
+
+## 2026-09-01 Final Rule Reconciliation Record
+
+The historical “全局 Product / UI Design System 最终统一指令” contained 27 numbered rule groups. Reconciliation against this document, the Legacy Fusion decisions, current confirmed capabilities, and the latest Lafayette overrides produced:
+
+| Result | Count | Meaning |
+| --- | ---: | --- |
+| Already present | 24 | The active rule already existed here; no duplicate rule was added. |
+| Newly supplemented | 1 | Restaurant image priority now also mandates convergence on one canonical renderer/presentation layer. |
+| Superseded | 1 | Default Marker offset/spiderfy/collision/zoom separation is replaced by natural overlap and explicit-user expansion only. |
+| Conflicted with the current rule | 1 | The historical five-level Source of Truth order was replaced by the final seven-level order above. |
+
+This reconciliation did not rerun Product UX Tasks 01–14, redesign pages, or authorize business-code changes. The active rules are the consolidated text above, not the historical attachment or its task-shaped implementation instructions.

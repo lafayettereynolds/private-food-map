@@ -1,6 +1,6 @@
 # Taste Map Legacy Fusion Decisions
 
-> 状态：审计建议；不代表已经批准实施。
+> 状态：已归并的 Legacy 决策登记；`NEEDS LAFAYETTE APPROVAL` 项仍未批准，任何代码实施仍需独立授权。
 > 审计基线：`fix/product-ux-correction-8-tasks@648be229878d7358c9381d5153580a130f32d8c3`
 > Legacy 基线：`main@fb127e9ea20498c0db450872deb9c9dc346ef34f`
 > 审计日期：2026-09-01
@@ -53,10 +53,11 @@ Current-only commits since Legacy = 113
 
 1. Lafayette 当前任务中的最新明确决定
 2. `docs/TASTEMAP_PRODUCT_DESIGN_RULES.md`
-3. 当前新版已确认的新功能与新产品决定
-4. 用户历史确认过的 Web 设计、页面与交互
-5. Windows/Web Legacy 实现证据
-6. 当前 iOS 中尚未确认的临时实现
+3. 本文件中已经记录并确认的 Legacy Fusion Decision
+4. 当前新版已确认的新功能与新产品决定
+5. 用户历史确认过的 Web 设计、页面与交互
+6. Windows/Web Legacy 实现证据
+7. 当前 iOS 中尚未人工确认的视觉实现
 
 本文只使用以下判断：
 
@@ -65,6 +66,8 @@ Current-only commits since Legacy = 113
 - **FUSE**：恢复 Legacy 的结构/语义，同时保留当前新增能力与架构。
 - **RETIRE**：Legacy 内容已废弃或与最新决定冲突，不恢复。
 - **NEEDS LAFAYETTE APPROVAL**：不能由代码证据自动决定，未来实施前必须确认。
+
+Legacy 默认没有权限删除或降级当前正式 feature、data field、interaction、Premium、Social、Sharing、Analytics 或当前架构。任何这类删除建议都必须改判为 **NEEDS LAFAYETTE APPROVAL**，并在实现前停止等待确认。
 
 证据列缩写：
 
@@ -95,7 +98,7 @@ Current-only commits since Legacy = 113
 | 03 | Map Filter/Sort/City | Legacy 有城市、筛选、排序和状态保留 | 当前 compact horizontal chips、filter sheet、共享 projection | L:`src/components/FilterPanel.tsx`; C:`PersonalRestaurantFilters.swift`,`MapHomeView.swift` | FUSE | 中 | 否 |
 | 04 | 远距离数字 cluster | Legacy `CLUSTER_MAX_ZOOM = 9`，远景数字聚合 | 最新明确任何缩放层级均不使用数字 cluster | L:`src/components/MapView.tsx`; C:`ClusteredRestaurantMapView.swift`; R:Marker override | RETIRE | 高：恢复会直接违反最新规则 | 否 |
 | 05 | 独立 Restaurant Marker | Legacy 城市级开始展开独立商户 | 当前 `clusteringIdentifier = nil`、独立 UUID Marker | C:`ClusteredRestaurantMapView.swift` | KEEP CURRENT | 低 | 否 |
-| 06 | Marker 重叠/同坐标处理 | Legacy 同坐标稳定轻微散开，同时保留 AMap 图层重叠 | 当前精确同坐标稳定散开、可视区域裁剪、每店可点 | L:`MapView.tsx`; C:`RestaurantMapPresentation.swift` | FUSE | 中：需兼顾可点性与不聚合 | 否 |
+| 06 | Marker 重叠/同坐标处理 | Legacy AMap 图层允许 Marker 自然重叠；历史代码也曾对完全同坐标做轻微散开 | 当前会对同坐标默认强制 dispersion | L:`MapView.tsx`; C:`RestaurantMapPresentation.swift`; R:最新 Marker override | FUSE | 中：最终规则是自然重叠；普通状态不默认 offset/spiderfy，只允许用户主动展开 | 否 |
 | 07 | Marker 评分层级 | Legacy 明确 `scoreOutOfTen` 优先、`visitCount` 次级，并设置 z-index | 当前 Marker 有 `averageRating`/`visitCount`，但 annotation `displayPriority` 全部相同，未形成评分层级 | L:`MapView.tsx#markerLayerPriority`; C:`RestaurantMapPresentation.swift`,`ClusteredRestaurantMapView.swift` | RESTORE | **高：当前最明确的未闭环迁移回归** | 否 |
 | 08 | 选中 Marker 置顶 | Legacy `setTop(selected)` | 当前用 MapKit select/deselect，主体选择正确，但应与未来评分 z-order 一起验证视觉置顶 | L:`MapView.tsx`; C:`ClusteredRestaurantMapView.swift` | FUSE | 中 | 否 |
 | 09 | 用户位置/头像 | Legacy 用户头像在最高图层 | 当前真实用户位置 + Profile avatar annotation，并保留权限诚实状态 | L:`MapView.tsx`; C:`ClusteredRestaurantMapView.swift`,`LocationPermissionManager.swift` | KEEP CURRENT | 低 | 否 |
@@ -208,9 +211,13 @@ selected marker = setTop(true)
 - 评分高者在重叠时优先显示在上层；
 - 到访次数只作为次级 tie-break；
 - selected Restaurant 永远在最上层；
+- stable Restaurant ID 是最终 deterministic tie-break；
 - 每家 Restaurant 仍是独立 Marker；
 - 不恢复数字 cluster；
-- 不删除当前稳定同坐标处理、用户头像、最新 scope/filter、真实图片优先级。
+- 允许 Marker 自然重叠，不要求全部露出；
+- 普通状态不默认强制 offset、spiderfy、collision dispersion 或 zoom-driven separation；
+- expand/spiderfy 只可作为用户主动检查高度重叠区域的辅助交互；
+- 保留用户头像、最新 scope/filter 与真实图片优先级。
 
 ### 6.2 应统一：Restaurant image renderer，而不是复制 Legacy 图片组件
 
@@ -254,7 +261,7 @@ selected marker = setTop(true)
 
 ## 7. 建议实施顺序（本轮未执行）
 
-1. **Map Marker overlap/z-order fusion**：先补评分/到访/selected 层级，并用密集 Marker regression + 真机/Simulator 视觉验证。
+1. **Map Marker natural-overlap/z-order fusion**：移除普通状态默认强制散开，补齐 `selected → rating → visit count → stable ID` 层级，并用密集 Marker regression + 真机/Simulator 视觉验证。
 2. **Canonical Restaurant image renderer**：把真实照片优先级在所有 Restaurant-facing surfaces 一次收口。
 3. **Lafayette 决定 `preferenceLevel` 是否需要正式 UI**：保留合同已无风险，是否展示四级偏好必须先决定，不能自动恢复。
 4. **App Icon 资产决策**：仅在 Lafayette 提供/确认正式 1024px source 后处理，不能从 512px Web icon 自动放大。
