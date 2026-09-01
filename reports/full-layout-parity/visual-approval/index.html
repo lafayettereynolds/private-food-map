@@ -4,33 +4,35 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
     <title>Taste Map｜Lafayette 视觉审批台</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="styles.css">
-    <script src="round2-data.js"></script>
-    <script src="app.js" defer></script>
+    <link rel="stylesheet" href="styles.css?v=zh-cn-1">
+    <script src="round2-data.js?v=zh-cn-1"></script>
+    <script src="app.js?v=zh-cn-1" defer></script>
   </head>
   <body>
     <header class="hero" id="top">
-      <div class="hero__eyebrow">TASTE MAP · LAFAYETTE VISUAL APPROVAL · ROUND 2</div>
+      <div class="hero__eyebrow">TASTE MAP · LAFAYETTE · 第二轮视觉审批</div>
       <div class="hero__content">
         <div>
-          <h1>Lafayette 视觉审批台 · Round 2</h1>
+          <h1>Lafayette 视觉审批台 · 第二轮</h1>
           <p>
-            本轮严格执行第一轮人工决定：五项 Legacy direction 已落成真实 Final Candidate，Settings 保持 Current Frozen；
-            Profile FUSE V2、Visit FUSE 与五类海报 A/B 仍是候选。所有画面来自真实 SwiftUI build 与固定 Simulator，
-            不是 AI 图、拼接图或文字 mockup。页面级方向与区域级冻结分开记录，Pending 不会被自动判定为 Approved。
+            本轮严格执行第一轮人工决定：五项旧版方向已落成真实最终候选版，设置保持现版冻结；
+            我的页面融合候选版 V2、到访记录融合候选版与五类海报 A/B 仍是候选。所有画面来自真实 SwiftUI 构建与固定模拟器，
+            不是 AI 图、拼接图或文字效果图。页面级方向与区域级冻结分开记录，待决定区域不会被自动判定为已确认。
           </p>
         </div>
         <div class="hero__seal" aria-hidden="true">
           <span>9</span>
-          <small>DECISIONS</small>
+          <small>审批项</small>
         </div>
       </div>
       <div class="scope-note">
         <strong>审批边界</strong>
-        本工具只记录视觉选择，不改 App、不写数据库、不连接 Production。
-        Candidate 不是正式产品决定；只有全部必要区域明确 KEEP 并冻结后，页面才显示 APPROVED FINAL。
+        本工具只记录视觉选择，不改 Taste Map 正式应用、不写数据库、不连接生产环境。
+        候选版不是正式产品决定；只有全部必要区域明确选择“保留”并冻结后，页面才显示“最终确认”。
       </div>
     </header>
 
@@ -58,7 +60,7 @@
         </div>
         <div class="progress-stat progress-stat--na">
           <span class="progress-stat__value" id="fuse-na-count">0</span>
-          <span class="progress-stat__label">Current Frozen</span>
+          <span class="progress-stat__label">现版已冻结</span>
         </div>
         <div class="progress-meter" aria-hidden="true">
           <span id="progress-meter-fill"></span>
@@ -82,7 +84,7 @@
     <dialog class="lightbox" id="lightbox" aria-label="截图全屏查看器">
       <div class="lightbox__toolbar">
         <div>
-          <span class="lightbox__kind" id="lightbox-kind">CURRENT</span>
+          <span class="lightbox__kind" id="lightbox-kind">现版</span>
           <strong id="lightbox-title">截图</strong>
         </div>
         <div class="lightbox__actions">

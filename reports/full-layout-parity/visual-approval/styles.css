@@ -1025,6 +1025,24 @@ label {
   gap: 7px;
 }
 
+.region-choice-help {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin: 14px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--brand-soft));
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.region-choice-help strong {
+  color: var(--text-primary);
+}
+
 .region-totals span,
 .region-totals strong {
   padding: 6px 9px;
