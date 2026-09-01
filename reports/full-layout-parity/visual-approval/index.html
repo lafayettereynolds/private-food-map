@@ -8,10 +8,11 @@
     <meta http-equiv="Pragma" content="no-cache">
     <title>Taste Map｜Lafayette 视觉审批台</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="styles.css?v=round3-1">
-    <script src="round2-data.js?v=round3-1"></script>
-    <script src="round3-data.js?v=round3-1"></script>
-    <script src="app.js?v=round3-1" defer></script>
+    <link rel="stylesheet" href="styles.css?v=references-3">
+    <script src="round2-data.js?v=references-3"></script>
+    <script src="round3-data.js?v=references-3"></script>
+    <script src="reference-library.js?v=references-3"></script>
+    <script src="app.js?v=references-3" defer></script>
   </head>
   <body>
     <header class="hero" id="top">
@@ -64,10 +65,21 @@
           <span class="progress-stat__value" id="fuse-na-count">0</span>
           <span class="progress-stat__label">现版已冻结</span>
         </div>
+        <div class="progress-stat progress-stat--references">
+          <span class="progress-stat__value" id="reference-count">0</span>
+          <span class="progress-stat__label">我的参考图</span>
+        </div>
+        <div class="progress-stat progress-stat--source">
+          <span class="progress-stat__value" id="reference-source-count">0</span>
+          <span class="progress-stat__label">最终视觉参考</span>
+        </div>
         <div class="progress-meter" aria-hidden="true">
           <span id="progress-meter-fill"></span>
         </div>
-        <button class="copy-summary" id="copy-summary" type="button">复制审批摘要</button>
+        <div class="approval-actions">
+          <button class="copy-summary" id="copy-summary" type="button">复制审批摘要</button>
+          <button class="export-approval" id="export-approval" type="button">导出视觉审批包</button>
+        </div>
       </div>
       <nav class="jump-nav" id="jump-nav" aria-label="快速跳转到视觉决策项"></nav>
     </div>

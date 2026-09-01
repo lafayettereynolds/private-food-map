@@ -10,12 +10,12 @@ Object.assign(r3ByID["profile-density"], {
   title: "我的页面｜融合候选版 V3",
   candidateTitle: "融合候选版 V3｜真实实现",
   candidateVersion: "融合候选版 V3",
-  summary: "只重做 Lafayette 指定的关注数据区域：关注/粉丝移到姓名下方，去过/想去/总消费保持同级；其余七个区域继续冻结。",
+  summary: "关注/粉丝与去过/想去/总消费已经确认；核心入口因左右不对称、视觉不协调而等待下一版重新设计，其余已确认区域继续冻结。",
   fuseVisuals: [
     r3v("融合候选版｜真实实现", "我的页面融合候选版 V3", R3_CANDIDATE + "profile-fuse-v3.png", "独立候选分支真实 SwiftUI：添加好友/设置保持旧版位置；关注/粉丝在姓名下方；去过/想去/总消费同排。")
   ],
   proposedFinal: ["旧版紧凑身份骨架不变。", "姓名下方呈现关注与粉丝；主统计仅保留去过、想去、总消费。", "所有已冻结的核心入口、回味、食单、洞察与设置保持 V2 构图。"],
-  recommendation: "本轮只审批关注数据区域；其他区域已冻结，不能因 V3 重画。"
+  recommendation: "第三轮已确认关注数据；下一版只允许修改核心入口的对称与协调关系，其他冻结区域不能重画。"
 });
 
 Object.assign(r3ByID["visit-editor-density"], {
@@ -24,12 +24,12 @@ Object.assign(r3ByID["visit-editor-density"], {
   directionLocked: true,
   candidateTitle: "最终确认｜正式 SwiftUI 实现",
   candidateVersion: "最终确认",
-  summary: "全部八个区域已经明确批准：Legacy 连续日记式结构 + Current 保存、空值、离线、菜品/照片与同步语义。",
+  summary: "全部八个区域已经明确批准为 Legacy 连续日记式布局；Current 空值、离线、菜品/照片、同步和唯一保存语义继续保留。",
   fuseVisuals: [
     r3v("最终 iOS｜真实实现", "到访记录：菜品、照片与详细评分", R3_FORMAL + "visit-editor-rich-approved.png", "正式分支真实 UI 测试截图；字段直接展示，不依赖展开按钮。"),
     r3v("最终 iOS｜真实实现", "到访记录：直接可点评分与体验", R3_FORMAL + "visit-editor-direct-ratings-approved.png", "详细评分和体验选项在连续表单中直接可见、可点，保存动作继续复用正式实现。")
   ],
-  proposedFinal: ["餐厅上下文 → 核心体验 → 评分 → 菜品与照片 → 用餐情境 → 备注 → 保存。", "可选维度直接显示；不恢复六个废弃字段，不修改 nil/offline/save 语义。"],
+  proposedFinal: ["餐厅上下文 → 核心体验 → 评分 → 菜品与照片 → 用餐情境 → 备注 → 保存。", "视觉与密度完全采用旧版基础；不恢复六个废弃字段，不修改 nil/offline/save 业务语义。"],
   recommendation: "已正式落地并由 UI 回归验证；不再作为待选候选。"
 });
 
@@ -43,8 +43,8 @@ Object.assign(r3ByID["dish-photo-composition"], {
 Object.assign(r3ByID["public-profile-social"], {
   candidateTitle: "最终确认｜旧版布局基础",
   candidateVersion: "最终确认",
-  summary: "八个区域全部保留旧版并冻结；现版 Social、权限、举报/拉黑、分享和用户隔离能力完整保留。",
-  recommendation: "已确认；不再重新组织公开主页拓扑。"
+  summary: "关注数据、主要操作、内容分类、餐厅记录、动态、公开食单和安全操作已采用旧版基础并冻结；顶部身份区仍待明确。",
+  recommendation: "下一版只处理顶部身份区；关注关系、动态/食单结构和安全操作继续冻结。"
 });
 
 Object.assign(r3ByID["lists-density"], {
@@ -126,9 +126,9 @@ window.round3InitialState = {
     notes: "添加好友和设置保持旧版左上/右上；Profile Premium 标识继续使用旧版已确认汉堡。",
     regions: {
       Header: r3Frozen("KEEP LEGACY", "第一轮 Lafayette 已确认"),
-      "Social Metrics": r3Pending("NEEDS REDESIGN", "总消费放在想去旁边；人物名字下面显示关注和粉丝。"),
-      "Main Statistics": r3Frozen("KEEP LEGACY"),
-      "Core Entries": r3Frozen("KEEP LEGACY"),
+      "Social Metrics": r3Frozen("KEEP FUSE", "总消费放在想去旁边；人物名字下面显示关注和粉丝。"),
+      "Main Statistics": r3Frozen("KEEP LEGACY", "第二轮 Lafayette 已确认"),
+      "Core Entries": r3Pending("NEEDS REDESIGN", "两边看起来不对称，不协调。"),
       "Memory / 回味": r3Frozen("KEEP FUSE"),
       Lists: r3Frozen("KEEP LEGACY"),
       Insights: r3Frozen("KEEP FUSE"),
@@ -137,29 +137,41 @@ window.round3InitialState = {
   },
   "visit-editor-density": {
     decision: "FUSE",
-    notes: "选择一目了然、直接点、直接保存；不再点击展开。",
+    notes: "选择一目了然、直接点、直接保存；不再点击展开。视觉完全按旧版基础执行。",
     regions: {
       Header: r3Frozen("KEEP LEGACY"),
       "Restaurant Context": r3Frozen("KEEP LEGACY"),
       "Core Experience": r3Frozen("KEEP LEGACY"),
-      Ratings: r3Frozen("KEEP LEGACY"),
+      Ratings: r3Frozen("KEEP LEGACY", "详细评分采用旧版文字说明；餐厅总评分位于最上方。"),
       "Dish / Photo Entry": r3Frozen("KEEP LEGACY"),
       "Dining Context": r3Frozen("KEEP LEGACY"),
       Notes: r3Frozen("KEEP LEGACY"),
-      "Save CTA": r3Frozen("KEEP CURRENT")
+      "Save CTA": r3Frozen("KEEP LEGACY")
     }
   },
   "dish-photo-composition": { decision: "Legacy", regions: allRegions("dish-photo-composition", () => r3Frozen("KEEP LEGACY")) },
-  "public-profile-social": { decision: "Legacy", regions: allRegions("public-profile-social", () => r3Frozen("KEEP LEGACY")) },
+  "public-profile-social": {
+    decision: "Legacy",
+    regions: {
+      Header: r3Pending("", "顶部身份区仍待决定。"),
+      "Social Metrics": r3Frozen("KEEP LEGACY", "被关注统一显示为粉丝。"),
+      "Primary Actions": r3Frozen("KEEP LEGACY"),
+      "Content Tabs": r3Frozen("KEEP LEGACY"),
+      "Restaurant Evidence": r3Frozen("KEEP LEGACY", "用户头像居中，并与我的页面身份视觉保持一致。"),
+      "Activity Feed": r3Frozen("KEEP LEGACY", "公开内容分类应显示动态和食单。"),
+      "Public Lists": r3Frozen("KEEP LEGACY"),
+      "Report / Block": r3Frozen("KEEP LEGACY")
+    }
+  },
   "lists-density": { decision: "Legacy", regions: allRegions("lists-density", () => r3Frozen("KEEP LEGACY")) },
   "analytics-compositions": {
     decision: "Needs redesign",
-    notes: "全部重新设计；继续以之前已确认的分析图片为视觉家族依据。",
+    notes: "我的口味档案最终整体接近 Lafayette 参考图：中央大型 Food Hero、四周菜系节点和连接线；左右分布 TOP3、数据总览和近期洞察；下方展示口味偏好、消费、人均、城市足迹、饭搭子和用餐时间。白色/微暖、现代、轻编辑设计感、留白充分；不得退化成普通纵向 Dashboard Card。具体内容必须由真实数据动态生成。",
     regions: allRegions("analytics-compositions", () => r3Pending())
   },
   "poster-family": {
     decision: "Needs redesign",
-    notes: "第二轮 A/B 全部否决；重新设计。",
+    notes: "第二轮 A/B 全部否决。海报继续遵守 Lafayette 口味档案参考图的信息图构图家族：中央 Food Hero、周边节点、连接线和不对称信息分布，但五类海报需按各自真实数据语义重新构图。",
     regions: allRegions("poster-family", () => r3Pending())
   },
   "premium-paywall": {

@@ -190,10 +190,28 @@ const decisions = window.round3Decisions || window.round2Decisions || [
 function v(kind, title, src, caption) { return { kind, title, src, caption }; }
 
 const storageKey = window.visualApprovalStorageKey || "tastemap.visualApproval.round2";
+const referenceLibrary = window.LafayetteReferenceLibrary;
 let reviewState = readState();
 let lightboxItems = [];
 let lightboxIndex = 0;
 let zoom = 1;
+let referenceRecords = [];
+const referenceObjectURLs = new Map();
+
+const referencePurposeLabels = {
+  wholePage: "整页参考",
+  region: "某个区域参考",
+  composition: "构图参考",
+  style: "风格参考",
+  component: "组件参考",
+};
+
+const referenceStrengthLabels = {
+  inspiration: "灵感参考",
+  direction: "视觉方向",
+  highFidelity: "高度复刻",
+  geometry: "几何 / 构图 Source of Truth",
+};
 
 function escapeHTML(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -575,6 +593,237 @@ function regionReviewMarkup(decision) {
   </div>`;
 }
 
+function referenceSectionMarkup(decision) {
+  return `<div class="section-block reference-section" data-reference-section="${escapeHTML(decision.id)}">
+    <div class="section-heading reference-section__heading">
+      <div>
+        <h3>我的参考图</h3>
+        <p>图片只保存在本机浏览器 IndexedDB，不会上传到 Taste Map、Production、云端或任何服务器。</p>
+      </div>
+      <span class="reference-count-badge" data-reference-count-for="${escapeHTML(decision.id)}">0 张</span>
+    </div>
+    <div class="reference-upload" data-reference-dropzone="${escapeHTML(decision.id)}" tabindex="0" role="button" aria-label="为${escapeHTML(displayText(decision.title))}上传或粘贴参考图片">
+      <input class="reference-file-input" data-reference-file-input="${escapeHTML(decision.id)}" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+      <div class="reference-upload__icon" aria-hidden="true">＋</div>
+      <div class="reference-upload__copy">
+        <strong>上传我的参考图</strong>
+        <span>点击选择、拖拽多张 PNG / JPG / WEBP，或聚焦这里后按 ⌘V 粘贴。</span>
+      </div>
+      <div class="reference-upload__actions">
+        <button class="reference-choose-button" type="button">选择图片</button>
+        <button class="reference-paste-button" type="button">粘贴剪贴板图片</button>
+      </div>
+    </div>
+    <p class="reference-status" data-reference-status="${escapeHTML(decision.id)}" aria-live="polite"></p>
+    <div class="reference-list" data-reference-list="${escapeHTML(decision.id)}" aria-live="polite">
+      <div class="reference-empty"><strong>还没有我的参考图</strong><span>Current、Legacy 和 FUSE 都不准确时，把 Lafayette 自己的图直接放在这里。</span></div>
+    </div>
+  </div>`;
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function referenceImageURL(record) {
+  if (!referenceObjectURLs.has(record.id)) referenceObjectURLs.set(record.id, URL.createObjectURL(record.blob));
+  return referenceObjectURLs.get(record.id);
+}
+
+function referenceBadgeMarkup(record) {
+  const badges = [];
+  if (record.isFinal) badges.push('<strong class="reference-source-badge">LAFAYETTE 最终视觉参考</strong>');
+  if (record.strength === "geometry") badges.push('<span class="reference-strength-badge">几何 / 构图 Source of Truth</span>');
+  if (record.strength === "highFidelity") badges.push('<span class="reference-strength-badge">高度复刻参考</span>');
+  return badges.join("");
+}
+
+function referenceRecordMarkup(decision, record, index) {
+  const regions = new Set(record.regionIds || []);
+  const title = record.title || record.filename;
+  return `<article class="reference-card" data-reference-id="${escapeHTML(record.id)}" data-reference-item="${escapeHTML(decision.id)}">
+    <header class="reference-card__header">
+      <div><span class="reference-card__index">参考图 ${index + 1}</span><h4>${escapeHTML(title)}</h4><p>${escapeHTML(record.filename)} · ${formatFileSize(record.size)}</p></div>
+      <div class="reference-card__badges">${referenceBadgeMarkup(record)}</div>
+    </header>
+    <button class="visual-card__button reference-card__preview" type="button" data-image-src="${escapeHTML(referenceImageURL(record))}" data-image-title="${escapeHTML(title)}" data-image-kind="Lafayette 用户参考图" data-image-caption="${escapeHTML(record.notes || referenceStrengthLabels[record.strength] || "Lafayette 用户参考图")}" aria-label="放大查看 Lafayette 参考图：${escapeHTML(title)}">
+      <img src="${escapeHTML(referenceImageURL(record))}" alt="${escapeHTML(title)}">
+    </button>
+    <div class="reference-card__form">
+      <label class="reference-field reference-field--wide"><span>参考图名称</span><input data-reference-field="title" value="${escapeHTML(title)}" maxlength="120"></label>
+      <label class="reference-field"><span>用途</span><select data-reference-field="purpose">${Object.entries(referencePurposeLabels).map(([value, label]) => `<option value="${value}" ${record.purpose === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      <label class="reference-field"><span>参考强度</span><select data-reference-field="strength">${Object.entries(referenceStrengthLabels).map(([value, label]) => `<option value="${value}" ${record.strength === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      <label class="reference-final-toggle"><input type="checkbox" data-reference-field="isFinal" ${record.isFinal ? "checked" : ""}><span><strong>这是最终视觉方向</strong><small>显示“Lafayette 最终视觉参考”，后续实现必须先查看此图。</small></span></label>
+      <fieldset class="reference-regions"><legend>绑定区域（可多选；整页参考可不选）</legend><div>${decision.regions.map((region) => `<label><input type="checkbox" data-reference-region="${escapeHTML(region)}" ${regions.has(region) ? "checked" : ""}><span>${escapeHTML(displayText(region))}</span></label>`).join("")}</div></fieldset>
+      <label class="reference-field reference-field--notes"><span>这张图我主要想保留什么？</span><textarea data-reference-field="notes" placeholder="记录构图、层级、比例、留白、图片关系或必须保持的区域……">${escapeHTML(record.notes || "")}</textarea></label>
+    </div>
+    <footer class="reference-card__footer">
+      <span class="reference-saved-at">本机保存 · ${escapeHTML(new Date(record.updatedAt || record.createdAt).toLocaleString("zh-CN"))}</span>
+      <div>
+        <label class="reference-replace-button">替换图片<input type="file" data-reference-replace accept="image/png,image/jpeg,image/webp" hidden></label>
+        <button class="reference-delete-button" type="button">删除参考图</button>
+      </div>
+    </footer>
+  </article>`;
+}
+
+function referencesForItem(itemId) {
+  return referenceRecords.filter((record) => record.itemId === itemId);
+}
+
+function setReferenceStatus(itemId, message, tone = "") {
+  const status = document.querySelector(`[data-reference-status="${CSS.escape(itemId)}"]`);
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.tone = tone;
+}
+
+async function refreshReferenceCache() {
+  if (!referenceLibrary) return;
+  referenceRecords = await referenceLibrary.listAll();
+  decisions.forEach(renderReferenceList);
+  updateReferenceProgress();
+  bindLightboxItems();
+}
+
+function renderReferenceList(decision) {
+  const list = document.querySelector(`[data-reference-list="${CSS.escape(decision.id)}"]`);
+  if (!list) return;
+  const records = referencesForItem(decision.id);
+  document.querySelector(`[data-reference-count-for="${CSS.escape(decision.id)}"]`).textContent = `${records.length} 张`;
+  list.innerHTML = records.length
+    ? records.map((record, index) => referenceRecordMarkup(decision, record, index)).join("")
+    : '<div class="reference-empty"><strong>还没有我的参考图</strong><span>Current、Legacy 和 FUSE 都不准确时，把 Lafayette 自己的图直接放在这里。</span></div>';
+  bindReferenceRecordControls(decision, list);
+}
+
+function updateReferenceProgress() {
+  document.querySelector("#reference-count").textContent = referenceRecords.length;
+  document.querySelector("#reference-source-count").textContent = referenceRecords.filter((record) => record.isFinal || record.strength === "geometry").length;
+}
+
+async function importReferenceFiles(itemId, files, sourceLabel) {
+  try {
+    const added = await referenceLibrary.addFiles(itemId, files);
+    await refreshReferenceCache();
+    setReferenceStatus(itemId, added.length ? `已从${sourceLabel}保存 ${added.length} 张图片到本机参考图库。` : "没有检测到可用图片。", added.length ? "success" : "");
+  } catch (error) {
+    setReferenceStatus(itemId, error.message || "图片保存失败。", "error");
+  }
+}
+
+async function pasteReferenceImages(itemId, event) {
+  const clipboardItems = Array.from(event?.clipboardData?.items || []);
+  const files = clipboardItems
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item, index) => {
+      const file = item.getAsFile();
+      return file && new File([file], `clipboard-${Date.now()}-${index + 1}.${file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg"}`, { type: file.type });
+    })
+    .filter(Boolean);
+  if (!files.length) return false;
+  event.preventDefault();
+  await importReferenceFiles(itemId, files, "剪贴板");
+  return true;
+}
+
+async function readClipboardImages(itemId) {
+  if (!navigator.clipboard?.read) {
+    setReferenceStatus(itemId, "当前浏览器需要先点击上传区域，再按 ⌘V 粘贴图片。", "error");
+    document.querySelector(`[data-reference-dropzone="${CSS.escape(itemId)}"]`)?.focus();
+    return;
+  }
+  try {
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const item of items) {
+      for (const type of item.types.filter((value) => value.startsWith("image/"))) {
+        const blob = await item.getType(type);
+        files.push(new File([blob], `clipboard-${Date.now()}-${files.length + 1}.${type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg"}`, { type }));
+      }
+    }
+    if (!files.length) throw new Error("剪贴板里没有 PNG、JPG 或 WEBP 图片");
+    await importReferenceFiles(itemId, files, "剪贴板");
+  } catch (error) {
+    setReferenceStatus(itemId, `${error.message || "无法读取剪贴板"}。也可以聚焦上传区域后按 ⌘V。`, "error");
+  }
+}
+
+function bindReferenceUploadControls() {
+  document.querySelectorAll("[data-reference-section]").forEach((section) => {
+    const itemId = section.dataset.referenceSection;
+    const input = section.querySelector("[data-reference-file-input]");
+    const dropzone = section.querySelector("[data-reference-dropzone]");
+    section.querySelector(".reference-choose-button").addEventListener("click", (event) => { event.stopPropagation(); input.click(); });
+    section.querySelector(".reference-paste-button").addEventListener("click", (event) => { event.stopPropagation(); readClipboardImages(itemId); });
+    input.addEventListener("change", async () => { await importReferenceFiles(itemId, input.files, "文件选择器"); input.value = ""; });
+    dropzone.addEventListener("click", (event) => { if (!event.target.closest("button")) input.click(); });
+    dropzone.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); input.click(); } });
+    ["dragenter", "dragover"].forEach((type) => dropzone.addEventListener(type, (event) => { event.preventDefault(); dropzone.dataset.dragging = "true"; }));
+    ["dragleave", "dragend"].forEach((type) => dropzone.addEventListener(type, () => { delete dropzone.dataset.dragging; }));
+    dropzone.addEventListener("drop", async (event) => { event.preventDefault(); delete dropzone.dataset.dragging; await importReferenceFiles(itemId, event.dataTransfer.files, "拖拽"); });
+    dropzone.addEventListener("paste", (event) => pasteReferenceImages(itemId, event));
+  });
+}
+
+function bindReferenceRecordControls(decision, list) {
+  list.querySelectorAll(".reference-card").forEach((card) => {
+    const id = card.dataset.referenceId;
+    const saveFields = async () => {
+      const regionIds = Array.from(card.querySelectorAll("[data-reference-region]:checked"), (input) => input.dataset.referenceRegion);
+      const changes = {
+        title: card.querySelector('[data-reference-field="title"]').value.trim() || "未命名参考图",
+        purpose: card.querySelector('[data-reference-field="purpose"]').value,
+        strength: card.querySelector('[data-reference-field="strength"]').value,
+        isFinal: card.querySelector('[data-reference-field="isFinal"]').checked,
+        notes: card.querySelector('[data-reference-field="notes"]').value,
+        regionIds,
+      };
+      try {
+        await referenceLibrary.update(id, changes);
+        await refreshReferenceCache();
+        setReferenceStatus(decision.id, "参考图用途、强度、区域和备注已保存在本机。", "success");
+      } catch (error) {
+        setReferenceStatus(decision.id, error.message || "参考图更新失败。", "error");
+      }
+    };
+    card.querySelectorAll("[data-reference-field], [data-reference-region]").forEach((control) => control.addEventListener("change", saveFields));
+    card.querySelector("[data-reference-replace]").addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        URL.revokeObjectURL(referenceObjectURLs.get(id));
+        referenceObjectURLs.delete(id);
+        await referenceLibrary.replaceImage(id, file);
+        await refreshReferenceCache();
+        setReferenceStatus(decision.id, "参考图片已替换，原有用途、强度、区域与备注保持不变。", "success");
+      } catch (error) {
+        setReferenceStatus(decision.id, error.message || "替换图片失败。", "error");
+      }
+    });
+    card.querySelector(".reference-delete-button").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      if (button.dataset.confirmDelete !== "true") {
+        button.dataset.confirmDelete = "true";
+        button.textContent = "再次点击确认删除";
+        window.setTimeout(() => { if (button.isConnected) { delete button.dataset.confirmDelete; button.textContent = "删除参考图"; } }, 3500);
+        return;
+      }
+      try {
+        await referenceLibrary.remove(id);
+        URL.revokeObjectURL(referenceObjectURLs.get(id));
+        referenceObjectURLs.delete(id);
+        await refreshReferenceCache();
+        setReferenceStatus(decision.id, "参考图已从本机图库删除。", "success");
+      } catch (error) {
+        setReferenceStatus(decision.id, error.message || "删除参考图失败。", "error");
+      }
+    });
+  });
+}
+
 function decisionMarkup(decision, index) {
   const saved = pageState(decision.id);
   const choices = [
@@ -588,6 +837,7 @@ function decisionMarkup(decision, index) {
   return `<section class="decision-card" id="${decision.id}" data-decision-id="${decision.id}" data-decided="${saved.decision ? "true" : "false"}">
     <header class="decision-card__header"><div class="decision-number">${String(index + 1).padStart(2, "0")}</div><div><h2>${escapeHTML(displayText(decision.title))}</h2><p class="decision-card__summary">${escapeHTML(displayText(decision.summary))}</p></div><span class="status-badge">${saved.decision ? `已选 · ${escapeHTML(displayDirection(saved.decision))}` : "待决定"}</span></header>
     <div class="section-block"><div class="section-heading"><h3>现版 iOS 与旧版 / 已确认历史参考</h3><p>所有旧版图片均来自 fb127e9 实际运行截图。</p></div><div class="image-track">${decision.visuals.map((item) => visualMarkup(item, decision.title)).join("")}</div></div>
+    ${referenceSectionMarkup(decision)}
     ${fuseMarkup(decision)}
     <div class="section-block"><div class="recommendation"><div class="recommendation__mark">荐</div><div><strong>Codex 建议（不自动批准）</strong><p>${escapeHTML(displayText(decision.recommendation))}</p></div></div></div>
     ${regionReviewMarkup(decision)}
@@ -604,7 +854,12 @@ function decisionMarkup(decision, index) {
 function render() {
   document.querySelector("#decision-list").innerHTML = decisions.map(decisionMarkup).join("");
   document.querySelector("#jump-nav").innerHTML = decisions.map((decision, index) => `<a href="#${decision.id}" data-nav-id="${decision.id}" data-decided="${Boolean(pageState(decision.id).decision)}"><span class="jump-nav__number">${index + 1}</span><span>${escapeHTML(displayText(decision.shortTitle))}</span></a>`).join("");
-  bindControls(); bindLightboxItems(); updateProgress();
+  bindControls();
+  bindReferenceUploadControls();
+  decisions.forEach(renderReferenceList);
+  bindLightboxItems();
+  updateProgress();
+  updateReferenceProgress();
 }
 
 function bindControls() {
@@ -650,12 +905,35 @@ function updateProgress() {
 
 function bindLightboxItems() {
   lightboxItems = Array.from(document.querySelectorAll(".visual-card__button"));
-  lightboxItems.forEach((button, index) => button.addEventListener("click", () => openLightbox(index)));
+  lightboxItems.forEach((button) => {
+    if (button.dataset.lightboxBound === "true") return;
+    button.dataset.lightboxBound = "true";
+    button.addEventListener("click", () => openLightbox(lightboxItems.indexOf(button)));
+  });
 }
 function openLightbox(index) { lightboxIndex = index; zoom = 1; updateLightbox(); document.querySelector("#lightbox").showModal(); }
 function updateLightbox() { const item = lightboxItems[lightboxIndex]; if (!item) return; const image = document.querySelector("#lightbox-image"); image.src = item.dataset.imageSrc; image.alt = item.dataset.imageTitle; image.style.transform = `scale(${zoom})`; document.querySelector("#lightbox-kind").textContent = item.dataset.imageKind; document.querySelector("#lightbox-title").textContent = item.dataset.imageTitle; document.querySelector("#lightbox-caption").textContent = item.dataset.imageCaption; document.querySelector("#zoom-value").textContent = `${Math.round(zoom * 100)}%`; }
 function changeZoom(delta) { zoom = Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))); updateLightbox(); }
 function moveLightbox(delta) { lightboxIndex = (lightboxIndex + delta + lightboxItems.length) % lightboxItems.length; zoom = 1; updateLightbox(); }
+
+function referenceSummaryLines(decision) {
+  const records = referencesForItem(decision.id);
+  if (!records.length) return ["", "Lafayette 视觉参考：", "- 暂无"];
+  const lines = ["", "Lafayette 视觉参考："];
+  records.forEach((record, index) => {
+    lines.push(`- ${index + 1}. ${record.title || record.filename}`);
+    lines.push(`  原始文件：${record.filename}`);
+    lines.push(`  用途：${referencePurposeLabels[record.purpose] || record.purpose}`);
+    lines.push(`  参考强度：${referenceStrengthLabels[record.strength] || record.strength}`);
+    lines.push(`  绑定区域：${(record.regionIds || []).map(displayText).join("、") || "整页 / 未单独绑定"}`);
+    lines.push(`  Lafayette 最终视觉参考：${record.isFinal ? "是" : "否"}`);
+    lines.push(`  我的备注：${record.notes?.trim() || "—"}`);
+    if (record.isFinal || record.strength === "geometry" || record.strength === "highFidelity") {
+      lines.push("  后续执行要求：必须先查看审批包中的这张图片，完成 Reference Decomposition 与 Layout Contract 后再实现，不得只根据文字摘要凭感觉重画。");
+    }
+  });
+  return lines;
+}
 
 function approvalSummary() {
   const lines = [window.visualApprovalSummaryTitle || "# Taste Map — Lafayette 第二轮视觉审批记录", "", "视觉证据：真实 SwiftUI 构建 + 固定模拟器", ""];
@@ -666,18 +944,89 @@ function approvalSummary() {
     lines.push("", "需要保留的现版新增能力："); decision.currentAdditions.forEach((item) => lines.push(`- ${displayText(item)}`));
     lines.push("", "区域审批：");
     decision.regions.forEach((region) => { const state = saved.regions[region] || {}; lines.push(`- ${displayText(region)}：${displayChoice(state.choice, true)} | 当前来源：${sourceFor(state.choice)} | 状态：${state.frozen ? "已冻结" : "待决定"}`); if (state.notes?.trim()) lines.push(`  我的备注：${displayNote(state.notes.trim())}`); });
+    lines.push(...referenceSummaryLines(decision));
     lines.push("", "页面备注：", saved.notes?.trim() || "—", "");
   });
   return lines.join("\n");
 }
 
 async function copySummary() {
-  const button = document.querySelector("#copy-summary"); const content = approvalSummary();
-  try { await navigator.clipboard.writeText(content); } catch { const helper = document.createElement("textarea"); helper.value = content; helper.style.position = "fixed"; helper.style.opacity = "0"; document.body.append(helper); helper.select(); document.execCommand("copy"); helper.remove(); }
-  const previous = button.textContent; button.textContent = "已复制审批摘要"; window.setTimeout(() => { button.textContent = previous; }, 1600);
+  const button = document.querySelector("#copy-summary");
+  const previous = button.textContent;
+  try {
+    referenceRecords = referenceLibrary ? await referenceLibrary.listAll() : [];
+    const content = approvalSummary();
+    try { await navigator.clipboard.writeText(content); } catch { const helper = document.createElement("textarea"); helper.value = content; helper.style.position = "fixed"; helper.style.opacity = "0"; document.body.append(helper); helper.select(); document.execCommand("copy"); helper.remove(); }
+    button.textContent = "已复制审批摘要";
+  } catch (error) {
+    button.textContent = "复制失败，请重试";
+  }
+  window.setTimeout(() => { button.textContent = previous; }, 1600);
+}
+
+function parseStoredApproval(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
+}
+
+function approvalPackagePayload() {
+  return {
+    schema: "com.tastemap.lafayette.visual-approval",
+    version: 1,
+    activeRound: window.visualApprovalSummaryTitle || "当前视觉审批",
+    activeStorageKey: storageKey,
+    round2: parseStoredApproval("tastemap.visualApproval.round2"),
+    current: structuredClone(reviewState),
+    pages: decisions.map((decision) => ({
+      id: decision.id,
+      title: displayText(decision.title),
+      direction: decision.direction,
+      decision: pageState(decision.id).decision || "",
+      candidateVersion: displayText(decision.candidateVersion || ""),
+      notes: pageState(decision.id).notes || "",
+      regions: decision.regions.map((region) => ({
+        id: region,
+        label: displayText(region),
+        choice: pageState(decision.id).regions[region]?.choice || "",
+        frozen: Boolean(pageState(decision.id).regions[region]?.frozen),
+        notes: pageState(decision.id).regions[region]?.notes || "",
+      })),
+    })),
+  };
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function exportApprovalPackage() {
+  const button = document.querySelector("#export-approval");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在生成审批包…";
+  try {
+    const result = await referenceLibrary.createApprovalPackage(approvalPackagePayload());
+    button.dataset.exportBytes = String(result.blob.size);
+    button.dataset.exportSignature = await result.blob.slice(0, 2).text();
+    button.dataset.exportReferences = String(result.payload.references.length);
+    downloadBlob(result.blob, "TasteMap-Lafayette-Visual-Approval.zip");
+    button.textContent = `已导出 ${result.payload.references.length} 张参考图`;
+  } catch (error) {
+    button.textContent = "导出失败，请重试";
+    console.error("Visual approval export failed", error);
+  }
+  window.setTimeout(() => { button.textContent = previous; button.disabled = false; }, 2200);
 }
 
 document.querySelector("#copy-summary").addEventListener("click", copySummary);
+document.querySelector("#export-approval").addEventListener("click", exportApprovalPackage);
 document.querySelector("#lightbox-close").addEventListener("click", () => document.querySelector("#lightbox").close());
 document.querySelector("#zoom-out").addEventListener("click", () => changeZoom(-0.25));
 document.querySelector("#zoom-in").addEventListener("click", () => changeZoom(0.25));
@@ -686,5 +1035,10 @@ document.querySelector("#lightbox-previous").addEventListener("click", () => mov
 document.querySelector("#lightbox-next").addEventListener("click", () => moveLightbox(1));
 document.querySelector("#fullscreen").addEventListener("click", async () => { const box = document.querySelector("#lightbox"); if (!document.fullscreenElement && box.requestFullscreen) await box.requestFullscreen(); else if (document.exitFullscreen) await document.exitFullscreen(); });
 document.addEventListener("keydown", (event) => { if (!document.querySelector("#lightbox").open) return; if (event.key === "ArrowLeft") moveLightbox(-1); if (event.key === "ArrowRight") moveLightbox(1); if (event.key === "+" || event.key === "=") changeZoom(0.25); if (event.key === "-") changeZoom(-0.25); });
+window.addEventListener("beforeunload", () => referenceObjectURLs.forEach((url) => URL.revokeObjectURL(url)));
 
 render();
+refreshReferenceCache().catch((error) => {
+  console.error("Visual reference library failed to load", error);
+  decisions.forEach((decision) => setReferenceStatus(decision.id, "本机参考图库暂时无法读取，请刷新页面重试。", "error"));
+});
