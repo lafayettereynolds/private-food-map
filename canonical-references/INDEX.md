@@ -53,3 +53,24 @@ determined by the written contract.
 Current-baseline screenshots for this audit are indexed at
 [`reports/full-layout-parity/audit-screenshots/INDEX.md`](../reports/full-layout-parity/audit-screenshots/INDEX.md).
 They are not promoted to canonical merely by being captured.
+
+## Task C candidate registry
+
+The final implementation atlas is indexed at
+[`reports/full-layout-parity/final-atlas/INDEX.md`](../reports/full-layout-parity/final-atlas/INDEX.md).
+Every item in this table is implementation evidence only. Its status is
+**CANDIDATE_CANONICAL — pending Lafayette confirmation**; this registry does
+not turn an automated PASS into visual approval.
+
+| Surface family | Candidate evidence | Status |
+| --- | --- | --- |
+| My Map / My List / Filters | [`task-04-map-after.png`](../reports/full-layout-parity/final-atlas/task-04-map-after.png), [`task-04-list-after.png`](../reports/full-layout-parity/final-atlas/task-04-list-after.png), [`final-atlas-map-filter-sheet.png`](../reports/full-layout-parity/final-atlas/final-atlas-map-filter-sheet.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Discovery / Community | [`final-atlas-discovery-for-you.png`](../reports/full-layout-parity/final-atlas/final-atlas-discovery-for-you.png), [`p3-d-community-feed.png`](../reports/full-layout-parity/final-atlas/p3-d-community-feed.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Add Restaurant | [`full-parity-add-restaurant-nearby-after.png`](../reports/full-layout-parity/final-atlas/full-parity-add-restaurant-nearby-after.png), [`product-ux-manual-restaurant-preview.png`](../reports/full-layout-parity/final-atlas/product-ux-manual-restaurant-preview.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Restaurant Detail | [`task-04-restaurant-detail-after.png`](../reports/full-layout-parity/final-atlas/task-04-restaurant-detail-after.png), [`global-restaurant-detail-remote-after.png`](../reports/full-layout-parity/final-atlas/global-restaurant-detail-remote-after.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Visit / Dish / Photo | [`final-atlas-visit-core-form.png`](../reports/full-layout-parity/final-atlas/final-atlas-visit-core-form.png), [`final-atlas-visit-rich-photo-dish-context.png`](../reports/full-layout-parity/final-atlas/final-atlas-visit-rich-photo-dish-context.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Profile / public Profile / Lists | [`final-fixed-simulator-rich-premium.png`](../reports/full-layout-parity/final-atlas/final-fixed-simulator-rich-premium.png), [`core-parity-public-profile-after.png`](../reports/full-layout-parity/final-atlas/core-parity-public-profile-after.png), [`p4-f-own-public-ranking.png`](../reports/full-layout-parity/final-atlas/p4-f-own-public-ranking.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Roulette | [`p4-g-large-candidate-pool.png`](../reports/full-layout-parity/final-atlas/p4-g-large-candidate-pool.png), [`final-atlas-roulette-dark.png`](../reports/full-layout-parity/final-atlas/final-atlas-roulette-dark.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Analytics and five posters | [`p4-a-taste-profile.png`](../reports/full-layout-parity/final-atlas/p4-a-taste-profile.png), [`p4-a-9x16-poster.png`](../reports/full-layout-parity/final-atlas/p4-a-9x16-poster.png) and the remaining families in the atlas index | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Premium / Settings / Data | [`p4-h-free-paywall.png`](../reports/full-layout-parity/final-atlas/p4-h-free-paywall.png), [`final-atlas-settings-root.png`](../reports/full-layout-parity/final-atlas/final-atlas-settings-root.png), [`final-atlas-import-preflight.png`](../reports/full-layout-parity/final-atlas/final-atlas-import-preflight.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |
+| Dark / large text / state variants | [`task-04-map-dark-after.png`](../reports/full-layout-parity/final-atlas/task-04-map-dark-after.png), [`task09-rich-profile-premium.png`](../reports/full-layout-parity/final-atlas/task09-rich-profile-premium.png), [`final-atlas-visual-qa-discovery-error.png`](../reports/full-layout-parity/final-atlas/final-atlas-visual-qa-discovery-error.png) | CANDIDATE_CANONICAL — pending Lafayette confirmation |

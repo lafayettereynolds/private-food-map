@@ -1,8 +1,11 @@
 # Taste Map — Full App Layout Parity Closure (Task B)
 
-Date: 2026-09-01  
-Branch: `fix/product-ux-correction-8-tasks`  
-Task B baseline: `4722f5e` (`Audit full app layout parity`)  
+Date: 2026-09-01
+
+Branch: `fix/product-ux-correction-8-tasks`
+
+Task B baseline: `4722f5e` (`Audit full app layout parity`)
+
 Fixed Simulator: iPhone 17 Pro / iOS 26.5 / `E4F3EED9-89D8-405C-B4CB-7CA816CE3405`
 
 ## 1. Scope and decision boundary
@@ -153,4 +156,3 @@ The only Task A finding that was both global and unambiguous is **CLOSED**.
 Reference-dependent visual choices were deliberately not guessed. They advance
 to Task C as explicit Lafayette approval items rather than being mislabeled as
 automatic failures or automatic passes.
-

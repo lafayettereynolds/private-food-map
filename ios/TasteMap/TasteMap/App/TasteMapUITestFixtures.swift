@@ -211,7 +211,7 @@ enum TasteMapUITestFixtures {
 
     static var usesDiscoveryFixture: Bool {
         ProcessInfo.processInfo.environment[discoveryEnvironmentKey] == "1"
-            || (usesVisualQA && visualQAMode?.forcesNetworkFailureState == false)
+            || usesVisualQA
     }
 
     static var usesDiscoveryOfflineFixture: Bool {

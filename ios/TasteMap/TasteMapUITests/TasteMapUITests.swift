@@ -499,6 +499,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(filter.waitForExistence(timeout: 5))
         filter.tap()
         XCTAssertTrue(app.navigationBars["筛选与排序"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Map Filter Sheet", of: app)
 
         let topRating = app.buttons["personal-filter-rating-5"]
         XCTAssertTrue(topRating.waitForExistence(timeout: 3))
@@ -509,8 +510,13 @@ final class TasteMapUITests: XCTestCase {
         takeout.tap()
         app.buttons["personal-filter-apply"].tap()
 
-        XCTAssertTrue(app.buttons["personal-filter-button"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["personal-filter-button"].label.contains("已启用"))
+        let activeFilter = app.buttons["personal-filter-button"]
+        XCTAssertTrue(activeFilter.waitForExistence(timeout: 5))
+        let enabledFilter = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已启用"),
+            object: activeFilter
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [enabledFilter], timeout: 5), .completed)
         app.buttons["map-header-view-list"].tap()
         XCTAssertTrue(app.staticTexts["F2-B 命中外卖餐厅"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["F2-B 排除到店餐厅"].exists)
@@ -710,6 +716,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["discovery-primary-trending"].exists)
         let restaurant = app.staticTexts["P3-C 发现寿司店"]
         XCTAssertTrue(restaurant.waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Discovery For You", of: app)
         restaurant.tap()
         XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 5))
         XCTAssertTrue(
@@ -735,6 +742,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["discovery-trend-window-7"].waitForExistence(timeout: 5))
         app.buttons["discovery-trend-window-30"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "近 30 天有 8 位用户到访")).firstMatch.waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Discovery Trending", of: app)
         app.swipeDown()
         XCTAssertTrue(app.staticTexts["P3-C 发现寿司店"].waitForExistence(timeout: 5))
     }
@@ -751,6 +759,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "离线内容")).firstMatch.waitForExistence(timeout: 5))
         let want = app.buttons["discovery-want-place:p3c-ui-0"]
         XCTAssertTrue(want.waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Discovery Offline", of: app)
         want.tap()
         XCTAssertTrue(app.staticTexts["已想吃"].waitForExistence(timeout: 5))
     }
@@ -777,6 +786,8 @@ final class TasteMapUITests: XCTestCase {
         community.launch()
         community.buttons["发现"].tap()
         community.buttons["discovery-primary-latest"].tap()
+        XCTAssertTrue(community.staticTexts["云边小馆·湖滨店"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Discovery Latest", of: community)
         let communityUnrated = community.staticTexts["community-activity-rating-visit-p3d-ui-2"]
         if !communityUnrated.exists { community.swipeUp() }
         if !communityUnrated.exists { community.swipeUp() }
@@ -1008,6 +1019,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(settings.isHittable)
         settings.tap()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Settings Root", of: app)
 
         let account = app.buttons["settings-account-entry"]
         XCTAssertTrue(account.waitForExistence(timeout: 3))
@@ -1038,6 +1050,7 @@ final class TasteMapUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(warning.exists)
         XCTAssertTrue(app.buttons["生成并分享"].exists)
+        keepScreenshot(named: "Final Atlas Backup Export Privacy", of: app)
         app.buttons["取消"].tap()
         XCTAssertFalse(app.buttons["生成并分享"].exists)
         app.navigationBars["数据与备份"].buttons["设置"].tap()
@@ -1050,6 +1063,7 @@ final class TasteMapUITests: XCTestCase {
         let pendingCount = app.descendants(matching: .any)["settings-sync-pending-count"]
         XCTAssertTrue(pendingCount.exists)
         XCTAssertTrue(pendingCount.label.contains("2") || pendingCount.value as? String == "2")
+        keepScreenshot(named: "Final Atlas Sync Pending", of: app)
         app.navigationBars["同步"].buttons["设置"].tap()
 
         let permissions = app.buttons["settings-permissions-entry"]
@@ -1059,6 +1073,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["settings-location-permission"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["settings-photo-permission"].exists)
         XCTAssertTrue(app.buttons["settings-open-system-settings"].exists)
+        keepScreenshot(named: "Final Atlas Permissions", of: app)
         app.navigationBars["权限"].buttons["设置"].tap()
 
         let about = app.buttons["settings-about-entry"]
@@ -1067,6 +1082,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["关于"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["settings-app-version"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["settings-build-number"].exists)
+        keepScreenshot(named: "Final Atlas About", of: app)
     }
 
     @MainActor
@@ -1083,6 +1099,7 @@ final class TasteMapUITests: XCTestCase {
         let photoMessage = app.descendants(matching: .any)["backup-import-photo-message"]
         scrollUntilVisible(photoMessage, in: app)
         XCTAssertTrue(photoMessage.exists)
+        keepScreenshot(named: "Final Atlas Import Preflight", of: app)
 
         let details = app.buttons["backup-import-issues-entry"]
         scrollUntilVisible(details, in: app)
@@ -1107,6 +1124,7 @@ final class TasteMapUITests: XCTestCase {
             .waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["此文件暂时无法继续导入。"].exists)
         XCTAssertFalse(app.buttons["导入"].exists)
+        keepScreenshot(named: "Final Atlas Import Blocking Error", of: app)
         let details = app.buttons["backup-import-issues-entry"]
         scrollUntilVisible(details, in: app)
         XCTAssertTrue(details.isHittable)
@@ -1127,6 +1145,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["backup-import-plan-page"].exists)
         XCTAssertFalse(app.buttons["正式导入"].exists)
         XCTAssertFalse(app.buttons["导入"].exists)
+        keepScreenshot(named: "Final Atlas Import Plan", of: app)
 
         let skip = app.buttons["backup-import-review-option-restaurant-skip"]
         scrollUntilVisible(skip, in: app)
@@ -1354,6 +1373,7 @@ final class TasteMapUITests: XCTestCase {
         let spend = app.textFields["visit-editor-spend"]
         scrollUntilVisible(spend, in: app)
         XCTAssertTrue(spend.exists)
+        keepScreenshot(named: "Final Atlas Visit Core Form", of: app)
 
         app.buttons["visit-editor-save"].tap()
         XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
@@ -1686,6 +1706,7 @@ final class TasteMapUITests: XCTestCase {
 
         let details = app.descendants(matching: .any)["visit-detailed-ratings"]
         scrollUntilVisible(details, in: app)
+        keepScreenshot(named: "Final Atlas Visit Rich Photo Dish Context", of: app)
         details.tap()
         let value = app.buttons["性价比 5.0 星"]
         scrollUntilVisible(value, in: app)
@@ -1696,6 +1717,7 @@ final class TasteMapUITests: XCTestCase {
         let service = app.buttons["服务 3.5 星"]
         scrollUntilVisible(service, in: app)
         service.tap()
+        keepScreenshot(named: "Final Atlas Visit Detailed Ratings", of: app)
 
         selectPicker("visit-editor-visibility", option: "公开", in: app)
         app.buttons["visit-editor-save"].tap()
@@ -1708,7 +1730,9 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(companions, in: app)
         XCTAssertTrue(companions.label.contains("P2-G 饭搭子"))
         XCTAssertTrue(app.staticTexts["visit-history-recommendation-source"].label.contains("P2-G 推荐来源"))
-        XCTAssertTrue(app.descendants(matching: .any)["restaurant-detailed-rating-value"].exists)
+        let detailedRating = app.descendants(matching: .any)["restaurant-detailed-rating-value"]
+        scrollUntilReadable(detailedRating, in: app)
+        XCTAssertTrue(detailedRating.waitForExistence(timeout: 5))
 
         app.terminate()
         app.launchArguments = ["-p1d-persistent-offline-fixture"]
@@ -2201,6 +2225,7 @@ final class TasteMapUITests: XCTestCase {
 
         app.buttons["我的"].tap()
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Profile Premium Analytics", of: app)
         let entry = app.buttons["profile-taste-analysis-entry"]
         scrollUntilVisible(entry, in: app)
         XCTAssertTrue(entry.isHittable)
@@ -2789,6 +2814,45 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testFinalAtlasRouletteDark() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-p1d-persistent-offline-fixture",
+            "-p1d-reset-persistent-offline-fixture",
+            "-AppleInterfaceStyle",
+            "Dark",
+        ]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST": "1",
+        ]
+        app.launch()
+
+        openP4GRoulette(in: app)
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("10"))
+        XCTAssertTrue(app.buttons["roulette-spin"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Roulette Dark", of: app)
+    }
+
+    @MainActor
+    func testFinalAtlasRouletteLargeText() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-p1d-persistent-offline-fixture", "-p1d-reset-persistent-offline-fixture"]
+        app.launchEnvironment = [
+            "TASTEMAP_P1D_UI_TEST": "1",
+            "TASTEMAP_P1D_RESET": "1",
+            "TASTEMAP_P4G_ROULETTE_LARGE_UI_TEST": "1",
+        ]
+        app.launch()
+
+        openP4GRoulette(in: app)
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].label.contains("10"))
+        XCTAssertTrue(app.buttons["roulette-spin"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Roulette Large Text", of: app)
+    }
+
+    @MainActor
     func testP4GRouletteCandidateManagerAndOfficialCustomRestaurantFlow() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-p1d-persistent-offline-fixture", "-p1d-reset-persistent-offline-fixture"]
@@ -2840,6 +2904,7 @@ final class TasteMapUITests: XCTestCase {
 
         app.buttons["我的"].tap()
         XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        keepScreenshot(named: "Final Atlas Profile Free", of: app)
         let profileEntry = app.buttons["profile-premium-entry"]
         XCTAssertTrue(profileEntry.waitForExistence(timeout: 5))
         profileEntry.tap()
@@ -3228,6 +3293,55 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["profile-premium-badge-entry"].exists)
         XCTAssertTrue(app.buttons["profile-taste-analysis-entry"].exists)
         keepScreenshot(named: "Task09-Rich-Profile-Premium", of: app)
+    }
+
+    @MainActor
+    func testFinalVisualAcceptanceVisualQAStateAtlas() throws {
+        let app = XCUIApplication()
+
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "empty"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
+        app.buttons["app-tab-profile"].tap()
+        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 8))
+        keepScreenshot(named: "Final Atlas Visual QA Empty Profile", of: app)
+
+        app.terminate()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "long-text"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
+        app.buttons["app-tab-profile"].tap()
+        XCTAssertTrue(app.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 8))
+        keepScreenshot(named: "Final Atlas Visual QA Long Text Profile", of: app)
+
+        app.terminate()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "missing-photo"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
+        app.buttons["map-header-view-list"].tap()
+        XCTAssertTrue(app.textFields["restaurant-list-search-field"].waitForExistence(timeout: 8))
+        keepScreenshot(named: "Final Atlas Visual QA Missing Photo List", of: app)
+
+        app.terminate()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "error"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
+        app.buttons["app-tab-discover"].tap()
+        XCTAssertTrue(app.staticTexts["discovery-header"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["重试"].firstMatch.waitForExistence(timeout: 10))
+        keepScreenshot(named: "Final Atlas Visual QA Discovery Error", of: app)
+
+        app.terminate()
+        app.launchArguments = ["-AppleInterfaceStyle", "Dark"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 10))
+        keepScreenshot(named: "Final Atlas Visual QA Rich Map Dark", of: app)
     }
 
     @MainActor

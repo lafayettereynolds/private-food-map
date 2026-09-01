@@ -223,11 +223,20 @@ struct DiscoveryView: View {
         }
 #if DEBUG
         if TasteMapUITestFixtures.usesDiscoveryFixture {
+            if TasteMapUITestFixtures.visualQAMode == .error {
+                cards = []
+                nextCursor = nil
+                cacheDate = nil
+                showingCache = false
+                message = "发现内容暂时无法加载，请检查网络后重试。"
+                return
+            }
             let page = TasteMapUITestFixtures.discoveryPage(mode: mode, window: trendWindowDays)
             cards = page.items
             nextCursor = nil
             cacheDate = .now.addingTimeInterval(-1800)
             showingCache = TasteMapUITestFixtures.usesDiscoveryOfflineFixture
+                || TasteMapUITestFixtures.visualQAMode == .offline
             message = showingCache ? "当前显示上次缓存的内容。" : nil
             await establishDistanceAnchorIfNeeded()
             return
