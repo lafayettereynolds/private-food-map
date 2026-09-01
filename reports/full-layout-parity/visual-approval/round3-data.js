@@ -1,9 +1,140 @@
 const R3_FORMAL = "round-3/formal/";
 const R3_CANDIDATE = "round-3/candidates/";
+const R3_ATLAS = "../final-atlas/";
+const R3_WEB_REFERENCE = "../../full-product-parity-assets/";
 
 function r3v(kind, title, src, caption) { return { kind, title, src, caption }; }
 
-window.round3Decisions = structuredClone(window.round2Decisions || []);
+const coreHumanApprovalDecisions = [
+  {
+    id: "my-map-list",
+    title: "我的地图 / 我的列表｜Lafayette 人工审批",
+    shortTitle: "我的地图 / 列表",
+    direction: "FUSE",
+    directionLocked: false,
+    candidateTitle: "当前融合实现｜尚未人工批准",
+    candidateVersion: "当前真实实现",
+    summary: "此前 Task C 的 Visual PASS / CLOSED 只代表自动化和 Codex 审计通过，不代表 Lafayette 已批准。标题、范围、筛选、Marker、列表和状态保持全部重新开放人工审批。",
+    visuals: [
+      r3v("现版 iOS｜真实截图", "当前我的地图", R3_ATLAS + "task-04-map-after.png", "当前正式 iOS：标题、一级范围、筛选栏、独立餐厅标记和添加餐厅入口。"),
+      r3v("现版 iOS｜真实截图", "当前我的列表", R3_ATLAS + "legacy-fusion-02-my-list-images.png", "当前正式 iOS 列表状态；使用统一餐厅图片策略。"),
+      r3v("旧版 Web｜真实截图", "历史我的地图", R3_WEB_REFERENCE + "web-map-before.jpg", "旧 Web 实际页面截图，不是 AI 图或拼接图。"),
+      r3v("旧版 Web｜真实截图", "历史我的列表", R3_WEB_REFERENCE + "web-list-before.jpg", "旧 Web 实际列表截图，作为布局和密度证据。")
+    ],
+    fuseVisuals: [
+      r3v("融合候选版｜当前真实实现", "地图融合候选：自然重叠与真实图片", R3_ATLAS + "legacy-fusion-rich-natural-markers.png", "当前正式实现已经融合历史重叠层级与现版独立 Marker、真实图片和稳定身份；仍需 Lafayette 亲自批准。"),
+      r3v("融合候选版｜当前真实实现", "列表融合候选：真实餐厅图片", R3_ATLAS + "legacy-fusion-02-my-list-images.png", "当前正式列表实现；候选截图不等于自动批准。")
+    ],
+    legacyBase: ["地图为第一屏主视觉，顶部控制克制。", "去过、想吃、推荐与筛选状态在地图/列表间保持。", "餐厅标记允许自然重叠，高评分优先置于上层。"],
+    currentAdditions: ["我的地图 / 我的列表标题与相邻图标作为唯一切换入口。", "去过 / 想吃 / 推荐、共享筛选与排序、用户头像位置、独立 Restaurant ID。", "无数字聚合；selected → rating → visit count → stable ID；真实餐厅图片优先。"],
+    proposedFinal: ["顶部留白 → 居中标题与切换图标 → 三个一级范围 → 紧凑筛选栏 → 地图或列表。", "地图与列表共享同一查询状态；添加餐厅入口不遮挡地图、标记或 Tab Bar。"],
+    recommendation: "建议逐区对照现版和旧版后再决定。此前 CLOSED 状态在本工具中没有审批效力。",
+    regions: ["顶部标题与地图 / 列表切换", "去过 / 想吃 / 推荐", "筛选栏", "餐厅标记与重叠层级", "用户位置", "选中餐厅与预览", "添加餐厅按钮", "我的列表条目", "地图 / 列表状态保持", "空白 / 加载 / 错误"]
+  },
+  {
+    id: "discovery-core",
+    title: "发现｜完整页面人工审批",
+    shortTitle: "发现",
+    direction: "FUSE",
+    directionLocked: false,
+    candidateTitle: "当前融合实现｜尚未人工批准",
+    candidateVersion: "当前真实实现",
+    summary: "发现页的五个一级入口、共享筛选和 Activity Card 曾被自动标为 PASS，但页面与每个内容区域均未获得 Lafayette 区域级批准。",
+    visuals: [
+      r3v("现版 iOS｜真实截图", "为你推荐", R3_ATLAS + "final-atlas-discovery-for-you.png", "当前正式为你推荐内容态。"),
+      r3v("现版 iOS｜真实截图", "关注动态", R3_ATLAS + "p3-d-community-feed.png", "当前正式 Activity Card、社交动作和餐厅导航。"),
+      r3v("现版 iOS｜真实截图", "同味之选", R3_ATLAS + "task-02-same-taste-content-after.png", "当前正式同味内容态。"),
+      r3v("现版 iOS｜真实截图", "最新", R3_ATLAS + "final-atlas-discovery-latest.png", "当前正式最新动态。"),
+      r3v("现版 iOS｜真实截图", "趋势", R3_ATLAS + "final-atlas-discovery-trending.png", "当前正式趋势内容。"),
+      r3v("现版 iOS｜真实截图", "错误与重试", R3_ATLAS + "final-atlas-visual-qa-discovery-error.png", "当前可恢复错误状态。"),
+      r3v("旧版 Web｜真实截图", "历史发现页", R3_WEB_REFERENCE + "web-discovery-before.jpg", "旧 Web 实际发现页面截图，不是 AI 图或拼接图。")
+    ],
+    fuseVisuals: [
+      r3v("融合候选版｜当前真实实现", "发现融合候选：餐厅真实图片", R3_ATLAS + "legacy-fusion-02-discovery-images.png", "当前实现融合旧版发现层级与现版真实图片、Activity rating、Social 和离线能力；仍待 Lafayette 审批。")
+    ],
+    legacyBase: ["关注 / 为你推荐 / 同味之选 / 最新 / 趋势是同一级产品入口。", "用户、餐厅、具体到访评分和互动动作在同一内容证据中呈现。"],
+    currentAdditions: ["共享 TasteMapPrimaryTabBar 与筛选栏。", "服务端 Like/Comment、分享、举报/拉黑、离线缓存、分页与重试。", "具体 Visit rating；nil 显示未评分；统一餐厅图片 renderer。"],
+    proposedFinal: ["居中发现标题 → 五个等宽一级入口 → 紧凑筛选栏 → 当前入口的真实内容状态。", "Activity Card 保持用户/时间、餐厅图文、具体到访评分、互动与餐厅动作的清楚分组。"],
+    recommendation: "建议按 11 个区域分别审批；不要用自动测试覆盖 Lafayette 的布局判断。",
+    regions: ["标题", "五个一级 Tab", "筛选栏", "动态卡片", "用户 / 时间", "餐厅图片 / 信息", "到访评分", "点赞 / 评论 / 更多", "餐厅操作", "同味之选内容", "空白 / 加载 / 错误"]
+  },
+  {
+    id: "add-restaurant-nearby",
+    title: "添加餐厅 / Nearby｜完整流程人工审批",
+    shortTitle: "添加餐厅 / Nearby",
+    direction: "FUSE",
+    directionLocked: false,
+    candidateTitle: "当前融合实现｜尚未人工批准",
+    candidateVersion: "当前真实实现",
+    summary: "Search、Nearby、Manual Add、Share Import、结果、预览和动作都重新进入人工审批；真实 GPS 和数据语义保持现版能力，但不自动决定页面构图。",
+    visuals: [
+      r3v("现版 iOS｜真实截图", "当前 Nearby", R3_ATLAS + "full-parity-add-restaurant-nearby-after.png", "当前正式 Nearby 与定位状态。"),
+      r3v("现版 iOS｜真实截图", "当前搜索候选预览", R3_ATLAS + "product-ux-restaurant-search-preview.png", "当前正式搜索结果与候选预览。"),
+      r3v("现版 iOS｜真实截图", "当前手动添加预览", R3_ATLAS + "product-ux-manual-restaurant-preview.png", "当前正式 Manual Add 候选确认。"),
+      r3v("现版 iOS｜真实截图", "当前外部分享识别", R3_ATLAS + "product-ux-external-share-recognition.png", "当前正式 Share Import 识别状态。"),
+      r3v("旧版 Web｜真实截图", "历史添加餐厅", R3_WEB_REFERENCE + "web-add-restaurant-before.jpg", "旧 Web 实际添加餐厅页面截图，不是 AI 图或拼接图。")
+    ],
+    fuseVisuals: [
+      r3v("融合候选版｜当前真实实现", "添加餐厅融合候选", R3_ATLAS + "full-parity-add-restaurant-nearby-after.png", "当前实现融合旧版入口层级与现版 fresh CLLocation、跨 provider identity、Share Import 和标准预览；仍待 Lafayette 审批。")
+    ],
+    legacyBase: ["Search、Nearby 和 Manual Add 是清楚、可找到的正式入口。", "结果先展示餐厅信息，再由用户明确选择想去或记录到访。"],
+    currentAdditions: ["fresh CLLocation、时间戳/精度校验、Reduced Accuracy、3km 与真实距离排序。", "Apple Maps / AMap / URL / 分享文本、provider-neutral identity、显式去重确认。", "Share Extension ingestion 与全局 Restaurant Detail transition。"],
+    proposedFinal: ["Header → Search → Nearby → Manual Add；Share Import 通过正式入口进入同一候选预览。", "Search/Nearby 结果和预览不重复维护第二套餐厅详情。"],
+    recommendation: "建议逐区审查入口顺序和信息密度；GPS 正确性继续由真实设备验证，不用视觉选择替代。",
+    regions: ["顶部", "搜索", "附近餐厅", "手动添加", "分享导入", "搜索结果", "附近结果", "餐厅预览", "想去 / 记录到访操作", "餐厅详情过渡"]
+  },
+  {
+    id: "restaurant-detail-global",
+    title: "餐厅详情｜全局唯一主体人工审批",
+    shortTitle: "餐厅详情",
+    direction: "FUSE",
+    directionLocked: false,
+    candidateTitle: "当前融合实现｜尚未人工批准",
+    candidateVersion: "当前真实实现",
+    summary: "全局唯一主体与跨入口复用已经自动验证，但 Hero、操作、基础信息、评分、照片和到访内容的最终构图仍需 Lafayette 亲自冻结。",
+    visuals: [
+      r3v("现版 iOS｜真实截图", "当前餐厅详情顶部", R3_ATLAS + "task-04-restaurant-detail-after.png", "当前正式 Hero、名称、操作与基础信息。"),
+      r3v("现版 iOS｜真实截图", "当前本地餐厅下游内容", R3_ATLAS + "global-restaurant-detail-local-after.png", "当前正式用户照片、到访概览和历史。"),
+      r3v("现版 iOS｜真实截图", "当前远程入口主体", R3_ATLAS + "global-restaurant-detail-remote-after.png", "远程/社区入口使用相同 Restaurant Detail 主体。"),
+      r3v("旧版 Web｜真实截图", "历史餐厅详情", R3_WEB_REFERENCE + "web-restaurant-detail-before.jpg", "旧 Web 实际餐厅详情截图，不是 AI 图或拼接图。")
+    ],
+    fuseVisuals: [
+      r3v("融合候选版｜当前真实实现", "餐厅详情融合候选：真实图片", R3_ATLAS + "legacy-fusion-02-restaurant-detail-image.png", "当前全局统一主体融合旧版信息顺序与现版真实图片、评分样本、PhotoAsset 和多入口；仍待 Lafayette 审批。")
+    ],
+    legacyBase: ["Hero → 城市/状态 → 名称 → 操作 → 地址/价格/电话/营业时间/导航。", "四圆评分、用户实拍、我的到访概览与历史保持固定层级。"],
+    currentAdditions: ["RestaurantDetailView / RestaurantDetailStandardBody 全局唯一主体。", "本地/公共/provider 图片优先级、nil/sample 诚实评分、Dish/Photo 与详细评分。", "entrySource 只影响返回、权限和分析，不改变主体 UI。"],
+    proposedFinal: ["使用一套主体覆盖地图、搜索、Nearby、发现、社交、食单、轮盘、分析与分享入口。", "所有入口对同一家餐厅呈现相同的 Hero 到下游内容顺序。"],
+    recommendation: "建议按七个主体区域审批；跨入口一致性属于不可删能力，不因视觉选择分叉页面。",
+    regions: ["Hero", "名称与操作", "基础信息", "评分参考", "用户实拍", "到访概览", "下游内容"]
+  },
+  {
+    id: "roulette-core",
+    title: "今天吃什么 / Roulette｜完整页面人工审批",
+    shortTitle: "今天吃什么",
+    direction: "FUSE",
+    directionLocked: false,
+    candidateTitle: "当前融合实现｜尚未人工批准",
+    candidateVersion: "当前真实实现",
+    summary: "轮盘几何、候选池和算法虽然已通过自动验收，但指针、中心、分区、候选管理、图片和结果构图尚未获得 Lafayette 区域级批准。",
+    visuals: [
+      r3v("现版 iOS｜真实截图", "当前大型候选池", R3_ATLAS + "p4-g-large-candidate-pool.png", "当前正式候选 chips、轮盘和十家候选状态。"),
+      r3v("现版 iOS｜真实截图", "当前抽签结果", R3_ATLAS + "p4-g-roulette-result.png", "当前正式结果交互。"),
+      r3v("现版 iOS｜真实截图", "当前真实餐厅图片", R3_ATLAS + "legacy-fusion-02-roulette-images.png", "当前统一餐厅图片 renderer。"),
+      r3v("旧版 Web｜真实截图", "历史轮盘顶部", R3_WEB_REFERENCE + "web-roulette-reference-top-module-6.png", "旧 Web 实际轮盘截图，不是 AI 图或拼接图。"),
+      r3v("旧版 Web｜真实截图", "历史轮盘完整页面", R3_WEB_REFERENCE + "web-roulette-reference-module-6.png", "旧 Web 实际候选管理与轮盘页面截图。")
+    ],
+    fuseVisuals: [
+      r3v("融合候选版｜当前真实实现", "轮盘融合候选", R3_ATLAS + "p4-g-large-candidate-pool.png", "当前实现融合历史 wheel geometry 与现版稳定 ID、统一图片、筛选和 Manual Add；仍待 Lafayette 审批。")
+    ],
+    legacyBase: ["清楚的 pointer、center、5–10 个 segment、候选 chips 和管理面板。", "未填 segment 显示“+ 添加更多餐厅”，不冒充真实候选。"],
+    currentAdditions: ["候选 chip、轮盘 segment 和结果使用同一个 stable Restaurant pool。", "真实餐厅图片、名称、城市、评分、最多 10 家、至少 2 家和均匀随机。", "候选管理连接正式 Restaurant 与 Manual Add，不创建临时假餐厅。"],
+    proposedFinal: ["Header / 候选管理 → 候选 chips → wheel / pointer / center → spin action → 结果。", "视觉构图不得让结果、候选或空 slot 与实际抽签池不一致。"],
+    recommendation: "建议逐区批准轮盘几何与候选管理；自动随机测试不能代替视觉审批。",
+    regions: ["顶部", "候选概览", "轮盘几何", "指针与中心", "餐厅分区", "空白分区", "候选管理", "抽签结果", "餐厅图片", "空白 / 错误"]
+  }
+];
+
+window.round3Decisions = [...coreHumanApprovalDecisions, ...structuredClone(window.round2Decisions || [])];
 const r3ByID = Object.fromEntries(window.round3Decisions.map((item) => [item.id, item]));
 
 Object.assign(r3ByID["profile-density"], {
@@ -121,6 +252,31 @@ function allRegions(decisionID, valueFactory) {
 }
 
 window.round3InitialState = {
+  "my-map-list": {
+    decision: "",
+    notes: "此前 Codex Visual PASS / CLOSED 不构成 Lafayette 人工视觉批准；本页及全部区域重新开放审批。",
+    regions: allRegions("my-map-list", () => r3Pending(""))
+  },
+  "discovery-core": {
+    decision: "",
+    notes: "发现页此前的自动验收不构成人工视觉批准；五个一级入口和内容卡片全部待 Lafayette 逐区决定。",
+    regions: allRegions("discovery-core", () => r3Pending(""))
+  },
+  "add-restaurant-nearby": {
+    decision: "",
+    notes: "只重新开放视觉与布局审批；fresh GPS、provider identity、去重和数据语义不因视觉选择改变。",
+    regions: allRegions("add-restaurant-nearby", () => r3Pending(""))
+  },
+  "restaurant-detail-global": {
+    decision: "",
+    notes: "只重新开放统一主体的视觉审批；全局唯一 Restaurant Detail 和跨入口一致性必须保留。",
+    regions: allRegions("restaurant-detail-global", () => r3Pending(""))
+  },
+  "roulette-core": {
+    decision: "",
+    notes: "轮盘算法和候选身份语义保持不变；页面构图、轮盘几何和结果区域等待 Lafayette 人工审批。",
+    regions: allRegions("roulette-core", () => r3Pending(""))
+  },
   "profile-density": {
     decision: "FUSE",
     notes: "添加好友和设置保持旧版左上/右上；Profile Premium 标识继续使用旧版已确认汉堡。",
@@ -196,5 +352,5 @@ window.round3InitialState = {
 
 window.visualApprovalStorageKey = "tastemap.visualApproval.round3";
 window.visualApprovalInitialState = window.round3InitialState;
-window.visualApprovalSummaryTitle = "# Taste Map — Lafayette 第三轮视觉审批记录";
+window.visualApprovalSummaryTitle = "# Taste Map — Lafayette 完整核心页面人工视觉审批记录";
 window.visualApprovalPreviousRoundLabel = "第二轮";

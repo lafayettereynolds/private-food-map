@@ -583,7 +583,7 @@ function fuseMarkup(decision) {
 function regionReviewMarkup(decision) {
   const state = pageState(decision.id);
   const frozen = decision.regions.filter((region) => state.regions[region]?.frozen).length;
-  const approved = frozen === decision.regions.length;
+  const approved = Boolean(state.decision) && frozen === decision.regions.length;
   return `<div class="section-block region-review" data-region-summary="${decision.id}">
     <div class="section-heading"><div><h3>区域级审批与候选版冻结</h3><p>选择“保留”后立即冻结；只有明确“解除冻结”后才能在后续版本修改。</p></div><div class="region-totals"><span>${escapeHTML(displayText(decision.candidateVersion || "候选版"))}</span><span class="frozen-count">已冻结 ${frozen}</span><span class="pending-region-count">待修改 ${decision.regions.length - frozen}</span><strong class="final-approval ${approved ? "is-approved" : ""}">${approved ? "最终确认" : "尚未最终确认"}</strong></div></div>
     <div class="region-choice-help" aria-label="区域审批按钮说明">
@@ -895,12 +895,18 @@ function updateDecisionStatus(card, id) {
 
 function updateProgress() {
   const decided = decisions.filter((item) => pageState(item.id).decision).length;
+  const fullyFrozen = decisions.filter((item) => {
+    const state = pageState(item.id);
+    return Boolean(state.decision) && item.regions.every((region) => state.regions[region]?.frozen);
+  }).length;
+  document.querySelector("#hero-total-count").textContent = decisions.length;
+  document.querySelector("#total-count").textContent = decisions.length;
   document.querySelector("#decided-count").textContent = decided;
   document.querySelector("#pending-count").textContent = decisions.length - decided;
   document.querySelector("#progress-meter-fill").style.width = `${(decided / decisions.length) * 100}%`;
   document.querySelector("#fuse-available-count").textContent = decisions.filter((item) => item.fuseVisuals.length).length;
   document.querySelector("#fuse-missing-count").textContent = decisions.filter((item) => !item.fuseVisuals.length).length;
-  document.querySelector("#fuse-na-count").textContent = decisions.filter((item) => item.direction === "Current").length;
+  document.querySelector("#fuse-na-count").textContent = fullyFrozen;
 }
 
 function bindLightboxItems() {
@@ -1016,6 +1022,7 @@ async function exportApprovalPackage() {
     button.dataset.exportBytes = String(result.blob.size);
     button.dataset.exportSignature = await result.blob.slice(0, 2).text();
     button.dataset.exportReferences = String(result.payload.references.length);
+    button.dataset.exportPages = String(result.payload.pages.length);
     downloadBlob(result.blob, "TasteMap-Lafayette-Visual-Approval.zip");
     button.textContent = `已导出 ${result.payload.references.length} 张参考图`;
   } catch (error) {

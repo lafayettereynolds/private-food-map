@@ -8,41 +8,41 @@
     <meta http-equiv="Pragma" content="no-cache">
     <title>Taste Map｜Lafayette 视觉审批台</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="styles.css?v=references-3">
-    <script src="round2-data.js?v=references-3"></script>
-    <script src="round3-data.js?v=references-3"></script>
-    <script src="reference-library.js?v=references-3"></script>
-    <script src="app.js?v=references-3" defer></script>
+    <link rel="stylesheet" href="styles.css?v=core-approval-14-2">
+    <script src="round2-data.js?v=core-approval-14-2"></script>
+    <script src="round3-data.js?v=core-approval-14-2"></script>
+    <script src="reference-library.js?v=core-approval-14-2"></script>
+    <script src="app.js?v=core-approval-14-2" defer></script>
   </head>
   <body>
     <header class="hero" id="top">
-      <div class="hero__eyebrow">TASTE MAP · LAFAYETTE · 第三轮视觉审批</div>
+      <div class="hero__eyebrow">TASTE MAP · LAFAYETTE · 完整核心页面人工视觉审批</div>
       <div class="hero__content">
         <div>
-          <h1>Lafayette 视觉审批台 · 第三轮</h1>
+          <h1>Lafayette 完整核心页面视觉审批台</h1>
           <p>
-            本轮严格执行第二轮人工决定：到访记录、菜品与照片、公开主页、食单和设置已完成区域冻结；
-            我的页面只重做关注数据，Premium 只重做汉堡主视觉，四类分析与五类海报提供全新的真实 SwiftUI V2 候选。
-            所有截图来自固定模拟器，不是 AI 图或拼接图；待决定区域不会被自动判定为已确认。
+            当前 9 个已有审批项目继续保留 Lafayette 的页面决定、区域冻结和备注；另外重新加入此前被 Task C 自动标为
+            Visual PASS / CLOSED、但尚未经过 Lafayette 人工视觉批准的我的地图 / 我的列表、发现、添加餐厅 / Nearby、
+            餐厅详情和 Roulette。Codex Visual PASS 不等于 Lafayette Visual Approval。
           </p>
         </div>
         <div class="hero__seal" aria-hidden="true">
-          <span>9</span>
+          <span id="hero-total-count">14</span>
           <small>审批项</small>
         </div>
       </div>
       <div class="scope-note">
         <strong>审批边界</strong>
         本工具只记录视觉选择，不改 Taste Map 正式应用、不写数据库、不连接生产环境。
-        候选版不是正式产品决定；第二轮记录保留在独立的本机存储键中，不会被第三轮覆盖。
-        只有全部必要区域明确选择“保留”并冻结后，页面才显示“最终确认”。
+        候选版、自动化 PASS、截图报告或 Codex CLOSED 都不是正式人工批准。
+        只有 Lafayette 在本工具中明确选择页面方向，并把全部必要区域选择“保留”后冻结，页面才显示“最终确认”。
       </div>
     </header>
 
     <div class="progress-shell">
       <div class="progress-bar" aria-label="审批进度">
         <div class="progress-stat">
-          <span class="progress-stat__value">9</span>
+          <span class="progress-stat__value" id="total-count">14</span>
           <span class="progress-stat__label">项目总数</span>
         </div>
         <div class="progress-stat progress-stat--done">
@@ -50,7 +50,7 @@
           <span class="progress-stat__label">方向已记录</span>
         </div>
         <div class="progress-stat progress-stat--pending">
-          <span class="progress-stat__value" id="pending-count">9</span>
+          <span class="progress-stat__value" id="pending-count">14</span>
           <span class="progress-stat__label">页面待选</span>
         </div>
         <div class="progress-stat progress-stat--fuse">
@@ -63,7 +63,7 @@
         </div>
         <div class="progress-stat progress-stat--na">
           <span class="progress-stat__value" id="fuse-na-count">0</span>
-          <span class="progress-stat__label">现版已冻结</span>
+          <span class="progress-stat__label">页面全部冻结</span>
         </div>
         <div class="progress-stat progress-stat--references">
           <span class="progress-stat__value" id="reference-count">0</span>
@@ -87,7 +87,7 @@
     <main class="decision-list" id="decision-list"></main>
 
     <noscript>
-      <p class="noscript">此审批工具需要启用 JavaScript 才能显示 9 项内容和本机记录区。</p>
+      <p class="noscript">此审批工具需要启用 JavaScript 才能显示 14 项内容和本机记录区。</p>
     </noscript>
 
     <footer class="page-footer">
