@@ -60,15 +60,15 @@ struct FuseVisualCandidateHost: View {
             case .analyticsSource: FuseAnalysisCandidate(kind: .source)
             case .analyticsMonthly: FuseAnalysisCandidate(kind: .monthly)
             case .analyticsAnnual: FuseAnalysisCandidate(kind: .annual)
-            case .posterTaste: FusePosterCandidate(kind: .taste, style: .infographic)
+            case .posterTaste: FusePosterCandidate(kind: .taste, style: .storyMap)
             case .posterTasteB: FusePosterCandidate(kind: .taste, style: .editorial)
-            case .posterCompanion: FusePosterCandidate(kind: .companion, style: .infographic)
+            case .posterCompanion: FusePosterCandidate(kind: .companion, style: .storyMap)
             case .posterCompanionB: FusePosterCandidate(kind: .companion, style: .editorial)
-            case .posterSource: FusePosterCandidate(kind: .source, style: .infographic)
+            case .posterSource: FusePosterCandidate(kind: .source, style: .storyMap)
             case .posterSourceB: FusePosterCandidate(kind: .source, style: .editorial)
-            case .posterMonthly: FusePosterCandidate(kind: .monthly, style: .infographic)
+            case .posterMonthly: FusePosterCandidate(kind: .monthly, style: .storyMap)
             case .posterMonthlyB: FusePosterCandidate(kind: .monthly, style: .editorial)
-            case .posterAnnual: FusePosterCandidate(kind: .annual, style: .infographic)
+            case .posterAnnual: FusePosterCandidate(kind: .annual, style: .storyMap)
             case .posterAnnualB: FusePosterCandidate(kind: .annual, style: .editorial)
             case .paywall: FusePaywallCandidate()
             case .settings: FuseSettingsCandidate()
@@ -239,7 +239,7 @@ private struct FuseRestaurantImage: View {
 
 private struct FuseProfileCandidate: View {
     var body: some View {
-        FusePage("我的", subtitle: "Header + Settings frozen to Legacy", badge: "FUSE V2") {
+        FusePage("我的", subtitle: "仅重做关注数据 · 其余区域继续冻结", badge: "FUSE V3") {
             legacyFrozenHeader
 
             FuseSection("核心入口") {
@@ -301,6 +301,12 @@ private struct FuseProfileCandidate: View {
                     Text(FuseFixture.name).font(.title2.bold())
                     PremiumBurgerBadge().frame(width: 24, height: 24)
                 }
+                HStack(spacing: 16) {
+                    Label("关注 (FuseFixture.following)", systemImage: "person.2")
+                    Label("粉丝 (FuseFixture.followers)", systemImage: "person.2.fill")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TasteMapCoreTheme.textSecondary)
                 Text(FuseFixture.joined)
                     .font(.caption)
                     .foregroundStyle(TasteMapCoreTheme.textSecondary)
@@ -313,32 +319,19 @@ private struct FuseProfileCandidate: View {
             }
 
             HStack(spacing: 0) {
-                FuseMetric(value: FuseFixture.following, label: "关注")
-                Divider().frame(height: 34)
-                FuseMetric(value: FuseFixture.followers, label: "被关注")
-                Divider().frame(height: 34)
                 FuseMetric(value: FuseFixture.visited, label: "去过")
                 Divider().frame(height: 34)
                 FuseMetric(value: FuseFixture.want, label: "想去")
+                Divider().frame(height: 34)
+                FuseMetric(value: FuseFixture.spending, label: "总消费")
             }
             .padding(.top, 11)
             .overlay(alignment: .top) { Divider() }
-
-            HStack {
-                Label("总消费", systemImage: "receipt")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TasteMapCoreTheme.textSecondary)
-                Spacer()
-                Text(FuseFixture.spending)
-                    .font(.headline.monospacedDigit())
-                    .foregroundStyle(TasteMapCoreTheme.textPrimary)
-            }
-            .padding(.horizontal, 4)
         }
         .padding(15)
         .tasteMapCoreCard(radius: 20)
         .overlay(alignment: .topTrailing) {
-            Text("FROZEN · LEGACY")
+            Text("V3 · SOCIAL ONLY")
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(TasteMapCoreTheme.brand)
                 .padding(.horizontal, 7)
@@ -642,6 +635,22 @@ private enum FuseAnalysisKind: String {
     var eyebrow: String { switch self { case .companion: "TOGETHER"; case .source: "DISCOVERY"; case .monthly: "THIS MONTH"; case .annual: "YEAR IN TASTE" } }
     var title: String { switch self { case .companion: "最佳饭搭子"; case .source: "谁最会种草"; case .monthly: "本月回顾"; case .annual: "年度回顾" } }
     var headline: String { switch self { case .companion: "你和 Mia，把城市吃成了共同记忆"; case .source: "Mia 最懂你的口味，小红书最会把你带进新店"; case .monthly: "九月是一场日料与夜宵的接力"; case .annual: "这一年，你用 96 家餐厅画出味觉轨迹" } }
+    var summary: String {
+        switch self {
+        case .companion: "42 次共同到访里，日料与深夜食堂构成你们最稳定的双人餐桌。"
+        case .source: "朋友推荐更准，内容平台带来更多新店；靠谱与踩坑被明确分开。"
+        case .monthly: "18 次到访、12 家餐厅和 7 家新店，组成这个月真实发生的味觉故事。"
+        case .annual: "278 次到访横跨四季，回头率与消费轨迹共同定义了你的 2026。"
+        }
+    }
+    var heroTag: String {
+        switch self {
+        case .companion: "双人餐桌"
+        case .source: "来源命中"
+        case .monthly: "九月主线"
+        case .annual: "年度味觉"
+        }
+    }
     var heroAsset: String { switch self { case .companion: "FoodHeroJapanese"; case .source: "FoodHeroMixed"; case .monthly: "FoodHeroHotpotGrill"; case .annual: "FoodHeroMixed" } }
     var callouts: [(String, String, FoodDiningVisualKind)] {
         switch self {
@@ -658,25 +667,53 @@ private struct FuseAnalysisCandidate: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(kind.eyebrow).font(.caption2.bold()).tracking(2).foregroundStyle(TasteMapAnalysisTheme.brand)
-                        Text(kind.title).font(.largeTitle.bold()).foregroundStyle(TasteMapAnalysisTheme.ink)
-                        Text(kind.headline).font(.subheadline).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
-                    }
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Image(systemName: "chevron.left")
+                        .font(.headline.weight(.semibold))
+                        .frame(width: 44, height: 44)
                     Spacer()
-                    Image(systemName: "square.and.arrow.up").foregroundStyle(TasteMapAnalysisTheme.brand)
+                    Text(kind.title)
+                        .font(.headline)
+                        .foregroundStyle(TasteMapAnalysisTheme.ink)
+                    Spacer()
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.headline)
+                        .foregroundStyle(TasteMapAnalysisTheme.brand)
+                        .frame(width: 44, height: 44)
                 }
-                .overlay(alignment: .topTrailing) {
-                    Text("FUSE V1").font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(TasteMapAnalysisTheme.brandSoft, in: Capsule()).offset(y: 30)
+
+                VStack(alignment: .leading, spacing: 11) {
+                    HStack {
+                        Text(kind.eyebrow)
+                            .font(.caption2.bold())
+                            .tracking(2.2)
+                            .foregroundStyle(TasteMapAnalysisTheme.brand)
+                        Spacer()
+                        Label("重新设计 V2", systemImage: "sparkles")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(TasteMapAnalysisTheme.brand)
+                    }
+                    Text(kind.title)
+                        .font(.system(size: 37, weight: .heavy, design: .rounded))
+                        .foregroundStyle(TasteMapAnalysisTheme.ink)
+                    Text(kind.summary)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(TasteMapAnalysisTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Label("生成分享海报", systemImage: "wand.and.stars")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .frame(height: 58)
+                        .background(TasteMapAnalysisTheme.brand, in: RoundedRectangle(cornerRadius: 18))
                 }
 
                 FuseAnalysisHero(kind: kind)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("味觉结论").font(.caption.bold()).foregroundStyle(TasteMapAnalysisTheme.brand)
+                    Text("核心洞察").font(.caption.bold()).foregroundStyle(TasteMapAnalysisTheme.brand)
                     Text(kind.headline).font(.title3.bold()).foregroundStyle(TasteMapAnalysisTheme.ink)
                     Text("结论来自 Rich Demo 的 Restaurant、Visit、消费、饭搭子与推荐来源记录；装饰图形不冒充数据语义。")
                         .font(.caption).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
@@ -694,7 +731,8 @@ private struct FuseAnalysisCandidate: View {
                 }
                 FuseDistribution(kind: kind)
             }
-            .padding(18).padding(.bottom, 28)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 28)
         }
         .background(TasteMapAnalysisTheme.canvas.ignoresSafeArea())
     }
@@ -705,20 +743,50 @@ private struct FuseAnalysisHero: View {
 
     var body: some View {
         ZStack {
-            AnalysisConnectorWeb().stroke(TasteMapAnalysisTheme.brand.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [4, 5]))
-                .frame(width: 300, height: 250)
-            Image(kind.heroAsset).resizable().scaledToFill().frame(width: 176, height: 176).clipShape(Circle())
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(TasteMapAnalysisTheme.creamSoft.opacity(0.72))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(TasteMapAnalysisTheme.hairline)
+                }
+            AnalysisConnectorWeb()
+                .stroke(
+                    TasteMapAnalysisTheme.brand.opacity(0.28),
+                    style: StrokeStyle(lineWidth: 1.3, dash: [5, 6])
+                )
+                .frame(width: 285, height: 275)
+            Image(kind.heroAsset)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 184, height: 184)
+                .clipShape(Circle())
                 .overlay { Circle().stroke(.white, lineWidth: 7) }
-                .shadow(color: TasteMapAnalysisTheme.brand.opacity(0.18), radius: 18, y: 10)
+                .shadow(color: TasteMapAnalysisTheme.brand.opacity(0.19), radius: 20, y: 11)
+                .overlay(alignment: .bottom) {
+                    Text(kind.heroTag)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(TasteMapAnalysisTheme.ink)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 7)
+                        .background(.white.opacity(0.96), in: Capsule())
+                        .offset(y: 17)
+                }
             ForEach(Array(kind.callouts.enumerated()), id: \.offset) { index, item in
                 FuseAnalysisNode(value: item.0, label: item.1, visual: item.2, tone: index)
                     .offset(nodeOffset(index))
             }
-        }.frame(maxWidth: .infinity).frame(height: 315)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 430)
     }
 
     private func nodeOffset(_ index: Int) -> CGSize {
-        switch index { case 0: CGSize(width: -120, height: -105); case 1: CGSize(width: 120, height: -105); case 2: CGSize(width: -120, height: 108); default: CGSize(width: 120, height: 108) }
+        switch index {
+        case 0: CGSize(width: -112, height: -145)
+        case 1: CGSize(width: 112, height: -145)
+        case 2: CGSize(width: -112, height: 145)
+        default: CGSize(width: 112, height: 145)
+        }
     }
 }
 
@@ -731,12 +799,35 @@ private struct FuseAnalysisNode: View {
     var color: Color { [TasteMapAnalysisTheme.ingredientRed, TasteMapAnalysisTheme.leafGreen, TasteMapAnalysisTheme.caramel, TasteMapAnalysisTheme.brand][tone % 4] }
 
     var body: some View {
-        VStack(spacing: 3) {
-            FoodDiningVisualIcon(kind: visual, usage: .dataLinked, size: 31, foregroundColor: color, backgroundColor: color.opacity(0.12))
-            Text(value).font(.caption.bold()).foregroundStyle(TasteMapAnalysisTheme.ink)
-            Text(label).font(.caption2).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
-        }.frame(width: 86).padding(.vertical, 8).background(TasteMapAnalysisTheme.card, in: RoundedRectangle(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).stroke(TasteMapAnalysisTheme.hairline) }
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color)
+                .frame(width: 4, height: 50)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    FoodDiningVisualIcon(
+                        kind: visual,
+                        usage: .dataLinked,
+                        size: 23,
+                        foregroundColor: color,
+                        backgroundColor: color.opacity(0.12)
+                    )
+                    Text(label)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                }
+                Text(value)
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(TasteMapAnalysisTheme.ink)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(width: 126, alignment: .leading)
+        .padding(9)
+        .background(TasteMapAnalysisTheme.card.opacity(0.97), in: RoundedRectangle(cornerRadius: 16))
+        .overlay { RoundedRectangle(cornerRadius: 16).stroke(TasteMapAnalysisTheme.hairline) }
+        .shadow(color: TasteMapAnalysisTheme.ink.opacity(0.055), radius: 9, y: 4)
     }
 }
 
@@ -770,11 +861,13 @@ private enum FusePosterKind: String {
 }
 
 private enum FusePosterStyle: String {
+    case storyMap
     case infographic
     case editorial
 
     var candidateLabel: String {
         switch self {
+        case .storyMap: "REDESIGN V2 · DINING STORY MAP"
         case .infographic: "CANDIDATE A · INFOGRAPHIC ORBIT"
         case .editorial: "CANDIDATE B · EDITORIAL RECEIPT"
         }
@@ -793,6 +886,8 @@ private struct FusePosterCandidate: View {
                 VStack {
                     Group {
                         switch style {
+                        case .storyMap:
+                            FuseStoryPosterCanvas(kind: kind, style: style)
                         case .infographic:
                             FusePosterCanvas(kind: kind, style: style)
                         case .editorial:
@@ -806,6 +901,174 @@ private struct FusePosterCandidate: View {
                 }.frame(maxWidth: .infinity)
             }.background(Color(white: 0.90).ignoresSafeArea())
         }
+    }
+}
+
+/// Redesign V2 is a real SwiftUI 9:16 dining story map. It keeps the native
+/// renderer/footer contract but replaces the rejected orbit/editorial options
+/// with one stronger hierarchy: statement → food story → evidence → brand.
+private struct FuseStoryPosterCanvas: View {
+    let kind: FusePosterKind
+    let style: FusePosterStyle
+
+    private var metrics: [(String, String, FoodDiningVisualKind)] {
+        switch kind {
+        case .taste:
+            [("日料", "稳定偏爱", .food), ("¥188", "典型消费", .receipt), ("41%", "回头率", .repeatVisit)]
+        case .companion:
+            [("42 次", "一起吃饭", .sharedMeal), ("鮨一", "共同记忆", .restaurant), ("11 天", "最近一次", .calendar)]
+        case .source:
+            [("4.72", "Mia 命中", .rating), ("28 次", "小红书", .discovery), ("3 家", "最坑来源", .receipt)]
+        case .monthly:
+            [("18 次", "本月到访", .calendar), ("7 家", "新店", .discovery), ("¥4,286", "实际消费", .receipt)]
+        case .annual:
+            [("278 次", "全年到访", .calendar), ("96 家", "餐厅", .restaurant), ("¥36.8k", "全年消费", .receipt)]
+        }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let scale = proxy.size.width / 390
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4 * scale) {
+                        Text(style.candidateLabel)
+                            .font(.system(size: 8 * scale, weight: .heavy))
+                            .tracking(1.4)
+                            .foregroundStyle(TasteMapAnalysisTheme.ingredientRed)
+                        Text(kind.eyebrow)
+                            .font(.system(size: 10 * scale, weight: .heavy))
+                            .tracking(2.2)
+                            .foregroundStyle(TasteMapAnalysisTheme.brand)
+                    }
+                    Spacer()
+                    FoodDiningVisualIcon(kind: kind.visual, usage: .dataLinked, size: 40 * scale)
+                }
+
+                Text(kind.title)
+                    .font(.system(size: 30 * scale, weight: .heavy, design: .rounded))
+                    .foregroundStyle(TasteMapAnalysisTheme.ink)
+                    .padding(.top, 8 * scale)
+                Text(kind.statement)
+                    .font(.system(size: 15 * scale, weight: .bold, design: .rounded))
+                    .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 5 * scale)
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 30 * scale, style: .continuous)
+                        .fill(TasteMapAnalysisTheme.creamSoft.opacity(0.82))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 30 * scale, style: .continuous)
+                                .stroke(TasteMapAnalysisTheme.hairline)
+                        }
+                    AnalysisConnectorWeb()
+                        .stroke(
+                            TasteMapAnalysisTheme.brand.opacity(0.24),
+                            style: StrokeStyle(lineWidth: 1.1 * scale, dash: [4 * scale, 5 * scale])
+                        )
+                        .frame(width: 295 * scale, height: 185 * scale)
+                    Image(kind.hero)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 170 * scale, height: 170 * scale)
+                        .clipShape(Circle())
+                        .overlay { Circle().stroke(.white, lineWidth: 6 * scale) }
+                        .shadow(color: TasteMapAnalysisTheme.ink.opacity(0.13), radius: 14 * scale, y: 8 * scale)
+                    storyBadge(metrics[0], color: TasteMapAnalysisTheme.ingredientRed, scale: scale)
+                        .offset(x: -112 * scale, y: -86 * scale)
+                    storyBadge(metrics[1], color: TasteMapAnalysisTheme.brand, scale: scale)
+                        .offset(x: 112 * scale, y: -86 * scale)
+                    storyBadge(metrics[2], color: TasteMapAnalysisTheme.leafGreen, scale: scale)
+                        .offset(x: 0, y: 102 * scale)
+                }
+                .frame(height: 290 * scale)
+                .padding(.top, 16 * scale)
+
+                VStack(alignment: .leading, spacing: 7 * scale) {
+                    HStack {
+                        Text("代表餐厅")
+                            .font(.system(size: 11 * scale, weight: .heavy))
+                            .foregroundStyle(TasteMapAnalysisTheme.brand)
+                        Spacer()
+                        Text("真实图片优先")
+                            .font(.system(size: 8 * scale, weight: .semibold))
+                            .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                    }
+                    HStack(spacing: 7 * scale) {
+                        ForEach(Array(FuseFixture.restaurants.enumerated()), id: \.offset) { index, item in
+                            FuseRestaurantImage(asset: item.3, name: "#\(index + 1) \(item.0)", height: 76 * scale)
+                                .clipShape(RoundedRectangle(cornerRadius: 11 * scale))
+                        }
+                    }
+                }
+                .padding(.top, 13 * scale)
+
+                HStack(spacing: 7 * scale) {
+                    ForEach(kind.editorialTags.prefix(4), id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 9 * scale, weight: .bold))
+                            .padding(.horizontal, 8 * scale)
+                            .padding(.vertical, 5 * scale)
+                            .background(.white.opacity(0.82), in: Capsule())
+                            .overlay { Capsule().stroke(TasteMapAnalysisTheme.hairline) }
+                    }
+                }
+                .padding(.top, 12 * scale)
+
+                Spacer(minLength: 0)
+                SharePosterBrandFooter(
+                    supportingText: "Taste Map · 把真实吃过的故事分享出去",
+                    configuration: SharePosterBrandConfiguration(qrDestinationURL: nil)
+                )
+                .scaleEffect(scale, anchor: .bottomLeading)
+                .frame(height: 62 * scale)
+            }
+            .padding(20 * scale)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .background(
+                ZStack {
+                    TasteMapAnalysisTheme.canvas
+                    Circle()
+                        .fill(TasteMapAnalysisTheme.leafGreenSoft.opacity(0.50))
+                        .frame(width: 200 * scale)
+                        .offset(x: -150 * scale, y: 255 * scale)
+                    Circle()
+                        .fill(TasteMapAnalysisTheme.creamSoft.opacity(0.68))
+                        .frame(width: 250 * scale)
+                        .offset(x: 155 * scale, y: -255 * scale)
+                }
+            )
+        }
+        .preferredColorScheme(.light)
+    }
+
+    private func storyBadge(
+        _ item: (String, String, FoodDiningVisualKind),
+        color: Color,
+        scale: CGFloat
+    ) -> some View {
+        HStack(spacing: 6 * scale) {
+            FoodDiningVisualIcon(
+                kind: item.2,
+                usage: .dataLinked,
+                size: 24 * scale,
+                foregroundColor: color,
+                backgroundColor: color.opacity(0.12)
+            )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.0)
+                    .font(.system(size: 11 * scale, weight: .heavy))
+                    .foregroundStyle(TasteMapAnalysisTheme.ink)
+                Text(item.1)
+                    .font(.system(size: 8 * scale, weight: .semibold))
+                    .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+            }
+        }
+        .frame(width: 105 * scale, alignment: .leading)
+        .padding(8 * scale)
+        .background(.white.opacity(0.96), in: RoundedRectangle(cornerRadius: 14 * scale))
+        .overlay { RoundedRectangle(cornerRadius: 14 * scale).stroke(TasteMapAnalysisTheme.hairline) }
     }
 }
 
@@ -1063,9 +1326,14 @@ private extension FusePosterKind {
 
 private struct FusePaywallCandidate: View {
     var body: some View {
-        FusePage("Taste Map Premium", subtitle: "Legacy conversion hierarchy · Current entitlement truth") {
+        FusePage(
+            "Taste Map Premium",
+            subtitle: "仅重做汉堡主视觉 · 其余区域继续冻结",
+            badge: "REDESIGN V2"
+        ) {
             VStack(spacing: 12) {
-                PremiumBurgerBadge().frame(width: 112, height: 112)
+                FusePremiumHamburgerV2()
+                    .frame(width: 138, height: 138)
                 Text("把每一顿饭，变成更完整的味觉记忆")
                     .font(.title3.bold()).multilineTextAlignment(.center).foregroundStyle(TasteMapCoreTheme.textPrimary)
                 Text("价格和订阅周期以 App Store 实际配置为准")
@@ -1087,6 +1355,85 @@ private struct FusePaywallCandidate: View {
             }
             HStack { Button("隐私政策") { }; Spacer(); Button("服务条款") { } }.font(.caption)
         }
+    }
+}
+
+/// Candidate-only Premium hero. The compact Profile badge remains the approved
+/// historical asset; this redraw is isolated to the Paywall region Lafayette
+/// explicitly marked NEEDS REDESIGN.
+private struct FusePremiumHamburgerV2: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(TasteMapCoreTheme.brandSoft.opacity(0.82))
+            Circle()
+                .stroke(TasteMapCoreTheme.brand.opacity(0.20), lineWidth: 1)
+            Ellipse()
+                .fill(.white.opacity(0.92))
+                .frame(width: 105, height: 35)
+                .offset(y: 35)
+                .shadow(color: TasteMapCoreTheme.textPrimary.opacity(0.09), radius: 7, y: 5)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(red: 0.96, green: 0.73, blue: 0.31))
+                    .frame(width: 88, height: 23)
+                    .offset(y: 25)
+                Capsule()
+                    .fill(Color(red: 0.31, green: 0.16, blue: 0.11))
+                    .frame(width: 92, height: 18)
+                    .offset(y: 12)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color(red: 0.98, green: 0.73, blue: 0.22))
+                    .frame(width: 78, height: 16)
+                    .rotationEffect(.degrees(-4))
+                    .offset(y: 2)
+                Capsule()
+                    .fill(Color(red: 0.34, green: 0.63, blue: 0.36))
+                    .frame(width: 96, height: 13)
+                    .overlay {
+                        HStack(spacing: 14) {
+                            Circle().fill(Color(red: 0.90, green: 0.24, blue: 0.20)).frame(width: 10)
+                            Circle().fill(Color(red: 0.90, green: 0.24, blue: 0.20)).frame(width: 10)
+                            Circle().fill(Color(red: 0.90, green: 0.24, blue: 0.20)).frame(width: 10)
+                        }
+                    }
+                    .offset(y: -8)
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 44,
+                    bottomLeadingRadius: 10,
+                    bottomTrailingRadius: 10,
+                    topTrailingRadius: 44,
+                    style: .continuous
+                )
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 1.0, green: 0.82, blue: 0.43), Color(red: 0.94, green: 0.61, blue: 0.20)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 94, height: 43)
+                .offset(y: -29)
+                HStack(spacing: 17) {
+                    Capsule().fill(.white.opacity(0.78)).frame(width: 8, height: 3).rotationEffect(.degrees(20))
+                    Capsule().fill(.white.opacity(0.78)).frame(width: 8, height: 3).rotationEffect(.degrees(-8))
+                    Capsule().fill(.white.opacity(0.78)).frame(width: 8, height: 3).rotationEffect(.degrees(18))
+                }
+                .offset(y: -37)
+            }
+            .offset(y: -1)
+
+            Image(systemName: "sparkle")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(TasteMapCoreTheme.brand)
+                .offset(x: -53, y: -46)
+            Image(systemName: "sparkle")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(TasteMapCoreTheme.brand)
+                .offset(x: 54, y: -34)
+        }
+        .accessibilityLabel("Premium 汉堡候选主视觉")
     }
 }
 
