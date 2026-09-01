@@ -543,6 +543,11 @@ struct TasteMapSegmentedControl<Option: Hashable>: View {
     }
 }
 
+enum TasteMapEmptyStatePresentation: Sendable {
+    case card
+    case embedded
+}
+
 struct TasteMapEmptyState: View {
     let title: String
     let message: String
@@ -550,8 +555,32 @@ struct TasteMapEmptyState: View {
     var foodDiningVisualKind: FoodDiningVisualKind? = nil
     var actionTitle: String?
     var action: (() -> Void)?
+    var actionAccessibilityIdentifier: String?
+    var secondaryActionTitle: String?
+    var secondaryAction: (() -> Void)?
+    var secondaryActionAccessibilityIdentifier: String?
+    var presentation: TasteMapEmptyStatePresentation = .card
+    var accessibilityIdentifier: String?
 
     var body: some View {
+        Group {
+            switch presentation {
+            case .card:
+                stateContent
+                    .padding(TasteMapDesignTokens.Spacing.xxLarge)
+                    .tasteMapCoreCard(showsShadow: true)
+            case .embedded:
+                stateContent
+                    .padding(.horizontal, TasteMapDesignTokens.Spacing.large)
+                    .padding(.vertical, TasteMapDesignTokens.Spacing.xxLarge)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-empty-state")
+    }
+
+    private var stateContent: some View {
         VStack(spacing: TasteMapDesignTokens.Spacing.stateContent) {
             if let foodDiningVisualKind {
                 FoodDiningVisualIcon(
@@ -585,12 +614,17 @@ struct TasteMapEmptyState: View {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .accessibilityIdentifier(actionAccessibilityIdentifier ?? "taste-map-empty-primary-action")
+            }
+            if let secondaryActionTitle, let secondaryAction {
+                Button(secondaryActionTitle, action: secondaryAction)
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .accessibilityIdentifier(
+                        secondaryActionAccessibilityIdentifier ?? "taste-map-empty-secondary-action"
+                    )
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(TasteMapDesignTokens.Spacing.xxLarge)
-        .tasteMapCoreCard(showsShadow: true)
-        .accessibilityElement(children: .contain)
     }
 }
 

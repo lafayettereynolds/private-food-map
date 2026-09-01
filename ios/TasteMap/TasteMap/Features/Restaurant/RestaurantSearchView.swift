@@ -42,23 +42,32 @@ struct RestaurantSearchView: View {
                 if viewModel.isLoading {
                     ProgressView("正在搜索餐厅…")
                 } else if let errorMessage = viewModel.errorMessage {
-                    ContentUnavailableView {
-                        Label("无法完成搜索", systemImage: "wifi.exclamationmark")
-                    } description: {
-                        Text(errorMessage)
-                    } actions: {
-                        Button("重试") {
-                            Task { await viewModel.retry() }
-                        }
-                    }
+                    TasteMapEmptyState(
+                        title: "无法完成搜索",
+                        message: errorMessage,
+                        systemImage: "wifi.exclamationmark",
+                        actionTitle: "重试",
+                        action: { Task { await viewModel.retry() } },
+                        presentation: .embedded,
+                        accessibilityIdentifier: "restaurant-search-error-state"
+                    )
                 } else if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView(
-                        "搜索餐厅",
+                    TasteMapEmptyState(
+                        title: "搜索餐厅",
+                        message: "输入真实餐厅名称或地址，结果由 Apple 地图提供。",
                         systemImage: "magnifyingglass",
-                        description: Text("输入真实餐厅名称或地址，结果由 Apple 地图提供。")
+                        foodDiningVisualKind: .genericDining,
+                        presentation: .embedded,
+                        accessibilityIdentifier: "restaurant-search-guidance-state"
                     )
                 } else if viewModel.results.isEmpty {
-                    ContentUnavailableView.search(text: query)
+                    TasteMapEmptyState(
+                        title: "没有找到餐厅",
+                        message: "Apple 地图没有找到与“\(query)”匹配的真实餐厅。",
+                        systemImage: "magnifyingglass",
+                        presentation: .embedded,
+                        accessibilityIdentifier: "restaurant-search-empty-state"
+                    )
                 } else {
                     List(viewModel.results) { candidate in
                         VStack(alignment: .leading, spacing: 12) {

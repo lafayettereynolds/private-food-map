@@ -2759,6 +2759,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["还没有候选餐厅"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["搜索餐厅"].exists)
         XCTAssertFalse(app.buttons["roulette-spin"].exists)
+        keepScreenshot(named: "Full Layout Closure Canonical Empty State", of: app)
     }
 
     @MainActor

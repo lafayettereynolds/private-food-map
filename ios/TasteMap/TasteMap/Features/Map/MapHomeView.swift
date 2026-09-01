@@ -159,7 +159,12 @@ struct MapHomeView: View {
                 }) {
                     RestaurantDetailView(restaurant: restaurant, entrySource: .map)
                 } else {
-                    ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
+                    TasteMapEmptyState(
+                        title: "餐厅不存在",
+                        message: "这家餐厅可能已经被删除或尚未同步完成。",
+                        systemImage: "fork.knife",
+                        presentation: .embedded
+                    )
                 }
             }
             .sheet(item: $visitEditorDestination) { destination in
@@ -168,7 +173,12 @@ struct MapHomeView: View {
                 }) {
                     VisitEditorView(restaurant: restaurant)
                 } else {
-                    ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
+                    TasteMapEmptyState(
+                        title: "餐厅不存在",
+                        message: "这家餐厅可能已经被删除或尚未同步完成。",
+                        systemImage: "fork.knife",
+                        presentation: .embedded
+                    )
                 }
             }
             .sheet(item: $rouletteDestination) { destination in

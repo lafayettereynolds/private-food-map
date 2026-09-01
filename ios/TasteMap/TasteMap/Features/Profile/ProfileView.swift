@@ -98,10 +98,13 @@ struct ProfileView: View {
                         tasteFootprintsSection
                     }
                     if authenticatedUser != nil, activeRestaurants.isEmpty {
-                        ContentUnavailableView(
-                            "还没有美食记录",
+                        TasteMapEmptyState(
+                            title: "还没有美食记录",
+                            message: "保存第一次到访后，你的真实记录会显示在这里。",
                             systemImage: "fork.knife.circle",
-                            description: Text("保存第一次到访后，你的真实记录会显示在这里。")
+                            foodDiningVisualKind: .genericDining,
+                            presentation: .embedded,
+                            accessibilityIdentifier: "profile-records-empty-state"
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)

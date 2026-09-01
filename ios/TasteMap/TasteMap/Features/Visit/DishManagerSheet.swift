@@ -17,10 +17,13 @@ struct DishManagerSheet: View {
             List {
                 Section("本次吃了什么") {
                     if drafts.isEmpty {
-                        ContentUnavailableView(
-                            "还没有添加菜品",
+                        TasteMapEmptyState(
+                            title: "还没有添加菜品",
+                            message: "可以选择以前吃过的菜，也可以记录一道新菜。",
                             systemImage: "fork.knife.circle",
-                            description: Text("可以选择以前吃过的菜，也可以记录一道新菜。")
+                            foodDiningVisualKind: .food,
+                            presentation: .embedded,
+                            accessibilityIdentifier: "dish-manager-empty-state"
                         )
                     } else {
                         ForEach(drafts) { draft in

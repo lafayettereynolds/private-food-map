@@ -16,10 +16,14 @@ private struct CommunityPreviewStateView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if items.isEmpty {
-                        ContentUnavailableView(
-                            "暂时没有可见内容", systemImage: "fork.knife.circle",
-                            description: Text("只有用户允许展示的记录才会出现在这里。")
-                        ).frame(minHeight: 420)
+                        TasteMapEmptyState(
+                            title: "暂时没有可见内容",
+                            message: "只有用户允许展示的记录才会出现在这里。",
+                            systemImage: "fork.knife.circle",
+                            foodDiningVisualKind: .genericDining,
+                            presentation: .embedded
+                        )
+                        .frame(minHeight: 420)
                     }
                     ForEach(items) { item in
                         PublicContentCard(

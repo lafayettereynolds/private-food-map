@@ -43,25 +43,28 @@ struct CommunityFeedView: View {
         NavigationStack {
             Group {
                 if currentUserID == nil && !loading {
-                    ContentUnavailableView(
-                        "登录后查看社区",
+                    TasteMapEmptyState(
+                        title: "登录后查看社区",
+                        message: "请先到“我的”使用 Apple 登录。",
                         systemImage: "person.crop.circle.badge.checkmark",
-                        description: Text("请先到“我的”使用 Apple 登录。")
+                        presentation: .embedded,
+                        accessibilityIdentifier: "community-auth-empty-state"
                     )
                 } else if loading && items.isEmpty {
                     ProgressView("正在加载社区动态…").frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if items.isEmpty {
-                    ContentUnavailableView {
-                        Label(scope == .following ? "还没有关注动态" : "还没有公开动态",
-                              systemImage: scope == .following ? "person.2" : "clock")
-                    } description: {
-                        Text(message ?? (scope == .following
+                    TasteMapEmptyState(
+                        title: scope == .following ? "还没有关注动态" : "还没有公开动态",
+                        message: message ?? (scope == .following
                             ? "关注用户或添加好友后，他们允许你查看的新记录会出现在这里。"
-                            : "有新的公开到访记录后会显示在这里。"))
-                    } actions: {
-                        Button("重试") { Task { await load(reset: true, preferCache: false) } }
-                            .buttonStyle(.borderedProminent)
-                    }
+                            : "有新的公开到访记录后会显示在这里。"),
+                        systemImage: scope == .following ? "person.2" : "clock",
+                        foodDiningVisualKind: .sharedMeal,
+                        actionTitle: "重试",
+                        action: { Task { await load(reset: true, preferCache: false) } },
+                        presentation: .embedded,
+                        accessibilityIdentifier: "community-content-empty-state"
+                    )
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 16) {

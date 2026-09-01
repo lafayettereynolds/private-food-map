@@ -145,9 +145,12 @@ private struct CommunityCommentsView: View {
                     if loading && comments.isEmpty {
                         ProgressView("正在加载评论…").frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if comments.isEmpty {
-                        ContentUnavailableView(
-                            "还没有评论", systemImage: "bubble.left",
-                            description: Text(message ?? "写下与这次公开到访有关的友善评论。")
+                        TasteMapEmptyState(
+                            title: "还没有评论",
+                            message: message ?? "写下与这次公开到访有关的友善评论。",
+                            systemImage: "bubble.left",
+                            presentation: .embedded,
+                            accessibilityIdentifier: "community-comments-empty-state"
                         )
                     } else {
                         List {

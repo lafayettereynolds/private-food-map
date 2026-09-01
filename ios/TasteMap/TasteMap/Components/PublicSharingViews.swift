@@ -157,10 +157,12 @@ struct PublicShareLandingView: View {
                 Group {
                     if let response { content(response.entity) }
                     else if let errorMessage {
-                        ContentUnavailableView(
-                            "这个分享已经不可用",
+                        TasteMapEmptyState(
+                            title: "这个分享已经不可用",
+                            message: errorMessage,
                             systemImage: "link.badge.plus",
-                            description: Text(errorMessage)
+                            presentation: .embedded,
+                            accessibilityIdentifier: "public-share-unavailable-state"
                         )
                     } else {
                         VStack(spacing: 12) {

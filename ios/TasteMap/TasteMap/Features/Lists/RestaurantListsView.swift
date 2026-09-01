@@ -22,24 +22,24 @@ struct RestaurantListsOverviewView: View {
     var body: some View {
         Group {
             if lists.isEmpty && query.isEmpty {
-                ContentUnavailableView {
-                    VStack(spacing: 10) {
-                        FoodDiningVisualIcon(
-                            kind: .menu,
-                            usage: .decorative,
-                            size: 58
-                        )
-                        Text("还没有榜单")
-                            .font(.title3.bold())
-                    }
-                } description: {
-                    Text("创建一份有主题的餐厅榜单，空榜单也可以先保存。")
-                } actions: {
-                    Button("新建榜单") { creating = true }.buttonStyle(.borderedProminent)
-                }
-                .accessibilityIdentifier("restaurant-lists-empty-state")
+                TasteMapEmptyState(
+                    title: "还没有榜单",
+                    message: "创建一份有主题的餐厅榜单，空榜单也可以先保存。",
+                    systemImage: "list.number",
+                    foodDiningVisualKind: .menu,
+                    actionTitle: "新建榜单",
+                    action: { creating = true },
+                    presentation: .embedded,
+                    accessibilityIdentifier: "restaurant-lists-empty-state"
+                )
             } else if lists.isEmpty {
-                ContentUnavailableView.search(text: query)
+                TasteMapEmptyState(
+                    title: "没有找到榜单",
+                    message: "没有与“\(query)”匹配的榜单标题。",
+                    systemImage: "magnifyingglass",
+                    presentation: .embedded,
+                    accessibilityIdentifier: "restaurant-lists-search-empty-state"
+                )
             } else {
                 ScrollView {
                     LazyVStack(spacing: 14) {
@@ -173,9 +173,12 @@ struct RestaurantListDetailView: View {
             }
             Section("餐厅 · \(items.count)") {
                 if items.isEmpty {
-                    ContentUnavailableView(
-                        "还没有加入餐厅", systemImage: "fork.knife.circle",
-                        description: Text("可以从去过、想吃或 Apple 地图搜索加入；不会自动改变想吃状态。")
+                    TasteMapEmptyState(
+                        title: "还没有加入餐厅",
+                        message: "可以从去过、想吃或 Apple 地图搜索加入；不会自动改变想吃状态。",
+                        systemImage: "fork.knife.circle",
+                        foodDiningVisualKind: .menu,
+                        presentation: .embedded
                     )
                     Button("添加餐厅", systemImage: "plus") { adding = true }
                         .frame(maxWidth: .infinity)
@@ -540,7 +543,13 @@ struct AddRestaurantToListsSheet: View {
         NavigationStack {
             List {
                 if ownLists.isEmpty {
-                    ContentUnavailableView("还没有榜单", systemImage: "list.number", description: Text("先创建一份榜单。"))
+                    TasteMapEmptyState(
+                        title: "还没有榜单",
+                        message: "先创建一份榜单。",
+                        systemImage: "list.number",
+                        foodDiningVisualKind: .menu,
+                        presentation: .embedded
+                    )
                 }
                 ForEach(ownLists) { list in
                     Button { toggle(list) } label: {
@@ -617,9 +626,12 @@ struct AddPlaceToListsSheet: View {
         NavigationStack {
             List {
                 if ownLists.isEmpty {
-                    ContentUnavailableView(
-                        "还没有榜单", systemImage: "list.number",
-                        description: Text("先创建一份榜单，再把这家餐厅加入。")
+                    TasteMapEmptyState(
+                        title: "还没有榜单",
+                        message: "先创建一份榜单，再把这家餐厅加入。",
+                        systemImage: "list.number",
+                        foodDiningVisualKind: .menu,
+                        presentation: .embedded
                     )
                 }
                 ForEach(ownLists) { list in

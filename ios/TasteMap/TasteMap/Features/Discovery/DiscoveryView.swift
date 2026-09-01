@@ -529,8 +529,13 @@ struct DiscoveryContentView: View {
             .padding(.top, 8).padding(.bottom, 10)
 
             if !isSignedIn {
-                ContentUnavailableView("登录后发现", systemImage: "person.crop.circle.badge.checkmark",
-                                       description: Text("请先到“我的”使用 Apple 登录。"))
+                TasteMapEmptyState(
+                    title: "登录后发现",
+                    message: "请先到“我的”使用 Apple 登录。",
+                    systemImage: "person.crop.circle.badge.checkmark",
+                    presentation: .embedded,
+                    accessibilityIdentifier: "discovery-auth-empty-state"
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if mode == .similarTaste && similarTasteAccess != .allowed {
                 if similarTasteAccess == .loading {
@@ -542,22 +547,21 @@ struct DiscoveryContentView: View {
             } else if loading && cards.isEmpty {
                 ProgressView("正在寻找真实餐厅…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if cards.isEmpty {
-                ContentUnavailableView {
-                    Label(emptyStateTitle,
-                          systemImage: filterEmptyReason == nil
-                            ? (mode == .similarTaste ? "person.2.wave.2" : "fork.knife.circle")
-                            : "line.3.horizontal.decrease.circle")
-                } description: { Text(emptyStateMessage) }
-                actions: {
-                    if filterEmptyReason != nil {
-                        Button("重置筛选", action: onResetFilters).buttonStyle(.borderedProminent)
-                        if canLoadMore {
-                            Button("继续加载更多结果", action: onLoadMore).buttonStyle(.bordered)
-                        }
-                    } else {
-                        Button("重试", action: onRetry).buttonStyle(.borderedProminent)
-                    }
-                }
+                TasteMapEmptyState(
+                    title: emptyStateTitle,
+                    message: emptyStateMessage,
+                    systemImage: filterEmptyReason == nil
+                        ? (mode == .similarTaste ? "person.2.wave.2" : "fork.knife.circle")
+                        : "line.3.horizontal.decrease.circle",
+                    foodDiningVisualKind: filterEmptyReason == nil ? .genericDining : nil,
+                    actionTitle: filterEmptyReason != nil ? "重置筛选" : "重试",
+                    action: filterEmptyReason != nil ? onResetFilters : onRetry,
+                    secondaryActionTitle: filterEmptyReason != nil && canLoadMore
+                        ? "继续加载更多结果" : nil,
+                    secondaryAction: filterEmptyReason != nil && canLoadMore ? onLoadMore : nil,
+                    presentation: .embedded,
+                    accessibilityIdentifier: "discovery-content-empty-state"
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {

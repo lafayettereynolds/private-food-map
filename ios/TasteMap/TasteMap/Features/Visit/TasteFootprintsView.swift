@@ -40,12 +40,14 @@ struct TasteFootprintsView: View {
 
         Group {
             if snapshot.footprints.isEmpty {
-                ContentUnavailableView(
-                    "还没有味觉足迹",
+                TasteMapEmptyState(
+                    title: "还没有味觉足迹",
+                    message: "每次真实到访都会在这里留下独立的一条记录，包括未评分的到访。",
                     systemImage: "point.bottomleft.forward.to.point.topright.scurvepath",
-                    description: Text("每次真实到访都会在这里留下独立的一条记录，包括未评分的到访。")
+                    foodDiningVisualKind: .location,
+                    presentation: .embedded,
+                    accessibilityIdentifier: "taste-footprints-empty"
                 )
-                .accessibilityIdentifier("taste-footprints-empty")
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -75,7 +77,12 @@ struct TasteFootprintsView: View {
             }) {
                 RestaurantDetailView(restaurant: restaurant, entrySource: .analysis)
             } else {
-                ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
+                TasteMapEmptyState(
+                    title: "餐厅不存在",
+                    message: "这家餐厅可能已经被删除或尚未同步完成。",
+                    systemImage: "fork.knife",
+                    presentation: .embedded
+                )
             }
         }
     }

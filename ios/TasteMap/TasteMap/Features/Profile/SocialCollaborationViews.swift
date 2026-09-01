@@ -22,10 +22,13 @@ struct SocialCollaborationInboxView: View {
         NavigationStack {
             List {
                 if companionIncoming.isEmpty && incoming.isEmpty && sent.isEmpty && accepted.isEmpty && !isLoading {
-                    ContentUnavailableView(
-                        "暂无协作消息",
+                    TasteMapEmptyState(
+                        title: "暂无协作消息",
+                        message: "饭搭子关联和一起记录邀请会出现在这里。",
                         systemImage: "person.2.wave.2",
-                        description: Text("饭搭子关联和一起记录邀请会出现在这里。")
+                        foodDiningVisualKind: .sharedMeal,
+                        presentation: .embedded,
+                        accessibilityIdentifier: "social-collaboration-empty-state"
                     )
                 }
 

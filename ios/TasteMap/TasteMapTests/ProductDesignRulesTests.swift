@@ -79,4 +79,28 @@ struct ProductDesignRulesTests {
         #expect(first == second)
         #expect(FoodDiningVisualLibrary.decorativeCoreKinds.contains(first))
     }
+
+    @Test("Formal product states use the canonical Taste Map renderer")
+    func productionStatesDoNotBypassCanonicalRenderer() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let appSource = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("TasteMap", isDirectory: true)
+        let enumerator = try #require(
+            FileManager.default.enumerator(
+                at: appSource,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        )
+        var bypasses: [String] = []
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "swift" {
+            let source = try String(contentsOf: fileURL, encoding: .utf8)
+            if source.contains("ContentUnavailableView") {
+                bypasses.append(fileURL.path.replacingOccurrences(of: appSource.path + "/", with: ""))
+            }
+        }
+        #expect(bypasses.isEmpty, "State renderer bypasses: \(bypasses.sorted())")
+    }
 }

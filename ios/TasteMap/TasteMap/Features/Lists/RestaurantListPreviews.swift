@@ -82,7 +82,13 @@ private struct RestaurantListDetailPreviewHost: View {
             if let list = lists.first {
                 RestaurantListDetailView(list: list, currentUserID: "tm_preview", photoAPI: nil)
             } else {
-                ContentUnavailableView("没有预览榜单", systemImage: "list.number")
+                TasteMapEmptyState(
+                    title: "没有预览榜单",
+                    message: "当前预览容器没有可显示的榜单。",
+                    systemImage: "list.number",
+                    foodDiningVisualKind: .menu,
+                    presentation: .embedded
+                )
             }
         }
         .modelContainer(scenario.container)

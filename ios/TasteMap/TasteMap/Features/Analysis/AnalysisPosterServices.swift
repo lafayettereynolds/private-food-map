@@ -330,13 +330,16 @@ struct AnalysisPosterExportSheet: View {
                 .padding(.bottom, 12)
             }
         } else if let errorMessage {
-            ContentUnavailableView {
-                Label("海报没有生成", systemImage: "photo.badge.exclamationmark")
-            } description: {
-                Text(errorMessage)
-            } actions: {
-                Button("重试") { Task { await generatePoster() } }
-            }
+            TasteMapEmptyState(
+                title: "海报没有生成",
+                message: errorMessage,
+                systemImage: "photo.badge.exclamationmark",
+                foodDiningVisualKind: .receipt,
+                actionTitle: "重试",
+                action: { Task { await generatePoster() } },
+                presentation: .embedded,
+                accessibilityIdentifier: "analysis-poster-error-state"
+            )
         } else {
             VStack(spacing: 14) {
                 ProgressView().controlSize(.large).tint(TasteMapAnalysisTheme.brand)

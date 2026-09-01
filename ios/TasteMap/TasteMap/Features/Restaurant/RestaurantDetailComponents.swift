@@ -222,10 +222,13 @@ struct RestaurantUserPhotosSection<Content: View>: View {
             if hasPhotos {
                 content
             } else {
-                ContentUnavailableView(
-                    "还没有用户实拍",
+                TasteMapEmptyState(
+                    title: "还没有用户实拍",
+                    message: "公开或本人记录的到访照片会显示在这里。",
                     systemImage: "photo.on.rectangle.angled",
-                    description: Text("公开或本人记录的到访照片会显示在这里。")
+                    foodDiningVisualKind: .genericDining,
+                    presentation: .embedded,
+                    accessibilityIdentifier: "restaurant-user-photos-empty-state"
                 )
                 .frame(maxWidth: .infinity, minHeight: 150)
             }
@@ -697,10 +700,13 @@ struct RestaurantDetailStatsSection: View {
                     )
                 }
             } else {
-                ContentUnavailableView(
-                    "还没有我的记录",
+                TasteMapEmptyState(
+                    title: "还没有我的记录",
+                    message: remoteMessage ?? "记录到访后会在这里显示你的统计。",
                     systemImage: "fork.knife.circle",
-                    description: Text(remoteMessage ?? "记录到访后会在这里显示你的统计。")
+                    foodDiningVisualKind: .genericDining,
+                    presentation: .embedded,
+                    accessibilityIdentifier: "restaurant-statistics-empty-state"
                 )
                 .frame(maxWidth: .infinity, minHeight: 150)
             }
@@ -759,10 +765,13 @@ struct RestaurantVisitHistorySection: View {
             .padding(.bottom, 8)
 
             if visits.isEmpty {
-                ContentUnavailableView(
-                    "还没有到访记录",
+                TasteMapEmptyState(
+                    title: "还没有到访记录",
+                    message: "真正去过后，每次到访都会独立保存在这里。",
                     systemImage: "fork.knife.circle",
-                    description: Text("真正去过后，每次到访都会独立保存在这里。")
+                    foodDiningVisualKind: .genericDining,
+                    presentation: .embedded,
+                    accessibilityIdentifier: "restaurant-visit-history-empty-state"
                 )
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)

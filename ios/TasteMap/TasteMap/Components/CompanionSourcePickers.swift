@@ -23,13 +23,20 @@ struct CompanionPickerSheet: View {
         NavigationStack {
             List {
                 if activeCompanions.isEmpty {
-                    ContentUnavailableView(
-                        "还没有饭搭子",
+                    TasteMapEmptyState(
+                        title: "还没有饭搭子",
+                        message: "写下一个名字，下次记录时就能直接选择。",
                         systemImage: "person.2",
-                        description: Text("写下一个名字，下次记录时就能直接选择。")
+                        foodDiningVisualKind: .sharedMeal,
+                        presentation: .embedded
                     )
                 } else if filteredCompanions.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
+                    TasteMapEmptyState(
+                        title: "没有找到饭搭子",
+                        message: "没有与“\(searchText)”匹配的已有名字。",
+                        systemImage: "magnifyingglass",
+                        presentation: .embedded
+                    )
                 } else {
                     Section(searchText.isEmpty ? "最近 / 常用饭搭子" : "搜索结果") {
                         ForEach(filteredCompanions) { companion in
@@ -191,13 +198,20 @@ struct RecommendationSourcePickerSheet: View {
         NavigationStack {
             List {
                 if activeSources.isEmpty {
-                    ContentUnavailableView(
-                        "还没有推荐来源",
+                    TasteMapEmptyState(
+                        title: "还没有推荐来源",
+                        message: "写下真实来源名称，下次可以直接复用。",
                         systemImage: "sparkles",
-                        description: Text("写下真实来源名称，下次可以直接复用。")
+                        foodDiningVisualKind: .receipt,
+                        presentation: .embedded
                     )
                 } else if filteredSources.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
+                    TasteMapEmptyState(
+                        title: "没有找到推荐来源",
+                        message: "没有与“\(searchText)”匹配的已有来源。",
+                        systemImage: "magnifyingglass",
+                        presentation: .embedded
+                    )
                 } else {
                     Section(searchText.isEmpty ? "最近使用" : "搜索结果") {
                         ForEach(filteredSources) { source in

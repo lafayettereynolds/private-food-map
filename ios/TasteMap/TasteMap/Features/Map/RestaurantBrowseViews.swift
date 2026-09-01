@@ -56,7 +56,12 @@ struct RestaurantCollectionView: View {
             }) {
                 RestaurantDetailView(restaurant: restaurant, entrySource: .list)
             } else {
-                ContentUnavailableView("餐厅不存在", systemImage: "fork.knife")
+                TasteMapEmptyState(
+                    title: "餐厅不存在",
+                    message: "这家餐厅可能已经被删除或尚未同步完成。",
+                    systemImage: "fork.knife",
+                    presentation: .embedded
+                )
             }
         }
     }
@@ -94,25 +99,27 @@ struct RestaurantBrowseList: View {
     private var content: some View {
         Group {
             if items.isEmpty, isFiltered {
-                ContentUnavailableView {
-                    Label("当前无符合条件的餐厅", systemImage: "line.3.horizontal.decrease.circle")
-                } description: {
-                    Text("可以清除筛选，重新查看你的餐厅。")
-                } actions: {
-                    Button("清除全部筛选", action: onClearFilters)
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("personal-filter-list-zero-clear")
-                }
+                TasteMapEmptyState(
+                    title: "当前无符合条件的餐厅",
+                    message: "可以清除筛选，重新查看你的餐厅。",
+                    systemImage: "line.3.horizontal.decrease.circle",
+                    actionTitle: "清除全部筛选",
+                    action: onClearFilters,
+                    actionAccessibilityIdentifier: "personal-filter-list-zero-clear",
+                    presentation: .embedded,
+                    accessibilityIdentifier: "personal-filter-list-zero"
+                )
                 .accessibilityIdentifier("personal-filter-list-zero")
             } else if items.isEmpty {
                 RestaurantBrowseEmptyState(segment: segment)
             } else if filteredItems.isEmpty {
-                ContentUnavailableView(
-                    "没有找到匹配的餐厅",
+                TasteMapEmptyState(
+                    title: "没有找到匹配的餐厅",
+                    message: "可以尝试搜索餐厅、城市、备注、饭搭子或菜品。",
                     systemImage: "magnifyingglass",
-                    description: Text("可以尝试搜索餐厅、城市、备注、饭搭子或菜品。")
+                    presentation: .embedded,
+                    accessibilityIdentifier: "restaurant-list-search-empty"
                 )
-                .accessibilityIdentifier("restaurant-list-search-empty")
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {

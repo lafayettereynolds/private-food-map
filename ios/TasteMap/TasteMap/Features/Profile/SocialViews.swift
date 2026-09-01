@@ -130,9 +130,12 @@ struct SocialHubView: View {
             .padding(.bottom, 10)
             if query.count < 2 && items.isEmpty {
                 if suggestions.isEmpty {
-                    ContentUnavailableView(
-                        "找到 Taste Map 用户", systemImage: "person.2.badge.plus",
-                        description: Text("输入至少 2 个字符；邮箱和 Apple 登录信息不能用于找人。")
+                    TasteMapEmptyState(
+                        title: "找到 Taste Map 用户",
+                        message: "输入至少 2 个字符；邮箱和 Apple 登录信息不能用于找人。",
+                        systemImage: "person.2.badge.plus",
+                        presentation: .embedded,
+                        accessibilityIdentifier: "social-search-guidance-state"
                     )
                 } else {
                     List {
@@ -190,9 +193,12 @@ struct SocialHubView: View {
         if loading && items.isEmpty {
             ProgressView("正在加载…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if items.isEmpty {
-            ContentUnavailableView(
-                emptyTitle, systemImage: "person.2",
-                description: Text(message ?? "建立关系后会显示在这里。")
+            TasteMapEmptyState(
+                title: emptyTitle,
+                message: message ?? "建立关系后会显示在这里。",
+                systemImage: "person.2",
+                presentation: .embedded,
+                accessibilityIdentifier: "social-relationship-empty-state"
             )
         } else {
             List {
@@ -628,10 +634,13 @@ struct SocialPublicProfileView: View {
         if loadingContent && contentItems.isEmpty {
             ProgressView("正在加载公开内容…").padding(.vertical, 36)
         } else if contentItems.isEmpty {
-            ContentUnavailableView(
-                contentSection == .visits ? "TA 还没有公开记录" : "TA 还没有公开想吃",
+            TasteMapEmptyState(
+                title: contentSection == .visits ? "TA 还没有公开记录" : "TA 还没有公开想吃",
+                message: contentMessage ?? "只有用户主动允许展示的内容才会出现在这里。",
                 systemImage: contentSection == .visits ? "fork.knife.circle" : "bookmark",
-                description: Text(contentMessage ?? "只有用户主动允许展示的内容才会出现在这里。")
+                foodDiningVisualKind: contentSection == .visits ? .genericDining : nil,
+                presentation: .embedded,
+                accessibilityIdentifier: "public-profile-content-empty-state"
             )
             .frame(minHeight: 220)
         } else {

@@ -78,16 +78,16 @@ private struct PremiumEntitlementLoadingView: View {
     let feature: PremiumFeature
 
     var body: some View {
-        ContentUnavailableView {
-            Label("正在确认会员权益", systemImage: "checkmark.seal")
-        } description: {
-            Text(entitlementService.lastErrorMessage ?? "不会先显示免费页面再突然切换状态。")
-        } actions: {
-            if entitlementService.activeUserID != nil {
-                Button("重试") { Task { await entitlementService.refresh() } }
-                    .buttonStyle(.borderedProminent)
-            }
-        }
+        TasteMapEmptyState(
+            title: "正在确认会员权益",
+            message: entitlementService.lastErrorMessage ?? "不会先显示免费页面再突然切换状态。",
+            systemImage: "checkmark.seal",
+            actionTitle: entitlementService.activeUserID != nil ? "重试" : nil,
+            action: entitlementService.activeUserID != nil
+                ? { Task { await entitlementService.refresh() } } : nil,
+            presentation: .embedded,
+            accessibilityIdentifier: "premium-entitlement-state"
+        )
         .navigationTitle(feature.definition.title)
         .navigationBarTitleDisplayMode(.inline)
         .tasteMapBottomNavigationHidden()
@@ -256,13 +256,14 @@ struct PremiumPaywallView: View {
                 HStack { ProgressView(); Text("正在获取 App Store 方案…") }
                     .frame(maxWidth: .infinity, minHeight: 70)
             } else if products.isEmpty {
-                ContentUnavailableView(
-                    "订阅方案暂时不可用",
+                TasteMapEmptyState(
+                    title: "订阅方案暂时不可用",
+                    message: "当前不会显示假价格或无法完成的购买按钮。",
                     systemImage: "cart.badge.questionmark",
-                    description: Text("当前不会显示假价格或无法完成的购买按钮。")
+                    presentation: .embedded,
+                    accessibilityIdentifier: "premium-no-store-products"
                 )
                 .frame(minHeight: 150)
-                .accessibilityIdentifier("premium-no-store-products")
 #if DEBUG
                 if entitlementService.developmentOverrideAvailable,
                    entitlementService.activeUserID != nil {

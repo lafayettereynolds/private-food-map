@@ -396,36 +396,42 @@ struct RestaurantRouletteExperienceView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(
-                candidates.isEmpty ? "还没有候选餐厅" : baseCandidates.isEmpty ? "没有符合条件的餐厅" : "候选池为空",
-                systemImage: candidates.isEmpty ? "fork.knife.circle" : baseCandidates.isEmpty ? "line.3.horizontal.decrease.circle" : "plus.circle"
-            )
-        } description: {
-            Text(candidates.isEmpty
-                 ? "先收藏几家想吃或记录去过的餐厅，再来转一转。"
-                 : baseCandidates.isEmpty
+        TasteMapEmptyState(
+            title: candidates.isEmpty
+                ? "还没有候选餐厅"
+                : baseCandidates.isEmpty ? "没有符合条件的餐厅" : "候选池为空",
+            message: candidates.isEmpty
+                ? "先收藏几家想吃或记录去过的餐厅，再来转一转。"
+                : baseCandidates.isEmpty
                     ? "可以清除筛选条件，再选择餐厅。"
-                    : "选择 2～10 家真实餐厅，轮盘会立即生成。")
-        } actions: {
-            if candidates.isEmpty {
-                Button("搜索餐厅", systemImage: "magnifyingglass", action: onSearch)
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("roulette-empty-search")
-            } else if !baseCandidates.isEmpty {
-                Button("管理候选", systemImage: "plus") { isShowingCandidateManager = true }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("roulette-empty-manage")
-            } else {
-                Button("清除条件", action: resetConditions)
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("roulette-clear-filters")
-            }
-        }
+                    : "选择 2～10 家真实餐厅，轮盘会立即生成。",
+            systemImage: candidates.isEmpty
+                ? "fork.knife.circle"
+                : baseCandidates.isEmpty ? "line.3.horizontal.decrease.circle" : "plus.circle",
+            foodDiningVisualKind: candidates.isEmpty ? .genericDining : nil,
+            actionTitle: candidates.isEmpty
+                ? "搜索餐厅"
+                : !baseCandidates.isEmpty ? "管理候选" : "清除条件",
+            action: performEmptyStateAction,
+            actionAccessibilityIdentifier: candidates.isEmpty
+                ? "roulette-empty-search"
+                : !baseCandidates.isEmpty ? "roulette-empty-manage" : "roulette-clear-filters",
+            presentation: .embedded,
+            accessibilityIdentifier: "roulette-empty-state"
+        )
         .frame(maxWidth: .infinity)
         .padding(.vertical, 34)
         .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .accessibilityIdentifier("roulette-empty-state")
+    }
+
+    private func performEmptyStateAction() {
+        if candidates.isEmpty {
+            onSearch()
+        } else if !baseCandidates.isEmpty {
+            isShowingCandidateManager = true
+        } else {
+            resetConditions()
+        }
     }
 
     private var localOnlyNote: some View {
