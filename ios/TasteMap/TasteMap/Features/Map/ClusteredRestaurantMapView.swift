@@ -45,6 +45,7 @@ struct RestaurantMapView: UIViewRepresentable {
         private var userAvatarTask: Task<Void, Never>?
         private var lastFitRequestID: UUID?
         private var lastLocationRequestID: UUID?
+        private var lastSelectedRestaurantID: UUID?
         private var isUserInteracting = false
         private var hasDeferredFit = false
         private var renderState: RestaurantMapRenderState = .loading
@@ -59,7 +60,17 @@ struct RestaurantMapView: UIViewRepresentable {
         }
 
         func updateAnnotations(on mapView: MKMapView) {
-            let incoming = Dictionary(uniqueKeysWithValues: parent.markers.map { ($0.id, $0) })
+            let visibleMarkers = RestaurantMapViewportPolicy.visibleMarkers(
+                parent.markers,
+                in: RestaurantMapViewport(
+                    centerLatitude: mapView.region.center.latitude,
+                    centerLongitude: mapView.region.center.longitude,
+                    latitudeDelta: mapView.region.span.latitudeDelta,
+                    longitudeDelta: mapView.region.span.longitudeDelta
+                ),
+                selectedRestaurantID: parent.selectedRestaurantID
+            )
+            let incoming = Dictionary(uniqueKeysWithValues: visibleMarkers.map { ($0.id, $0) })
             let removedIDs = Set(annotationsByID.keys).subtracting(incoming.keys)
             let removed = removedIDs.compactMap { annotationsByID.removeValue(forKey: $0) }
             removedIDs.forEach {
@@ -69,7 +80,7 @@ struct RestaurantMapView: UIViewRepresentable {
             if !removed.isEmpty { mapView.removeAnnotations(removed) }
 
             var added: [RestaurantMapAnnotation] = []
-            for marker in parent.markers {
+            for marker in visibleMarkers {
                 if let annotation = annotationsByID[marker.id] {
                     guard annotation.presentation != marker else { continue }
                     annotation.presentation = marker
@@ -88,15 +99,16 @@ struct RestaurantMapView: UIViewRepresentable {
         }
 
         func applySelection(on mapView: MKMapView) {
-            for (id, annotation) in annotationsByID {
-                let shouldSelect = id == parent.selectedRestaurantID
-                let isSelected = mapView.selectedAnnotations.contains { $0 === annotation }
-                if shouldSelect, !isSelected {
-                    mapView.selectAnnotation(annotation, animated: false)
-                } else if !shouldSelect, isSelected {
-                    mapView.deselectAnnotation(annotation, animated: false)
-                }
+            let selectedID = parent.selectedRestaurantID
+            guard selectedID != lastSelectedRestaurantID else { return }
+            if let previousID = lastSelectedRestaurantID,
+               let previous = annotationsByID[previousID] {
+                mapView.deselectAnnotation(previous, animated: false)
             }
+            if let selectedID, let selected = annotationsByID[selectedID] {
+                mapView.selectAnnotation(selected, animated: false)
+            }
+            lastSelectedRestaurantID = selectedID
         }
 
         func fitIfRequested(on mapView: MKMapView) {
@@ -185,6 +197,10 @@ struct RestaurantMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            // Refresh only after MapKit settles a pan/zoom. Offscreen
+            // annotations and their image tasks are removed, while every
+            // Restaurant in the padded viewport stays an independent marker.
+            updateAnnotations(on: mapView)
             guard isUserInteracting else { return }
             let stillInteracting = mapView.gestureRecognizers?.contains(where: {
                 $0.state == .began || $0.state == .changed
@@ -527,30 +543,56 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
 
 private actor RestaurantMapRemoteImageLoader {
     static let shared = RestaurantMapRemoteImageLoader()
-    private var cache: [URL: Data] = [:]
+    private struct CacheEntry {
+        let data: Data
+        var access: UInt64
+    }
+
+    private var cache: [URL: CacheEntry] = [:]
+    private var cacheBytes = 0
+    private var accessCounter: UInt64 = 0
     private var requests: [URL: Task<Data?, Never>] = [:]
-    private let maximumBytes = 8 * 1_024 * 1_024
+    private let maximumObjectBytes = 8 * 1_024 * 1_024
+    private let maximumCacheBytes = 24 * 1_024 * 1_024
+    private let maximumCount = 64
 
     func data(for url: URL) async -> Data? {
-        if let cached = cache[url] { return cached }
+        if var cached = cache[url] {
+            accessCounter &+= 1
+            cached.access = accessCounter
+            cache[url] = cached
+            return cached.data
+        }
         if let request = requests[url] { return await request.value }
-        let maximumBytes = self.maximumBytes
+        let maximumObjectBytes = self.maximumObjectBytes
         let request = Task<Data?, Never> {
             guard let (data, response) = try? await URLSession.shared.data(from: url),
                   let response = response as? HTTPURLResponse,
                   (200 ... 299).contains(response.statusCode),
                   response.mimeType?.hasPrefix("image/") == true,
                   !data.isEmpty,
-                  data.count <= maximumBytes else { return nil }
+                  data.count <= maximumObjectBytes else { return nil }
             return data
         }
         requests[url] = request
         let result = await request.value
         requests[url] = nil
         if let result {
-            if cache.count >= 48, let oldest = cache.keys.first { cache[oldest] = nil }
-            cache[url] = result
+            insert(result, for: url)
         }
         return result
+    }
+
+    private func insert(_ data: Data, for url: URL) {
+        guard data.count <= maximumCacheBytes else { return }
+        if let previous = cache[url] { cacheBytes -= previous.data.count }
+        accessCounter &+= 1
+        cache[url] = CacheEntry(data: data, access: accessCounter)
+        cacheBytes += data.count
+        while cacheBytes > maximumCacheBytes || cache.count > maximumCount {
+            guard let oldest = cache.min(by: { $0.value.access < $1.value.access }) else { break }
+            cacheBytes -= oldest.value.data.count
+            cache[oldest.key] = nil
+        }
     }
 }

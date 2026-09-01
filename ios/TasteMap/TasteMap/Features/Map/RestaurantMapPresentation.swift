@@ -34,6 +34,56 @@ struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
     let distanceKilometers: Double?
 }
 
+/// A MapKit-independent viewport value keeps large-library culling testable
+/// without creating an MKMapView. It never aggregates Restaurants: every
+/// returned value is still the original, independently selectable marker.
+struct RestaurantMapViewport: Equatable, Sendable {
+    let centerLatitude: Double
+    let centerLongitude: Double
+    let latitudeDelta: Double
+    let longitudeDelta: Double
+}
+
+enum RestaurantMapViewportPolicy {
+    static let prefetchPadding = 1.35
+
+    static func visibleMarkers(
+        _ markers: [RestaurantMapMarkerPresentation],
+        in viewport: RestaurantMapViewport,
+        selectedRestaurantID: UUID? = nil,
+        padding: Double = prefetchPadding
+    ) -> [RestaurantMapMarkerPresentation] {
+        guard viewport.centerLatitude.isFinite,
+              viewport.centerLongitude.isFinite,
+              viewport.latitudeDelta.isFinite,
+              viewport.longitudeDelta.isFinite,
+              viewport.latitudeDelta > 0,
+              viewport.longitudeDelta > 0 else {
+            return markers
+        }
+
+        let safePadding = max(1, padding)
+        let latitudeRadius = min(90, viewport.latitudeDelta * safePadding / 2)
+        let longitudeRadius = min(180, viewport.longitudeDelta * safePadding / 2)
+        return markers.filter { marker in
+            if marker.id == selectedRestaurantID { return true }
+            guard abs(marker.latitude - viewport.centerLatitude) <= latitudeRadius else {
+                return false
+            }
+            guard longitudeRadius < 180 else { return true }
+            return wrappedLongitudeDistance(
+                marker.longitude,
+                viewport.centerLongitude
+            ) <= longitudeRadius
+        }
+    }
+
+    private static func wrappedLongitudeDistance(_ left: Double, _ right: Double) -> Double {
+        let raw = abs(left - right).truncatingRemainder(dividingBy: 360)
+        return min(raw, 360 - raw)
+    }
+}
+
 @MainActor
 enum RestaurantMapMarkerBuilder {
     static func build(

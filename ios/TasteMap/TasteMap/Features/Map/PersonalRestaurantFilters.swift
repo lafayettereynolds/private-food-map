@@ -232,7 +232,7 @@ enum PersonalRestaurantFilterEngine {
             }
             if let city = state.city, item.restaurant.city != city { return false }
             if let cuisine = state.cuisine,
-               !restaurantTags(item.restaurant).contains(cuisine) { return false }
+               !item.restaurantTags.contains(cuisine) { return false }
             if let distance = state.distance {
                 guard let currentLocation,
                       let restaurantLocation = validLocation(for: item.restaurant),
@@ -339,27 +339,12 @@ enum PersonalRestaurantFilterEngine {
         return CLLocation(latitude: latitude, longitude: longitude)
     }
 
-    private static func restaurantTags(_ restaurant: Restaurant) -> Set<String> {
-        guard let data = restaurant.remoteRecordData,
-              let record = try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: data) else {
-            return []
-        }
-        return Set(record.tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
-    }
 }
 
 enum PersonalRestaurantFilterProjection {
     static func options(from items: [RestaurantBrowseItem]) -> PersonalRestaurantFilterOptions {
         let cities = Set(items.map(\.restaurant.city).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-        let cuisines = Set(items.flatMap { item -> [String] in
-            guard let data = item.restaurant.remoteRecordData,
-                  let record = try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: data) else {
-                return []
-            }
-            return record.tags
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        })
+        let cuisines = Set(items.flatMap(\.restaurantTags))
         let facets = items.flatMap(\.visitFacets)
         return PersonalRestaurantFilterOptions(
             cities: cities.sorted { $0.localizedStandardCompare($1) == .orderedAscending },

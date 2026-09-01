@@ -22,12 +22,16 @@ enum AnalysisPosterRenderer {
         content: Content,
         canvasSize: CGSize
     ) throws -> UIImage {
-        let renderer = ImageRenderer(content: content)
-        renderer.proposedSize = ProposedViewSize(canvasSize)
-        renderer.scale = 1
-        renderer.isOpaque = true
-        guard let image = renderer.uiImage else { throw AnalysisPosterRenderError.imageUnavailable }
-        return image
+        try autoreleasepool {
+            let renderer = ImageRenderer(content: content)
+            renderer.proposedSize = ProposedViewSize(canvasSize)
+            renderer.scale = 1
+            renderer.isOpaque = true
+            guard let image = renderer.uiImage else {
+                throw AnalysisPosterRenderError.imageUnavailable
+            }
+            return image
+        }
     }
 
     static func render(

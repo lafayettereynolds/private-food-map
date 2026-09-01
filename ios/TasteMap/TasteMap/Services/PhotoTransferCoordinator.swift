@@ -22,6 +22,10 @@ final class PhotoTransferCoordinator {
     @ObservationIgnored private var authObserver: NSObjectProtocol?
     @ObservationIgnored private var manualRetryObserver: NSObjectProtocol?
     @ObservationIgnored private var imageLoads: [String: Task<Data, Error>] = [:]
+    /// NSCache is thread-safe and automatically responds to memory pressure.
+    /// The coordinator is MainActor-isolated, so this is a bounded decoded-
+    /// source-data cache rather than a second persistent photo store.
+    @ObservationIgnored private let imageDataCache = NSCache<NSString, NSData>()
     @ObservationIgnored private var rerunAfterProcessing = false
 
     init(
@@ -38,6 +42,7 @@ final class PhotoTransferCoordinator {
         self.networkObserver = networkObserver
         authenticatedUserIDProvider = { await sessionManager.restoredUser()?.id }
         synchronizeMetadata = { await syncCoordinator.synchronizeNow() }
+        configureImageDataCache()
     }
 
     init(
@@ -56,6 +61,7 @@ final class PhotoTransferCoordinator {
         }
         self.synchronizeMetadata = synchronizeMetadata
         self.networkObserver = networkObserver
+        configureImageDataCache()
     }
 
     func start() {
@@ -187,10 +193,17 @@ final class PhotoTransferCoordinator {
     }
 
     func imageData(for photo: PhotoAsset, variant: PhotoBinaryVariant) async throws -> Data {
+        let cacheKey = imageCacheKey(for: photo, variant: variant)
+        if let cached = imageDataCache.object(forKey: cacheKey) {
+            return cached as Data
+        }
         let localPath = variant == .thumbnail
             ? (photo.thumbnailFileRelativePath ?? photo.displayFileRelativePath ?? photo.localFileRelativePath)
             : (photo.displayFileRelativePath ?? photo.localFileRelativePath)
-        if let localPath, let data = try? await files.load(relativePath: localPath) { return data }
+        if let localPath, let data = try? await files.load(relativePath: localPath) {
+            imageDataCache.setObject(data as NSData, forKey: cacheKey, cost: data.count)
+            return data
+        }
 
         let remoteVariant: PhotoBinaryVariant = variant == .thumbnail && photo.thumbnailStorageKey == nil
             ? .display
@@ -217,11 +230,28 @@ final class PhotoTransferCoordinator {
             photo.cachedStorageKey = photo.storageKey
         }
         try context.save()
+        imageDataCache.setObject(data as NSData, forKey: cacheKey, cost: data.count)
         return data
     }
 
     func localData(relativePath: String) async throws -> Data {
         try await files.load(relativePath: relativePath)
+    }
+
+    func purgeTransientImageDataCache() {
+        imageDataCache.removeAllObjects()
+    }
+
+    private func configureImageDataCache() {
+        imageDataCache.countLimit = 192
+        imageDataCache.totalCostLimit = 32 * 1_024 * 1_024
+    }
+
+    private func imageCacheKey(for photo: PhotoAsset, variant: PhotoBinaryVariant) -> NSString {
+        let sourceVersion = variant == .thumbnail
+            ? (photo.thumbnailContentHash ?? photo.cachedThumbnailStorageKey ?? photo.thumbnailStorageKey)
+            : (photo.displayContentHash ?? photo.cachedStorageKey ?? photo.storageKey)
+        return "\(photo.id.uuidString):\(variant.rawValue):\(sourceVersion ?? "local"):\(photo.updatedAt.timeIntervalSince1970)" as NSString
     }
 
     private func scheduleProcessing() {

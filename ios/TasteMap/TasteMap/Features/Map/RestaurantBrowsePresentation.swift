@@ -48,6 +48,10 @@ struct RestaurantBrowseItem: Identifiable {
     let photo: PhotoAsset?
     let merchantImageURL: URL?
     let visitFacets: [PersonalVisitFilterFacet]
+    /// Decoded once while the shared Map/List projection is built. Filters
+    /// must not repeatedly decode the Restaurant JSON payload on every chip
+    /// change for a large local library.
+    let restaurantTags: Set<String>
     let normalizedSearchText: String
 
     var id: UUID { restaurant.id }
@@ -238,6 +242,11 @@ enum RestaurantBrowseBuilder {
                     sourceDirectory: sourceDirectory
                 )
             },
+            restaurantTags: Set(
+                (restaurantRecord?.tags ?? [])
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+            ),
             normalizedSearchText: RestaurantBrowseSearch.normalized(searchTerms.joined(separator: "\n"))
         )
     }

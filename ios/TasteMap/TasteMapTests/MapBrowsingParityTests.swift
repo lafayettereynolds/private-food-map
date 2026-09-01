@@ -208,6 +208,30 @@ struct MapBrowsingParityTests {
         #expect(elapsed < 3, "1,000 marker projection took \(elapsed) seconds")
     }
 
+    @Test("Padded viewport culling never aggregates or rewrites Restaurant markers")
+    func viewportCulling() {
+        let values = (0..<1_000).map { index in
+            presentation(
+                index,
+                latitude: 30 + Double(index % 50) * 0.01,
+                longitude: 120 + Double(index / 50) * 0.01
+            )
+        }
+        let result = RestaurantMapViewportPolicy.visibleMarkers(
+            values,
+            in: RestaurantMapViewport(
+                centerLatitude: 30.2,
+                centerLongitude: 120.1,
+                latitudeDelta: 0.1,
+                longitudeDelta: 0.1
+            )
+        )
+        #expect(!result.isEmpty)
+        #expect(result.count < values.count)
+        #expect(Set(result.map(\.id)).count == result.count)
+        #expect(result.allSatisfy { marker in values.contains(marker) })
+    }
+
     private func markers(
         _ items: [RestaurantBrowseItem],
         photos: [PhotoAsset] = [],
