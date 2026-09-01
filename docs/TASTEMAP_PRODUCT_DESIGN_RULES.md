@@ -73,6 +73,20 @@ Stable visual values belong in shared tokens rather than arbitrary page-local ma
 
 Page-specific values are allowed only when a canonical composition needs them and the reason is clear.
 
+The code authority is `TasteMapDesignTokens`. It owns the formal `Spacing`, `Typography`, `Radius`, `Border`, `Control`, `Icon`, `Avatar`, `ImageRatio`, `Shadow`, and `Layout` groups. Shared components consume those values directly. `TasteMapCoreTheme` remains the color/elevation theme and exposes only compatibility aliases for older feature code while it is migrated.
+
+The following product invariants are tokens, not page-local choices:
+
+- 44-point minimum interactive target;
+- compact 34-point visible filter pill inside that target;
+- 44-point primary-tab row with a 2-point selected indicator;
+- one page inset and standard section-spacing scale;
+- one card/control radius scale and one standard border width;
+- shared icon, avatar, Restaurant image ratio, and social-poster ratio scales;
+- shared semantic typography for filters, tabs, section headers, activity ratings, and empty states.
+
+A page may retain a special composition measurement—for example a hero height or approved map top offset—when the Canonical Page Template requires it. It must not define another general chip, tab, card, avatar, icon, image-ratio, or touch-target scale.
+
 ### Layer 2 — Food & Dining Visual System
 
 This is the brand layer that makes Taste Map recognizably about food, restaurants, dining memories, and social meals. Use the shared `FoodDiningVisualLibrary` (or its formal successor), never page-specific unrelated art styles.
@@ -291,6 +305,7 @@ Use the previously approved historical hamburger asset everywhere Premium identi
 - Do not patch one instance of a repeated UI problem without globally searching and correcting the shared pattern.
 - Do not add a page-local component when a shared component or canonical template already owns the behavior.
 - Do not let pages independently choose radius, chip, tab, card, icon, Restaurant image, or empty-state styles.
+- Do not reintroduce stable Core UI measurements as page-local magic numbers when `TasteMapDesignTokens` owns the same concept.
 - Do not use Core UI components as permission to freely rearrange a Canonical Page Template.
 - Do not leave a newly confirmed long-term design decision only in chat or a temporary acceptance report; update this document.
 

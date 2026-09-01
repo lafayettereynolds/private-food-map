@@ -1329,13 +1329,12 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["visit-editor-date"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["visit-editor-dining-mode"].exists)
+        let note = app.descendants(matching: .any)["visit-editor-note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 2))
         XCTAssertTrue(app.textFields["visit-editor-party-size"].exists)
         let spend = app.textFields["visit-editor-spend"]
         scrollUntilVisible(spend, in: app)
         XCTAssertTrue(spend.exists)
-        let note = app.descendants(matching: .any)["visit-editor-note"]
-        scrollUntilVisible(note, in: app)
-        XCTAssertTrue(note.waitForExistence(timeout: 2))
 
         app.buttons["visit-editor-save"].tap()
         XCTAssertTrue(app.staticTexts["restaurant-status-visited"].waitForExistence(timeout: 5))
@@ -2784,9 +2783,8 @@ final class TasteMapUITests: XCTestCase {
         app.buttons["roulette-manage-candidates"].tap()
         XCTAssertTrue(app.navigationBars["管理候选餐厅"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.searchFields["搜索我的餐厅"].exists)
-        XCTAssertTrue(app.segmentedControls["roulette-manager-source"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["roulette-manager-source"].exists)
         XCTAssertTrue(app.buttons["roulette-apply-candidates"].exists)
-        XCTAssertTrue(app.buttons["roulette-add-custom-restaurant"].exists)
 
         segmentedOption("想吃", in: app).tap()
         app.searchFields["搜索我的餐厅"].tap()
@@ -2798,7 +2796,10 @@ final class TasteMapUITests: XCTestCase {
         )
         dismissSearchKeyboard(in: app)
 
-        app.buttons["roulette-add-custom-restaurant"].tap()
+        let addCustomRestaurant = app.buttons["roulette-add-custom-restaurant"]
+        scrollUntilVisible(addCustomRestaurant, in: app)
+        XCTAssertTrue(addCustomRestaurant.exists)
+        addCustomRestaurant.tap()
         XCTAssertTrue(app.navigationBars["手动添加餐厅"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["manual-restaurant-name"].exists)
         XCTAssertTrue(app.textFields["manual-restaurant-city"].exists)

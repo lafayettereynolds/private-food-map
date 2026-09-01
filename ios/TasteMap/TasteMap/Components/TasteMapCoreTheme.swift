@@ -19,10 +19,13 @@ enum TasteMapCoreTheme {
 
     static let warmAccent = Color(red: 208 / 255, green: 154 / 255, blue: 99 / 255)
     static let danger = Color(red: 184 / 255, green: 79 / 255, blue: 79 / 255)
-    static let cardRadius: CGFloat = 20
-    static let compactRadius: CGFloat = 12
-    static let pageInset: CGFloat = 16
-    static let sectionSpacing: CGFloat = 16
+    // Compatibility aliases for feature code written before the formal token
+    // layer. New shared components should consume `TasteMapDesignTokens`
+    // directly so the scale remains explicit and testable.
+    static let cardRadius = TasteMapDesignTokens.Radius.card
+    static let compactRadius = TasteMapDesignTokens.Radius.compact
+    static let pageInset = TasteMapDesignTokens.Layout.pageInset
+    static let sectionSpacing = TasteMapDesignTokens.Layout.standardSectionSpacing
 
     static let cardShadow = Color(uiColor: dynamicColor(
         light: .init(52, 79, 105, alpha: 0.075),
@@ -93,12 +96,15 @@ private struct TasteMapCoreCardModifier: ViewModifier {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(TasteMapCoreTheme.border.opacity(0.9), lineWidth: 1)
+                    .stroke(
+                        TasteMapCoreTheme.border.opacity(0.9),
+                        lineWidth: TasteMapDesignTokens.Border.standard
+                    )
             }
             .shadow(
                 color: showsShadow ? TasteMapCoreTheme.cardShadow : .clear,
-                radius: showsShadow ? 12 : 0,
-                y: showsShadow ? 5 : 0
+                radius: showsShadow ? TasteMapDesignTokens.Shadow.cardRadius : 0,
+                y: showsShadow ? TasteMapDesignTokens.Shadow.cardYOffset : 0
             )
     }
 }
@@ -122,10 +128,10 @@ extension View {
     /// pill height, border, active color, or touch target.
     func tasteMapFilterChipStyle(isActive: Bool) -> some View {
         self
-            .font(.caption.weight(.semibold))
+            .font(TasteMapDesignTokens.Typography.filterLabel)
             .foregroundStyle(isActive ? Color.white : TasteMapCoreTheme.brandDeep)
-            .padding(.horizontal, 11)
-            .frame(height: 34)
+            .padding(.horizontal, TasteMapDesignTokens.Control.filterChipHorizontalPadding)
+            .frame(height: TasteMapDesignTokens.Control.chipVisibleHeight)
             .background(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.surface, in: Capsule())
             .overlay { Capsule().stroke(isActive ? TasteMapCoreTheme.brand : TasteMapCoreTheme.border) }
             .buttonStyle(.plain)
@@ -177,16 +183,16 @@ struct TasteMapFilterChipLabel: View {
     var count: Int?
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: TasteMapDesignTokens.Spacing.compact) {
             Image(systemName: semantic.systemImage)
                 .accessibilityHidden(true)
             Text(title)
                 .lineLimit(1)
             if let count, count > 0 {
                 Text("\(count)")
-                    .font(.caption2.monospacedDigit().weight(.bold))
-                    .padding(.horizontal, 5)
-                    .frame(minHeight: 18)
+                    .font(TasteMapDesignTokens.Typography.filterBadge)
+                    .padding(.horizontal, TasteMapDesignTokens.Spacing.compact)
+                    .frame(minHeight: TasteMapDesignTokens.Control.filterBadgeMinimumHeight)
                     .foregroundStyle(isActive ? TasteMapCoreTheme.brandDeep : TasteMapCoreTheme.textSecondary)
                     .background(
                         (isActive ? Color.white : TasteMapCoreTheme.brandSoft).opacity(0.92),
@@ -221,7 +227,7 @@ struct TasteMapFilterChip: View {
             )
         }
         .buttonStyle(TasteMapFilterChipButtonStyle())
-        .frame(minHeight: 44)
+        .frame(minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
         .accessibilityLabel(title)
         .accessibilityValue(isActive ? "已启用" : "未启用")
         .accessibilityAddTraits(isActive ? .isSelected : [])
@@ -256,13 +262,13 @@ struct TasteMapFilterBar<Content: View>: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: TasteMapDesignTokens.Spacing.small) {
                 content
             }
             .padding(.horizontal, horizontalPadding)
         }
         .scrollClipDisabled()
-        .frame(minHeight: 44)
+        .frame(minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
@@ -293,8 +299,8 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
         Group {
             if TasteMapPrimaryTabLayout.resolve(dynamicTypeSize) == .horizontallyScrollable {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) { tabItems(equalWidth: false) }
-                        .padding(.horizontal, 4)
+                    HStack(spacing: TasteMapDesignTokens.Spacing.small) { tabItems(equalWidth: false) }
+                        .padding(.horizontal, TasteMapDesignTokens.Spacing.xSmall)
                 }
                 .scrollClipDisabled()
             } else {
@@ -313,7 +319,11 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
                 } label: {
                     VStack(spacing: 7) {
                         Text(item.title)
-                            .font(.subheadline.weight(selection == item.option ? .semibold : .medium))
+                            .font(
+                                selection == item.option
+                                    ? TasteMapDesignTokens.Typography.primaryTabSelected
+                                    : TasteMapDesignTokens.Typography.primaryTab
+                            )
                             .foregroundStyle(
                                 selection == item.option
                                     ? TasteMapCoreTheme.textPrimary
@@ -324,14 +334,19 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
                             .multilineTextAlignment(.center)
                         Capsule()
                             .fill(selection == item.option ? TasteMapCoreTheme.brand : .clear)
-                            .frame(height: 2)
+                            .frame(height: TasteMapDesignTokens.Control.primaryTabIndicatorHeight)
                     }
                     .frame(
-                        minWidth: equalWidth ? 0 : 76,
+                        minWidth: equalWidth
+                            ? 0
+                            : TasteMapDesignTokens.Control.primaryTabCompactMinimumWidth,
                         maxWidth: equalWidth ? .infinity : nil,
-                        minHeight: 44
+                        minHeight: TasteMapDesignTokens.Control.primaryTabMinimumHeight
                     )
-                    .padding(.horizontal, equalWidth ? 0 : 8)
+                    .padding(
+                        .horizontal,
+                        equalWidth ? 0 : TasteMapDesignTokens.Spacing.small
+                    )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -366,7 +381,7 @@ struct TasteMapActivityRatingBadge: View {
             rating.map { String(format: "\(prefix) %.1f", $0) } ?? "\(prefix) · 未评分",
             systemImage: rating == nil ? "star.slash" : "star.fill"
         )
-        .font(.caption.weight(.semibold))
+        .font(TasteMapDesignTokens.Typography.activityRating)
         .foregroundStyle(rating == nil ? TasteMapCoreTheme.textSecondary : .orange)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-activity-rating")
@@ -385,8 +400,8 @@ struct TasteMapActivityCard<Content: View>: View {
 
     var body: some View {
         content
-            .padding(14)
-            .tasteMapCoreCard(radius: 22, showsShadow: true)
+            .padding(TasteMapDesignTokens.Spacing.content)
+            .tasteMapCoreCard(radius: TasteMapDesignTokens.Radius.activityCard, showsShadow: true)
             .accessibilityElement(children: .contain)
     }
 }
@@ -403,22 +418,28 @@ struct TasteMapSectionHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: TasteMapDesignTokens.Spacing.medium) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.subheadline.weight(.semibold))
+                    .font(TasteMapDesignTokens.Typography.selectedControl)
                     .foregroundStyle(TasteMapCoreTheme.brand)
-                    .frame(width: 32, height: 32)
-                    .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 10))
+                    .frame(
+                        width: TasteMapDesignTokens.Icon.sectionContainer,
+                        height: TasteMapDesignTokens.Icon.sectionContainer
+                    )
+                    .background(
+                        TasteMapCoreTheme.brandSoft,
+                        in: RoundedRectangle(cornerRadius: TasteMapDesignTokens.Radius.small)
+                    )
                     .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.xxSmall) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(TasteMapDesignTokens.Typography.sectionTitle)
                     .foregroundStyle(TasteMapCoreTheme.textPrimary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption)
+                    .font(TasteMapDesignTokens.Typography.sectionSubtitle)
                         .foregroundStyle(TasteMapCoreTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -450,34 +471,44 @@ struct TasteMapSegmentedControl<Option: Hashable>: View {
     var accessibilityIdentifier: String?
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: TasteMapDesignTokens.Spacing.xSmall) {
             ForEach(items) { item in
                 Button {
                     withAnimation(accessibilityReduceMotion ? nil : .easeOut(duration: 0.16)) {
                         selection = item.option
                     }
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: TasteMapDesignTokens.Spacing.compact) {
                         if let systemImage = item.systemImage {
                             Image(systemName: systemImage).accessibilityHidden(true)
                         }
                         Text(item.title).lineLimit(1)
                     }
-                    .font(.subheadline.weight(selection == item.option ? .semibold : .medium))
+                    .font(
+                        selection == item.option
+                            ? TasteMapDesignTokens.Typography.selectedControl
+                            : TasteMapDesignTokens.Typography.control
+                    )
                     .foregroundStyle(
                         selection == item.option
                             ? TasteMapCoreTheme.brandDeep
                             : TasteMapCoreTheme.textSecondary
                     )
-                    .frame(maxWidth: .infinity, minHeight: 38)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: TasteMapDesignTokens.Control.segmentedVisibleHeight
+                    )
                     .background(
                         selection == item.option ? TasteMapCoreTheme.surface : .clear,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        in: RoundedRectangle(
+                            cornerRadius: TasteMapDesignTokens.Radius.small,
+                            style: .continuous
+                        )
                     )
                     .shadow(
                         color: selection == item.option ? TasteMapCoreTheme.cardShadow : .clear,
-                        radius: 5,
-                        y: 2
+                        radius: TasteMapDesignTokens.Shadow.selectedControlRadius,
+                        y: TasteMapDesignTokens.Shadow.selectedControlYOffset
                     )
                     .contentShape(Rectangle())
                 }
@@ -489,11 +520,23 @@ struct TasteMapSegmentedControl<Option: Hashable>: View {
                 )
             }
         }
-        .padding(4)
-        .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .padding(TasteMapDesignTokens.Spacing.xSmall)
+        .background(
+            TasteMapCoreTheme.brandSoft,
+            in: RoundedRectangle(
+                cornerRadius: TasteMapDesignTokens.Radius.control,
+                style: .continuous
+            )
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(TasteMapCoreTheme.border.opacity(0.72))
+            RoundedRectangle(
+                cornerRadius: TasteMapDesignTokens.Radius.control,
+                style: .continuous
+            )
+            .stroke(
+                TasteMapCoreTheme.border.opacity(0.72),
+                lineWidth: TasteMapDesignTokens.Border.standard
+            )
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-segment")
@@ -509,26 +552,32 @@ struct TasteMapEmptyState: View {
     var action: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 13) {
+        VStack(spacing: TasteMapDesignTokens.Spacing.stateContent) {
             if let foodDiningVisualKind {
                 FoodDiningVisualIcon(
                     kind: foodDiningVisualKind,
                     usage: .decorative,
-                    size: 58
+                    size: TasteMapDesignTokens.Icon.foodEmptyArtwork
                 )
             } else {
                 Image(systemName: systemImage)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(TasteMapCoreTheme.brand)
-                    .frame(width: 54, height: 54)
-                    .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 17))
+                    .frame(
+                        width: TasteMapDesignTokens.Icon.emptyContainer,
+                        height: TasteMapDesignTokens.Icon.emptyContainer
+                    )
+                    .background(
+                        TasteMapCoreTheme.brandSoft,
+                        in: RoundedRectangle(cornerRadius: TasteMapDesignTokens.Radius.emptyArtwork)
+                    )
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.headline)
+                .font(TasteMapDesignTokens.Typography.emptyTitle)
                 .foregroundStyle(TasteMapCoreTheme.textPrimary)
             Text(message)
-                .font(.subheadline)
+                .font(TasteMapDesignTokens.Typography.emptyMessage)
                 .foregroundStyle(TasteMapCoreTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -539,14 +588,14 @@ struct TasteMapEmptyState: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(24)
+        .padding(TasteMapDesignTokens.Spacing.xxLarge)
         .tasteMapCoreCard(showsShadow: true)
         .accessibilityElement(children: .contain)
     }
 }
 
 #Preview("Core visual foundation") {
-    VStack(spacing: 18) {
+    VStack(spacing: TasteMapDesignTokens.Spacing.large) {
         TasteMapSectionHeader(
             "你的餐厅",
             subtitle: "低饱和灰蓝、冷白表面与清晰的信息层级",

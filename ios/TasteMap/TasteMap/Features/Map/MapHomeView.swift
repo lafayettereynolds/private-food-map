@@ -358,8 +358,8 @@ struct MapHomeView: View {
                 .accessibilityLabel("清除搜索")
             }
         }
-        .padding(.horizontal, 11)
-        .frame(height: 34)
+        .padding(.horizontal, TasteMapDesignTokens.Control.filterChipHorizontalPadding)
+        .frame(height: TasteMapDesignTokens.Control.chipVisibleHeight)
         .background(TasteMapCoreTheme.surface, in: Capsule())
         .overlay { Capsule().stroke(TasteMapCoreTheme.border) }
     }

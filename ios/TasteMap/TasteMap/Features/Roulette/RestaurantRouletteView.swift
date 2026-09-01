@@ -931,15 +931,13 @@ private struct RouletteFilterSheet: View {
         NavigationStack {
             Form {
                 Section("候选来源") {
-                    Picker("餐厅状态", selection: $source) {
-                        ForEach(RouletteCandidateSource.allCases) { value in
-                            Text(value.title)
-                                .tag(value)
-                                .accessibilityIdentifier("roulette-source-\(value.rawValue)")
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("roulette-source-picker")
+                    TasteMapSegmentedControl(
+                        selection: $source,
+                        items: RouletteCandidateSource.allCases.map {
+                            .init($0, title: $0.title)
+                        },
+                        accessibilityIdentifier: "roulette-source-picker"
+                    )
                 }
                 if !cities.isEmpty {
                     Section("所在城市") {
@@ -1016,13 +1014,13 @@ private struct RouletteCandidateManager: View {
         NavigationStack {
             List {
                 Section {
-                    Picker("餐厅状态", selection: $source) {
-                        ForEach(RouletteCandidateSource.allCases) { value in
-                            Text(value.title).tag(value)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("roulette-manager-source")
+                    TasteMapSegmentedControl(
+                        selection: $source,
+                        items: RouletteCandidateSource.allCases.map {
+                            .init($0, title: $0.title)
+                        },
+                        accessibilityIdentifier: "roulette-manager-source"
+                    )
                 }
                 Section {
                     ForEach(visible) { candidate in

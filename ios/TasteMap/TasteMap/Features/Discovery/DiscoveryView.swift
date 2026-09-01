@@ -462,10 +462,13 @@ struct DiscoveryContentView: View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 if showsModePicker {
-                    Picker("发现内容", selection: $mode) {
-                        ForEach(DiscoveryModeV1.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
+                    TasteMapSegmentedControl(
+                        selection: $mode,
+                        items: DiscoveryModeV1.allCases.map {
+                            .init($0, title: $0.title)
+                        },
+                        accessibilityIdentifier: "discovery-mode-segment"
+                    )
                 }
                 TasteMapFilterBar(accessibilityIdentifier: "discovery-filter-chip-strip") {
                     HStack(spacing: 8) {
@@ -672,7 +675,7 @@ private struct DiscoveryCityMenu: View {
             )
         }
         .buttonStyle(.plain)
-        .frame(minHeight: 44)
+        .frame(minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
         .accessibilityIdentifier("discovery-city-menu")
     }
 }

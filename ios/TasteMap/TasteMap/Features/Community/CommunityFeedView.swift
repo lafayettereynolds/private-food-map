@@ -104,9 +104,14 @@ struct CommunityFeedView: View {
             .toolbar {
                 if showsScopePicker {
                     ToolbarItem(placement: .principal) {
-                        Picker("社区内容", selection: $scope) {
-                            ForEach(CommunityFeedScopeV1.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }.pickerStyle(.segmented).frame(width: 190)
+                        TasteMapSegmentedControl(
+                            selection: $scope,
+                            items: CommunityFeedScopeV1.allCases.map {
+                                .init($0, title: $0.title)
+                            },
+                            accessibilityIdentifier: "community-scope-segment"
+                        )
+                        .frame(width: 190)
                     }
                 }
             }

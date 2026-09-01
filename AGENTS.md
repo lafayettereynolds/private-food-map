@@ -14,6 +14,12 @@ For every affected page, first identify which parts belong to:
 
 SwiftUI is the rendering and interaction framework; its defaults are not the Taste Map design system. The current iOS layout is not automatically a source of truth.
 
+Compose product UI in this direction only:
+
+`Canonical Page Template → Core UI Components/TasteMapDesignTokens + Food & Dining Visual Components → SwiftUI rendering`
+
+Stable typography, spacing, radius, border, control, icon, avatar, image-ratio, and touch-target values belong to `TasteMapDesignTokens`. Do not introduce a page-local replacement scale for a concept already owned by those tokens. A page-specific composition value is acceptable only when its canonical template genuinely requires it.
+
 ## Product semantics before presentation
 
 For parity work, always perform these steps in order:

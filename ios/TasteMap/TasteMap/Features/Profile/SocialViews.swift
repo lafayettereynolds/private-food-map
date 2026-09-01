@@ -34,10 +34,13 @@ struct SocialHubView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("社交关系", selection: $section) {
-                    ForEach(SocialHubSection.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
+                TasteMapSegmentedControl(
+                    selection: $section,
+                    items: SocialHubSection.allCases.map {
+                        .init($0, title: $0.rawValue)
+                    },
+                    accessibilityIdentifier: "social-hub-section"
+                )
                 .padding()
                 Group {
                     if section == .search { searchContent }
@@ -494,11 +497,14 @@ struct SocialPublicProfileView: View {
                     publicMetricStrip
                     if let overview { publicOverview(overview) }
                     if communityAPI != nil {
-                        Picker("公开内容", selection: $contentSection) {
-                            Text("公开记录").tag(PublicContentSectionV1.visits)
-                            Text("想吃餐厅").tag(PublicContentSectionV1.wantToGo)
-                        }
-                        .pickerStyle(.segmented)
+                        TasteMapSegmentedControl(
+                            selection: $contentSection,
+                            items: [
+                                .init(.visits, title: "公开记录"),
+                                .init(.wantToGo, title: "想吃餐厅"),
+                            ],
+                            accessibilityIdentifier: "public-profile-content-section"
+                        )
                         publicContent
                     }
                     if let restaurantListAPI {

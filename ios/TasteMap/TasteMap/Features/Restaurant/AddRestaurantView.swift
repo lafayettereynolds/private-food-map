@@ -395,13 +395,13 @@ private struct RestaurantCandidateConfirmationView: View {
                             )
                         }
 
-                        Picker("餐厅状态", selection: $selection) {
-                            ForEach(Selection.allCases) { value in
-                                Text(value.rawValue).tag(value)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .accessibilityIdentifier("restaurant-status-selection")
+                        TasteMapSegmentedControl(
+                            selection: $selection,
+                            items: Selection.allCases.map {
+                                .init($0, title: $0.rawValue)
+                            },
+                            accessibilityIdentifier: "restaurant-status-selection"
+                        )
 
                         AcquisitionMessage(
                             icon: selection == .visited ? "fork.knife" : "bookmark",

@@ -246,13 +246,13 @@ struct VisitEditorView: View {
             )
             .accessibilityIdentifier("visit-editor-date")
 
-            Picker("用餐方式", selection: $draft.diningMode) {
-                ForEach(DiningMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.systemImage).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("visit-editor-dining-mode")
+            TasteMapSegmentedControl(
+                selection: $draft.diningMode,
+                items: DiningMode.allCases.map {
+                    .init($0, title: $0.title, systemImage: $0.systemImage)
+                },
+                accessibilityIdentifier: "visit-editor-dining-mode"
+            )
 
             LabeledContent("用餐人数") {
                 TextField("未填写", text: $partySizeText)

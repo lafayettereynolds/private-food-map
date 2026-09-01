@@ -978,12 +978,13 @@ struct ProfileEditorSheet: View {
                         .accessibilityIdentifier("profile-bio")
                 }
                 Section("个人主页可见范围") {
-                    Picker("可见范围", selection: $visibility) {
-                        ForEach(ProfileVisibility.allCases, id: \.self) { value in
-                            Text(value.title).tag(value)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    TasteMapSegmentedControl(
+                        selection: $visibility,
+                        items: ProfileVisibility.allCases.map {
+                            .init($0, title: $0.title)
+                        },
+                        accessibilityIdentifier: "profile-visibility"
+                    )
                     Text("公开资料只包含头像、显示名称、简介、城市和基于公开到访计算的统计。")
                         .font(.caption)
                         .foregroundStyle(.secondary)

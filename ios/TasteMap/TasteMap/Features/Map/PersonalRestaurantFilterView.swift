@@ -102,13 +102,13 @@ struct PersonalRestaurantFilterSheet: View {
 
     private var sortSection: some View {
         Section("排序") {
-            Picker("排序方式", selection: $draft.sort) {
-                ForEach(PersonalRestaurantSort.allCases) { value in
-                    Text(value.title).tag(value)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("personal-filter-sort")
+            TasteMapSegmentedControl(
+                selection: $draft.sort,
+                items: PersonalRestaurantSort.allCases.map {
+                    .init($0, title: $0.title)
+                },
+                accessibilityIdentifier: "personal-filter-sort"
+            )
         }
     }
 
