@@ -302,8 +302,8 @@ private struct FuseProfileCandidate: View {
                     PremiumBurgerBadge().frame(width: 24, height: 24)
                 }
                 HStack(spacing: 16) {
-                    Label("关注 (FuseFixture.following)", systemImage: "person.2")
-                    Label("粉丝 (FuseFixture.followers)", systemImage: "person.2.fill")
+                    Label("关注 \(FuseFixture.following)", systemImage: "person.2")
+                    Label("粉丝 \(FuseFixture.followers)", systemImage: "person.2.fill")
                 }
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(TasteMapCoreTheme.textSecondary)
