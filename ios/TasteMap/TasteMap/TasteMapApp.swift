@@ -210,11 +210,23 @@ struct TasteMapApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if let fuseCandidate = FuseVisualCandidateRuntime.current {
+                FuseVisualCandidateHost(kind: fuseCandidate)
+            } else {
+                ContentView(automaticServicesEnabled: automaticServicesEnabled)
+                    .environment(nativeAuthServices)
+                    .environment(syncCoordinator)
+                    .environment(premiumEntitlementService)
+                    .environment(\.photoTransferCoordinator, photoTransferCoordinator)
+            }
+            #else
             ContentView(automaticServicesEnabled: automaticServicesEnabled)
                 .environment(nativeAuthServices)
                 .environment(syncCoordinator)
                 .environment(premiumEntitlementService)
                 .environment(\.photoTransferCoordinator, photoTransferCoordinator)
+            #endif
         }
         .modelContainer(modelContainer)
     }
