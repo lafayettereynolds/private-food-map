@@ -2,7 +2,7 @@ const LEGACY = "../legacy-reference-screenshots/";
 const FUSE = "fuse-candidates/";
 const ATLAS = "../final-atlas/";
 
-const decisions = window.round2Decisions || [
+const decisions = window.round3Decisions || window.round2Decisions || [
   {
     id: "profile-density",
     title: "Profile 头部与 Dashboard",
@@ -189,7 +189,7 @@ const decisions = window.round2Decisions || [
 
 function v(kind, title, src, caption) { return { kind, title, src, caption }; }
 
-const storageKey = "tastemap.visualApproval.round2";
+const storageKey = window.visualApprovalStorageKey || "tastemap.visualApproval.round2";
 let reviewState = readState();
 let lightboxItems = [];
 let lightboxIndex = 0;
@@ -416,6 +416,7 @@ const userTextReplacements = [
   ["IA", "信息架构"],
   ["Imagery", "图片"],
   ["Import", "导入"],
+  ["Lists", "我的食单"],
   ["List", "食单"],
   ["Poster", "海报"],
   ["Preflight", "预检"],
@@ -436,7 +437,6 @@ const userTextReplacements = [
   ["Main Statistics", "主统计"],
   ["Core Entries", "核心入口"],
   ["Memory", "回味"],
-  ["Lists", "我的食单"],
   ["Insights", "洞察"],
   ["Restaurant Context", "餐厅信息"],
   ["Core Experience", "用餐体验"],
@@ -500,7 +500,7 @@ function readState() {
   try {
     const current = JSON.parse(localStorage.getItem(storageKey) || "null");
     if (current) return current;
-    return structuredClone(window.round2InitialState || {});
+    return structuredClone(window.visualApprovalInitialState || window.round2InitialState || {});
   } catch { return {}; }
 }
 
@@ -510,7 +510,13 @@ function persistState() {
 
 function visualMarkup(visual, decisionTitle) {
   const normalized = visual.kind.toLowerCase();
-  const kindClass = normalized.includes("legacy") ? " visual-card__kind--legacy" : normalized.includes("fuse") ? " visual-card__kind--fuse" : normalized.includes("reference") ? " visual-card__kind--reference" : "";
+  const kindClass = normalized.includes("legacy") || normalized.includes("旧版")
+    ? " visual-card__kind--legacy"
+    : normalized.includes("fuse") || normalized.includes("融合")
+      ? " visual-card__kind--fuse"
+      : normalized.includes("reference") || normalized.includes("参考")
+        ? " visual-card__kind--reference"
+        : "";
   const title = displayText(visual.title);
   const kind = displayText(visual.kind);
   const caption = displayText(visual.caption);
@@ -590,7 +596,7 @@ function decisionMarkup(decision, index) {
         <article><strong>旧版</strong><p>历史版本整体布局、构图和信息架构作为视觉骨架；现版新增且已确认的能力以最小侵入方式嵌入。它不代表回滚代码、删除现版功能或恢复旧数据架构。</p></article>
         <article><strong>融合版</strong><p>旧版与现版都只取部分结构，形成新的融合构图。它不同于直接采用完整旧版页面骨架。</p></article>
       </div>
-      ${decision.directionLocked ? `<p class="storage-note"><strong>第一轮方向已锁定：</strong>${escapeHTML(displayDirection(decision.direction))}。本轮请使用区域反馈和“我的备注”审批真实候选。</p>` : ""}
+      ${decision.directionLocked ? `<p class="storage-note"><strong>${escapeHTML(window.visualApprovalPreviousRoundLabel || "第一轮")}方向已锁定：</strong>${escapeHTML(displayDirection(decision.direction))}。本轮请使用区域反馈和“我的备注”审批真实候选。</p>` : ""}
       <div class="decision-options">${choices.map((choice) => `<label class="decision-choice"><input type="radio" name="decision-${decision.id}" value="${choice.value}" ${saved.decision === choice.value ? "checked" : ""} ${decision.directionLocked ? "disabled" : ""}><span>${choice.label}</span></label>`).join("")}</div><label class="notes-label">页面备注<textarea data-notes-for="${decision.id}" placeholder="记录整个页面的总体决定……">${escapeHTML(saved.notes || "")}</textarea></label><p class="storage-note">记录仅保存在当前浏览器，不写入 Taste Map、Git、数据库或服务器。</p></div>
   </section>`;
 }
@@ -652,7 +658,7 @@ function changeZoom(delta) { zoom = Math.min(3, Math.max(0.5, Number((zoom + del
 function moveLightbox(delta) { lightboxIndex = (lightboxIndex + delta + lightboxItems.length) % lightboxItems.length; zoom = 1; updateLightbox(); }
 
 function approvalSummary() {
-  const lines = ["# Taste Map — Lafayette 第二轮视觉审批记录", "", "视觉证据：真实 SwiftUI 构建 + 固定模拟器", ""];
+  const lines = [window.visualApprovalSummaryTitle || "# Taste Map — Lafayette 第二轮视觉审批记录", "", "视觉证据：真实 SwiftUI 构建 + 固定模拟器", ""];
   decisions.forEach((decision, index) => {
     const saved = pageState(decision.id);
     lines.push(`## ${index + 1}. ${displayText(decision.title)}`, "", `记录方向：${displayDirection(decision.direction, true)}`, `页面选择：${displayDirection(saved.decision, true)}`, `候选版本：${displayText(decision.candidateVersion || "—")}`, "", "旧版基础：");
