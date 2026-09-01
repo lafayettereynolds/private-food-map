@@ -47,7 +47,7 @@ nonisolated struct SharePosterBrandConfiguration: Equatable, Sendable {
         if host.hasSuffix(".workers.dev") || host == "workers.dev" { return true }
         if host == "testflight.apple.com" { return true }
         if environment == .production,
-           host == "api-dev.tastemap.cn" || host.hasPrefix("dev.") || host.contains("-dev.") {
+           host.hasPrefix("dev.") || host.contains("-dev.") {
             return true
         }
         return false

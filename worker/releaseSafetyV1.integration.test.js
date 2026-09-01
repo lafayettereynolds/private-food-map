@@ -74,6 +74,19 @@ describe('Release safety V1 integration', () => {
       ...reportBody, requestId: crypto.randomUUID(),
     })).status).toBe(400)
 
+    const commentReport = await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/reports', 'POST', {
+      apiVersion: 1, requestId: crypto.randomUUID(), contentType: 'comment',
+      contentId: 'comment-b-on-a', reason: 'harassment', details: '', userId: 'tm_a',
+    })
+    const userReport = await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/reports', 'POST', {
+      apiVersion: 1, requestId: crypto.randomUUID(), contentType: 'user',
+      contentId: 'tm_b', reason: 'privacy', details: '', userId: 'tm_a',
+    })
+    expect(commentReport).toMatchObject({ status: 'pending', duplicate: false })
+    expect(userReport).toMatchObject({ status: 'pending', duplicate: false })
+    expect(database.get(`SELECT COUNT(*) AS count FROM content_reports
+      WHERE reporter_user_id = 'tm_a' AND content_type IN ('visit', 'comment', 'user')`).count).toBe(3)
+
     expect((await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/feed?scope=latest')).items)
       .toHaveLength(1)
     const block = await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/blocks/tm_b', 'PUT')

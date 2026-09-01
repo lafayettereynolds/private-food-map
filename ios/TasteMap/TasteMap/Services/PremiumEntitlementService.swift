@@ -241,6 +241,7 @@ final class PremiumEntitlementService {
     }
 }
 
+#if DEBUG
 nonisolated enum DevelopmentPremiumOverride: String, Sendable {
     case free
     case premium
@@ -268,6 +269,7 @@ nonisolated enum DevelopmentPremiumOverridePolicy {
         buildIsDebug && environment == .development
     }
 }
+#endif
 
 @MainActor
 private struct StaticPremiumEntitlementAPI: PremiumEntitlementAPI {
