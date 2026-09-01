@@ -41,9 +41,6 @@ struct VisitEditorView: View {
     @State private var dishDrafts: [DishDraft] = []
     @State private var isManagingDishes = false
     @State private var didLoadDishes = false
-    @State private var showsDetailedRatings: Bool
-    @State private var showsDiningContext: Bool
-    @State private var showsExperienceContext: Bool
     @State private var isChoosingCompanions = false
     @State private var isChoosingRecommendationSource = false
     @State private var invitedUserIDs: Set<String> = []
@@ -78,13 +75,6 @@ struct VisitEditorView: View {
         _partySizeText = State(initialValue: Self.integerString(initialDraft.partySize))
         _spendText = State(initialValue: Self.spendString(initialDraft.myActualSpend))
         _totalPriceText = State(initialValue: Self.spendString(initialDraft.totalPrice))
-        _showsDetailedRatings = State(initialValue: RatingDimension.allCases.contains {
-            $0.value(in: initialDraft) != nil
-        })
-        _showsDiningContext = State(initialValue:
-            !initialDraft.diningOccasionRawValues.isEmpty || initialDraft.queueDurationRawValue != nil
-        )
-        _showsExperienceContext = State(initialValue: initialDraft.hasExperienceContext)
     }
 
     @MainActor
@@ -104,13 +94,6 @@ struct VisitEditorView: View {
         _partySizeText = State(initialValue: Self.integerString(initialDraft.partySize))
         _spendText = State(initialValue: Self.spendString(initialDraft.myActualSpend))
         _totalPriceText = State(initialValue: Self.spendString(initialDraft.totalPrice))
-        _showsDetailedRatings = State(initialValue: RatingDimension.allCases.contains {
-            $0.value(in: initialDraft) != nil
-        })
-        _showsDiningContext = State(initialValue:
-            !initialDraft.diningOccasionRawValues.isEmpty || initialDraft.queueDurationRawValue != nil
-        )
-        _showsExperienceContext = State(initialValue: initialDraft.hasExperienceContext)
     }
 
     var body: some View {
@@ -226,15 +209,83 @@ struct VisitEditorView: View {
 
     private var restaurantSection: some View {
         Section("餐厅") {
-            Text(restaurant?.name ?? candidate?.name ?? "")
-                .font(.headline)
-            let address = restaurant?.address ?? candidate?.address ?? ""
-            if !address.isEmpty {
-                Text(address)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: TasteMapDesignTokens.Spacing.regular) {
+                TasteMapRestaurantImage(
+                    resolution: restaurantImageResolution,
+                    photosByID: restaurantImagePhotosByID,
+                    semanticID: restaurant?.id.uuidString ?? candidate?.id.uuidString ?? "visit-editor",
+                    fallbackKind: restaurantFallbackKind,
+                    fallbackIconSize: TasteMapDesignTokens.Icon.sectionContainer,
+                    accessibilityLabel: "到访餐厅图片"
+                )
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: TasteMapDesignTokens.Radius.compact, style: .continuous))
+
+                VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.xSmall) {
+                    Text(restaurant?.name ?? candidate?.name ?? "")
+                        .font(.headline)
+                    let context = restaurantContextLine
+                    if !context.isEmpty {
+                        Text(context)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    if let count = restaurantVisitCount, count > 0 {
+                        Text("第 \(count + (visit == nil ? 1 : 0)) 次到访")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                    }
+                }
+                Spacer(minLength: 0)
             }
         }
+    }
+
+    private var restaurantContextLine: String {
+        let values = [restaurant?.city ?? candidate?.city, restaurant?.address ?? candidate?.address]
+            .compactMap { value -> String? in
+                guard let value else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+        return values.joined(separator: " · ")
+    }
+
+    private var restaurantVisitCount: Int? {
+        guard let restaurantID = restaurant?.id else { return nil }
+        return owned.visits.filter { $0.restaurantId == restaurantID && $0.deletedAt == nil }.count
+    }
+
+    private var restaurantImageResolution: RestaurantImageResolution {
+        if let restaurant {
+            let metadata = RestaurantDetailMetadata(restaurant: restaurant)
+            let photo = RestaurantImagePhotoSelectionPolicy.preferredPhoto(
+                restaurantID: restaurant.id,
+                photos: owned.photos,
+                referencedPhotoID: metadata.markerPhotoID
+            )
+            return RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: photo?.id,
+                publicOrCachedPhotoID: metadata.markerPhotoID,
+                providerMerchantImageURL: metadata.merchantImageURL
+            )
+        }
+        return RestaurantImagePriorityPolicy.resolution(
+            localUserPhotoID: nil,
+            providerMerchantImageURL: candidate?.photoURL
+        )
+    }
+
+    private var restaurantImagePhotosByID: [UUID: PhotoAsset] {
+        Dictionary(uniqueKeysWithValues: owned.photos.map { ($0.id, $0) })
+    }
+
+    private var restaurantFallbackKind: FoodDiningVisualKind {
+        guard let restaurant else { return .genericDining }
+        return FoodDiningVisualLibrary.kind(
+            legacySymbol: RestaurantDetailMetadata(restaurant: restaurant).markerEmoji
+        )
     }
 
     private var basicsSection: some View {
@@ -270,40 +321,30 @@ struct VisitEditorView: View {
 
     private var diningContextSection: some View {
         Section {
-            DisclosureGroup(isExpanded: $showsDiningContext) {
-                VisitOptionalChoicePicker(
-                    title: "排队 / 等位",
-                    selection: $draft.queueDurationRawValue,
-                    options: VisitQueueDuration.allCases.map {
-                        VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
-                    },
-                    accessibilityIdentifier: "visit-editor-queue-duration"
-                )
-                VisitMultiChoicePicker(
-                    title: "适合场景",
-                    selection: $draft.diningOccasionRawValues,
-                    options: VisitDiningOccasion.allCases.map {
-                        VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
-                    },
-                    accessibilityIdentifier: "visit-editor-dining-occasions"
-                )
-                if draft.diningOccasionRawValues.contains(VisitDiningOccasion.other.rawValue) {
-                    TextField("例如：工作简餐", text: $draft.diningOccasionText)
-                        .accessibilityLabel("自定义用餐场景")
-                        .accessibilityIdentifier("visit-editor-dining-occasion-text")
-                }
-            } label: {
-                HStack {
-                    Label("用餐场景与等位", systemImage: "clock.badge.questionmark")
-                    Spacer()
-                    Text(diningContextSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            VisitOptionalChoicePicker(
+                title: "排队 / 等位",
+                selection: $draft.queueDurationRawValue,
+                options: VisitQueueDuration.allCases.map {
+                    VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
+                },
+                accessibilityIdentifier: "visit-editor-queue-duration"
+            )
+            VisitMultiChoicePicker(
+                title: "适合场景",
+                selection: $draft.diningOccasionRawValues,
+                options: VisitDiningOccasion.allCases.map {
+                    VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
+                },
+                accessibilityIdentifier: "visit-editor-dining-occasions"
+            )
+            if draft.diningOccasionRawValues.contains(VisitDiningOccasion.other.rawValue) {
+                TextField("例如：工作简餐", text: $draft.diningOccasionText)
+                    .accessibilityLabel("自定义用餐场景")
+                    .accessibilityIdentifier("visit-editor-dining-occasion-text")
             }
-            .accessibilityIdentifier("visit-editor-dining-context")
         } header: {
             Text("用餐情况")
+                .accessibilityIdentifier("visit-editor-dining-context")
         } footer: {
             Text("全部可选。未记录排队与明确无需排队会作为两个不同状态保存。")
         }
@@ -359,13 +400,6 @@ struct VisitEditorView: View {
         } footer: {
             Text("全部可选。名字只来自你的输入，不会读取通讯录；保存后下次可以直接复用。")
         }
-    }
-
-    private var diningContextSummary: String {
-        let count = draft.diningOccasions.count
-        if count > 0 { return "\(count) 个场景" }
-        if let queue = draft.queueDuration { return queue.title }
-        return "可选"
     }
 
     private var photosSection: some View {
@@ -523,31 +557,18 @@ struct VisitEditorView: View {
 
     private var detailedRatingSection: some View {
         Section {
-            DisclosureGroup(isExpanded: $showsDetailedRatings) {
-                ForEach(RatingDimension.allCases) { dimension in
-                    TasteMapRatingInput(
-                        dimension: dimension,
-                        rating: detailedRatingBinding(for: dimension)
-                    )
-                }
-            } label: {
-                HStack {
-                    Label("详细评分", systemImage: "slider.horizontal.3")
-                    Spacer()
-                    Text("\(detailedRatingCount)/\(RatingDimension.allCases.count)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            ForEach(RatingDimension.allCases) { dimension in
+                TasteMapRatingInput(
+                    dimension: dimension,
+                    rating: detailedRatingBinding(for: dimension)
+                )
             }
-            .accessibilityIdentifier("visit-editor-experience-context")
-            .accessibilityIdentifier("visit-detailed-ratings")
+        } header: {
+            Text("详细评分")
+                .accessibilityIdentifier("visit-detailed-ratings")
         } footer: {
             Text("性价比、环境和服务全部可选，可以只记录其中一项。")
         }
-    }
-
-    private var detailedRatingCount: Int {
-        RatingDimension.allCases.filter { $0.value(in: draft) != nil }.count
     }
 
     private func detailedRatingBinding(for dimension: RatingDimension) -> Binding<Double?> {
@@ -646,74 +667,64 @@ struct VisitEditorView: View {
 
     private var experienceContextSection: some View {
         Section {
-            DisclosureGroup(isExpanded: $showsExperienceContext) {
-                VisitOptionalChoicePicker(
-                    title: "嘈杂程度",
-                    selection: $draft.noiseLevelRawValue,
-                    options: VisitNoiseLevel.allCases.map {
-                        VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
-                    },
-                    accessibilityIdentifier: "visit-editor-noise-level"
-                )
-                VisitOptionalChoicePicker(
-                    title: "上餐时长",
-                    selection: $draft.diningDurationRawValue,
-                    options: VisitDiningDuration.allCases.map {
-                        VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
-                    },
-                    accessibilityIdentifier: "visit-editor-serving-duration"
-                )
-                VisitOptionalChoicePicker(
-                    title: "菜量",
-                    selection: $draft.portionLevelRawValue,
-                    options: VisitPortionLevel.allCases.map {
-                        VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
-                    },
-                    accessibilityIdentifier: "visit-editor-portion-level"
-                )
-                VisitOptionalChoicePicker(
-                    title: "交通便利度",
-                    selection: $draft.transportConvenienceRawValue,
-                    options: VisitTransportConvenience.allCases.map {
-                        VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
-                    },
-                    accessibilityIdentifier: "visit-editor-transport-convenience"
-                )
-                VisitTagPicker(
-                    title: "性价比标签",
-                    selection: $draft.valueTags,
-                    presets: VisitContextOptions.valueTags,
-                    accessibilityIdentifier: "visit-editor-value-tags"
-                )
-                VisitTagPicker(
-                    title: "环境标签",
-                    selection: $draft.environmentTags,
-                    presets: VisitContextOptions.environmentTags,
-                    accessibilityIdentifier: "visit-editor-environment-tags"
-                )
-                VisitTagPicker(
-                    title: "服务标签",
-                    selection: $draft.serviceTags,
-                    presets: VisitContextOptions.serviceTags,
-                    accessibilityIdentifier: "visit-editor-service-tags"
-                )
-                TextField(
-                    "最低消费、现场取号、用餐限时或特殊营业规则……",
-                    text: $draft.specialNotes,
-                    axis: .vertical
-                )
-                .lineLimit(2...5)
-                .accessibilityLabel("特殊注意事项")
-                .accessibilityIdentifier("visit-editor-special-notes")
-            } label: {
-                HStack {
-                    Label("更多体验记录", systemImage: "tag.fill")
-                    Spacer()
-                    Text(draft.hasExperienceContext ? "已记录" : "可选")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            VisitOptionalChoicePicker(
+                title: "嘈杂程度",
+                selection: $draft.noiseLevelRawValue,
+                options: VisitNoiseLevel.allCases.map {
+                    VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
+                },
+                accessibilityIdentifier: "visit-editor-noise-level"
+            )
+            VisitOptionalChoicePicker(
+                title: "上餐时长",
+                selection: $draft.diningDurationRawValue,
+                options: VisitDiningDuration.allCases.map {
+                    VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
+                },
+                accessibilityIdentifier: "visit-editor-serving-duration"
+            )
+            VisitOptionalChoicePicker(
+                title: "菜量",
+                selection: $draft.portionLevelRawValue,
+                options: VisitPortionLevel.allCases.map {
+                    VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
+                },
+                accessibilityIdentifier: "visit-editor-portion-level"
+            )
+            VisitOptionalChoicePicker(
+                title: "交通便利度",
+                selection: $draft.transportConvenienceRawValue,
+                options: VisitTransportConvenience.allCases.map {
+                    VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
+                },
+                accessibilityIdentifier: "visit-editor-transport-convenience"
+            )
+            VisitTagPicker(
+                title: "性价比标签",
+                selection: $draft.valueTags,
+                presets: VisitContextOptions.valueTags,
+                accessibilityIdentifier: "visit-editor-value-tags"
+            )
+            VisitTagPicker(
+                title: "环境标签",
+                selection: $draft.environmentTags,
+                presets: VisitContextOptions.environmentTags,
+                accessibilityIdentifier: "visit-editor-environment-tags"
+            )
+            VisitTagPicker(
+                title: "服务标签",
+                selection: $draft.serviceTags,
+                presets: VisitContextOptions.serviceTags,
+                accessibilityIdentifier: "visit-editor-service-tags"
+            )
+            TextField(
+                "最低消费、现场取号、用餐限时或特殊营业规则……",
+                text: $draft.specialNotes,
+                axis: .vertical
+            )
+            .lineLimit(2...5)
+            .accessibilityLabel("特殊注意事项")
+            .accessibilityIdentifier("visit-editor-special-notes")
         } header: {
             Text("体验补充")
         } footer: {

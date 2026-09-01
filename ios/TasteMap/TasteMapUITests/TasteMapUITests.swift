@@ -1677,7 +1677,6 @@ final class TasteMapUITests: XCTestCase {
 
         let context = app.descendants(matching: .any)["visit-editor-dining-context"]
         scrollUntilVisible(context, in: app)
-        context.tap()
         selectPicker("visit-editor-queue-duration", option: "无需排队", in: app)
         let friends = app.buttons["visit-editor-dining-occasions-friends"]
         scrollUntilVisible(friends, in: app)
@@ -1709,9 +1708,6 @@ final class TasteMapUITests: XCTestCase {
         scrollUntilVisible(details, in: app)
         keepScreenshot(named: "Final Atlas Visit Rich Photo Dish Context", of: app)
         let value = app.buttons["性价比 5.0 星"]
-        if !value.exists {
-            details.tap()
-        }
         scrollUntilVisible(value, in: app)
         XCTAssertTrue(value.waitForExistence(timeout: 3))
         value.tap()
@@ -1972,7 +1968,6 @@ final class TasteMapUITests: XCTestCase {
         let details = app.descendants(matching: .any)["visit-detailed-ratings"]
         scrollUntilVisible(details, in: app)
         XCTAssertTrue(details.exists)
-        details.tap()
         let valueRating = app.buttons["性价比 5.0 星"]
         scrollUntilVisible(valueRating, in: app)
         XCTAssertTrue(valueRating.waitForExistence(timeout: 3))
@@ -2051,7 +2046,6 @@ final class TasteMapUITests: XCTestCase {
         let context = app.descendants(matching: .any)["visit-editor-dining-context"]
         scrollUntilVisible(context, in: app)
         XCTAssertTrue(context.waitForExistence(timeout: 3))
-        context.tap()
         selectPicker("visit-editor-queue-duration", option: "无需排队", in: app)
         let friends = app.buttons["visit-editor-dining-occasions-friends"]
         scrollUntilVisible(friends, in: app)
@@ -3238,6 +3232,14 @@ final class TasteMapUITests: XCTestCase {
         case "visit-editor-visibility": "可见性"
         default: identifier
         }
+        if identifier == "visit-editor-queue-duration" || identifier == "visit-editor-payment-mode" {
+            let directChoice = app.buttons["\(title)：\(option)"]
+            scrollUntilVisible(directChoice, in: app)
+            XCTAssertTrue(directChoice.waitForExistence(timeout: 3))
+            directChoice.tap()
+            return
+        }
+
         let picker = app.buttons[title]
         scrollUntilVisible(picker, in: app)
         XCTAssertTrue(picker.waitForExistence(timeout: 3))

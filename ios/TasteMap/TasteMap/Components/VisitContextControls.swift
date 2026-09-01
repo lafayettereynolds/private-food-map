@@ -13,25 +13,60 @@ struct VisitOptionalChoicePicker: View {
     let accessibilityIdentifier: String
 
     var body: some View {
-        Menu {
-            Button("不记录") { selection = nil }
-                .accessibilityLabel("\(title)：不记录")
-            ForEach(options) { option in
-                Button(option.title) { selection = option.value }
-            }
-        } label: {
-            LabeledContent(title) {
-                Text(selectedTitle)
+        VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.small) {
+            Text(title)
+                .font(TasteMapDesignTokens.Typography.control)
+                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+
+            LazyVGrid(
+                columns: [
+                    GridItem(
+                        .adaptive(minimum: 88, maximum: 150),
+                        spacing: TasteMapDesignTokens.Spacing.small
+                    ),
+                ],
+                alignment: .leading,
+                spacing: TasteMapDesignTokens.Spacing.small
+            ) {
+                choiceButton(title: "不记录", value: nil)
+                ForEach(options) { option in
+                    choiceButton(title: option.title, value: option.value)
+                }
             }
         }
-        .accessibilityLabel(title)
-        .accessibilityValue(selectedTitle)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
-    private var selectedTitle: String {
-        guard let selection else { return "不记录" }
-        return options.first(where: { $0.value == selection })?.title ?? selection
+    private func choiceButton(title optionTitle: String, value: String?) -> some View {
+        let selected = selection == value
+        return Button {
+            selection = value
+        } label: {
+            Text(optionTitle)
+                .font(selected
+                    ? TasteMapDesignTokens.Typography.selectedControl
+                    : TasteMapDesignTokens.Typography.control)
+                .foregroundStyle(selected ? TasteMapCoreTheme.brandDeep : TasteMapCoreTheme.textPrimary)
+                .padding(.horizontal, TasteMapDesignTokens.Control.filterChipHorizontalPadding)
+                .frame(maxWidth: .infinity)
+                .frame(height: TasteMapDesignTokens.Control.chipVisibleHeight)
+                .background(
+                    selected ? TasteMapCoreTheme.brandSoft : TasteMapCoreTheme.surfaceSubtle,
+                    in: Capsule()
+                )
+                .overlay {
+                    Capsule().stroke(
+                        selected ? TasteMapCoreTheme.brand.opacity(0.42) : TasteMapCoreTheme.border,
+                        lineWidth: TasteMapDesignTokens.Border.standard
+                    )
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+        .accessibilityLabel("\(title)：\(optionTitle)")
+        .accessibilityValue(selected ? "已选择" : "未选择")
+        .accessibilityIdentifier("\(accessibilityIdentifier)-\(value ?? "none")")
     }
 }
 
