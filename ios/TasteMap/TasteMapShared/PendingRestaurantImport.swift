@@ -53,13 +53,17 @@ nonisolated struct PendingRestaurantImportStore {
         guard !normalizedText.isEmpty || normalizedURL != nil else {
             throw PendingRestaurantImportStoreError.emptyPayload
         }
-        let canonical = "\(normalizedURL?.absoluteString ?? "")\n\(normalizedText)"
-        guard canonical.utf8.count <= Self.maximumPayloadBytes else {
+        let payload = "\(normalizedURL?.absoluteString ?? "")\n\(normalizedText)"
+        guard payload.utf8.count <= Self.maximumPayloadBytes else {
             throw PendingRestaurantImportStoreError.payloadTooLarge
         }
         try prepareDirectory()
         try cleanupExpired(now: now)
-        let id = Self.fingerprint(canonical)
+        // Share providers frequently change the surrounding title/caption while
+        // preserving the same destination URL. Treat that as one pending import;
+        // text-only evidence continues to deduplicate by its normalized contents.
+        let dedupeKey = normalizedURL?.absoluteString ?? normalizedText
+        let id = Self.fingerprint(dedupeKey)
         let fileURL = self.fileURL(for: id)
         if let existing = try? decode(fileURL), existing.expiresAt > now { return existing }
         let pending = PendingRestaurantImport(

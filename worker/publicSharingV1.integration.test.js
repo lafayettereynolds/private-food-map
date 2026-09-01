@@ -33,6 +33,9 @@ describe('Task 09 public sharing', () => {
 
   it('dynamically revokes Restaurant access after privacy, deletion, or profile changes', async () => {
     const share = await create('tm_share_a', 'restaurant', 'restaurant-apple-only')
+    database.get('UPDATE public_share_links SET revoked_at = ? WHERE share_id = ?', at, share.shareId)
+    await expect(read(share.shareId)).rejects.toMatchObject({ status: 404 })
+    database.get('UPDATE public_share_links SET revoked_at = NULL WHERE share_id = ?', share.shareId)
     database.get("UPDATE visits SET visibility = 'private' WHERE id = 'visit-public'")
     await expect(read(share.shareId)).rejects.toMatchObject({ status: 404 })
     database.get("UPDATE visits SET visibility = 'public' WHERE id = 'visit-public'")
@@ -82,6 +85,13 @@ describe('Task 09 public sharing', () => {
     await expect(create('tm_share_a', 'list', 'list-private')).rejects.toMatchObject({ status: 404 })
     await expect(read('restaurant-apple-only')).rejects.toMatchObject({ status: 404 })
     expect(database.get('SELECT COUNT(*) AS value FROM public_share_links').value).toBe(0)
+  })
+
+  it('rate limits anonymous reads without exposing whether the opaque ID exists', async () => {
+    const share = await create('tm_share_a', 'restaurant', 'restaurant-apple-only')
+    for (let index = 0; index < 240; index += 1) await read(share.shareId)
+    await expect(read(share.shareId)).rejects.toMatchObject({ status: 429 })
+    await expect(read('________________________________')).rejects.toMatchObject({ status: 429 })
   })
 })
 

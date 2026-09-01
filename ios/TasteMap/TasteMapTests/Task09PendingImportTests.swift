@@ -26,6 +26,21 @@ struct Task09PendingImportTests {
         #expect(first.acquisitionText.contains("maps.apple.com"))
     }
 
+    @Test("The same shared URL remains idempotent when a provider changes its caption")
+    func duplicateURLWithDifferentCaption() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("task11-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = PendingRestaurantImportStore(directoryURL: directory)
+        let now = Date(timeIntervalSince1970: 1_788_100_000)
+        let url = URL(string: "https://uri.amap.com/marker?position=120.1,30.2&poiid=B0TASK11")!
+        let first = try store.enqueue(text: "第一次分享文案", url: url, now: now)
+        let replay = try store.enqueue(text: "高德更新后的分享文案", url: url, now: now.addingTimeInterval(30))
+
+        #expect(replay.id == first.id)
+        #expect(try store.pending(now: now).count == 1)
+    }
+
     @Test("expired and malformed records cannot replay")
     func expiryAndMalformed() throws {
         let directory = FileManager.default.temporaryDirectory

@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "7G5J9MJX88.com.lafayette.tastemap"
+        ],
+        "components": [
+          {
+            "/": "/share/*",
+            "comment": "Taste Map public Restaurant, Profile and List shares"
+          }
+        ]
+      }
+    ]
+  }
+}
