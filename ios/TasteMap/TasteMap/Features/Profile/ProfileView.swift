@@ -587,7 +587,7 @@ private struct ProfileIdentityCard: View {
                                     .accessibilityIdentifier("profile-city-text")
                             }
                             Label {
-                                Text("加入于 \(profile.createdAt.formatted(.dateTime.year().month()))")
+                                Text("加入于 \(TasteMapDisplayDate.yearMonth(profile.createdAt))")
                             } icon: {
                                 Image(systemName: "calendar.badge.checkmark")
                             }

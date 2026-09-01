@@ -6,6 +6,7 @@ import UIKit
 
 @MainActor
 enum TasteMapUITestFixtures {
+    static let visualQAEnvironmentKey = "TASTEMAP_VISUAL_QA_MODE"
     static let detailRestaurantID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
     static let detailLaunchArgument = "-p1b-restaurant-detail-fixture"
     static let persistentLaunchArgument = "-p1d-persistent-offline-fixture"
@@ -44,6 +45,13 @@ enum TasteMapUITestFixtures {
     static let onThisDayEnvironmentKey = "TASTEMAP_F7A_ON_THIS_DAY_UI_TEST"
     static let coreParityInitialTabEnvironmentKey = "TASTEMAP_CORE_PARITY_INITIAL_TAB"
 
+    static var visualQAMode: TasteMapVisualQAMode? {
+        ProcessInfo.processInfo.environment[visualQAEnvironmentKey]
+            .flatMap(TasteMapVisualQAMode.init(rawValue:))
+    }
+
+    static var usesVisualQA: Bool { visualQAMode != nil }
+
     static var coreParityInitialTab: AppTab? {
         guard let value = ProcessInfo.processInfo.environment[coreParityInitialTabEnvironmentKey]
         else { return nil }
@@ -55,7 +63,7 @@ enum TasteMapUITestFixtures {
     }
 
     static var onThisDayContextOverride: OnThisDayContext? {
-        guard usesOnThisDayFixture else { return nil }
+        guard usesOnThisDayFixture || usesVisualQA else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "zh_Hans_CN")
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
@@ -105,6 +113,9 @@ enum TasteMapUITestFixtures {
     }
 
     static var premiumOverride: DevelopmentPremiumOverride? {
+        if let visualQAMode {
+            return visualQAMode == .free ? .free : .premium
+        }
         let value = ProcessInfo.processInfo.environment[premiumEnvironmentKey]
         if value == DevelopmentPremiumOverride.free.rawValue { return .free }
         if value == DevelopmentPremiumOverride.premium.rawValue { return .premium }
@@ -157,6 +168,7 @@ enum TasteMapUITestFixtures {
     static var usesRestaurantListsFixture: Bool {
         ProcessInfo.processInfo.environment[restaurantListsEnvironmentKey] == "1"
             || ProcessInfo.processInfo.environment[restaurantListsPrivateEnvironmentKey] == "1"
+            || usesVisualQA
     }
 
     static var restaurantListsFixtureIsPrivate: Bool {
@@ -190,6 +202,7 @@ enum TasteMapUITestFixtures {
     static var usesCommunityFixture: Bool {
         ProcessInfo.processInfo.environment[communityEnvironmentKey] == "1"
             || usesCommunityOfflineFixture
+            || (usesVisualQA && visualQAMode?.forcesNetworkFailureState == false)
     }
 
     static var usesCommunityOfflineFixture: Bool {
@@ -198,6 +211,7 @@ enum TasteMapUITestFixtures {
 
     static var usesDiscoveryFixture: Bool {
         ProcessInfo.processInfo.environment[discoveryEnvironmentKey] == "1"
+            || (usesVisualQA && visualQAMode?.forcesNetworkFailureState == false)
     }
 
     static var usesDiscoveryOfflineFixture: Bool {
@@ -214,11 +228,14 @@ enum TasteMapUITestFixtures {
             || usesF2BFiltersFixture
             || usesModule8MapClusterFixture
             || usesOnThisDayFixture
+            || usesVisualQA
     }
 
     static var profileSocialStatisticsOverride: ProfileSocialStatistics? {
         guard usesProfileFixture else { return nil }
-        return .init(friendCount: 12, followingCount: 18, followerCount: 9)
+        return usesVisualQA
+            ? .init(friendCount: 24, followingCount: 48, followerCount: 73)
+            : .init(friendCount: 12, followingCount: 18, followerCount: 9)
     }
 
     static var usesPhotoFixture: Bool {
@@ -504,11 +521,11 @@ enum TasteMapUITestFixtures {
             .contains(where: { $0.tasteMapUserID == profileUserID }) { return }
         context.insert(UserProfile(
             tasteMapUserID: profileUserID,
-            displayName: "P3-A 初始用户",
-            bio: "正在建立自己的美食身份。",
+            displayName: usesVisualQA ? "Lafayette · 丰富美食档案" : "P3-A 初始用户",
+            bio: usesVisualQA ? "在杭州与上海认真记录每一次值得回味的饭。" : "正在建立自己的美食身份。",
             city: "杭州",
             avatarPreset: .polarBear,
-            visibility: .private,
+            visibility: usesVisualQA ? .public : .private,
             serverVersion: 1,
             syncStatus: .synced
         ))
@@ -875,7 +892,8 @@ enum TasteMapUITestFixtures {
             city: "杭州", avatarPhotoId: nil, avatarPresetId: .penguin,
             friendshipId: nil, friendshipState: .none, isFollowing: false
         )
-        let items = (0..<4).map { index -> DiscoveryCardV1 in
+        let itemCount = usesVisualQA ? 12 : 4
+        let items = (0..<itemCount).map { index -> DiscoveryCardV1 in
             let projection = DiscoveryRestaurantProjectionV1(
                 globalKey: "place:p3c-ui-\(index)",
                 placeIdentities: [.init(provider: .appleMaps, externalId: "apple-p3c-ui-\(index)", isPrimary: true)],
@@ -933,7 +951,8 @@ enum TasteMapUITestFixtures {
             )
         ]
         let formatter = ISO8601DateFormatter()
-        let items = (0..<4).map { index -> PublicContentItemV1 in
+        let itemCount = usesVisualQA ? 12 : 4
+        let items = (0..<itemCount).map { index -> PublicContentItemV1 in
             let user = users[index % users.count]
             let eventAt = formatter.string(from: Date(timeIntervalSince1970: 1_777_500_000 - Double(index * 3_600)))
             let restaurant = PublicContentRestaurantV1(

@@ -164,7 +164,7 @@ private struct TasteFootprintRow: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            Text(item.visit.visitedAt.formatted(date: .abbreviated, time: .shortened))
+            Text(TasteMapDisplayDate.abbreviatedDateTime(item.visit.visitedAt))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Color.accentColor)
             let location = [item.restaurant.city, item.restaurant.address]

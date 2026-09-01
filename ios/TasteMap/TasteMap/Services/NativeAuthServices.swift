@@ -121,4 +121,12 @@ final class NativeAuthServices {
     func endLocalAccountSession() {
         localAccountScope = .guest
     }
+
+#if DEBUG
+    /// Activates only the isolated, compilation-gated Visual QA workspace.
+    /// No credential is persisted and no server authorization is fabricated.
+    func activateVisualQAFixture(userID: String) {
+        localAccountScope = .authenticated(userID)
+    }
+#endif
 }

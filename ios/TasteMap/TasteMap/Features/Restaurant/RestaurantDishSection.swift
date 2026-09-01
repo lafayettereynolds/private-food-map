@@ -126,7 +126,7 @@ private struct RestaurantDishRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 if let latest = summary.latestVisit {
-                    Text("吃过 \(summary.visitCount) 次 · 最近 \(latest.visitedAt.formatted(date: .abbreviated, time: .omitted))")
+                    Text("吃过 \(summary.visitCount) 次 · 最近 \(TasteMapDisplayDate.abbreviatedDate(latest.visitedAt))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

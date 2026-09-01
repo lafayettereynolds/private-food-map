@@ -231,7 +231,7 @@ private struct RestaurantBrowseCard: View {
                             visitedSummary
                         } else if segment == .wantToGo {
                             Label(
-                                "加入于 \(item.restaurant.createdAt.formatted(date: .abbreviated, time: .omitted))",
+                                "加入于 \(TasteMapDisplayDate.abbreviatedDate(item.restaurant.createdAt))",
                                 systemImage: "bookmark.fill"
                             )
                             .font(.caption)

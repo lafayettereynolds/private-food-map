@@ -128,7 +128,7 @@ struct SocialCollaborationInboxView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text(Self.date(invitation.occurredAt).formatted(date: .abbreviated, time: .shortened))
+            Text(TasteMapDisplayDate.abbreviatedDateTime(Self.date(invitation.occurredAt)))
                 .font(.caption).foregroundStyle(.secondary)
 
             switch scope {

@@ -1,0 +1,35 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "E4F3EED9-89D8-405C-B4CB-7CA816CE3405",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "AF6412E3-6DB6-4B55-AEAB-209A336971B5.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Task09-Rich-Profile-Premium_0_475B7BC1-78E2-438A-85D1-86EDDB938C30.png",
+        "timestamp" : 1788226313.779
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "E4F3EED9-89D8-405C-B4CB-7CA816CE3405",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "9F92AFC1-B348-4025-8EE6-F3219C03C7AD.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Task09-Rich-Discovery-Accessibility_0_06C8E023-0C0E-4551-A8E3-8AD426178763.png",
+        "timestamp" : 1788226311.907
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "E4F3EED9-89D8-405C-B4CB-7CA816CE3405",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "9237639B-DBEE-4900-BE0E-6F88C9F0BFE4.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Task09-Rich-Map-Accessibility_0_6B1089A5-209D-443A-96A3-3C565343DC20.png",
+        "timestamp" : 1788226309.993
+      }
+    ],
+    "testIdentifier" : "TasteMapUITests/testTask09RichVisualQAPremiumAccessibilityPath()",
+    "testIdentifierURL" : "test://com.apple.xcode/TasteMap/TasteMapUITests/TasteMapUITests/testTask09RichVisualQAPremiumAccessibilityPath"
+  }
+]

@@ -281,6 +281,6 @@ private struct CommunityCommentsView: View {
     }
 
     private func displayDate(_ value: String) -> String {
-        CachedCommunityContent.date(value)?.formatted(date: .abbreviated, time: .shortened) ?? value
+        CachedCommunityContent.date(value).map(TasteMapDisplayDate.abbreviatedDateTime) ?? value
     }
 }

@@ -513,7 +513,7 @@ struct DiscoveryContentView: View {
                     }
                 }
                 if showingCache, let cacheDate {
-                    Label("离线内容 · 更新于 \(cacheDate.formatted(.relative(presentation: .named)))",
+                    Label("离线内容 · 更新于 \(TasteMapDisplayDate.relative(cacheDate))",
                           systemImage: "wifi.slash")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -972,6 +972,12 @@ struct DiscoveryRestaurantImage: View {
         }
         .clipped()
         .task(id: restaurant.photo?.photoId) {
+#if DEBUG
+            if TasteMapUITestFixtures.usesVisualQA {
+                image = TasteMapVisualQAFixtures.restaurantImage(stableKey: restaurant.globalKey)
+                return
+            }
+#endif
             guard let photo = restaurant.photo, let id = UUID(uuidString: photo.photoId), let photoAPI else { return }
             if let data = try? await photoAPI.download(photoID: id, variant: .thumbnail) { image = UIImage(data: data) }
         }

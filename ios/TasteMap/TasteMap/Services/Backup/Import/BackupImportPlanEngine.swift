@@ -1060,7 +1060,7 @@ nonisolated struct BackupImportPlanEngine: Sendable {
     }
 
     private static func visitLabel(_ value: BackupImportSourceVisit) -> String {
-        "\(value.visitedAt.formatted(date: .numeric, time: .shortened)) · \(value.rating.map { "\($0) 星" } ?? "未评分")"
+        "\(TasteMapDisplayDate.numericDateTime(value.visitedAt)) · \(value.rating.map { "\($0) 星" } ?? "未评分")"
     }
 
     private static func distanceMeters(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {

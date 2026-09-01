@@ -123,6 +123,11 @@ struct RootTabView: View {
     }
 
     private func loadPendingSharedImportIfNeeded() {
+#if DEBUG
+        // The isolated Visual QA workspace must never read or consume the real
+        // App Group import queue from a developer's installed application.
+        guard !TasteMapUITestFixtures.usesVisualQA else { return }
+#endif
         guard pendingSharedImport == nil,
               let store = try? PendingRestaurantImportStore.live() else { return }
         pendingSharedImport = try? store.pending().first

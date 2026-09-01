@@ -3,6 +3,7 @@ import Foundation
 enum TasteMapRuntimeTier: String, Equatable, Sendable {
     case application
     #if DEBUG
+    case visualQA = "visual-qa"
     case unit
     case localIntegration = "local-integration"
     case ui
@@ -14,6 +15,7 @@ struct TasteMapRuntimeConfiguration: Equatable, Sendable {
     #if DEBUG
     static let explicitTierEnvironmentKey = "TASTEMAP_TEST_TIER"
     static let uiRuntimeEnvironmentKey = "TASTEMAP_UI_TEST_RUNTIME"
+    static let visualQAEnvironmentKey = "TASTEMAP_VISUAL_QA_MODE"
     #endif
 
     let tier: TasteMapRuntimeTier
@@ -60,6 +62,9 @@ struct TasteMapRuntimeConfiguration: Equatable, Sendable {
         }
         if environment["XCTestConfigurationFilePath"] != nil {
             return TasteMapRuntimeConfiguration(tier: .unit)
+        }
+        if environment[visualQAEnvironmentKey] != nil {
+            return TasteMapRuntimeConfiguration(tier: .visualQA)
         }
         let isUIFixture = environment[uiRuntimeEnvironmentKey] == "1"
             || environment.keys.contains { key in

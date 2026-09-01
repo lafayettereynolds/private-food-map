@@ -279,7 +279,7 @@ private struct DiningCompanionSummaryCard: View {
                 Text("\(summary.sharedVisitCount) 次共同到访 · \(summary.restaurantCount) 家餐厅")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
-                Text(summary.latestVisit.map { "最近 \($0.formatted(date: .abbreviated, time: .omitted))" }
+                Text(summary.latestVisit.map { "最近 \(TasteMapDisplayDate.abbreviatedDate($0))" }
                      ?? "还没有共同到访")
                     .font(.caption)
                     .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
@@ -742,7 +742,7 @@ private struct DiningCompanionRestaurantCard: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(TasteMapAnalysisTheme.brand)
                 HStack {
-                    Text(item.latestVisit.formatted(date: .abbreviated, time: .omitted))
+                    Text(TasteMapDisplayDate.abbreviatedDate(item.latestVisit))
                     if let rating = item.averageRating {
                         Spacer()
                         Label(rating.formatted(.number.precision(.fractionLength(1))), systemImage: "star.fill")

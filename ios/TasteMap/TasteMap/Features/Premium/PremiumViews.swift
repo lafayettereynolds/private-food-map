@@ -400,7 +400,7 @@ struct PremiumPaywallView: View {
         }
         if snapshot.isLifetime { return "\(source) · 长期有效" }
         if let expiresAt = snapshot.expiresAt {
-            return "\(source) · 有效期至 \(expiresAt.formatted(date: .abbreviated, time: .omitted))"
+            return "\(source) · 有效期至 \(TasteMapDisplayDate.abbreviatedDate(expiresAt))"
         }
         return source
     }

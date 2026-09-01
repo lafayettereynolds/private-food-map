@@ -673,6 +673,8 @@ struct MapBrowseTitleSwitch: View {
             Text(browseMode.pageTitle)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("map-home-title")
 

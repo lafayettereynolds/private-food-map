@@ -131,7 +131,7 @@ struct DishManagerSheet: View {
         let rating = dish.rating.map { String(format: "%.1f ★", $0) } ?? "未评分"
         guard let usage = usageByDishID[dish.id], usage.count > 0 else { return rating }
         if let latest = usage.lastUsedAt {
-            return "吃过 \(usage.count) 次 · 最近 \(latest.formatted(.dateTime.month().day())) · \(rating)"
+            return "吃过 \(usage.count) 次 · 最近 \(TasteMapDisplayDate.monthDay(latest)) · \(rating)"
         }
         return "吃过 \(usage.count) 次 · \(rating)"
     }

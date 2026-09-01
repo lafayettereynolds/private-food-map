@@ -49,7 +49,7 @@ struct SyncPresentation: Equatable, Sendable {
         case .signedOut:
             "本地记录会继续保留，登录后再同步到 Taste Map。"
         case .synced:
-            lastSyncedAt.map { "最近同步：\($0.formatted(date: .abbreviated, time: .shortened))" }
+            lastSyncedAt.map { "最近同步：\(TasteMapDisplayDate.abbreviatedDateTime($0))" }
                 ?? "本地与云端记录已保持一致。"
         case .pending:
             pendingSummary(suffix: "等待上传。")

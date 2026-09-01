@@ -174,6 +174,15 @@ final class PremiumEntitlementService {
         return true
     }
 
+    /// Synchronous fixture activation for the isolated Visual QA runtime. This
+    /// is compiled out of Release and never writes StoreKit, Keychain, or the
+    /// entitlement backend.
+    func activateVisualQAFixture(userID: String, override: DevelopmentPremiumOverride) {
+        activeUserID = userID
+        developmentOverride = override
+        apply(override.snapshot(userID: userID, now: now()), offline: false)
+    }
+
 #endif
 
     static func preview(

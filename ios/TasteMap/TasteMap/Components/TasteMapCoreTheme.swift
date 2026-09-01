@@ -287,9 +287,26 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
     @Binding var selection: Option
     let items: [Item]
     var accessibilityIdentifier: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 0) {
+        Group {
+            if TasteMapPrimaryTabLayout.resolve(dynamicTypeSize) == .horizontallyScrollable {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) { tabItems(equalWidth: false) }
+                        .padding(.horizontal, 4)
+                }
+                .scrollClipDisabled()
+            } else {
+                HStack(spacing: 0) { tabItems(equalWidth: true) }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    @ViewBuilder
+    private func tabItems(equalWidth: Bool) -> some View {
             ForEach(items) { item in
                 Button {
                     selection = item.option
@@ -302,25 +319,38 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
                                     ? TasteMapCoreTheme.textPrimary
                                     : TasteMapCoreTheme.textSecondary
                             )
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.82)
+                            .multilineTextAlignment(.center)
                         Capsule()
                             .fill(selection == item.option ? TasteMapCoreTheme.brand : .clear)
                             .frame(height: 2)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .frame(
+                        minWidth: equalWidth ? 0 : 76,
+                        maxWidth: equalWidth ? .infinity : nil,
+                        minHeight: 44
+                    )
+                    .padding(.horizontal, equalWidth ? 0 : 8)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(item.title)
+                .accessibilityValue(selection == item.option ? "已选择" : "未选择")
                 .accessibilityAddTraits(selection == item.option ? .isSelected : [])
                 .accessibilityIdentifier(
                     item.accessibilityIdentifier ?? "\(accessibilityIdentifier)-\(item.title)"
                 )
             }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
+nonisolated enum TasteMapPrimaryTabLayout: Equatable, Sendable {
+    case equalWidth
+    case horizontallyScrollable
+
+    static func resolve(_ dynamicTypeSize: DynamicTypeSize) -> Self {
+        dynamicTypeSize.isAccessibilitySize ? .horizontallyScrollable : .equalWidth
     }
 }
 

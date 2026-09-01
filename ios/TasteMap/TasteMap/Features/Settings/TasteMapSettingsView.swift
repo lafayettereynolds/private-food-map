@@ -529,7 +529,7 @@ struct SyncSettingsView: View {
                 }
                 LabeledContent(
                     "最近成功同步",
-                    value: presentation.lastSyncedAt?.formatted(date: .abbreviated, time: .shortened) ?? "暂无"
+                    value: presentation.lastSyncedAt.map(TasteMapDisplayDate.abbreviatedDateTime) ?? "暂无"
                 )
 #if DEBUG
                 if let diagnostic = presentation.diagnostic {

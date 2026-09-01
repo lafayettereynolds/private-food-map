@@ -334,6 +334,6 @@ enum RestaurantDetailFormatting {
     }
 
     nonisolated static func shortDate(_ date: Date) -> String {
-        date.formatted(.dateTime.year().month().day())
+        TasteMapDisplayDate.abbreviatedDate(date)
     }
 }

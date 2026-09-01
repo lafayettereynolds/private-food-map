@@ -53,6 +53,7 @@ struct TasteMapApp: App {
         let container: ModelContainer
         do {
             #if DEBUG
+            let useVisualQA = TasteMapUITestFixtures.usesVisualQA
             let useRestaurantDetailFixture = ProcessInfo.processInfo.arguments.contains(
                 TasteMapUITestFixtures.detailLaunchArgument
             )
@@ -73,6 +74,7 @@ struct TasteMapApp: App {
                 ? TasteMapUITestFixtures.persistentStoreURL
                 : nil
             #else
+            let useVisualQA = false
             let useRestaurantDetailFixture = false
             let useDiscoveryFixture = false
             let useCommunityFixture = false
@@ -91,11 +93,17 @@ struct TasteMapApp: App {
                 inMemory: (runtime.isolatesPersistentState && !usePersistentOfflineFixture)
                     || useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture
                     || useAnalysisFixture || useRestaurantAcquisitionFixture || useF2ABrowsingFixture
-                    || useF2BFiltersFixture || useModule8MapClusterFixture || useOnThisDayFixture,
+                    || useF2BFiltersFixture || useModule8MapClusterFixture || useOnThisDayFixture
+                    || useVisualQA,
                 configurationName: persistenceConfigurationName,
                 storageURL: persistenceStorageURL
             )
             #if DEBUG
+            if let visualQAMode = TasteMapUITestFixtures.visualQAMode {
+                try TasteMapUITestFixtures.insertProfileFixture(into: container)
+                try TasteMapVisualQAFixtures.insert(mode: visualQAMode, into: container)
+                authServices.activateVisualQAFixture(userID: TasteMapVisualQAFixtures.userID)
+            }
             if useRestaurantDetailFixture {
                 try TasteMapUITestFixtures.insertRestaurantDetailFixture(into: container)
             }
@@ -153,6 +161,12 @@ struct TasteMapApp: App {
         if let override = TasteMapUITestFixtures.premiumOverride {
             _ = premiumService.setDevelopmentOverride(override)
         }
+        if let visualQAMode = TasteMapUITestFixtures.visualQAMode {
+            premiumService.activateVisualQAFixture(
+                userID: TasteMapVisualQAFixtures.userID,
+                override: visualQAMode == .free ? .free : .premium
+            )
+        }
 #endif
         premiumEntitlementService = premiumService
         modelContainer = container
@@ -165,9 +179,15 @@ struct TasteMapApp: App {
         let photoFiles: LocalPhotoFileStore
         do {
             #if DEBUG
-            let photoRootURL = runtime.isolatesPersistentState
-                ? TasteMapTestRuntimeResources.temporaryRoot(component: "photos")
-                : nil
+            let photoRootURL: URL?
+            if let visualQAMode = TasteMapUITestFixtures.visualQAMode {
+                try TasteMapVisualQAFixtures.preparePhotoFiles(mode: visualQAMode)
+                photoRootURL = TasteMapVisualQAFixtures.photoRootURL(for: visualQAMode)
+            } else {
+                photoRootURL = runtime.isolatesPersistentState
+                    ? TasteMapTestRuntimeResources.temporaryRoot(component: "photos")
+                    : nil
+            }
             #else
             let photoRootURL: URL? = nil
             #endif

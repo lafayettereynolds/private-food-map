@@ -3176,6 +3176,36 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testTask09RichVisualQAPremiumAccessibilityPath() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = [
+            "TASTEMAP_VISUAL_QA_MODE": "rich",
+            "UIPreferredContentSizeCategoryName": "UICTContentSizeCategoryAccessibilityExtraExtraLarge",
+        ]
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["map-home-title"].label, "我的地图")
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["map-header-view-list"].exists)
+        keepScreenshot(named: "Task09-Rich-Map-Accessibility", of: app)
+
+        app.buttons["app-tab-discover"].tap()
+        XCTAssertTrue(app.staticTexts["discovery-header"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["discovery-primary-following"].exists)
+        XCTAssertTrue(app.buttons["discovery-primary-similarTaste"].exists)
+        XCTAssertTrue(app.buttons["discovery-primary-trending"].exists)
+        keepScreenshot(named: "Task09-Rich-Discovery-Accessibility", of: app)
+
+        app.buttons["app-tab-profile"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["profile-stat-visited"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-premium-badge-entry"].exists)
+        XCTAssertTrue(app.buttons["profile-taste-analysis-entry"].exists)
+        keepScreenshot(named: "Task09-Rich-Profile-Premium", of: app)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

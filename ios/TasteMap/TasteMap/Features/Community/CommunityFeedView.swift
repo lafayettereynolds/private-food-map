@@ -408,7 +408,7 @@ struct PublicContentCard: View {
 
     private var eventText: String {
         let date = CachedCommunityContent.date(item.eventAt)
-        let formatted = date?.formatted(date: .abbreviated, time: .shortened) ?? item.eventAt
+        let formatted = date.map(TasteMapDisplayDate.abbreviatedDateTime) ?? item.eventAt
         return item.kind == .visit ? "公开了一次到访 · \(formatted)" : "加入了想吃 · \(formatted)"
     }
 
