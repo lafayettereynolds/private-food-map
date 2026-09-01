@@ -1067,9 +1067,39 @@ enum TasteMapUITestFixtures {
 
         var firstVisitByRestaurant: [UUID: UUID] = [:]
         let sequence = [0, 0, 1, 0, 2, 1, 3, 0, 2, 1, 0, 3, 1, 2]
+        let calendar = Calendar.current
+        let currentMonthStart = calendar.date(
+            from: calendar.dateComponents([.year, .month], from: .now)
+        ) ?? .now
+        let previousMonthStart = calendar.date(
+            byAdding: .month,
+            value: -1,
+            to: currentMonthStart
+        ) ?? currentMonthStart
         for (index, restaurantIndex) in sequence.enumerated() {
             let restaurant = restaurants[restaurantIndex]
-            let date = Calendar.current.date(byAdding: .day, value: -index * 9, to: .now) ?? .now
+            let date: Date
+            if usesMonthlyRecapFixture {
+                // Keep the monthly recap fixture deterministic at month boundaries:
+                // four base visits across two restaurants belong to the current month,
+                // while the remaining history belongs to the previous month.
+                if index < 4 {
+                    let currentMonthDate = calendar.date(
+                        byAdding: .hour,
+                        value: index + 1,
+                        to: currentMonthStart
+                    ) ?? .now
+                    date = min(currentMonthDate, .now)
+                } else {
+                    date = calendar.date(
+                        byAdding: .day,
+                        value: index - 4,
+                        to: previousMonthStart
+                    ) ?? previousMonthStart
+                }
+            } else {
+                date = calendar.date(byAdding: .day, value: -index * 9, to: .now) ?? .now
+            }
             let visit = Visit(
                 id: uuid(4_200 + index), restaurantId: restaurant.id, visitedAt: date,
                 rating: index % 5 == 3 ? nil : [4.0, 4.5, 5.0][index % 3],

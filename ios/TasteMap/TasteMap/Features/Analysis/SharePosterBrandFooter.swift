@@ -44,7 +44,12 @@ nonisolated struct SharePosterBrandConfiguration: Equatable, Sendable {
         environment: TasteMapAppEnvironment
     ) -> Bool {
         if host == "localhost" || host == "127.0.0.1" || host == "::1" { return true }
-        if host.hasSuffix(".workers.dev") || host == "workers.dev" { return true }
+        let hostLabels = host.split(separator: ".", omittingEmptySubsequences: false)
+        if hostLabels.count >= 2,
+           hostLabels[hostLabels.count - 2] == "workers",
+           hostLabels[hostLabels.count - 1] == "dev" {
+            return true
+        }
         if host == "testflight.apple.com" { return true }
         if environment == .production,
            host.hasPrefix("dev.") || host.contains("-dev.") {

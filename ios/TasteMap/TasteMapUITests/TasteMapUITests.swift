@@ -2428,7 +2428,11 @@ final class TasteMapUITests: XCTestCase {
         scrollToTop(in: app)
         XCTAssertTrue(previous.waitForExistence(timeout: 8))
         previous.tap()
-        XCTAssertTrue(app.staticTexts["2026 年 7 月"].waitForExistence(timeout: 8))
+        let calendar = Calendar.current
+        let previousMonth = calendar.date(byAdding: .month, value: -1, to: .now) ?? .now
+        let previousComponents = calendar.dateComponents([.year, .month], from: previousMonth)
+        let previousMonthLabel = "\(previousComponents.year ?? 0) 年 \(previousComponents.month ?? 0) 月"
+        XCTAssertTrue(app.staticTexts[previousMonthLabel].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["历史月份"].exists)
         keepScreenshot(named: "P4-D Monthly Recap Previous", of: app)
         let next = app.buttons["monthly-recap-next-month"]
