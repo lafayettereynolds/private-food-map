@@ -195,8 +195,54 @@ let reviewState = readState();
 let lightboxItems = [];
 let lightboxIndex = 0;
 let zoom = 1;
+let lightboxReturnScrollY = 0;
 let referenceRecords = [];
 const referenceObjectURLs = new Map();
+const workspaceStorageKey = `${storageKey}.workspace`;
+let workspaceState = readWorkspaceState();
+let scrollSaveFrame = 0;
+let scrollStableTimer = 0;
+let lastStableScrollY = Number(workspaceState.scrollY || 0);
+
+function readWorkspaceState() {
+  const fallback = {
+    activePage: "profile-density",
+    activeRegion: "Social Metrics",
+    scrollY: 0,
+    pages: {},
+    lightbox: { selectedImage: "", zoom: 1 },
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(workspaceStorageKey) || "null");
+    return saved ? { ...fallback, ...saved, pages: saved.pages || {}, lightbox: { ...fallback.lightbox, ...(saved.lightbox || {}) } } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function persistWorkspaceState() {
+  try { localStorage.setItem(workspaceStorageKey, JSON.stringify(workspaceState)); } catch { /* session-only fallback */ }
+}
+
+function pageWorkspaceState(id) {
+  workspaceState.pages[id] ||= id === "profile-density"
+    ? { pinned: ["fuse"], locked: true, clean: false, collapsed: false }
+    : { pinned: ["current", "legacy", "fuse"], locked: false, clean: false, collapsed: false };
+  return workspaceState.pages[id];
+}
+
+function holdViewport(y, x = window.scrollX) {
+  const restore = () => window.scrollTo({ left: x, top: y, behavior: "instant" });
+  window.clearTimeout(scrollStableTimer);
+  lastStableScrollY = y;
+  workspaceState.scrollY = y;
+  persistWorkspaceState();
+  restore();
+  window.requestAnimationFrame(restore);
+  window.setTimeout(restore, 0);
+  window.setTimeout(restore, 80);
+  window.setTimeout(restore, 240);
+}
 
 const referencePurposeLabels = {
   wholePage: "整页参考",
@@ -526,7 +572,7 @@ function persistState() {
   try { localStorage.setItem(storageKey, JSON.stringify(reviewState)); } catch { /* session-only fallback */ }
 }
 
-function visualMarkup(visual, decisionTitle) {
+function visualMarkup(visual, decisionTitle, extraClass = "") {
   const normalized = visual.kind.toLowerCase();
   const kindClass = normalized.includes("legacy") || normalized.includes("旧版")
     ? " visual-card__kind--legacy"
@@ -538,7 +584,7 @@ function visualMarkup(visual, decisionTitle) {
   const title = displayText(visual.title);
   const kind = displayText(visual.kind);
   const caption = displayText(visual.caption);
-  return `<article class="visual-card">
+  return `<article class="visual-card ${escapeHTML(extraClass)}">
     <div class="visual-card__meta"><div class="visual-card__title">${escapeHTML(title)}</div><span class="visual-card__kind${kindClass}">${escapeHTML(kind)}</span></div>
     <button class="visual-card__button" type="button" data-image-src="${escapeHTML(visual.src)}" data-image-title="${escapeHTML(title)}" data-image-kind="${escapeHTML(kind)}" data-image-caption="${escapeHTML(caption)}" aria-label="放大查看：${escapeHTML(displayText(decisionTitle))}，${escapeHTML(title)}">
       <img src="${escapeHTML(visual.src)}" alt="${escapeHTML(title)}" loading="lazy">
@@ -560,15 +606,146 @@ function sourceFor(choice) {
   return "待决定";
 }
 
+function reviewRegions(decision) {
+  if (decision.id === "profile-density") {
+    return ["Social Metrics", "Main Statistics", "Core Entries", "Memory / 回味", "Lists", "Insights"];
+  }
+  return decision.regions;
+}
+
+function fixedRegions(decision) {
+  return decision.id === "profile-density" ? ["Header", "Settings"] : [];
+}
+
 function regionMarkup(decision, region) {
   const state = pageState(decision.id).regions[region] || {};
   const options = ["KEEP CURRENT", "KEEP LEGACY", "KEEP FUSE", "CHANGE", "NEEDS REDESIGN"];
-  return `<article class="region-card" data-region-page="${escapeHTML(decision.id)}" data-region-name="${escapeHTML(region)}" data-frozen="${state.frozen ? "true" : "false"}">
+  const isActive = workspaceState.activePage === decision.id && workspaceState.activeRegion === region;
+  return `<article class="region-card${isActive ? " is-active" : ""}" data-region-page="${escapeHTML(decision.id)}" data-region-name="${escapeHTML(region)}" data-frozen="${state.frozen ? "true" : "false"}" tabindex="-1">
     <header class="region-card__header"><div><h4>${escapeHTML(displayText(region))}</h4><span class="region-source">当前来源：${escapeHTML(sourceFor(state.choice))}</span></div><span class="freeze-badge">${state.frozen ? "已冻结" : "待决定"}</span></header>
-    <div class="region-options">${options.map((option) => `<label title="${escapeHTML(choiceExplanation(option))}"><input type="radio" name="region-${escapeHTML(decision.id)}-${escapeHTML(region)}" value="${option}" ${state.choice === option ? "checked" : ""} ${state.frozen ? "disabled" : ""}><span>${escapeHTML(displayChoice(option))}</span></label>`).join("")}</div>
-    ${state.frozen ? `<button class="unfreeze-region" type="button">解除冻结</button>` : ""}
+    <div class="region-options">${options.map((option) => `<button type="button" data-region-choice="${option}" title="${escapeHTML(choiceExplanation(option))}" aria-pressed="${state.choice === option ? "true" : "false"}" ${state.frozen ? "disabled" : ""}>${escapeHTML(displayChoice(option))}</button>`).join("")}</div>
+    <div class="region-secondary-actions">
+      <button class="unfreeze-region" type="button" aria-hidden="${state.frozen ? "false" : "true"}" ${state.frozen ? "" : "disabled"}>解除冻结</button>
+      <button class="clear-region-choice" type="button" aria-hidden="${state.choice && !state.frozen ? "false" : "true"}" ${state.choice && !state.frozen ? "" : "disabled"}>清除未冻结选择</button>
+    </div>
     <label class="region-notes">我的备注<textarea placeholder="只记录这个区域的保留或修改要求……">${escapeHTML(displayNote(state.notes))}</textarea></label>
   </article>`;
+}
+
+function visualCategory(visual) {
+  const value = `${visual.kind} ${visual.title}`.toLowerCase();
+  if (value.includes("lafayette 用户参考图")) return "lafayette";
+  if (value.includes("option a") || value.includes("candidate a") || value.includes("候选版 a") || value.includes("方案 a")) return "option-a";
+  if (value.includes("option b") || value.includes("candidate b") || value.includes("候选版 b") || value.includes("方案 b")) return "option-b";
+  if (value.includes("legacy") || value.includes("旧版")) return "legacy";
+  if (value.includes("fuse") || value.includes("融合") || value.includes("重新设计") || value.includes("candidate")) return "fuse";
+  if (value.includes("reference") || value.includes("参考")) return "reference";
+  return "current";
+}
+
+function profileFuseV2Visual() {
+  return {
+    kind: "FUSE CANDIDATE — REAL IMPLEMENTATION",
+    title: "我的页面融合候选版 V2",
+    src: "round-2/candidates/profile-fuse-v2.png",
+    caption: "固定审批对照：我的页面融合候选版 V2。顶部身份区与设置保持冻结；右侧只审批关注数据、主统计、核心入口、回味、我的食单和洞察。",
+  };
+}
+
+function staticWorkspaceVisuals(decision) {
+  if (decision.id === "profile-density") return [...decision.visuals, profileFuseV2Visual()];
+  return [...decision.visuals, ...decision.fuseVisuals];
+}
+
+function referenceVisuals(decision) {
+  return referencesForItem(decision.id).map((record) => ({
+    kind: "Lafayette 用户参考图",
+    title: record.title || record.filename,
+    src: referenceImageURL(record),
+    caption: record.notes || referenceStrengthLabels[record.strength] || "Lafayette 用户参考图",
+    cleanSrc: referenceImageURL(record),
+    referenceRegions: record.regionIds || [],
+  }));
+}
+
+function workspaceVisuals(decision) {
+  return [...staticWorkspaceVisuals(decision), ...referenceVisuals(decision)];
+}
+
+function isCleanVisual(visual) {
+  if (visual.cleanSrc) return true;
+  const category = visualCategory(visual);
+  return category === "current" || category === "legacy" || category === "reference";
+}
+
+function stickyVisualMarkup(visual, decision, clean) {
+  if (clean && !isCleanVisual(visual)) {
+    return `<article class="sticky-visual sticky-visual--missing-clean">
+      <strong>无候选标识预览尚未提供</strong>
+      <p>${escapeHTML(displayText(visual.title))} 的原截图包含候选 / DEBUG 标识。审批台不会涂抹、裁切或伪造正式截图；必须从候选预览实现重新生成一张无标识截图后才能在此显示。</p>
+    </article>`;
+  }
+  const src = clean ? (visual.cleanSrc || visual.src) : visual.src;
+  const title = displayText(visual.title);
+  const kind = displayText(visual.kind);
+  return `<article class="sticky-visual" data-visual-category="${visualCategory(visual)}">
+    <button class="sticky-visual__image visual-card__button" type="button" data-image-src="${escapeHTML(src)}" data-image-title="${escapeHTML(title)}" data-image-kind="${escapeHTML(kind)}" data-image-caption="${escapeHTML(displayText(visual.caption))}" aria-label="放大查看：${escapeHTML(title)}">
+      <img src="${escapeHTML(src)}" alt="${escapeHTML(title)}">
+    </button>
+    ${clean ? "" : `<div class="sticky-visual__label"><strong>${escapeHTML(title)}</strong><span>${escapeHTML(kind)}</span></div>`}
+  </article>`;
+}
+
+function selectedWorkspaceVisuals(decision) {
+  const state = pageWorkspaceState(decision.id);
+  const visuals = workspaceVisuals(decision);
+  const pinned = state.pinned?.length ? state.pinned : ["current", "legacy", "fuse"];
+  const matches = visuals.filter((visual) => pinned.includes(visualCategory(visual)));
+  return matches.length ? matches : visuals.slice(0, 1);
+}
+
+function visualPinButtons(decision) {
+  const state = pageWorkspaceState(decision.id);
+  const available = new Set(workspaceVisuals(decision).map(visualCategory));
+  const controls = [
+    ["current", "锁定现版"],
+    ["legacy", "锁定旧版"],
+    ["fuse", decision.id === "profile-density" ? "锁定我的页面融合候选版 V2" : "锁定融合版"],
+    ["reference", "锁定已确认参考"],
+    ["lafayette", "锁定我的参考图"],
+    ["option-a", "锁定方案 A"],
+    ["option-b", "锁定方案 B"],
+  ].filter(([value]) => available.has(value));
+  return `${controls.map(([value, label]) => `<button type="button" class="pin-visual${state.locked && state.pinned?.length === 1 && state.pinned[0] === value ? " is-selected" : ""}" data-pin-visual="${value}">${label}</button>`).join("")}
+    <button type="button" class="pin-visual${state.locked && state.pinned?.length > 1 ? " is-selected" : ""}" data-pin-visual="multi">多图对比</button>
+    <button type="button" class="unpin-visual" data-unpin-visual ${state.locked ? "" : "disabled"}>解除锁定</button>`;
+}
+
+function stickyVisualPanelMarkup(decision) {
+  const state = pageWorkspaceState(decision.id);
+  const visuals = selectedWorkspaceVisuals(decision);
+  const fixed = fixedRegions(decision);
+  return `<aside class="visual-reference-panel${state.collapsed ? " is-collapsed" : ""}" data-visual-panel="${escapeHTML(decision.id)}">
+    <div class="visual-reference-panel__header">
+      <div><span>固定视觉对照</span><strong>${decision.id === "profile-density" ? "我的页面融合候选版 V2" : "当前页面参考图"}</strong></div>
+      <button type="button" class="collapse-visual-panel">${state.collapsed ? "展开参考图" : "收起参考图"}</button>
+    </div>
+    <div class="visual-reference-panel__body">
+      <div class="visual-lock-controls" aria-label="锁定当前对比图">${visualPinButtons(decision)}</div>
+      <label class="clean-preview-toggle"><input type="checkbox" data-clean-preview ${state.clean ? "checked" : ""}><span><strong>无候选标识预览</strong><small>隐藏审批台候选标识；含内嵌 DEBUG 标识的截图必须提供独立无标识版本。</small></span></label>
+      ${fixed.length ? `<div class="fixed-region-note"><strong>固定区域</strong>${fixed.map((region) => `<span>${escapeHTML(displayText(region))}</span>`).join("")}</div>` : ""}
+      <div class="sticky-visual-stage${state.clean ? " is-clean" : ""}" data-sticky-visual-stage>${visuals.map((visual) => stickyVisualMarkup(visual, decision, state.clean)).join("")}</div>
+      <p class="visual-lock-status">${state.locked ? "当前对比图已锁定；切换 Region 不会自动换图。" : "当前为多图浏览；点击上方按钮可锁定对比图。"}</p>
+    </div>
+  </aside>`;
+}
+
+function regionIndexMarkup(decision) {
+  const activeRegion = workspaceState.activePage === decision.id ? workspaceState.activeRegion : "";
+  return `<div class="region-index" aria-label="区域快速选择">${reviewRegions(decision).map((region) => {
+    const state = pageState(decision.id).regions[region] || {};
+    return `<button type="button" data-select-region="${escapeHTML(region)}" class="${activeRegion === region ? "is-active" : ""}"><span>${escapeHTML(displayText(region))}</span><small>${state.frozen ? "已冻结" : "选择"}</small></button>`;
+  }).join("")}</div>`;
 }
 
 function fuseMarkup(decision) {
@@ -585,11 +762,18 @@ function regionReviewMarkup(decision) {
   const frozen = decision.regions.filter((region) => state.regions[region]?.frozen).length;
   const approved = Boolean(state.decision) && frozen === decision.regions.length;
   return `<div class="section-block region-review" data-region-summary="${decision.id}">
-    <div class="section-heading"><div><h3>区域级审批与候选版冻结</h3><p>选择“保留”后立即冻结；只有明确“解除冻结”后才能在后续版本修改。</p></div><div class="region-totals"><span>${escapeHTML(displayText(decision.candidateVersion || "候选版"))}</span><span class="frozen-count">已冻结 ${frozen}</span><span class="pending-region-count">待修改 ${decision.regions.length - frozen}</span><strong class="final-approval ${approved ? "is-approved" : ""}">${approved ? "最终确认" : "尚未最终确认"}</strong></div></div>
-    <div class="region-choice-help" aria-label="区域审批按钮说明">
-      <span><strong>保留现版：</strong>采用当前 iOS 区域并冻结</span><span><strong>保留旧版：</strong>采用旧版 Web 区域并冻结</span><span><strong>保留融合版：</strong>采用当前融合候选区域并冻结</span><span><strong>需要修改：</strong>保留方向并继续调整</span><span><strong>重新设计：</strong>下一版重新设计该区域</span>
+    <div class="approval-workspace">
+      ${stickyVisualPanelMarkup(decision)}
+      <section class="region-approval-panel">
+        <div class="section-heading"><div><h3>区域级审批与候选版冻结</h3><p>选择“保留”后立即冻结；操作只更新当前区域，不改变页面滚动位置。</p></div><div class="region-totals"><span class="candidate-version-label">${escapeHTML(displayText(decision.candidateVersion || "候选版"))}</span><span class="frozen-count">已冻结 ${frozen}</span><span class="pending-region-count">待修改 ${decision.regions.length - frozen}</span><strong class="final-approval ${approved ? "is-approved" : ""}">${approved ? "最终确认" : "尚未最终确认"}</strong></div></div>
+        ${regionIndexMarkup(decision)}
+        <div class="region-choice-help" aria-label="区域审批按钮说明">
+          <span><strong>保留现版：</strong>采用当前 iOS 区域并冻结</span><span><strong>保留旧版：</strong>采用旧版 Web 区域并冻结</span><span><strong>保留融合版：</strong>采用当前融合候选区域并冻结</span><span><strong>需要修改：</strong>保留方向并继续调整</span><span><strong>重新设计：</strong>下一版重新设计该区域</span>
+        </div>
+        <div class="region-grid">${reviewRegions(decision).map((region) => regionMarkup(decision, region)).join("")}</div>
+        <button class="next-pending-region" type="button">下一个待决定区域 <span aria-hidden="true">→</span></button>
+      </section>
     </div>
-    <div class="region-grid">${decision.regions.map((region) => regionMarkup(decision, region)).join("")}</div>
   </div>`;
 }
 
@@ -684,6 +868,7 @@ async function refreshReferenceCache() {
   if (!referenceLibrary) return;
   referenceRecords = await referenceLibrary.listAll();
   decisions.forEach(renderReferenceList);
+  decisions.forEach((decision) => renderWorkspaceVisualPanel(decision.id));
   updateReferenceProgress();
   bindLightboxItems();
 }
@@ -862,27 +1047,213 @@ function render() {
   updateReferenceProgress();
 }
 
+function decisionFor(id) {
+  return decisions.find((decision) => decision.id === id);
+}
+
+function renderWorkspaceVisualPanel(id) {
+  const decision = decisionFor(id);
+  const panel = document.querySelector(`[data-visual-panel="${CSS.escape(id)}"]`);
+  if (!decision || !panel) return;
+  const replacement = document.createElement("div");
+  replacement.innerHTML = stickyVisualPanelMarkup(decision).trim();
+  const nextPanel = replacement.firstElementChild;
+  panel.replaceWith(nextPanel);
+  bindVisualPanelControls(nextPanel, decision);
+  bindLightboxItems();
+}
+
+function syncRegionCard(card, decision, region) {
+  const state = pageState(decision.id).regions[region] || {};
+  card.dataset.frozen = state.frozen ? "true" : "false";
+  card.classList.toggle("is-active", workspaceState.activePage === decision.id && workspaceState.activeRegion === region);
+  card.querySelector(".region-source").textContent = `当前来源：${sourceFor(state.choice)}`;
+  card.querySelector(".freeze-badge").textContent = state.frozen ? "已冻结" : "待决定";
+  card.querySelectorAll("[data-region-choice]").forEach((button) => {
+    button.setAttribute("aria-pressed", button.dataset.regionChoice === state.choice ? "true" : "false");
+    button.disabled = Boolean(state.frozen);
+  });
+  const unfreeze = card.querySelector(".unfreeze-region");
+  unfreeze.setAttribute("aria-hidden", state.frozen ? "false" : "true");
+  unfreeze.disabled = !state.frozen;
+  const clear = card.querySelector(".clear-region-choice");
+  const canClear = Boolean(state.choice) && !state.frozen;
+  clear.setAttribute("aria-hidden", canClear ? "false" : "true");
+  clear.disabled = !canClear;
+  const indexButton = document.querySelector(`[data-region-summary="${CSS.escape(decision.id)}"] [data-select-region="${CSS.escape(region)}"]`);
+  if (indexButton) {
+    indexButton.classList.toggle("is-active", workspaceState.activePage === decision.id && workspaceState.activeRegion === region);
+    indexButton.querySelector("small").textContent = state.frozen ? "已冻结" : "选择";
+  }
+}
+
+function updateRegionSummary(decision) {
+  const container = document.querySelector(`[data-region-summary="${CSS.escape(decision.id)}"]`);
+  if (!container) return;
+  const state = pageState(decision.id);
+  const frozen = decision.regions.filter((region) => state.regions[region]?.frozen).length;
+  const approved = Boolean(state.decision) && frozen === decision.regions.length;
+  container.querySelector(".frozen-count").textContent = `已冻结 ${frozen}`;
+  container.querySelector(".pending-region-count").textContent = `待修改 ${decision.regions.length - frozen}`;
+  const final = container.querySelector(".final-approval");
+  final.textContent = approved ? "最终确认" : "尚未最终确认";
+  final.classList.toggle("is-approved", approved);
+}
+
+function setActiveRegion(id, region, { reveal = false, focus = false } = {}) {
+  workspaceState.activePage = id;
+  workspaceState.activeRegion = region;
+  persistWorkspaceState();
+  document.querySelectorAll(".region-card.is-active, .region-index button.is-active").forEach((element) => element.classList.remove("is-active"));
+  const card = document.querySelector(`.region-card[data-region-page="${CSS.escape(id)}"][data-region-name="${CSS.escape(region)}"]`);
+  const indexButton = document.querySelector(`[data-region-summary="${CSS.escape(id)}"] [data-select-region="${CSS.escape(region)}"]`);
+  card?.classList.add("is-active");
+  indexButton?.classList.add("is-active");
+  if (reveal) {
+    card?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    window.setTimeout(() => {
+      if (!card) return;
+      card.dataset.approvalViewportY = String(window.scrollY);
+      lastStableScrollY = window.scrollY;
+      workspaceState.scrollY = window.scrollY;
+      persistWorkspaceState();
+    }, 260);
+  }
+  if (focus) window.setTimeout(() => (card?.querySelector('input[type="radio"]:not(:disabled)') || card)?.focus({ preventScroll: true }), 180);
+}
+
+function pendingRegionAfter(decision, currentRegion) {
+  const regions = reviewRegions(decision);
+  const start = Math.max(-1, regions.indexOf(currentRegion));
+  for (let offset = 1; offset <= regions.length; offset += 1) {
+    const region = regions[(start + offset) % regions.length];
+    if (!pageState(decision.id).regions[region]?.frozen) return { decision, region };
+  }
+  const startPage = decisions.indexOf(decision);
+  for (let pageOffset = 1; pageOffset <= decisions.length; pageOffset += 1) {
+    const nextDecision = decisions[(startPage + pageOffset) % decisions.length];
+    const region = reviewRegions(nextDecision).find((item) => !pageState(nextDecision.id).regions[item]?.frozen);
+    if (region) return { decision: nextDecision, region };
+  }
+  return null;
+}
+
+function bindVisualPanelControls(panel, decision) {
+  panel.querySelectorAll("[data-pin-visual]").forEach((button) => button.addEventListener("click", () => {
+    const state = pageWorkspaceState(decision.id);
+    const value = button.dataset.pinVisual;
+    state.pinned = value === "multi" ? ["current", "legacy", "fuse", "reference", "lafayette", "option-a", "option-b"] : [value];
+    state.locked = true;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  }));
+  panel.querySelector("[data-unpin-visual]")?.addEventListener("click", () => {
+    const state = pageWorkspaceState(decision.id);
+    state.pinned = ["current", "legacy", "fuse", "reference", "lafayette", "option-a", "option-b"];
+    state.locked = false;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  });
+  panel.querySelector("[data-clean-preview]")?.addEventListener("change", (event) => {
+    pageWorkspaceState(decision.id).clean = event.target.checked;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  });
+  panel.querySelector(".collapse-visual-panel")?.addEventListener("click", () => {
+    const state = pageWorkspaceState(decision.id);
+    state.collapsed = !state.collapsed;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  });
+}
+
 function bindControls() {
   document.querySelectorAll(".decision-card").forEach((card) => {
     const id = card.dataset.decisionId;
     card.querySelectorAll(`input[name="decision-${id}"]`).forEach((input) => input.addEventListener("change", () => { pageState(id).decision = input.value; persistState(); updateDecisionStatus(card, id); updateProgress(); }));
     card.querySelector(`[data-notes-for="${id}"]`).addEventListener("input", (event) => { pageState(id).notes = event.target.value; persistState(); });
   });
-  document.querySelectorAll(".region-card").forEach((card) => {
+  bindRegionDelegation();
+  document.querySelectorAll("[data-region-summary]").forEach((summary) => {
+    const decision = decisionFor(summary.dataset.regionSummary);
+    summary.querySelectorAll("[data-select-region]").forEach((button) => button.addEventListener("click", () => setActiveRegion(decision.id, button.dataset.selectRegion, { reveal: true, focus: true })));
+    summary.querySelector(".next-pending-region")?.addEventListener("click", () => {
+      const next = pendingRegionAfter(decision, workspaceState.activePage === decision.id ? workspaceState.activeRegion : "");
+      if (next) setActiveRegion(next.decision.id, next.region, { reveal: true, focus: true });
+      else summary.querySelector(".next-pending-region").textContent = "全部区域均已冻结";
+    });
+    bindVisualPanelControls(summary.querySelector("[data-visual-panel]"), decision);
+  });
+}
+
+function bindRegionDelegation() {
+  const root = document.querySelector("#decision-list");
+  if (root.dataset.regionEventsBound === "true") return;
+  root.dataset.regionEventsBound = "true";
+  const context = (target) => {
+    const card = target.closest(".region-card");
+    if (!card) return null;
     const id = card.dataset.regionPage;
     const region = card.dataset.regionName;
-    card.querySelectorAll('input[type="radio"]').forEach((input) => input.addEventListener("change", () => {
-      const state = pageState(id); state.regions[region] ||= {}; state.regions[region].choice = input.value; state.regions[region].frozen = input.value.startsWith("KEEP "); persistState(); render(); document.querySelector(`#${id}-fuse`)?.scrollIntoView({ block: "start" });
-    }));
-    card.querySelector("textarea").addEventListener("input", (event) => { const state = pageState(id); state.regions[region] ||= {}; state.regions[region].notes = event.target.value; persistState(); });
-    card.querySelector(".unfreeze-region")?.addEventListener("click", () => {
-      const regionState = pageState(id).regions[region];
-      regionState.frozen = false;
-      regionState.choice = "";
-      persistState();
-      render();
-      document.querySelector(`#${id}-fuse`)?.scrollIntoView({ block: "start" });
-    });
+    return { card, id, region, decision: decisionFor(id), state: pageState(id).regions[region] || (pageState(id).regions[region] = {}) };
+  };
+  const sync = ({ card, id, region, decision }) => {
+    const storedAnchor = Number(card.dataset.approvalViewportY);
+    const inferredAnchor = Math.abs(window.scrollY - lastStableScrollY) <= 240 ? lastStableScrollY : window.scrollY;
+    const viewport = { x: window.scrollX, y: Number.isFinite(storedAnchor) ? storedAnchor : inferredAnchor };
+    card.dataset.approvalViewportY = String(viewport.y);
+    persistState();
+    setActiveRegion(id, region);
+    syncRegionCard(card, decision, region);
+    updateRegionSummary(decision);
+    updateProgress();
+    holdViewport(viewport.y, viewport.x);
+    workspaceState.scrollY = viewport.y;
+    persistWorkspaceState();
+  };
+  root.addEventListener("pointerdown", (event) => {
+    const value = context(event.target);
+    if (!value) return;
+    const returnY = lastStableScrollY;
+    setActiveRegion(value.id, value.region);
+    if (Math.abs(window.scrollY - returnY) <= 240) holdViewport(returnY);
+  });
+  root.addEventListener("focusin", (event) => {
+    const value = context(event.target);
+    if (!value) return;
+    const returnY = lastStableScrollY;
+    if (event.target.matches(".region-notes textarea")) value.card.dataset.notesViewportY = String(returnY);
+    setActiveRegion(value.id, value.region);
+    if (Math.abs(window.scrollY - returnY) <= 240) {
+      holdViewport(returnY);
+    }
+  });
+  root.addEventListener("input", (event) => {
+    const value = context(event.target);
+    if (!value || !event.target.matches(".region-notes textarea")) return;
+    value.state.notes = event.target.value;
+    persistState();
+    const returnY = Number(value.card.dataset.notesViewportY || lastStableScrollY);
+    if (Math.abs(window.scrollY - returnY) <= 240) {
+      holdViewport(returnY);
+    }
+  });
+  root.addEventListener("click", (event) => {
+    const value = context(event.target);
+    if (!value) return;
+    if (Math.abs(window.scrollY - lastStableScrollY) <= 240) holdViewport(lastStableScrollY);
+    const choiceButton = event.target.closest("[data-region-choice]");
+    if (choiceButton) {
+      value.state.choice = choiceButton.dataset.regionChoice;
+      value.state.frozen = value.state.choice.startsWith("KEEP ");
+      sync(value);
+      return;
+    }
+    if (event.target.closest(".unfreeze-region") || event.target.closest(".clear-region-choice")) {
+      value.state.frozen = false;
+      value.state.choice = "";
+      sync(value);
+    }
   });
 }
 
@@ -917,8 +1288,28 @@ function bindLightboxItems() {
     button.addEventListener("click", () => openLightbox(lightboxItems.indexOf(button)));
   });
 }
-function openLightbox(index) { lightboxIndex = index; zoom = 1; updateLightbox(); document.querySelector("#lightbox").showModal(); }
-function updateLightbox() { const item = lightboxItems[lightboxIndex]; if (!item) return; const image = document.querySelector("#lightbox-image"); image.src = item.dataset.imageSrc; image.alt = item.dataset.imageTitle; image.style.transform = `scale(${zoom})`; document.querySelector("#lightbox-kind").textContent = item.dataset.imageKind; document.querySelector("#lightbox-title").textContent = item.dataset.imageTitle; document.querySelector("#lightbox-caption").textContent = item.dataset.imageCaption; document.querySelector("#zoom-value").textContent = `${Math.round(zoom * 100)}%`; }
+function openLightbox(index) {
+  lightboxReturnScrollY = window.scrollY;
+  lightboxIndex = index;
+  const requestedZoom = Number(workspaceState.lightbox?.zoom || 1);
+  zoom = Number.isFinite(requestedZoom) ? requestedZoom : 1;
+  updateLightbox();
+  document.querySelector("#lightbox").showModal();
+}
+function updateLightbox() {
+  const item = lightboxItems[lightboxIndex];
+  if (!item) return;
+  const image = document.querySelector("#lightbox-image");
+  image.src = item.dataset.imageSrc;
+  image.alt = item.dataset.imageTitle;
+  image.style.transform = `scale(${zoom})`;
+  document.querySelector("#lightbox-kind").textContent = item.dataset.imageKind;
+  document.querySelector("#lightbox-title").textContent = item.dataset.imageTitle;
+  document.querySelector("#lightbox-caption").textContent = item.dataset.imageCaption;
+  document.querySelector("#zoom-value").textContent = `${Math.round(zoom * 100)}%`;
+  workspaceState.lightbox = { selectedImage: item.dataset.imageSrc, zoom };
+  persistWorkspaceState();
+}
 function changeZoom(delta) { zoom = Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))); updateLightbox(); }
 function moveLightbox(delta) { lightboxIndex = (lightboxIndex + delta + lightboxItems.length) % lightboxItems.length; zoom = 1; updateLightbox(); }
 
@@ -1042,6 +1433,25 @@ document.querySelector("#lightbox-previous").addEventListener("click", () => mov
 document.querySelector("#lightbox-next").addEventListener("click", () => moveLightbox(1));
 document.querySelector("#fullscreen").addEventListener("click", async () => { const box = document.querySelector("#lightbox"); if (!document.fullscreenElement && box.requestFullscreen) await box.requestFullscreen(); else if (document.exitFullscreen) await document.exitFullscreen(); });
 document.addEventListener("keydown", (event) => { if (!document.querySelector("#lightbox").open) return; if (event.key === "ArrowLeft") moveLightbox(-1); if (event.key === "ArrowRight") moveLightbox(1); if (event.key === "+" || event.key === "=") changeZoom(0.25); if (event.key === "-") changeZoom(-0.25); });
+document.querySelector("#lightbox").addEventListener("close", () => {
+  holdViewport(lightboxReturnScrollY);
+});
+document.querySelector("#jump-nav").addEventListener("click", (event) => {
+  const link = event.target.closest("[data-nav-id]");
+  if (!link) return;
+  workspaceState.activePage = link.dataset.navId;
+  persistWorkspaceState();
+});
+window.addEventListener("scroll", () => {
+  if (document.querySelector("#lightbox").open || scrollSaveFrame) return;
+  scrollSaveFrame = window.requestAnimationFrame(() => {
+    scrollSaveFrame = 0;
+    workspaceState.scrollY = window.scrollY;
+    persistWorkspaceState();
+  });
+  window.clearTimeout(scrollStableTimer);
+  scrollStableTimer = window.setTimeout(() => { lastStableScrollY = window.scrollY; }, 140);
+}, { passive: true });
 window.addEventListener("beforeunload", () => referenceObjectURLs.forEach((url) => URL.revokeObjectURL(url)));
 
 render();
@@ -1049,3 +1459,9 @@ refreshReferenceCache().catch((error) => {
   console.error("Visual reference library failed to load", error);
   decisions.forEach((decision) => setReferenceStatus(decision.id, "本机参考图库暂时无法读取，请刷新页面重试。", "error"));
 });
+window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+  const savedY = Number(workspaceState.scrollY || 0);
+  if (savedY > 0) window.scrollTo({ top: savedY, behavior: "instant" });
+  lastStableScrollY = savedY;
+  if (workspaceState.activePage && workspaceState.activeRegion) setActiveRegion(workspaceState.activePage, workspaceState.activeRegion);
+}));
