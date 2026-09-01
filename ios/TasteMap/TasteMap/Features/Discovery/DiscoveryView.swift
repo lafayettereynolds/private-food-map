@@ -819,6 +819,7 @@ private struct DiscoveryFilterSheet: View {
 }
 
 struct DiscoveryRestaurantQuickActions: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let viewerState: DiscoveryViewerRestaurantStateV1
     let onRecordVisit: () -> Void
     let onWantToGo: () -> Void
@@ -828,9 +829,15 @@ struct DiscoveryRestaurantQuickActions: View {
     let restaurantKey: String
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 7) { actions }
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) { actions }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                LazyVGrid(columns: [GridItem(.flexible())], spacing: 8) { actions }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 7) { actions }
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) { actions }
+                }
+            }
         }
         .controlSize(.small)
     }
@@ -862,6 +869,7 @@ struct DiscoveryRestaurantQuickActions: View {
 }
 
 private struct DiscoveryRestaurantCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let card: DiscoveryCardV1
     let onOpen: () -> Void
     let onWantToGo: () -> Void
@@ -880,9 +888,13 @@ private struct DiscoveryRestaurantCard: View {
                         .frame(height: 142).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(card.restaurant.name).font(.headline).foregroundStyle(.primary).lineLimit(2)
+                            Text(card.restaurant.name).font(.headline).foregroundStyle(.primary)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Text([card.restaurant.city, card.restaurant.address].filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                         FoodDiningVisualIcon(
@@ -905,22 +917,16 @@ private struct DiscoveryRestaurantCard: View {
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
-            HStack(spacing: 10) {
-                if let source = card.sourceUser {
-                    Button { onOpenUser(source) } label: {
-                        HStack(spacing: 7) {
-                            PresetProfileAvatarView(preset: source.avatarPresetId)
-                                .frame(width: 28, height: 28).clipShape(Circle())
-                            Text(source.displayName).font(.caption.weight(.semibold))
-                        }
-                    }.buttonStyle(.plain)
-                }
-                Spacer()
-                if let activity = card.activity {
-                    TasteMapActivityRatingBadge(
-                        rating: activity.rating,
-                        accessibilityIdentifier: "discovery-activity-rating-\(card.restaurant.globalKey)"
-                    )
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) { attributionContent }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 10) {
+                    if let source = card.sourceUser {
+                        sourceButton(source)
+                    }
+                    Spacer()
+                    activityRating
                 }
             }
             if let trend = card.trend {
@@ -941,6 +947,36 @@ private struct DiscoveryRestaurantCard: View {
                 restaurantKey: card.restaurant.globalKey
             )
             }
+        }
+    }
+
+    @ViewBuilder
+    private var attributionContent: some View {
+        if let source = card.sourceUser {
+            sourceButton(source)
+        }
+        activityRating
+    }
+
+    private func sourceButton(_ source: DiscoveryPublicUserProjectionV1) -> some View {
+        Button { onOpenUser(source) } label: {
+            HStack(spacing: 7) {
+                PresetProfileAvatarView(preset: source.avatarPresetId)
+                    .frame(width: 28, height: 28).clipShape(Circle())
+                Text(source.displayName)
+                    .font(.caption.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }.buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var activityRating: some View {
+        if let activity = card.activity {
+            TasteMapActivityRatingBadge(
+                rating: activity.rating,
+                accessibilityIdentifier: "discovery-activity-rating-\(card.restaurant.globalKey)"
+            )
         }
     }
 

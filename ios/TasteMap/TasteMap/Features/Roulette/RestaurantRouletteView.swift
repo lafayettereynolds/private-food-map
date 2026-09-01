@@ -283,18 +283,10 @@ struct RestaurantRouletteExperienceView: View {
 
     private var candidatePool: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("已选候选")
-                    .font(.headline)
-                    .foregroundStyle(RouletteTheme.ink)
-                Spacer()
-                Text("\(filteredCandidates.count) / \(RestaurantRouletteEngine.maximumActiveCandidateCount)")
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(RouletteTheme.brandDeep)
-                Button("清空") { clearCandidatePool() }
-                    .font(.subheadline.weight(.semibold))
-                    .disabled(filteredCandidates.isEmpty || isSpinning)
-                    .accessibilityIdentifier("roulette-clear-candidates")
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) { candidatePoolHeader }
+            } else {
+                HStack(alignment: .firstTextBaseline) { candidatePoolHeader }
             }
 
             if filteredCandidates.isEmpty {
@@ -315,42 +307,18 @@ struct RestaurantRouletteExperienceView: View {
             }
 
             Divider()
-            HStack(spacing: 8) {
-                conditionChip(symbol: source == .all ? "fork.knife" : source == .wantToGo ? "bookmark.fill" : "checkmark.circle.fill", text: source.title)
-                if let selectedCity {
-                    conditionChip(symbol: "building.2.fill", text: selectedCity)
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) { conditionItems(includesSpacer: false) }
                 }
-                Spacer(minLength: 4)
-                Button {
-                    isShowingFilters = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(width: 34, height: 34)
-                        .background(RouletteTheme.brandSoft, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("调整候选条件")
-                .accessibilityIdentifier("roulette-filter-open")
+            } else {
+                HStack(spacing: 8) { conditionItems(includesSpacer: true) }
             }
 
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(filteredCandidates.count) 家候选餐厅")
-                        .font(.headline)
-                        .foregroundStyle(RouletteTheme.ink)
-                        .accessibilityIdentifier("roulette-candidate-count")
-                    Text(candidateCountDetail)
-                        .font(.caption)
-                        .foregroundStyle(RouletteTheme.muted)
-                }
-                Spacer()
-                if !candidatesForManager.isEmpty {
-                    Button("管理候选餐厅") { isShowingCandidateManager = true }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(RouletteTheme.brandDeep)
-                        .accessibilityIdentifier("roulette-manage-candidates")
-                }
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) { candidateSummary }
+            } else {
+                HStack { candidateSummary }
             }
         }
         .padding(16)
@@ -359,6 +327,73 @@ struct RestaurantRouletteExperienceView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(TasteMapCoreTheme.border, lineWidth: 1)
         }
+    }
+
+    @ViewBuilder
+    private var candidatePoolHeader: some View {
+                Text("已选候选")
+                    .font(.headline)
+                    .foregroundStyle(RouletteTheme.ink)
+                if !dynamicTypeSize.isAccessibilitySize { Spacer() }
+                Text("\(filteredCandidates.count) / \(RestaurantRouletteEngine.maximumActiveCandidateCount)")
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(RouletteTheme.brandDeep)
+                Button("清空") { clearCandidatePool() }
+                    .font(.subheadline.weight(.semibold))
+                    .disabled(filteredCandidates.isEmpty || isSpinning)
+                    .accessibilityIdentifier("roulette-clear-candidates")
+    }
+
+    @ViewBuilder
+    private func conditionItems(includesSpacer: Bool) -> some View {
+        conditionChip(
+            symbol: source == .all
+                ? "fork.knife"
+                : source == .wantToGo ? "bookmark.fill" : "checkmark.circle.fill",
+            text: source.title
+        )
+        if let selectedCity {
+            conditionChip(symbol: "building.2.fill", text: selectedCity)
+        }
+        if includesSpacer { Spacer(minLength: 4) }
+        Button {
+            isShowingFilters = true
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.subheadline.weight(.semibold))
+                .frame(
+                    width: dynamicTypeSize.isAccessibilitySize ? 44 : 34,
+                    height: dynamicTypeSize.isAccessibilitySize ? 44 : 34
+                )
+                .background(RouletteTheme.brandSoft, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("调整候选条件")
+        .accessibilityIdentifier("roulette-filter-open")
+    }
+
+    @ViewBuilder
+    private var candidateSummary: some View {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(filteredCandidates.count) 家候选餐厅")
+                        .font(.headline)
+                        .foregroundStyle(RouletteTheme.ink)
+                        .accessibilityIdentifier("roulette-candidate-count")
+                    Text(candidateCountDetail)
+                        .font(.caption)
+                        .foregroundStyle(RouletteTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !dynamicTypeSize.isAccessibilitySize { Spacer() }
+                if !candidatesForManager.isEmpty {
+                    Button("管理候选餐厅") { isShowingCandidateManager = true }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(RouletteTheme.brandDeep)
+                        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 4 : 0)
+                        .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 44 : nil)
+                        .contentShape(Rectangle())
+                        .accessibilityIdentifier("roulette-manage-candidates")
+                }
     }
 
     private var rouletteStage: some View {
@@ -488,7 +523,24 @@ struct RestaurantRouletteExperienceView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(RouletteTheme.brandDeep)
             }
-            HStack(spacing: 12) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 12) { resultActions(candidate) }
+                } else {
+                    HStack(spacing: 12) { resultActions(candidate) }
+                }
+            }
+        }
+        .padding(16)
+        .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: RouletteTheme.brandDeep.opacity(0.08), radius: 18, y: 9)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("今天吃：\(candidate.displayName)。\(candidate.statusDetail)")
+        .accessibilityIdentifier("roulette-result-card")
+    }
+
+    @ViewBuilder
+    private func resultActions(_ candidate: RouletteCandidate) -> some View {
                 Button {
                     spin()
                 } label: {
@@ -509,14 +561,6 @@ struct RestaurantRouletteExperienceView: View {
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("roulette-open-restaurant")
                 }
-            }
-        }
-        .padding(16)
-        .background(RouletteTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: RouletteTheme.brandDeep.opacity(0.08), radius: 18, y: 9)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("今天吃：\(candidate.displayName)。\(candidate.statusDetail)")
-        .accessibilityIdentifier("roulette-result-card")
     }
 
     @ViewBuilder
@@ -689,6 +733,7 @@ struct RestaurantRouletteExperienceView: View {
 }
 
 private struct RouletteWheelView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let candidates: [RouletteCandidate]
     let photos: [PhotoAsset]
     let rotation: Double
@@ -748,19 +793,26 @@ private struct RouletteWheelView: View {
 
                 Circle()
                     .fill(RouletteTheme.brandDeep)
-                    .frame(width: size * 0.30, height: size * 0.30)
+                    .frame(width: centerDiameter(size), height: centerDiameter(size))
                     .overlay { Circle().stroke(.white, lineWidth: 5) }
                     .shadow(color: RouletteTheme.brandDeep.opacity(0.2), radius: 10, y: 5)
                 Button(action: onSpin) {
-                    VStack(spacing: 2) {
-                        Text(isSpinning ? "抽取中" : hasResult ? "再抽一次" : "开始")
-                            .font((hasResult ? Font.subheadline : .headline).bold())
-                        Text(isSpinning ? "马上揭晓" : "随机选一家")
-                            .font(.caption2)
-                            .opacity(0.84)
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Text(isSpinning ? "抽取中" : hasResult ? "再抽" : "开始")
+                                .font(.headline.bold())
+                        } else {
+                            VStack(spacing: 2) {
+                                Text(isSpinning ? "抽取中" : hasResult ? "再抽一次" : "开始")
+                                    .font((hasResult ? Font.subheadline : .headline).bold())
+                                Text(isSpinning ? "马上揭晓" : "随机选一家")
+                                    .font(.caption2)
+                                    .opacity(0.84)
+                            }
+                        }
                     }
                     .foregroundStyle(.white)
-                    .frame(width: size * 0.30, height: size * 0.30)
+                    .frame(width: centerDiameter(size), height: centerDiameter(size))
                     .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -791,6 +843,10 @@ private struct RouletteWheelView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("餐厅转盘，共 \(candidates.count) 家候选餐厅")
         .accessibilityIdentifier("roulette-wheel")
+    }
+
+    private func centerDiameter(_ size: CGFloat) -> CGFloat {
+        size * (dynamicTypeSize.isAccessibilitySize ? 0.50 : 0.30)
     }
 
     private func addMoreSegmentLabel(size: CGFloat) -> some View {

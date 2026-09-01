@@ -11,6 +11,7 @@ private enum ProfileBrowseDestination: Hashable {
 }
 
 struct ProfileView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.modelContext) private var modelContext
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
     @Environment(NativeAuthServices.self) private var authServices
@@ -165,7 +166,7 @@ struct ProfileView: View {
 
     private var primaryActions: some View {
         ProfileDashboardSection(title: "") {
-            LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 10) {
+            LazyVGrid(columns: dashboardColumns(count: 2), spacing: 10) {
                 NavigationLink {
                     RestaurantRouletteScreen(preferredCity: activeProfile?.city)
                 } label: {
@@ -199,7 +200,7 @@ struct ProfileView: View {
 
     private var memoriesSection: some View {
         ProfileDashboardSection(title: "回味") {
-            LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 3), spacing: 8) {
+            LazyVGrid(columns: dashboardColumns(count: 3), spacing: 8) {
                 NavigationLink {
                     MonthlyRecapAnalysisScreen()
                 } label: {
@@ -267,7 +268,7 @@ struct ProfileView: View {
 
     private var insightsSection: some View {
         ProfileDashboardSection(title: "发现与洞察") {
-            LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 10) {
+            LazyVGrid(columns: dashboardColumns(count: 2), spacing: 10) {
                 NavigationLink {
                     DiningCompanionAnalysisScreen()
                 } label: {
@@ -294,6 +295,13 @@ struct ProfileView: View {
             }
         }
         .accessibilityIdentifier("profile-insights-section")
+    }
+
+    private func dashboardColumns(count: Int) -> [GridItem] {
+        Array(
+            repeating: GridItem(.flexible()),
+            count: dynamicTypeSize.isAccessibilitySize ? 1 : count
+        )
     }
 
     private var tasteFootprintsSection: some View {
@@ -543,6 +551,7 @@ struct ProfileBasicStatistics: Equatable {
 }
 
 private struct ProfileIdentityCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let profile: UserProfile?
     let avatarPhoto: PhotoAsset?
     let isSignedIn: Bool
@@ -558,109 +567,33 @@ private struct ProfileIdentityCard: View {
 
     var body: some View {
         VStack(spacing: 11) {
-            HStack(alignment: .center, spacing: 13) {
-                ProfileAvatarView(profile: profile, photo: avatarPhoto)
-                    .frame(width: isSignedIn ? 64 : 58, height: isSignedIn ? 64 : 58)
-                if let profile, isSignedIn {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 7) {
-                            Text(profile.displayName)
-                                .font(.headline.bold())
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                            if membershipStatus == .premium || membershipStatus == .gracePeriod {
-                                Button(action: onPremium) {
-                                    PremiumBurgerBadge().frame(width: 21, height: 21)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Taste Map Premium 已开通，查看会员状态")
-                                .accessibilityIdentifier("profile-premium-badge-entry")
-                            }
-                        }
-                        if !profile.bio.isEmpty {
-                            Text(profile.bio)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .accessibilityIdentifier("profile-bio-text")
-                        }
-                        HStack(spacing: 8) {
-                            if !profile.city.isEmpty {
-                                Label(profile.city, systemImage: "building.2")
-                                    .accessibilityIdentifier("profile-city-text")
-                            }
-                            Label {
-                                Text("加入于 \(TasteMapDisplayDate.yearMonth(profile.createdAt))")
-                            } icon: {
-                                Image(systemName: "calendar.badge.checkmark")
-                            }
-                        }
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-
-                        HStack(spacing: 8) {
-                            Button("编辑资料", action: onEdit)
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .accessibilityIdentifier("profile-edit-button")
-                            if membershipStatus == .free || membershipStatus == .expired {
-                                Button("Premium", action: onPremium)
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                                    .accessibilityIdentifier("profile-premium-entry")
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("记录属于你的每一顿")
-                            .font(.headline)
-                        Text("登录后查看个人档案、统计与回味。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button(action: onSignIn) {
-                            Label("使用 Apple 登录", systemImage: "apple.logo")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("profile-sign-in-button")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    avatar
+                    identityContent
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center, spacing: 13) {
+                    avatar
+                    identityContent
                 }
             }
 
             if isSignedIn {
                 Divider()
-                HStack(spacing: 12) {
-                    connectionMetric(
-                        "关注", value: socialStatistics.followingCount,
-                        systemImage: "person.crop.circle.badge.checkmark",
-                        identifier: "profile-following-stat", action: onFollowing
-                    )
-                    connectionMetric(
-                        "被关注", value: socialStatistics.followerCount,
-                        systemImage: "person.2",
-                        identifier: "profile-followers-stat", action: onFollowers
-                    )
-                    Spacer(minLength: 0)
-                    Button(action: onFriends) {
-                        Image(systemName: "person.2.fill")
-                            .frame(width: 36, height: 36)
-                            .background(TasteMapCoreTheme.brandSoft, in: Circle())
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        connectionButtons
+                        socialButtons
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("好友 \(socialStatistics.friendCount)，查看")
-                    .accessibilityIdentifier("profile-friends-stat")
-                    Button(action: onDiscover) {
-                        Image(systemName: "person.badge.plus")
-                            .frame(width: 36, height: 36)
-                            .background(TasteMapCoreTheme.brandSoft, in: Circle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    HStack(spacing: 12) {
+                        connectionButtons
+                        Spacer(minLength: 0)
+                        socialButtons
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("找人")
-                    .accessibilityIdentifier("profile-social-entry")
                 }
             }
         }
@@ -679,6 +612,155 @@ private struct ProfileIdentityCard: View {
                 .stroke(TasteMapCoreTheme.border.opacity(0.9))
         }
         .shadow(color: TasteMapCoreTheme.cardShadow, radius: 8, y: 3)
+    }
+
+    private var avatar: some View {
+        ProfileAvatarView(profile: profile, photo: avatarPhoto)
+            .frame(width: isSignedIn ? 64 : 58, height: isSignedIn ? 64 : 58)
+    }
+
+    @ViewBuilder
+    private var identityContent: some View {
+        if let profile, isSignedIn {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    Text(profile.displayName)
+                        .font(.headline.bold())
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                    if membershipStatus == .premium || membershipStatus == .gracePeriod {
+                        Button(action: onPremium) {
+                            PremiumBurgerBadge().frame(width: 21, height: 21)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Taste Map Premium 已开通，查看会员状态")
+                        .accessibilityIdentifier("profile-premium-badge-entry")
+                    }
+                }
+                if !profile.bio.isEmpty {
+                    Text(profile.bio)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("profile-bio-text")
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { profileMetadata(profile) }
+                    VStack(alignment: .leading, spacing: 5) { profileMetadata(profile) }
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { profileActions }
+                    VStack(alignment: .leading, spacing: 8) { profileActions }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("记录属于你的每一顿")
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("登录后查看个人档案、统计与回味。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: onSignIn) {
+                    Label("使用 Apple 登录", systemImage: "apple.logo")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityIdentifier("profile-sign-in-button")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func profileMetadata(_ profile: UserProfile) -> some View {
+        if !profile.city.isEmpty {
+            Label(profile.city, systemImage: "building.2")
+                .accessibilityIdentifier("profile-city-text")
+        }
+        Label {
+            Text("加入于 \(TasteMapDisplayDate.yearMonth(profile.createdAt))")
+        } icon: {
+            Image(systemName: "calendar.badge.checkmark")
+        }
+    }
+
+    @ViewBuilder
+    private var profileActions: some View {
+        Button("编辑资料", action: onEdit)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityIdentifier("profile-edit-button")
+        if membershipStatus == .free || membershipStatus == .expired {
+            Button("Premium", action: onPremium)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityIdentifier("profile-premium-entry")
+        }
+    }
+
+    @ViewBuilder
+    private var connectionButtons: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                connectionMetric(
+                    "关注", value: socialStatistics.followingCount,
+                    systemImage: "person.crop.circle.badge.checkmark",
+                    identifier: "profile-following-stat", action: onFollowing
+                )
+                connectionMetric(
+                    "被关注", value: socialStatistics.followerCount,
+                    systemImage: "person.2",
+                    identifier: "profile-followers-stat", action: onFollowers
+                )
+            }
+        } else {
+            Group {
+                    connectionMetric(
+                        "关注", value: socialStatistics.followingCount,
+                        systemImage: "person.crop.circle.badge.checkmark",
+                        identifier: "profile-following-stat", action: onFollowing
+                    )
+                    connectionMetric(
+                        "被关注", value: socialStatistics.followerCount,
+                        systemImage: "person.2",
+                        identifier: "profile-followers-stat", action: onFollowers
+                    )
+            }
+        }
+    }
+
+    private var socialButtons: some View {
+        HStack(spacing: 12) {
+            Button(action: onFriends) {
+                Image(systemName: "person.2.fill")
+                    .frame(
+                        width: dynamicTypeSize.isAccessibilitySize ? 44 : 36,
+                        height: dynamicTypeSize.isAccessibilitySize ? 44 : 36
+                    )
+                    .background(TasteMapCoreTheme.brandSoft, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("好友 \(socialStatistics.friendCount)，查看")
+            .accessibilityIdentifier("profile-friends-stat")
+            Button(action: onDiscover) {
+                Image(systemName: "person.badge.plus")
+                    .frame(
+                        width: dynamicTypeSize.isAccessibilitySize ? 44 : 36,
+                        height: dynamicTypeSize.isAccessibilitySize ? 44 : 36
+                    )
+                    .background(TasteMapCoreTheme.brandSoft, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("找人")
+            .accessibilityIdentifier("profile-social-entry")
+        }
     }
 
     private func connectionMetric(
@@ -702,12 +784,25 @@ private struct ProfileIdentityCard: View {
 }
 
 private struct ProfileStatisticsSection: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let statistics: ProfileBasicStatistics
     let onVisited: () -> Void
     let onWantToGo: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) { statisticsContent(vertical: true) }
+            } else {
+                HStack(spacing: 0) { statisticsContent(vertical: false) }
+            }
+        }
+        .padding(.vertical, 8)
+        .tasteMapCoreCard(radius: 18)
+    }
+
+    @ViewBuilder
+    private func statisticsContent(vertical: Bool) -> some View {
             Button(action: onVisited) {
                 statistic(
                     "去过", value: "\(statistics.visitedRestaurantCount)",
@@ -716,7 +811,7 @@ private struct ProfileStatisticsSection: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("profile-stat-visited")
-            Divider().frame(height: 36)
+            divider(vertical: vertical)
             Button(action: onWantToGo) {
                 statistic(
                     "想去", value: "\(statistics.wantToGoRestaurantCount)",
@@ -725,16 +820,22 @@ private struct ProfileStatisticsSection: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("profile-stat-want")
-            Divider().frame(height: 36)
+            divider(vertical: vertical)
             statistic(
                 "总消费",
                 value: statistics.totalSpend.map(Self.currencyString) ?? "—",
                 systemImage: "receipt.fill"
             )
             .accessibilityIdentifier("profile-stat-spend")
+    }
+
+    @ViewBuilder
+    private func divider(vertical: Bool) -> some View {
+        if vertical {
+            Divider().padding(.horizontal, 14)
+        } else {
+            Divider().frame(height: 36)
         }
-        .padding(.vertical, 8)
-        .tasteMapCoreCard(radius: 18)
     }
 
     private func statistic(_ title: String, value: String, systemImage: String) -> some View {
@@ -746,8 +847,7 @@ private struct ProfileStatisticsSection: View {
                     .accessibilityHidden(true)
                 Text(value)
                     .font(.subheadline.bold())
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.68)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
@@ -800,11 +900,11 @@ private struct ProfileDashboardTile: View {
                 Text(title)
                     .font(.subheadline.bold())
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(detail)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let premiumFeature {
                     PremiumFeatureInlineBadge(feature: premiumFeature)
                 }
@@ -841,7 +941,7 @@ private struct ProfileCompactTile: View {
                 .font(.caption.bold())
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             if let premiumFeature {
                 PremiumFeatureInlineBadge(feature: premiumFeature)
                     .scaleEffect(0.88)
@@ -870,7 +970,9 @@ private struct ProfileCompactRow: View {
             )
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(detail).font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Image(systemName: "chevron.right")

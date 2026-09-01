@@ -245,7 +245,7 @@ struct DiscoverHubView: View {
                 .font(.caption)
                 .foregroundStyle(TasteMapCoreTheme.textSecondary)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)

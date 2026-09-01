@@ -3296,6 +3296,64 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testDynamicTypeP1AccessibilityExtraExtraLargeClosure() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = [
+            "TASTEMAP_VISUAL_QA_MODE": "rich",
+            "TASTEMAP_CORE_PARITY_INITIAL_TAB": "profile",
+        ]
+        app.launch()
+
+        let addRestaurant = app.buttons["addRestaurantButton"]
+        let mapTab = app.buttons["app-tab-map"]
+        let discoverTab = app.buttons["app-tab-discover"]
+        let profileTab = app.buttons["app-tab-profile"]
+        XCTAssertTrue(addRestaurant.waitForExistence(timeout: 12))
+        XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
+        XCTAssertTrue(addRestaurant.isHittable)
+        XCTAssertTrue(mapTab.isHittable)
+        XCTAssertTrue(discoverTab.isHittable)
+        XCTAssertTrue(profileTab.isHittable)
+        XCTAssertLessThanOrEqual(addRestaurant.frame.maxY, mapTab.frame.minY)
+        XCTAssertFalse(mapTab.frame.intersects(discoverTab.frame))
+        XCTAssertFalse(discoverTab.frame.intersects(profileTab.frame))
+
+        let rouletteEntry = app.buttons["profile-restaurant-roulette-entry"]
+        scrollUntilVisible(rouletteEntry, in: app)
+        XCTAssertTrue(rouletteEntry.isHittable)
+        keepScreenshot(named: "Dynamic Type P1 Profile XX Large", of: app)
+        rouletteEntry.tap()
+
+        XCTAssertTrue(app.navigationBars["今天吃什么"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["addRestaurantButton"].exists)
+        XCTAssertTrue(app.staticTexts["roulette-candidate-count"].exists)
+        let manageCandidates = app.buttons["roulette-manage-candidates"]
+        scrollUntilVisible(manageCandidates, in: app)
+        XCTAssertTrue(manageCandidates.isHittable)
+        XCTAssertGreaterThanOrEqual(manageCandidates.frame.height, 44)
+        keepScreenshot(named: "Dynamic Type P1 Roulette XX Large", of: app)
+
+        app.terminate()
+        app.launchEnvironment = [
+            "TASTEMAP_VISUAL_QA_MODE": "rich",
+            "TASTEMAP_CORE_PARITY_INITIAL_TAB": "discover",
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["discovery-header"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["discovery-primary-forYou"].isHittable)
+        XCTAssertTrue(app.buttons["discovery-city-menu"].isHittable)
+        XCTAssertTrue(app.buttons["discovery-filters"].isHittable)
+        XCTAssertTrue(app.buttons["addRestaurantButton"].isHittable)
+        XCTAssertLessThanOrEqual(
+            app.buttons["addRestaurantButton"].frame.maxY,
+            app.buttons["app-tab-map"].frame.minY
+        )
+        keepScreenshot(named: "Dynamic Type P1 Discovery XX Large", of: app)
+    }
+
+    @MainActor
     func testFinalVisualAcceptanceVisualQAStateAtlas() throws {
         let app = XCUIApplication()
 
