@@ -144,22 +144,27 @@ struct PremiumPaywallView: View {
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            PremiumFoodMotif().frame(height: 132)
+        HStack(alignment: .center, spacing: 17) {
+            PremiumBurgerBadge()
+                .frame(width: 76, height: 76)
+                .padding(10)
+                .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: PremiumTheme.brand.opacity(0.12), radius: 12, y: 6)
             VStack(alignment: .leading, spacing: 8) {
                 Text("TASTE MAP PREMIUM")
                     .font(.caption2.bold()).tracking(1.7)
                     .foregroundStyle(PremiumTheme.brand)
                 Text("把长期记录，变成更懂你的分析。")
-                    .font(.largeTitle.bold())
+                    .font(.title2.bold())
                     .foregroundStyle(PremiumTheme.ink)
                 Text(source.contextCopy)
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(18)
         .background(
             LinearGradient(
                 colors: [TasteMapCoreTheme.surface, PremiumTheme.brandSoft, PremiumTheme.cream],
@@ -168,6 +173,7 @@ struct PremiumPaywallView: View {
             ),
             in: RoundedRectangle(cornerRadius: 30, style: .continuous)
         )
+        .accessibilityIdentifier("premium-legacy-hierarchy-hero")
     }
 
     @ViewBuilder
@@ -213,24 +219,33 @@ struct PremiumPaywallView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("更完整地理解自己的饮食生活")
                 .font(.title3.bold()).foregroundStyle(PremiumTheme.ink)
-            ForEach(PremiumFeatureRegistry.paywallHighlights) { feature in
-                HStack(alignment: .top, spacing: 13) {
-                    Image(systemName: feature.definition.symbol)
-                        .font(.headline)
-                        .foregroundStyle(PremiumTheme.brand)
-                        .frame(width: 38, height: 38)
-                        .background(PremiumTheme.brandSoft, in: RoundedRectangle(cornerRadius: 12))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(feature.definition.title).font(.headline)
-                        Text(feature.definition.valueDescription)
-                            .font(.caption).foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(PremiumFeatureRegistry.paywallHighlights) { feature in
+                    HStack(alignment: .top, spacing: 9) {
+                        Image(systemName: feature.definition.symbol)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(PremiumTheme.brand)
+                            .frame(width: 34, height: 34)
+                            .background(PremiumTheme.brandSoft, in: RoundedRectangle(cornerRadius: 10))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(feature.definition.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(2)
+                            Text(feature.definition.valueDescription)
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
+                    .padding(10)
+                    .background(TasteMapCoreTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 16))
                 }
             }
         }
         .padding(18)
         .background(TasteMapCoreTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .accessibilityIdentifier("premium-legacy-benefit-grid")
     }
 
     private var comparison: some View {

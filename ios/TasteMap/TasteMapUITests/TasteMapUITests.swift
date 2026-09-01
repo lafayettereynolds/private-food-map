@@ -1693,6 +1693,7 @@ final class TasteMapUITests: XCTestCase {
         importButton.tap()
         XCTAssertTrue(app.staticTexts["本机"].waitForExistence(timeout: 5))
         openDishManager(in: app)
+        keepScreenshot(named: "Round 2 Dish Photo Legacy Final Candidate", of: app)
         app.buttons["visit-dish-add-new"].tap()
         XCTAssertTrue(app.navigationBars["新菜品"].waitForExistence(timeout: 5))
         app.textFields["dish-name"].tap()
@@ -1707,9 +1708,12 @@ final class TasteMapUITests: XCTestCase {
         let details = app.descendants(matching: .any)["visit-detailed-ratings"]
         scrollUntilVisible(details, in: app)
         keepScreenshot(named: "Final Atlas Visit Rich Photo Dish Context", of: app)
-        details.tap()
         let value = app.buttons["性价比 5.0 星"]
+        if !value.exists {
+            details.tap()
+        }
         scrollUntilVisible(value, in: app)
+        XCTAssertTrue(value.waitForExistence(timeout: 3))
         value.tap()
         let environment = app.buttons["环境 4.0 星"]
         scrollUntilVisible(environment, in: app)

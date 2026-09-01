@@ -317,6 +317,126 @@ struct AnalysisHeroMedia: View {
     }
 }
 
+/// Canonical page-level infographic used by the approved historical Analysis
+/// family. The center is always a real Restaurant image when one resolves; the
+/// Food Hero asset is an honest fallback. The surrounding facts are supplied by
+/// the existing owner-scoped analyzers rather than invented for decoration.
+struct LegacyAnalysisInfographicHero: View {
+    let centerReference: AnalysisImageReference
+    let fallbackAssetName: String
+    let centerLabel: String
+    let callouts: [AnalysisCallout]
+    let photosByID: [UUID: PhotoAsset]
+    var accessibilityIdentifier: String
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let cardWidth = min(148, width * 0.43)
+            ZStack {
+                RoundedRectangle(cornerRadius: 34, style: .continuous)
+                    .fill(
+                        RadialGradient(
+                            colors: [TasteMapAnalysisTheme.card, TasteMapAnalysisTheme.creamSoft.opacity(0.72)],
+                            center: .center,
+                            startRadius: 34,
+                            endRadius: 260
+                        )
+                    )
+                    .overlay { RoundedRectangle(cornerRadius: 34).stroke(TasteMapAnalysisTheme.hairline, lineWidth: 1.5) }
+                    .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.08), radius: 20, y: 11)
+
+                AnalysisConnectorWeb()
+                    .stroke(
+                        TasteMapAnalysisTheme.brand.opacity(0.27),
+                        style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [5, 7])
+                    )
+                    .padding(.horizontal, 54)
+                    .padding(.vertical, 70)
+
+                centerImage
+                    .frame(width: min(214, width * 0.56), height: min(214, width * 0.56))
+                    .clipShape(Circle())
+                    .overlay { Circle().stroke(.white, lineWidth: 5) }
+                    .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.14), radius: 18, y: 9)
+                    .offset(y: 6)
+
+                Text(centerLabel)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(TasteMapAnalysisTheme.brandDeep)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .position(x: width / 2, y: 356)
+
+                ForEach(Array(callouts.prefix(4).enumerated()), id: \.element.id) { index, callout in
+                    LegacyInfographicCalloutCard(callout: callout)
+                        .frame(width: cardWidth)
+                        .position(position(for: index, width: width))
+                }
+            }
+        }
+        .frame(height: 430)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    @ViewBuilder
+    private var centerImage: some View {
+        switch centerReference {
+        case .none:
+            Image(fallbackAssetName).resizable().scaledToFit().padding(4)
+                .background(TasteMapAnalysisTheme.creamSoft)
+        default:
+            RestaurantEvidenceImage(reference: centerReference, photosByID: photosByID, height: 214)
+        }
+    }
+
+    private func position(for index: Int, width: CGFloat) -> CGPoint {
+        switch index {
+        case 0: CGPoint(x: width * 0.23, y: 74)
+        case 1: CGPoint(x: width * 0.77, y: 74)
+        case 2: CGPoint(x: width * 0.23, y: 360)
+        default: CGPoint(x: width * 0.77, y: 360)
+        }
+    }
+}
+
+private struct LegacyInfographicCalloutCard: View {
+    let callout: AnalysisCallout
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                AnalysisFoodGlyph(symbol: callout.icon, tone: callout.tone, size: 24, semanticID: callout.id)
+                Text(callout.title)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+            }
+            Text(callout.value)
+                .font(.subheadline.weight(.heavy))
+                .foregroundStyle(callout.sufficiency == .insufficient
+                    ? TasteMapAnalysisTheme.secondaryInk : TasteMapAnalysisTheme.ink)
+                .lineLimit(2)
+                .minimumScaleFactor(0.68)
+            Text(callout.detail)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                .lineLimit(2)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        .background(TasteMapAnalysisTheme.card.opacity(0.96), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(alignment: .leading) {
+            Capsule().fill(TasteMapAnalysisTheme.color(for: callout.tone))
+                .frame(width: 4).padding(.vertical, 13)
+        }
+        .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.09), radius: 10, y: 5)
+    }
+}
+
 struct RestaurantEvidenceImage: View {
     let reference: AnalysisImageReference
     let photosByID: [UUID: PhotoAsset]

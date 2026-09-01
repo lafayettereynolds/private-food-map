@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Taste Map｜Lafayette 视觉审批台</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+    <script src="round2-data.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="hero" id="top">
+      <div class="hero__eyebrow">TASTE MAP · LAFAYETTE VISUAL APPROVAL · ROUND 2</div>
+      <div class="hero__content">
+        <div>
+          <h1>Lafayette 视觉审批台 · Round 2</h1>
+          <p>
+            本轮严格执行第一轮人工决定：五项 Legacy direction 已落成真实 Final Candidate，Settings 保持 Current Frozen；
+            Profile FUSE V2、Visit FUSE 与五类海报 A/B 仍是候选。所有画面来自真实 SwiftUI build 与固定 Simulator，
+            不是 AI 图、拼接图或文字 mockup。页面级方向与区域级冻结分开记录，Pending 不会被自动判定为 Approved。
+          </p>
+        </div>
+        <div class="hero__seal" aria-hidden="true">
+          <span>9</span>
+          <small>DECISIONS</small>
+        </div>
+      </div>
+      <div class="scope-note">
+        <strong>审批边界</strong>
+        本工具只记录视觉选择，不改 App、不写数据库、不连接 Production。
+        Candidate 不是正式产品决定；只有全部必要区域明确 KEEP 并冻结后，页面才显示 APPROVED FINAL。
+      </div>
+    </header>
+
+    <div class="progress-shell">
+      <div class="progress-bar" aria-label="审批进度">
+        <div class="progress-stat">
+          <span class="progress-stat__value">9</span>
+          <span class="progress-stat__label">项目总数</span>
+        </div>
+        <div class="progress-stat progress-stat--done">
+          <span class="progress-stat__value" id="decided-count">0</span>
+          <span class="progress-stat__label">方向已记录</span>
+        </div>
+        <div class="progress-stat progress-stat--pending">
+          <span class="progress-stat__value" id="pending-count">9</span>
+          <span class="progress-stat__label">页面待选</span>
+        </div>
+        <div class="progress-stat progress-stat--fuse">
+          <span class="progress-stat__value" id="fuse-available-count">9</span>
+          <span class="progress-stat__label">真实候选组</span>
+        </div>
+        <div class="progress-stat progress-stat--missing">
+          <span class="progress-stat__value" id="fuse-missing-count">0</span>
+          <span class="progress-stat__label">候选缺图</span>
+        </div>
+        <div class="progress-stat progress-stat--na">
+          <span class="progress-stat__value" id="fuse-na-count">0</span>
+          <span class="progress-stat__label">Current Frozen</span>
+        </div>
+        <div class="progress-meter" aria-hidden="true">
+          <span id="progress-meter-fill"></span>
+        </div>
+        <button class="copy-summary" id="copy-summary" type="button">复制审批摘要</button>
+      </div>
+      <nav class="jump-nav" id="jump-nav" aria-label="快速跳转到视觉决策项"></nav>
+    </div>
+
+    <main class="decision-list" id="decision-list"></main>
+
+    <noscript>
+      <p class="noscript">此审批工具需要启用 JavaScript 才能显示 9 项内容和本机记录区。</p>
+    </noscript>
+
+    <footer class="page-footer">
+      <p>记录仅保存在当前浏览器的本地存储中，不会写入 Taste Map、Git 或任何服务器。</p>
+      <a href="#top">返回顶部</a>
+    </footer>
+
+    <dialog class="lightbox" id="lightbox" aria-label="截图全屏查看器">
+      <div class="lightbox__toolbar">
+        <div>
+          <span class="lightbox__kind" id="lightbox-kind">CURRENT</span>
+          <strong id="lightbox-title">截图</strong>
+        </div>
+        <div class="lightbox__actions">
+          <button type="button" id="zoom-out" aria-label="缩小图片">−</button>
+          <output id="zoom-value" aria-live="polite">100%</output>
+          <button type="button" id="zoom-in" aria-label="放大图片">＋</button>
+          <button type="button" id="zoom-reset">适应</button>
+          <button type="button" id="fullscreen">全屏</button>
+          <button type="button" id="lightbox-close" aria-label="关闭全屏查看">关闭</button>
+        </div>
+      </div>
+      <div class="lightbox__stage" id="lightbox-stage">
+        <button class="lightbox__nav lightbox__nav--previous" id="lightbox-previous" type="button" aria-label="上一张图片">‹</button>
+        <img id="lightbox-image" alt="">
+        <button class="lightbox__nav lightbox__nav--next" id="lightbox-next" type="button" aria-label="下一张图片">›</button>
+      </div>
+      <p class="lightbox__caption" id="lightbox-caption"></p>
+    </dialog>
+  </body>
+</html>
