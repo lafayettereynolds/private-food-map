@@ -496,13 +496,14 @@ struct SocialPublicProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 14) {
-                    publicIdentityHeader
-                    HStack(spacing: 10) { friendshipButtons; followButton }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    publicMetricStrip
+                VStack(spacing: 18) {
+                    publicProfileHero
                     if let overview { publicOverview(overview) }
                     if communityAPI != nil {
+                        publicEvidenceHeader(
+                            title: "TA 的餐桌",
+                            detail: "公开记录、想吃与食单共同构成这份真实餐饮档案。"
+                        )
                         TasteMapSegmentedControl(
                             selection: $contentSection,
                             items: [
@@ -514,6 +515,10 @@ struct SocialPublicProfileView: View {
                         publicContent
                     }
                     if let restaurantListAPI {
+                        publicEvidenceHeader(
+                            title: "TA 的食单",
+                            detail: "只展示当前权限允许查看的公开或好友可见榜单。"
+                        )
                         PublicRestaurantListsSection(
                             ownerUserID: item.profile.userId,
                             currentUserID: currentUserID,
@@ -574,6 +579,43 @@ struct SocialPublicProfileView: View {
         }
     }
 
+    private var publicProfileHero: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            publicIdentityHeader
+            HStack(spacing: 10) {
+                friendshipButtons
+                followButton
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+            publicMetricStrip
+        }
+        .padding(18)
+        .background(
+            LinearGradient(
+                colors: [TasteMapCoreTheme.surface, TasteMapCoreTheme.brandSoft.opacity(0.54)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+        .overlay { RoundedRectangle(cornerRadius: 24).stroke(TasteMapCoreTheme.border, lineWidth: 1) }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func publicEvidenceHeader(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("PUBLIC DINING EVIDENCE")
+                .font(.caption2.weight(.bold))
+                .tracking(1.4)
+                .foregroundStyle(TasteMapCoreTheme.brand)
+            Text(title).font(.title3.weight(.bold))
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var publicIdentityHeader: some View {
         HStack(alignment: .center, spacing: 14) {
             PresetProfileAvatarView(preset: item.profile.avatarPresetId)
@@ -612,8 +654,7 @@ struct SocialPublicProfileView: View {
             Divider().frame(height: 34)
             publicMetric("公开记录", context?.profile.statistics.publicVisitCount)
         }
-        .padding(.vertical, 8)
-        .tasteMapCoreCard(radius: 16)
+        .padding(.vertical, 2)
         .accessibilityIdentifier("public-profile-metric-strip")
     }
 
@@ -697,6 +738,10 @@ struct SocialPublicProfileView: View {
 
     private func publicOverview(_ overview: PublicProfileOverviewV1) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            publicEvidenceHeader(
+                title: "口味与餐厅证据",
+                detail: "共同想吃、口味印象与代表餐厅来自当前可见的真实数据。"
+            )
             if overview.friendCount > 0 {
                 Label("好友 \(overview.friendCount)", systemImage: "person.2.fill")
                     .font(.caption.weight(.semibold))
@@ -734,8 +779,9 @@ struct SocialPublicProfileView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .tasteMapCoreCard(radius: 18)
+        .padding(18)
+        .tasteMapCoreCard(radius: 22)
+        .accessibilityIdentifier("public-profile-taste-evidence")
     }
 
     @MainActor

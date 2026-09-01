@@ -104,27 +104,35 @@ struct RestaurantListSummaryCard: View {
     let photoAPI: (any PhotoBinaryAPI)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        HStack(alignment: .center, spacing: 13) {
             RestaurantListCoverGrid(
                 places: list.previewRestaurants,
                 customPhotoID: list.coverMode == .custom ? list.customCoverPhotoID : nil,
                 photoAPI: photoAPI
             )
-            .frame(height: 142)
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(list.title).font(.headline).lineLimit(2)
-                    Text("\(list.activeItemCount) 家餐厅\(list.isRanked ? " · 排名榜单" : "")")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
+            .frame(width: 124, height: 94)
+            VStack(alignment: .leading, spacing: 7) {
+                Text(list.isRanked ? "RANKED LIST" : "COLLECTION")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.1)
+                    .foregroundStyle(TasteMapCoreTheme.brand)
+                Text(list.title).font(.headline).lineLimit(2)
+                Text("\(list.activeItemCount) 家餐厅")
+                    .font(.caption).foregroundStyle(.secondary)
                 Label(list.visibility.title, systemImage: list.visibility.systemImage)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(list.visibility == .public ? Color.accentColor : .secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(12)
-        .tasteMapCoreCard(radius: 22, showsShadow: true)
+        .tasteMapCoreCard(radius: 20, showsShadow: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(list.title)，\(list.isRanked ? "排名榜单" : "收藏食单")，\(list.activeItemCount) 家餐厅，\(list.visibility.title)")
     }
 }
 
@@ -157,10 +165,14 @@ struct RestaurantListDetailView: View {
                     customPhotoID: list.coverMode == .custom ? list.customCoverPhotoID : nil,
                     photoAPI: photoAPI
                 )
-                .frame(height: 210)
+                .frame(height: 176)
                 .listRowInsets(.init())
                 .listRowBackground(Color.clear)
                 VStack(alignment: .leading, spacing: 8) {
+                    Text(list.isRanked ? "RANKED LIST" : "COLLECTION")
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.2)
+                        .foregroundStyle(TasteMapCoreTheme.brand)
                     HStack {
                         Label(list.visibility.title, systemImage: list.visibility.systemImage)
                         if list.isRanked { Label("排名榜单", systemImage: "number") }
@@ -796,8 +808,12 @@ struct PublicRestaurantListDetailView: View {
                 Section {
                     if let detail {
                         PublicListPreviewGrid(values: detail.list.previewRestaurants, photoAPI: photoAPI)
-                            .frame(height: 190).listRowInsets(.init())
-                        Text("由 \(detail.list.owner.displayName) 创建").font(.subheadline).foregroundStyle(.secondary)
+                            .frame(height: 176).listRowInsets(.init())
+                        Text(detail.list.isRanked ? "RANKED LIST" : "COLLECTION")
+                            .font(.caption2.weight(.bold)).tracking(1.2)
+                            .foregroundStyle(TasteMapCoreTheme.brand)
+                        Text("由 \(detail.list.owner.displayName) 创建 · \(detail.list.restaurantCount) 家餐厅")
+                            .font(.subheadline).foregroundStyle(.secondary)
                         if !detail.list.description.isEmpty { Text(detail.list.description) }
                     }
                 }

@@ -14,95 +14,111 @@ struct DishManagerSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("本次吃了什么") {
-                    if drafts.isEmpty {
-                        TasteMapEmptyState(
-                            title: "还没有添加菜品",
-                            message: "可以选择以前吃过的菜，也可以记录一道新菜。",
-                            systemImage: "fork.knife.circle",
-                            foodDiningVisualKind: .food,
-                            presentation: .embedded,
-                            accessibilityIdentifier: "dish-manager-empty-state"
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    mealStoryHeader
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        DishStorySectionHeader(
+                            eyebrow: "THIS MEAL",
+                            title: "本次吃了什么",
+                            detail: drafts.isEmpty ? "从一道菜开始，留下这次用餐的味道。" : "\(drafts.count) 道菜组成了这次用餐故事。"
                         )
-                    } else {
-                        ForEach(drafts) { draft in
-                            HStack(spacing: 10) {
-                                DishDraftRow(
+                        if drafts.isEmpty {
+                            TasteMapEmptyState(
+                                title: "还没有添加菜品",
+                                message: "可以选择以前吃过的菜，也可以记录一道新菜。",
+                                systemImage: "fork.knife.circle",
+                                foodDiningVisualKind: .food,
+                                presentation: .embedded,
+                                accessibilityIdentifier: "dish-manager-empty-state"
+                            )
+                            .frame(minHeight: 170)
+                        } else {
+                            ForEach(drafts) { draft in
+                                DishStoryDraftCard(
                                     draft: draft,
-                                    photo: photos.first { $0.id == draft.photoID }
+                                    photo: photos.first { $0.id == draft.photoID },
+                                    onEdit: { editingDraft = draft },
+                                    onRemove: { drafts.removeAll { $0.id == draft.id } }
                                 )
-                                Button { editingDraft = draft } label: {
-                                    Image(systemName: "pencil.circle.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(.tint)
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel("编辑 \(draft.name)")
-                                .accessibilityIdentifier("visit-dish-edit-\(draft.id.uuidString)")
-                                Button(role: .destructive) {
-                                    drafts.removeAll { $0.id == draft.id }
-                                } label: {
-                                    Image(systemName: "minus.circle.fill")
-                                        .font(.title2)
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel("从本次到访移除 \(draft.name)")
-                                .accessibilityIdentifier("visit-dish-remove-\(draft.id.uuidString)")
                             }
-                            .contentShape(Rectangle())
-                            .onTapGesture { editingDraft = draft }
                         }
-                        .onDelete { drafts.remove(atOffsets: $0) }
-                    }
-                }
 
-                Section {
-                    ForEach(filteredExistingDishes) { dish in
                         Button {
-                            guard !drafts.contains(where: { $0.dishID == dish.id }) else { return }
-                            drafts.append(DishDraft(dish: dish))
+                            editingDraft = DishDraft()
                         } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "fork.knife")
-                                    .foregroundStyle(.tint)
-                                    .frame(width: 34, height: 34)
-                                    .background(Color.accentColor.opacity(0.1), in: Circle())
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(dish.name)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .multilineTextAlignment(.leading)
-                                    Text(reuseDetail(for: dish))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: drafts.contains(where: { $0.dishID == dish.id })
-                                      ? "checkmark.circle.fill" : "plus.circle")
-                            }
+                            Label("记录一道新菜", systemImage: "plus.circle.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
                         }
-                        .disabled(drafts.contains(where: { $0.dishID == dish.id }))
-                        .accessibilityIdentifier("existing-dish-\(dish.id.uuidString)")
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("visit-dish-add-new")
                     }
-                    if filteredExistingDishes.isEmpty {
-                        Text(existingDishes.isEmpty ? "这家餐厅还没有记录过菜品。" : "没有匹配的历史菜品。")
-                            .foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("以前吃过的菜")
-                } footer: {
-                    Text("再次选择会关联同一道 Restaurant Dish，不会复制菜品。")
-                }
 
-                Section {
-                    Button("添加新菜品", systemImage: "plus.circle.fill") {
-                        editingDraft = DishDraft()
+                    VStack(alignment: .leading, spacing: 12) {
+                        DishStorySectionHeader(
+                            eyebrow: "REVISIT A FLAVOR",
+                            title: "以前吃过的菜",
+                            detail: "再次选择会关联同一道 Restaurant Dish，不会复制菜品。"
+                        )
+                        if filteredExistingDishes.isEmpty {
+                            Text(existingDishes.isEmpty ? "这家餐厅还没有记录过菜品。" : "没有匹配的历史菜品。")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(18)
+                                .tasteMapCoreCard(radius: 18)
+                        } else {
+                            LazyVStack(spacing: 1) {
+                                ForEach(filteredExistingDishes) { dish in
+                                    let selected = drafts.contains(where: { $0.dishID == dish.id })
+                                    Button {
+                                        guard !selected else { return }
+                                        drafts.append(DishDraft(dish: dish))
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            FoodDiningVisualIcon(
+                                                kind: .food,
+                                                usage: .dataLinked,
+                                                size: 42,
+                                                foregroundColor: TasteMapCoreTheme.brandDeep,
+                                                backgroundColor: TasteMapCoreTheme.brandSoft
+                                            )
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(dish.name)
+                                                    .font(.body.weight(.semibold))
+                                                    .foregroundStyle(.primary)
+                                                    .multilineTextAlignment(.leading)
+                                                Text(reuseDetail(for: dish))
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            Image(systemName: selected ? "checkmark.circle.fill" : "plus.circle")
+                                                .foregroundStyle(selected ? TasteMapCoreTheme.brand : .secondary)
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 11)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(selected)
+                                    .accessibilityIdentifier("existing-dish-\(dish.id.uuidString)")
+                                    if dish.id != filteredExistingDishes.last?.id {
+                                        Divider().padding(.leading, 68)
+                                    }
+                                }
+                            }
+                            .tasteMapCoreCard(radius: 18)
+                        }
                     }
-                    .accessibilityIdentifier("visit-dish-add-new")
                 }
+                .padding(.horizontal, TasteMapDesignTokens.Layout.pageInset)
+                .padding(.top, 14)
+                .padding(.bottom, 34)
             }
-            .scrollContentBackground(.hidden)
             .background(TasteMapCoreTheme.page)
             .searchable(text: $searchText, prompt: "搜索以前吃过的菜")
             .navigationTitle("本次吃了什么")
@@ -122,6 +138,60 @@ struct DishManagerSheet: View {
                 )
             }
         }
+    }
+
+    private var mealStoryHeader: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("MEAL NOTES")
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.6)
+                        .foregroundStyle(TasteMapCoreTheme.brand)
+                    Text("把菜和照片留在同一个故事里")
+                        .font(.title2.weight(.bold))
+                    Text("菜品、评分与代表照片都属于这一次真实到访；离线时也可以继续整理。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                FoodDiningVisualIcon(
+                    kind: .tableware,
+                    usage: .decorative,
+                    size: 58,
+                    foregroundColor: TasteMapCoreTheme.brandDeep,
+                    backgroundColor: TasteMapCoreTheme.brandSoft
+                )
+            }
+            if !photos.isEmpty || !preparedPhotos.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(Array(photos.prefix(3))) { photo in
+                        PhotoAssetImageView(photo: photo)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 82)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    ForEach(Array(preparedPhotos.prefix(max(0, 3 - photos.count)))) { photo in
+                        PreparedPhotoImageView(prepared: photo)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 82)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+                .accessibilityElement(children: .contain)
+            }
+        }
+        .padding(18)
+        .background(
+            LinearGradient(
+                colors: [TasteMapCoreTheme.surface, TasteMapCoreTheme.brandSoft.opacity(0.72)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+        .overlay { RoundedRectangle(cornerRadius: 24).stroke(TasteMapCoreTheme.border, lineWidth: 1) }
+        .accessibilityIdentifier("dish-manager-meal-story-header")
     }
 
     private var filteredExistingDishes: [Dish] {
@@ -146,6 +216,59 @@ struct DishManagerSheet: View {
             drafts.append(draft)
         }
         editingDraft = nil
+    }
+}
+
+private struct DishStorySectionHeader: View {
+    let eyebrow: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(eyebrow)
+                .font(.caption2.weight(.bold))
+                .tracking(1.4)
+                .foregroundStyle(TasteMapCoreTheme.brand)
+            Text(title).font(.title3.weight(.bold))
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct DishStoryDraftCard: View {
+    let draft: DishDraft
+    let photo: PhotoAsset?
+    let onEdit: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 13) {
+            DishDraftRow(draft: draft, photo: photo)
+            VStack(spacing: 8) {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .frame(width: 34, height: 34)
+                        .background(TasteMapCoreTheme.surfaceSubtle, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("编辑 \(draft.name)")
+                .accessibilityIdentifier("visit-dish-edit-\(draft.id.uuidString)")
+                Button(role: .destructive, action: onRemove) {
+                    Image(systemName: "minus")
+                        .frame(width: 34, height: 34)
+                        .background(Color.red.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("从本次到访移除 \(draft.name)")
+                .accessibilityIdentifier("visit-dish-remove-\(draft.id.uuidString)")
+            }
+        }
+        .padding(14)
+        .tasteMapCoreCard(radius: 18)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onEdit)
     }
 }
 

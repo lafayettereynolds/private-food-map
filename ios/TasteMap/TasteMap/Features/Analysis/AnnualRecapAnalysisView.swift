@@ -241,23 +241,40 @@ struct AnnualRecapAnalysisView: View {
     }
 
     private var hero: some View {
-        ZStack(alignment: .bottomLeading) {
-            AnnualPhotoCollage(stories: report.representativeRestaurants, photosByID: photosByID)
-            LinearGradient(colors: [.clear, TasteMapAnalysisTheme.ink.opacity(0.82)], startPoint: .center, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 7) {
-                Text(report.periodLabel.uppercased()).font(.caption2.weight(.bold)).tracking(1.5)
-                Text("\(report.visitCount) 次用餐，\(report.restaurantCount) 家餐厅")
-                    .font(.title.weight(.heavy))
-                Text(report.tasteJourney.changeSummaries.first
-                     ?? report.favoriteRestaurant.map { "年度代表味道：\($0.name)" }
-                     ?? "真实到访组成了这一年的味觉地图。")
-                    .font(.subheadline.weight(.semibold)).opacity(0.92).lineLimit(2)
-            }
-            .foregroundStyle(.white).padding(20)
-        }
-        .frame(height: 390).clipShape(RoundedRectangle(cornerRadius: 32))
-        .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.14), radius: 20, y: 10)
-        .accessibilityIdentifier("annual-recap-hero")
+        LegacyAnalysisInfographicHero(
+            centerReference: report.representativeRestaurants.first?.imageReference ?? .asset(FoodHeroTheme.mixed.assetName),
+            fallbackAssetName: FoodHeroTheme.mixed.assetName,
+            centerLabel: report.favoriteRestaurant?.name ?? report.periodLabel,
+            callouts: annualHeroCallouts,
+            photosByID: photosByID,
+            accessibilityIdentifier: "annual-recap-hero"
+        )
+    }
+
+    private var annualHeroCallouts: [AnalysisCallout] {
+        let sufficiency = AnalysisSufficiencyPolicy.level(sampleCount: report.visitCount, emergingAt: 3, establishedAt: 12)
+        return [
+            AnalysisCallout(
+                id: "annual-hero-visits", icon: "🍽️", title: "全年到访",
+                value: "\(report.visitCount) 次", detail: report.periodLabel, tone: .brand,
+                sufficiency: sufficiency
+            ),
+            AnalysisCallout(
+                id: "annual-hero-restaurants", icon: "📍", title: "餐厅",
+                value: "\(report.restaurantCount) 家", detail: "按 Restaurant ID 去重", tone: .ingredientRed,
+                sufficiency: sufficiency
+            ),
+            AnalysisCallout(
+                id: "annual-hero-new", icon: "✨", title: "人生新店",
+                value: "\(report.newRestaurantCount) 家", detail: explorationNote, tone: .leafGreen,
+                sufficiency: sufficiency
+            ),
+            AnalysisCallout(
+                id: "annual-hero-spend", icon: "🧾", title: report.spend.displayState.label,
+                value: report.spend.recordedTotal.map { "¥\(Int($0.rounded()))" } ?? "未记录",
+                detail: spendCoverageNote, tone: .caramel, sufficiency: sufficiency
+            ),
+        ]
     }
 
     private var coreStatistics: some View {

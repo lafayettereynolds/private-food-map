@@ -302,30 +302,51 @@ struct MonthlyRecapAnalysisView: View {
     }
 
     private var hero: some View {
-        ZStack(alignment: .bottomLeading) {
-            MonthlyPhotoCollage(
-                stories: report.representativeRestaurants,
-                photosByID: photosByID
+        VStack(spacing: 8) {
+            LegacyAnalysisInfographicHero(
+                centerReference: report.representativeRestaurants.first?.imageReference ?? .asset(FoodHeroTheme.mixed.assetName),
+                fallbackAssetName: FoodHeroTheme.mixed.assetName,
+                centerLabel: report.highlight?.name ?? report.periodLabel,
+                callouts: monthlyHeroCallouts,
+                photosByID: photosByID,
+                accessibilityIdentifier: "monthly-recap-hero"
             )
-            LinearGradient(
-                colors: [.clear, TasteMapAnalysisTheme.ink.opacity(0.78)],
-                startPoint: .center, endPoint: .bottom
-            )
-            VStack(alignment: .leading, spacing: 7) {
-                Text(report.periodLabel.uppercased())
-                    .font(.caption2.weight(.bold)).tracking(1.5)
+            VStack(spacing: 3) {
                 Text("\(report.visitCount) 次用餐，\(report.restaurantCount) 家餐厅")
-                    .font(.title.weight(.heavy))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(TasteMapAnalysisTheme.ink)
                 Text(heroCaption)
-                    .font(.subheadline.weight(.semibold)).opacity(0.9)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
             }
-            .foregroundStyle(.white)
-            .padding(20)
+            .multilineTextAlignment(.center)
         }
-        .frame(height: 360)
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.13), radius: 18, y: 10)
-        .accessibilityIdentifier("monthly-recap-hero")
+    }
+
+    private var monthlyHeroCallouts: [AnalysisCallout] {
+        let sufficiency = AnalysisSufficiencyPolicy.level(sampleCount: report.visitCount)
+        return [
+            AnalysisCallout(
+                id: "monthly-hero-visits", icon: "🍽️", title: "去过次数",
+                value: "\(report.visitCount) 次", detail: "本月真实 Visit", tone: .brand,
+                sufficiency: sufficiency
+            ),
+            AnalysisCallout(
+                id: "monthly-hero-restaurants", icon: "📍", title: "餐厅",
+                value: "\(report.restaurantCount) 家", detail: "按 Restaurant ID 去重", tone: .ingredientRed,
+                sufficiency: sufficiency
+            ),
+            AnalysisCallout(
+                id: "monthly-hero-new", icon: "✨", title: "人生新店",
+                value: "\(report.newRestaurantCount) 家", detail: "第一次真实到访", tone: .leafGreen,
+                sufficiency: sufficiency
+            ),
+            AnalysisCallout(
+                id: "monthly-hero-spend", icon: "🧾", title: report.spend.displayState.label,
+                value: report.spend.recordedTotal.map { "¥\(Int($0.rounded()))" } ?? "未记录",
+                detail: spendCoverageNote, tone: .caramel, sufficiency: sufficiency
+            ),
+        ]
     }
 
     private var heroCaption: String {

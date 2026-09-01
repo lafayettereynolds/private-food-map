@@ -298,6 +298,13 @@ Canonical order: hero; city/status; name; address; compact actions; reference sp
 
 Rating circles mean: large circle = score, small circle = sample count. Nil never renders as zero.
 
+## Visit Editor
+
+- The approved editor is one continuous, compact dining diary. Restaurant context, core experience, ratings, dishes/photos, dining context, notes, and the final save action remain in one readable flow.
+- Optional choice dimensions are visible and directly tappable. They must not be hidden behind default disclosure/expand controls merely to shorten the page.
+- The visual restoration does not change field optionality, nil semantics, persistence, offline mutation behavior, photo lifecycle, or save validation.
+- The primary save action remains the current canonical save implementation; the Legacy reference governs layout density and information order, not data architecture.
+
 ## Profile and Lists
 
 - Compact identity header with avatar, name, joined date, edit, Premium, following and followers.
@@ -319,7 +326,23 @@ Restore the approved Web/history wheel. Candidate chips and segments represent t
 
 ## Premium
 
-Use the previously approved historical hamburger asset everywhere Premium identity appears. Do not replace it, use fake prices, or use emoji food rows in the formal Premium hero.
+The compact Premium identity badge used in Profile keeps the previously approved historical hamburger asset. The Paywall hero hamburger is a separate visual-approval region and is currently pending a Lafayette-approved redesign; no candidate may replace the formal Paywall hero before approval. Never use fake prices or emoji food rows in the formal Premium hero.
+
+## Human Visual Approval Freeze Registry
+
+Lafayette visual approval is region-based and convergent. A region marked KEEP is frozen; later candidate versions may change only regions marked `需要修改` or `重新设计`, unless Lafayette explicitly unfreezes a region.
+
+- **Visit Editor:** all regions approved. Legacy layout/density is frozen for restaurant context, core experience, ratings, dish/photo entry, dining context, and notes; the current canonical Save CTA is frozen.
+- **Dish / Photo Manager:** all approved regions use the Legacy layout base while preserving current photo lifecycle and business semantics.
+- **Public Profile / Social Hub:** all approved regions use the Legacy layout base while preserving current Social, moderation, sharing, and data-isolation capability.
+- **Lists / Public Lists:** all approved regions use the Legacy layout base while preserving current list models, visibility, sharing, and persistence.
+- **Settings / Data:** the current native-density structure is approved and frozen.
+- **Profile:** header, main statistics, core entries, Memories, Lists, Insights, and Settings are frozen according to the latest approval record. Social metrics remain pending redesign; the next candidate may change that region only.
+- **Analytics (Best Companion, Recommendation Source, Monthly, Annual):** no candidate is approved. All composition regions remain pending redesign; the approved Taste Profile infographic family is the governing reference.
+- **Share Posters (five types):** no candidate is approved. All composition regions remain pending redesign; candidates must remain native 9:16 renderers with the canonical privacy/footer contract.
+- **Premium Paywall:** all regions except the hamburger hero are frozen to the current FUSE composition. Only the hamburger hero remains pending redesign.
+
+Candidate code, screenshots, recommendations, and approval-tool selections do not become formal product decisions until Lafayette explicitly approves the relevant region or page.
 
 ## Historical Mistakes — Do Not Regress
 
@@ -336,7 +359,7 @@ Use the previously approved historical hamburger asset everywhere Premium identi
 - Do not render system emoji as formal Food/Dining artwork.
 - Do not let Food/Dining fallback cover an available lawful real Restaurant image.
 - Do not let Restaurant-facing pages invent independent image-source resolvers instead of the canonical policy and renderer.
-- Do not replace the approved Premium hamburger.
+- Do not replace the approved compact Profile Premium badge. Do not promote a Paywall hamburger redesign candidate before Lafayette approves it.
 - Do not treat “the function exists” as Product Parity PASS.
 - Do not patch one instance of a repeated UI problem without globally searching and correcting the shared pattern.
 - Do not add a page-local component when a shared component or canonical template already owns the behavior.

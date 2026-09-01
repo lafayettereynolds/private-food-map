@@ -145,7 +145,7 @@ struct DiningCompanionOverviewView: View {
                 restaurantsByID: restaurantsByID
             )
         } label: {
-            VStack(alignment: .leading, spacing: 15) {
+            VStack(alignment: .leading, spacing: 13) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("最常一起吃的人")
@@ -163,27 +163,22 @@ struct DiningCompanionOverviewView: View {
                         size: 76
                     )
                 }
+                LegacyAnalysisInfographicHero(
+                    centerReference: report.hero.imageReferences.first ?? .asset(report.hero.fallbackAssetName),
+                    fallbackAssetName: report.hero.fallbackAssetName,
+                    centerLabel: report.hero.primaryTheme,
+                    callouts: report.callouts,
+                    photosByID: photosByID,
+                    accessibilityIdentifier: "companion-analysis-legacy-infographic"
+                )
                 Text(report.summary)
                     .font(.headline)
                     .foregroundStyle(TasteMapAnalysisTheme.ink)
                     .multilineTextAlignment(.leading)
-                HStack(spacing: 10) {
-                    overviewMetric("\(report.sharedVisitCount)", "共同到访", .brand)
-                    overviewMetric("\(report.restaurantCount)", "共同餐厅", .ingredientRed)
-                    overviewMetric(report.topFoods.first?.label ?? "形成中", "常一起吃", .leafGreen)
-                }
+                Label("查看你和 TA 的完整餐桌故事", systemImage: "arrow.up.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(TasteMapAnalysisTheme.brand)
             }
-            .padding(20)
-            .background(
-                LinearGradient(
-                    colors: [TasteMapAnalysisTheme.card, TasteMapAnalysisTheme.brandSoft.opacity(0.72)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
-            )
-            .overlay { RoundedRectangle(cornerRadius: 28).stroke(TasteMapAnalysisTheme.hairline, lineWidth: 1.5) }
-            .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.08), radius: 16, y: 9)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("companion-analysis-lead")
