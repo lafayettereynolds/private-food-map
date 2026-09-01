@@ -205,6 +205,7 @@ private struct RestaurantBrowseCard: View {
         HStack(alignment: .top, spacing: 11) {
             RestaurantBrowsePhoto(
                 photo: item.photo,
+                publicPhotoID: item.publicPhotoID,
                 merchantImageURL: item.merchantImageURL,
                 restaurantID: item.restaurant.id
             )
@@ -342,48 +343,23 @@ private struct RestaurantBrowseCard: View {
 
 struct RestaurantBrowsePhoto: View {
     let photo: PhotoAsset?
+    var publicPhotoID: String? = nil
     let merchantImageURL: URL?
     let restaurantID: UUID
 
     var body: some View {
-        if let photo {
-            PhotoAssetImageView(photo: photo, variant: .thumbnail)
-        } else if let merchantImageURL {
-            AsyncImage(url: merchantImageURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                        .accessibilityLabel("餐厅商家图片")
-                        .accessibilityIdentifier("restaurant-provider-image-\(restaurantID.uuidString)")
-                case .empty:
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .failure:
-                    fallback
-                @unknown default:
-                    fallback
-                }
-            }
-        } else {
-            fallback
-        }
-    }
-
-    private var fallback: some View {
-        ZStack {
-            LinearGradient(
-                colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surfaceSubtle],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            FoodDiningVisualIcon(
-                kind: .genericDining,
-                usage: .decorative,
-                size: 38
-            )
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("餐厅暂无照片")
-        .accessibilityIdentifier("restaurant-photo-fallback-\(restaurantID.uuidString)")
+        TasteMapRestaurantImage(
+            resolution: RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: photo?.id,
+                publicOrCachedPhotoID: publicPhotoID,
+                providerMerchantImageURL: merchantImageURL
+            ),
+            photosByID: photo.map { [$0.id: $0] } ?? [:],
+            semanticID: restaurantID.uuidString,
+            fallbackBackgroundColor: TasteMapCoreTheme.brandSoft,
+            fallbackIconSize: 38,
+            accessibilityLabel: "餐厅图片"
+        )
     }
 }
 

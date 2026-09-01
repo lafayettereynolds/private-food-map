@@ -893,13 +893,24 @@ enum TasteMapUITestFixtures {
         )
         let itemCount = usesVisualQA ? 12 : 4
         let items = (0..<itemCount).map { index -> DiscoveryCardV1 in
+            let publicPhoto = usesVisualQA && index < 4
+                ? DiscoveryPhotoProjectionV1(
+                    photoId: String(format: "00000000-0000-4000-8000-%012d", 8_000 + index),
+                    variant: .thumbnail
+                )
+                : nil
+            let providerImage = usesVisualQA && (4..<8).contains(index)
+                ? "https://visual-qa.invalid/discovery/\(index).jpg"
+                : nil
             let projection = DiscoveryRestaurantProjectionV1(
                 globalKey: "place:p3c-ui-\(index)",
                 placeIdentities: [.init(provider: .appleMaps, externalId: "apple-p3c-ui-\(index)", isPrimary: true)],
                 name: index == 0 ? "P3-C 发现寿司店" : "P3-C 真实餐厅 \(index + 1)",
                 address: "西湖区发现路 \(index + 1) 号", city: "杭州",
                 latitude: 30.25, longitude: 120.16, tags: ["日料"], pricePerPerson: 128,
-                merchantImageUrl: nil, markerEmoji: index == 0 ? "🍣" : "🍲", photo: nil
+                merchantImageUrl: providerImage,
+                markerEmoji: index == 0 ? "🍣" : "🍲",
+                photo: publicPhoto
             )
             let reason: DiscoveryReasonV1
             switch mode {
@@ -954,14 +965,23 @@ enum TasteMapUITestFixtures {
         let items = (0..<itemCount).map { index -> PublicContentItemV1 in
             let user = users[index % users.count]
             let eventAt = formatter.string(from: Date(timeIntervalSince1970: 1_777_500_000 - Double(index * 3_600)))
+            let restaurantPhoto = usesVisualQA && index < 4
+                ? PublicContentPhotoV1(
+                    photoId: String(format: "00000000-0000-4000-8000-%012d", 9_000 + index),
+                    variant: .thumbnail
+                )
+                : nil
+            let providerImage = usesVisualQA && (4..<8).contains(index)
+                ? "https://visual-qa.invalid/community/\(index).jpg"
+                : nil
             let restaurant = PublicContentRestaurantV1(
                 globalKey: "place:p3d-ui-\(index)",
                 placeIdentities: [.init(provider: .appleMaps, externalId: "apple-p3d-ui-\(index)", isPrimary: true)],
                 name: index == 0 ? "云边小馆·湖滨店" : "社区真实餐厅 \(index + 1)",
                 address: "湖滨路 \(index + 18) 号", city: index.isMultiple(of: 2) ? "杭州" : "上海",
                 latitude: 30.25, longitude: 120.16, tags: ["本帮菜", "适合朋友聚餐"],
-                pricePerPerson: 136, merchantImageUrl: nil,
-                markerEmoji: index.isMultiple(of: 2) ? "🍲" : "🍣", photo: nil
+                pricePerPerson: 136, merchantImageUrl: providerImage,
+                markerEmoji: index.isMultiple(of: 2) ? "🍲" : "🍣", photo: restaurantPhoto
             )
             let photos: [PublicContentPhotoV1] = index == 0
                 ? (0..<3).map {

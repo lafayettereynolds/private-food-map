@@ -233,7 +233,7 @@ struct RecommendationSourcePosterView: View {
 
     private func image(for reference: AnalysisImageReference) -> UIImage? {
         switch reference {
-        case .photo(let id): resolvedImages[id]
+        case .photo(let id, _): resolvedImages[id]
         case .provider: reference.resolutionKey.flatMap { resolvedImages[$0] }
         case .asset(let name): UIImage(named: name)
         case .none: nil

@@ -353,7 +353,7 @@ enum RecommendationSourceAnalyzer {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id.uuidString < $1.id.uuidString
         }.first
-        return photo.map { .photo($0.id) }
+        return photo.map { .photo($0.id, providerFallback: merchantImageURL) }
             ?? merchantImageURL.map(AnalysisImageReference.provider)
             ?? .none
     }

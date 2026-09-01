@@ -241,7 +241,9 @@ struct AnalysisHeroMedia: View {
 
     private var visibleReferences: [AnalysisImageReference] {
         let valid = hero.imageReferences.filter { reference in
-            if case .photo(let id) = reference { return photosByID[id] != nil }
+            if case .photo(let id, let providerFallback) = reference {
+                return photosByID[id] != nil || providerFallback != nil
+            }
             if case .none = reference { return false }
             return true
         }
@@ -283,20 +285,18 @@ struct AnalysisHeroMedia: View {
     @ViewBuilder
     private func heroImage(_ reference: AnalysisImageReference) -> some View {
         switch reference {
-        case .photo(let id):
-            if let photo = photosByID[id] {
-                PhotoAssetImageView(photo: photo, variant: .display)
-            } else {
-                fallback
-            }
-        case .provider(let url):
-            AsyncImage(url: url) { phase in
-                if case .success(let image) = phase {
-                    image.resizable().scaledToFill()
-                } else {
-                    fallback
-                }
-            }
+        case .photo, .provider:
+            if let resolution = reference.restaurantResolution {
+                TasteMapRestaurantImage(
+                    resolution: resolution,
+                    photosByID: photosByID,
+                    semanticID: reference.resolutionKey?.uuidString ?? hero.primaryTheme,
+                    variant: .display,
+                    fallbackBackgroundColor: TasteMapAnalysisTheme.creamSoft,
+                    fallbackIconSize: size * 0.25,
+                    accessibilityLabel: "分析餐厅图片"
+                )
+            } else { fallback }
         case .asset(let name):
             Image(name).resizable().scaledToFit().padding(size * 0.025)
         case .none:
@@ -325,20 +325,17 @@ struct RestaurantEvidenceImage: View {
     var body: some View {
         Group {
             switch reference {
-            case .photo(let id):
-                if let photo = photosByID[id] {
-                    PhotoAssetImageView(photo: photo, variant: .thumbnail)
-                } else {
-                    missingImage
-                }
-            case .provider(let url):
-                AsyncImage(url: url) { phase in
-                    if case .success(let image) = phase {
-                        image.resizable().scaledToFill()
-                    } else {
-                        missingImage
-                    }
-                }
+            case .photo, .provider:
+                if let resolution = reference.restaurantResolution {
+                    TasteMapRestaurantImage(
+                        resolution: resolution,
+                        photosByID: photosByID,
+                        semanticID: reference.resolutionKey?.uuidString ?? "analysis-evidence",
+                        fallbackBackgroundColor: TasteMapAnalysisTheme.creamSoft,
+                        fallbackIconSize: 42,
+                        accessibilityLabel: "代表餐厅图片"
+                    )
+                } else { missingImage }
             case .asset(let name):
                 Image(name).resizable().scaledToFill()
             case .none:

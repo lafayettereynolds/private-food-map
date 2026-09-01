@@ -360,7 +360,7 @@ enum DiningCompanionAnalyzer {
                     sharedVisitIDs: sharedVisitIDs,
                     dishes: dishes,
                     associations: associations
-                ).map { .photo($0.id) }
+                ).map { .photo($0.id, providerFallback: restaurant.merchantImageURL) }
                     ?? restaurant.merchantImageURL.map(AnalysisImageReference.provider)
                     ?? .none
             )
@@ -557,7 +557,7 @@ enum DiningCompanionAnalyzer {
                 detail: detail,
                 averageRating: rating,
                 visitCount: visits.count,
-                imageReference: photo.map { .photo($0.id) }
+                imageReference: photo.map { .photo($0.id, providerFallback: restaurant.merchantImageURL) }
                     ?? restaurant.merchantImageURL.map(AnalysisImageReference.provider)
                     ?? .none
             )
@@ -636,7 +636,7 @@ enum DiningCompanionAnalyzer {
                     city: restaurant.city,
                     reason: reason,
                     score: score,
-                    imageReference: photo.map { .photo($0.id) }
+                    imageReference: photo.map { .photo($0.id, providerFallback: restaurant.merchantImageURL) }
                         ?? restaurant.merchantImageURL.map(AnalysisImageReference.provider)
                         ?? .none
                 ),

@@ -100,48 +100,40 @@ struct RestaurantStatusBadge: View {
 }
 
 struct RestaurantPhotoGallerySection: View {
+    let restaurantID: UUID
     let photos: [PhotoAsset]
+    let publicPhotoID: String?
     let merchantImageURL: URL?
     let markerEmoji: String
+    var photoAPI: (any PhotoBinaryAPI)? = nil
     let onSelect: (PhotoAsset) -> Void
     let onRetry: (PhotoAsset) -> Void
     var showsThumbnails = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if photos.isEmpty {
-                RestaurantPhotoFallback(
-                    merchantImageURL: merchantImageURL,
-                    markerEmoji: markerEmoji
-                )
-            } else {
-                if let primaryPhoto = photos.first {
-                    Button { onSelect(primaryPhoto) } label: {
-                        PhotoAssetImageView(photo: primaryPhoto)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 216)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .overlay(alignment: .bottomLeading) {
-                                PhotoUploadStatusBadge(photo: primaryPhoto)
-                                    .padding(8)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("restaurant-photo-\(primaryPhoto.id.uuidString)")
-                    .overlay(alignment: .bottomTrailing) {
-                        if primaryPhoto.uploadState == .failed {
-                            Button("重试") { onRetry(primaryPhoto) }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                                .padding(8)
-                        }
+            if let primaryPhoto = photos.first {
+                Button { onSelect(primaryPhoto) } label: {
+                    hero(primaryPhoto: primaryPhoto)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("restaurant-photo-\(primaryPhoto.id.uuidString)")
+                .overlay(alignment: .bottomTrailing) {
+                    if primaryPhoto.uploadState == .failed {
+                        Button("重试") { onRetry(primaryPhoto) }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .padding(8)
                     }
                 }
+            } else {
+                hero(primaryPhoto: nil)
+            }
 
-                if showsThumbnails, photos.count > 1 {
-                    ScrollView(.horizontal) {
-                        LazyHStack(spacing: 8) {
-                            ForEach(Array(photos.dropFirst())) { photo in
+            if showsThumbnails, photos.count > 1 {
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 8) {
+                        ForEach(Array(photos.dropFirst())) { photo in
                             Button { onSelect(photo) } label: {
                                 PhotoAssetImageView(photo: photo)
                                     .frame(width: 92, height: 68)
@@ -162,15 +154,14 @@ struct RestaurantPhotoGallerySection: View {
                                     }
                                 }
                             }
-                        }
                     }
-                    .scrollIndicators(.hidden)
                 }
+                .scrollIndicators(.hidden)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .topTrailing) {
-            Text(photos.isEmpty ? (merchantImageURL == nil ? "餐厅图标" : "商家图片") : "\(photos.count) 张")
+            Text(imageCountLabel)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 9)
@@ -180,6 +171,38 @@ struct RestaurantPhotoGallerySection: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-photo-gallery")
+    }
+
+    private var imageCountLabel: String {
+        if !photos.isEmpty { return "\(photos.count) 张" }
+        if publicPhotoID != nil { return "公开图片" }
+        return merchantImageURL == nil ? "餐厅图标" : "商家图片"
+    }
+
+    private func hero(primaryPhoto: PhotoAsset?) -> some View {
+        TasteMapRestaurantImage(
+            resolution: RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: primaryPhoto?.id,
+                publicOrCachedPhotoID: publicPhotoID,
+                providerMerchantImageURL: merchantImageURL
+            ),
+            photosByID: Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) }),
+            photoAPI: photoAPI,
+            semanticID: restaurantID.uuidString,
+            variant: .display,
+            fallbackKind: FoodDiningVisualLibrary.kind(legacySymbol: markerEmoji),
+            fallbackBackgroundColor: Color.accentColor.opacity(0.07),
+            fallbackIconSize: 62,
+            accessibilityLabel: "餐厅主图"
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 216)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(alignment: .bottomLeading) {
+            if let primaryPhoto {
+                PhotoUploadStatusBadge(photo: primaryPhoto).padding(8)
+            }
+        }
     }
 }
 
@@ -331,58 +354,6 @@ enum RestaurantDetailSectionOrderContract {
         "restaurant-detail-statistics",
         "restaurant-visit-history",
     ]
-}
-
-private struct RestaurantPhotoFallback: View {
-    let merchantImageURL: URL?
-    let markerEmoji: String
-
-    var body: some View {
-        Group {
-            if let merchantImageURL {
-                AsyncImage(url: merchantImageURL) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image.resizable().scaledToFill()
-                    case .empty:
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    case .failure:
-                        brandFallback
-                    @unknown default:
-                        brandFallback
-                    }
-                }
-                .accessibilityLabel("餐厅商家图片")
-            } else {
-                brandFallback
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 216)
-        .background(Color.accentColor.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .clipped()
-        .accessibilityIdentifier(merchantImageURL == nil ? "restaurant-brand-fallback" : "restaurant-merchant-image")
-    }
-
-    private var brandFallback: some View {
-        VStack(spacing: 10) {
-            FoodDiningVisualIcon(
-                kind: FoodDiningVisualLibrary.kind(legacySymbol: markerEmoji),
-                usage: .decorative,
-                size: 62,
-                foregroundColor: TasteMapCoreTheme.brandDeep,
-                backgroundColor: TasteMapCoreTheme.brandSoft
-            )
-            Text("Taste Map")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("记录到访照片后，会优先显示你的照片")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 }
 
 struct RestaurantBusinessInformationSection: View {

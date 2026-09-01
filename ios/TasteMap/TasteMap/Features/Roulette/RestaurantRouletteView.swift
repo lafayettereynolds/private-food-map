@@ -857,47 +857,21 @@ private struct RouletteRestaurantImage: View {
     let variant: PhotoBinaryVariant
     let fallbackIconSize: CGFloat
 
-    private var localPhoto: PhotoAsset? {
-        guard let photoID = candidate.photoID else { return nil }
-        return photos.first {
-            $0.id == photoID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
-        }
-    }
-
     var body: some View {
-        if let localPhoto {
-            PhotoAssetImageView(photo: localPhoto, variant: variant)
-        } else if let providerURL = candidate.merchantImageURL {
-            AsyncImage(url: providerURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                        .accessibilityLabel("\(candidate.displayName)商家图片")
-                case .empty:
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .failure:
-                    fallback
-                @unknown default:
-                    fallback
-                }
-            }
-        } else {
-            fallback
-        }
-    }
-
-    private var fallback: some View {
-        ZStack {
-            Color.white.opacity(0.76)
-            FoodDiningVisualIcon(
-                kind: .genericDining,
-                usage: .decorative,
-                size: max(24, fallbackIconSize * 2.1),
-                foregroundColor: RouletteTheme.brandDeep,
-                backgroundColor: .white.opacity(0.72)
-            )
-        }
-        .accessibilityLabel("\(candidate.displayName)暂无真实图片")
+        TasteMapRestaurantImage(
+            resolution: RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: candidate.photoID,
+                publicOrCachedPhotoID: candidate.publicPhotoID,
+                providerMerchantImageURL: candidate.merchantImageURL
+            ),
+            photosByID: Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) }),
+            semanticID: candidate.globalKey,
+            variant: variant,
+            fallbackForegroundColor: RouletteTheme.brandDeep,
+            fallbackBackgroundColor: .white.opacity(0.76),
+            fallbackIconSize: max(24, fallbackIconSize * 2.1),
+            accessibilityLabel: "\(candidate.displayName)餐厅图片"
+        )
     }
 }
 

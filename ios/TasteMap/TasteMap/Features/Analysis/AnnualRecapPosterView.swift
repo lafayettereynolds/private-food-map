@@ -211,7 +211,7 @@ struct AnnualRecapPosterView: View {
     @ViewBuilder
     private func posterImage(_ reference: AnalysisImageReference) -> some View {
         switch reference {
-        case .photo(let id):
+        case .photo(let id, _):
             if let image = resolvedImages[id] { Image(uiImage: image).resizable().scaledToFill() }
             else { posterFallback }
         case .provider:

@@ -3230,6 +3230,99 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testLegacyFusion02CanonicalRestaurantImagesAcrossMapListAndDetail() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 10))
+        keepScreenshot(named: "Legacy Fusion 02 Map Real Restaurant Images", of: app)
+
+        let wantToGo = app.buttons["map-scope-wantToGo"]
+        XCTAssertTrue(wantToGo.waitForExistence(timeout: 5))
+        wantToGo.tap()
+        XCTAssertTrue(wantToGo.isSelected)
+        keepScreenshot(named: "Legacy Fusion 02 Map Honest Fallback", of: app)
+
+        let visited = app.buttons["map-scope-visited"]
+        visited.tap()
+        XCTAssertTrue(visited.isSelected)
+        app.buttons["map-header-view-list"].tap()
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["map-home-title"].label, "我的列表")
+        XCTAssertTrue(app.textFields["restaurant-list-search-field"].waitForExistence(timeout: 5))
+        let realImages = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH 'restaurant-image-user-'")
+        )
+        XCTAssertGreaterThan(realImages.count, 0)
+        keepScreenshot(named: "Legacy Fusion 02 My List Images", of: app)
+
+        let firstRow = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'restaurant-list-item-'")
+        ).firstMatch
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
+        firstRow.tap()
+        XCTAssertTrue(app.navigationBars["餐厅详情"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-photo-gallery"].waitForExistence(timeout: 8))
+        XCTAssertGreaterThan(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH 'restaurant-image-user-'")
+            ).count,
+            0
+        )
+        keepScreenshot(named: "Legacy Fusion 02 Restaurant Detail Image", of: app)
+    }
+
+    @MainActor
+    func testLegacyFusion02CanonicalRestaurantImagesAcrossDiscoveryRouletteAndAnalytics() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launch()
+
+        app.buttons["app-tab-discover"].tap()
+        XCTAssertTrue(app.staticTexts["discovery-header"].waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH 'restaurant-image-'")
+            ).count,
+            0
+        )
+        keepScreenshot(named: "Legacy Fusion 02 Discovery Images", of: app)
+
+        app.buttons["app-tab-profile"].tap()
+        let roulette = app.buttons["profile-restaurant-roulette-entry"]
+        scrollUntilVisible(roulette, in: app)
+        XCTAssertTrue(roulette.waitForExistence(timeout: 8))
+        roulette.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-roulette-screen"].waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH 'restaurant-image-'")
+            ).count,
+            0
+        )
+        keepScreenshot(named: "Legacy Fusion 02 Roulette Images", of: app)
+
+        XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        let tasteProfile = app.buttons["profile-taste-analysis-entry"]
+        scrollUntilVisible(tasteProfile, in: app)
+        XCTAssertTrue(tasteProfile.waitForExistence(timeout: 8))
+        tasteProfile.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["taste-profile-analysis-page"].waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH 'restaurant-image-'")
+            ).count,
+            0
+        )
+        keepScreenshot(named: "Legacy Fusion 02 Analytics Restaurant Images", of: app)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

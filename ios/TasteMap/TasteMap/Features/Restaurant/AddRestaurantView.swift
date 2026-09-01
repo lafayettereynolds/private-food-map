@@ -499,21 +499,18 @@ private struct RestaurantCandidateHero: View {
     let candidate: RestaurantCandidate
 
     var body: some View {
-        Group {
-            if let photoURL = candidate.photoURL {
-                AsyncImage(url: photoURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else if phase.error != nil {
-                        fallback
-                    } else {
-                        ProgressView()
-                    }
-                }
-            } else {
-                fallback
-            }
-        }
+        TasteMapRestaurantImage(
+            resolution: RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: nil,
+                providerMerchantImageURL: candidate.photoURL
+            ),
+            semanticID: candidate.id.uuidString,
+            variant: .display,
+            fallbackForegroundColor: AcquisitionPalette.brandDeep,
+            fallbackBackgroundColor: AcquisitionPalette.brandSoft,
+            fallbackIconSize: 62,
+            accessibilityLabel: "\(candidate.name)餐厅图片"
+        )
         .frame(maxWidth: .infinity)
         .frame(height: 216)
         .background(AcquisitionPalette.brandSoft)
@@ -522,21 +519,6 @@ private struct RestaurantCandidateHero: View {
         .accessibilityIdentifier("restaurant-photo-gallery")
     }
 
-    private var fallback: some View {
-        VStack(spacing: 10) {
-            FoodDiningVisualIcon(
-                kind: .genericDining,
-                usage: .decorative,
-                size: 62,
-                foregroundColor: AcquisitionPalette.brandDeep,
-                backgroundColor: AcquisitionPalette.brandSoft
-            )
-            Text("先确认餐厅，再开始记录")
-                .font(.headline)
-                .foregroundStyle(AcquisitionPalette.muted)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 }
 
 private struct RestaurantCandidateBusinessSection: View {
@@ -839,17 +821,17 @@ private struct RestaurantAcquisitionCandidateRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Group {
-                if let photoURL = candidate.photoURL {
-                    AsyncImage(url: photoURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        candidatePlaceholder
-                    }
-                } else {
-                    candidatePlaceholder
-                }
-            }
+            TasteMapRestaurantImage(
+                resolution: RestaurantImagePriorityPolicy.resolution(
+                    localUserPhotoID: nil,
+                    providerMerchantImageURL: candidate.photoURL
+                ),
+                semanticID: candidate.id.uuidString,
+                fallbackForegroundColor: AcquisitionPalette.brand,
+                fallbackBackgroundColor: AcquisitionPalette.brandSoft,
+                fallbackIconSize: 28,
+                accessibilityLabel: "\(candidate.name)餐厅图片"
+            )
             .frame(width: 44, height: 44)
             .clipShape(RoundedRectangle(cornerRadius: 11))
 
@@ -906,14 +888,6 @@ private struct RestaurantAcquisitionCandidateRow: View {
         .overlay { RoundedRectangle(cornerRadius: 12).stroke(AcquisitionPalette.border) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("restaurant-candidate-\(candidate.id.uuidString)")
-    }
-
-    private var candidatePlaceholder: some View {
-        ZStack {
-            AcquisitionPalette.brandSoft
-            Image(systemName: "fork.knife")
-                .foregroundStyle(AcquisitionPalette.brand)
-        }
     }
 
     private static func distanceText(_ meters: Double) -> String {

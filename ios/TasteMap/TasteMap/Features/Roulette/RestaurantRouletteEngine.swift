@@ -33,10 +33,45 @@ nonisolated struct RouletteCandidate: Identifiable, Equatable, Hashable, Sendabl
     let visitCount: Int
     let latestVisitAt: Date?
     let photoID: UUID?
+    let publicPhotoID: String?
     let merchantImageURL: URL?
     let categories: [String]
     let markerEmoji: String
     let updatedAt: Date
+
+    init(
+        restaurantID: UUID,
+        globalKey: String,
+        displayName: String,
+        address: String,
+        city: String,
+        status: RestaurantStatus,
+        averageRating: Double?,
+        visitCount: Int,
+        latestVisitAt: Date?,
+        photoID: UUID?,
+        publicPhotoID: String? = nil,
+        merchantImageURL: URL?,
+        categories: [String],
+        markerEmoji: String,
+        updatedAt: Date
+    ) {
+        self.restaurantID = restaurantID
+        self.globalKey = globalKey
+        self.displayName = displayName
+        self.address = address
+        self.city = city
+        self.status = status
+        self.averageRating = averageRating
+        self.visitCount = visitCount
+        self.latestVisitAt = latestVisitAt
+        self.photoID = photoID
+        self.publicPhotoID = publicPhotoID
+        self.merchantImageURL = merchantImageURL
+        self.categories = categories
+        self.markerEmoji = markerEmoji
+        self.updatedAt = updatedAt
+    }
 
     var id: String { globalKey }
 
@@ -63,11 +98,52 @@ nonisolated struct RouletteRestaurantRecord: Equatable, Sendable {
     let visitCount: Int
     let latestVisitAt: Date?
     let photoID: UUID?
+    let publicPhotoID: String?
     let merchantImageURL: URL?
     let categories: [String]
     let markerEmoji: String
     let latitude: Double
     let longitude: Double
+
+    init(
+        restaurantID: UUID,
+        globalKey: String,
+        displayName: String,
+        address: String,
+        city: String,
+        status: RestaurantStatus,
+        updatedAt: Date,
+        deletedAt: Date?,
+        averageRating: Double?,
+        visitCount: Int,
+        latestVisitAt: Date?,
+        photoID: UUID?,
+        publicPhotoID: String? = nil,
+        merchantImageURL: URL?,
+        categories: [String],
+        markerEmoji: String,
+        latitude: Double,
+        longitude: Double
+    ) {
+        self.restaurantID = restaurantID
+        self.globalKey = globalKey
+        self.displayName = displayName
+        self.address = address
+        self.city = city
+        self.status = status
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+        self.averageRating = averageRating
+        self.visitCount = visitCount
+        self.latestVisitAt = latestVisitAt
+        self.photoID = photoID
+        self.publicPhotoID = publicPhotoID
+        self.merchantImageURL = merchantImageURL
+        self.categories = categories
+        self.markerEmoji = markerEmoji
+        self.latitude = latitude
+        self.longitude = longitude
+    }
 }
 
 nonisolated enum RestaurantRouletteEngine {
@@ -108,6 +184,7 @@ nonisolated enum RestaurantRouletteEngine {
                 visitCount: record.visitCount,
                 latestVisitAt: record.latestVisitAt,
                 photoID: record.photoID,
+                publicPhotoID: record.publicPhotoID,
                 merchantImageURL: record.merchantImageURL,
                 categories: stableUnique(record.categories),
                 markerEmoji: record.markerEmoji.isEmpty ? "🍽️" : record.markerEmoji,
@@ -342,6 +419,7 @@ extension RouletteRestaurantRecord {
                 visitCount: restaurantVisits.count,
                 latestVisitAt: restaurantVisits.map(\.visitedAt).max(),
                 photoID: restaurantPhotos.first?.id,
+                publicPhotoID: contract?.markerPhotoId,
                 merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
                     contract?.merchantImageUrl
                 ),

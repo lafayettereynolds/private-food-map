@@ -46,6 +46,7 @@ struct RestaurantBrowseItem: Identifiable {
     let latestVisitAt: Date?
     let averageRating: Double?
     let photo: PhotoAsset?
+    let publicPhotoID: String?
     let merchantImageURL: URL?
     let visitFacets: [PersonalVisitFilterFacet]
     /// Decoded once while the shared Map/List projection is built. Filters
@@ -61,6 +62,7 @@ struct TasteFootprintItem: Identifiable {
     let visit: Visit
     let restaurant: Restaurant
     let photo: PhotoAsset?
+    let publicPhotoID: String?
     let merchantImageURL: URL?
     let dishNames: [String]
     let companionNames: [String]
@@ -142,8 +144,7 @@ enum RestaurantBrowseBuilder {
                     photos: (photosByRestaurant[restaurant.id] ?? []).map(\.1),
                     dishesByVisit: dishesByVisit,
                     companionDirectory: companionNamesByID,
-                    sourceDirectory: sourceNamesByID,
-                    preferMarker: false
+                    sourceDirectory: sourceNamesByID
                 )
             }
             .sorted(by: visitedOrder)
@@ -157,8 +158,7 @@ enum RestaurantBrowseBuilder {
                     photos: (photosByRestaurant[restaurant.id] ?? []).map(\.1),
                     dishesByVisit: dishesByVisit,
                     companionDirectory: companionNamesByID,
-                    sourceDirectory: sourceNamesByID,
-                    preferMarker: true
+                    sourceDirectory: sourceNamesByID
                 )
             }
             .sorted(by: wantToGoOrder)
@@ -167,9 +167,9 @@ enum RestaurantBrowseBuilder {
             .sorted(by: visitOrder)
             .compactMap { visit -> TasteFootprintItem? in
                 guard let restaurant = restaurantByID[visit.restaurantId] else { return nil }
-                let photo = preferredPhoto(
-                    from: (photosByVisit[visit.id] ?? []).map(\.1),
-                    preferMarker: false
+                let photo = RestaurantImagePhotoSelectionPolicy.preferredPhoto(
+                    restaurantID: restaurant.id,
+                    photos: (photosByVisit[visit.id] ?? []).map(\.1)
                 )
                 let names = (dishesByVisit[visit.id] ?? [])
                     .sorted { left, right in
@@ -182,6 +182,9 @@ enum RestaurantBrowseBuilder {
                     visit: visit,
                     restaurant: restaurant,
                     photo: photo,
+                    publicPhotoID: restaurant.remoteRecordData.flatMap {
+                        try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+                    }?.markerPhotoId,
                     merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
                         restaurant.remoteRecordData.flatMap {
                             try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
@@ -208,8 +211,7 @@ enum RestaurantBrowseBuilder {
         photos: [PhotoAsset],
         dishesByVisit: [UUID: [Dish]],
         companionDirectory: [String: String],
-        sourceDirectory: [String: String],
-        preferMarker: Bool
+        sourceDirectory: [String: String]
     ) -> RestaurantBrowseItem {
         let ratings = visits.compactMap(\.rating)
         let restaurantRecord = restaurant.remoteRecordData.flatMap {
@@ -231,7 +233,12 @@ enum RestaurantBrowseBuilder {
             visitCount: visits.count,
             latestVisitAt: visits.map(\.visitedAt).max(),
             averageRating: ratings.isEmpty ? nil : ratings.reduce(0, +) / Double(ratings.count),
-            photo: preferredPhoto(from: photos, preferMarker: preferMarker),
+            photo: RestaurantImagePhotoSelectionPolicy.preferredPhoto(
+                restaurantID: restaurant.id,
+                photos: photos,
+                referencedPhotoID: restaurantRecord?.markerPhotoId
+            ),
+            publicPhotoID: restaurantRecord?.markerPhotoId,
             merchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
                 restaurantRecord?.merchantImageUrl
             ),
@@ -290,20 +297,6 @@ enum RestaurantBrowseBuilder {
             companionOptions: companionOptions,
             sourceOptions: sourceOptions
         )
-    }
-
-    private static func preferredPhoto(
-        from photos: [PhotoAsset],
-        preferMarker: Bool
-    ) -> PhotoAsset? {
-        photos.min { left, right in
-            if preferMarker, left.kind != right.kind {
-                return left.kind == .restaurantMarker
-            }
-            if left.createdAt != right.createdAt { return left.createdAt > right.createdAt }
-            if left.sortOrder != right.sortOrder { return left.sortOrder < right.sortOrder }
-            return left.id.uuidString < right.id.uuidString
-        }
     }
 
     private static func visitedOrder(_ left: RestaurantBrowseItem, _ right: RestaurantBrowseItem) -> Bool {

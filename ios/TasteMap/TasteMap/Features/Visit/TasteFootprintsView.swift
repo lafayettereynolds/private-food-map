@@ -95,6 +95,7 @@ private struct TasteFootprintRow: View {
                     header
                     RestaurantBrowsePhoto(
                         photo: item.photo,
+                        publicPhotoID: item.publicPhotoID,
                         merchantImageURL: item.merchantImageURL,
                         restaurantID: item.restaurant.id
                     )

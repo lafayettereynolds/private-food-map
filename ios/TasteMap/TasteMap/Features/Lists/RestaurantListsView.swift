@@ -898,7 +898,12 @@ struct RestaurantListCoverGrid: View {
 
     var body: some View {
         if let customPhotoID {
-            RestaurantListPhotoIDImage(photoID: customPhotoID, fallbackEmoji: "🍽️", photoAPI: photoAPI)
+            RestaurantListPhotoIDImage(
+                photoID: customPhotoID,
+                fallbackEmoji: "🍽️",
+                semanticID: "list-cover-\(customPhotoID)",
+                photoAPI: photoAPI
+            )
                 .clipShape(RoundedRectangle(cornerRadius: 18))
         } else if places.isEmpty {
             LinearGradient(colors: [Color.accentColor.opacity(0.16), .orange.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -930,7 +935,13 @@ struct PublicListPreviewGrid: View {
             let rows = values.count <= 2 ? 1 : 2
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: columns), spacing: 2) {
                 ForEach(Array(values.prefix(4))) { value in
-                    RestaurantListPhotoIDImage(photoID: value.photoId, merchantImageURL: value.merchantImageUrl, fallbackEmoji: value.markerEmoji, photoAPI: photoAPI)
+                    RestaurantListPhotoIDImage(
+                        photoID: value.photoId,
+                        merchantImageURL: value.merchantImageUrl,
+                        fallbackEmoji: value.markerEmoji,
+                        semanticID: value.globalKey,
+                        photoAPI: photoAPI
+                    )
                         .frame(height: (proxy.size.height - CGFloat(rows - 1) * 2) / CGFloat(rows))
                 }
             }
@@ -943,7 +954,13 @@ struct RestaurantListPlaceImage: View {
     let place: RestaurantListPlaceContractV1
     let photoAPI: (any PhotoBinaryAPI)?
     var body: some View {
-        RestaurantListPhotoIDImage(photoID: place.markerPhotoId, merchantImageURL: place.merchantImageUrl, fallbackEmoji: place.markerEmoji, photoAPI: photoAPI)
+        RestaurantListPhotoIDImage(
+            photoID: place.markerPhotoId,
+            merchantImageURL: place.merchantImageUrl,
+            fallbackEmoji: place.markerEmoji,
+            semanticID: place.globalKey,
+            photoAPI: photoAPI
+        )
     }
 }
 
@@ -951,38 +968,25 @@ private struct RestaurantListPhotoIDImage: View {
     let photoID: String?
     var merchantImageURL: String? = nil
     let fallbackEmoji: String
+    let semanticID: String
     let photoAPI: (any PhotoBinaryAPI)?
-    @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else if let merchantImageURL, let url = URL(string: merchantImageURL) {
-                AsyncImage(url: url) { phase in
-                    if let value = phase.image { value.resizable().scaledToFill() } else { placeholder }
-                }
-            } else { placeholder }
-        }
-        .clipped()
-        .task(id: photoID) {
-            guard let photoID, let id = UUID(uuidString: photoID), let photoAPI else { return }
-            if let data = try? await photoAPI.download(photoID: id, variant: .thumbnail) { image = UIImage(data: data) }
-        }
-    }
-
-    private var placeholder: some View {
-        LinearGradient(colors: [Color.accentColor.opacity(0.18), .orange.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            .overlay {
-                FoodDiningVisualIcon(
-                    kind: FoodDiningVisualLibrary.kind(
-                        legacySymbol: fallbackEmoji.isEmpty ? nil : fallbackEmoji
-                    ),
-                    usage: .decorative,
-                    size: 42,
-                    foregroundColor: TasteMapCoreTheme.brandDeep,
-                    backgroundColor: TasteMapCoreTheme.surface.opacity(0.8)
-                )
-            }
+        TasteMapRestaurantImage(
+            resolution: RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: nil,
+                publicOrCachedPhotoID: photoID,
+                providerMerchantImageURL: merchantImageURL
+            ),
+            photoAPI: photoAPI,
+            semanticID: semanticID,
+            fallbackKind: FoodDiningVisualLibrary.kind(
+                legacySymbol: fallbackEmoji.isEmpty ? nil : fallbackEmoji
+            ),
+            fallbackBackgroundColor: Color.accentColor.opacity(0.16),
+            fallbackIconSize: 42,
+            accessibilityLabel: "餐厅图片"
+        )
     }
 }
 

@@ -114,7 +114,9 @@ struct RestaurantDetailView: View {
             ScrollView {
                 RestaurantDetailStandardBody {
                     RestaurantPhotoGallerySection(
+                        restaurantID: restaurant.id,
                         photos: activePhotos,
+                        publicPhotoID: metadata.markerPhotoID,
                         merchantImageURL: metadata.merchantImageURL,
                         markerEmoji: metadata.markerEmoji,
                         onSelect: { selectedPhoto = $0 },

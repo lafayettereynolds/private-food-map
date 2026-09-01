@@ -29,9 +29,60 @@ struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
     let longitude: Double
     let status: RestaurantMapMarkerStatus
     let visual: RestaurantMapMarkerVisual
+    let publicPhotoID: String?
+    let fallbackMerchantImageURL: URL?
     let visitCount: Int
     let averageRating: Double?
     let distanceKilometers: Double?
+
+    init(
+        id: UUID,
+        name: String,
+        latitude: Double,
+        longitude: Double,
+        status: RestaurantMapMarkerStatus,
+        visual: RestaurantMapMarkerVisual,
+        publicPhotoID: String? = nil,
+        fallbackMerchantImageURL: URL? = nil,
+        visitCount: Int,
+        averageRating: Double?,
+        distanceKilometers: Double?
+    ) {
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+        self.status = status
+        self.visual = visual
+        self.publicPhotoID = publicPhotoID
+        self.fallbackMerchantImageURL = fallbackMerchantImageURL
+        self.visitCount = visitCount
+        self.averageRating = averageRating
+        self.distanceKilometers = distanceKilometers
+    }
+
+    var imageResolution: RestaurantImageResolution {
+        switch visual {
+        case .photo(let id):
+            RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: id,
+                publicOrCachedPhotoID: publicPhotoID,
+                providerMerchantImageURL: fallbackMerchantImageURL
+            )
+        case .merchantImage(let url):
+            RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: nil,
+                publicOrCachedPhotoID: publicPhotoID,
+                providerMerchantImageURL: url
+            )
+        case .emoji, .fallback:
+            RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: nil,
+                publicOrCachedPhotoID: publicPhotoID,
+                providerMerchantImageURL: fallbackMerchantImageURL
+            )
+        }
+    }
 }
 
 /// A MapKit-independent viewport value keeps large-library culling testable
@@ -147,6 +198,10 @@ enum RestaurantMapMarkerBuilder {
                 longitude: restaurant.longitude,
                 status: status(for: restaurant, segment: segment),
                 visual: visual,
+                publicPhotoID: record?.markerPhotoId,
+                fallbackMerchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
+                    record?.merchantImageUrl
+                ),
                 visitCount: item.visitCount,
                 averageRating: item.averageRating,
                 distanceKilometers: distanceKilometers(

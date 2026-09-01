@@ -238,7 +238,10 @@ struct P4ATasteProfileTests {
             now: TasteProfilePreviewFixtures.now
         )
         let localRepresentative = localReport.restaurants.first { $0.id == restaurants[0].id }
-        #expect(localRepresentative?.imageReference == .photo(realPhoto.id))
+        #expect(localRepresentative?.imageReference == .photo(
+            realPhoto.id,
+            providerFallback: providerURL
+        ))
     }
 
     @Test("Taste keywords are explainable, bounded and disappear when no evidence exists")

@@ -244,32 +244,21 @@ struct RestaurantMapView: UIViewRepresentable {
             imageTasks[marker.id]?.cancel()
             imageTasks[marker.id] = nil
 
-            switch marker.visual {
-            case let .photo(photoID):
-                guard let photo = parent.photosByID[photoID], let coordinator = parent.photoCoordinator else {
-                    view.showFallback()
+            guard !marker.imageResolution.isFallbackOnly else { return }
+            imageTasks[marker.id] = Task { @MainActor [weak view] in
+                let result = await RestaurantImageLoader.image(
+                    resolution: marker.imageResolution,
+                    photosByID: parent.photosByID,
+                    coordinator: parent.photoCoordinator,
+                    photoAPI: nil,
+                    variant: .thumbnail,
+                    semanticID: marker.id.uuidString
+                )
+                guard !Task.isCancelled, let result else {
+                    if !Task.isCancelled { view?.showFallback() }
                     return
                 }
-                imageTasks[marker.id] = Task { @MainActor [weak view] in
-                    guard let data = try? await coordinator.imageData(for: photo, variant: .thumbnail),
-                          !Task.isCancelled,
-                          let image = UIImage(data: data) else {
-                        if !Task.isCancelled { view?.showFallback() }
-                        return
-                    }
-                    view?.show(image: image, for: marker.id)
-                }
-            case let .merchantImage(url):
-                imageTasks[marker.id] = Task { @MainActor [weak view] in
-                    let data = await RestaurantMapRemoteImageLoader.shared.data(for: url)
-                    guard !Task.isCancelled, let data, let image = UIImage(data: data) else {
-                        if !Task.isCancelled { view?.showFallback() }
-                        return
-                    }
-                    view?.show(image: image, for: marker.id)
-                }
-            case .emoji, .fallback:
-                break
+                view?.show(image: result.image, for: marker.id)
             }
         }
 
@@ -581,62 +570,6 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         case .rating, .discovery: UIColor(red: 0.82, green: 0.49, blue: 0.22, alpha: 1)
         case .sharedMeal: UIColor(red: 0.42, green: 0.58, blue: 0.43, alpha: 1)
         default: UIColor(red: 0.72, green: 0.36, blue: 0.31, alpha: 1)
-        }
-    }
-}
-
-private actor RestaurantMapRemoteImageLoader {
-    static let shared = RestaurantMapRemoteImageLoader()
-    private struct CacheEntry {
-        let data: Data
-        var access: UInt64
-    }
-
-    private var cache: [URL: CacheEntry] = [:]
-    private var cacheBytes = 0
-    private var accessCounter: UInt64 = 0
-    private var requests: [URL: Task<Data?, Never>] = [:]
-    private let maximumObjectBytes = 8 * 1_024 * 1_024
-    private let maximumCacheBytes = 24 * 1_024 * 1_024
-    private let maximumCount = 64
-
-    func data(for url: URL) async -> Data? {
-        if var cached = cache[url] {
-            accessCounter &+= 1
-            cached.access = accessCounter
-            cache[url] = cached
-            return cached.data
-        }
-        if let request = requests[url] { return await request.value }
-        let maximumObjectBytes = self.maximumObjectBytes
-        let request = Task<Data?, Never> {
-            guard let (data, response) = try? await URLSession.shared.data(from: url),
-                  let response = response as? HTTPURLResponse,
-                  (200 ... 299).contains(response.statusCode),
-                  response.mimeType?.hasPrefix("image/") == true,
-                  !data.isEmpty,
-                  data.count <= maximumObjectBytes else { return nil }
-            return data
-        }
-        requests[url] = request
-        let result = await request.value
-        requests[url] = nil
-        if let result {
-            insert(result, for: url)
-        }
-        return result
-    }
-
-    private func insert(_ data: Data, for url: URL) {
-        guard data.count <= maximumCacheBytes else { return }
-        if let previous = cache[url] { cacheBytes -= previous.data.count }
-        accessCounter &+= 1
-        cache[url] = CacheEntry(data: data, access: accessCounter)
-        cacheBytes += data.count
-        while cacheBytes > maximumCacheBytes || cache.count > maximumCount {
-            guard let oldest = cache.min(by: { $0.value.access < $1.value.access }) else { break }
-            cacheBytes -= oldest.value.data.count
-            cache[oldest.key] = nil
         }
     }
 }

@@ -138,7 +138,18 @@ enum TasteMapVisualQAFixtures {
             let name = isLong ? "\(baseName)·湖滨银泰限定季节料理与炭火烧物体验店" : "\(baseName) \(index / names.count + 1)"
             let city = cities[index % cities.count]
             let id = uuid(32_000 + index)
-            let photoID = index < counts.photos ? uuid(35_000 + index) : nil
+            let hasImageFixture = mode != .missingPhoto
+            let localPhotoID = hasImageFixture && index < counts.photos ? uuid(35_000 + index) : nil
+            let publicPhotoID = hasImageFixture
+                && index >= counts.photos
+                && index < min(restaurantCount, counts.photos + 20)
+                ? uuid(45_000 + index).uuidString.lowercased()
+                : nil
+            let providerImageURL = hasImageFixture
+                && index >= counts.photos + 20
+                && index < min(restaurantCount, counts.photos + 40)
+                ? "https://visual-qa.invalid/restaurants/\(index).jpg"
+                : nil
             let tags = cuisines[index % cuisines.count]
             let anchor = mapAnchors[index % mapAnchors.count]
             let overlap = overlapOffsets[(index / mapAnchors.count) % overlapOffsets.count]
@@ -154,7 +165,9 @@ enum TasteMapVisualQAFixtures {
                 serverVersion: 1, lastSyncedAt: baseDate, syncStatus: .synced,
                 remoteRecordData: try restaurantContract(
                     id: id, index: index, name: name, city: city, status: status,
-                    tags: tags, markerPhotoID: photoID
+                    tags: tags,
+                    markerPhotoID: localPhotoID?.uuidString.lowercased() ?? publicPhotoID,
+                    merchantImageURL: providerImageURL
                 )
             )
             restaurants.append(restaurant)
@@ -314,7 +327,7 @@ enum TasteMapVisualQAFixtures {
 
     private static func restaurantContract(
         id: UUID, index: Int, name: String, city: String, status: RestaurantStatus,
-        tags: [String], markerPhotoID: UUID?
+        tags: [String], markerPhotoID: String?, merchantImageURL: String?
     ) throws -> Data {
         let timestamp = "2026-08-29T12:00:00.000Z"
         let provider: RestaurantPlaceProvider = index.isMultiple(of: 3) ? .appleMaps : (index.isMultiple(of: 5) ? .amap : .manual)
@@ -334,7 +347,7 @@ enum TasteMapVisualQAFixtures {
             longTermNote: "招牌菜稳定，适合按当日心情再来。",
             pricePerPerson: Double(68 + index % 8 * 32), phone: "+86 571 88\(String(format: "%06d", index))",
             openingHours: "周一至周日 11:00–22:30", markerType: markerPhotoID == nil ? .emoji : .image,
-            markerPhotoId: markerPhotoID?.uuidString.lowercased(), merchantImageUrl: nil,
+            markerPhotoId: markerPhotoID, merchantImageUrl: merchantImageURL,
             markerEmoji: ["🍣", "🍲", "🍜", "☕️", "🥟", "🥩"][index % 6],
             createdAt: timestamp, updatedAt: timestamp, deletedAt: nil, isTestData: true
         ))
@@ -353,36 +366,33 @@ enum TasteMapVisualQAFixtures {
             placeIdentities: listIdentities,
             name: restaurant.name, address: restaurant.address, city: restaurant.city,
             latitude: restaurant.latitude, longitude: restaurant.longitude,
-            markerPhotoId: contract?.markerPhotoId, merchantImageUrl: nil,
+            markerPhotoId: contract?.markerPhotoId, merchantImageUrl: contract?.merchantImageUrl,
             markerEmoji: contract?.markerEmoji ?? "🍽️"
         )
     }
 
     private static func restaurantPhoto(index: Int) -> Data {
+        let approvedRestaurantStyleAssets = [
+            "FoodHeroChinese", "FoodHeroJapanese", "FoodHeroHotpotGrill",
+            "FoodHeroWestern", "FoodHeroCafe", "FoodHeroMixed",
+        ]
+        guard let image = UIImage(named: approvedRestaurantStyleAssets[index % approvedRestaurantStyleAssets.count]) else {
+            return Data()
+        }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1_200, height: 900), format: format)
         return renderer.image { context in
-            let palettes: [(UIColor, UIColor, UIColor)] = [
-                (.systemTeal, .systemOrange, .systemYellow), (.systemIndigo, .systemPink, .systemGreen),
-                (.systemBrown, .systemRed, .systemOrange), (.systemBlue, .systemMint, .systemYellow),
-            ]
-            let palette = palettes[index % palettes.count]
-            palette.0.withAlphaComponent(0.22).setFill()
+            UIColor(red: 0.965, green: 0.957, blue: 0.937, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 0, width: 1_200, height: 900))
-            UIColor.white.withAlphaComponent(0.94).setFill()
-            context.cgContext.fillEllipse(in: CGRect(x: 230, y: 85, width: 740, height: 740))
-            palette.1.setFill()
-            context.cgContext.fillEllipse(in: CGRect(x: 365, y: 225, width: 470, height: 410))
-            palette.2.setFill()
-            for offset in 0..<5 {
-                let x = 410 + CGFloat(offset % 3) * 135
-                let y = 270 + CGFloat(offset / 3) * 180
-                context.cgContext.fillEllipse(in: CGRect(x: x, y: y, width: 105, height: 105))
-            }
-            UIColor.darkGray.withAlphaComponent(0.55).setFill()
-            context.cgContext.fill(CGRect(x: 1020, y: 130, width: 18, height: 610))
-            context.cgContext.fill(CGRect(x: 1070, y: 130, width: 18, height: 610))
+            let scale = max(1_200 / image.size.width, 900 / image.size.height)
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            image.draw(in: CGRect(
+                x: (1_200 - size.width) / 2,
+                y: (900 - size.height) / 2,
+                width: size.width,
+                height: size.height
+            ))
         }.jpegData(compressionQuality: 0.86) ?? Data()
     }
 

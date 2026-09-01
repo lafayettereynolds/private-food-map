@@ -75,7 +75,7 @@ nonisolated enum FoodHeroTheme: String, CaseIterable, Hashable, Sendable {
 }
 
 nonisolated enum AnalysisImageReference: Hashable, Sendable {
-    case photo(UUID)
+    case photo(UUID, providerFallback: URL? = nil)
     case provider(URL)
     case asset(String)
     case none
@@ -85,7 +85,7 @@ nonisolated enum AnalysisImageReference: Hashable, Sendable {
     /// render never changes identity between launches.
     nonisolated var resolutionKey: UUID? {
         switch self {
-        case .photo(let id):
+        case .photo(let id, _):
             return id
         case .provider(let url):
             let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
@@ -95,6 +95,23 @@ nonisolated enum AnalysisImageReference: Hashable, Sendable {
             return UUID(uuidString: value)
         case .asset, .none:
             return nil
+        }
+    }
+
+    nonisolated var restaurantResolution: RestaurantImageResolution? {
+        switch self {
+        case .photo(let id, let providerFallback):
+            RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: id,
+                providerMerchantImageURL: providerFallback
+            )
+        case .provider(let url):
+            RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: nil,
+                providerMerchantImageURL: url
+            )
+        case .asset, .none:
+            nil
         }
     }
 }

@@ -265,7 +265,7 @@ struct PosterHeroMedia: View {
     private var images: [UIImage] {
         let values = hero.imageReferences.compactMap { reference -> UIImage? in
             switch reference {
-            case .photo(let id): resolvedImages[id]
+            case .photo(let id, _): resolvedImages[id]
             case .provider: reference.resolutionKey.flatMap { resolvedImages[$0] }
             case .asset(let name): UIImage(named: name)
             case .none: nil

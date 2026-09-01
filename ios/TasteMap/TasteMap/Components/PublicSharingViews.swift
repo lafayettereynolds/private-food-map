@@ -199,6 +199,17 @@ struct PublicShareLandingView: View {
                 ForEach(Array(value.restaurants.prefix(20).enumerated()), id: \.element.id) { index, restaurant in
                     HStack(alignment: .top, spacing: 10) {
                         if value.isRanked { Text("\(index + 1)").font(.headline).foregroundStyle(Color.accentColor) }
+                        TasteMapRestaurantImage(
+                            resolution: RestaurantImagePriorityPolicy.resolution(
+                                localUserPhotoID: nil,
+                                providerMerchantImageURL: restaurant.merchantImageUrl
+                            ),
+                            semanticID: restaurant.id,
+                            fallbackIconSize: 30,
+                            accessibilityLabel: "\(restaurant.name)餐厅图片"
+                        )
+                        .frame(width: 52, height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                         VStack(alignment: .leading, spacing: 3) {
                             Text(restaurant.name).font(.subheadline.weight(.semibold))
                             Text([restaurant.city, restaurant.address].filter { !$0.isEmpty }.joined(separator: " · "))
@@ -314,41 +325,22 @@ private struct PublicSharedRestaurantDetailBody: View {
     }
 
     private var hero: some View {
-        Group {
-            if let url = value.merchantImageUrl {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        heroFallback
-                    }
-                }
-            } else {
-                heroFallback
-            }
-        }
+        TasteMapRestaurantImage(
+            resolution: RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: nil,
+                providerMerchantImageURL: value.merchantImageUrl
+            ),
+            semanticID: value.shareId,
+            variant: .display,
+            fallbackKind: .restaurant,
+            fallbackIconSize: 72,
+            accessibilityLabel: "\(value.name)餐厅图片"
+        )
         .frame(maxWidth: .infinity)
         .frame(height: 216)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .clipped()
         .accessibilityIdentifier("restaurant-photo-gallery")
-    }
-
-    private var heroFallback: some View {
-        LinearGradient(
-            colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surfaceSubtle],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .overlay {
-            FoodDiningVisualIcon(
-                kind: .restaurant,
-                usage: .decorative,
-                size: 72,
-                foregroundColor: TasteMapCoreTheme.brandDeep,
-                backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
-            )
-        }
     }
 
     private var publicActions: some View {

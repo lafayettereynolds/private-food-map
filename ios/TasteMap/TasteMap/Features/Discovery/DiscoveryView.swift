@@ -960,44 +960,21 @@ struct DiscoveryRestaurantImage: View {
     let restaurant: DiscoveryRestaurantProjectionV1
     let photoAPI: (any PhotoBinaryAPI)?
     var allowsMerchantImageFallback = true
-    @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else if allowsMerchantImageFallback,
-                    let value = restaurant.merchantImageUrl,
-                    let url = URL(string: value) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() } else { placeholder }
-                }
-            } else { placeholder }
-        }
-        .clipped()
-        .task(id: restaurant.photo?.photoId) {
-#if DEBUG
-            if TasteMapUITestFixtures.usesVisualQA {
-                image = TasteMapVisualQAFixtures.restaurantImage(stableKey: restaurant.globalKey)
-                return
-            }
-#endif
-            guard let photo = restaurant.photo, let id = UUID(uuidString: photo.photoId), let photoAPI else { return }
-            if let data = try? await photoAPI.download(photoID: id, variant: .thumbnail) { image = UIImage(data: data) }
-        }
-    }
-
-    private var placeholder: some View {
-        LinearGradient(colors: [Color.accentColor.opacity(0.16), .orange.opacity(0.12)],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
-            .overlay {
-                FoodDiningVisualIcon(
-                    kind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
-                    usage: .decorative,
-                    size: 64,
-                    foregroundColor: TasteMapCoreTheme.brandDeep,
-                    backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
-                )
-            }
+        TasteMapRestaurantImage(
+            resolution: RestaurantImagePriorityPolicy.resolution(
+                localUserPhotoID: nil,
+                publicOrCachedPhotoID: restaurant.photo?.photoId,
+                providerMerchantImageURL: allowsMerchantImageFallback ? restaurant.merchantImageUrl : nil
+            ),
+            photoAPI: photoAPI,
+            semanticID: restaurant.globalKey,
+            fallbackKind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
+            fallbackBackgroundColor: Color.accentColor.opacity(0.14),
+            fallbackIconSize: 64,
+            accessibilityLabel: "\(restaurant.name)餐厅图片"
+        )
     }
 }
 
