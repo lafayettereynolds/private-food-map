@@ -156,7 +156,10 @@ enum RestaurantMapMarkerBuilder {
                 )
             )
         }
-        return RestaurantMapMarkerCollisionPolicy.dispersed(markers)
+        // Preserve the provider/source coordinate exactly. Overlapping
+        // Restaurants remain independent annotations and are resolved by the
+        // deterministic layer policy at render time, not by synthetic offsets.
+        return markers
     }
 
     private static func status(
@@ -196,51 +199,71 @@ enum RestaurantMapMarkerBuilder {
     }
 }
 
-/// MapKit collision avoidance without merging Restaurants into an aggregate.
-/// Restaurants that share the same map coordinate are dispersed by a tiny,
-/// deterministic offset so every Restaurant remains independently selectable
-/// at every zoom level.
-enum RestaurantMapMarkerCollisionPolicy {
-    private struct CoordinateBucket: Hashable {
-        let latitude: Int
-        let longitude: Int
-    }
-
-    static func dispersed(
-        _ markers: [RestaurantMapMarkerPresentation]
+/// One shared back-to-front contract for every Restaurant annotation.
+///
+/// Coordinates are deliberately absent from this policy: natural overlap is
+/// retained at every zoom level. An unrated Restaurant is a distinct semantic
+/// state below rated Restaurants, rather than a fabricated zero-star score.
+enum RestaurantMapMarkerLayerPolicy {
+    static func orderedBackToFront(
+        _ markers: [RestaurantMapMarkerPresentation],
+        selectedRestaurantID: UUID?
     ) -> [RestaurantMapMarkerPresentation] {
-        let groups = Dictionary(grouping: markers) {
-            CoordinateBucket(
-                latitude: Int(($0.latitude * 100_000).rounded()),
-                longitude: Int(($0.longitude * 100_000).rounded())
+        markers.sorted { left, right in
+            isLowerPriority(
+                left,
+                than: right,
+                selectedRestaurantID: selectedRestaurantID
             )
         }
-        var resolvedByID: [UUID: RestaurantMapMarkerPresentation] = [:]
-        for group in groups.values {
-            let ordered = group.sorted { $0.id.uuidString < $1.id.uuidString }
-            guard ordered.count > 1 else {
-                if let marker = ordered.first { resolvedByID[marker.id] = marker }
-                continue
-            }
-            for (index, marker) in ordered.enumerated() {
-                let angle = (Double(index) / Double(ordered.count)) * 2 * Double.pi
-                let latitudeOffset = cos(angle) * 0.000_12
-                let longitudeScale = max(0.2, cos(marker.latitude * Double.pi / 180))
-                let longitudeOffset = sin(angle) * 0.000_12 / longitudeScale
-                resolvedByID[marker.id] = RestaurantMapMarkerPresentation(
-                    id: marker.id,
-                    name: marker.name,
-                    latitude: marker.latitude + latitudeOffset,
-                    longitude: marker.longitude + longitudeOffset,
-                    status: marker.status,
-                    visual: marker.visual,
-                    visitCount: marker.visitCount,
-                    averageRating: marker.averageRating,
-                    distanceKilometers: marker.distanceKilometers
-                )
-            }
+    }
+
+    static func layerRanks(
+        _ markers: [RestaurantMapMarkerPresentation],
+        selectedRestaurantID: UUID?
+    ) -> [UUID: Int] {
+        Dictionary(uniqueKeysWithValues: orderedBackToFront(
+            markers,
+            selectedRestaurantID: selectedRestaurantID
+        ).enumerated().map { index, marker in
+            (marker.id, index + 1)
+        })
+    }
+
+    private static func isLowerPriority(
+        _ left: RestaurantMapMarkerPresentation,
+        than right: RestaurantMapMarkerPresentation,
+        selectedRestaurantID: UUID?
+    ) -> Bool {
+        let leftSelected = left.id == selectedRestaurantID
+        let rightSelected = right.id == selectedRestaurantID
+        if leftSelected != rightSelected { return !leftSelected }
+
+        let leftRating = finiteRating(left.averageRating)
+        let rightRating = finiteRating(right.averageRating)
+        switch (leftRating, rightRating) {
+        case let (.some(left), .some(right)) where left != right:
+            return left < right
+        case (.none, .some):
+            return true
+        case (.some, .none):
+            return false
+        default:
+            break
         }
-        return markers.compactMap { resolvedByID[$0.id] }
+
+        let leftVisitCount = max(0, left.visitCount)
+        let rightVisitCount = max(0, right.visitCount)
+        if leftVisitCount != rightVisitCount {
+            return leftVisitCount < rightVisitCount
+        }
+
+        return left.id.uuidString.lowercased() < right.id.uuidString.lowercased()
+    }
+
+    private static func finiteRating(_ rating: Double?) -> Double? {
+        guard let rating, rating.isFinite else { return nil }
+        return rating
     }
 }
 

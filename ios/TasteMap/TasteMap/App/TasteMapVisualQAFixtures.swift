@@ -112,6 +112,22 @@ enum TasteMapVisualQAFixtures {
             ["烘焙", "甜点"], ["饺子", "本地小馆"], ["西餐", "约会"], ["甜点", "下午茶"],
         ]
         let cities = ["杭州", "杭州", "杭州", "上海", "杭州", "北京", "成都", "广州"]
+        // Stable, organic dining anchors replace the old evenly spaced grid.
+        // Each anchor intentionally receives repeated and near-coincident
+        // Restaurants so Rich Visual QA exercises natural overlap rather than
+        // presenting a synthetic wall of fully separated markers.
+        let mapAnchors: [(latitude: Double, longitude: Double)] = [
+            (30.2741, 120.1551), (30.2676, 120.1474), (30.2819, 120.1628),
+            (30.2598, 120.1692), (30.2893, 120.1431), (30.2527, 120.1518),
+            (30.2772, 120.1776), (30.2951, 120.1589), (30.2644, 120.1327),
+            (30.2848, 120.1864), (30.2469, 120.1745), (30.3016, 120.1388),
+            (30.2713, 120.1912), (30.2561, 120.1239), (30.3102, 120.1698),
+            (30.2397, 120.1436), (30.2924, 120.1991), (30.3190, 120.1507),
+        ]
+        let overlapOffsets: [(latitude: Double, longitude: Double)] = [
+            (0, 0), (0, 0), (0.000_16, -0.000_10),
+            (-0.000_12, 0.000_15), (0.000_08, 0.000_18),
+        ]
         let restaurantCount = counts.visitedRestaurants + counts.wantToGoRestaurants
         var restaurants: [Restaurant] = []
         restaurants.reserveCapacity(restaurantCount)
@@ -124,11 +140,13 @@ enum TasteMapVisualQAFixtures {
             let id = uuid(32_000 + index)
             let photoID = index < counts.photos ? uuid(35_000 + index) : nil
             let tags = cuisines[index % cuisines.count]
+            let anchor = mapAnchors[index % mapAnchors.count]
+            let overlap = overlapOffsets[(index / mapAnchors.count) % overlapOffsets.count]
             let restaurant = Restaurant(
                 id: id, ownerUserID: userID, name: name,
                 address: "\(city)市美食街 \(index + 1) 号\(isLong ? "（靠近湖滨步行街与地铁换乘通道）" : "")",
-                latitude: 30.238 + Double(index % 15) * 0.0042,
-                longitude: 120.118 + Double((index / 15) % 15) * 0.0045,
+                latitude: anchor.latitude + overlap.latitude,
+                longitude: anchor.longitude + overlap.longitude,
                 appleMapItemIdentifier: index.isMultiple(of: 3) ? "apple-visual-qa-\(index)" : nil,
                 city: city, status: status,
                 createdAt: baseDate.addingTimeInterval(Double(-index * 2) * 86_400),

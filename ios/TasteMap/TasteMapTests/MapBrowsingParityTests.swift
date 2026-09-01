@@ -174,17 +174,113 @@ struct MapBrowsingParityTests {
         #expect(longitudeDelta > 121.47 - 120.13)
     }
 
-    @Test("Coincident Restaurants remain independent and receive stable positions")
-    func coordinateCollisionDispersion() {
-        let members = (0 ..< 100).map {
-            presentation($0, latitude: 30.27, longitude: 120.13)
+    @Test("Coincident Restaurants remain independent at their natural source coordinate")
+    func coordinateCollisionKeepsNaturalOverlap() {
+        let restaurants = (0 ..< 100).map {
+            makeRestaurant(
+                1_000 + $0,
+                name: "重叠餐厅 \($0)",
+                status: .visited,
+                latitude: 30.27,
+                longitude: 120.13
+            )
         }
-        let first = RestaurantMapMarkerCollisionPolicy.dispersed(members)
-        let repeated = RestaurantMapMarkerCollisionPolicy.dispersed(members)
-        #expect(first.count == members.count)
-        #expect(Set(first.map(\.id)) == Set(members.map(\.id)))
-        #expect(Set(first.map { "\($0.latitude):\($0.longitude)" }).count == members.count)
-        #expect(first == repeated)
+        let snapshot = RestaurantBrowseBuilder.build(restaurants: restaurants, visits: [])
+        let members = markers(snapshot.visited)
+        #expect(members.count == 100)
+        #expect(Set(members.map(\.id)).count == 100)
+        #expect(Set(members.map { "\($0.latitude):\($0.longitude)" }).count == 1)
+    }
+
+    @Test("Restaurant layer order is selected, rating, visit count, then stable ID")
+    func markerLayerPriorityContract() {
+        let unrated = presentation(1, rating: nil, visitCount: 50)
+        let lowerRated = presentation(2, rating: 4, visitCount: 20)
+        let fewerVisits = presentation(3, rating: 4.5, visitCount: 2)
+        let moreVisits = presentation(4, rating: 4.5, visitCount: 9)
+        let selected = presentation(5, rating: 1, visitCount: 0)
+
+        let backToFront = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            [selected, moreVisits, unrated, fewerVisits, lowerRated],
+            selectedRestaurantID: selected.id
+        )
+
+        #expect(backToFront.map(\.id) == [
+            unrated.id, lowerRated.id, fewerVisits.id, moreVisits.id, selected.id,
+        ])
+    }
+
+    @Test("A 4.8 Restaurant renders above a coincident 4.2 Restaurant")
+    func higherRatedCoincidentRestaurantIsFrontmost() {
+        let lower = presentation(6, rating: 4.2, visitCount: 30)
+        let higher = presentation(7, rating: 4.8, visitCount: 1)
+
+        let backToFront = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            [higher, lower],
+            selectedRestaurantID: nil
+        )
+
+        #expect(backToFront.map(\.id) == [lower.id, higher.id])
+    }
+
+    @Test("Unrated is distinct from zero and stable ID resolves complete ties")
+    func markerLayerNilAndStableID() {
+        let unrated = presentation(10, rating: nil, visitCount: 3)
+        let ratedZero = presentation(11, rating: 0, visitCount: 0)
+        let stableLower = presentation(12, rating: 4.5, visitCount: 3)
+        let stableHigher = presentation(13, rating: 4.5, visitCount: 3)
+
+        let backToFront = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            [stableHigher, ratedZero, stableLower, unrated],
+            selectedRestaurantID: nil
+        )
+
+        #expect(backToFront.map(\.id) == [
+            unrated.id, ratedZero.id, stableLower.id, stableHigher.id,
+        ])
+    }
+
+    @Test("Selecting and deselecting only overrides the stable base order")
+    func markerLayerSelectionRestoresBaseOrder() {
+        let low = presentation(20, rating: 3, visitCount: 10)
+        let high = presentation(21, rating: 5, visitCount: 1)
+        let base = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            [high, low], selectedRestaurantID: nil
+        )
+        let selected = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            [high, low], selectedRestaurantID: low.id
+        )
+        let restored = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            [low, high], selectedRestaurantID: nil
+        )
+
+        #expect(base.map(\.id) == [low.id, high.id])
+        #expect(selected.map(\.id) == [high.id, low.id])
+        #expect(restored.map(\.id) == base.map(\.id))
+    }
+
+    @Test("Layer ordering remains deterministic across input and viewport refresh order")
+    func markerLayerViewportStability() {
+        let markers = (0..<90).map { index in
+            presentation(
+                100 + index,
+                latitude: 30.27,
+                longitude: 120.13,
+                rating: index.isMultiple(of: 8) ? nil : Double(index % 10 + 1) / 2,
+                visitCount: index % 12
+            )
+        }
+        let expected = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            markers,
+            selectedRestaurantID: nil
+        ).map(\.id)
+        let refreshed = RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            Array(markers.reversed()),
+            selectedRestaurantID: nil
+        ).map(\.id)
+
+        #expect(refreshed == expected)
+        #expect(Set(markers.map { "\($0.latitude):\($0.longitude)" }).count == 1)
     }
 
     @Test("One thousand marker presentations build without repeated global scans")
@@ -240,10 +336,16 @@ struct MapBrowsingParityTests {
         RestaurantMapMarkerBuilder.build(items: items, photos: photos, segment: segment)
     }
 
-    private func presentation(_ value: Int, latitude: Double, longitude: Double) -> RestaurantMapMarkerPresentation {
+    private func presentation(
+        _ value: Int,
+        latitude: Double = 30.27,
+        longitude: Double = 120.13,
+        rating: Double? = nil,
+        visitCount: Int = 0
+    ) -> RestaurantMapMarkerPresentation {
         RestaurantMapMarkerPresentation(
             id: uuid(value), name: "餐厅 \(value)", latitude: latitude, longitude: longitude,
-            status: .visited, visual: .fallback, visitCount: 0, averageRating: nil,
+            status: .visited, visual: .fallback, visitCount: visitCount, averageRating: rating,
             distanceKilometers: nil
         )
     }

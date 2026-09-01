@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import SwiftUI
 import Testing
 @testable import TasteMap
@@ -54,5 +55,25 @@ struct Task09AccessibilityVisualQATests {
         #expect(TasteMapVisualQAMode.allCases.contains(.free))
         #expect(TasteMapVisualQAMode.allCases.contains(.missingPhoto))
         #expect(TasteMapVisualQAMode.allCases.contains(.longText))
+    }
+
+    @Test("Rich demo uses natural dense overlap instead of a separated marker wall")
+    @MainActor
+    func richDemoMapOverlap() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        try TasteMapVisualQAFixtures.insert(mode: .rich, into: container)
+        let restaurants = try container.mainContext.fetch(FetchDescriptor<Restaurant>())
+        let visited = restaurants.filter { $0.deletedAt == nil && $0.status == .visited }
+        let snapshot = RestaurantBrowseBuilder.build(restaurants: visited, visits: [])
+        let markers = RestaurantMapMarkerBuilder.build(
+            items: snapshot.visited,
+            photos: [],
+            segment: .visited
+        )
+        let coordinateKeys = markers.map { "\($0.latitude):\($0.longitude)" }
+
+        #expect(markers.count == 90)
+        #expect(Set(coordinateKeys).count < markers.count)
+        #expect(Dictionary(grouping: coordinateKeys, by: { $0 }).values.contains { $0.count > 1 })
     }
 }

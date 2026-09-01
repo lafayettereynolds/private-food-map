@@ -49,6 +49,7 @@ struct RestaurantMapView: UIViewRepresentable {
         private var isUserInteracting = false
         private var hasDeferredFit = false
         private var renderState: RestaurantMapRenderState = .loading
+        private var markerLayerRanks: [UUID: Int] = [:]
 
         init(parent: RestaurantMapView) {
             self.parent = parent
@@ -95,20 +96,24 @@ struct RestaurantMapView: UIViewRepresentable {
                     added.append(annotation)
                 }
             }
+            refreshMarkerLayerRanks()
             if !added.isEmpty { mapView.addAnnotations(added) }
+            applyMarkerLayerOrder(on: mapView)
         }
 
         func applySelection(on mapView: MKMapView) {
             let selectedID = parent.selectedRestaurantID
-            guard selectedID != lastSelectedRestaurantID else { return }
-            if let previousID = lastSelectedRestaurantID,
-               let previous = annotationsByID[previousID] {
-                mapView.deselectAnnotation(previous, animated: false)
+            if selectedID != lastSelectedRestaurantID {
+                if let previousID = lastSelectedRestaurantID,
+                   let previous = annotationsByID[previousID] {
+                    mapView.deselectAnnotation(previous, animated: false)
+                }
+                if let selectedID, let selected = annotationsByID[selectedID] {
+                    mapView.selectAnnotation(selected, animated: false)
+                }
+                lastSelectedRestaurantID = selectedID
             }
-            if let selectedID, let selected = annotationsByID[selectedID] {
-                mapView.selectAnnotation(selected, animated: false)
-            }
-            lastSelectedRestaurantID = selectedID
+            applyMarkerLayerOrder(on: mapView)
         }
 
         func fitIfRequested(on mapView: MKMapView) {
@@ -156,6 +161,7 @@ struct RestaurantMapView: UIViewRepresentable {
                     ?? TasteMapUserLocationAnnotationView(annotation: annotation, reuseIdentifier: identifier)
                 view.annotation = annotation
                 configureUserLocation(view)
+                view.layer.zPosition = Self.userLocationLayerPosition
                 return view
             }
             guard let restaurant = annotation as? RestaurantMapAnnotation else { return nil }
@@ -168,12 +174,15 @@ struct RestaurantMapView: UIViewRepresentable {
             view.displayPriority = .required
             view.collisionMode = .circle
             configure(view, for: restaurant)
+            applyMarkerLayerOrder(to: view, restaurantID: restaurant.presentation.id)
             return view
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let annotation = view.annotation as? RestaurantMapAnnotation else { return }
             parent.selectedRestaurantID = annotation.presentation.id
+            lastSelectedRestaurantID = annotation.presentation.id
+            applyMarkerLayerOrder(on: mapView)
         }
 
         func mapViewWillStartLoadingMap(_ mapView: MKMapView) {
@@ -215,6 +224,7 @@ struct RestaurantMapView: UIViewRepresentable {
                 return
             }
             configureUserLocation(view)
+            view.layer.zPosition = Self.userLocationLayerPosition
         }
 
         func setRenderState(_ state: RestaurantMapRenderState) {
@@ -286,6 +296,39 @@ struct RestaurantMapView: UIViewRepresentable {
                 )
             }
         }
+
+        /// MapKit remains responsible for annotation placement. This method
+        /// changes only the compositing order of Restaurant views, preserving
+        /// exact coordinates and natural overlap across viewport refreshes.
+        private func applyMarkerLayerOrder(on mapView: MKMapView) {
+            refreshMarkerLayerRanks()
+            for (restaurantID, annotation) in annotationsByID {
+                guard let view = mapView.view(for: annotation) as? RestaurantMarkerAnnotationView else {
+                    continue
+                }
+                view.layer.zPosition = CGFloat(markerLayerRanks[restaurantID] ?? 0)
+            }
+            if let userView = mapView.view(for: mapView.userLocation) as? TasteMapUserLocationAnnotationView {
+                userView.layer.zPosition = Self.userLocationLayerPosition
+            }
+        }
+
+        private func applyMarkerLayerOrder(
+            to view: RestaurantMarkerAnnotationView,
+            restaurantID: UUID
+        ) {
+            if markerLayerRanks[restaurantID] == nil { refreshMarkerLayerRanks() }
+            view.layer.zPosition = CGFloat(markerLayerRanks[restaurantID] ?? 0)
+        }
+
+        private func refreshMarkerLayerRanks() {
+            markerLayerRanks = RestaurantMapMarkerLayerPolicy.layerRanks(
+                annotationsByID.values.map(\.presentation),
+                selectedRestaurantID: parent.selectedRestaurantID
+            )
+        }
+
+        private static let userLocationLayerPosition: CGFloat = 1_000_000
 
         private func applyCameraTarget(
             _ target: RestaurantMapCameraTarget,
@@ -445,6 +488,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         representedRestaurantID = nil
         imageView.image = nil
         fallbackImageView.image = nil
+        layer.zPosition = 0
     }
 
     override var isSelected: Bool {

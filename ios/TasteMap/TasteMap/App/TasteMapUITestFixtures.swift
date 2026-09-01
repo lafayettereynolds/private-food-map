@@ -700,9 +700,9 @@ enum TasteMapUITestFixtures {
         try context.save()
     }
 
-    /// A deterministic, development-only fixture that proves the far-zoom map
-    /// uses a dining visual with a secondary count badge while close browsing
-    /// continues to render individual restaurant markers.
+    /// A deterministic, development-only dense-map fixture. Every Restaurant
+    /// remains an independent marker; no count cluster or default coordinate
+    /// dispersion is introduced at any zoom level.
     static func insertModule8MapClusterFixture(into container: ModelContainer) throws {
         guard usesModule8MapClusterFixture else { return }
         let context = container.mainContext
@@ -726,9 +726,8 @@ enum TasteMapUITestFixtures {
             ))
         }
 
-        // A distant visited restaurant forces the initial fitted region into
-        // the explicit far-zoom clustering policy without changing production
-        // camera behavior.
+        // A distant visited Restaurant exercises far-zoom viewport behavior
+        // without changing production camera behavior or aggregating markers.
         context.insert(Restaurant(
             id: uuid(18_100),
             name: "上海远距离样本",

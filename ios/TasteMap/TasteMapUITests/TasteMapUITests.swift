@@ -259,6 +259,25 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testLegacyFusionRichMapKeepsIndependentNaturalMarkers() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 12))
+        let clusters = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "restaurant-map-cluster-")
+        )
+        let markers = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "restaurant-map-marker-")
+        )
+        XCTAssertFalse(clusters.firstMatch.exists)
+        XCTAssertGreaterThanOrEqual(markers.count, 10)
+        XCTAssertEqual(app.staticTexts["map-home-title"].label, "我的地图")
+        keepScreenshot(named: "Legacy Fusion Rich Natural Markers", of: app)
+    }
+
+    @MainActor
     func testTask04DarkLayoutKeepsCompactMapControls() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleInterfaceStyle", "Dark"]
