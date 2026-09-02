@@ -3504,6 +3504,47 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridPhase2AProfileRestaurantAndNativeBackPaths() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 15))
+
+        let visited = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "去过")
+        ).firstMatch
+        XCTAssertTrue(visited.waitForExistence(timeout: 8))
+        visited.tap()
+
+        let restaurant = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
+        ).firstMatch
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 8))
+        restaurant.tap()
+
+        let hybridBack = webView.buttons["返回我的页面"]
+        XCTAssertTrue(hybridBack.waitForExistence(timeout: 12))
+        hybridBack.tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 10))
+
+        let roulette = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "今天吃什么")
+        ).firstMatch
+        XCTAssertTrue(roulette.waitForExistence(timeout: 8))
+        roulette.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-roulette-screen"].waitForExistence(timeout: 12))
+        let nativeBack = app.buttons["返回"]
+        XCTAssertTrue(nativeBack.waitForExistence(timeout: 8))
+        nativeBack.tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

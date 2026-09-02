@@ -20,7 +20,7 @@ final class TasteMapNativePlugin: CAPPlugin, CAPBridgedPlugin {
             let requestID = request["requestId"] as? String ?? "invalid"
             do {
                 let requestData = try JSONSerialization.data(withJSONObject: request)
-                let responseData = try loadedDispatcher().responseData(for: requestData)
+                let responseData = try await loadedDispatcher().responseDataAsync(for: requestData)
                 guard let response = try JSONSerialization.jsonObject(with: responseData) as? [String: Any],
                       let object = jsObject(response) else {
                     throw BridgeHostError.responseEncodingFailed

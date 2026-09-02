@@ -16,6 +16,7 @@ struct ContentView: View {
     @Environment(SyncCoordinator.self) private var syncCoordinator
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
+    @Environment(TasteMapHybridRuntime.self) private var hybridRuntime
     @Environment(\.photoTransferCoordinator) private var photoTransferCoordinator
 
     init(automaticServicesEnabled: Bool = true) {
@@ -24,7 +25,7 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var premiumEntitlementService = premiumEntitlementService
-        RootTabView()
+        rootView
             .tint(TasteMapCoreTheme.brand)
             .environment(\.localAccountScope, authServices.localAccountScope)
             .task {
@@ -55,6 +56,19 @@ struct ContentView: View {
                 PremiumPaywallView(source: source)
                     .environment(premiumEntitlementService)
             }
+    }
+
+    @ViewBuilder
+    private var rootView: some View {
+#if DEBUG
+        if hybridRuntime.mode == .hybridDevelopment {
+            TasteMapHybridDevelopmentRootView()
+        } else {
+            RootTabView()
+        }
+#else
+        RootTabView()
+#endif
     }
 
     @MainActor

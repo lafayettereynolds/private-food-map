@@ -8,6 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		A90000013050000000000001 /* TasteMapShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A90000023050000000000002 /* TasteMapShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B20000013060000000000001 /* Capacitor in Frameworks */ = {isa = PBXBuildFile; productRef = B200000D306000000000000D /* Capacitor */; };
+		B20000023060000000000002 /* Cordova in Frameworks */ = {isa = PBXBuildFile; productRef = B200000E306000000000000E /* Cordova */; };
+		B20000033060000000000003 /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = B20000073060000000000007 /* capacitor.config.json */; };
+		B20000043060000000000004 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = B20000083060000000000008 /* config.xml */; };
+		B20000053060000000000005 /* public in Resources */ = {isa = PBXBuildFile; fileRef = B20000093060000000000009 /* public */; };
+		B20000063060000000000006 /* hybrid-bundle-manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = B200000A306000000000000A /* hybrid-bundle-manifest.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +55,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B20000073060000000000007 /* capacitor.config.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
+		B20000083060000000000008 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		B20000093060000000000009 /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		B200000A306000000000000A /* hybrid-bundle-manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "hybrid-bundle-manifest.json"; sourceTree = "<group>"; };
 		A90000023050000000000002 /* TasteMapShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TasteMapShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEFC0760303FE869006C2B3B /* TasteMap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TasteMap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEFC076D303FE86A006C2B3B /* TasteMapTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TasteMapTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -113,6 +123,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20000013060000000000001 /* Capacitor in Frameworks */,
+				B20000023060000000000002 /* Cordova in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,6 +148,7 @@
 		CEFC0757303FE869006C2B3B = {
 			isa = PBXGroup;
 			children = (
+				B200000B306000000000000B /* HybridRuntimeResources */,
 				CEFC0762303FE869006C2B3B /* TasteMap */,
 				A90000063050000000000006 /* TasteMapShared */,
 				A90000073050000000000007 /* TasteMapShareExtension */,
@@ -144,6 +157,17 @@
 				A100001A303FE86A006C2B3B /* SharedContracts */,
 				CEFC0761303FE869006C2B3B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		B200000B306000000000000B /* HybridRuntimeResources */ = {
+			isa = PBXGroup;
+			children = (
+				B20000073060000000000007 /* capacitor.config.json */,
+				B20000083060000000000008 /* config.xml */,
+				B20000093060000000000009 /* public */,
+				B200000A306000000000000A /* hybrid-bundle-manifest.json */,
+			);
+			path = HybridRuntimeResources;
 			sourceTree = "<group>";
 		};
 		CEFC0761303FE869006C2B3B /* Products */ = {
@@ -203,6 +227,8 @@
 			);
 			name = TasteMap;
 			packageProductDependencies = (
+				B200000D306000000000000D /* Capacitor */,
+				B200000E306000000000000E /* Cordova */,
 			);
 			productName = TasteMap;
 			productReference = CEFC0760303FE869006C2B3B /* TasteMap.app */;
@@ -297,6 +323,9 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CEFC0761303FE869006C2B3B /* Products */;
+			packageReferences = (
+				B200000C306000000000000C /* XCRemoteSwiftPackageReference "capacitor-swift-pm" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -320,6 +349,10 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20000033060000000000003 /* capacitor.config.json in Resources */,
+				B20000043060000000000004 /* config.xml in Resources */,
+				B20000053060000000000005 /* public in Resources */,
+				B20000063060000000000006 /* hybrid-bundle-manifest.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -775,6 +808,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B200000C306000000000000C /* XCRemoteSwiftPackageReference "capacitor-swift-pm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ionic-team/capacitor-swift-pm.git";
+			requirement = {
+				kind = exactVersion;
+				version = 8.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B200000D306000000000000D /* Capacitor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B200000C306000000000000C /* XCRemoteSwiftPackageReference "capacitor-swift-pm" */;
+			productName = Capacitor;
+		};
+		B200000E306000000000000E /* Cordova */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B200000C306000000000000C /* XCRemoteSwiftPackageReference "capacitor-swift-pm" */;
+			productName = Cordova;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CEFC0758303FE869006C2B3B /* Project object */;
 }

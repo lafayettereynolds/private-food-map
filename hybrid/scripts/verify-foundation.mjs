@@ -31,6 +31,7 @@ const bundleText = await readTextTree(resolve(root, 'dist'))
 for (const forbidden of release ? [
   'tm_capacitor_poc', 'local-poc', 'hybridPOC', 'profile-restaurant-rich.json',
   'X-Taste-Map-Test-User', 'identityToken', 'authorizationCode', 'refreshToken',
+  'accessToken', 'Authorization', 'Bearer ',
   '/Users/lafayette/', 'BEGIN PRIVATE KEY',
 ] : ['tm_capacitor_poc', 'local-poc', 'hybridPOC', '/Users/lafayette/', 'BEGIN PRIVATE KEY']) {
   assert.equal(bundleText.includes(forbidden), false, `Forbidden Hybrid bundle marker: ${forbidden}`)

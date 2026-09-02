@@ -9,6 +9,9 @@ import {
   type TasteMapBridgeResponseEnvelope,
   type TasteMapLocationDTO,
   type TasteMapNativeRouteRequest,
+  type TasteMapHybridRoute,
+  type TasteMapHybridEvent,
+  type TasteMapNavigationStateDTO,
   type TasteMapPhotoPickResult,
   type TasteMapPlatform,
   type TasteMapPremiumStatusDTO,
@@ -25,6 +28,7 @@ import { projectBridgeProfile, projectBridgeRestaurant } from './TasteMapBridgeP
 
 interface TasteMapNativeV1Plugin {
   invoke(options: { request: TasteMapBridgeRequestEnvelope<unknown> }): Promise<TasteMapBridgeResponseEnvelope<unknown>>
+  addListener?(eventName: 'event', listener: (event: TasteMapHybridEvent) => void): Promise<{ remove(): Promise<void> }>
 }
 
 interface CapacitorWindow extends Window {
@@ -67,7 +71,18 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
   location = { current: () => this.call<TasteMapLocationDTO>('location.current') }
   photo = { pick: () => this.call<TasteMapPhotoPickResult>('photo.pick') }
   premium = { status: () => this.call<TasteMapPremiumStatusDTO>('premium.status') }
-  navigation = { openNative: async (request: TasteMapNativeRouteRequest) => { await this.call<Record<string, never>>('navigation.openNative', request) } }
+  navigation = {
+    openNative: async (request: TasteMapNativeRouteRequest) => { await this.call<Record<string, never>>('navigation.openNative', request) },
+    openHybrid: (route: TasteMapHybridRoute) => this.call<TasteMapNavigationStateDTO>('navigation.openHybrid', route),
+    back: () => this.call<TasteMapNavigationStateDTO>('navigation.back'),
+    current: () => this.call<TasteMapNavigationStateDTO>('navigation.current'),
+  }
+  events = {
+    subscribe: async (listener: (event: TasteMapHybridEvent) => void) => {
+      guardEventAPI(this.plugin)
+      return this.plugin.addListener!('event', listener)
+    },
+  }
 
   private runtimeInfo() {
     this.runtimePromise ??= this.call<TasteMapRuntimeInfo>('runtime.info', {}, false).then((info) => {
@@ -101,6 +116,10 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
     }
     return response.result as TResult
   }
+}
+
+function guardEventAPI(plugin: TasteMapNativeV1Plugin): asserts plugin is TasteMapNativeV1Plugin & Required<Pick<TasteMapNativeV1Plugin, 'addListener'>> {
+  if (!plugin.addListener) throw new TasteMapPlatformError('TasteMapNative.v1 event channel is unavailable.', 'native_event_channel_unavailable')
 }
 
 export function hasNativeTasteMapRuntime(target: CapacitorWindow = window as CapacitorWindow) {

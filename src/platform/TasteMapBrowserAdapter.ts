@@ -123,7 +123,13 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       expiresAt: null,
     }),
   }
-  navigation = { openNative: async () => capabilityUnavailable('nativeNavigation') }
+  navigation = {
+    openNative: async () => capabilityUnavailable('nativeNavigation'),
+    openHybrid: async (route: import('./TasteMapPlatform').TasteMapHybridRoute) => ({ route, owner: 'hybrid' as const, canGoBack: false }),
+    back: async () => ({ route: { surface: 'profile' as const }, owner: 'hybrid' as const, canGoBack: false }),
+    current: async () => ({ route: { surface: 'profile' as const }, owner: 'hybrid' as const, canGoBack: false }),
+  }
+  events = { subscribe: async () => ({ remove: async () => undefined }) }
 
   private loadProfile() {
     this.profilePromise ??= this.dataSource.profile()

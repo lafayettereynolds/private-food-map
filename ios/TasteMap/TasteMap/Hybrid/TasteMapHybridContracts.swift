@@ -28,6 +28,122 @@ public struct TasteMapHybridAuthStateDTO: Codable, Sendable {
     }
 }
 
+public struct TasteMapHybridAuthResultDTO: Codable, Sendable {
+    public let state: String
+    public let session: TasteMapHybridAuthStateDTO
+
+    public init(state: String, session: TasteMapHybridAuthStateDTO) {
+        self.state = state
+        self.session = session
+    }
+}
+
+public enum TasteMapHybridRuntimeMode: String, Codable, Sendable {
+    case nativePrimary = "NATIVE_PRIMARY"
+#if DEBUG
+    case hybridDevelopment = "HYBRID_DEVELOPMENT"
+#endif
+}
+
+public enum TasteMapHybridRouteSurface: String, Codable, CaseIterable, Sendable {
+    case map, discovery, add, profile, restaurant, visit, lists, publicList, activity
+    case roulette, analytics, premium, settings
+}
+
+public enum TasteMapHybridRouteOwner: String, Codable, Sendable { case hybrid, native }
+
+public struct TasteMapHybridRouteDTO: Codable, Equatable, Identifiable, Sendable {
+    public let surface: TasteMapHybridRouteSurface
+    public let identifier: String?
+
+    public init(surface: TasteMapHybridRouteSurface, identifier: String? = nil) throws {
+        let normalized = identifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if surface == .restaurant, normalized?.isEmpty != false { throw TasteMapHybridRouteError.missingIdentifier }
+        if let normalized, normalized.count > 256 { throw TasteMapHybridRouteError.invalidIdentifier }
+        self.surface = surface
+        self.identifier = normalized?.isEmpty == false ? normalized : nil
+    }
+
+    private enum CodingKeys: String, CodingKey { case surface, identifier }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            surface: values.decode(TasteMapHybridRouteSurface.self, forKey: .surface),
+            identifier: values.decodeIfPresent(String.self, forKey: .identifier)
+        )
+    }
+
+    public var owner: TasteMapHybridRouteOwner {
+        switch surface {
+        case .restaurant: .hybrid
+        case .profile where identifier == nil: .hybrid
+        default: .native
+        }
+    }
+
+    public var id: String { "\(surface.rawValue):\(identifier ?? "_")" }
+}
+
+public struct TasteMapHybridNativeRouteRequest: Codable, Equatable, Sendable {
+    public let route: TasteMapHybridRouteSurface
+    public let identifier: String?
+}
+
+public enum TasteMapHybridRouteError: Error, Equatable, Sendable {
+    case missingIdentifier, invalidIdentifier, malformedURL, unsupportedRoute
+}
+
+public struct TasteMapHybridNavigationStateDTO: Codable, Equatable, Sendable {
+    public let route: TasteMapHybridRouteDTO
+    public let owner: TasteMapHybridRouteOwner
+    public let canGoBack: Bool
+
+    public init(route: TasteMapHybridRouteDTO, canGoBack: Bool) {
+        self.route = route
+        self.owner = route.owner
+        self.canGoBack = canGoBack
+    }
+}
+
+public enum TasteMapHybridEventName: String, Codable, Sendable {
+    case authChanged = "auth.changed"
+    case navigationRoute = "navigation.route"
+    case deepLinkReceived = "deepLink.received"
+    case shareExtensionReceived = "shareExtension.received"
+    case appLifecycle = "app.lifecycle"
+}
+
+public struct TasteMapHybridEventEnvelope: Codable, Sendable {
+    public let version: Int
+    public let sequence: Int
+    public let name: TasteMapHybridEventName
+    public let payload: TasteMapHybridJSONValue
+
+    public init(sequence: Int, name: TasteMapHybridEventName, payload: TasteMapHybridJSONValue) {
+        self.version = TasteMapHybridBridgeContract.version
+        self.sequence = sequence
+        self.name = name
+        self.payload = payload
+    }
+}
+
+public enum TasteMapHybridLifecycleState: String, Codable, Sendable {
+    case foreground, background, resume, memoryWarning
+}
+
+public struct TasteMapHybridNormalizedSharePayload: Codable, Equatable, Sendable {
+    public let fingerprint: String
+    public let text: String
+    public let url: String?
+
+    public init(fingerprint: String, text: String, url: String?) {
+        self.fingerprint = fingerprint
+        self.text = text
+        self.url = url
+    }
+}
+
 public struct TasteMapHybridUserDTO: Codable, Sendable {
     public let id: String
     public let nickname: String
@@ -157,6 +273,9 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case photoPick = "photo.pick"
     case premiumStatus = "premium.status"
     case navigationOpenNative = "navigation.openNative"
+    case navigationOpenHybrid = "navigation.openHybrid"
+    case navigationBack = "navigation.back"
+    case navigationCurrent = "navigation.current"
 }
 
 public enum TasteMapHybridJSONValue: Codable, Sendable {
@@ -199,6 +318,18 @@ public struct TasteMapHybridBridgeErrorDTO: Codable, Sendable, Error {
     public let message: String
     public let recoverable: Bool
     public let details: [String: TasteMapHybridJSONValue]?
+
+    public init(
+        code: String,
+        message: String,
+        recoverable: Bool,
+        details: [String: TasteMapHybridJSONValue]?
+    ) {
+        self.code = code
+        self.message = message
+        self.recoverable = recoverable
+        self.details = details
+    }
 }
 
 public struct TasteMapHybridBridgeResponse: Codable, Sendable {

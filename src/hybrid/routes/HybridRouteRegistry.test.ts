@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { HYBRID_ROUTE_REGISTRY, parseTasteMapDeepLink, routeFromLocation, routeHash } from './HybridRouteRegistry'
 
 describe('HybridRouteRegistry', () => {
-  it('marks only Profile and Restaurant Detail as HYBRID_READY', () => {
-    expect(HYBRID_ROUTE_REGISTRY.profile).toBe('HYBRID_READY')
-    expect(HYBRID_ROUTE_REGISTRY.restaurant).toBe('HYBRID_READY')
-    expect(Object.entries(HYBRID_ROUTE_REGISTRY).filter(([, status]) => status === 'HYBRID_READY')).toHaveLength(2)
+  it('marks only Profile and Restaurant Detail as HYBRID_INTEGRATED', () => {
+    expect(HYBRID_ROUTE_REGISTRY.profile).toBe('HYBRID_INTEGRATED')
+    expect(HYBRID_ROUTE_REGISTRY.restaurant).toBe('HYBRID_INTEGRATED')
+    expect(Object.entries(HYBRID_ROUTE_REGISTRY).filter(([, status]) => status === 'HYBRID_INTEGRATED')).toHaveLength(2)
   })
 
   it('round-trips ready routes and keeps unknown paths at Profile', () => {

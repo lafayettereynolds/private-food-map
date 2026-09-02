@@ -2,6 +2,7 @@ export type HybridRouteStatus =
   | 'NATIVE_PRIMARY'
   | 'HYBRID_POC'
   | 'HYBRID_READY'
+  | 'HYBRID_INTEGRATED'
   | 'HYBRID_PRIMARY'
   | 'NATIVE_ROLLBACK'
   | 'RETIRED_AFTER_MIGRATION'
@@ -10,20 +11,22 @@ export const HYBRID_ROUTE_REGISTRY = {
   map: 'NATIVE_PRIMARY',
   discovery: 'NATIVE_PRIMARY',
   add: 'NATIVE_PRIMARY',
-  restaurant: 'HYBRID_READY',
-  profile: 'HYBRID_READY',
+  restaurant: 'HYBRID_INTEGRATED',
+  profile: 'HYBRID_INTEGRATED',
   visit: 'NATIVE_PRIMARY',
   lists: 'NATIVE_PRIMARY',
   roulette: 'NATIVE_PRIMARY',
   analytics: 'NATIVE_PRIMARY',
   premium: 'NATIVE_PRIMARY',
   settings: 'NATIVE_PRIMARY',
+  publicList: 'NATIVE_PRIMARY',
+  activity: 'NATIVE_PRIMARY',
 } as const satisfies Record<string, HybridRouteStatus>
 
 export type HybridSurface = keyof typeof HYBRID_ROUTE_REGISTRY
 
 export type HybridRoute =
-  | { surface: 'profile' }
+  | { surface: 'profile'; id?: string }
   | { surface: 'restaurant'; id: string }
   | { surface: Exclude<HybridSurface, 'profile' | 'restaurant'>; id?: string }
 
@@ -39,13 +42,13 @@ export function routeFromLocation(location: Pick<Location, 'hash'>): HybridRoute
       ? { surface, id: decodeURIComponent(match[2]) }
       : { surface: 'profile' }
   }
-  if (surface === 'profile') return { surface }
+  if (surface === 'profile') return { surface, id: match[2] ? decodeURIComponent(match[2]) : undefined }
   return { surface, id: match[2] ? decodeURIComponent(match[2]) : undefined }
 }
 
 export function routeHash(route: HybridRoute) {
   if (route.surface === 'restaurant') return `#/restaurant/${encodeURIComponent(route.id)}`
-  if (route.surface === 'profile') return '#/profile'
+  if (route.surface === 'profile') return route.id ? `#/profile/${encodeURIComponent(route.id)}` : '#/profile'
   return route.id
     ? `#/${route.surface}/${encodeURIComponent(route.id)}`
     : `#/${route.surface}`
@@ -58,6 +61,10 @@ export function surfaceStatus(surface: HybridSurface) {
 export interface TasteMapDeepLinkRoute {
   surface: 'restaurant' | 'profile' | 'list' | 'activity'
   id: string
+}
+
+export function isHybridOwnedRoute(route: HybridRoute) {
+  return route.surface === 'restaurant' || (route.surface === 'profile' && !route.id)
 }
 
 /** Parses only the allowlisted local/deep-link contract; it never navigates. */

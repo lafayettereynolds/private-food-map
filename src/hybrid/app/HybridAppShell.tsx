@@ -3,7 +3,7 @@ import { ArrowLeft, CloudOff, RotateCcw } from 'lucide-react'
 import { ProfilePage } from '../../components/ProfilePage'
 import { RestaurantPreviewCard } from '../../components/RestaurantPreviewCard'
 import { resolveTasteMapPlatform } from '../../platform/tasteMapPlatformResolver'
-import { TasteMapPlatformError, type TasteMapPlatform, type TasteMapProfileDashboardViewModel, type TasteMapRestaurantDetailViewModel, type TasteMapRuntimeInfo } from '../../platform/TasteMapPlatform'
+import { TasteMapPlatformError, type TasteMapHybridRoute as PlatformRoute, type TasteMapPlatform, type TasteMapProfileDashboardViewModel, type TasteMapRestaurantDetailViewModel, type TasteMapRuntimeInfo } from '../../platform/TasteMapPlatform'
 import { routeFromLocation, routeHash, surfaceStatus, type HybridRoute } from '../routes/HybridRouteRegistry'
 import './hybridShell.css'
 
@@ -21,6 +21,26 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const [routeError, setRouteError] = useState<string | null>(null)
   const [online, setOnline] = useState(() => navigator.onLine)
   const [generation, setGeneration] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    let remove: (() => Promise<void>) | undefined
+    platform.events.subscribe((event) => {
+      if (!active) return
+      if (event.name === 'auth.changed') {
+        setRestaurant(null)
+        setGeneration((value) => value + 1)
+      }
+      if (event.name === 'navigation.route' || event.name === 'deepLink.received') {
+        const next = platformRouteToHybrid(event.payload.route)
+        if (next) updateLocation(next)
+      }
+    }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
+    return () => {
+      active = false
+      void remove?.()
+    }
+  }, [platform])
 
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, '', routeHash({ surface: 'profile' }))
@@ -73,14 +93,26 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     return () => { active = false }
   }, [platform, route])
 
-  const navigate = (nextRoute: HybridRoute) => {
-    const hash = routeHash(nextRoute)
-    if (window.location.hash === hash) setRoute(nextRoute)
-    else window.location.hash = hash
+  const navigate = async (nextRoute: HybridRoute) => {
+    if (platform.kind === 'native') await platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute))
+    updateLocation(nextRoute)
+  }
+
+  const navigateBack = async () => {
+    if (platform.kind === 'native') {
+      const state = await platform.navigation.back()
+      const next = platformRouteToHybrid(state.route)
+      if (next) updateLocation(next)
+      return
+    }
+    window.history.back()
   }
 
   if (bootstrap.state === 'loading') return <ShellState kind="loading" message="正在读取 Taste Map 本地数据…" />
-  if (bootstrap.state === 'authRequired') return <ShellState kind="auth" message={bootstrap.message} />
+  if (bootstrap.state === 'authRequired') return <ShellState action={async () => {
+    const result = await platform.auth.signInWithApple()
+    if (result.state === 'authenticated') setGeneration((value) => value + 1)
+  }} kind="auth" message={bootstrap.message} />
   if (bootstrap.state === 'fatal') {
     return <ShellState action={() => setGeneration((value) => value + 1)} code={bootstrap.code} kind="fatal" message={bootstrap.message} />
   }
@@ -100,7 +132,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
           onSave={async () => undefined}
           onSelectRestaurant={(selected) => {
             void platform.haptics.selection()
-            navigate({ surface: 'restaurant', id: selected.id })
+            void navigate({ surface: 'restaurant', id: selected.id })
           }}
           restaurants={profile.restaurants}
           user={profile.user}
@@ -109,14 +141,14 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       : route.surface === 'restaurant'
         ? restaurant
           ? <main className="tm-hybrid-detail">
-              <button aria-label="返回我的页面" className="tm-hybrid-detail__back" onClick={() => window.history.back()} type="button"><ArrowLeft aria-hidden="true" size={18} />返回我的页面</button>
+              <button aria-label="返回我的页面" className="tm-hybrid-detail__back" onClick={() => void navigateBack()} type="button"><ArrowLeft aria-hidden="true" size={18} />返回我的页面</button>
               <RestaurantPreviewCard
                 additionalUserPhotos={restaurant.restaurant.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] })))}
                 historyRestaurants={profile.restaurants}
                 isInRoulette={false}
                 onAddToRoulette={() => void openNativeRoute(platform, 'roulette')}
                 onAddVisit={() => void openNativeRoute(platform, 'visit', restaurant.restaurant.id)}
-                onClose={() => window.history.back()}
+                onClose={() => void navigateBack()}
                 onDelete={() => undefined}
                 onEdit={() => undefined}
                 onEditVisit={() => undefined}
@@ -134,13 +166,13 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   </div>
 }
 
-function ShellState({ kind, message, code, action }: { kind: 'loading' | 'auth' | 'fatal'; message: string; code?: string; action?: () => void }) {
+function ShellState({ kind, message, code, action }: { kind: 'loading' | 'auth' | 'fatal'; message: string; code?: string; action?: () => void | Promise<void> }) {
   return <main className={`tm-hybrid-state is-${kind}`}>
     {kind === 'loading' ? <span aria-hidden="true" className="tm-hybrid-state__loader" /> : null}
     <h1>{kind === 'auth' ? '需要登录' : kind === 'fatal' ? '无法启动 Taste Map' : '正在启动 Taste Map'}</h1>
     <p>{message}</p>
     {code ? <small>错误代码：{code}</small> : null}
-    {action ? <button onClick={action} type="button"><RotateCcw aria-hidden="true" size={17} />重试</button> : null}
+    {action ? <button onClick={() => void action()} type="button"><RotateCcw aria-hidden="true" size={17} />{kind === 'auth' ? '使用 Apple 登录' : '重试'}</button> : null}
   </main>
 }
 
@@ -174,4 +206,23 @@ function initialRoute(): HybridRoute {
     ? import.meta.env.VITE_HYBRID_DEBUG_ROUTE
     : undefined
   return routeFromLocation({ hash: debugRoute || window.location.hash } as Location)
+}
+
+function updateLocation(nextRoute: HybridRoute) {
+  const hash = routeHash(nextRoute)
+  if (window.location.hash === hash) window.dispatchEvent(new HashChangeEvent('hashchange'))
+  else window.location.hash = hash
+}
+
+function hybridRouteToPlatform(route: HybridRoute): PlatformRoute {
+  if (route.surface === 'restaurant') return { surface: 'restaurant', identifier: route.id }
+  if (route.surface === 'profile') return { surface: 'profile', identifier: route.id }
+  return { surface: route.surface, identifier: route.id }
+}
+
+function platformRouteToHybrid(route: PlatformRoute): HybridRoute | null {
+  if (route.surface === 'restaurant') return route.identifier ? { surface: 'restaurant', id: route.identifier } : null
+  if (route.surface === 'profile') return { surface: 'profile', id: route.identifier }
+  if (route.surface === 'publicList' || route.surface === 'activity') return { surface: route.surface, id: route.identifier }
+  return { surface: route.surface, id: route.identifier }
 }

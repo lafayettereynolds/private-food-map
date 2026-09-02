@@ -19,6 +19,9 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'photo.pick',
   'premium.status',
   'navigation.openNative',
+  'navigation.openHybrid',
+  'navigation.back',
+  'navigation.current',
 ] as const
 
 export type TasteMapBridgeMethod = typeof TASTE_MAP_BRIDGE_METHODS[number]
@@ -199,6 +202,28 @@ export interface TasteMapNativeRouteRequest {
   identifier?: string
 }
 
+export type TasteMapHybridRoute =
+  | { surface: 'profile'; identifier?: string }
+  | { surface: 'restaurant'; identifier: string }
+  | { surface: 'map' | 'discovery' | 'add' | 'visit' | 'lists' | 'publicList' | 'activity' | 'roulette' | 'analytics' | 'premium' | 'settings'; identifier?: string }
+
+export interface TasteMapNavigationStateDTO {
+  route: TasteMapHybridRoute
+  owner: 'hybrid' | 'native'
+  canGoBack: boolean
+}
+
+export type TasteMapLifecycleState = 'foreground' | 'background' | 'resume' | 'memoryWarning'
+
+export type TasteMapHybridEvent =
+  | { version: 1; sequence: number; name: 'auth.changed'; payload: TasteMapAuthSessionStatus }
+  | { version: 1; sequence: number; name: 'navigation.route'; payload: TasteMapNavigationStateDTO }
+  | { version: 1; sequence: number; name: 'deepLink.received'; payload: TasteMapNavigationStateDTO }
+  | { version: 1; sequence: number; name: 'shareExtension.received'; payload: { fingerprint: string; target: TasteMapNavigationStateDTO } }
+  | { version: 1; sequence: number; name: 'app.lifecycle'; payload: { state: TasteMapLifecycleState } }
+
+export interface TasteMapEventSubscription { remove(): Promise<void> }
+
 export interface TasteMapBridgeErrorPayload {
   code: string
   message: string
@@ -243,7 +268,13 @@ export interface TasteMapPlatform {
   location: { current(): Promise<TasteMapLocationDTO> }
   photo: { pick(): Promise<TasteMapPhotoPickResult> }
   premium: { status(): Promise<TasteMapPremiumStatusDTO> }
-  navigation: { openNative(request: TasteMapNativeRouteRequest): Promise<void> }
+  navigation: {
+    openNative(request: TasteMapNativeRouteRequest): Promise<void>
+    openHybrid(route: TasteMapHybridRoute): Promise<TasteMapNavigationStateDTO>
+    back(): Promise<TasteMapNavigationStateDTO>
+    current(): Promise<TasteMapNavigationStateDTO>
+  }
+  events: { subscribe(listener: (event: TasteMapHybridEvent) => void): Promise<TasteMapEventSubscription> }
 }
 
 export type TasteMapBridgeUIState =

@@ -1,0 +1,15 @@
+{
+  "appId": "com.lafayette.tastemap",
+  "appName": "Taste Map",
+  "webDir": "public",
+  "loggingBehavior": "none",
+  "ios": {
+    "contentInset": "never",
+    "preferredContentMode": "mobile",
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "hostname": "localhost",
+    "iosScheme": "capacitor"
+  }
+}

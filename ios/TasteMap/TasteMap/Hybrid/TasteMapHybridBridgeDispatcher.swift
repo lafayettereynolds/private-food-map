@@ -7,6 +7,7 @@ public final class TasteMapHybridBridgeDispatcher {
     private let service: (any TasteMapHybridServiceProviding)?
     private let authState: @MainActor () -> TasteMapHybridAuthStateDTO
     private let nativeAction: @MainActor (TasteMapHybridBridgeMethod) throws -> Void
+    private let asynchronousAction: @MainActor (TasteMapHybridBridgeMethod, TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue
     private let runtime: TasteMapHybridRuntimeDTO
 
     public init(
@@ -15,13 +16,23 @@ public final class TasteMapHybridBridgeDispatcher {
         build: String,
         dataSource: String,
         authState: @escaping @MainActor () -> TasteMapHybridAuthStateDTO,
-        nativeAction: @escaping @MainActor (TasteMapHybridBridgeMethod) throws -> Void = { _ in }
+        nativeAction: @escaping @MainActor (TasteMapHybridBridgeMethod) throws -> Void = { _ in },
+        capabilityOverrides: [TasteMapHybridCapability: Bool] = [:],
+        asynchronousAction: @escaping @MainActor (TasteMapHybridBridgeMethod, TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue = { method, _ in
+            throw TasteMapHybridBridgeErrorDTO(
+                code: "capability_unavailable",
+                message: "This capability is not available in this Hybrid runtime.",
+                recoverable: false,
+                details: ["method": .string(method.rawValue)]
+            )
+        }
     ) {
         self.service = service
         self.authState = authState
         self.nativeAction = nativeAction
+        self.asynchronousAction = asynchronousAction
         let dataReady = service != nil
-        let capabilities: [TasteMapHybridCapability: Bool] = [
+        var capabilities: [TasteMapHybridCapability: Bool] = [
             .appleSignIn: false,
             .logout: false,
             .profileRead: dataReady,
@@ -37,6 +48,7 @@ public final class TasteMapHybridBridgeDispatcher {
             .backup: false,
             .accountDelete: false,
         ]
+        for (capability, enabled) in capabilityOverrides { capabilities[capability] = enabled }
         runtime = TasteMapHybridRuntimeDTO(
             bridgeVersion: Self.bridgeVersion,
             platform: "ios",
@@ -53,6 +65,36 @@ public final class TasteMapHybridBridgeDispatcher {
         let request = try Self.decoder.decode(TasteMapHybridBridgeRequest.self, from: requestData)
         let response = dispatch(request)
         return try Self.encoder.encode(response)
+    }
+
+    public func responseDataAsync(for requestData: Data) async throws -> Data {
+        let request = try Self.decoder.decode(TasteMapHybridBridgeRequest.self, from: requestData)
+        let response = await dispatchAsync(request)
+        return try Self.encoder.encode(response)
+    }
+
+    public func dispatchAsync(_ request: TasteMapHybridBridgeRequest) async -> TasteMapHybridBridgeResponse {
+        switch request.method {
+        case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
+                .photoPick, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
+                .navigationBack, .navigationCurrent:
+            guard request.version == Self.bridgeVersion else {
+                return failure(request, code: "bridge_version_mismatch", message: "This bridge version is not supported.")
+            }
+            guard request.requestId.count >= 8, request.requestId.count <= 128 else {
+                return failure(request, code: "invalid_request_id", message: "The bridge request identifier is invalid.")
+            }
+            do {
+                let value = try await asynchronousAction(request.method, request.payload)
+                return TasteMapHybridBridgeResponse(version: Self.bridgeVersion, requestId: request.requestId, result: value, error: nil)
+            } catch let error as TasteMapHybridBridgeErrorDTO {
+                return TasteMapHybridBridgeResponse(version: Self.bridgeVersion, requestId: request.requestId, result: nil, error: error)
+            } catch {
+                return failure(request, code: "native_bridge_failure", message: "Taste Map could not complete this request.", recoverable: true)
+            }
+        default:
+            return dispatch(request)
+        }
     }
 
     public func dispatch(_ request: TasteMapHybridBridgeRequest) -> TasteMapHybridBridgeResponse {
@@ -93,7 +135,8 @@ public final class TasteMapHybridBridgeDispatcher {
                 try nativeAction(.hapticsSelection)
                 result = .object([:])
             case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
-                    .photoPick, .premiumStatus, .navigationOpenNative:
+                    .photoPick, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
+                    .navigationBack, .navigationCurrent:
                 throw TasteMapHybridBridgeErrorDTO(
                     code: "capability_unavailable",
                     message: "This capability is not available in Hybrid Migration Phase 1.",
@@ -113,6 +156,7 @@ public final class TasteMapHybridBridgeDispatcher {
 
     private func requiredService() throws -> any TasteMapHybridServiceProviding {
         guard let service else {
+            if authState().state != "authenticated" { throw TasteMapHybridServiceError.authRequired }
             throw TasteMapHybridBridgeErrorDTO(
                 code: "hybrid_service_unavailable",
                 message: "The Hybrid data service is not configured in this build.",

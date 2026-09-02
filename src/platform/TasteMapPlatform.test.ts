@@ -118,6 +118,12 @@ describe('TasteMapBrowserAdapter', () => {
 
 describe('TasteMapNativeAdapter', () => {
   function nativeTarget(options: { bridgeVersion?: number; failMethod?: string } = {}) {
+    let eventListener: ((event: { sequence: number; name: 'auth.changed'; payload: { state: 'signedOut' } }) => void) | undefined
+    const remove = vi.fn(async () => undefined)
+    const addListener = vi.fn(async (_eventName: 'event', listener: typeof eventListener) => {
+      eventListener = listener
+      return { remove }
+    })
     const invoke = vi.fn(async ({ request }: { request: TasteMapBridgeRequestEnvelope<unknown> }) => {
       const version = options.bridgeVersion ?? TASTE_MAP_NATIVE_BRIDGE_VERSION
       let result: unknown
@@ -136,11 +142,15 @@ describe('TasteMapNativeAdapter', () => {
         result = { restaurant: bridgeProfile.restaurants.find((item) => item.id === id)! }
       } else if (request.method === 'auth.sessionStatus') {
         result = { state: 'authenticated', userID: fixture.profile.user.id, displayName: fixture.profile.user.nickname }
+      } else if (request.method === 'navigation.openHybrid') {
+        result = { route: request.payload, owner: 'hybrid', canGoBack: true }
+      } else if (request.method === 'navigation.back' || request.method === 'navigation.current') {
+        result = { route: { surface: 'profile' }, owner: 'hybrid', canGoBack: false }
       } else result = {}
       return { version, requestId: request.requestId, result } as TasteMapBridgeResponseEnvelope
     })
-    const target = { Capacitor: { Plugins: { TasteMapNative: { invoke } }, getPlatform: () => 'ios', isNativePlatform: () => true } }
-    return { invoke, target }
+    const target = { Capacitor: { Plugins: { TasteMapNative: { invoke, addListener } }, getPlatform: () => 'ios', isNativePlatform: () => true } }
+    return { addListener, emit: (event: Parameters<NonNullable<typeof eventListener>>[0]) => eventListener?.(event), invoke, remove, target }
   }
 
   it('uses one typed v1 envelope for runtime, profile, Restaurant and haptics', async () => {
@@ -173,5 +183,24 @@ describe('TasteMapNativeAdapter', () => {
     await expect(adapter.sync.run()).rejects.toMatchObject({
       name: 'TasteMapPlatformError', code: 'capability_unavailable', recoverable: false,
     } satisfies Partial<TasteMapPlatformError>)
+  })
+
+  it('keeps navigation and versioned native events typed without exposing auth credentials', async () => {
+    const native = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(native.target as never)
+    const session = await adapter.auth.sessionStatus()
+    expect(JSON.stringify(session)).not.toMatch(/accessToken|refreshToken|authorization|bearer/i)
+
+    const opened = await adapter.navigation.openHybrid({ surface: 'restaurant', identifier: fixture.restaurants[0].id })
+    expect(opened).toMatchObject({ owner: 'hybrid', route: { surface: 'restaurant' }, canGoBack: true })
+    expect((await adapter.navigation.back()).route.surface).toBe('profile')
+
+    const listener = vi.fn()
+    const subscription = await adapter.events.subscribe(listener)
+    native.emit({ sequence: 1, name: 'auth.changed', payload: { state: 'signedOut' } })
+    expect(listener).toHaveBeenCalledWith({ sequence: 1, name: 'auth.changed', payload: { state: 'signedOut' } })
+    await subscription.remove()
+    expect(native.addListener).toHaveBeenCalledWith('event', expect.any(Function))
+    expect(native.remove).toHaveBeenCalledOnce()
   })
 })

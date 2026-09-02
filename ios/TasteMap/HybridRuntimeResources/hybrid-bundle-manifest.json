@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "source": "vite-hybrid-release",
+  "localBundle": true,
+  "stagedAtBuildTime": false
+}

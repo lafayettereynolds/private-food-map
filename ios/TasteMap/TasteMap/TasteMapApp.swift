@@ -15,6 +15,7 @@ struct TasteMapApp: App {
     private let syncCoordinator: SyncCoordinator
     private let photoTransferCoordinator: PhotoTransferCoordinator
     private let premiumEntitlementService: PremiumEntitlementService
+    private let hybridRuntime: TasteMapHybridRuntime
     private let automaticServicesEnabled: Bool
 
     init() {
@@ -170,6 +171,12 @@ struct TasteMapApp: App {
 #endif
         premiumEntitlementService = premiumService
         modelContainer = container
+        hybridRuntime = TasteMapHybridRuntime(
+            mode: TasteMapHybridRuntimeConfiguration.current,
+            container: container,
+            authServices: authServices,
+            premiumEntitlementService: premiumService
+        )
         let coordinator = SyncCoordinator(
             context: container.mainContext,
             api: authServices.syncAPI,
@@ -214,6 +221,7 @@ struct TasteMapApp: App {
                 .environment(nativeAuthServices)
                 .environment(syncCoordinator)
                 .environment(premiumEntitlementService)
+                .environment(hybridRuntime)
                 .environment(\.photoTransferCoordinator, photoTransferCoordinator)
         }
         .modelContainer(modelContainer)
