@@ -17,7 +17,6 @@ import {
   X,
 } from 'lucide-react'
 import { AddRestaurantModal } from './components/AddRestaurantModal'
-import { PlusAction } from './components/PlusAction'
 import { AddVisitModal } from './components/AddVisitModal'
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal'
 import { MapView } from './components/MapView'
@@ -47,6 +46,10 @@ import { TasteFootprints } from './components/TasteFootprints'
 import { PublicRestaurantListRoute } from './components/RestaurantListsPanel'
 import { PremiumBurgerBadge } from './components/PremiumBurgerBadge'
 import { PremiumPaywallHost } from './components/PremiumPaywall'
+import { TasteMapAnalyticsPage, type AnalyticsMode } from './components/TasteMapAnalyticsPage'
+import { TasteMapListsPage } from './components/TasteMapListsPage'
+import { TasteMapPremiumPage, TasteMapSettingsPage } from './components/TasteMapPremiumSettingsPages'
+import { openPremiumPaywall } from './services/premiumPaywall'
 import { CLOUD_SYNC_ENABLED, IS_DEVELOPMENT, LOCAL_TEST_ACCOUNT } from './config/appEnvironment'
 import { db } from './db/appDb'
 import {
@@ -83,6 +86,7 @@ import { visitPhotoLimit } from './services/featurePolicy'
 import { buildRecommendationEmptyState, candidateCentroid, distanceKilometers, resolveRecommendationFilters, sameCity, type RelaxationSuggestion } from './services/recommendationFilterResolver'
 import { MEMBERSHIP_CHANGED_EVENT, MembershipService } from './services/membershipService'
 import { TasteMapBrowserAdapter } from './platform/TasteMapBrowserAdapter'
+import type { TasteMapHybridListDTO, TasteMapProfileDashboardViewModel } from './platform/TasteMapPlatform'
 
 type ActiveList = RestaurantStatus | 'recommended' | 'footprints'
 type ActiveView = 'map' | 'community' | 'profile'
@@ -144,6 +148,11 @@ export default function App() {
   const [rouletteTemporaryItems, setRouletteTemporaryItems] = useState<RouletteTemporaryCandidate[]>([])
   const [rouletteRestaurantSnapshots, setRouletteRestaurantSnapshots] = useState<RestaurantSummary[]>([])
   const [showRouletteCandidates, setShowRouletteCandidates] = useState(false)
+  const [sharedAnalyticsMode, setSharedAnalyticsMode] = useState<AnalyticsMode | null>(null)
+  const [sharedAnalyticsProfile, setSharedAnalyticsProfile] = useState<TasteMapProfileDashboardViewModel | null>(null)
+  const [sharedLists, setSharedLists] = useState<TasteMapHybridListDTO[] | null>(null)
+  const [sharedSettingsProfile, setSharedSettingsProfile] = useState<TasteMapProfileDashboardViewModel | null>(null)
+  const [sharedPremiumOpen, setSharedPremiumOpen] = useState(false)
   const [standaloneRestaurant, setStandaloneRestaurant] = useState<RestaurantSummary | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [toast, setToast] = useState('')
@@ -161,6 +170,21 @@ export default function App() {
   })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const profileReturnScrollRef = useRef(0)
+
+  const openSharedAnalytics = useCallback(async (mode: AnalyticsMode) => {
+    const profile = await browserPlatform.profile.getCurrent()
+    setSharedAnalyticsProfile(profile)
+    setSharedAnalyticsMode(mode)
+  }, [browserPlatform])
+
+  const openSharedLists = useCallback(async () => {
+    const content = await browserPlatform.content.snapshot()
+    setSharedLists(content.lists)
+  }, [browserPlatform])
+
+  const openSharedSettings = useCallback(async () => {
+    setSharedSettingsProfile(await browserPlatform.profile.getCurrent())
+  }, [browserPlatform])
 
   const allRestaurants = useMemo(() => restaurants ?? [], [restaurants])
   const allVisits = useMemo(() => visits ?? [], [visits])
@@ -1034,7 +1058,9 @@ export default function App() {
           onBack={viewedProfile ? returnFromViewedProfile : undefined}
           onDismissFriendRecommendation={viewedProfile ? undefined : dismissFriendRecommendation}
           onOpenRoulette={() => setShowRoulette(true)}
-          onOpenSettings={() => setShowSettings(true)}
+          onOpenAnalytics={(section) => void openSharedAnalytics(section)}
+          onOpenLists={() => void openSharedLists()}
+          onOpenSettings={() => void openSharedSettings()}
           onRequestRecommendationFriend={viewedProfile ? undefined : (userId) => void requestRecommendedFriendship(userId)}
           onSelectRestaurant={handleProfileListSelect}
           onSelectUser={viewedProfile ? (nextUser) => void viewUserProfile(nextUser) : undefined}
@@ -1064,10 +1090,9 @@ export default function App() {
         </div> : null}
       </aside> : null}
 
-      <nav aria-label="主要功能" className="bottom-navigation">
+      <nav aria-label="主要功能" className="bottom-navigation" data-product-contract="bottom-navigation">
         <button className={activeView === 'map' && !isSidebarOpen ? 'is-active' : ''} onClick={() => { setActiveView('map'); setSelectedId(null); setIsSidebarOpen(false) }} type="button"><MapIcon size={18} /><span>地图</span></button>
         <button className={activeView === 'community' ? 'is-active' : ''} onClick={() => setActiveView('community')} type="button"><Globe2 size={18} /><span>发现</span></button>
-        <PlusAction actionType="ADD_RESTAURANT" className="bottom-navigation__add" context="global" label="添加餐厅" onAction={() => setShowAddModal(true)} showLabel />
         <button className={`bottom-navigation__profile${activeView === 'profile' && !viewedProfile ? ' is-active' : ''}`} onClick={() => { setViewedProfile(null); setActiveView('profile') }} type="button"><UserRound size={18} /><span>我的</span></button>
       </nav>
 
@@ -1078,6 +1103,10 @@ export default function App() {
       {showSettings ? <SettingsModal membershipTier={currentUser?.membershipTier ?? 'free'} onClose={() => setShowSettings(false)} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} visitCount={allVisits.length} /> : null}
       <PremiumPaywallHost membershipTier={currentUser?.membershipTier ?? 'free'} />
       {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={handleSelect} onSelectedRestaurantIdsChange={setRouletteRestaurantIds} onTemporaryItemsChange={setRouletteTemporaryItems} restaurants={rouletteRestaurantOptions} selectedRestaurantIds={rouletteRestaurantIds} temporaryItems={rouletteTemporaryItems} /> : null}
+      {sharedAnalyticsMode && sharedAnalyticsProfile ? <section aria-label="数据分析" className="app-shared-surface-overlay"><button aria-label="关闭数据分析" className="app-shared-surface-overlay__close" onClick={() => { setSharedAnalyticsMode(null); setSharedAnalyticsProfile(null) }} type="button"><X size={18} />关闭</button><TasteMapAnalyticsPage initialMode={sharedAnalyticsMode} onOpenRestaurant={(restaurantID) => { const value = summaries.find((item) => item.id === restaurantID); if (value) { setSharedAnalyticsMode(null); setSharedAnalyticsProfile(null); setStandaloneRestaurant(value) } }} platform={browserPlatform} profile={sharedAnalyticsProfile} /></section> : null}
+      {sharedLists ? <section aria-label="我的食单" className="app-shared-surface-overlay"><button aria-label="关闭我的食单" className="app-shared-surface-overlay__close" onClick={() => setSharedLists(null)} type="button"><X size={18} />关闭</button><TasteMapListsPage lists={sharedLists} onOpenRestaurant={(restaurantID) => { const value = summaries.find((item) => item.id === restaurantID); if (value) { setSharedLists(null); setStandaloneRestaurant(value) } }} platform={browserPlatform} /></section> : null}
+      {sharedSettingsProfile ? <section aria-label="设置" className="app-shared-surface-overlay"><button aria-label="关闭设置" className="app-shared-surface-overlay__close" onClick={() => setSharedSettingsProfile(null)} type="button"><X size={18} />关闭</button><TasteMapSettingsPage onOpenNativeSettings={() => setShowSettings(true)} onOpenPremium={() => setSharedPremiumOpen(true)} platform={browserPlatform} profile={sharedSettingsProfile} /></section> : null}
+      {sharedPremiumOpen ? <section aria-label="Premium" className="app-shared-surface-overlay"><button aria-label="关闭 Premium" className="app-shared-surface-overlay__close" onClick={() => setSharedPremiumOpen(false)} type="button"><X size={18} />关闭</button><TasteMapPremiumPage onOpenStore={() => openPremiumPaywall('settings_entry')} platform={browserPlatform} /></section> : null}
       <PublicRestaurantListRoute onSelectRestaurant={handleProfileListSelect} restaurants={summaries} />
       {toast ? <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div> : null}
     </main>

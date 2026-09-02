@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronDown, Clock3, Edit3, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
+import { CalendarClock, ChevronDown, Clock3, Edit3, ListPlus, Share2, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
 import { DINING_OCCASION_OPTIONS, diningModeLabel, formatAverageQueueDuration, queueDurationLabel, starToTenScore, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
@@ -9,13 +9,17 @@ interface RestaurantPreviewCardProps {
   historyRestaurants?: RestaurantSummary[]
   additionalUserPhotos?: Array<{ source: string; photoId?: string | null }>
   onClose: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onAddVisit: () => void
-  onEditVisit: (visit: Visit) => void
-  onSaveRecommendation: () => void
-  onAddToRoulette: () => void
-  isInRoulette: boolean
+  onEdit?: () => void
+  onDelete?: () => void
+  onAddVisit?: () => void
+  onEditVisit?: (visit: Visit) => void
+  /** Native/Browser ownership projection; when present it is authoritative per Visit. */
+  canEditVisit?: (visit: Visit) => boolean
+  onSaveRecommendation?: () => void
+  onAddToRoulette?: () => void
+  onAddToList?: () => void
+  onShare?: () => void
+  isInRoulette?: boolean
   onAddToWant?: () => void
   /** Explicit current-viewer state for public discovery records; null means not saved by the viewer. */
   viewerStatus?: RestaurantSummary['status'] | null
@@ -34,9 +38,12 @@ export function RestaurantPreviewCard({
   onDelete,
   onAddVisit,
   onEditVisit,
+  canEditVisit,
   onSaveRecommendation,
   onAddToRoulette,
-  isInRoulette,
+  onAddToList,
+  onShare,
+  isInRoulette = false,
   onAddToWant,
   viewerStatus,
   readOnly = false,
@@ -51,14 +58,14 @@ export function RestaurantPreviewCard({
     <article className="map-card">
       <button className="map-card__close" aria-label="关闭餐厅卡片" onClick={onClose} type="button"><X size={16} /></button>
       <RestaurantSummarySection
-        actions={{
+        actions={onAddVisit || onAddToWant || onSaveRecommendation || onAddToRoulette ? {
           isInRoulette,
           onAddToWant: onAddToWant ?? onSaveRecommendation,
           onMarkVisited: onAddVisit,
           onToggleRoulette: onAddToRoulette,
           visitedActive: quickActionStatus === 'visited',
           wantActive: quickActionStatus === 'wantToGo',
-        }}
+        } : undefined}
         additionalUserPhotos={additionalUserPhotos}
         className="is-detail-card"
         historyRestaurants={historyRestaurants}
@@ -86,7 +93,7 @@ export function RestaurantPreviewCard({
                   <strong>第 {restaurant.visits.length - index} 次</strong>
                   <div className="visit-history-row__top-actions">
                     <time><CalendarClock size={12} /> {formatVisitDateTime(visit.visitedAt)}</time>
-                    {!readOnly ? <button aria-label={`编辑第 ${restaurant.visits.length - index} 次到访`} onClick={() => onEditVisit(visit)} type="button"><Edit3 size={11} /> 编辑</button> : null}
+                    {onEditVisit && (canEditVisit ? canEditVisit(visit) : !readOnly) ? <button data-product-contract="visit-edit-entry" aria-label={`编辑第 ${restaurant.visits.length - index} 次到访`} onClick={() => onEditVisit(visit)} type="button"><Edit3 size={11} /> 编辑</button> : null}
                   </div>
                 </div>
                 <div className="visit-history-row__details">
@@ -124,7 +131,10 @@ export function RestaurantPreviewCard({
         </details>
       ) : null}
       <div className="map-card__actions">
-        {!readOnly && !restaurant.isRecommendation ? <><button className="secondary-button" onClick={onEdit} type="button"><Edit3 size={15} /> 编辑</button><button className="danger-ghost-button" onClick={onDelete} type="button"><Trash2 size={15} /> 删除</button></> : null}
+        {onAddToList ? <button className="secondary-button" onClick={onAddToList} type="button"><ListPlus size={15} /> 加入食单</button> : null}
+        {onShare ? <button className="secondary-button" onClick={onShare} type="button"><Share2 size={15} /> 分享</button> : null}
+        {!readOnly && !restaurant.isRecommendation && onEdit ? <button className="secondary-button" onClick={onEdit} type="button"><Edit3 size={15} /> 编辑</button> : null}
+        {!readOnly && !restaurant.isRecommendation && onDelete ? <button className="danger-ghost-button" onClick={onDelete} type="button"><Trash2 size={15} /> 删除</button> : null}
       </div>
     </article>
   )

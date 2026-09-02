@@ -23,7 +23,16 @@ export function projectBridgeProfile(dto: TasteMapProfileDashboardDTO): TasteMap
 }
 
 export function projectBridgeRestaurant(dto: TasteMapRestaurantDetailDTO): TasteMapRestaurantDetailViewModel {
-  return { restaurant: projectRestaurant(dto.restaurant), image: dto.restaurant.image }
+  const restaurant = projectRestaurant(dto.restaurant)
+  restaurant.status = dto.viewerState === 'visited' ? 'visited' : 'wantToGo'
+  restaurant.isRecommendation = dto.viewerState === 'none'
+  return {
+    restaurant,
+    image: dto.restaurant.image,
+    viewerState: dto.viewerState,
+    editableVisitIDs: dto.editableVisitIDs,
+    capabilities: dto.capabilities,
+  }
 }
 
 function projectUser(user: TasteMapUserDTO): UserProfile {

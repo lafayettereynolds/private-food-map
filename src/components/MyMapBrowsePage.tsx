@@ -9,6 +9,7 @@ import type {
   TasteMapProfileDashboardViewModel,
 } from '../platform/TasteMapPlatform'
 import { projectBridgeRestaurant } from '../platform/TasteMapBridgeProjection'
+import { HYBRID_MAP_PRIMARY_SCOPES } from '../hybrid/app/HybridProductContracts'
 import type { Coordinates, RestaurantSummary } from '../types/domain'
 import { MapView } from './MapView'
 import { initialMapBrowseState, mapBrowseReducer } from './mapBrowseState'
@@ -72,7 +73,20 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       setError(null)
       platform.map.viewport(request).then((response) => {
         if (latestRequestID.current !== requestID || response.requestID !== requestID) return
-        const projected = response.items.map((restaurant) => projectBridgeRestaurant({ restaurant }))
+        const projected = response.items.map((restaurant) => projectBridgeRestaurant({
+          restaurant,
+          viewerState: restaurant.status === 'visited' ? 'visited' : 'want_to_go',
+          editableVisitIDs: [],
+          capabilities: {
+            canEditRestaurant: false,
+            canDeleteRestaurant: false,
+            canRecordVisit: true,
+            canAddToWantToGo: true,
+            canAddToList: true,
+            canAddToRoulette: true,
+            canShare: true,
+          },
+        }))
         setItems(projected.map((value) => value.restaurant))
         setImages(Object.fromEntries(projected.map((value) => [value.restaurant.id, value.image])))
         setOptions(response.options)
@@ -123,7 +137,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
         {mode === 'map' ? <MapIcon aria-hidden="true" size={19} /> : <List aria-hidden="true" size={19} />}
       </button>
       <nav aria-label="地图范围" className="tm-my-map__scopes">
-        {([['visited', '去过'], ['wantToGo', '想吃'], ['recommended', '推荐']] as const).map(([value, label]) => (
+        {HYBRID_MAP_PRIMARY_SCOPES.map(([value, label]) => (
           <button aria-current={scope === value ? 'page' : undefined} className={scope === value ? 'is-active' : ''} key={value} onClick={() => dispatch({ type: 'scope', value })} type="button">{label}</button>
         ))}
       </nav>
@@ -170,7 +184,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
         <span><strong>{selected.name}</strong><small>{selected.scoreOutOfTen?.toFixed(1) ?? '尚未评分'} · {selected.visitCount} 次到访</small></span>
         <button onClick={() => openRestaurant(selected)} type="button">查看详情</button>
       </aside> : null}
-      <button aria-label="添加餐厅" className="tm-my-map__add" onClick={onAddRestaurant} type="button"><Plus aria-hidden="true" size={17} />添加餐厅</button>
+      <button aria-label="添加餐厅" className="tm-my-map__add" data-product-contract="add-restaurant-primary-entry" onClick={onAddRestaurant} type="button"><Plus aria-hidden="true" size={17} />添加餐厅</button>
     </section>
 
     {fullFilterOpen ? <FullFilterSheet filters={filters} onChange={(value) => dispatch({ type: 'filters', value })} onClose={() => setFullFilterOpen(false)} options={options} /> : null}

@@ -36,6 +36,7 @@ struct RootTabView: View {
                 if !isBottomNavigationHidden {
                     TasteMapBottomNavigation(
                         selection: $selectedTab,
+                        showsAddRestaurant: selectedTab == .map,
                         onAddRestaurant: { isShowingSearch = true }
                     )
                 }

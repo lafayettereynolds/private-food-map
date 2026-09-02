@@ -17,6 +17,7 @@ import {
 
 const capabilities: TasteMapCapabilityRegistry = {
   appleSignIn: false, logout: false, profileRead: true, restaurantRead: true, mapBrowse: true,
+  contentRead: true,
   visitContract: true, sync: false, haptics: true, share: false,
   location: false, photoPicker: false, premium: false, nativeNavigation: false,
   backup: false, accountDelete: false,
@@ -171,7 +172,20 @@ describe('TasteMapNativeAdapter', () => {
       else if (request.method === 'restaurant.get') {
         const id = (request.payload as { id: string }).id
         const restaurant = fixture.restaurants.find((item) => item.id === id)!
-        result = { restaurant: bridgeProfile.restaurants.find((item) => item.id === id)! }
+        result = {
+          restaurant: bridgeProfile.restaurants.find((item) => item.id === id)!,
+          viewerState: restaurant.status === 'visited' ? 'visited' : 'want_to_go',
+          editableVisitIDs: restaurant.visits.map((visit) => visit.id),
+          capabilities: {
+            canEditRestaurant: true,
+            canDeleteRestaurant: true,
+            canRecordVisit: true,
+            canAddToWantToGo: true,
+            canAddToList: true,
+            canAddToRoulette: true,
+            canShare: true,
+          },
+        }
       } else if (request.method === 'auth.sessionStatus') {
         result = { state: 'authenticated', userID: fixture.profile.user.id, displayName: fixture.profile.user.nickname }
       } else if (request.method === 'navigation.openHybrid') {
@@ -197,6 +211,12 @@ describe('TasteMapNativeAdapter', () => {
     const detail = await adapter.restaurant.get(fixture.restaurants[0].id)
     expect(detail.restaurant.id).toBe(fixture.restaurants[0].id)
     expect(detail.restaurant.userId).toBe(CURRENT_USER_ID)
+    expect(detail.editableVisitIDs).toEqual(fixture.restaurants[0].visits.map((visit) => visit.id))
+    expect(detail.capabilities).toEqual(expect.objectContaining({
+      canEditRestaurant: true,
+      canDeleteRestaurant: true,
+      canRecordVisit: true,
+    }))
     await adapter.haptics.selection()
     expect(invoke).toHaveBeenCalledTimes(4)
     for (const call of invoke.mock.calls) {
@@ -243,5 +263,17 @@ describe('TasteMapNativeAdapter', () => {
     await subscription.remove()
     expect(native.addListener).toHaveBeenCalledWith('event', expect.any(Function))
     expect(native.remove).toHaveBeenCalledOnce()
+  })
+
+  it('routes Visit edits through the typed Native handoff without embedding ownership decisions in JavaScript', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    await adapter.navigation.openNative({ route: 'visitEdit', identifier: 'visit-owned-1' })
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({
+        method: 'navigation.openNative',
+        payload: { route: 'visitEdit', identifier: 'visit-owned-1' },
+      }),
+    }))
   })
 })

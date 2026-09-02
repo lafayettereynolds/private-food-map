@@ -135,10 +135,10 @@ describe('analysis share system', () => {
     expect(`${safe.summary} ${safe.restaurants[0].meta}`).not.toMatch(/owner@example|private_123|¥388|18 号/)
   })
 
-  it('renders a clean 1080 by 1440 poster rather than a page screenshot', () => {
+  it('renders a clean 9:16 1080 by 1920 poster rather than a page screenshot', () => {
     const data = shareData()
     const svg = renderAnalysisPosterSvg({ data, hero: data.heroCandidates[0].source, logo: null, restaurantImages: data.restaurants.map((item) => item.image.source), heroIndex: 0 })
-    expect(svg).toContain('width="1080" height="1440"')
+    expect(svg).toContain('width="1080" height="1920"')
     expect(svg).not.toMatch(/button|scrollbar|overflow/)
   })
 

@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { HYBRID_ROUTE_REGISTRY, parseTasteMapDeepLink, routeFromLocation, routeHash } from './HybridRouteRegistry'
+import { HYBRID_ROUTE_REGISTRY, parseTasteMapDeepLink, routeFromLocation, routeFromStartupLocation, routeHash } from './HybridRouteRegistry'
 
 describe('HybridRouteRegistry', () => {
-  it('marks My Map, Profile and Restaurant Detail as HYBRID_INTEGRATED', () => {
-    expect(HYBRID_ROUTE_REGISTRY.map).toBe('HYBRID_INTEGRATED')
-    expect(HYBRID_ROUTE_REGISTRY.profile).toBe('HYBRID_INTEGRATED')
-    expect(HYBRID_ROUTE_REGISTRY.restaurant).toBe('HYBRID_INTEGRATED')
-    expect(Object.entries(HYBRID_ROUTE_REGISTRY).filter(([, status]) => status === 'HYBRID_INTEGRATED')).toHaveLength(3)
+  it('marks the Batch 01 product surfaces as HYBRID_INTEGRATED while Visit remains Native', () => {
+    const migrated = ['map', 'profile', 'restaurant', 'discovery', 'activity', 'add', 'lists', 'publicList', 'roulette', 'analytics', 'premium', 'settings'] as const
+    migrated.forEach((surface) => expect(HYBRID_ROUTE_REGISTRY[surface]).toBe('HYBRID_INTEGRATED'))
+    expect(HYBRID_ROUTE_REGISTRY.visit).toBe('NATIVE_PRIMARY')
   })
 
   it('round-trips ready routes and keeps unknown paths at Profile', () => {
     const detail = { surface: 'restaurant' as const, id: 'restaurant id' }
     expect(routeFromLocation({ hash: routeHash(detail) } as Location)).toEqual(detail)
     expect(routeFromLocation({ hash: '#/unknown' } as Location)).toEqual({ surface: 'profile' })
+  })
+
+  it('keeps an explicit Browser or Capacitor route authoritative over the Debug fallback', () => {
+    expect(routeFromStartupLocation({ hash: '#/discovery' } as Location, '#/map')).toEqual({ surface: 'discovery' })
+    expect(routeFromStartupLocation({ hash: '#/add' } as Location, '#/map')).toEqual({ surface: 'add' })
+    expect(routeFromStartupLocation({ hash: '' } as Location, '#/map')).toEqual({ surface: 'map' })
   })
 
   it('allowlists app and universal deep-link shapes', () => {

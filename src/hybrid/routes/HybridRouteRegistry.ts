@@ -9,18 +9,18 @@ export type HybridRouteStatus =
 
 export const HYBRID_ROUTE_REGISTRY = {
   map: 'HYBRID_INTEGRATED',
-  discovery: 'NATIVE_PRIMARY',
-  add: 'NATIVE_PRIMARY',
+  discovery: 'HYBRID_INTEGRATED',
+  add: 'HYBRID_INTEGRATED',
   restaurant: 'HYBRID_INTEGRATED',
   profile: 'HYBRID_INTEGRATED',
   visit: 'NATIVE_PRIMARY',
-  lists: 'NATIVE_PRIMARY',
-  roulette: 'NATIVE_PRIMARY',
-  analytics: 'NATIVE_PRIMARY',
-  premium: 'NATIVE_PRIMARY',
-  settings: 'NATIVE_PRIMARY',
-  publicList: 'NATIVE_PRIMARY',
-  activity: 'NATIVE_PRIMARY',
+  lists: 'HYBRID_INTEGRATED',
+  roulette: 'HYBRID_INTEGRATED',
+  analytics: 'HYBRID_INTEGRATED',
+  premium: 'HYBRID_INTEGRATED',
+  settings: 'HYBRID_INTEGRATED',
+  publicList: 'HYBRID_INTEGRATED',
+  activity: 'HYBRID_INTEGRATED',
 } as const satisfies Record<string, HybridRouteStatus>
 
 export type HybridSurface = keyof typeof HYBRID_ROUTE_REGISTRY
@@ -46,6 +46,18 @@ export function routeFromLocation(location: Pick<Location, 'hash'>): HybridRoute
   return { surface, id: match[2] ? decodeURIComponent(match[2]) : undefined }
 }
 
+/**
+ * Browser and Capacitor deep links are authoritative. The Debug fixture route is
+ * only a fallback for an otherwise empty launch and must never mask an explicit
+ * URL/deep-link route during refresh.
+ */
+export function routeFromStartupLocation(
+  location: Pick<Location, 'hash'>,
+  debugFallbackHash?: string,
+): HybridRoute {
+  return routeFromLocation({ hash: location.hash || debugFallbackHash || '' } as Location)
+}
+
 export function routeHash(route: HybridRoute) {
   if (route.surface === 'restaurant') return `#/restaurant/${encodeURIComponent(route.id)}`
   if (route.surface === 'profile') return route.id ? `#/profile/${encodeURIComponent(route.id)}` : '#/profile'
@@ -64,7 +76,7 @@ export interface TasteMapDeepLinkRoute {
 }
 
 export function isHybridOwnedRoute(route: HybridRoute) {
-  return route.surface === 'map' || route.surface === 'restaurant' || (route.surface === 'profile' && !route.id)
+  return route.surface !== 'visit' && (route.surface !== 'profile' || !route.id)
 }
 
 /** Parses only the allowlisted local/deep-link contract; it never navigates. */

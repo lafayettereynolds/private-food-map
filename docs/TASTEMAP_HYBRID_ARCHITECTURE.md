@@ -112,6 +112,8 @@ Deep links are parsed only for allowlisted `restaurant`, `profile`, `list`, and 
 
 The Swift and TypeScript route registries are tested against the same ownership matrix. `HYBRID_INTEGRATED` means a route can run through the formal app target; it is not `HYBRID_PRIMARY`, and Release still launches current SwiftUI.
 
+Route existence is deliberately independent from primary-navigation membership. The route registry can contain `add` and every other owned surface while the exact bottom navigation remains only `map → discovery → profile` (`地图 → 发现 → 我的`). Add Restaurant is a real Hybrid route, but its sole root primary entry is the Map-owned floating `添加餐厅` CTA. It is forbidden to infer or generate bottom tabs from all registered routes.
+
 ## 6. Auth session and bootstrap contract
 
 Bootstrap order is deterministic:
@@ -154,6 +156,22 @@ Browser and Capacitor reuse `ProfilePage`, `RestaurantPreviewCard`, `MyMapBrowse
 The map product contract forbids numeric or food-count clusters at every zoom level. Every Restaurant remains an independent marker. Normal layout uses natural overlap without default offset, dispersion or spiderfy. Layer priority is deterministic: selected Restaurant → rating → visit count → stable Restaurant ID. The current-user avatar location marker is a separate layer and never participates in the Restaurant comparator. A missing/unavailable map SDK degrades to the local neutral map shell with independent markers and working list/detail navigation rather than a blank page.
 
 `TasteMapBridgeProjection` is an anti-corruption layer for legacy Web presentation sentinels. It does not rewrite real user IDs in DTOs or native storage.
+
+### 9.1 Independent acceptance gates
+
+One shared React/CSS tree prevents platform drift, but two hosts can still render the same incorrect product. Hybrid acceptance therefore reports seven independent gates:
+
+1. `PRODUCT CONTRACT`: exact approved topology and semantics, independent of host parity;
+2. `ONE REACT UI`: formal Browser and Capacitor hosts consume the same page/shared components rather than parallel layouts;
+3. `CURRENT CAPABILITY PRESERVATION`: Native-pending capabilities keep their formal UI entry and use typed Native handoff;
+4. `BROWSER ↔ CAPACITOR`: same component/CSS and equivalent rendering state;
+5. `LAFAYETTE / CANONICAL REFERENCE`: controlling reference parity when applicable;
+6. `FUNCTION / SEMANTIC`: interactions, data sources, states and return paths, including Native owner-scoped capability authority;
+7. `NEGATIVE CONTRACT`: forbidden topology, duplicate pages, semantic substitutions, no-op actions and silent capability loss are absent.
+
+An applicable failure keeps the surface out of `PASS`, even when the other gates pass. Objective topology is executable policy, not documentation alone. `hybrid/tests/HybridGlobalProductContract.test.ts` locks exact bottom-navigation count/order, the single Add primary entry, Map scopes, Discovery tabs, canonical Restaurant Detail ownership and negative patterns such as clusters, default marker separation, wrong Activity-rating semantics and paste-link primary acquisition. App Shell/navigation changes must run this suite.
+
+Batch closure also performs a systemic source scan for platform-specific page forks, migration-state hiding (`readOnly`, `disabled`, `unavailable`, missing/no-op callbacks), route-to-tab generation and shared Browser/Capacitor errors. Permission-sensitive actions are emitted by typed Native capability DTOs; JavaScript does not infer ownership from a user ID string or visibility state.
 
 ## 10. Build and Release policy
 
@@ -199,3 +217,5 @@ See `TASTEMAP_HYBRID_MIGRATION_STATUS.md` for the current route matrix.
 - Do not reintroduce clusters, default offset/spiderfy/dispersion, platform-specific Map page forks or a second Map/List query state.
 - Do not let React resolve private native paths or independently change the canonical Restaurant image source identity.
 - Do not begin a new route migration merely because Phase 2B infrastructure is ready.
+- Do not equate route registration with bottom-tab membership or add Add Restaurant as a fourth tab.
+- Do not infer Product correctness from Browser/Capacitor equality; Product Contract, visual reference, function and native data/security remain separate gates.

@@ -6,7 +6,7 @@ const source = (name: string) => readFileSync(new URL(name, import.meta.url), 'u
 describe('Phase 2B Hybrid Map product contract', () => {
   it('keeps one centered title switch and the exact three canonical scopes', () => {
     const page = source('../../src/components/MyMapBrowsePage.tsx')
-    expect(page).toContain("[['visited', '去过'], ['wantToGo', '想吃'], ['recommended', '推荐']]")
+    expect(page).toContain('HYBRID_MAP_PRIMARY_SCOPES.map')
     expect(page).toContain("切换到我的列表")
     expect(page).toContain("切换到我的地图")
     expect(page).not.toContain('适合你')

@@ -8,6 +8,7 @@ import {
   type TasteMapBridgeRequestEnvelope,
   type TasteMapBridgeResponseEnvelope,
   type TasteMapLocationDTO,
+  type TasteMapHybridContentSnapshotDTO,
   type TasteMapMapBrowseRequest,
   type TasteMapMapBrowseResponse,
   type TasteMapNativeRouteRequest,
@@ -64,6 +65,7 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
     list: async (request: TasteMapRestaurantListRequest = {}) => (await this.call<TasteMapRestaurantDetailDTO[]>('restaurant.list', request)).map(projectBridgeRestaurant),
   }
   map = { viewport: (request: TasteMapMapBrowseRequest) => this.call<TasteMapMapBrowseResponse>('map.viewport', request) }
+  content = { snapshot: () => this.call<TasteMapHybridContentSnapshotDTO>('content.snapshot') }
   visit = { contract: () => this.call<{ version: 1; writeUIReady: false }>('visit.contract') }
   sync = {
     status: () => this.call<TasteMapSyncStatusDTO>('sync.status'),

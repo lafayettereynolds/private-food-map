@@ -43,6 +43,7 @@ public protocol TasteMapHybridServiceProviding: AnyObject {
     func restaurantDetail(id: String) throws -> TasteMapHybridRestaurantDetailDTO
     func restaurants(request: TasteMapHybridRestaurantListRequest) throws -> [TasteMapHybridRestaurantDetailDTO]
     func mapViewport(request: TasteMapHybridMapBrowseRequest) throws -> TasteMapHybridMapBrowseResponse
+    func contentSnapshot() throws -> TasteMapHybridContentSnapshotDTO
 }
 
 /// Typed, owner-scoped read facade for the first Hybrid-ready routes.
@@ -106,10 +107,33 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     }
 
     public func restaurantDetail(id: String) throws -> TasteMapHybridRestaurantDetailDTO {
-        guard let restaurant = try scopedRestaurants().first(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) else {
-            throw TasteMapHybridServiceError.restaurantMissing
+        let scoped = try scopedRestaurants()
+        if let restaurant = scoped.first(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) {
+            return ownedDetail(restaurant)
         }
-        return TasteMapHybridRestaurantDetailDTO(restaurant: restaurant)
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+        if let reference = try TasteMapHybridRestaurantReferenceResolver.resolve(
+            identifier: id,
+            ownerUserID: ownerUserID,
+            context: context
+        ) {
+            let ownedModels = try context.fetch(FetchDescriptor<Restaurant>()).filter {
+                $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+            }
+            if let match = RestaurantDeduplicator.classifiedMatch(
+                for: reference.projection.restaurantCandidate,
+                in: ownedModels
+            ), match.kind == .exactProviderIdentity {
+                let local = match.restaurant
+                let localID = local.remoteID ?? local.id.uuidString.lowercased()
+                if let restaurant = scoped.first(where: { $0.id.caseInsensitiveCompare(localID) == .orderedSame }) {
+                    return ownedDetail(restaurant)
+                }
+            }
+            return publicDetail(reference)
+        }
+#endif
+        throw TasteMapHybridServiceError.restaurantMissing
     }
 
     public func restaurants(request: TasteMapHybridRestaurantListRequest) throws -> [TasteMapHybridRestaurantDetailDTO] {
@@ -121,8 +145,66 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                     && (request.status == nil || request.status == restaurant.status)
             }
             .prefix(maximum)
-            .map(TasteMapHybridRestaurantDetailDTO.init(restaurant:))
+            .map { restaurant in
+                TasteMapHybridRestaurantDetailDTO(
+                    restaurant: restaurant,
+                    viewerState: restaurant.status == "visited" ? "visited" : "want_to_go",
+                    editableVisitIDs: restaurant.visits.map(\.id),
+                    capabilities: .owned
+                )
+            }
     }
+
+    private func ownedDetail(_ restaurant: TasteMapHybridRestaurantDTO) -> TasteMapHybridRestaurantDetailDTO {
+        TasteMapHybridRestaurantDetailDTO(
+            restaurant: restaurant,
+            viewerState: restaurant.status == "visited" ? "visited" : "want_to_go",
+            editableVisitIDs: restaurant.visits.map(\.id),
+            capabilities: .owned
+        )
+    }
+
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+    private func publicDetail(
+        _ reference: TasteMapHybridResolvedRestaurantReference
+    ) -> TasteMapHybridRestaurantDetailDTO {
+        let value = reference.projection
+        let timestamp = Self.dateFormatter.string(from: reference.updatedAt)
+        let status = reference.viewerState == .visited ? "visited" : "wantToGo"
+        let restaurant = TasteMapHybridRestaurantDTO(
+            id: value.globalKey,
+            name: value.name,
+            address: value.address,
+            city: value.city,
+            latitude: value.latitude,
+            longitude: value.longitude,
+            status: status,
+            tags: value.tags,
+            phone: nil,
+            openingHours: nil,
+            referencePrice: value.pricePerPerson,
+            visitCount: 0,
+            averageRating: nil,
+            scoreOutOfTen: nil,
+            latestVisitDate: nil,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            visits: [],
+            image: publicImageDescriptor(
+                photoID: value.photo?.photoId,
+                merchantURL: value.merchantImageUrl,
+                seed: value.globalKey,
+                name: value.name
+            )
+        )
+        return TasteMapHybridRestaurantDetailDTO(
+            restaurant: restaurant,
+            viewerState: reference.viewerState.rawValue,
+            editableVisitIDs: [],
+            capabilities: .publicReadable
+        )
+    }
+#endif
 
     public func mapViewport(request: TasteMapHybridMapBrowseRequest) throws -> TasteMapHybridMapBrowseResponse {
         guard request.requestID.count >= 8, request.requestID.count <= 128 else {
@@ -196,6 +278,300 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             options: options
         )
     }
+
+    public func contentSnapshot() throws -> TasteMapHybridContentSnapshotDTO {
+        let generatedAt = Self.dateFormatter.string(from: .now)
+        let restaurants = try scopedRestaurants()
+        if ownerUserID == "tm_hybrid_debug" {
+            return debugContentSnapshot(restaurants: restaurants, generatedAt: generatedAt)
+        }
+#if !TASTEMAP_HYBRID_BRIDGE_CORE && DEBUG
+        // Visual QA is an isolated Debug-only session. It intentionally uses
+        // deterministic owner-scoped records instead of remote social APIs so
+        // Lafayette can inspect rich content without a real Apple credential.
+        if TasteMapUITestFixtures.usesVisualQA {
+            return debugContentSnapshot(restaurants: restaurants, generatedAt: generatedAt)
+        }
+#endif
+#if TASTEMAP_HYBRID_BRIDGE_CORE
+        return TasteMapHybridContentSnapshotDTO(
+            generatedAt: generatedAt,
+            discovery: .init(forYou: [], similarTaste: [], trending: []),
+            community: .init(following: [], latest: []),
+            lists: []
+        )
+#else
+        let discoveryRestaurants = Dictionary(uniqueKeysWithValues:
+            try context.fetch(FetchDescriptor<CachedDiscoveryRestaurant>())
+                .filter { $0.currentUserID == ownerUserID }
+                .compactMap { cached in cached.projection.map { (cached.globalKey, $0) } }
+        )
+        let discoveryItems = try context.fetch(FetchDescriptor<CachedDiscoveryPlacement>())
+            .filter { $0.currentUserID == ownerUserID }
+            .compactMap { placement -> TasteMapHybridDiscoveryItemDTO? in
+                guard let projection = discoveryRestaurants[placement.globalKey],
+                      let value = placement.context else { return nil }
+                return discoveryDTO(context: value, restaurant: projection)
+            }
+            .reduce(into: [String: TasteMapHybridDiscoveryItemDTO]()) { result, item in
+                if result[item.id] == nil || (result[item.id]?.rank ?? .max) > item.rank { result[item.id] = item }
+            }
+            .values
+            .sorted { $0.rank < $1.rank || ($0.rank == $1.rank && $0.id < $1.id) }
+
+        let cachedCommunity = try context.fetch(FetchDescriptor<CachedCommunityContent>())
+            .filter { $0.currentUserID == ownerUserID }
+        let latest = uniqueCommunityItems(cachedCommunity.compactMap { $0.item }.map(communityDTO))
+        let followingIDs = Set(cachedCommunity.filter {
+            $0.routeKey == LocalCommunityStore.feedRoute(.following)
+        }.map(\.contentID))
+
+        let profile = try context.fetch(FetchDescriptor<UserProfile>()).first {
+            $0.tasteMapUserID == ownerUserID && $0.deletedAt == nil
+        }
+        let ownerName = profile?.displayName ?? "我"
+        let ownLists = try context.fetch(FetchDescriptor<RestaurantList>())
+            .filter { $0.ownerUserID == ownerUserID && $0.deletedAt == nil }
+        let ownItems = try context.fetch(FetchDescriptor<RestaurantListItem>())
+            .filter { $0.ownerUserID == ownerUserID && $0.deletedAt == nil }
+        let ownListDTOs = ownLists.map { list in
+            let items = ownItems.filter { $0.listID == list.id }.sorted { $0.position < $1.position }
+            return TasteMapHybridListDTO(
+                id: list.remoteID ?? list.id.uuidString.lowercased(),
+                title: list.title,
+                description: list.listDescription,
+                visibility: list.visibility.rawValue,
+                isRanked: list.isRanked,
+                isOwnedByViewer: true,
+                ownerName: ownerName,
+                restaurantCount: items.count,
+                restaurants: items.compactMap { listRestaurantDTO(item: $0) },
+                updatedAt: Self.dateFormatter.string(from: list.updatedAt)
+            )
+        }
+        let publicLists = try context.fetch(FetchDescriptor<CachedPublicRestaurantList>())
+            .filter { $0.viewerUserID == ownerUserID }
+        let publicItems = try context.fetch(FetchDescriptor<CachedPublicRestaurantListItem>())
+            .filter { $0.viewerUserID == ownerUserID }
+        let publicListDTOs = publicLists.compactMap { cached -> TasteMapHybridListDTO? in
+            guard let summary = cached.summary else { return nil }
+            let items = publicItems.filter { $0.listID == cached.listID }.compactMap(\.item).sorted { $0.position < $1.position }
+            return TasteMapHybridListDTO(
+                id: summary.id,
+                title: summary.title,
+                description: summary.description,
+                visibility: summary.visibility.rawValue,
+                isRanked: summary.isRanked,
+                isOwnedByViewer: summary.owner.userId == ownerUserID,
+                ownerName: summary.owner.displayName,
+                restaurantCount: summary.restaurantCount,
+                restaurants: items.map { item in listRestaurantDTO(item: item) },
+                updatedAt: summary.updatedAt
+            )
+        }
+        return TasteMapHybridContentSnapshotDTO(
+            generatedAt: generatedAt,
+            discovery: .init(
+                forYou: discoveryItems.filter { $0.mode == "for_you" },
+                similarTaste: discoveryItems.filter { $0.mode == "similar_taste" },
+                trending: discoveryItems.filter { $0.mode == "trending" }
+            ),
+            community: .init(
+                following: latest.filter { followingIDs.contains($0.id) },
+                latest: latest
+            ),
+            lists: (ownListDTOs + publicListDTOs).sorted { $0.updatedAt > $1.updatedAt }
+        )
+#endif
+    }
+
+    private func debugContentSnapshot(
+        restaurants: [TasteMapHybridRestaurantDTO],
+        generatedAt: String
+    ) -> TasteMapHybridContentSnapshotDTO {
+        let names = ["林夏", "周舟", "陈一碗", "江南胃", "阿岚", "西湖小柚", "陆小满", "一只饭团"]
+        let discovery = Array(restaurants.prefix(12).enumerated()).map { index, value in
+            let user = TasteMapHybridPersonDTO(
+                id: "tm_demo_\(index)", name: names[index % names.count], city: value.city,
+                avatarPhotoID: nil, avatarPresetID: ["otter", "polar-bear", "fox", "capybara"][index % 4],
+                isFollowing: index.isMultiple(of: 2)
+            )
+            let content = contentRestaurant(value)
+            return TasteMapHybridDiscoveryItemDTO(
+                id: "hybrid-discovery-\(index)", mode: "for_you", restaurant: content,
+                viewerState: value.status == "visited" ? "visited" : "want_to_go", sourceUser: user,
+                activityRating: value.averageRating, activityVisitedAt: value.latestVisitDate,
+                reason: index.isMultiple(of: 2) ? "与你常吃的菜系很接近" : "同城高质量真实记录",
+                similarityPercent: 82 - index * 3, sharedRestaurantCount: 6 + index,
+                uniqueVisitorCount: 18 + index * 4, wantToGoCount: 9 + index,
+                rank: index + 1
+            )
+        }
+        let similar = discovery.map { item in
+            TasteMapHybridDiscoveryItemDTO(
+                id: "similar-\(item.id)", mode: "similar_taste", restaurant: item.restaurant,
+                viewerState: item.viewerState, sourceUser: item.sourceUser,
+                activityRating: item.activityRating, activityVisitedAt: item.activityVisitedAt,
+                reason: "与这位用户有 \(item.sharedRestaurantCount ?? 0) 家共同到访",
+                similarityPercent: item.similarityPercent, sharedRestaurantCount: item.sharedRestaurantCount,
+                uniqueVisitorCount: nil, wantToGoCount: nil, rank: item.rank
+            )
+        }
+        let trending = discovery.map { item in
+            TasteMapHybridDiscoveryItemDTO(
+                id: "trending-\(item.id)", mode: "trending", restaurant: item.restaurant,
+                viewerState: item.viewerState, sourceUser: item.sourceUser,
+                activityRating: item.activityRating, activityVisitedAt: item.activityVisitedAt,
+                reason: "最近 7 天有 \(item.uniqueVisitorCount ?? 0) 位用户到访",
+                similarityPercent: nil, sharedRestaurantCount: nil,
+                uniqueVisitorCount: item.uniqueVisitorCount, wantToGoCount: item.wantToGoCount, rank: item.rank
+            )
+        }
+        let activities = discovery.enumerated().map { index, item in
+            TasteMapHybridActivityItemDTO(
+                id: "hybrid-activity-\(index)", kind: index % 5 == 4 ? "want_to_go" : "visit",
+                eventAt: item.activityVisitedAt ?? generatedAt,
+                user: item.sourceUser!, restaurant: item.restaurant,
+                visitID: index % 5 == 4 ? nil : "demo-visit-\(index)",
+                visitRating: index % 5 == 4 ? nil : item.activityRating,
+                note: index % 5 == 4 ? nil : ["值得专程来吃，服务也很细致。", "今天最惊喜的是招牌菜。", "和朋友一起吃很舒服。", "会为了这道菜再来一次。"][index % 4],
+                viewerState: item.viewerState, likedByViewer: index == 1,
+                likeCount: 12 + index * 5, commentCount: 2 + index
+            )
+        }
+        let lists = (0..<5).map { index in
+            let values = restaurants.enumerated().filter { $0.offset % 5 == index }.map { pair in
+                TasteMapHybridListRestaurantDTO(
+                    id: pair.element.id, name: pair.element.name, address: pair.element.address,
+                    city: pair.element.city, position: pair.offset, note: index == 1 ? "本月想去" : "",
+                    image: pair.element.image
+                )
+            }
+            return TasteMapHybridListDTO(
+                id: "hybrid-list-\(index)",
+                title: ["杭州私藏餐厅", "周末想吃", "年度 TOP 10", "适合约会", "朋友来杭带吃"][index],
+                description: index == 2 ? "按我的真实到访评分排序。" : "基于真实记录整理的食单。",
+                visibility: index == 4 ? "public" : index == 3 ? "friends" : "private",
+                isRanked: index == 2, isOwnedByViewer: true, ownerName: "Lafayette",
+                restaurantCount: values.count, restaurants: values,
+                updatedAt: generatedAt
+            )
+        }
+        return TasteMapHybridContentSnapshotDTO(
+            generatedAt: generatedAt,
+            discovery: .init(forYou: discovery, similarTaste: similar, trending: trending),
+            community: .init(following: activities.filter { $0.user.isFollowing }, latest: activities),
+            lists: lists
+        )
+    }
+
+    private func contentRestaurant(_ value: TasteMapHybridRestaurantDTO) -> TasteMapHybridContentRestaurantDTO {
+        TasteMapHybridContentRestaurantDTO(
+            id: value.id, name: value.name, address: value.address, city: value.city,
+            latitude: value.latitude, longitude: value.longitude, tags: value.tags,
+            referencePrice: value.referencePrice, image: value.image
+        )
+    }
+
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+    private func contentRestaurant(_ value: DiscoveryRestaurantProjectionV1) -> TasteMapHybridContentRestaurantDTO {
+        TasteMapHybridContentRestaurantDTO(
+            id: value.globalKey, name: value.name, address: value.address, city: value.city,
+            latitude: value.latitude, longitude: value.longitude, tags: value.tags,
+            referencePrice: value.pricePerPerson,
+            image: publicImageDescriptor(photoID: value.photo?.photoId, merchantURL: value.merchantImageUrl, seed: value.globalKey, name: value.name)
+        )
+    }
+
+    private func discoveryDTO(
+        context value: DiscoveryCachedCardContext,
+        restaurant: DiscoveryRestaurantProjectionV1
+    ) -> TasteMapHybridDiscoveryItemDTO {
+        TasteMapHybridDiscoveryItemDTO(
+            id: value.id, mode: value.mode.rawValue, restaurant: contentRestaurant(restaurant),
+            viewerState: value.viewerState.rawValue,
+            sourceUser: value.sourceUser.map(personDTO),
+            activityRating: value.activity?.rating,
+            activityVisitedAt: value.activity?.visitedAt,
+            reason: value.reasons.first?.text ?? "来自 Taste Map 的真实记录",
+            similarityPercent: value.similarity?.percent,
+            sharedRestaurantCount: value.similarity?.sharedRestaurantCount,
+            uniqueVisitorCount: value.trend?.uniqueVisitorCount,
+            wantToGoCount: value.trend?.wantToGoCount,
+            rank: value.rank
+        )
+    }
+
+    private func personDTO(_ value: DiscoveryPublicUserProjectionV1) -> TasteMapHybridPersonDTO {
+        .init(
+            id: value.userId, name: value.displayName, city: value.city,
+            avatarPhotoID: value.avatarPhotoId, avatarPresetID: value.avatarPresetId.rawValue,
+            isFollowing: value.isFollowing
+        )
+    }
+
+    private func personDTO(_ value: PublicContentUserV1) -> TasteMapHybridPersonDTO {
+        .init(
+            id: value.userId, name: value.displayName, city: value.city,
+            avatarPhotoID: value.avatarPhotoId, avatarPresetID: value.avatarPresetId.rawValue,
+            isFollowing: value.isFollowing
+        )
+    }
+
+    private func communityDTO(_ value: PublicContentItemV1) -> TasteMapHybridActivityItemDTO {
+        TasteMapHybridActivityItemDTO(
+            id: value.id, kind: value.kind.rawValue, eventAt: value.eventAt,
+            user: personDTO(value.user), restaurant: contentRestaurant(value.restaurant.discoveryProjection),
+            visitID: value.visit?.id, visitRating: value.visit?.rating, note: value.visit?.note,
+            viewerState: value.viewerState.rawValue, likedByViewer: value.engagement.likedByViewer,
+            likeCount: value.engagement.likeCount, commentCount: value.engagement.commentCount
+        )
+    }
+
+    private func uniqueCommunityItems(_ values: [TasteMapHybridActivityItemDTO]) -> [TasteMapHybridActivityItemDTO] {
+        Array(Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values)
+            .sorted { $0.eventAt > $1.eventAt || ($0.eventAt == $1.eventAt && $0.id < $1.id) }
+    }
+
+    private func listRestaurantDTO(item: RestaurantListItem) -> TasteMapHybridListRestaurantDTO? {
+        guard let value = item.restaurantSnapshot else { return nil }
+        return listRestaurantDTO(value: value, position: item.position, note: item.note)
+    }
+
+    private func listRestaurantDTO(item: PublicListItemDTO) -> TasteMapHybridListRestaurantDTO {
+        listRestaurantDTO(value: item.restaurant, position: item.position, note: item.note)
+    }
+
+    private func listRestaurantDTO(
+        value: RestaurantListPlaceContractV1,
+        position: Int,
+        note: String
+    ) -> TasteMapHybridListRestaurantDTO {
+        .init(
+            id: value.restaurantId, name: value.name, address: value.address, city: value.city,
+            position: position, note: note,
+            image: publicImageDescriptor(photoID: value.markerPhotoId, merchantURL: value.merchantImageUrl, seed: value.globalKey, name: value.name)
+        )
+    }
+
+    private func publicImageDescriptor(
+        photoID: String?, merchantURL: String?, seed: String, name: String
+    ) -> TasteMapHybridImageDescriptor {
+        if let photoID, !photoID.isEmpty {
+            let encoded = photoID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoID
+            return .init(
+                kind: .publicOrCached,
+                resourceURL: "tastemap-resource://public-photo/\(encoded)/display",
+                photoID: photoID,
+                accessibilityLabel: "\(name) 餐厅图片"
+            )
+        }
+        if let merchantURL, let url = URL(string: merchantURL), ["https", "http"].contains(url.scheme?.lowercased()) {
+            return .init(kind: .providerMerchant, resourceURL: merchantURL, accessibilityLabel: "\(name) 餐厅图片")
+        }
+        return .init(kind: .foodDiningFallback, stableSeed: seed, accessibilityLabel: "\(name) 餐饮图示")
+    }
+#endif
 
     private func scopedRestaurants() throws -> [TasteMapHybridRestaurantDTO] {
         let restaurants = try context.fetch(FetchDescriptor<Restaurant>()).filter {
@@ -384,3 +760,139 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         return formatter
     }()
 }
+
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+/// Resolves only Restaurant projections already visible to the authenticated
+/// owner through Discovery, Community, or Restaurant Lists. It is deliberately
+/// not a general identifier lookup and never exposes another user's private
+/// Restaurant/Visit rows.
+@MainActor
+struct TasteMapHybridResolvedRestaurantReference: Sendable {
+    let projection: DiscoveryRestaurantProjectionV1
+    let viewerState: DiscoveryViewerRestaurantStateV1
+    let updatedAt: Date
+}
+
+@MainActor
+enum TasteMapHybridRestaurantReferenceResolver {
+    @discardableResult
+    static func cacheCandidate(
+        _ candidate: RestaurantCandidate,
+        ownerUserID: String,
+        context: ModelContext,
+        now: Date = .now
+    ) throws -> String {
+        let identities = candidate.placeIdentities.map {
+            DiscoveryPlaceIdentityV1(
+                provider: $0.provider,
+                externalId: $0.externalID,
+                isPrimary: $0.isPrimary
+            )
+        }
+        let primary = identities.first(where: \.isPrimary) ?? identities.first
+        let globalKey = primary.map { "\($0.provider.rawValue):\($0.externalId)" }
+            ?? "candidate:\(candidate.id.uuidString.lowercased())"
+        let projection = DiscoveryRestaurantProjectionV1(
+            globalKey: globalKey,
+            placeIdentities: identities,
+            name: candidate.name,
+            address: candidate.address,
+            city: candidate.city,
+            latitude: candidate.latitude,
+            longitude: candidate.longitude,
+            tags: [],
+            pricePerPerson: nil,
+            merchantImageUrl: candidate.photoURL?.absoluteString,
+            markerEmoji: "",
+            photo: nil
+        )
+        let cacheID = "\(ownerUserID)|\(globalKey)"
+        let cached = try context.fetch(FetchDescriptor<CachedDiscoveryRestaurant>())
+        if let existing = cached.first(where: { $0.cacheID == cacheID }) {
+            existing.projectionData = try JSONEncoder().encode(projection)
+            existing.fetchedAt = now
+        } else {
+            context.insert(try CachedDiscoveryRestaurant(
+                currentUserID: ownerUserID,
+                projection: projection,
+                fetchedAt: now
+            ))
+        }
+        try context.save()
+        return globalKey
+    }
+
+    static func resolve(
+        identifier: String,
+        ownerUserID: String,
+        context: ModelContext
+    ) throws -> TasteMapHybridResolvedRestaurantReference? {
+        let key = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return nil }
+
+        let discoveryRestaurants = try context.fetch(FetchDescriptor<CachedDiscoveryRestaurant>())
+            .filter { $0.currentUserID == ownerUserID }
+        if let cached = discoveryRestaurants.first(where: {
+            $0.globalKey.caseInsensitiveCompare(key) == .orderedSame
+        }), let projection = cached.projection {
+            let placements = try context.fetch(FetchDescriptor<CachedDiscoveryPlacement>()).filter {
+                $0.currentUserID == ownerUserID && $0.globalKey == cached.globalKey
+            }
+            return .init(
+                projection: projection,
+                viewerState: strongestViewerState(placements.compactMap { $0.context?.viewerState }),
+                updatedAt: max(cached.fetchedAt, placements.map(\.generatedAt).max() ?? cached.fetchedAt)
+            )
+        }
+
+        let community = try context.fetch(FetchDescriptor<CachedCommunityContent>())
+            .filter { $0.currentUserID == ownerUserID }
+        let communityMatches = community.compactMap { cached -> (CachedCommunityContent, PublicContentItemV1)? in
+            guard let item = cached.item,
+                  item.restaurant.globalKey.caseInsensitiveCompare(key) == .orderedSame else { return nil }
+            return (cached, item)
+        }
+        if let first = communityMatches.first {
+            return .init(
+                projection: first.1.restaurant.discoveryProjection,
+                viewerState: strongestViewerState(communityMatches.map { $0.1.viewerState }),
+                updatedAt: communityMatches.map { $0.0.fetchedAt }.max() ?? first.0.fetchedAt
+            )
+        }
+
+        let ownedListItems = try context.fetch(FetchDescriptor<RestaurantListItem>()).filter {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+        }
+        if let item = ownedListItems.first(where: { item in
+            item.restaurantGlobalKey.caseInsensitiveCompare(key) == .orderedSame
+                || item.restaurantReferenceID.caseInsensitiveCompare(key) == .orderedSame
+                || item.restaurantSnapshot?.restaurantId.caseInsensitiveCompare(key) == .orderedSame
+        }), let place = item.restaurantSnapshot {
+            return .init(projection: place.discoveryProjection, viewerState: .none, updatedAt: item.updatedAt)
+        }
+
+        let publicListItems = try context.fetch(FetchDescriptor<CachedPublicRestaurantListItem>())
+            .filter { $0.viewerUserID == ownerUserID }
+        if let cached = publicListItems.first(where: { cached in
+            guard let item = cached.item else { return false }
+            return item.restaurant.globalKey.caseInsensitiveCompare(key) == .orderedSame
+                || item.restaurant.restaurantId.caseInsensitiveCompare(key) == .orderedSame
+        }), let item = cached.item {
+            return .init(
+                projection: item.restaurant.discoveryProjection,
+                viewerState: .none,
+                updatedAt: cached.fetchedAt
+            )
+        }
+        return nil
+    }
+
+    private static func strongestViewerState(
+        _ values: [DiscoveryViewerRestaurantStateV1]
+    ) -> DiscoveryViewerRestaurantStateV1 {
+        if values.contains(.visited) { return .visited }
+        if values.contains(.wantToGo) { return .wantToGo }
+        return .none
+    }
+}
+#endif

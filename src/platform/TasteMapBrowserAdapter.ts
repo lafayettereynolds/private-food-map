@@ -1,6 +1,7 @@
 import { db } from '../db/appDb'
 import { CURRENT_USER_ID, ensureCurrentUser } from '../db/social'
 import { buildRestaurantSummaries } from '../services/restaurantSummaryProjection'
+import type { RestaurantListCollection, RestaurantListItem } from '../types/domain'
 import type { RestaurantSummary } from '../types/domain'
 import {
   TASTE_MAP_NATIVE_BRIDGE_VERSION,
@@ -47,6 +48,7 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
   profileRead: true,
   restaurantRead: true,
   mapBrowse: true,
+  contentRead: true,
   visitContract: true,
   sync: false,
   haptics: false,
@@ -94,7 +96,13 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       const profile = await this.loadProfile()
       const restaurant = profile.restaurants.find((item) => item.id === id)
       if (!restaurant) throw new TasteMapPlatformError(`Restaurant ${id} was not found.`, 'restaurant_not_found')
-      return { restaurant, image: profile.restaurantImages[id] ?? browserImageDescriptor(restaurant) }
+      return {
+        restaurant,
+        image: profile.restaurantImages[id] ?? browserImageDescriptor(restaurant),
+        viewerState: restaurant.status === 'visited' ? 'visited' as const : 'want_to_go' as const,
+        editableVisitIDs: restaurant.visits.map((visit) => visit.id),
+        capabilities: ownedRestaurantCapabilities(),
+      }
     },
     list: async (request: TasteMapRestaurantListRequest = {}) => {
       const profile = await this.loadProfile()
@@ -102,7 +110,13 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       return profile.restaurants
         .filter((item) => (!ids || ids.has(item.id)) && (!request.status || item.status === request.status))
         .slice(0, normalizedLimit(request.limit))
-        .map((restaurant) => ({ restaurant, image: profile.restaurantImages[restaurant.id] ?? browserImageDescriptor(restaurant) }))
+        .map((restaurant) => ({
+          restaurant,
+          image: profile.restaurantImages[restaurant.id] ?? browserImageDescriptor(restaurant),
+          viewerState: restaurant.status === 'visited' ? 'visited' as const : 'want_to_go' as const,
+          editableVisitIDs: restaurant.visits.map((visit) => visit.id),
+          capabilities: ownedRestaurantCapabilities(),
+        }))
     },
   }
 
@@ -110,6 +124,19 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     viewport: async (request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> => {
       const profile = await this.loadProfile()
       return projectBrowserMapViewport(profile, request)
+    },
+  }
+
+  content = {
+    snapshot: async () => {
+      const debugFixture = await this.loadDebugFixture()
+      if (debugFixture) return debugFixture.content
+      const [profile, lists, listItems] = await Promise.all([
+        this.loadProfile(),
+        db.restaurantLists.filter((value) => !value.deletedAt && value.userId === CURRENT_USER_ID).toArray(),
+        db.restaurantListItems.filter((value) => !value.deletedAt).toArray(),
+      ])
+      return browserContentSnapshot(profile, lists, listItems)
     },
   }
 
@@ -142,8 +169,74 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
   events = { subscribe: async () => ({ remove: async () => undefined }) }
 
   private loadProfile() {
-    this.profilePromise ??= this.dataSource.profile()
+    this.profilePromise ??= this.loadDebugFixture().then((fixture) => fixture?.profile ?? this.dataSource.profile())
     return this.profilePromise
+  }
+
+  private async loadDebugFixture() {
+    if (import.meta.env.VITE_HYBRID_INTERNAL !== 'true') return null
+    const { loadTasteMapBrowserDebugFixture } = await import('./TasteMapBrowserDebugFixture')
+    return loadTasteMapBrowserDebugFixture()
+  }
+}
+
+function ownedRestaurantCapabilities() {
+  return {
+    canEditRestaurant: true,
+    canDeleteRestaurant: true,
+    canRecordVisit: true,
+    canAddToWantToGo: true,
+    canAddToList: true,
+    canAddToRoulette: true,
+    canShare: true,
+  } as const
+}
+
+function browserContentSnapshot(
+  profile: TasteMapProfileDashboardViewModel,
+  lists: RestaurantListCollection[],
+  listItems: RestaurantListItem[],
+): import('./TasteMapPlatform').TasteMapHybridContentSnapshotDTO {
+  const restaurants = new Map(profile.restaurants.map((value) => [value.id, value]))
+  return {
+    generatedAt: new Date().toISOString(),
+    discovery: {
+      forYou: [],
+      similarTaste: [],
+      trending: [],
+    },
+    community: {
+      following: [],
+      latest: [],
+    },
+    lists: lists.map((list) => {
+      const items = listItems.filter((value) => value.listId === list.id).sort((a, b) => a.position - b.position)
+      return {
+        id: list.id,
+        title: list.title,
+        description: list.description,
+        visibility: list.visibility,
+        isRanked: list.isRanked,
+        isOwnedByViewer: true,
+        ownerName: profile.user.nickname,
+        restaurantCount: items.length,
+        restaurants: items.map((item) => {
+          const restaurant = restaurants.get(item.restaurantId)
+          return {
+            id: item.restaurantId,
+            name: restaurant?.name ?? '餐厅',
+            address: restaurant?.address ?? '',
+            city: restaurant?.city ?? '',
+            position: item.position,
+            note: item.note,
+            image: restaurant
+              ? profile.restaurantImages[restaurant.id] ?? browserImageDescriptor(restaurant)
+              : { kind: 'foodDiningFallback', stableSeed: item.restaurantId, accessibilityLabel: '餐厅图示' },
+          }
+        }),
+        updatedAt: list.updatedAt,
+      }
+    }),
   }
 }
 

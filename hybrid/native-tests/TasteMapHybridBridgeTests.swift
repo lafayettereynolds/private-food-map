@@ -32,6 +32,9 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(detail.restaurant.image.kind, .providerMerchant)
         XCTAssertTrue(detail.restaurant.image.resourceURL?.hasPrefix("https://") == true)
         XCTAssertEqual(detail.restaurant.visits.count, 2)
+        XCTAssertEqual(detail.editableVisitIDs, detail.restaurant.visits.map(\.id))
+        XCTAssertEqual(detail.viewerState, "visited")
+        XCTAssertEqual(detail.capabilities, .owned)
     }
 
     func testOwnerIsolationExcludesForeignRowsAndRelationships() throws {
@@ -49,12 +52,17 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         context.insert(CachedFollow(relationshipID: "foreign", currentUserID: foreignOwner, followerUserID: foreignOwner, followedUserID: owner))
         try context.save()
 
-        let profile = try TasteMapHybridBridgeService(container: container, ownerUserID: owner).profileDashboard()
+        let service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner)
+        let profile = try service.profileDashboard()
         XCTAssertEqual(profile.user.nickname, "Owner A")
         XCTAssertEqual(profile.restaurants.map(\.name), ["Owner Restaurant"])
         XCTAssertEqual(profile.followerCount, 0)
         XCTAssertEqual(profile.followingCount, 0)
         XCTAssertNil(try JSONEncoder().encode(profile).range(of: Data("Owner B".utf8)))
+        let detail = try service.restaurantDetail(id: profile.restaurants[0].id)
+        XCTAssertEqual(detail.editableVisitIDs, detail.restaurant.visits.map(\.id))
+        XCTAssertEqual(detail.viewerState, "visited")
+        XCTAssertEqual(detail.capabilities, .owned)
     }
 
     func testTypedEnvelopeCapabilitiesAndSafeErrorContract() throws {
@@ -152,6 +160,22 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         ))
         XCTAssertTrue(recommended.items.isEmpty)
         XCTAssertEqual(recommended.totalCount, 0)
+    }
+
+    func testContentSnapshotUsesTypedRichDebugContentWithoutSensitiveFields() throws {
+        let snapshot = try makeService().contentSnapshot()
+        XCTAssertEqual(snapshot.discovery.forYou.count, 5)
+        XCTAssertEqual(snapshot.discovery.similarTaste.count, 5)
+        XCTAssertEqual(snapshot.discovery.trending.count, 5)
+        XCTAssertEqual(snapshot.community.latest.count, 5)
+        XCTAssertEqual(snapshot.lists.count, 5)
+        XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { !$0.restaurant.name.isEmpty })
+        XCTAssertTrue(snapshot.community.latest.contains { $0.visitRating == nil })
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        for forbidden in ["accessToken", "refreshToken", "identityToken", "authorizationCode", "file://", "/Users/"] {
+            XCTAssertNil(encoded.range(of: Data(forbidden.utf8)))
+        }
     }
 
     private func response(

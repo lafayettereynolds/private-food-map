@@ -230,7 +230,7 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
     pickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  return <ModalShell description="从我的餐厅中随机挑选一家，帮你决定！" onClose={onClose} size="large" title="今天吃什么 ✦">
+  return <ModalShell description="从我的餐厅中随机挑选一家，帮你决定！" onClose={onClose} size="large" title="今天吃什么">
     <div className="roulette-layout">
       <section className="roulette-candidate-pool" aria-label={`已选餐厅 ${selectedItems.length} / ${MAX_RESTAURANTS}`}>
         <header><strong>候选餐厅</strong><span>{selectedItems.length} / {MAX_RESTAURANTS}</span><button className="roulette-clear" disabled={!selectedItems.length || spinning} onClick={clearCandidates} type="button">清空</button></header>

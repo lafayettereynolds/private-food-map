@@ -3267,10 +3267,19 @@ final class TasteMapUITests: XCTestCase {
 
     @MainActor
     private func keepScreenshot(named name: String, of app: XCUIApplication) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        guard let outputDirectory = ProcessInfo.processInfo.environment["TASTEMAP_SCREENSHOT_OUTPUT_DIR"],
+              !outputDirectory.isEmpty else { return }
+        let safeName = name.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .replacingOccurrences(of: "/", with: "-")
+        let directory = URL(fileURLWithPath: outputDirectory, isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("\(safeName).png"))
     }
 
     @MainActor
@@ -3317,13 +3326,11 @@ final class TasteMapUITests: XCTestCase {
         let mapTab = app.buttons["app-tab-map"]
         let discoverTab = app.buttons["app-tab-discover"]
         let profileTab = app.buttons["app-tab-profile"]
-        XCTAssertTrue(addRestaurant.waitForExistence(timeout: 12))
         XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
-        XCTAssertTrue(addRestaurant.isHittable)
+        XCTAssertFalse(addRestaurant.exists)
         XCTAssertTrue(mapTab.isHittable)
         XCTAssertTrue(discoverTab.isHittable)
         XCTAssertTrue(profileTab.isHittable)
-        XCTAssertLessThanOrEqual(addRestaurant.frame.maxY, mapTab.frame.minY)
         XCTAssertFalse(mapTab.frame.intersects(discoverTab.frame))
         XCTAssertFalse(discoverTab.frame.intersects(profileTab.frame))
 
@@ -3353,11 +3360,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.buttons["discovery-primary-forYou"].isHittable)
         XCTAssertTrue(app.buttons["discovery-city-menu"].isHittable)
         XCTAssertTrue(app.buttons["discovery-filters"].isHittable)
-        XCTAssertTrue(app.buttons["addRestaurantButton"].isHittable)
-        XCTAssertLessThanOrEqual(
-            app.buttons["addRestaurantButton"].frame.maxY,
-            app.buttons["app-tab-map"].frame.minY
-        )
+        XCTAssertFalse(app.buttons["addRestaurantButton"].exists)
         keepScreenshot(named: "Dynamic Type P1 Discovery XX Large", of: app)
     }
 
@@ -3504,7 +3507,7 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testHybridPhase2AProfileRestaurantAndNativeBackPaths() throws {
+    func testHybridProfileRestaurantAndSharedRoulettePaths() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
         app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
@@ -3540,10 +3543,13 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(roulette.waitForExistence(timeout: 8))
         roulette.tap()
 
-        XCTAssertTrue(app.descendants(matching: .any)["restaurant-roulette-screen"].waitForExistence(timeout: 12))
-        let nativeBack = app.buttons["返回"]
-        XCTAssertTrue(nativeBack.waitForExistence(timeout: 8))
-        nativeBack.tap()
+        XCTAssertTrue(webView.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "今天吃什么")
+        ).firstMatch.waitForExistence(timeout: 12))
+        XCTAssertTrue(webView.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "最多选择 10 家")
+        ).firstMatch.waitForExistence(timeout: 8))
+        webView.buttons["关闭"].firstMatch.tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 10))
     }
 
@@ -3594,6 +3600,424 @@ final class TasteMapUITests: XCTestCase {
         hybridBack.tap()
         XCTAssertTrue(webView.buttons["查看详情"].waitForExistence(timeout: 8))
         XCTAssertTrue(visitedScope.exists)
+    }
+
+    @MainActor
+    func testHybridRemainingBatchPrimaryProductRoutesStayInteractiveWithRichData() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+
+        let discovery = webView.buttons["发现"]
+        XCTAssertTrue(discovery.waitForExistence(timeout: 12))
+        discovery.tap()
+        XCTAssertTrue(webView.staticTexts["发现"].waitForExistence(timeout: 12))
+        for label in ["关注", "为你推荐", "同味之选", "最新", "趋势"] {
+            let tab = webView.buttons[label]
+            XCTAssertTrue(tab.waitForExistence(timeout: 8), "Missing Discovery tab: \(label)")
+            tab.tap()
+        }
+        XCTAssertTrue(webView.buttons["查看餐厅"].firstMatch.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Batch 01 Discovery", of: app)
+
+        webView.buttons["地图"].tap()
+        let add = webView.buttons["添加餐厅"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 8))
+        add.tap()
+        XCTAssertTrue(webView.staticTexts["搜索餐厅"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts["附近餐厅"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["手动添加餐厅"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["从外部分享添加"].waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Batch 01 Add Restaurant", of: app)
+
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        let lists = webView.buttons["查看全部食单"].firstMatch
+        scrollUntilVisible(lists, in: app)
+        XCTAssertTrue(lists.waitForExistence(timeout: 8))
+        XCTAssertTrue(lists.isHittable)
+        lists.tap()
+        XCTAssertTrue(webView.staticTexts["把餐厅整理成收藏或有顺序的榜单；加入食单不会改变想吃状态。"].waitForExistence(timeout: 8))
+        let publicLists = webView.descendants(matching: .any)["公开食单"]
+        XCTAssertTrue(publicLists.waitForExistence(timeout: 8))
+        publicLists.tap()
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "朋友来杭带吃")
+        ).firstMatch.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Batch 01 Lists", of: app)
+
+        webView.buttons["我的"].tap()
+        let roulette = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "今天吃什么")
+        ).firstMatch
+        XCTAssertTrue(roulette.waitForExistence(timeout: 8))
+        roulette.tap()
+        XCTAssertTrue(webView.staticTexts["今天吃什么"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "最多选择 10 家")
+        ).firstMatch.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Batch 01 Roulette", of: app)
+        let closeRoulette = webView.buttons["关闭"]
+        XCTAssertTrue(closeRoulette.waitForExistence(timeout: 8))
+        closeRoulette.tap()
+
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        let analytics = webView.buttons["数据分析"].firstMatch
+        XCTAssertTrue(analytics.waitForExistence(timeout: 8))
+        XCTAssertTrue(analytics.isHittable)
+        analytics.tap()
+        for label in ["我的口味档案", "最佳饭搭子", "谁最会种草", "本月回顾", "年度回顾"] {
+            XCTAssertTrue(webView.buttons[label].waitForExistence(timeout: 8), "Missing Analytics mode: \(label)")
+        }
+        XCTAssertTrue(webView.descendants(matching: .any)["周边分析节点"].waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Batch 01 Analytics", of: app)
+
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        scrollToTop(in: app)
+        let settings = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "数据与设置")
+        ).firstMatch
+        scrollUntilVisible(settings, in: app)
+        XCTAssertTrue(settings.waitForExistence(timeout: 8))
+        settings.tap()
+        XCTAssertTrue(webView.staticTexts["设置"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "Backup v1 不包含照片原图")
+        ).firstMatch.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Batch 01 Settings", of: app)
+    }
+
+    @MainActor
+    func testHybridVisitHistoryEditUsesOwnedNativeEditorAndRefreshesDetail() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+
+        let visited = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "去过")
+        ).firstMatch
+        XCTAssertTrue(visited.waitForExistence(timeout: 8))
+        visited.tap()
+        let restaurant = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
+        ).firstMatch
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 8))
+        restaurant.tap()
+
+        let editVisit = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "编辑第")
+        ).firstMatch
+        scrollUntilVisible(editVisit, in: app)
+        XCTAssertTrue(editVisit.waitForExistence(timeout: 8))
+        XCTAssertEqual(webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "编辑第")
+        ).count, 4)
+        editVisit.tap()
+
+        XCTAssertTrue(app.navigationBars["编辑到访"].waitForExistence(timeout: 10))
+        let note = app.descendants(matching: .any)["visit-editor-note"]
+        scrollUntilVisible(note, in: app)
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.clearAndType("Batch 1 Native 编辑后刷新")
+        app.buttons["visit-editor-save"].tap()
+
+        XCTAssertTrue(webView.buttons["返回上一页"].waitForExistence(timeout: 12))
+        let refreshedNote = webView.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Batch 1 Native 编辑后刷新")
+        ).firstMatch
+        scrollUntilVisible(refreshedNote, in: app)
+        XCTAssertTrue(refreshedNote.waitForExistence(timeout: 8))
+    }
+
+    @MainActor
+    func testNativeGlobalProductNavigationContract() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let map = app.buttons["app-tab-map"]
+        let discovery = app.buttons["app-tab-discover"]
+        let profile = app.buttons["app-tab-profile"]
+        XCTAssertTrue(map.waitForExistence(timeout: 15))
+        XCTAssertTrue(discovery.exists)
+        XCTAssertTrue(profile.exists)
+        XCTAssertFalse(app.buttons["添加"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "addRestaurantButton").count, 1)
+
+        discovery.tap()
+        XCTAssertTrue(app.staticTexts["discovery-header"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["addRestaurantButton"].exists)
+
+        profile.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["addRestaurantButton"].exists)
+
+        map.tap()
+        XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.buttons.matching(identifier: "addRestaurantButton").count, 1)
+        XCTAssertTrue(app.buttons["addRestaurantButton"].isHittable)
+    }
+
+    @MainActor
+    func testHybridGlobalProductNavigationContract() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        for label in ["地图", "发现", "我的"] {
+            XCTAssertTrue(webView.buttons[label].waitForExistence(timeout: 8), "Missing exact bottom-navigation item: \(label)")
+        }
+        XCTAssertFalse(webView.buttons["添加"].exists, "Add Restaurant must never be a fourth bottom-navigation tab")
+
+        webView.buttons["地图"].tap()
+        let addEntries = webView.buttons.matching(NSPredicate(format: "label == %@", "添加餐厅"))
+        XCTAssertEqual(addEntries.count, 1, "My Map must expose exactly one floating Add Restaurant primary entry")
+        XCTAssertTrue(addEntries.firstMatch.isHittable)
+    }
+
+    @MainActor
+    func testHybridDiscoverySharedProductAndVisualContract() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["发现"].tap()
+        XCTAssertTrue(webView.staticTexts["发现"].waitForExistence(timeout: 12))
+        XCTAssertTrue(webView.staticTexts["按照你的口味，找到更值得参考的人和下一家餐厅。"].waitForExistence(timeout: 12))
+        XCTAssertFalse(webView.staticTexts["DISCOVER"].exists)
+
+        let tabs = ["关注", "为你推荐", "同味之选", "最新", "趋势"]
+        for label in tabs {
+            XCTAssertTrue(webView.buttons[label].waitForExistence(timeout: 8), "Missing Discovery tab: \(label)")
+        }
+        XCTAssertTrue(webView.buttons["筛选"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["查看餐厅"].firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.images.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "本次到访")
+        ).firstMatch.waitForExistence(timeout: 8))
+        for label in ["记录", "食单", "轮盘"] {
+            XCTAssertTrue(webView.buttons[label].firstMatch.waitForExistence(timeout: 8), "Missing Restaurant action: \(label)")
+        }
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label IN %@", ["想吃", "已想吃"])
+        ).firstMatch.waitForExistence(timeout: 8), "Missing WantToGo state action")
+
+        webView.buttons["关注"].tap()
+        XCTAssertTrue(webView.switches.matching(
+            NSPredicate(format: "label IN %@", ["点赞", "取消点赞"])
+        ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["评论"].firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["分享动态"].firstMatch.waitForExistence(timeout: 8))
+
+        for label in ["同味之选", "最新", "趋势", "为你推荐"] {
+            webView.buttons[label].tap()
+            XCTAssertTrue(webView.buttons[label].isSelected)
+        }
+        keepScreenshot(named: "Batch 01 Discovery Shared Contract", of: app)
+    }
+
+    @MainActor
+    func testHybridRemainingBatchScreenshotAtlas() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["发现"].tap()
+        let discoveryTabs = [
+            ("关注", "Batch 01 Discovery Following"),
+            ("为你推荐", "Batch 01 Discovery For You"),
+            ("同味之选", "Batch 01 Discovery Same Taste"),
+            ("最新", "Batch 01 Discovery Latest"),
+            ("趋势", "Batch 01 Discovery Trending"),
+        ]
+        for (label, screenshotName) in discoveryTabs {
+            let button = webView.buttons[label]
+            XCTAssertTrue(button.waitForExistence(timeout: 8))
+            button.tap()
+            keepScreenshot(named: screenshotName, of: app)
+        }
+
+        webView.buttons["地图"].tap()
+        webView.buttons["添加餐厅"].firstMatch.tap()
+        keepScreenshot(named: "Batch 01 Add Search", of: app)
+        let search = webView.textFields["餐厅名称、地址或城市"]
+        XCTAssertTrue(search.waitForExistence(timeout: 8))
+        search.tap()
+        search.typeText("青岚")
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司")
+        ).firstMatch.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Batch 01 Add Search Results", of: app)
+        XCTAssertTrue(webView.staticTexts["附近餐厅"].waitForExistence(timeout: 8))
+        keepScreenshot(named: "Batch 01 Add Nearby", of: app)
+        let manual = webView.buttons["手动添加餐厅"]
+        scrollUntilVisible(manual, in: app)
+        XCTAssertTrue(manual.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Batch 01 Add Manual", of: app)
+        let share = webView.buttons["从外部分享添加"]
+        scrollUntilVisible(share, in: app)
+        XCTAssertTrue(share.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Batch 01 Add Share", of: app)
+
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        let allLists = webView.buttons["查看全部食单"].firstMatch
+        scrollUntilVisible(allLists, in: app)
+        allLists.tap()
+        keepScreenshot(named: "Batch 01 Lists Mine", of: app)
+        let publicLists = webView.descendants(matching: .any)["公开食单"]
+        XCTAssertTrue(publicLists.waitForExistence(timeout: 8))
+        publicLists.tap()
+        keepScreenshot(named: "Batch 01 Lists Public", of: app)
+        let publicList = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "朋友来杭带吃")
+        ).firstMatch
+        XCTAssertTrue(publicList.waitForExistence(timeout: 8))
+        publicList.tap()
+        keepScreenshot(named: "Batch 01 Public List Detail", of: app)
+
+        webView.buttons["我的"].tap()
+        let roulette = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "今天吃什么")
+        ).firstMatch
+        XCTAssertTrue(roulette.waitForExistence(timeout: 8))
+        roulette.tap()
+        keepScreenshot(named: "Batch 01 Roulette Wheel", of: app)
+        let manage = webView.buttons["管理候选餐厅"]
+        XCTAssertTrue(manage.waitForExistence(timeout: 8))
+        manage.tap()
+        keepScreenshot(named: "Batch 01 Roulette Management", of: app)
+        webView.buttons["完成"].tap()
+        webView.buttons["开始随机选择餐厅"].tap()
+        XCTAssertTrue(webView.staticTexts["今天就吃"].waitForExistence(timeout: 4))
+        keepScreenshot(named: "Batch 01 Roulette Result", of: app)
+        webView.buttons["再转一次"].tap()
+
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        webView.buttons["数据分析"].tap()
+        let analyticsTabs = [
+            ("我的口味档案", "taste-profile"),
+            ("最佳饭搭子", "best-companion"),
+            ("谁最会种草", "recommendation-source"),
+            ("本月回顾", "monthly-review"),
+            ("年度回顾", "annual-review"),
+        ]
+        for (label, slug) in analyticsTabs {
+            let tab = webView.buttons[label]
+            XCTAssertTrue(tab.waitForExistence(timeout: 8))
+            tab.tap()
+            keepScreenshot(named: "Batch 01 Analytics \(slug)", of: app)
+            webView.buttons["分享海报"].tap()
+            XCTAssertTrue(webView.buttons["打开系统分享"].waitForExistence(timeout: 8))
+            keepScreenshot(named: "Batch 01 Poster \(slug)", of: app)
+            webView.buttons["返回分析"].tap()
+        }
+
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        scrollToTop(in: app)
+        let settings = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "数据与设置")
+        ).firstMatch
+        scrollUntilVisible(settings, in: app)
+        settings.tap()
+        keepScreenshot(named: "Batch 01 Settings Main", of: app)
+        let premium = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "查看当前权益与订阅管理")
+        ).firstMatch
+        scrollUntilVisible(premium, in: app)
+        XCTAssertTrue(premium.waitForExistence(timeout: 8))
+        premium.tap()
+        XCTAssertTrue(webView.staticTexts["已开通"].waitForExistence(timeout: 8))
+        keepScreenshot(named: "Batch 01 Premium Active", of: app)
+    }
+
+    @MainActor
+    func testHybridRemainingBatchTenMinuteNavigationSoak() throws {
+        guard ProcessInfo.processInfo.environment["TASTEMAP_HYBRID_SOAK"] == "1" else {
+            throw XCTSkip("10-minute Hybrid soak is opt-in; run with TASTEMAP_HYBRID_SOAK=1.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        for _ in 0..<20 {
+            for label in ["地图", "发现", "我的"] {
+                let route = webView.buttons[label].firstMatch
+                XCTAssertTrue(route.waitForExistence(timeout: 8))
+                route.tap()
+            }
+        }
+
+        webView.buttons["发现"].tap()
+        let restaurant = webView.buttons["查看餐厅"].firstMatch
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 8))
+        restaurant.tap()
+        XCTAssertTrue(webView.buttons["返回上一页"].waitForExistence(timeout: 8))
+        webView.buttons["返回上一页"].tap()
+
+        webView.buttons["我的"].tap()
+        let listShortcut = webView.buttons["我的食单"].firstMatch
+        XCTAssertTrue(listShortcut.waitForExistence(timeout: 8))
+        listShortcut.tap()
+        XCTAssertTrue(webView.descendants(matching: .any)["公开食单"].waitForExistence(timeout: 8))
+        webView.buttons["我的"].tap()
+        let analyticsShortcut = webView.buttons["数据分析"].firstMatch
+        XCTAssertTrue(analyticsShortcut.waitForExistence(timeout: 8))
+        analyticsShortcut.tap()
+        XCTAssertTrue(webView.buttons["年度回顾"].waitForExistence(timeout: 8))
+
+        webView.buttons["我的"].tap()
+        scrollToTop(in: app)
+        let roulette = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "今天吃什么")
+        ).firstMatch
+        XCTAssertTrue(roulette.waitForExistence(timeout: 8))
+        roulette.tap()
+        XCTAssertTrue(webView.buttons["开始随机选择餐厅"].waitForExistence(timeout: 8))
+
+        webView.buttons["我的"].tap()
+        scrollToTop(in: app)
+        let settings = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "数据与设置")
+        ).firstMatch
+        scrollUntilVisible(settings, in: app)
+        XCTAssertTrue(settings.waitForExistence(timeout: 8))
+        settings.tap()
+        XCTAssertTrue(webView.staticTexts["设置"].waitForExistence(timeout: 8))
+
+        webView.buttons["发现"].tap()
+        webView.buttons["为你推荐"].tap()
+        print("TASTEMAP_HYBRID_SOAK_SETTLED")
+        Thread.sleep(forTimeInterval: 600)
+        XCTAssertTrue(webView.exists)
+        XCTAssertTrue(webView.buttons["发现"].exists)
     }
 
     @MainActor

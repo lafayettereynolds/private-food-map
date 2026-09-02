@@ -152,6 +152,16 @@ A page-local URL resolver, photo lookup, provider branch, or fallback is tempora
 
 Templates define information architecture, section order, control and image placement, interaction hierarchy, content density, and component composition. Core components are not permission to freely rearrange an already approved product page.
 
+#### Root App Shell Contract
+
+- The formal bottom navigation is exactly `地图 / 发现 / 我的`, in that order, with exactly three items.
+- `Add Restaurant` is a routable product surface, but route availability never implies bottom-navigation membership.
+- The single formal Add Restaurant entry is the Map-owned floating `添加餐厅` primary CTA. It must not be duplicated as a fourth bottom tab, page-wide tab, or competing primary action.
+- Shared Browser and Capacitor rendering does not make a shell topology correct by itself. Any root navigation change must pass the exact Product Contract before cross-platform and visual parity can pass.
+- Product Contract, One React UI, Current Capability Preservation, Browser ↔ Capacitor parity, Lafayette Reference parity, Function/Semantic, and Negative Contract are independent gates; no gate substitutes for another.
+- A capability still implemented in Native remains visible in Hybrid through a typed Native handoff. `readOnly`, migration status, or a missing React write implementation must not silently remove Record Visit, Edit Visit, Photo/Camera, List mutation, Premium purchase/restore, Backup/Import, Sync, Account, or Share entries.
+- React renders ownership-sensitive actions only from Native capability DTOs. It must not infer `canEdit`, `canDelete`, `canRecord`, `canAddToList`, report or block permission from a user-ID comparison or UI state.
+
 #### 1. My Map / My List Template
 
 - top breathing space;
@@ -264,6 +274,8 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 
 ## My Map
 
+- The root App Shell contains exactly `地图 / 发现 / 我的`; `添加` is forbidden as a fourth bottom tab.
+- `添加餐厅` appears exactly once as the Map-owned floating primary CTA and routes to the formal Add Restaurant flow.
 - Centered `我的地图` or `我的列表` title with the adjacent view-switch icon.
 - Primary scopes are `去过 / 想吃 / 推荐`.
 - No separate Map/List segmented row.

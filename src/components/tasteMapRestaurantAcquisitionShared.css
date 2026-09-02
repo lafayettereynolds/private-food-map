@@ -1,0 +1,24 @@
+.tm-acquisition { display: grid; gap: 0; color: #263a48; }
+.tm-acquisition__page-header { padding: 18px 18px 10px; text-align: center; }
+.tm-acquisition__page-header h1 { margin: 0; font-size: clamp(23px, 6.4vw, 29px); line-height: 1.16; letter-spacing: -.03em; }
+.tm-acquisition__page-header p { margin: 5px 0 0; color: #7d8c96; font-size: 11px; }
+.tm-acquisition__section { padding: 13px 16px 14px; border-bottom: 1px solid #e5ebee; background: #fff; }
+.tm-acquisition__section > header { min-height: 34px; margin-bottom: 9px; display: flex; align-items: center; gap: 9px; color: #53738a; }
+.tm-acquisition__section > header > span { min-width: 0; display: grid; gap: 1px; }
+.tm-acquisition__section > header strong { color: #2b404e; font-size: 14px; line-height: 1.25; }
+.tm-acquisition__section > header small { color: #82909a; font-size: 9px; line-height: 1.35; }
+.tm-acquisition__secondary-actions { padding: 5px 0 0; display: grid; }
+.tm-acquisition__secondary-actions > button { width: 100%; min-height: 57px; padding: 8px 16px; border: 0; border-bottom: 1px solid #e7ecef; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; color: #57778d; background: #fff; text-align: left; }
+.tm-acquisition__secondary-actions > button:active { background: #f3f7f9; }
+.tm-acquisition__secondary-actions > button > span { min-width: 0; display: grid; gap: 2px; }
+.tm-acquisition__secondary-actions strong { color: #2d424f; font-size: 13px; }
+.tm-acquisition__secondary-actions small { color: #7e8d97; font-size: 9px; line-height: 1.35; }
+.tm-acquisition__share-panel { margin: 4px 16px 10px; padding: 11px; border: 1px solid #dce6eb; border-radius: 12px; background: #f8fafb; }
+
+@media (prefers-color-scheme: dark) {
+  .tm-acquisition { color: #dbe5e9; }
+  .tm-acquisition__section, .tm-acquisition__secondary-actions > button { border-color: #344750; background: #1d2b34; }
+  .tm-acquisition__section > header strong, .tm-acquisition__secondary-actions strong { color: #e3ebee; }
+  .tm-acquisition__section > header small, .tm-acquisition__secondary-actions small, .tm-acquisition__page-header p { color: #9eacb4; }
+  .tm-acquisition__share-panel { border-color: #3b4d57; background: #243640; }
+}

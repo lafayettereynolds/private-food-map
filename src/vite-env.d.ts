@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_APP_ENV?: 'development' | 'production'
   readonly VITE_HYBRID_SHELL?: 'true' | 'false'
   readonly VITE_HYBRID_INTERNAL?: 'true' | 'false'
+  readonly VITE_HYBRID_DIAGNOSTICS?: 'true' | 'false'
   readonly VITE_HYBRID_DEBUG_ROUTE?: string
   readonly VITE_CLOUD_SYNC_ENABLED?: 'true' | 'false'
   readonly VITE_SOCIAL_API_ENABLED?: 'true' | 'false'

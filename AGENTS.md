@@ -82,4 +82,26 @@ The following rules are project-level constraints:
 9. Profile and Restaurant Detail are the Phase 1 reference routes. All other routes remain native-primary until a separately authorized migration phase.
 10. Native service queries must be current-user scoped. Bridge DTOs are lean, explicit, deterministic, and backward-compatible within their major version. Do not pass a database or network client through the bridge.
 
+### Mandatory Hybrid Product Contract gate
+
+`Browser == Capacitor` proves only cross-platform parity; it never proves that the shared UI is the correct product. Every Hybrid surface and every shared App Shell change must pass these gates independently:
+
+1. `PRODUCT CONTRACT PASS`: the route, App Shell, navigation, global CTA, page hierarchy, labels, section order and data semantics match Lafayette's current approved product rules.
+2. `ONE REACT UI PASS`: Browser and Capacitor consume the same formal React page/shared component; a platform adapter may not redraw the page hierarchy.
+3. `CURRENT CAPABILITY PRESERVATION PASS`: a capability that remains Native stays visible through a typed handoff. Migration state is never permission to silently remove a formal capability.
+4. `BROWSER ↔ CAPACITOR PARITY PASS`: both hosts render the same React component/CSS and equivalent state.
+5. `VISUAL REFERENCE PASS`: every applicable Legacy, Lafayette or canonical reference is satisfied. Mark `NOT APPLICABLE` only when no controlling reference exists.
+6. `FUNCTION / SEMANTIC PASS`: actions, data sources, states, return paths and error handling work; Native DTO capability fields remain the authority for ownership-sensitive UI.
+7. `NEGATIVE CONTRACT PASS`: prohibited UI, semantic substitutions, duplicate routes/pages and no-op actions are absent.
+
+Native data/security verification is mandatory inside the Function/Semantic gate and never becomes optional merely because the page is read-oriented.
+
+Only when every applicable gate passes may a route be reported as `HYBRID_INTEGRATED / PASS`. Automated presence tests are insufficient: stable product topology must also have exact count/order assertions and negative/forbidden-pattern assertions.
+
+Before declaring a Hybrid batch complete, scan the entire authorized route set for duplicate `HybridXXXPage`/`IOSXXXPage`/Capacitor-only layouts, `readOnly`/`disabled`/`unavailable`/no-op migration losses, route-to-tab coupling and Browser/Capacitor shared errors. Fix each repeated root cause in the shared component or typed adapter and add a regression contract; do not wait for Lafayette to rediscover each surface visually.
+
+The route registry is not a bottom-navigation registry. The route registry may contain Map, Discovery, Add, Restaurant, Profile, Visit, Lists, Roulette, Analytics, Premium, Settings and deep-link surfaces. The exact primary bottom navigation is `地图 → 发现 → 我的`; Add Restaurant remains a route entered by the single Map-owned floating `添加餐厅` primary CTA and must never become a fourth bottom tab.
+
+Any change to `HybridAppShell`, bottom navigation, root routes, global CTA or root tab composition must run the global Hybrid Product Contract suite in addition to route and bridge tests.
+
 When a durable Hybrid architecture decision changes, update both Hybrid documents and add focused TypeScript/Swift contract coverage. Build success alone is not acceptance: verify Browser behavior, fixed-Simulator Capacitor behavior, back navigation, safe areas, offline local boot, structured error states, performance, and Release purity.

@@ -42,7 +42,15 @@ struct TasteMapHybridDevelopmentRootView: View {
     private var nativeRouteBinding: Binding<TasteMapHybridRouteDTO?> {
         Binding(
             get: { runtime.navigation.presentedNativeRoute },
-            set: { if $0 == nil { runtime.navigation.dismissNativePresentation() } }
+            set: {
+                // Explicit Native completions clear the typed route before the
+                // SwiftUI sheet reports its own dismissal. Only consume a back
+                // step while a Native route is still present; otherwise the
+                // second callback would also pop the underlying Hybrid page.
+                if $0 == nil, runtime.navigation.presentedNativeRoute != nil {
+                    runtime.navigation.dismissNativePresentation()
+                }
+            }
         )
     }
 
@@ -95,19 +103,47 @@ private struct TasteMapHybridNativeRouteHost: View {
         case .discovery:
             DiscoverHubView()
         case .add:
-            TasteMapHybridNativeAddRoute()
+            TasteMapHybridNativeAddRoute(onOpenHybrid: dismissNativePresentation)
+        case .acquisitionNative:
+            TasteMapHybridNativeAddRoute(onOpenHybrid: dismissNativePresentation)
         case .visit:
             TasteMapHybridNativeVisitRoute(identifier: route.identifier)
+        case .visitEdit:
+            TasteMapHybridNativeVisitEditRoute(
+                identifier: route.identifier,
+                onSaved: dismissNativePresentation
+            )
         case .lists:
-            TasteMapHybridNativeListsRoute()
+            TasteMapHybridNativeListsRoute(identifier: route.identifier)
+        case .listManage:
+            TasteMapHybridNativeListsRoute(identifier: route.identifier)
         case .roulette:
             RestaurantRouletteScreen()
         case .analytics:
             TasteProfileAnalysisScreen()
         case .premium:
             PremiumPaywallView(source: .profile)
+        case .premiumStore:
+            PremiumPaywallView(source: .profile)
         case .settings:
             TasteMapHybridNativeSettingsRoute()
+        case .settingsNative:
+            TasteMapHybridNativeSettingsRoute()
+        case .socialNative:
+            DiscoverHubView()
+        case .profileEdit:
+            TasteMapHybridNativeProfileEditRoute()
+        case .restaurantEdit:
+            TasteMapHybridNativeRestaurantEditRoute(identifier: route.identifier)
+        case .restaurantDelete:
+            TasteMapHybridNativeRestaurantDeleteRoute(identifier: route.identifier)
+        case .restaurantAddToList:
+            TasteMapHybridNativeRestaurantAddToListRoute(identifier: route.identifier)
+        case .restaurantWantToGo:
+            TasteMapHybridNativeRestaurantWantToGoRoute(
+                identifier: route.identifier,
+                onSaved: dismissNativePresentation
+            )
         case .activity, .publicList:
             if let identifier = route.identifier {
                 PublicShareLandingView(shareID: identifier, api: nativeAuthServices.publicSharingAPI)
@@ -117,6 +153,11 @@ private struct TasteMapHybridNativeRouteHost: View {
         case .profile, .restaurant:
             unsupported
         }
+    }
+
+    private func dismissNativePresentation() {
+        runtime.navigation.dismissNativePresentation()
+        dismiss()
     }
 
     @Environment(NativeAuthServices.self) private var nativeAuthServices
@@ -132,6 +173,33 @@ private struct TasteMapHybridNativeRouteHost: View {
     }
 }
 
+private struct TasteMapHybridNativeProfileEditRoute: View {
+    @Environment(\.localAccountScope) private var accountScope
+    @Query private var profiles: [UserProfile]
+    @Query private var photos: [PhotoAsset]
+
+    var body: some View {
+        if let profile {
+            ProfileEditorSheet(profile: profile, avatarPhoto: avatarPhoto)
+        } else {
+            unauthorized("无法编辑个人资料")
+        }
+    }
+
+    private var profile: UserProfile? {
+        profiles.first { accountScope.contains(ownerUserID: $0.tasteMapUserID) && $0.deletedAt == nil }
+    }
+
+    private var avatarPhoto: PhotoAsset? {
+        guard let id = profile?.avatarPhotoID else { return nil }
+        return photos.first {
+            accountScope.contains(ownerUserID: $0.ownerUserID)
+                && $0.deletedAt == nil
+                && ($0.remoteID == id || $0.id.uuidString.caseInsensitiveCompare(id) == .orderedSame)
+        }
+    }
+}
+
 private struct TasteMapHybridNativeAddRoute: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.localAccountScope) private var accountScope
@@ -139,11 +207,13 @@ private struct TasteMapHybridNativeAddRoute: View {
     @Environment(TasteMapHybridRuntime.self) private var runtime
     @Query private var restaurants: [Restaurant]
     @State private var requestedVisit: RestaurantCandidate?
+    let onOpenHybrid: () -> Void
 
     var body: some View {
         AddRestaurantView(
             dependencies: .live(linkResolver: authServices.externalRestaurantLinkAPI),
-            initialSharedText: runtime.pendingSharedImport?.acquisitionText
+            initialSharedText: runtime.pendingSharedImport?.acquisitionText,
+            onCandidateSelected: openCanonicalDetail
         ) { candidate, action in
             switch action {
             case .wantToGo:
@@ -163,9 +233,33 @@ private struct TasteMapHybridNativeAddRoute: View {
     private var scopedRestaurants: [Restaurant] {
         restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
     }
+
+    private func openCanonicalDetail(_ candidate: RestaurantCandidate) throws {
+        guard let ownerUserID = accountScope.authenticatedUserID else {
+            throw TasteMapHybridServiceError.authRequired
+        }
+        let identifier: String
+        if let match = RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants),
+           match.kind == .exactProviderIdentity {
+            identifier = match.restaurant.remoteID ?? match.restaurant.id.uuidString.lowercased()
+        } else {
+            identifier = try TasteMapHybridRestaurantReferenceResolver.cacheCandidate(
+                candidate,
+                ownerUserID: ownerUserID,
+                context: modelContext
+            )
+        }
+        runtime.consumePendingSharedImport()
+        _ = try runtime.navigation.openHybrid(TasteMapHybridRouteDTO(
+            surface: .restaurant,
+            identifier: identifier
+        ))
+        onOpenHybrid()
+    }
 }
 
 private struct TasteMapHybridNativeVisitRoute: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
     let identifier: String?
@@ -183,6 +277,8 @@ private struct TasteMapHybridNativeVisitRoute: View {
                 latitude: restaurant.latitude,
                 longitude: restaurant.longitude
             ))
+        } else if let reference {
+            VisitEditorView(candidate: reference.projection.restaurantCandidate)
         } else {
             TasteMapEmptyState(
                 title: "找不到这家餐厅",
@@ -194,11 +290,63 @@ private struct TasteMapHybridNativeVisitRoute: View {
             )
         }
     }
+
+    private var reference: TasteMapHybridResolvedRestaurantReference? {
+        guard let identifier, let ownerUserID = accountScope.authenticatedUserID else { return nil }
+        return try? TasteMapHybridRestaurantReferenceResolver.resolve(
+            identifier: identifier,
+            ownerUserID: ownerUserID,
+            context: modelContext
+        )
+    }
+}
+
+private struct TasteMapHybridNativeVisitEditRoute: View {
+    @Environment(\.localAccountScope) private var accountScope
+    @Query private var restaurants: [Restaurant]
+    @Query private var visits: [Visit]
+    let identifier: String?
+    let onSaved: () -> Void
+
+    var body: some View {
+        if let visit = editableVisit,
+           let restaurant = restaurants.first(where: {
+               accountScope.contains(ownerUserID: $0.ownerUserID)
+                   && $0.deletedAt == nil
+                   && $0.id == visit.restaurantId
+           }) {
+            VisitEditorView(restaurant: restaurant, visit: visit, onSaved: { _ in
+                // VisitEditor owns the existing SwiftData/mutation-queue write.
+                // The Hybrid host only closes the typed Native handoff so React
+                // receives the canonical Restaurant route and refetches detail.
+                onSaved()
+            })
+                .accessibilityIdentifier("hybrid-native-visit-edit-route")
+        } else {
+            TasteMapEmptyState(
+                title: "无法编辑这次到访",
+                message: "只有当前账户自己的到访记录可以编辑。",
+                systemImage: "lock.shield",
+                presentation: .embedded,
+                accessibilityIdentifier: "hybrid-visit-edit-not-authorized"
+            )
+        }
+    }
+
+    private var editableVisit: Visit? {
+        visits.first(where: {
+            accountScope.contains(ownerUserID: $0.ownerUserID)
+                && $0.deletedAt == nil
+                && ($0.remoteID == identifier
+                    || $0.id.uuidString.caseInsensitiveCompare(identifier ?? "") == .orderedSame)
+        })
+    }
 }
 
 private struct TasteMapHybridNativeListsRoute: View {
     @Environment(\.localAccountScope) private var accountScope
     @Environment(NativeAuthServices.self) private var authServices
+    let identifier: String?
 
     var body: some View {
         if let userID = accountScope.authenticatedUserID {
@@ -213,6 +361,194 @@ private struct TasteMapHybridNativeListsRoute: View {
             )
         }
     }
+}
+
+private struct TasteMapHybridNativeRestaurantEditRoute: View {
+    @Environment(\.localAccountScope) private var accountScope
+    @Query private var restaurants: [Restaurant]
+    let identifier: String?
+
+    var body: some View {
+        if let restaurant = ownedRestaurant {
+            RestaurantEditView(restaurant: restaurant)
+        } else {
+            unauthorized("无法编辑这家餐厅")
+        }
+    }
+
+    private var ownedRestaurant: Restaurant? {
+        restaurants.first(where: {
+            accountScope.contains(ownerUserID: $0.ownerUserID)
+                && $0.deletedAt == nil
+                && ($0.remoteID == identifier || $0.id.uuidString.caseInsensitiveCompare(identifier ?? "") == .orderedSame)
+        })
+    }
+}
+
+private struct TasteMapHybridNativeRestaurantAddToListRoute: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.localAccountScope) private var accountScope
+    @Query private var restaurants: [Restaurant]
+    let identifier: String?
+
+    var body: some View {
+        if let userID = accountScope.authenticatedUserID {
+            if let restaurant = ownedRestaurant {
+                AddRestaurantToListsSheet(restaurant: restaurant, currentUserID: userID)
+            } else if let reference {
+                AddPlaceToListsSheet(place: reference.projection, currentUserID: userID)
+            } else {
+                unauthorized("无法把这家餐厅加入食单")
+            }
+        } else {
+            unauthorized("无法把这家餐厅加入食单")
+        }
+    }
+
+    private var ownedRestaurant: Restaurant? {
+        restaurants.first(where: {
+            accountScope.contains(ownerUserID: $0.ownerUserID)
+                && $0.deletedAt == nil
+                && ($0.remoteID == identifier || $0.id.uuidString.caseInsensitiveCompare(identifier ?? "") == .orderedSame)
+        })
+    }
+
+
+    private var reference: TasteMapHybridResolvedRestaurantReference? {
+        guard let identifier, let ownerUserID = accountScope.authenticatedUserID else { return nil }
+        return try? TasteMapHybridRestaurantReferenceResolver.resolve(
+            identifier: identifier,
+            ownerUserID: ownerUserID,
+            context: modelContext
+        )
+    }
+}
+
+private struct TasteMapHybridNativeRestaurantWantToGoRoute: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.localAccountScope) private var accountScope
+    @Query private var restaurants: [Restaurant]
+    @State private var state: SaveState = .saving
+    let identifier: String?
+    let onSaved: () -> Void
+
+    private enum SaveState { case saving, failed }
+
+    var body: some View {
+        Group {
+            switch state {
+            case .saving:
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("正在加入想吃").font(.headline)
+                }
+                .task { save() }
+            case .failed:
+                TasteMapEmptyState(
+                    title: "没有加入想吃",
+                    message: "这家餐厅已不在当前账户可见的正式来源中，请返回后刷新。",
+                    systemImage: "bookmark.slash",
+                    presentation: .embedded,
+                    accessibilityIdentifier: "hybrid-want-to-go-failed"
+                )
+            }
+        }
+    }
+
+    private func save() {
+        guard let identifier,
+              let ownerUserID = accountScope.authenticatedUserID,
+              let reference = try? TasteMapHybridRestaurantReferenceResolver.resolve(
+                  identifier: identifier,
+                  ownerUserID: ownerUserID,
+                  context: modelContext
+              ) else {
+            state = .failed
+            return
+        }
+        do {
+            _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+                projection: reference.projection,
+                among: restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) },
+                currentUserID: ownerUserID
+            )
+            try LocalDiscoveryStore(context: modelContext).updateViewerState(
+                globalKey: reference.projection.globalKey,
+                currentUserID: ownerUserID,
+                state: .wantToGo
+            )
+            try LocalCommunityStore(context: modelContext).updateViewerState(
+                globalKey: reference.projection.globalKey,
+                currentUserID: ownerUserID,
+                state: .wantToGo
+            )
+            onSaved()
+        } catch {
+            state = .failed
+        }
+    }
+}
+
+private struct TasteMapHybridNativeRestaurantDeleteRoute: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.localAccountScope) private var accountScope
+    @Query private var restaurants: [Restaurant]
+    @State private var errorMessage: String?
+    let identifier: String?
+
+    var body: some View {
+        if let restaurant = ownedRestaurant {
+            VStack(spacing: 16) {
+                FoodDiningVisualIcon(kind: .receipt, usage: .decorative, size: 56)
+                Text("删除这家餐厅？").font(.title3.weight(.semibold))
+                Text("餐厅、到访、菜品和照片会先在本机标记删除，并按现有同步依赖顺序处理。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("删除餐厅及其记录", role: .destructive) {
+                    do {
+                        try LocalTasteMapStore(context: modelContext).delete(
+                            restaurant,
+                            actorUserID: accountScope.authenticatedUserID
+                        )
+                        dismiss()
+                    } catch {
+                        errorMessage = "当前账户无权删除，或删除没有完成。现有记录已保留。"
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .accessibilityIdentifier("hybrid-restaurant-delete-confirm")
+            }
+            .padding(24)
+            .alert("无法删除", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) { Button("好", role: .cancel) {} } message: { Text(errorMessage ?? "请稍后重试。") }
+        } else {
+            unauthorized("无法删除这家餐厅")
+        }
+    }
+
+    private var ownedRestaurant: Restaurant? {
+        restaurants.first(where: {
+            accountScope.contains(ownerUserID: $0.ownerUserID)
+                && $0.deletedAt == nil
+                && ($0.remoteID == identifier || $0.id.uuidString.caseInsensitiveCompare(identifier ?? "") == .orderedSame)
+        })
+    }
+}
+
+@ViewBuilder
+private func unauthorized(_ title: String) -> some View {
+    TasteMapEmptyState(
+        title: title,
+        message: "只有当前账户自己的记录可以执行这个操作。",
+        systemImage: "lock.shield",
+        presentation: .embedded,
+        accessibilityIdentifier: "hybrid-native-owner-authorization-failed"
+    )
 }
 
 private struct TasteMapHybridNativeSettingsRoute: View {

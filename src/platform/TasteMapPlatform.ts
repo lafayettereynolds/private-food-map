@@ -11,6 +11,7 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'restaurant.get',
   'restaurant.list',
   'map.viewport',
+  'content.snapshot',
   'visit.contract',
   'sync.status',
   'sync.run',
@@ -33,6 +34,7 @@ export type TasteMapCapability =
   | 'profileRead'
   | 'restaurantRead'
   | 'mapBrowse'
+  | 'contentRead'
   | 'visitContract'
   | 'sync'
   | 'haptics'
@@ -137,6 +139,22 @@ export interface TasteMapProfileDashboardDTO {
 
 export interface TasteMapRestaurantDetailDTO {
   restaurant: TasteMapRestaurantDTO
+  /** Adapter-owned viewer state. Public records must never infer this from IDs. */
+  viewerState: 'none' | 'want_to_go' | 'visited'
+  /** Owner-scoped Native decision. JavaScript must not infer edit rights from user IDs. */
+  editableVisitIDs: string[]
+  /** Native/Browser adapter capability decision for the current viewer. */
+  capabilities: TasteMapRestaurantCapabilitiesDTO
+}
+
+export interface TasteMapRestaurantCapabilitiesDTO {
+  canEditRestaurant: boolean
+  canDeleteRestaurant: boolean
+  canRecordVisit: boolean
+  canAddToWantToGo: boolean
+  canAddToList: boolean
+  canAddToRoulette: boolean
+  canShare: boolean
 }
 
 export interface TasteMapProfileDashboardViewModel {
@@ -151,6 +169,9 @@ export interface TasteMapProfileDashboardViewModel {
 export interface TasteMapRestaurantDetailViewModel {
   restaurant: RestaurantSummary
   image: TasteMapImageDescriptor
+  viewerState: 'none' | 'want_to_go' | 'visited'
+  editableVisitIDs: string[]
+  capabilities: TasteMapRestaurantCapabilitiesDTO
 }
 
 export interface TasteMapRestaurantListRequest {
@@ -204,6 +225,95 @@ export interface TasteMapMapBrowseResponse {
   options: TasteMapMapBrowseOptions
 }
 
+export interface TasteMapHybridListRestaurantDTO {
+  id: string
+  name: string
+  address: string
+  city: string
+  position: number
+  note: string
+  image: TasteMapImageDescriptor
+}
+
+export interface TasteMapHybridPersonDTO {
+  id: string
+  name: string
+  city: string | null
+  avatarPhotoID: string | null
+  avatarPresetID: UserProfile['avatarPresetId']
+  isFollowing: boolean
+}
+
+export interface TasteMapHybridContentRestaurantDTO {
+  id: string
+  name: string
+  address: string
+  city: string
+  latitude: number
+  longitude: number
+  tags: string[]
+  referencePrice: number | null
+  image: TasteMapImageDescriptor
+}
+
+export interface TasteMapHybridDiscoveryItemDTO {
+  id: string
+  mode: 'for_you' | 'similar_taste' | 'trending'
+  restaurant: TasteMapHybridContentRestaurantDTO
+  viewerState: 'none' | 'want_to_go' | 'visited'
+  sourceUser: TasteMapHybridPersonDTO | null
+  activityRating: number | null
+  activityVisitedAt: string | null
+  reason: string
+  similarityPercent: number | null
+  sharedRestaurantCount: number | null
+  uniqueVisitorCount: number | null
+  wantToGoCount: number | null
+  rank: number
+}
+
+export interface TasteMapHybridActivityItemDTO {
+  id: string
+  kind: 'visit' | 'want_to_go'
+  eventAt: string
+  user: TasteMapHybridPersonDTO
+  restaurant: TasteMapHybridContentRestaurantDTO
+  visitID: string | null
+  visitRating: number | null
+  note: string | null
+  viewerState: 'none' | 'want_to_go' | 'visited'
+  likedByViewer: boolean
+  likeCount: number
+  commentCount: number
+}
+
+export interface TasteMapHybridListDTO {
+  id: string
+  title: string
+  description: string
+  visibility: 'private' | 'friends' | 'public'
+  isRanked: boolean
+  isOwnedByViewer: boolean
+  ownerName: string
+  restaurantCount: number
+  restaurants: TasteMapHybridListRestaurantDTO[]
+  updatedAt: string
+}
+
+export interface TasteMapHybridContentSnapshotDTO {
+  generatedAt: string
+  discovery: {
+    forYou: TasteMapHybridDiscoveryItemDTO[]
+    similarTaste: TasteMapHybridDiscoveryItemDTO[]
+    trending: TasteMapHybridDiscoveryItemDTO[]
+  }
+  community: {
+    following: TasteMapHybridActivityItemDTO[]
+    latest: TasteMapHybridActivityItemDTO[]
+  }
+  lists: TasteMapHybridListDTO[]
+}
+
 export interface TasteMapAuthSessionStatus {
   state: 'authenticated' | 'signedOut' | 'restoring'
   userID: string | null
@@ -243,17 +353,25 @@ export interface TasteMapSharePayload {
   text?: string
   url?: string
   nativeResourceURL?: string
+  /** Transient generated share artwork only. Native rejects non-image and oversized payloads. */
+  imageDataURL?: string
 }
 
 export interface TasteMapNativeRouteRequest {
-  route: 'map' | 'discovery' | 'add' | 'visit' | 'lists' | 'roulette' | 'analytics' | 'premium' | 'settings'
+  route:
+    | 'map' | 'discovery' | 'add' | 'visit' | 'visitEdit' | 'lists' | 'roulette' | 'analytics' | 'premium' | 'settings'
+    | 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative'
+    | 'profileEdit' | 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo'
   identifier?: string
 }
 
 export type TasteMapHybridRoute =
   | { surface: 'profile'; identifier?: string }
   | { surface: 'restaurant'; identifier: string }
-  | { surface: 'map' | 'discovery' | 'add' | 'visit' | 'lists' | 'publicList' | 'activity' | 'roulette' | 'analytics' | 'premium' | 'settings'; identifier?: string }
+  | { surface: 'map' | 'discovery' | 'add' | 'visit' | 'visitEdit' | 'lists' | 'publicList' | 'activity' | 'roulette' | 'analytics' | 'premium' | 'settings'; identifier?: string }
+  | { surface: 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative'; identifier?: string }
+  | { surface: 'profileEdit'; identifier?: string }
+  | { surface: 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo'; identifier: string }
 
 export interface TasteMapNavigationStateDTO {
   route: TasteMapHybridRoute
@@ -308,6 +426,7 @@ export interface TasteMapPlatform {
     list(request?: TasteMapRestaurantListRequest): Promise<TasteMapRestaurantDetailViewModel[]>
   }
   map: { viewport(request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> }
+  content: { snapshot(): Promise<TasteMapHybridContentSnapshotDTO> }
   visit: { contract(): Promise<{ version: 1; writeUIReady: false }> }
   sync: {
     status(): Promise<TasteMapSyncStatusDTO>

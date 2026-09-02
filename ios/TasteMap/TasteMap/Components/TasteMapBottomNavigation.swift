@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TasteMapBottomNavigation: View {
     @Binding var selection: AppTab
+    let showsAddRestaurant: Bool
     let onAddRestaurant: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -27,16 +28,20 @@ struct TasteMapBottomNavigation: View {
                     .frame(height: 1)
             }
             .shadow(color: TasteMapCoreTheme.cardShadow, radius: 14, y: -5)
-            .padding(.top, 30)
+            .padding(.top, showsAddRestaurant ? 30 : 0)
 
-            addRestaurantButton(fixedHeight: 38)
+            if showsAddRestaurant {
+                addRestaurantButton(fixedHeight: 38)
+            }
         }
-        .frame(height: 88, alignment: .bottom)
+        .frame(height: showsAddRestaurant ? 88 : 58, alignment: .bottom)
     }
 
     private var accessibilityLayout: some View {
         VStack(spacing: 8) {
-            addRestaurantButton(fixedHeight: nil)
+            if showsAddRestaurant {
+                addRestaurantButton(fixedHeight: nil)
+            }
             tabItems
                 .padding(.horizontal, 8)
         }

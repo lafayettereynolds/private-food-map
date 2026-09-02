@@ -35,6 +35,7 @@ struct AddRestaurantView: View {
 
     private let initialSharedText: String?
     private let startsWithManualEntry: Bool
+    private let onCandidateSelected: ((RestaurantCandidate) throws -> Void)?
     let onAction: (RestaurantCandidate, RestaurantSearchAction) throws -> Void
 
     private var scopedRestaurants: [Restaurant] {
@@ -45,6 +46,7 @@ struct AddRestaurantView: View {
         dependencies: RestaurantAcquisitionDependencies,
         initialSharedText: String? = nil,
         startsWithManualEntry: Bool = false,
+        onCandidateSelected: ((RestaurantCandidate) throws -> Void)? = nil,
         onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) throws -> Void
     ) {
         _viewModel = StateObject(wrappedValue: RestaurantAcquisitionViewModel(
@@ -54,6 +56,7 @@ struct AddRestaurantView: View {
         ))
         self.initialSharedText = initialSharedText
         self.startsWithManualEntry = startsWithManualEntry
+        self.onCandidateSelected = onCandidateSelected
         self.onAction = onAction
     }
 
@@ -329,13 +332,21 @@ struct AddRestaurantView: View {
     }
 
     private func select(_ candidate: RestaurantCandidate, match: RestaurantDeduplicator.Match?) {
+        if let onCandidateSelected {
+            do {
+                try onCandidateSelected(candidate)
+            } catch {
+                actionError = "无法打开餐厅详情，请重试。"
+            }
+            return
+        }
         selectedCandidate = RestaurantAcquisitionSelection(candidate: candidate, match: match)
     }
 
     private func presentPendingManualCandidate() {
         guard let pendingManualCandidate else { return }
         self.pendingManualCandidate = nil
-        selectedCandidate = RestaurantAcquisitionSelection(candidate: pendingManualCandidate, match: nil)
+        select(pendingManualCandidate, match: nil)
     }
 
     private func perform(_ candidate: RestaurantCandidate, _ action: RestaurantSearchAction) {

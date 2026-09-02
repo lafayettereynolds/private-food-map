@@ -84,7 +84,7 @@ export function buildCompanionShareData(user: UserProfile, companions: DiningCom
   return {
     ...base(type, user, `${visits.length}:${insights.length}`),
     privacy: { companionNameIncluded: revealName, spendIncluded: false, exactLocationIncluded: false },
-    title: '饭搭子分析',
+    title: '最佳饭搭子',
     eyebrow: 'DINING COMPANION',
     subtitle: `基于 ${visits.length} 条真实到访中的共同记录`,
     summary: lead ? `你和${companionLabel}一起记录了 ${lead.sharedVisitCount} 次用餐，去过 ${lead.restaurantCount} 家餐厅。` : '记录饭搭子后，共同口味会逐渐形成。',
@@ -125,7 +125,7 @@ export function buildRecommendationSourceShareData(user: UserProfile, restaurant
   ]
   return {
     ...base(type, user, `${visits.length}:${insights.length}`),
-    title: '推荐来源分析',
+    title: '谁最会种草',
     eyebrow: 'RECOMMENDATION SOURCES',
     subtitle: '推荐的价值，由真实到访结果验证',
     summary: lead ? `目前最懂你的来源是「${lead.label}」${worst ? `；「${worst.insight.label}」过去对你的实际结果相对较差。` : '。'}` : '填写推荐来源并实际到访后，这里会判断谁更懂你的口味。',

@@ -12,7 +12,7 @@ const BENEFITS = [
   ['完整口味档案', '预算、场景、评分风格与口味变化', BarChart3],
   ['深度个性化推荐', '更多推荐依据、解释与跨城市匹配', WandSparkles],
   ['同味能力', '同味之选、同味评分与相似用户洞察', UsersRound],
-  ['饭搭子与推荐来源分析', '验证谁和你最合拍、谁的推荐最准', Sparkles],
+  ['最佳饭搭子与谁最会种草', '验证谁和你最合拍、谁的推荐最准', Sparkles],
   ['长期回顾', '完整月度回顾与年度食味年鉴', RefreshCw],
   ['高级筛选与更多照片', '高级推荐筛选，每次到访最多 20 张照片', Images],
 ] as const
@@ -158,7 +158,7 @@ function PremiumPaywall({ membershipTier, sourceFeatureKey, onClose }: { members
 
   return <ModalShell description={PREMIUM_SOURCE_COPY[sourceFeatureKey]} onClose={onClose} size="large" title="Taste Map Premium">
     <div className="premium-paywall">
-      <section className="premium-paywall__hero"><Sparkles size={25} /><div><h2>把长期记录，变成更懂你的分析。</h2><p>解锁完整口味档案、深度推荐、饭搭子与推荐来源分析，让每一次真实记录都变得更有价值。</p></div></section>
+      <section className="premium-paywall__hero"><Sparkles size={25} /><div><h2>把长期记录，变成更懂你的分析。</h2><p>解锁完整口味档案、深度推荐、最佳饭搭子与谁最会种草，让每一次真实记录都变得更有价值。</p></div></section>
       <section className="premium-paywall__benefits">{BENEFITS.map(([title, description, Icon]) => <article key={title}><span><Icon size={19} /></span><div><strong>{title}</strong><small>{description}</small></div></article>)}</section>
       <section className="premium-paywall__comparison"><h3>免费版与 Premium</h3><div className="premium-comparison-row is-head"><span>功能</span><span>免费版</span><span>Premium</span></div>{COMPARISON.map((row) => <div className="premium-comparison-row" key={row[0]}>{row.map((cell) => <span key={cell}>{cell === '包含' ? <><Check size={13} />包含</> : cell}</span>)}</div>)}</section>
       <section className="premium-paywall__plans">

@@ -41,6 +41,7 @@ import type {
 import { currentDateAndTime, localDateTimeToIso } from '../utils/date'
 import { CURRENT_USER_ID } from '../db/social'
 import { resolveExternalRestaurantLink, type ExternalLinkResolveResult } from '../services/externalRestaurantLink'
+import { TasteMapRestaurantAcquisitionScaffold } from './TasteMapRestaurantAcquisitionShared'
 
 interface AddRestaurantModalProps {
   companionOptions: string[]
@@ -579,57 +580,45 @@ function SearchStep({
   onRecordExisting,
   onSearch,
 }: SearchStepProps) {
+  const [shareIngestionOpen, setShareIngestionOpen] = useState(false)
   return (
     <>
       {!mapService.isConfigured ? (
         <div className="config-notice"><TriangleAlert size={19} /><div><strong>还需要配置高德地图</strong><p>填入高德 Key 和安全密钥后，餐厅搜索就会启用。</p></div></div>
       ) : null}
-      <form className="poi-search-form" onSubmit={onSearch}>
-        <label className="field field--grow"><span>餐厅名称</span><div className="input-with-icon"><Search size={17} /><input autoFocus onChange={(event) => onKeywordChange(event.target.value)} placeholder="例如：寿喜烧" value={keyword} /></div></label>
-        <label className="field field--city"><span>搜索城市 {locatingCity ? '· 正在精确定位' : ''}</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" value={city} />{locationLabel ? <small className="gps-location-detail"><LocateFixed size={12} /> 已定位：{locationLabel}</small> : null}</label>
-        <button className="primary-button search-submit" disabled={!mapService.isConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
-      </form>
-      <section className="external-link-import">
-        <header><Link2 size={16} /><div><strong>粘贴餐厅链接</strong><span>支持高德、Apple 地图和普通餐厅网页</span></div></header>
-        <form className="external-link-import__form" onSubmit={onExternalLinkResolve}>
-          <div className="input-with-icon"><Link2 size={16} /><input onChange={(event) => onExternalLinkChange(event.target.value)} placeholder="粘贴链接或分享文字" value={externalLink} /></div>
-          <button className="secondary-button" disabled={externalLinkLoading || !externalLink.trim()} type="submit">
-            {externalLinkLoading ? <LoaderCircle className="spin" size={16} /> : '识别'}
-          </button>
-        </form>
-        {externalLinkResult ? <div className={`external-link-import__result is-${externalLinkResult.confidence.toLowerCase()}`}>
-          <p><strong>{externalLinkResult.message}</strong><span>推荐来源建议：{externalLinkResult.sourceSuggestion}（保存前可修改）</span></p>
-          {externalLinkResult.candidates.length ? <PoiResultList
-            existingRestaurantsByPoiId={existingRestaurantsByPoiId}
-            onChoose={onChoose}
-            onRecordExisting={onRecordExisting}
-            results={externalLinkResult.candidates}
-          /> : null}
-        </div> : null}
-      </section>
-      {error ? <p className="form-error">{error}</p> : null}
-      {!hasSearched ? (
-        <section className="nearby-restaurant-section">
-          <header><div><LocateFixed size={16} /><strong>附近餐厅</strong></div><span>{locationLabel ? 'GPS 3 公里内' : '仅使用精确 GPS'}</span></header>
+      <TasteMapRestaurantAcquisitionScaffold
+        nearby={<>
+          <div className="tm-acquisition__nearby-meta"><span>{locationLabel ? 'GPS 3 公里内' : '仅使用精确 GPS'}</span></div>
           {nearbyLoading ? <div className="nearby-loading"><LoaderCircle className="spin" size={17} /> 正在寻找附近餐厅</div> : null}
-          {!nearbyLoading ? <PoiResultList
-            existingRestaurantsByPoiId={existingRestaurantsByPoiId}
-            onChoose={onChoose}
-            onRecordExisting={onRecordExisting}
-            results={nearbyResults}
-          /> : null}
+          {!nearbyLoading ? <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={nearbyResults} /> : null}
           {!nearbyLoading && nearbyMessage ? <div className="nearby-status-message"><MapPin size={16} /><span>{nearbyMessage}</span><button onClick={onRetryLocation} type="button">重新定位</button></div> : null}
-        </section>
-      ) : null}
-      <div className="poi-results" aria-live="polite">
-        <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={results} />
-        {hasSearched && !loading && !error && results.length === 0 ? <div className="empty-results"><Search size={21} /><strong>没有找到匹配的餐厅或地点，请尝试其他关键词。</strong></div> : null}
-        {!hasSearched ? <div className="search-hint"><span>搜索建议</span><p>名称太常见时，加上城市会更准确，例如“杭州 寿喜烧”。</p></div> : null}
-      </div>
-      <button className="manual-restaurant-entry" onClick={onManualAdd} type="button">
-        <Store size={18} />
-        <span><strong>地图上搜不到？手动添加</strong><small>适合路边小摊、快闪店和私房店</small></span>
-      </button>
+        </>}
+        onOpenManual={onManualAdd}
+        onOpenShare={() => setShareIngestionOpen((value) => !value)}
+        search={<>
+          <form className="poi-search-form" onSubmit={onSearch}>
+            <label className="field field--grow"><span>餐厅名称</span><div className="input-with-icon"><Search size={17} /><input autoFocus onChange={(event) => onKeywordChange(event.target.value)} placeholder="例如：寿喜烧" value={keyword} /></div></label>
+            <label className="field field--city"><span>搜索城市 {locatingCity ? '· 正在精确定位' : ''}</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" value={city} />{locationLabel ? <small className="gps-location-detail"><LocateFixed size={12} /> 已定位：{locationLabel}</small> : null}</label>
+            <button className="primary-button search-submit" disabled={!mapService.isConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
+          </form>
+          {error ? <p className="form-error">{error}</p> : null}
+          <div className="poi-results" aria-live="polite">
+            <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={results} />
+            {hasSearched && !loading && !error && results.length === 0 ? <div className="empty-results"><Search size={21} /><strong>没有找到匹配的餐厅或地点，请尝试其他关键词。</strong></div> : null}
+            {!hasSearched ? <div className="search-hint"><span>搜索建议</span><p>名称太常见时，加上城市会更准确，例如“杭州 寿喜烧”。</p></div> : null}
+          </div>
+        </>}
+        sharePanel={shareIngestionOpen ? <section className="tm-acquisition__share-panel" data-secondary-share-ingestion="true">
+          <form className="external-link-import__form" onSubmit={onExternalLinkResolve}>
+            <div className="input-with-icon"><Link2 size={16} /><input onChange={(event) => onExternalLinkChange(event.target.value)} placeholder="粘贴来自地图或网页的分享内容" value={externalLink} /></div>
+            <button className="secondary-button" disabled={externalLinkLoading || !externalLink.trim()} type="submit">{externalLinkLoading ? <LoaderCircle className="spin" size={16} /> : '识别'}</button>
+          </form>
+          {externalLinkResult ? <div className={`external-link-import__result is-${externalLinkResult.confidence.toLowerCase()}`}>
+            <p><strong>{externalLinkResult.message}</strong><span>推荐来源建议：{externalLinkResult.sourceSuggestion}（保存前可修改）</span></p>
+            {externalLinkResult.candidates.length ? <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={externalLinkResult.candidates} /> : null}
+          </div> : null}
+        </section> : undefined}
+      />
     </>
   )
 }

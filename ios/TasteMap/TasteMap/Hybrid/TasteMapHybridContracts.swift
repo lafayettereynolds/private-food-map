@@ -2,6 +2,7 @@ import Foundation
 
 public enum TasteMapHybridCapability: String, Codable, CaseIterable, Sendable {
     case appleSignIn, logout, profileRead, restaurantRead, mapBrowse, visitContract, sync
+    case contentRead
     case haptics, share, location, photoPicker, premium, nativeNavigation, backup, accountDelete
 }
 
@@ -46,8 +47,10 @@ public enum TasteMapHybridRuntimeMode: String, Codable, Sendable {
 }
 
 public enum TasteMapHybridRouteSurface: String, Codable, CaseIterable, Sendable {
-    case map, discovery, add, profile, restaurant, visit, lists, publicList, activity
+    case map, discovery, add, profile, restaurant, visit, visitEdit, lists, publicList, activity
     case roulette, analytics, premium, settings
+    case acquisitionNative, listManage, premiumStore, settingsNative, socialNative
+    case profileEdit, restaurantEdit, restaurantDelete, restaurantAddToList, restaurantWantToGo
 }
 
 public enum TasteMapHybridRouteOwner: String, Codable, Sendable { case hybrid, native }
@@ -58,7 +61,10 @@ public struct TasteMapHybridRouteDTO: Codable, Equatable, Identifiable, Sendable
 
     public init(surface: TasteMapHybridRouteSurface, identifier: String? = nil) throws {
         let normalized = identifier?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if surface == .restaurant, normalized?.isEmpty != false { throw TasteMapHybridRouteError.missingIdentifier }
+        if [.restaurant, .visit, .visitEdit, .restaurantEdit, .restaurantDelete,
+            .restaurantAddToList, .restaurantWantToGo].contains(surface), normalized?.isEmpty != false {
+            throw TasteMapHybridRouteError.missingIdentifier
+        }
         if let normalized, normalized.count > 256 { throw TasteMapHybridRouteError.invalidIdentifier }
         self.surface = surface
         self.identifier = normalized?.isEmpty == false ? normalized : nil
@@ -76,7 +82,8 @@ public struct TasteMapHybridRouteDTO: Codable, Equatable, Identifiable, Sendable
 
     public var owner: TasteMapHybridRouteOwner {
         switch surface {
-        case .map, .restaurant: .hybrid
+        case .map, .restaurant, .discovery, .add, .lists, .publicList, .activity,
+                .roulette, .analytics, .premium, .settings: .hybrid
         case .profile where identifier == nil: .hybrid
         default: .native
         }
@@ -245,6 +252,41 @@ public struct TasteMapHybridProfileDTO: Codable, Sendable {
 
 public struct TasteMapHybridRestaurantDetailDTO: Codable, Sendable {
     public let restaurant: TasteMapHybridRestaurantDTO
+    /// Native/Browser-owned viewer state. React must not infer this from a
+    /// restaurant ID, user ID, or the existence of a public activity.
+    public let viewerState: String
+    public let editableVisitIDs: [String]
+    public let capabilities: TasteMapHybridRestaurantCapabilitiesDTO
+}
+
+public struct TasteMapHybridRestaurantCapabilitiesDTO: Codable, Equatable, Sendable {
+    public let canEditRestaurant: Bool
+    public let canDeleteRestaurant: Bool
+    public let canRecordVisit: Bool
+    public let canAddToWantToGo: Bool
+    public let canAddToList: Bool
+    public let canAddToRoulette: Bool
+    public let canShare: Bool
+
+    public static let owned = TasteMapHybridRestaurantCapabilitiesDTO(
+        canEditRestaurant: true,
+        canDeleteRestaurant: true,
+        canRecordVisit: true,
+        canAddToWantToGo: true,
+        canAddToList: true,
+        canAddToRoulette: true,
+        canShare: true
+    )
+
+    public static let publicReadable = TasteMapHybridRestaurantCapabilitiesDTO(
+        canEditRestaurant: false,
+        canDeleteRestaurant: false,
+        canRecordVisit: true,
+        canAddToWantToGo: true,
+        canAddToList: true,
+        canAddToRoulette: true,
+        canShare: true
+    )
 }
 
 public struct TasteMapHybridRestaurantListRequest: Codable, Sendable {
@@ -312,6 +354,99 @@ public struct TasteMapHybridMapBrowseResponse: Codable, Sendable {
     public let options: TasteMapHybridMapBrowseOptions
 }
 
+public struct TasteMapHybridPersonDTO: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let city: String?
+    public let avatarPhotoID: String?
+    public let avatarPresetID: String
+    public let isFollowing: Bool
+}
+
+public struct TasteMapHybridContentRestaurantDTO: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let address: String
+    public let city: String
+    public let latitude: Double
+    public let longitude: Double
+    public let tags: [String]
+    public let referencePrice: Double?
+    public let image: TasteMapHybridImageDescriptor
+}
+
+public struct TasteMapHybridDiscoveryItemDTO: Codable, Sendable {
+    public let id: String
+    public let mode: String
+    public let restaurant: TasteMapHybridContentRestaurantDTO
+    public let viewerState: String
+    public let sourceUser: TasteMapHybridPersonDTO?
+    public let activityRating: Double?
+    public let activityVisitedAt: String?
+    public let reason: String
+    public let similarityPercent: Int?
+    public let sharedRestaurantCount: Int?
+    public let uniqueVisitorCount: Int?
+    public let wantToGoCount: Int?
+    public let rank: Int
+}
+
+public struct TasteMapHybridActivityItemDTO: Codable, Sendable {
+    public let id: String
+    public let kind: String
+    public let eventAt: String
+    public let user: TasteMapHybridPersonDTO
+    public let restaurant: TasteMapHybridContentRestaurantDTO
+    public let visitID: String?
+    public let visitRating: Double?
+    public let note: String?
+    public let viewerState: String
+    public let likedByViewer: Bool
+    public let likeCount: Int
+    public let commentCount: Int
+}
+
+public struct TasteMapHybridListRestaurantDTO: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let address: String
+    public let city: String
+    public let position: Int
+    public let note: String
+    public let image: TasteMapHybridImageDescriptor
+}
+
+public struct TasteMapHybridListDTO: Codable, Sendable {
+    public let id: String
+    public let title: String
+    public let description: String
+    public let visibility: String
+    public let isRanked: Bool
+    public let isOwnedByViewer: Bool
+    public let ownerName: String
+    public let restaurantCount: Int
+    public let restaurants: [TasteMapHybridListRestaurantDTO]
+    public let updatedAt: String
+}
+
+public struct TasteMapHybridDiscoverySnapshotDTO: Codable, Sendable {
+    public let forYou: [TasteMapHybridDiscoveryItemDTO]
+    public let similarTaste: [TasteMapHybridDiscoveryItemDTO]
+    public let trending: [TasteMapHybridDiscoveryItemDTO]
+}
+
+public struct TasteMapHybridCommunitySnapshotDTO: Codable, Sendable {
+    public let following: [TasteMapHybridActivityItemDTO]
+    public let latest: [TasteMapHybridActivityItemDTO]
+}
+
+public struct TasteMapHybridContentSnapshotDTO: Codable, Sendable {
+    public let generatedAt: String
+    public let discovery: TasteMapHybridDiscoverySnapshotDTO
+    public let community: TasteMapHybridCommunitySnapshotDTO
+    public let lists: [TasteMapHybridListDTO]
+}
+
 public struct TasteMapHybridLocationDTO: Codable, Sendable {
     public let latitude: Double
     public let longitude: Double
@@ -330,6 +465,7 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case restaurantGet = "restaurant.get"
     case restaurantList = "restaurant.list"
     case mapViewport = "map.viewport"
+    case contentSnapshot = "content.snapshot"
     case visitContract = "visit.contract"
     case syncStatus = "sync.status"
     case syncRun = "sync.run"

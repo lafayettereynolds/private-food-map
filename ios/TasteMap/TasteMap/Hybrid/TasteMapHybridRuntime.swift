@@ -106,6 +106,8 @@ final class TasteMapHybridRuntime {
                 .logout: true,
                 .nativeNavigation: true,
                 .location: true,
+                .premium: true,
+                .share: true,
             ],
             asynchronousAction: { [weak self] method, payload in
                 guard let self else { throw Self.bridgeError("hybrid_runtime_unavailable", recoverable: true) }
@@ -126,8 +128,9 @@ final class TasteMapHybridRuntime {
         }
     }
 
-    /// Resolves only owner-scoped photo descriptors emitted by the typed
-    /// bridge. JavaScript never receives an absolute file path.
+    /// Resolves only owner-scoped or owner-visible cached photo descriptors
+    /// emitted by the typed bridge. JavaScript never receives an absolute file
+    /// path and cannot use this resource scheme as an arbitrary photo endpoint.
     func resourceData(for url: URL) async throws -> (data: Data, mimeType: String) {
         guard url.scheme == "tastemap-resource" else {
             throw TasteMapHybridResourceError.unsupportedResource
@@ -142,24 +145,81 @@ final class TasteMapHybridRuntime {
             throw TasteMapHybridResourceError.authRequired
         }
         let context = ModelContext(container)
-        guard let photo = try context.fetch(FetchDescriptor<PhotoAsset>()).first(where: {
+        let ownedPhoto = try context.fetch(FetchDescriptor<PhotoAsset>()).first(where: {
             $0.ownerUserID == ownerUserID
                 && $0.deletedAt == nil
                 && $0.binaryDeletedAt == nil
                 && ($0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame
                     || $0.remoteID?.caseInsensitiveCompare(identifier) == .orderedSame)
-        }) else { throw TasteMapHybridResourceError.notFound }
-        let relativePath = photo.thumbnailFileRelativePath
-            ?? photo.displayFileRelativePath
-            ?? photo.localFileRelativePath
-        if let relativePath {
-            return (try await photoFiles.load(relativePath: relativePath), photo.mimeType)
+        })
+        if let ownedPhoto {
+            let relativePath = ownedPhoto.thumbnailFileRelativePath
+                ?? ownedPhoto.displayFileRelativePath
+                ?? ownedPhoto.localFileRelativePath
+            if let relativePath {
+                return (try await photoFiles.load(relativePath: relativePath), ownedPhoto.mimeType)
+            }
         }
-        if parts[0] == "public-photo" {
-            let remoteID = UUID(uuidString: identifier) ?? photo.id
-            return (try await authServices.photoAPI.download(photoID: remoteID, variant: .thumbnail), photo.mimeType)
+
+        guard parts[0] == "public-photo",
+              Self.isOwnerVisibleCachedPhoto(
+                identifier,
+                ownerUserID: ownerUserID,
+                context: context
+              ),
+              let remoteID = UUID(uuidString: identifier) else {
+            throw TasteMapHybridResourceError.notFound
         }
-        throw TasteMapHybridResourceError.notFound
+        let variant = PhotoBinaryVariant(rawValue: parts[2]) ?? .thumbnail
+        let data = try await authServices.photoAPI.download(photoID: remoteID, variant: variant)
+        return (data, Self.imageMimeType(data))
+    }
+
+    /// Public photo access is deliberately derived from the signed-in user's
+    /// local projections. A guessed UUID that is absent from Discovery,
+    /// Community, or Public Lists remains inaccessible.
+    private static func isOwnerVisibleCachedPhoto(
+        _ identifier: String,
+        ownerUserID: String,
+        context: ModelContext
+    ) -> Bool {
+        let normalized = identifier.lowercased()
+        let discoveryContainsPhoto = ((try? context.fetch(FetchDescriptor<CachedDiscoveryRestaurant>())) ?? [])
+            .contains { cached in
+                cached.currentUserID == ownerUserID
+                    && cached.projection?.photo?.photoId.lowercased() == normalized
+            }
+        if discoveryContainsPhoto { return true }
+
+        let communityContainsPhoto = ((try? context.fetch(FetchDescriptor<CachedCommunityContent>())) ?? [])
+            .contains { cached in
+                guard cached.currentUserID == ownerUserID, let item = cached.item else { return false }
+                if item.restaurant.photo?.photoId.lowercased() == normalized { return true }
+                return item.visit?.photos.contains { $0.photoId.lowercased() == normalized } == true
+            }
+        if communityContainsPhoto { return true }
+
+        let publicListContainsPhoto = ((try? context.fetch(FetchDescriptor<CachedPublicRestaurantListItem>())) ?? [])
+            .contains { cached in
+                cached.viewerUserID == ownerUserID
+                    && cached.item?.restaurant.markerPhotoId?.lowercased() == normalized
+            }
+        if publicListContainsPhoto { return true }
+
+        return ((try? context.fetch(FetchDescriptor<CachedPublicRestaurantList>())) ?? [])
+            .contains { cached in
+                guard cached.viewerUserID == ownerUserID, let summary = cached.summary else { return false }
+                if summary.customCoverPhotoId?.lowercased() == normalized { return true }
+                return summary.previewRestaurants.contains { $0.photoId?.lowercased() == normalized }
+            }
+    }
+
+    private static func imageMimeType(_ data: Data) -> String {
+        if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return "image/png" }
+        if data.starts(with: [0x47, 0x49, 0x46, 0x38]) { return "image/gif" }
+        if data.starts(with: [0x52, 0x49, 0x46, 0x46]), data.count >= 12,
+           data[8..<12].elementsEqual([0x57, 0x45, 0x42, 0x50]) { return "image/webp" }
+        return "image/jpeg"
     }
 
     func receive(sharedImport: PendingRestaurantImport) {
@@ -210,9 +270,65 @@ final class TasteMapHybridRuntime {
             return try encode(navigation.current)
         case .locationCurrent:
             return try await currentLocation()
+        case .premiumStatus:
+            return premiumStatus()
+        case .shareOpen:
+            return try await openShareSheet(payload)
         default:
             throw Self.bridgeError("capability_unavailable", method: method)
         }
+    }
+
+    private func premiumStatus() -> TasteMapHybridJSONValue {
+        let status: String
+        switch premiumEntitlementService.membershipStatus {
+        case .premium, .gracePeriod: status = "premium"
+        case .free, .expired: status = "free"
+        case .loading, .unknown: status = "unavailable"
+        }
+        return .object([
+            "state": .string(status),
+            "expiresAt": premiumEntitlementService.snapshot?.expiresAt.map {
+                .string(Self.dateFormatter.string(from: $0))
+            } ?? .null,
+        ])
+    }
+
+    private func openShareSheet(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: HybridShareRequest = try decode(payload)
+        var items: [Any] = []
+        if let title = request.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            items.append(title)
+        }
+        if let text = request.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            items.append(text)
+        }
+        if let rawURL = request.url, let url = URL(string: rawURL), ["https", "http"].contains(url.scheme?.lowercased()) {
+            items.append(url)
+        }
+        if let resource = request.nativeResourceURL,
+           let url = URL(string: resource), url.scheme == "tastemap-resource",
+           let loaded = try? await resourceData(for: url),
+           let image = UIImage(data: loaded.data) {
+            items.append(image)
+        }
+        if let dataURL = request.imageDataURL,
+           let image = Self.generatedShareImage(dataURL: dataURL) {
+            items.append(image)
+        }
+        guard !items.isEmpty, let presenter = presentationController else {
+            throw Self.bridgeError("share_payload_invalid", method: .shareOpen, recoverable: true)
+        }
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.popoverPresentationController?.sourceView = presenter.view
+        controller.popoverPresentationController?.sourceRect = CGRect(
+            x: presenter.view.bounds.midX,
+            y: presenter.view.bounds.maxY - 1,
+            width: 1,
+            height: 1
+        )
+        presenter.present(controller, animated: true)
+        return .object(["presented": .bool(true)])
     }
 
     private func currentLocation() async throws -> TasteMapHybridJSONValue {
@@ -314,6 +430,20 @@ final class TasteMapHybridRuntime {
                 .first(where: \.isKeyWindow)
     }
 
+    private var presentationController: UIViewController? {
+        var controller = presentationWindow?.rootViewController
+        while let presented = controller?.presentedViewController { controller = presented }
+        return controller
+    }
+
+    private static func generatedShareImage(dataURL: String) -> UIImage? {
+        let prefix = "data:image/png;base64,"
+        guard dataURL.hasPrefix(prefix), dataURL.utf8.count <= 12_000_000,
+              let data = Data(base64Encoded: String(dataURL.dropFirst(prefix.count)), options: .ignoreUnknownCharacters),
+              data.count <= 9_000_000 else { return nil }
+        return UIImage(data: data)
+    }
+
     private func emit<T: Encodable>(_ name: TasteMapHybridEventName, payload: T) {
         guard let value = try? encode(payload) else { return }
         sequence += 1
@@ -348,6 +478,14 @@ final class TasteMapHybridRuntime {
         value.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return value
     }()
+}
+
+private struct HybridShareRequest: Decodable {
+    let title: String?
+    let text: String?
+    let url: String?
+    let nativeResourceURL: String?
+    let imageDataURL: String?
 }
 
 private enum TasteMapHybridResourceError: Error {
