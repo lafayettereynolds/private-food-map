@@ -444,6 +444,11 @@ struct SocialHubView: View {
 }
 
 struct SocialPublicProfileView: View {
+    private enum PublicProfileSection: Hashable {
+        case activity
+        case lists
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query private var restaurants: [Restaurant]
@@ -451,6 +456,7 @@ struct SocialPublicProfileView: View {
     @State private var context: SocialProfileContextV1?
     @State private var processing = false
     @State private var message: String?
+    @State private var profileSection: PublicProfileSection = .activity
     @State private var contentSection: PublicContentSectionV1 = .visits
     @State private var contentItems: [PublicContentItemV1] = []
     @State private var contentStatistics: PublicContentStatisticsV1?
@@ -499,7 +505,17 @@ struct SocialPublicProfileView: View {
                 VStack(spacing: 18) {
                     publicProfileHero
                     if let overview { publicOverview(overview) }
-                    if communityAPI != nil {
+                    if communityAPI != nil || restaurantListAPI != nil {
+                        TasteMapSegmentedControl(
+                            selection: $profileSection,
+                            items: [
+                                .init(.activity, title: "动态"),
+                                .init(.lists, title: "食单"),
+                            ],
+                            accessibilityIdentifier: "public-profile-primary-section"
+                        )
+                    }
+                    if profileSection == .activity, communityAPI != nil {
                         publicEvidenceHeader(
                             title: "TA 的餐桌",
                             detail: "公开记录、想吃与食单共同构成这份真实餐饮档案。"
@@ -507,14 +523,14 @@ struct SocialPublicProfileView: View {
                         TasteMapSegmentedControl(
                             selection: $contentSection,
                             items: [
-                                .init(.visits, title: "公开记录"),
-                                .init(.wantToGo, title: "想吃餐厅"),
+                                .init(.visits, title: "到访"),
+                                .init(.wantToGo, title: "想吃"),
                             ],
                             accessibilityIdentifier: "public-profile-content-section"
                         )
                         publicContent
                     }
-                    if let restaurantListAPI {
+                    if profileSection == .lists, let restaurantListAPI {
                         publicEvidenceHeader(
                             title: "TA 的食单",
                             detail: "只展示当前权限允许查看的公开或好友可见榜单。"
@@ -617,29 +633,28 @@ struct SocialPublicProfileView: View {
     }
 
     private var publicIdentityHeader: some View {
-        HStack(alignment: .center, spacing: 14) {
+        VStack(alignment: .center, spacing: 8) {
             PresetProfileAvatarView(preset: item.profile.avatarPresetId)
                 .frame(width: 80, height: 80)
                 .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 5) {
-                Text(item.profile.displayName)
-                    .font(.title3.bold())
-                    .lineLimit(2)
-                if let city = item.profile.city {
-                    Label(city, systemImage: "building.2")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let bio = item.profile.bio {
-                    Text(bio)
-                        .font(.subheadline)
-                        .lineLimit(2)
-                        .foregroundStyle(.secondary)
-                }
+            Text(item.profile.displayName)
+                .font(.title3.bold())
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+            if let city = item.profile.city {
+                Label(city, systemImage: "building.2")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if let bio = item.profile.bio {
+                Text(bio)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .accessibilityIdentifier("public-profile-compact-header")
     }
 
@@ -648,7 +663,7 @@ struct SocialPublicProfileView: View {
         HStack(spacing: 0) {
             publicMetric("关注", overview?.followingCount)
             Divider().frame(height: 34)
-            publicMetric("被关注", overview?.followerCount)
+            publicMetric("粉丝", overview?.followerCount)
             Divider().frame(height: 34)
             publicMetric("去过", context?.profile.statistics.publicRestaurantCount)
             Divider().frame(height: 34)

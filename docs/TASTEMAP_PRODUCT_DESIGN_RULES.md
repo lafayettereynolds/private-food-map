@@ -332,12 +332,18 @@ The compact Premium identity badge used in Profile keeps the previously approved
 
 Lafayette visual approval is region-based and convergent. A region marked KEEP is frozen; later candidate versions may change only regions marked `需要修改` or `重新设计`, unless Lafayette explicitly unfreezes a region.
 
+- **Approval source:** `TasteMap-Lafayette-Visual-Approval.zip`, exported 2026-09-02. Its `approval.json` is the current machine-readable freeze registry; report text and earlier automated `Visual PASS` labels cannot override it.
+- **My Map / My List:** approved title switch, scopes, filters, preview, add action and state behavior are frozen. Marker layout uses the Legacy natural-overlap base; rating-colored rings and the canonical real-image priority are required. Generated QA artwork may not masquerade as a provider merchant photo.
+- **Discovery:** the approved Legacy-base/FUSE composition is frozen, including centered title, five primary tabs, shared FilterBar and Legacy activity-content geometry.
+- **Add Restaurant / Nearby:** the Legacy-base Search, Nearby, Manual Add, results, preview, actions and transition are frozen; current Share ingestion remains frozen and current-only.
+- **Restaurant Detail:** the global Legacy-base information architecture is frozen and continues to use the single current `RestaurantDetailStandardBody`.
+- **Roulette:** the approved Legacy wheel, candidate management, result, imagery and state geometry are frozen while current selection semantics remain authoritative.
 - **Visit Editor:** all regions approved. Legacy layout/density is frozen for restaurant context, core experience, ratings, dish/photo entry, dining context, and notes; the current canonical Save CTA is frozen.
 - **Dish / Photo Manager:** all approved regions use the Legacy layout base while preserving current photo lifecycle and business semantics.
-- **Public Profile / Social Hub:** all approved regions use the Legacy layout base while preserving current Social, moderation, sharing, and data-isolation capability.
+- **Public Profile / Social Hub:** Social Metrics, actions, content classification, Restaurant evidence, activity, public Lists and safety actions use the frozen Legacy base while preserving current Social, moderation, sharing, and data-isolation capability. The user-facing follower term is `粉丝`; primary content classification is `动态 / 食单`. Header machine choice is still blank and must not be auto-approved, even though a historical note says it was confirmed.
 - **Lists / Public Lists:** all approved regions use the Legacy layout base while preserving current list models, visibility, sharing, and persistence.
 - **Settings / Data:** the current native-density structure is approved and frozen.
-- **Profile:** header, main statistics, core entries, Memories, Lists, Insights, and Settings are frozen according to the latest approval record. Social metrics remain pending redesign; the next candidate may change that region only.
+- **Profile:** Header, Social Metrics, Main Statistics, Memories, Lists, Insights and Settings are frozen. The frozen composition has Add Friend and Settings at the two top corners, no extra `我的` navigation title, `关注 / 粉丝` under the identity, and `去过 / 想去 / 总消费` in one statistic group. Core Entries alone remain `NEEDS REDESIGN`; a later candidate may change only that region.
 - **Analytics (Best Companion, Recommendation Source, Monthly, Annual):** no candidate is approved. All composition regions remain pending redesign; the approved Taste Profile infographic family is the governing reference.
 - **Share Posters (five types):** no candidate is approved. All composition regions remain pending redesign; candidates must remain native 9:16 renderers with the canonical privacy/footer contract.
 - **Premium Paywall:** all regions except the hamburger hero are frozen to the current FUSE composition. Only the hamburger hero remains pending redesign.

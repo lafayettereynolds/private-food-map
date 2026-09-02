@@ -227,11 +227,11 @@ enum RestaurantImageLoader {
     ) async -> (image: UIImage, source: RestaurantImageSourceReference)? {
 #if DEBUG
         if TasteMapUITestFixtures.usesVisualQA,
-           !resolution.isFallbackOnly,
+           let fixtureSource = visualQAFixtureSource(in: resolution),
            let fixtureImage = TasteMapVisualQAFixtures.restaurantImage(stableKey: semanticID) {
             return (
                 fixtureImage,
-                resolution.preferredSource
+                fixtureSource
             )
         }
 #endif
@@ -265,6 +265,25 @@ enum RestaurantImageLoader {
         }
         return nil
     }
+
+#if DEBUG
+    /// Rich Visual QA may stand in for user-owned/cached fixture binaries, but
+    /// must never paint a generated Food Hero and report it as a provider's
+    /// merchant photo. Provider-only fixtures therefore exercise the real
+    /// network/failure chain and end at the honest dining fallback.
+    static func visualQAFixtureSource(
+        in resolution: RestaurantImageResolution
+    ) -> RestaurantImageSourceReference? {
+        resolution.sources.first { source in
+            switch source {
+            case .localUserPhoto, .publicOrCachedPhoto:
+                true
+            case .providerMerchantImage, .foodDiningFallback:
+                false
+            }
+        }
+    }
+#endif
 }
 
 /// Canonical SwiftUI Restaurant image renderer.

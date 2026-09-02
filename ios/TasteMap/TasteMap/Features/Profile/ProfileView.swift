@@ -28,6 +28,7 @@ struct ProfileView: View {
     @State private var isEditingProfile = false
     @State private var browseDestination: ProfileBrowseDestination?
     @State private var socialHubSection: SocialHubSection?
+    @State private var isShowingSettings = false
     @State private var socialStatistics = ProfileSocialStatistics.zero
 
     private var ownedContent: ProfileOwnedContentScope.Snapshot {
@@ -66,15 +67,16 @@ struct ProfileView: View {
                         profile: activeProfile,
                         avatarPhoto: avatarPhoto,
                         isSignedIn: authenticatedUser != nil,
+                        shareEntityID: activeProfile?.visibility == .public ? authenticatedUser?.id : nil,
                         membershipStatus: premiumEntitlementService.membershipStatus,
                         socialStatistics: socialStatistics,
                         onEdit: { isEditingProfile = true },
                         onSignIn: { Task { await signIn() } },
                         onPremium: { premiumEntitlementService.openPaywall(from: .profile) },
-                        onFriends: { socialHubSection = .friends },
                         onFollowing: { socialHubSection = .follows },
                         onFollowers: { socialHubSection = .follows },
-                        onDiscover: { socialHubSection = .search }
+                        onDiscover: { socialHubSection = .search },
+                        onSettings: { isShowingSettings = true }
                     )
                     if isRunningAuthOperation {
                         ProgressView()
@@ -117,18 +119,7 @@ struct ProfileView: View {
                 .padding(.bottom, 110)
             }
             .background(TasteMapCoreTheme.page)
-            .navigationTitle("我的")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if let user = authenticatedUser, activeProfile?.visibility == .public {
-                    ToolbarItem(placement: .primaryAction) {
-                        PublicShareButton(entityType: .profile, entityID: user.id) {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                        .accessibilityLabel("分享我的公开主页")
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $browseDestination) { destination in
                 switch destination {
                 case .visited:
@@ -138,6 +129,9 @@ struct ProfileView: View {
                 case .footprints:
                     TasteFootprintsView(currentUserID: authenticatedUser?.id)
                 }
+            }
+            .navigationDestination(isPresented: $isShowingSettings) {
+                settingsDestination
             }
             .sheet(isPresented: $isEditingProfile) {
                 if let activeProfile {
@@ -322,15 +316,7 @@ struct ProfileView: View {
 
     private var settingsEntry: some View {
         NavigationLink {
-            TasteMapSettingsView(
-                authenticatedUser: authenticatedUser,
-                profile: activeProfile,
-                avatarPhoto: avatarPhoto,
-                logoutAction: SettingsLogoutAction(perform: { await logout() }),
-                accountDeletedAction: SettingsAccountDeletedAction(perform: { await accountDeletionDidComplete() }),
-                permissionOverride: settingsPermissionOverride,
-                syncPresentationOverride: settingsSyncPresentationOverride
-            )
+            settingsDestination
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: "gearshape")
@@ -354,6 +340,18 @@ struct ProfileView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("profile-settings-entry")
+    }
+
+    private var settingsDestination: some View {
+        TasteMapSettingsView(
+            authenticatedUser: authenticatedUser,
+            profile: activeProfile,
+            avatarPhoto: avatarPhoto,
+            logoutAction: SettingsLogoutAction(perform: { await logout() }),
+            accountDeletedAction: SettingsAccountDeletedAction(perform: { await accountDeletionDidComplete() }),
+            permissionOverride: settingsPermissionOverride,
+            syncPresentationOverride: settingsSyncPresentationOverride
+        )
     }
 
     private var settingsPermissionOverride: SettingsPermissionSnapshot? {
@@ -555,19 +553,24 @@ private struct ProfileIdentityCard: View {
     let profile: UserProfile?
     let avatarPhoto: PhotoAsset?
     let isSignedIn: Bool
+    let shareEntityID: String?
     let membershipStatus: MembershipStatus
     let socialStatistics: ProfileSocialStatistics
     let onEdit: () -> Void
     let onSignIn: () -> Void
     let onPremium: () -> Void
-    let onFriends: () -> Void
     let onFollowing: () -> Void
     let onFollowers: () -> Void
     let onDiscover: () -> Void
+    let onSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 11) {
-            if dynamicTypeSize.isAccessibilitySize {
+            if isSignedIn {
+                profileHeaderControls
+                avatar
+                identityContent
+            } else if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 12) {
                     avatar
                     identityContent
@@ -577,23 +580,6 @@ private struct ProfileIdentityCard: View {
                 HStack(alignment: .center, spacing: 13) {
                     avatar
                     identityContent
-                }
-            }
-
-            if isSignedIn {
-                Divider()
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(alignment: .leading, spacing: 8) {
-                        connectionButtons
-                        socialButtons
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    HStack(spacing: 12) {
-                        connectionButtons
-                        Spacer(minLength: 0)
-                        socialButtons
-                    }
                 }
             }
         }
@@ -612,51 +598,78 @@ private struct ProfileIdentityCard: View {
                 .stroke(TasteMapCoreTheme.border.opacity(0.9))
         }
         .shadow(color: TasteMapCoreTheme.cardShadow, radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile-identity-card")
+    }
+
+    private var profileHeaderControls: some View {
+        HStack(spacing: 12) {
+            Button(action: onDiscover) {
+                Label("添加好友", systemImage: "person.badge.plus")
+                    .font(.caption.weight(.semibold))
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile-social-entry")
+            Spacer(minLength: 0)
+            Button(action: onSettings) {
+                Image(systemName: "gearshape")
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("设置")
+            .accessibilityIdentifier("profile-settings-header-entry")
+        }
     }
 
     private var avatar: some View {
         ProfileAvatarView(profile: profile, photo: avatarPhoto)
-            .frame(width: isSignedIn ? 64 : 58, height: isSignedIn ? 64 : 58)
+            .frame(width: isSignedIn ? 76 : 58, height: isSignedIn ? 76 : 58)
     }
 
     @ViewBuilder
     private var identityContent: some View {
         if let profile, isSignedIn {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .center, spacing: 6) {
                 HStack(spacing: 7) {
                     Text(profile.displayName)
-                        .font(.headline.bold())
+                        .font(.title3.bold())
                         .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
+                        .multilineTextAlignment(.center)
                     if membershipStatus == .premium || membershipStatus == .gracePeriod {
                         Button(action: onPremium) {
-                            PremiumBurgerBadge().frame(width: 21, height: 21)
+                            PremiumBurgerBadge().frame(width: 22, height: 22)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Taste Map Premium 已开通，查看会员状态")
                         .accessibilityIdentifier("profile-premium-badge-entry")
                     }
                 }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) { connectionButtons }
+                    VStack(spacing: 4) { connectionButtons }
+                }
                 if !profile.bio.isEmpty {
                     Text(profile.bio)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.center)
                         .accessibilityIdentifier("profile-bio-text")
                 }
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { profileMetadata(profile) }
-                    VStack(alignment: .leading, spacing: 5) { profileMetadata(profile) }
+                    VStack(alignment: .center, spacing: 5) { profileMetadata(profile) }
                 }
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
 
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { profileActions }
-                    VStack(alignment: .leading, spacing: 8) { profileActions }
+                    VStack(alignment: .center, spacing: 8) { profileActions }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text("记录属于你的每一顿")
@@ -703,64 +716,28 @@ private struct ProfileIdentityCard: View {
                 .controlSize(.small)
                 .accessibilityIdentifier("profile-premium-entry")
         }
+        if let shareEntityID {
+            PublicShareButton(entityType: .profile, entityID: shareEntityID) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityLabel("分享我的公开主页")
+        }
     }
 
     @ViewBuilder
     private var connectionButtons: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 6) {
-                connectionMetric(
-                    "关注", value: socialStatistics.followingCount,
-                    systemImage: "person.crop.circle.badge.checkmark",
-                    identifier: "profile-following-stat", action: onFollowing
-                )
-                connectionMetric(
-                    "被关注", value: socialStatistics.followerCount,
-                    systemImage: "person.2",
-                    identifier: "profile-followers-stat", action: onFollowers
-                )
-            }
-        } else {
-            Group {
-                    connectionMetric(
-                        "关注", value: socialStatistics.followingCount,
-                        systemImage: "person.crop.circle.badge.checkmark",
-                        identifier: "profile-following-stat", action: onFollowing
-                    )
-                    connectionMetric(
-                        "被关注", value: socialStatistics.followerCount,
-                        systemImage: "person.2",
-                        identifier: "profile-followers-stat", action: onFollowers
-                    )
-            }
-        }
-    }
-
-    private var socialButtons: some View {
-        HStack(spacing: 12) {
-            Button(action: onFriends) {
-                Image(systemName: "person.2.fill")
-                    .frame(
-                        width: dynamicTypeSize.isAccessibilitySize ? 44 : 36,
-                        height: dynamicTypeSize.isAccessibilitySize ? 44 : 36
-                    )
-                    .background(TasteMapCoreTheme.brandSoft, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("好友 \(socialStatistics.friendCount)，查看")
-            .accessibilityIdentifier("profile-friends-stat")
-            Button(action: onDiscover) {
-                Image(systemName: "person.badge.plus")
-                    .frame(
-                        width: dynamicTypeSize.isAccessibilitySize ? 44 : 36,
-                        height: dynamicTypeSize.isAccessibilitySize ? 44 : 36
-                    )
-                    .background(TasteMapCoreTheme.brandSoft, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("找人")
-            .accessibilityIdentifier("profile-social-entry")
-        }
+        connectionMetric(
+            "关注", value: socialStatistics.followingCount,
+            systemImage: "person.2",
+            identifier: "profile-following-stat", action: onFollowing
+        )
+        connectionMetric(
+            "粉丝", value: socialStatistics.followerCount,
+            systemImage: "person.2.fill",
+            identifier: "profile-followers-stat", action: onFollowers
+        )
     }
 
     private func connectionMetric(
@@ -1181,15 +1158,16 @@ private struct ProfilePreviewScreen: View {
                     profile: profile,
                     avatarPhoto: photo,
                     isSignedIn: true,
+                    shareEntityID: profile.tasteMapUserID,
                     membershipStatus: .free,
                     socialStatistics: .init(friendCount: 8, followingCount: 18, followerCount: 9),
                     onEdit: {},
                     onSignIn: {},
                     onPremium: {},
-                    onFriends: {},
                     onFollowing: {},
                     onFollowers: {},
-                    onDiscover: {}
+                    onDiscover: {},
+                    onSettings: {}
                 )
                 ProfileStatisticsSection(
                     statistics: statistics,

@@ -437,7 +437,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
         app.launch()
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 8))
         keepScreenshot(named: "Core Parity Profile Before", of: app)
     }
 
@@ -463,7 +463,7 @@ final class TasteMapUITests: XCTestCase {
         app.launchEnvironment = ["TASTEMAP_F2A_BROWSING_UI_TEST": "1"]
         app.launch()
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
 
         let visitedEntry = app.buttons["profile-stat-visited"]
         scrollUntilVisible(visitedEntry, in: app)
@@ -695,7 +695,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["discovery-header"].waitForExistence(timeout: 5))
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
 
         app.buttons["地图"].tap()
         XCTAssertTrue(segmentedOption("去过", in: app).waitForExistence(timeout: 5))
@@ -859,8 +859,10 @@ final class TasteMapUITests: XCTestCase {
         app.staticTexts["常去小馆的阿岚"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["公开主页"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["常去小馆的阿岚"].exists)
-        XCTAssertTrue(app.staticTexts["常去小馆的阿岚"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["public-profile-metric-strip"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["动态"].exists)
+        XCTAssertTrue(app.buttons["食单"].exists)
+        XCTAssertTrue(app.staticTexts["粉丝"].exists)
         keepScreenshot(named: "Core Parity Public Profile After", of: app)
         app.buttons["完成"].tap()
 
@@ -955,7 +957,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["P3-A 初始用户"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["profile-edit-button"].exists)
         app.buttons["profile-edit-button"].tap()
@@ -1011,7 +1013,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["profile-backup-export-button"].exists)
 
         let settings = app.buttons["profile-settings-entry"]
@@ -2222,7 +2224,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         keepScreenshot(named: "Final Atlas Profile Premium Analytics", of: app)
         let entry = app.buttons["profile-taste-analysis-entry"]
         scrollUntilVisible(entry, in: app)
@@ -2257,7 +2259,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         let entry = app.buttons["profile-companion-analysis-entry"]
         scrollUntilVisible(entry, in: app)
         // Move the card clear of the custom bottom navigation before tapping.
@@ -2330,7 +2332,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         let entry = app.buttons["profile-recommendation-source-analysis-entry"]
         scrollUntilVisible(entry, in: app)
         XCTAssertTrue(entry.isHittable)
@@ -2420,7 +2422,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         let entry = app.buttons["profile-monthly-recap-entry"]
         scrollUntilVisible(entry, in: app)
         // The custom bottom navigation can overlap the first visible pixels of a
@@ -2499,7 +2501,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         let entry = app.buttons["profile-annual-recap-entry"]
         scrollUntilVisible(entry, in: app)
         app.swipeUp(velocity: .slow)
@@ -2901,7 +2903,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         keepScreenshot(named: "Final Atlas Profile Free", of: app)
         let profileEntry = app.buttons["profile-premium-entry"]
         XCTAssertTrue(profileEntry.waitForExistence(timeout: 5))
@@ -2943,7 +2945,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["profile-premium-badge-entry"].waitForExistence(timeout: 5))
         keepScreenshot(named: "Core Parity Approved Premium Hamburger", of: app)
     }
@@ -2974,7 +2976,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
 
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         let entry = app.buttons["profile-on-this-day-entry"]
         scrollUntilVisible(entry, in: app)
         XCTAssertTrue(entry.waitForExistence(timeout: 5))
@@ -3123,7 +3125,7 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     private func openImportPreflight(in app: XCUIApplication) {
         app.buttons["我的"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 5))
         let settings = app.buttons["profile-settings-entry"]
         scrollUntilVisible(settings, in: app)
         XCTAssertTrue(settings.isHittable)
@@ -3368,7 +3370,7 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["map-home-title"].waitForExistence(timeout: 15))
         app.buttons["app-tab-profile"].tap()
-        XCTAssertTrue(app.navigationBars["我的"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-identity-card"].waitForExistence(timeout: 8))
         keepScreenshot(named: "Final Atlas Visual QA Empty Profile", of: app)
 
         app.terminate()
