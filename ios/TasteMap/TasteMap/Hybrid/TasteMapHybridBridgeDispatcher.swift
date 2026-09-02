@@ -78,7 +78,7 @@ public final class TasteMapHybridBridgeDispatcher {
     public func dispatchAsync(_ request: TasteMapHybridBridgeRequest) async -> TasteMapHybridBridgeResponse {
         switch request.method {
         case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
-                .photoPick, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
+                .photoPick, .photoDiscard, .photoRetry, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
                 .navigationBack, .navigationCurrent:
             guard request.version == Self.bridgeVersion else {
                 return failure(request, code: "bridge_version_mismatch", message: "This bridge version is not supported.")
@@ -148,7 +148,7 @@ public final class TasteMapHybridBridgeDispatcher {
                 try nativeAction(.hapticsSelection)
                 result = .object([:])
             case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
-                    .photoPick, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
+                    .photoPick, .photoDiscard, .photoRetry, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
                     .navigationBack, .navigationCurrent:
                 throw TasteMapHybridBridgeErrorDTO(
                     code: "capability_unavailable",

@@ -21,6 +21,8 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'share.open',
   'location.current',
   'photo.pick',
+  'photo.discard',
+  'photo.retry',
   'premium.status',
   'navigation.openNative',
   'navigation.openHybrid',
@@ -353,7 +355,17 @@ export interface TasteMapLocationDTO {
   authorizationStatus: 'allowed' | 'denied' | 'notDetermined' | 'restricted'
 }
 
-export interface TasteMapPhotoPickResult { photoIDs: string[] }
+export interface TasteMapPhotoPickItemDTO {
+  photoID: string
+  preview: Extract<TasteMapImageDescriptor, { kind: 'nativeResource' }>
+}
+
+export interface TasteMapPhotoPickResult { photos: TasteMapPhotoPickItemDTO[] }
+
+export interface TasteMapPendingPhotoAttachmentDTO {
+  photoID: string
+  dishDraftID: string | null
+}
 
 export interface TasteMapVisitWriteDishDTO {
   id: string
@@ -393,6 +405,7 @@ export interface TasteMapVisitWriteDraftDTO {
   sharedParticipantUserIDs: string[]
   companions: string[]
   dishes: TasteMapVisitWriteDishDTO[]
+  pendingPhotos?: TasteMapPendingPhotoAttachmentDTO[]
   note: string
 }
 
@@ -406,6 +419,7 @@ export interface TasteMapVisitMutationResultDTO {
   restaurantID: string
   visitID: string
   updatedAt: string
+  photoWarning?: string | null
 }
 
 export interface TasteMapPremiumStatusDTO {
@@ -504,7 +518,11 @@ export interface TasteMapPlatform {
   haptics: { selection(): Promise<void> }
   share: { open(payload: TasteMapSharePayload): Promise<void> }
   location: { current(): Promise<TasteMapLocationDTO> }
-  photo: { pick(): Promise<TasteMapPhotoPickResult> }
+  photo: {
+    pick(selectionLimit: number): Promise<TasteMapPhotoPickResult>
+    discard(photoID: string): Promise<void>
+    retry(photoID: string): Promise<void>
+  }
   premium: { status(): Promise<TasteMapPremiumStatusDTO> }
   navigation: {
     openNative(request: TasteMapNativeRouteRequest): Promise<void>

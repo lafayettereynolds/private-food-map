@@ -32,9 +32,11 @@ interface AddVisitModalProps {
   onClose: () => void
   onDelete?: () => Promise<void>
   onSave: (input: AddVisitInput) => Promise<void>
+  onPickNativePhotos?: (availableSlots: number) => Promise<Array<{ source: string; photoID: string }>>
+  onRemoveNativePhoto?: (photoID: string) => Promise<void>
 }
 
-export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onDelete, onSave }: AddVisitModalProps) {
+export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onDelete, onSave, onPickNativePhotos, onRemoveNativePhoto }: AddVisitModalProps) {
   const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
@@ -76,9 +78,35 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
     const nextCount = splitCompanions(next).length
     setCompanions(next)
     setPartySize((current) => String(Math.max(1, (Number(current) || 1) + nextCount - previousCount)))
+    setDirty(true)
   }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [dirty, setDirty] = useState(false)
+  const [nativeDraftPhotoIDs, setNativeDraftPhotoIDs] = useState<string[]>([])
+
+  async function pickNativePhotos(availableSlots: number) {
+    if (!onPickNativePhotos) return []
+    const selected = await onPickNativePhotos(availableSlots)
+    setNativeDraftPhotoIDs((current) => [...new Set([...current, ...selected.map((photo) => photo.photoID)])])
+    setDirty(true)
+    return selected
+  }
+
+  async function removeNativePhoto(photoID: string) {
+    if (!onRemoveNativePhoto) return
+    await onRemoveNativePhoto(photoID)
+    setNativeDraftPhotoIDs((current) => current.filter((value) => value !== photoID))
+    setDirty(true)
+  }
+
+  async function closeEditor() {
+    if (dirty && !window.confirm('放弃尚未保存的修改？')) return
+    if (onRemoveNativePhoto) {
+      await Promise.allSettled(nativeDraftPhotoIDs.map((photoID) => onRemoveNativePhoto(photoID)))
+    }
+    onClose()
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -129,6 +157,10 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         note: feeling,
         photos,
         photoIds,
+        pendingNativePhotos: [
+          ...photoIds.flatMap((photoID) => photoID ? [{ photoID, dishDraftID: null }] : []),
+          ...dishes.flatMap((dish) => dish.photoId ? [{ photoID: dish.photoId, dishDraftID: dish.id }] : []),
+        ],
       })
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存失败，请稍后重试。')
@@ -141,9 +173,9 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
     <ModalShell
       title={initialVisit ? '编辑到访记录' : '记录一次到访'}
       description={initialVisit ? `修改 ${restaurant.name} 的这次到访，保存后会更新原记录。` : `为 ${restaurant.name} 增加一条真实到访记录。`}
-      onClose={onClose}
+      onClose={() => { void closeEditor() }}
     >
-      <form className="sticky-action-form" onSubmit={handleSubmit}>
+      <form className="sticky-action-form" onChange={() => setDirty(true)} onSubmit={handleSubmit}>
         <div className="editor-form sticky-action-form__content">
         <RestaurantSummarySection
           additionalUserPhotos={photos.map((source, index) => ({ source, photoId: photoIds[index] }))}
@@ -153,8 +185,8 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         />
         <div className="restaurant-record-form-divider"><span>{initialVisit ? '修改这次到访' : '这次到访'}</span></div>
         <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
-        <label className="field"><span>个人评价 <small>可选</small></span><StarRating onChange={setRating} value={rating} /></label>
-        <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="primary" value={extraFields} />
+        <label className="field"><span>个人评价 <small>可选</small></span><StarRating onChange={(value) => { setRating(value); setDirty(true) }} value={rating} /></label>
+        <VisitExtraFields friendOptions={friendOptions} onChange={(value) => { setExtraFields(value); setDirty(true) }} section="primary" value={extraFields} />
         <div className="field-grid visit-time-grid">
           <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input onChange={(event) => setDate(event.target.value)} required type="date" value={date} /></div></label>
           <label className="field"><span>时间</span><input onChange={(event) => setTime(event.target.value)} required type="time" value={time} /></label>
@@ -164,10 +196,10 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
           <label className="field field-with-leading-icon"><span>用餐人数</span><div><Users size={16} /><input min="1" onChange={(event) => setPartySize(event.target.value)} required step="1" type="number" value={partySize} /></div></label>
           <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
         </div>
-        <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
-        <VisitPhotoPicker maxPhotos={maxPhotos} onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds) }} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
-        <DishEditor onChange={setDishes} value={dishes} />
-        <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
+        <QueueDurationPicker onChange={(value) => { setQueueDuration(value); setDirty(true) }} value={queueDuration} />
+        <VisitPhotoPicker maxPhotos={maxPhotos} onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds); setDirty(true) }} onPickNative={onPickNativePhotos ? pickNativePhotos : undefined} onRemoveNative={onRemoveNativePhoto ? removeNativePhoto : undefined} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
+        <DishEditor onChange={(value) => { setDishes(value); setDirty(true) }} onPickNativePhoto={onPickNativePhotos ? async () => (await pickNativePhotos(1))[0] ?? null : undefined} onRemoveNativePhoto={onRemoveNativePhoto ? removeNativePhoto : undefined} value={dishes} />
+        <VisitExtraFields friendOptions={friendOptions} onChange={(value) => { setExtraFields(value); setDirty(true) }} section="details" value={extraFields} />
         {initialVisit && onDelete ? <button className="danger-ghost-button visit-delete-action" disabled={saving} onClick={() => {
           if (!window.confirm('删除这次到访记录？这不会删除餐厅。')) return
           setSaving(true)
@@ -180,7 +212,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         <StickyFormActionBar
           primaryLabel={initialVisit ? '保存修改' : '保存到我的地图'}
           primaryLoading={saving}
-          secondaryAction={onClose}
+          secondaryAction={() => { void closeEditor() }}
           statusMessage={error}
           statusTone="error"
         />

@@ -200,6 +200,11 @@ describe('TasteMapNativeAdapter', () => {
         result = { restaurantID: payload.restaurantID, visitID: payload.visitID ?? 'visit-created-1', updatedAt: '2026-09-03T00:00:00.000Z' }
       } else if (request.method === 'visit.delete') {
         result = { restaurantID: fixture.restaurants[0].id, visitID: (request.payload as { visitID: string }).visitID, updatedAt: '2026-09-03T00:00:00.000Z' }
+      } else if (request.method === 'photo.pick') {
+        result = { photos: [{
+          photoID: 'pending-photo-1',
+          preview: { kind: 'nativeResource', resourceURL: 'tastemap-resource://photo-draft/pending-photo-1/thumbnail', photoID: 'pending-photo-1', accessibilityLabel: '待保存的到访照片' },
+        }] }
       } else result = {}
       return { version, requestId: request.requestId, result } as TasteMapBridgeResponseEnvelope
     })
@@ -301,5 +306,22 @@ describe('TasteMapNativeAdapter', () => {
       }),
     }))
     expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|bearer/i)
+  })
+
+  it('uses opaque Native photo descriptors without paths or image bytes', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    const picked = await adapter.photo.pick(3)
+    expect(picked.photos).toEqual([expect.objectContaining({
+      photoID: 'pending-photo-1',
+      preview: expect.objectContaining({ kind: 'nativeResource' }),
+    })])
+    await adapter.photo.discard('pending-photo-1')
+    await adapter.photo.retry('existing-photo-1')
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({ method: 'photo.pick', payload: { selectionLimit: 3 } }),
+    }))
+    const serialized = JSON.stringify(invoke.mock.calls)
+    expect(serialized).not.toMatch(/file:\/\/|\/Users\/|base64|imageData|ownerUserID|bearer/i)
   })
 })

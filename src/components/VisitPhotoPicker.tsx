@@ -10,9 +10,11 @@ interface VisitPhotoPickerProps {
   maxPhotos?: number
   upgradeAvailable?: boolean
   onChange: (value: string[], photoIds: Array<string | null>) => void
+  onPickNative?: (availableSlots: number) => Promise<Array<{ source: string; photoID: string }>>
+  onRemoveNative?: (photoID: string) => Promise<void>
 }
 
-export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvailable = false, onChange }: VisitPhotoPickerProps) {
+export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvailable = false, onChange, onPickNative, onRemoveNative }: VisitPhotoPickerProps) {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
 
@@ -46,6 +48,40 @@ export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvail
     }
   }
 
+  async function handleNativePick() {
+    const availableSlots = Math.max(0, maxPhotos - value.length)
+    if (!availableSlots || !onPickNative) return
+    setProcessing(true)
+    setError('')
+    try {
+      const selected = await onPickNative(availableSlots)
+      onChange(
+        [...value, ...selected.map((photo) => photo.source)],
+        [...photoIds, ...selected.map((photo) => photo.photoID)],
+      )
+    } catch (photoError) {
+      setError(photoError instanceof Error ? photoError.message : '照片处理失败。')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  async function removePhoto(index: number) {
+    const photoID = photoIds[index]
+    if (photoID && onRemoveNative) {
+      setProcessing(true)
+      setError('')
+      try { await onRemoveNative(photoID) }
+      catch (photoError) {
+        setError(photoError instanceof Error ? photoError.message : '照片没有删除成功。')
+        setProcessing(false)
+        return
+      }
+      setProcessing(false)
+    }
+    onChange(value.filter((_, photoIndex) => photoIndex !== index), photoIds.filter((_, photoIndex) => photoIndex !== index))
+  }
+
   return (
     <section className="visit-photo-picker">
       <header><strong>本次照片</strong><small>{value.length} / {maxPhotos} 张</small></header>
@@ -53,10 +89,13 @@ export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvail
         {value.map((photo, index) => (
           <figure key={`${index}-${photo.slice(-20)}`}>
             <SyncedImage alt={`本次就餐照片 ${index + 1}`} photoId={photoIds[index]} source={photo} />
-            <button aria-label={`删除第 ${index + 1} 张照片`} onClick={() => onChange(value.filter((_, photoIndex) => photoIndex !== index), photoIds.filter((_, photoIndex) => photoIndex !== index))} type="button"><Trash2 size={13} /></button>
+            <button aria-label={`删除第 ${index + 1} 张照片`} disabled={processing} onClick={() => void removePhoto(index)} type="button"><Trash2 size={13} /></button>
           </figure>
         ))}
-        {value.length < maxPhotos ? <label className="visit-photo-picker__add">
+        {value.length < maxPhotos && onPickNative ? <button className="visit-photo-picker__add" disabled={processing} onClick={() => void handleNativePick()} type="button">
+          <ImagePlus size={20} />
+          <span>{processing ? '处理中…' : value.length ? '继续添加' : '上传照片'}</span>
+        </button> : value.length < maxPhotos ? <label className="visit-photo-picker__add">
           <ImagePlus size={20} />
           <span>{processing ? '处理中…' : value.length ? '继续添加' : '上传照片'}</span>
           <input accept="image/*" disabled={processing} hidden multiple onChange={handleFiles} type="file" />

@@ -8,6 +8,8 @@ import { SyncedImage } from './SyncedImage'
 interface DishEditorProps {
   value: VisitDish[]
   onChange: (value: VisitDish[]) => void
+  onPickNativePhoto?: () => Promise<{ source: string; photoID: string } | null>
+  onRemoveNativePhoto?: (photoID: string) => Promise<void>
 }
 
 function createDish(): VisitDish {
@@ -22,7 +24,7 @@ function createDish(): VisitDish {
   }
 }
 
-export function DishEditor({ value, onChange }: DishEditorProps) {
+export function DishEditor({ value, onChange, onPickNativePhoto, onRemoveNativePhoto }: DishEditorProps) {
   const [expanded, setExpanded] = useState(value.length > 0)
   const [error, setError] = useState('')
 
@@ -37,6 +39,20 @@ export function DishEditor({ value, onChange }: DishEditorProps) {
     setError('')
     try {
       updateDish(dishId, { imageData: await optimizeMarkerImage(file), photoId: null })
+    } catch (imageError) {
+      setError(imageError instanceof Error ? imageError.message : '图片处理失败。')
+    }
+  }
+
+  async function handleNativeImage(dish: VisitDish) {
+    if (!onPickNativePhoto) return
+    setError('')
+    try {
+      const photo = await onPickNativePhoto()
+      if (photo) {
+        if (dish.photoId && onRemoveNativePhoto) await onRemoveNativePhoto(dish.photoId)
+        updateDish(dish.id, { imageData: photo.source, photoId: photo.photoID })
+      }
     } catch (imageError) {
       setError(imageError instanceof Error ? imageError.message : '图片处理失败。')
     }
@@ -61,10 +77,12 @@ export function DishEditor({ value, onChange }: DishEditorProps) {
         <div className="dish-editor__content">
           {value.map((dish, index) => (
             <article className="dish-row" key={dish.id}>
-              <label className="dish-image-input">
+              {onPickNativePhoto ? <button aria-label={`选择第 ${index + 1} 道菜的照片`} className="dish-image-input" onClick={() => void handleNativeImage(dish)} type="button">
+                {dish.imageData || dish.photoId ? <SyncedImage alt="" photoId={dish.photoId} source={dish.imageData} /> : <ImagePlus size={18} />}
+              </button> : <label className="dish-image-input">
                 {dish.imageData || dish.photoId ? <SyncedImage alt="" photoId={dish.photoId} source={dish.imageData} /> : <ImagePlus size={18} />}
                 <input accept="image/*" hidden onChange={(event) => handleImage(dish.id, event)} type="file" />
-              </label>
+              </label>}
               <label className="field"><span>菜名 {index + 1}</span><input onChange={(event) => updateDish(dish.id, { name: event.target.value })} placeholder="例如：寿喜烧" value={dish.name} /></label>
               <label className="field dish-taste-field"><span>口味</span><input onChange={(event) => updateDish(dish.id, { taste: event.target.value })} placeholder="例如：甜香浓郁" value={dish.taste} /></label>
               <fieldset className="dish-rating-field"><legend>星级</legend><StarRating ariaLabel={`菜品 ${index + 1} 星级`} compact onChange={(rating) => updateDish(dish.id, { rating })} showSummary={false} value={dish.rating} /></fieldset>

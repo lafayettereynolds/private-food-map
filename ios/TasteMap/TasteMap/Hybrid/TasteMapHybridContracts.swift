@@ -243,7 +243,13 @@ public struct TasteMapHybridVisitWriteDraftDTO: Codable, Sendable {
     public let sharedParticipantUserIDs: [String]
     public let companions: [String]
     public let dishes: [TasteMapHybridVisitWriteDishDTO]
+    public let pendingPhotos: [TasteMapHybridPendingPhotoAttachmentDTO]?
     public let note: String
+}
+
+public struct TasteMapHybridPendingPhotoAttachmentDTO: Codable, Sendable {
+    public let photoID: String
+    public let dishDraftID: String?
 }
 
 public struct TasteMapHybridVisitWriteDishDTO: Codable, Sendable {
@@ -269,6 +275,36 @@ public struct TasteMapHybridVisitMutationResultDTO: Codable, Sendable {
     public let restaurantID: String
     public let visitID: String
     public let updatedAt: String
+    public let photoWarning: String?
+
+    public init(
+        restaurantID: String,
+        visitID: String,
+        updatedAt: String,
+        photoWarning: String? = nil
+    ) {
+        self.restaurantID = restaurantID
+        self.visitID = visitID
+        self.updatedAt = updatedAt
+        self.photoWarning = photoWarning
+    }
+}
+
+public struct TasteMapHybridPhotoPickRequest: Codable, Sendable {
+    public let selectionLimit: Int
+}
+
+public struct TasteMapHybridPhotoPickItemDTO: Codable, Sendable {
+    public let photoID: String
+    public let preview: TasteMapHybridImageDescriptor
+}
+
+public struct TasteMapHybridPhotoPickResultDTO: Codable, Sendable {
+    public let photos: [TasteMapHybridPhotoPickItemDTO]
+}
+
+public struct TasteMapHybridPhotoIDRequest: Codable, Sendable {
+    public let photoID: String
 }
 
 public enum TasteMapHybridImageKind: String, Codable, Sendable {
@@ -551,6 +587,8 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case shareOpen = "share.open"
     case locationCurrent = "location.current"
     case photoPick = "photo.pick"
+    case photoDiscard = "photo.discard"
+    case photoRetry = "photo.retry"
     case premiumStatus = "premium.status"
     case navigationOpenNative = "navigation.openNative"
     case navigationOpenHybrid = "navigation.openHybrid"

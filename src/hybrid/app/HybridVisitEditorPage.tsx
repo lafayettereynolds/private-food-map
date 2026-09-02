@@ -49,8 +49,14 @@ export function HybridVisitEditorPage({ platform, restaurantID, visitID, restaur
         visitID: existingVisit?.id ?? null,
         draft: visitWriteDraft(input),
       })
+      if (result.photoWarning) window.alert(result.photoWarning)
       onSaved(result.restaurantID)
     }}
+    onPickNativePhotos={async (selectionLimit) => (await platform.photo.pick(selectionLimit)).photos.map((photo) => ({
+      source: photo.preview.resourceURL,
+      photoID: photo.photoID,
+    }))}
+    onRemoveNativePhoto={(photoID) => platform.photo.discard(photoID)}
     photoUpgradeAvailable={false}
     restaurant={restaurant}
   />
@@ -93,6 +99,7 @@ function visitWriteDraft(input: AddVisitInput): TasteMapVisitWriteDraftDTO {
       price: dish.price,
       photoID: dish.photoId,
     })),
+    pendingPhotos: input.pendingNativePhotos ?? [],
     note: input.note,
   }
 }

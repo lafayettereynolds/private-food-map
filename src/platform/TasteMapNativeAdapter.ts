@@ -80,7 +80,11 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
   haptics = { selection: async () => { await this.call<Record<string, never>>('haptics.selection') } }
   share = { open: async (payload: TasteMapSharePayload) => { await this.call<Record<string, never>>('share.open', payload) } }
   location = { current: () => this.call<TasteMapLocationDTO>('location.current') }
-  photo = { pick: () => this.call<TasteMapPhotoPickResult>('photo.pick') }
+  photo = {
+    pick: (selectionLimit: number) => this.call<TasteMapPhotoPickResult>('photo.pick', { selectionLimit }),
+    discard: async (photoID: string) => { await this.call<Record<string, never>>('photo.discard', { photoID }) },
+    retry: async (photoID: string) => { await this.call<Record<string, never>>('photo.retry', { photoID }) },
+  }
   premium = { status: () => this.call<TasteMapPremiumStatusDTO>('premium.status') }
   navigation = {
     openNative: async (request: TasteMapNativeRouteRequest) => { await this.call<Record<string, never>>('navigation.openNative', request) },

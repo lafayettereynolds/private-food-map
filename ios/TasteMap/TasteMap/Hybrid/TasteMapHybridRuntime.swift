@@ -2,8 +2,10 @@ import AuthenticationServices
 import CoreLocation
 import Foundation
 import Observation
+import PhotosUI
 import SwiftData
 import UIKit
+import UniformTypeIdentifiers
 
 @Observable
 @MainActor
@@ -15,6 +17,7 @@ final class TasteMapHybridRuntime {
     private let authServices: NativeAuthServices
     private let premiumEntitlementService: PremiumEntitlementService
     private let photoFiles: any LocalPhotoFileStoring
+    private let photoTransferCoordinator: PhotoTransferCoordinator
     private let locationPermissionManager = LocationPermissionManager()
     private weak var plugin: TasteMapProductionNativePlugin?
     private var pendingEvents: [TasteMapHybridEventEnvelope] = []
@@ -22,19 +25,23 @@ final class TasteMapHybridRuntime {
     private var lastLifecycleState: TasteMapHybridLifecycleState?
     private var bridgeControllerStorage: TasteMapHybridBridgeViewController?
     private(set) var pendingSharedImport: PendingRestaurantImport?
+    private var pendingPhotoSelections: [String: PendingHybridPhotoSelection] = [:]
+    private var photoPickerSession: HybridPhotoPickerSession?
 
     init(
         mode: TasteMapHybridRuntimeMode,
         container: ModelContainer,
         authServices: NativeAuthServices,
         premiumEntitlementService: PremiumEntitlementService,
-        photoFiles: any LocalPhotoFileStoring
+        photoFiles: any LocalPhotoFileStoring,
+        photoTransferCoordinator: PhotoTransferCoordinator
     ) {
         self.mode = mode
         self.container = container
         self.authServices = authServices
         self.premiumEntitlementService = premiumEntitlementService
         self.photoFiles = photoFiles
+        self.photoTransferCoordinator = photoTransferCoordinator
         navigation.didChange = { [weak self] state in
             self?.emit(.navigationRoute, payload: state)
         }
@@ -90,6 +97,16 @@ final class TasteMapHybridRuntime {
                         sourceVisitID: sourceVisitID,
                         participantUserIDs: participantUserIDs
                     )
+                },
+                attachPendingPhotos: { [weak self] attachments, restaurantID, visitID, dishIDsByDraftID, visibility in
+                    self?.attachPendingPhotos(
+                        attachments,
+                        restaurantID: restaurantID,
+                        visitID: visitID,
+                        dishIDsByDraftID: dishIDsByDraftID,
+                        visibility: PhotoVisibility(rawValue: visibility) ?? .private,
+                        ownerUserID: userID
+                    ) ?? attachments.count
                 }
             )
         } else {
@@ -115,6 +132,7 @@ final class TasteMapHybridRuntime {
                 .location: true,
                 .premium: true,
                 .share: true,
+                .photoPicker: true,
             ],
             asynchronousAction: { [weak self] method, payload in
                 guard let self else { throw Self.bridgeError("hybrid_runtime_unavailable", recoverable: true) }
@@ -144,12 +162,21 @@ final class TasteMapHybridRuntime {
         }
         let parts = [url.host].compactMap { $0 } + url.pathComponents.filter { $0 != "/" }
         guard parts.count >= 3,
-              parts[0] == "photo" || parts[0] == "public-photo" else {
+              parts[0] == "photo" || parts[0] == "public-photo" || parts[0] == "photo-draft" else {
             throw TasteMapHybridResourceError.unsupportedResource
         }
         let identifier = parts[1].removingPercentEncoding ?? parts[1]
         guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
             throw TasteMapHybridResourceError.authRequired
+        }
+        if parts[0] == "photo-draft" {
+            guard let pending = pendingPhotoSelections[identifier], pending.ownerUserID == ownerUserID else {
+                throw TasteMapHybridResourceError.notFound
+            }
+            return (
+                try await photoFiles.load(relativePath: pending.prepared.thumbnailFileRelativePath),
+                pending.prepared.displayMimeType
+            )
         }
         let context = ModelContext(container)
         let ownedPhoto = try context.fetch(FetchDescriptor<PhotoAsset>()).first(where: {
@@ -281,8 +308,186 @@ final class TasteMapHybridRuntime {
             return premiumStatus()
         case .shareOpen:
             return try await openShareSheet(payload)
+        case .photoPick:
+            return try await pickPhotos(payload)
+        case .photoDiscard:
+            return try await discardPhoto(payload)
+        case .photoRetry:
+            return try retryPhoto(payload)
         default:
             throw Self.bridgeError("capability_unavailable", method: method)
+        }
+    }
+
+    private func pickPhotos(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridPhotoPickRequest = try decode(payload)
+        let limit = min(max(request.selectionLimit, 1), PhotoImportService.maximumSelectionCount)
+        guard let presenter = presentationController else {
+            throw Self.bridgeError("presentation_anchor_unavailable", method: .photoPick, recoverable: true)
+        }
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
+            throw TasteMapHybridBridgeErrorDTO(
+                code: "auth_required",
+                message: "Authentication is required.",
+                recoverable: false,
+                details: nil
+            )
+        }
+        let results = await presentPhotoPicker(from: presenter, selectionLimit: limit)
+        var picked: [TasteMapHybridPhotoPickItemDTO] = []
+        for result in results.prefix(limit) {
+            do {
+                let provider = result.itemProvider
+                let data = try await Self.photoData(from: provider)
+                let prepared = try await photoTransferCoordinator.preparePhoto(
+                    data: data,
+                    suggestedContentType: provider.registeredTypeIdentifiers.compactMap {
+                        UTType($0)?.preferredMIMEType
+                    }.first,
+                    originalFileName: provider.suggestedName
+                )
+                let identifier = prepared.id.uuidString.lowercased()
+                pendingPhotoSelections[identifier] = PendingHybridPhotoSelection(
+                    ownerUserID: ownerUserID,
+                    prepared: prepared
+                )
+                picked.append(TasteMapHybridPhotoPickItemDTO(
+                    photoID: identifier,
+                    preview: TasteMapHybridImageDescriptor(
+                        kind: .nativeResource,
+                        resourceURL: "tastemap-resource://photo-draft/\(identifier)/thumbnail",
+                        photoID: identifier,
+                        accessibilityLabel: "待保存的到访照片"
+                    )
+                ))
+            } catch {
+                // One bad selection does not discard other prepared photos or
+                // turn the later Visit save into an all-or-nothing photo flow.
+                continue
+            }
+        }
+        return try encode(TasteMapHybridPhotoPickResultDTO(photos: picked))
+    }
+
+    private func discardPhoto(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridPhotoIDRequest = try decode(payload)
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
+            throw Self.bridgeError("auth_required", method: .photoDiscard)
+        }
+        let normalized = request.photoID.lowercased()
+        if let pending = pendingPhotoSelections[normalized], pending.ownerUserID == ownerUserID {
+            pendingPhotoSelections[normalized] = nil
+            await photoTransferCoordinator.discardPrepared(pending.prepared)
+            return .object([:])
+        }
+        guard let photo = try ownedPhoto(identifier: request.photoID, ownerUserID: ownerUserID) else {
+            throw Self.bridgeError("photo_not_found", method: .photoDiscard, recoverable: true)
+        }
+        try await photoTransferCoordinator.delete(photo)
+        return .object([:])
+    }
+
+    private func retryPhoto(_ payload: TasteMapHybridJSONValue) throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridPhotoIDRequest = try decode(payload)
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope,
+              let photo = try ownedPhoto(identifier: request.photoID, ownerUserID: ownerUserID) else {
+            throw Self.bridgeError("photo_not_found", method: .photoRetry, recoverable: true)
+        }
+        try photoTransferCoordinator.retry(photo)
+        return .object([:])
+    }
+
+    private func attachPendingPhotos(
+        _ attachments: [TasteMapHybridPendingPhotoAttachmentDTO],
+        restaurantID: UUID,
+        visitID: UUID,
+        dishIDsByDraftID: [String: String],
+        visibility: PhotoVisibility,
+        ownerUserID: String
+    ) -> Int {
+        var failureCount = 0
+        var attachedCount = 0
+        for attachment in attachments {
+            let identifier = attachment.photoID.lowercased()
+            guard let pending = pendingPhotoSelections[identifier], pending.ownerUserID == ownerUserID else {
+                // Existing PhotoAsset IDs are expected in an edit draft and do
+                // not need to be attached again.
+                continue
+            }
+            var attachedPhoto: PhotoAsset?
+            do {
+                let photo = try photoTransferCoordinator.attachPreparedPhoto(
+                    pending.prepared,
+                    restaurantID: restaurantID,
+                    visitID: visitID,
+                    sortOrder: attachedCount,
+                    visibility: visibility,
+                    queueForUpload: true
+                )
+                attachedPhoto = photo
+                if let draftID = attachment.dishDraftID?.lowercased(),
+                   let dishIdentifier = dishIDsByDraftID[draftID],
+                   let dishID = UUID(uuidString: dishIdentifier) {
+                    let dish = try container.mainContext.fetch(FetchDescriptor<Dish>()).first(where: {
+                        $0.id == dishID && $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+                    })
+                    try photoTransferCoordinator.setDishRelationship(photo, dish: dish)
+                }
+                try photoTransferCoordinator.enqueue(photo)
+                pendingPhotoSelections[identifier] = nil
+                attachedCount += 1
+            } catch {
+                pendingPhotoSelections[identifier] = nil
+                let photoToDiscard = attachedPhoto
+                Task { @MainActor [photoTransferCoordinator] in
+                    if let photoToDiscard {
+                        try? await photoTransferCoordinator.discardLocalPhoto(photoToDiscard)
+                    } else {
+                        await photoTransferCoordinator.discardPrepared(pending.prepared)
+                    }
+                }
+                failureCount += 1
+            }
+        }
+        return failureCount
+    }
+
+    private func ownedPhoto(identifier: String, ownerUserID: String) throws -> PhotoAsset? {
+        try container.mainContext.fetch(FetchDescriptor<PhotoAsset>()).first(where: {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+                && ($0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame
+                    || $0.remoteID?.caseInsensitiveCompare(identifier) == .orderedSame)
+        })
+    }
+
+    private func presentPhotoPicker(
+        from presenter: UIViewController,
+        selectionLimit: Int
+    ) async -> [PHPickerResult] {
+        await withCheckedContinuation { continuation in
+            var configuration = PHPickerConfiguration(photoLibrary: .shared())
+            configuration.filter = .images
+            configuration.selectionLimit = selectionLimit
+            configuration.selection = .ordered
+            let picker = PHPickerViewController(configuration: configuration)
+            let session = HybridPhotoPickerSession { [weak self, weak picker] results in
+                picker?.dismiss(animated: true) {
+                    self?.photoPickerSession = nil
+                    continuation.resume(returning: results)
+                }
+            }
+            photoPickerSession = session
+            picker.delegate = session
+            presenter.present(picker, animated: true)
+        }
+    }
+
+    private static func photoData(from provider: NSItemProvider) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
+                if let data { continuation.resume(returning: data) }
+                else { continuation.resume(throwing: error ?? PhotoImportError.invalidImage) }
+            }
         }
     }
 
@@ -493,6 +698,24 @@ private struct HybridShareRequest: Decodable {
     let url: String?
     let nativeResourceURL: String?
     let imageDataURL: String?
+}
+
+private struct PendingHybridPhotoSelection {
+    let ownerUserID: String
+    let prepared: PreparedLocalPhoto
+}
+
+@MainActor
+private final class HybridPhotoPickerSession: NSObject, PHPickerViewControllerDelegate {
+    private let completion: ([PHPickerResult]) -> Void
+
+    init(completion: @escaping ([PHPickerResult]) -> Void) {
+        self.completion = completion
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        completion(results)
+    }
 }
 
 private enum TasteMapHybridResourceError: Error {

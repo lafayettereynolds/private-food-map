@@ -223,6 +223,7 @@ struct HybridPhase2AIntegrationTests {
                 sharedParticipantUserIDs: [],
                 companions: [],
                 dishes: [],
+                pendingPhotos: nil,
                 note: "从公开候选记录"
             )
         ))
@@ -262,7 +263,15 @@ struct HybridPhase2AIntegrationTests {
         context.insert(foreign)
         try context.save()
 
-        let service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner)
+        var attachedPhotoIDs: [String] = []
+        let service = try TasteMapHybridBridgeService(
+            container: container,
+            ownerUserID: owner,
+            attachPendingPhotos: { attachments, _, _, _, _ in
+                attachedPhotoIDs = attachments.map(\.photoID)
+                return attachments.isEmpty ? 0 : 1
+            }
+        )
         let draft = TasteMapHybridVisitWriteDraftDTO(
             visitedAt: "2026-09-03T00:00:00.000Z",
             rating: 4.5,
@@ -299,6 +308,10 @@ struct HybridPhase2AIntegrationTests {
                 price: 88,
                 photoID: nil
             )],
+            pendingPhotos: [TasteMapHybridPendingPhotoAttachmentDTO(
+                photoID: "opaque-pending-photo",
+                dishDraftID: nil
+            )],
             note: "会再来"
         )
         let saved = try service.saveVisit(request: .init(
@@ -317,6 +330,8 @@ struct HybridPhase2AIntegrationTests {
         #expect(visits[0].companionNames == ["小王"])
         #expect(mutations.contains { $0.entityType == .visit })
         #expect(mutations.contains { $0.entityType == .dish })
+        #expect(attachedPhotoIDs == ["opaque-pending-photo"])
+        #expect(saved.photoWarning == "到访已保存，但有 1 张照片未能附加。")
         #expect(throws: TasteMapHybridServiceError.restaurantMissing) {
             try service.saveVisit(request: .init(
                 restaurantID: foreign.remoteID!,

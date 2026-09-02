@@ -62,6 +62,9 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     private let mapSharingEnabled: Bool
     private let metadataByRestaurantID: [UUID: TasteMapHybridRestaurantMetadata]
     private let enqueueSharedMealInvitations: ((String, [String]) throws -> Void)?
+    private let attachPendingPhotos: ((
+        [TasteMapHybridPendingPhotoAttachmentDTO], UUID, UUID, [String: String], String
+    ) -> Int)?
 
     public init(
         container: ModelContainer,
@@ -69,7 +72,10 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         membershipTier: String = "free",
         mapSharingEnabled: Bool = false,
         metadataByRestaurantID: [UUID: TasteMapHybridRestaurantMetadata] = [:],
-        enqueueSharedMealInvitations: ((String, [String]) throws -> Void)? = nil
+        enqueueSharedMealInvitations: ((String, [String]) throws -> Void)? = nil,
+        attachPendingPhotos: ((
+            [TasteMapHybridPendingPhotoAttachmentDTO], UUID, UUID, [String: String], String
+        ) -> Int)? = nil
     ) throws {
         let normalizedOwner = LocalAccountOwner.normalized(ownerUserID)
         guard normalizedOwner.hasPrefix("tm_") else { throw TasteMapHybridServiceError.authRequired }
@@ -80,6 +86,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         self.mapSharingEnabled = mapSharingEnabled
         self.metadataByRestaurantID = metadataByRestaurantID
         self.enqueueSharedMealInvitations = enqueueSharedMealInvitations
+        self.attachPendingPhotos = attachPendingPhotos
     }
 
     public func profileDashboard() throws -> TasteMapHybridProfileDTO {
@@ -462,10 +469,22 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 request.draft.sharedParticipantUserIDs
             )
         }
+        let photoFailureCount = attachPendingPhotos?(
+            request.draft.pendingPhotos ?? [],
+            result.restaurant.id,
+            result.visit.id,
+            Dictionary(uniqueKeysWithValues: result.dishesByDraftID.map {
+                ($0.key.uuidString.lowercased(), $0.value.id.uuidString.lowercased())
+            }),
+            request.draft.visibility
+        ) ?? 0
         return TasteMapHybridVisitMutationResultDTO(
             restaurantID: result.restaurant.remoteID ?? result.restaurant.id.uuidString.lowercased(),
             visitID: result.visit.remoteID ?? result.visit.id.uuidString.lowercased(),
-            updatedAt: Self.dateFormatter.string(from: result.visit.updatedAt)
+            updatedAt: Self.dateFormatter.string(from: result.visit.updatedAt),
+            photoWarning: photoFailureCount > 0
+                ? "到访已保存，但有 \(photoFailureCount) 张照片未能附加。"
+                : nil
         )
 #endif
     }

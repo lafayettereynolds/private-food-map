@@ -171,7 +171,11 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     },
   }
   location = { current: async () => capabilityUnavailable('location') }
-  photo = { pick: async () => capabilityUnavailable('photoPicker') }
+  photo = {
+    pick: async () => capabilityUnavailable('photoPicker'),
+    discard: async () => capabilityUnavailable('photoPicker'),
+    retry: async () => capabilityUnavailable('photoPicker'),
+  }
   premium = {
     status: async (): Promise<TasteMapPremiumStatusDTO> => ({
       state: (await this.loadProfile()).user.membershipTier === 'member' ? 'premium' : 'free',

@@ -198,21 +198,23 @@ struct TasteMapApp: App {
         } catch {
             fatalError("Unable to initialize local photo storage: \(error)")
         }
-        hybridRuntime = TasteMapHybridRuntime(
-            mode: TasteMapHybridRuntimeConfiguration.current,
-            container: container,
-            authServices: authServices,
-            premiumEntitlementService: premiumService,
-            photoFiles: photoFiles
-        )
         syncCoordinator = coordinator
-        photoTransferCoordinator = PhotoTransferCoordinator(
+        let transferCoordinator = PhotoTransferCoordinator(
             context: container.mainContext,
             api: authServices.photoAPI,
             files: photoFiles,
             sessionManager: authServices.sessionManager,
             syncCoordinator: coordinator,
             networkObserver: NetworkPathObserver()
+        )
+        photoTransferCoordinator = transferCoordinator
+        hybridRuntime = TasteMapHybridRuntime(
+            mode: TasteMapHybridRuntimeConfiguration.current,
+            container: container,
+            authServices: authServices,
+            premiumEntitlementService: premiumService,
+            photoFiles: photoFiles,
+            photoTransferCoordinator: transferCoordinator
         )
     }
 

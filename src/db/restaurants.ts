@@ -323,6 +323,8 @@ export interface AddVisitInput {
   note: string
   photos: string[]
   photoIds: Array<string | null>
+  /** Opaque Native picker selections. Browser persistence never consumes these. */
+  pendingNativePhotos?: Array<{ photoID: string; dishDraftID: string | null }>
 }
 
 export async function addVisit(restaurantId: string, input: AddVisitInput) {
