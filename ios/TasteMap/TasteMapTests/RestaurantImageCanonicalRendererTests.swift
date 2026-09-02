@@ -111,4 +111,24 @@ struct RestaurantImageCanonicalRendererTests {
         #expect(provider == 20)
         #expect(fallback == 15)
     }
+
+#if DEBUG
+    @Test("Visual QA never labels a generated fixture as a provider merchant image")
+    @MainActor
+    func visualQAMerchantImageHonesty() throws {
+        let localID = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000111"))
+        let provider = try #require(URL(string: "https://images.example.com/restaurant.jpg"))
+        let local = RestaurantImagePriorityPolicy.resolution(
+            localUserPhotoID: localID,
+            providerMerchantImageURL: provider
+        )
+        let providerOnly = RestaurantImagePriorityPolicy.resolution(
+            localUserPhotoID: nil,
+            providerMerchantImageURL: provider
+        )
+
+        #expect(RestaurantImageLoader.visualQAFixtureSource(in: local) == .localUserPhoto(localID))
+        #expect(RestaurantImageLoader.visualQAFixtureSource(in: providerOnly) == nil)
+    }
+#endif
 }

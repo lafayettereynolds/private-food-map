@@ -518,7 +518,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
             return .genericDining
         }()
         fallbackImageView.tintColor = fallbackTint(fallbackKind)
-        visualContainer.layer.borderColor = statusColor(marker.status).cgColor
+        visualContainer.layer.borderColor = ratingColor(marker.averageRating).cgColor
         statusBadge.backgroundColor = statusColor(marker.status)
         statusBadge.image = UIImage(
             systemName: statusSymbol(marker.status),
@@ -553,6 +553,11 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         case .wantToGo: UIColor(red: 0.45, green: 0.57, blue: 0.67, alpha: 1)
         case .recommended: UIColor(red: 0.38, green: 0.49, blue: 0.61, alpha: 1)
         }
+    }
+
+    private func ratingColor(_ rating: Double?) -> UIColor {
+        let color = RestaurantScoreColorPolicy.color(forFivePointRating: rating)
+        return UIColor(red: color.red, green: color.green, blue: color.blue, alpha: 1)
     }
 
     private func statusSymbol(_ status: RestaurantMapMarkerStatus) -> String {

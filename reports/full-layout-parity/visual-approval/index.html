@@ -8,38 +8,43 @@
     <meta http-equiv="Pragma" content="no-cache">
     <title>Taste Map｜Lafayette 视觉审批台</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="styles.css?v=zh-cn-1">
-    <script src="round2-data.js?v=zh-cn-1"></script>
-    <script src="app.js?v=zh-cn-1" defer></script>
+    <link rel="stylesheet" href="styles.css?v=approval-workspace-2">
+    <script src="round2-data.js?v=approval-workspace-2"></script>
+    <script src="round3-data.js?v=approval-workspace-2"></script>
+    <script src="reference-library.js?v=approval-workspace-2"></script>
+    <script src="app.js?v=approval-workspace-2" defer></script>
   </head>
   <body>
     <header class="hero" id="top">
-      <div class="hero__eyebrow">TASTE MAP · LAFAYETTE · 第二轮视觉审批</div>
+      <div class="hero__eyebrow">TASTE MAP · LAFAYETTE · 完整核心页面人工视觉审批</div>
       <div class="hero__content">
         <div>
-          <h1>Lafayette 视觉审批台 · 第二轮</h1>
+          <h1>Lafayette 完整核心页面视觉审批台</h1>
           <p>
-            本轮严格执行第一轮人工决定：五项旧版方向已落成真实最终候选版，设置保持现版冻结；
-            我的页面融合候选版 V2、到访记录融合候选版与五类海报 A/B 仍是候选。所有画面来自真实 SwiftUI 构建与固定模拟器，
-            不是 AI 图、拼接图或文字效果图。页面级方向与区域级冻结分开记录，待决定区域不会被自动判定为已确认。
+            当前 9 个已有审批项目继续保留 Lafayette 的页面决定、区域冻结和备注；另外重新加入此前被 Task C 自动标为
+            Visual PASS / CLOSED、但尚未经过 Lafayette 人工视觉批准的我的地图 / 我的列表、发现、添加餐厅 / Nearby、
+            餐厅详情和 Roulette。Codex Visual PASS 不等于 Lafayette Visual Approval。
           </p>
         </div>
         <div class="hero__seal" aria-hidden="true">
-          <span>9</span>
+          <span id="hero-total-count">14</span>
           <small>审批项</small>
         </div>
       </div>
       <div class="scope-note">
         <strong>审批边界</strong>
         本工具只记录视觉选择，不改 Taste Map 正式应用、不写数据库、不连接生产环境。
-        候选版不是正式产品决定；只有全部必要区域明确选择“保留”并冻结后，页面才显示“最终确认”。
+        候选版、自动化 PASS、截图报告或 Codex CLOSED 都不是正式人工批准。
+        只有 Lafayette 在本工具中明确选择页面方向，并把全部必要区域选择“保留”后冻结，页面才显示“最终确认”。
+        FUSE V1/V2/V3、候选版本、修改范围、已冻结/待决定均属于本地审批候选信息，不得进入 Taste Map 正式页面或 Release UI；
+        正式视觉判断请使用各页面固定参考图面板中的“无候选标识预览”。若候选截图把 DEBUG 标识写进图片本身，工具会诚实标记为缺少无标识预览，而不会抹图伪造。
       </div>
     </header>
 
     <div class="progress-shell">
       <div class="progress-bar" aria-label="审批进度">
         <div class="progress-stat">
-          <span class="progress-stat__value">9</span>
+          <span class="progress-stat__value" id="total-count">14</span>
           <span class="progress-stat__label">项目总数</span>
         </div>
         <div class="progress-stat progress-stat--done">
@@ -47,7 +52,7 @@
           <span class="progress-stat__label">方向已记录</span>
         </div>
         <div class="progress-stat progress-stat--pending">
-          <span class="progress-stat__value" id="pending-count">9</span>
+          <span class="progress-stat__value" id="pending-count">14</span>
           <span class="progress-stat__label">页面待选</span>
         </div>
         <div class="progress-stat progress-stat--fuse">
@@ -60,12 +65,23 @@
         </div>
         <div class="progress-stat progress-stat--na">
           <span class="progress-stat__value" id="fuse-na-count">0</span>
-          <span class="progress-stat__label">现版已冻结</span>
+          <span class="progress-stat__label">页面全部冻结</span>
+        </div>
+        <div class="progress-stat progress-stat--references">
+          <span class="progress-stat__value" id="reference-count">0</span>
+          <span class="progress-stat__label">我的参考图</span>
+        </div>
+        <div class="progress-stat progress-stat--source">
+          <span class="progress-stat__value" id="reference-source-count">0</span>
+          <span class="progress-stat__label">最终视觉参考</span>
         </div>
         <div class="progress-meter" aria-hidden="true">
           <span id="progress-meter-fill"></span>
         </div>
-        <button class="copy-summary" id="copy-summary" type="button">复制审批摘要</button>
+        <div class="approval-actions">
+          <button class="copy-summary" id="copy-summary" type="button">复制审批摘要</button>
+          <button class="export-approval" id="export-approval" type="button">导出视觉审批包</button>
+        </div>
       </div>
       <nav class="jump-nav" id="jump-nav" aria-label="快速跳转到视觉决策项"></nav>
     </div>
@@ -73,7 +89,7 @@
     <main class="decision-list" id="decision-list"></main>
 
     <noscript>
-      <p class="noscript">此审批工具需要启用 JavaScript 才能显示 9 项内容和本机记录区。</p>
+      <p class="noscript">此审批工具需要启用 JavaScript 才能显示 14 项内容和本机记录区。</p>
     </noscript>
 
     <footer class="page-footer">

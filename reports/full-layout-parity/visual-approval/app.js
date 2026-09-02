@@ -2,7 +2,7 @@ const LEGACY = "../legacy-reference-screenshots/";
 const FUSE = "fuse-candidates/";
 const ATLAS = "../final-atlas/";
 
-const decisions = window.round2Decisions || [
+const decisions = window.round3Decisions || window.round2Decisions || [
   {
     id: "profile-density",
     title: "Profile 头部与 Dashboard",
@@ -189,11 +189,75 @@ const decisions = window.round2Decisions || [
 
 function v(kind, title, src, caption) { return { kind, title, src, caption }; }
 
-const storageKey = "tastemap.visualApproval.round2";
+const storageKey = window.visualApprovalStorageKey || "tastemap.visualApproval.round2";
+const referenceLibrary = window.LafayetteReferenceLibrary;
 let reviewState = readState();
 let lightboxItems = [];
 let lightboxIndex = 0;
 let zoom = 1;
+let lightboxReturnScrollY = 0;
+let referenceRecords = [];
+const referenceObjectURLs = new Map();
+const workspaceStorageKey = `${storageKey}.workspace`;
+let workspaceState = readWorkspaceState();
+let scrollSaveFrame = 0;
+let scrollStableTimer = 0;
+let lastStableScrollY = Number(workspaceState.scrollY || 0);
+
+function readWorkspaceState() {
+  const fallback = {
+    activePage: "profile-density",
+    activeRegion: "Social Metrics",
+    scrollY: 0,
+    pages: {},
+    lightbox: { selectedImage: "", zoom: 1 },
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(workspaceStorageKey) || "null");
+    return saved ? { ...fallback, ...saved, pages: saved.pages || {}, lightbox: { ...fallback.lightbox, ...(saved.lightbox || {}) } } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function persistWorkspaceState() {
+  try { localStorage.setItem(workspaceStorageKey, JSON.stringify(workspaceState)); } catch { /* session-only fallback */ }
+}
+
+function pageWorkspaceState(id) {
+  workspaceState.pages[id] ||= id === "profile-density"
+    ? { pinned: ["fuse"], locked: true, clean: false, collapsed: false }
+    : { pinned: ["current", "legacy", "fuse"], locked: false, clean: false, collapsed: false };
+  return workspaceState.pages[id];
+}
+
+function holdViewport(y, x = window.scrollX) {
+  const restore = () => window.scrollTo({ left: x, top: y, behavior: "instant" });
+  window.clearTimeout(scrollStableTimer);
+  lastStableScrollY = y;
+  workspaceState.scrollY = y;
+  persistWorkspaceState();
+  restore();
+  window.requestAnimationFrame(restore);
+  window.setTimeout(restore, 0);
+  window.setTimeout(restore, 80);
+  window.setTimeout(restore, 240);
+}
+
+const referencePurposeLabels = {
+  wholePage: "整页参考",
+  region: "某个区域参考",
+  composition: "构图参考",
+  style: "风格参考",
+  component: "组件参考",
+};
+
+const referenceStrengthLabels = {
+  inspiration: "灵感参考",
+  direction: "视觉方向",
+  highFidelity: "高度复刻",
+  geometry: "几何 / 构图 Source of Truth",
+};
 
 function escapeHTML(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -416,6 +480,7 @@ const userTextReplacements = [
   ["IA", "信息架构"],
   ["Imagery", "图片"],
   ["Import", "导入"],
+  ["Lists", "我的食单"],
   ["List", "食单"],
   ["Poster", "海报"],
   ["Preflight", "预检"],
@@ -436,7 +501,6 @@ const userTextReplacements = [
   ["Main Statistics", "主统计"],
   ["Core Entries", "核心入口"],
   ["Memory", "回味"],
-  ["Lists", "我的食单"],
   ["Insights", "洞察"],
   ["Restaurant Context", "餐厅信息"],
   ["Core Experience", "用餐体验"],
@@ -500,7 +564,7 @@ function readState() {
   try {
     const current = JSON.parse(localStorage.getItem(storageKey) || "null");
     if (current) return current;
-    return structuredClone(window.round2InitialState || {});
+    return structuredClone(window.visualApprovalInitialState || window.round2InitialState || {});
   } catch { return {}; }
 }
 
@@ -508,13 +572,19 @@ function persistState() {
   try { localStorage.setItem(storageKey, JSON.stringify(reviewState)); } catch { /* session-only fallback */ }
 }
 
-function visualMarkup(visual, decisionTitle) {
+function visualMarkup(visual, decisionTitle, extraClass = "") {
   const normalized = visual.kind.toLowerCase();
-  const kindClass = normalized.includes("legacy") ? " visual-card__kind--legacy" : normalized.includes("fuse") ? " visual-card__kind--fuse" : normalized.includes("reference") ? " visual-card__kind--reference" : "";
+  const kindClass = normalized.includes("legacy") || normalized.includes("旧版")
+    ? " visual-card__kind--legacy"
+    : normalized.includes("fuse") || normalized.includes("融合")
+      ? " visual-card__kind--fuse"
+      : normalized.includes("reference") || normalized.includes("参考")
+        ? " visual-card__kind--reference"
+        : "";
   const title = displayText(visual.title);
   const kind = displayText(visual.kind);
   const caption = displayText(visual.caption);
-  return `<article class="visual-card">
+  return `<article class="visual-card ${escapeHTML(extraClass)}">
     <div class="visual-card__meta"><div class="visual-card__title">${escapeHTML(title)}</div><span class="visual-card__kind${kindClass}">${escapeHTML(kind)}</span></div>
     <button class="visual-card__button" type="button" data-image-src="${escapeHTML(visual.src)}" data-image-title="${escapeHTML(title)}" data-image-kind="${escapeHTML(kind)}" data-image-caption="${escapeHTML(caption)}" aria-label="放大查看：${escapeHTML(displayText(decisionTitle))}，${escapeHTML(title)}">
       <img src="${escapeHTML(visual.src)}" alt="${escapeHTML(title)}" loading="lazy">
@@ -536,15 +606,146 @@ function sourceFor(choice) {
   return "待决定";
 }
 
+function reviewRegions(decision) {
+  if (decision.id === "profile-density") {
+    return ["Social Metrics", "Main Statistics", "Core Entries", "Memory / 回味", "Lists", "Insights"];
+  }
+  return decision.regions;
+}
+
+function fixedRegions(decision) {
+  return decision.id === "profile-density" ? ["Header", "Settings"] : [];
+}
+
 function regionMarkup(decision, region) {
   const state = pageState(decision.id).regions[region] || {};
   const options = ["KEEP CURRENT", "KEEP LEGACY", "KEEP FUSE", "CHANGE", "NEEDS REDESIGN"];
-  return `<article class="region-card" data-region-page="${escapeHTML(decision.id)}" data-region-name="${escapeHTML(region)}" data-frozen="${state.frozen ? "true" : "false"}">
+  const isActive = workspaceState.activePage === decision.id && workspaceState.activeRegion === region;
+  return `<article class="region-card${isActive ? " is-active" : ""}" data-region-page="${escapeHTML(decision.id)}" data-region-name="${escapeHTML(region)}" data-frozen="${state.frozen ? "true" : "false"}" tabindex="-1">
     <header class="region-card__header"><div><h4>${escapeHTML(displayText(region))}</h4><span class="region-source">当前来源：${escapeHTML(sourceFor(state.choice))}</span></div><span class="freeze-badge">${state.frozen ? "已冻结" : "待决定"}</span></header>
-    <div class="region-options">${options.map((option) => `<label title="${escapeHTML(choiceExplanation(option))}"><input type="radio" name="region-${escapeHTML(decision.id)}-${escapeHTML(region)}" value="${option}" ${state.choice === option ? "checked" : ""} ${state.frozen ? "disabled" : ""}><span>${escapeHTML(displayChoice(option))}</span></label>`).join("")}</div>
-    ${state.frozen ? `<button class="unfreeze-region" type="button">解除冻结</button>` : ""}
+    <div class="region-options">${options.map((option) => `<button type="button" data-region-choice="${option}" title="${escapeHTML(choiceExplanation(option))}" aria-pressed="${state.choice === option ? "true" : "false"}" ${state.frozen ? "disabled" : ""}>${escapeHTML(displayChoice(option))}</button>`).join("")}</div>
+    <div class="region-secondary-actions">
+      <button class="unfreeze-region" type="button" aria-hidden="${state.frozen ? "false" : "true"}" ${state.frozen ? "" : "disabled"}>解除冻结</button>
+      <button class="clear-region-choice" type="button" aria-hidden="${state.choice && !state.frozen ? "false" : "true"}" ${state.choice && !state.frozen ? "" : "disabled"}>清除未冻结选择</button>
+    </div>
     <label class="region-notes">我的备注<textarea placeholder="只记录这个区域的保留或修改要求……">${escapeHTML(displayNote(state.notes))}</textarea></label>
   </article>`;
+}
+
+function visualCategory(visual) {
+  const value = `${visual.kind} ${visual.title}`.toLowerCase();
+  if (value.includes("lafayette 用户参考图")) return "lafayette";
+  if (value.includes("option a") || value.includes("candidate a") || value.includes("候选版 a") || value.includes("方案 a")) return "option-a";
+  if (value.includes("option b") || value.includes("candidate b") || value.includes("候选版 b") || value.includes("方案 b")) return "option-b";
+  if (value.includes("legacy") || value.includes("旧版")) return "legacy";
+  if (value.includes("fuse") || value.includes("融合") || value.includes("重新设计") || value.includes("candidate")) return "fuse";
+  if (value.includes("reference") || value.includes("参考")) return "reference";
+  return "current";
+}
+
+function profileFuseV2Visual() {
+  return {
+    kind: "FUSE CANDIDATE — REAL IMPLEMENTATION",
+    title: "我的页面融合候选版 V2",
+    src: "round-2/candidates/profile-fuse-v2.png",
+    caption: "固定审批对照：我的页面融合候选版 V2。顶部身份区与设置保持冻结；右侧只审批关注数据、主统计、核心入口、回味、我的食单和洞察。",
+  };
+}
+
+function staticWorkspaceVisuals(decision) {
+  if (decision.id === "profile-density") return [...decision.visuals, profileFuseV2Visual()];
+  return [...decision.visuals, ...decision.fuseVisuals];
+}
+
+function referenceVisuals(decision) {
+  return referencesForItem(decision.id).map((record) => ({
+    kind: "Lafayette 用户参考图",
+    title: record.title || record.filename,
+    src: referenceImageURL(record),
+    caption: record.notes || referenceStrengthLabels[record.strength] || "Lafayette 用户参考图",
+    cleanSrc: referenceImageURL(record),
+    referenceRegions: record.regionIds || [],
+  }));
+}
+
+function workspaceVisuals(decision) {
+  return [...staticWorkspaceVisuals(decision), ...referenceVisuals(decision)];
+}
+
+function isCleanVisual(visual) {
+  if (visual.cleanSrc) return true;
+  const category = visualCategory(visual);
+  return category === "current" || category === "legacy" || category === "reference";
+}
+
+function stickyVisualMarkup(visual, decision, clean) {
+  if (clean && !isCleanVisual(visual)) {
+    return `<article class="sticky-visual sticky-visual--missing-clean">
+      <strong>无候选标识预览尚未提供</strong>
+      <p>${escapeHTML(displayText(visual.title))} 的原截图包含候选 / DEBUG 标识。审批台不会涂抹、裁切或伪造正式截图；必须从候选预览实现重新生成一张无标识截图后才能在此显示。</p>
+    </article>`;
+  }
+  const src = clean ? (visual.cleanSrc || visual.src) : visual.src;
+  const title = displayText(visual.title);
+  const kind = displayText(visual.kind);
+  return `<article class="sticky-visual" data-visual-category="${visualCategory(visual)}">
+    <button class="sticky-visual__image visual-card__button" type="button" data-image-src="${escapeHTML(src)}" data-image-title="${escapeHTML(title)}" data-image-kind="${escapeHTML(kind)}" data-image-caption="${escapeHTML(displayText(visual.caption))}" aria-label="放大查看：${escapeHTML(title)}">
+      <img src="${escapeHTML(src)}" alt="${escapeHTML(title)}">
+    </button>
+    ${clean ? "" : `<div class="sticky-visual__label"><strong>${escapeHTML(title)}</strong><span>${escapeHTML(kind)}</span></div>`}
+  </article>`;
+}
+
+function selectedWorkspaceVisuals(decision) {
+  const state = pageWorkspaceState(decision.id);
+  const visuals = workspaceVisuals(decision);
+  const pinned = state.pinned?.length ? state.pinned : ["current", "legacy", "fuse"];
+  const matches = visuals.filter((visual) => pinned.includes(visualCategory(visual)));
+  return matches.length ? matches : visuals.slice(0, 1);
+}
+
+function visualPinButtons(decision) {
+  const state = pageWorkspaceState(decision.id);
+  const available = new Set(workspaceVisuals(decision).map(visualCategory));
+  const controls = [
+    ["current", "锁定现版"],
+    ["legacy", "锁定旧版"],
+    ["fuse", decision.id === "profile-density" ? "锁定我的页面融合候选版 V2" : "锁定融合版"],
+    ["reference", "锁定已确认参考"],
+    ["lafayette", "锁定我的参考图"],
+    ["option-a", "锁定方案 A"],
+    ["option-b", "锁定方案 B"],
+  ].filter(([value]) => available.has(value));
+  return `${controls.map(([value, label]) => `<button type="button" class="pin-visual${state.locked && state.pinned?.length === 1 && state.pinned[0] === value ? " is-selected" : ""}" data-pin-visual="${value}">${label}</button>`).join("")}
+    <button type="button" class="pin-visual${state.locked && state.pinned?.length > 1 ? " is-selected" : ""}" data-pin-visual="multi">多图对比</button>
+    <button type="button" class="unpin-visual" data-unpin-visual ${state.locked ? "" : "disabled"}>解除锁定</button>`;
+}
+
+function stickyVisualPanelMarkup(decision) {
+  const state = pageWorkspaceState(decision.id);
+  const visuals = selectedWorkspaceVisuals(decision);
+  const fixed = fixedRegions(decision);
+  return `<aside class="visual-reference-panel${state.collapsed ? " is-collapsed" : ""}" data-visual-panel="${escapeHTML(decision.id)}">
+    <div class="visual-reference-panel__header">
+      <div><span>固定视觉对照</span><strong>${decision.id === "profile-density" ? "我的页面融合候选版 V2" : "当前页面参考图"}</strong></div>
+      <button type="button" class="collapse-visual-panel">${state.collapsed ? "展开参考图" : "收起参考图"}</button>
+    </div>
+    <div class="visual-reference-panel__body">
+      <div class="visual-lock-controls" aria-label="锁定当前对比图">${visualPinButtons(decision)}</div>
+      <label class="clean-preview-toggle"><input type="checkbox" data-clean-preview ${state.clean ? "checked" : ""}><span><strong>无候选标识预览</strong><small>隐藏审批台候选标识；含内嵌 DEBUG 标识的截图必须提供独立无标识版本。</small></span></label>
+      ${fixed.length ? `<div class="fixed-region-note"><strong>固定区域</strong>${fixed.map((region) => `<span>${escapeHTML(displayText(region))}</span>`).join("")}</div>` : ""}
+      <div class="sticky-visual-stage${state.clean ? " is-clean" : ""}" data-sticky-visual-stage>${visuals.map((visual) => stickyVisualMarkup(visual, decision, state.clean)).join("")}</div>
+      <p class="visual-lock-status">${state.locked ? "当前对比图已锁定；切换 Region 不会自动换图。" : "当前为多图浏览；点击上方按钮可锁定对比图。"}</p>
+    </div>
+  </aside>`;
+}
+
+function regionIndexMarkup(decision) {
+  const activeRegion = workspaceState.activePage === decision.id ? workspaceState.activeRegion : "";
+  return `<div class="region-index" aria-label="区域快速选择">${reviewRegions(decision).map((region) => {
+    const state = pageState(decision.id).regions[region] || {};
+    return `<button type="button" data-select-region="${escapeHTML(region)}" class="${activeRegion === region ? "is-active" : ""}"><span>${escapeHTML(displayText(region))}</span><small>${state.frozen ? "已冻结" : "选择"}</small></button>`;
+  }).join("")}</div>`;
 }
 
 function fuseMarkup(decision) {
@@ -559,14 +760,253 @@ function fuseMarkup(decision) {
 function regionReviewMarkup(decision) {
   const state = pageState(decision.id);
   const frozen = decision.regions.filter((region) => state.regions[region]?.frozen).length;
-  const approved = frozen === decision.regions.length;
+  const approved = Boolean(state.decision) && frozen === decision.regions.length;
   return `<div class="section-block region-review" data-region-summary="${decision.id}">
-    <div class="section-heading"><div><h3>区域级审批与候选版冻结</h3><p>选择“保留”后立即冻结；只有明确“解除冻结”后才能在后续版本修改。</p></div><div class="region-totals"><span>${escapeHTML(displayText(decision.candidateVersion || "候选版"))}</span><span class="frozen-count">已冻结 ${frozen}</span><span class="pending-region-count">待修改 ${decision.regions.length - frozen}</span><strong class="final-approval ${approved ? "is-approved" : ""}">${approved ? "最终确认" : "尚未最终确认"}</strong></div></div>
-    <div class="region-choice-help" aria-label="区域审批按钮说明">
-      <span><strong>保留现版：</strong>采用当前 iOS 区域并冻结</span><span><strong>保留旧版：</strong>采用旧版 Web 区域并冻结</span><span><strong>保留融合版：</strong>采用当前融合候选区域并冻结</span><span><strong>需要修改：</strong>保留方向并继续调整</span><span><strong>重新设计：</strong>下一版重新设计该区域</span>
+    <div class="approval-workspace">
+      ${stickyVisualPanelMarkup(decision)}
+      <section class="region-approval-panel">
+        <div class="section-heading"><div><h3>区域级审批与候选版冻结</h3><p>选择“保留”后立即冻结；操作只更新当前区域，不改变页面滚动位置。</p></div><div class="region-totals"><span class="candidate-version-label">${escapeHTML(displayText(decision.candidateVersion || "候选版"))}</span><span class="frozen-count">已冻结 ${frozen}</span><span class="pending-region-count">待修改 ${decision.regions.length - frozen}</span><strong class="final-approval ${approved ? "is-approved" : ""}">${approved ? "最终确认" : "尚未最终确认"}</strong></div></div>
+        ${regionIndexMarkup(decision)}
+        <div class="region-choice-help" aria-label="区域审批按钮说明">
+          <span><strong>保留现版：</strong>采用当前 iOS 区域并冻结</span><span><strong>保留旧版：</strong>采用旧版 Web 区域并冻结</span><span><strong>保留融合版：</strong>采用当前融合候选区域并冻结</span><span><strong>需要修改：</strong>保留方向并继续调整</span><span><strong>重新设计：</strong>下一版重新设计该区域</span>
+        </div>
+        <div class="region-grid">${reviewRegions(decision).map((region) => regionMarkup(decision, region)).join("")}</div>
+        <button class="next-pending-region" type="button">下一个待决定区域 <span aria-hidden="true">→</span></button>
+      </section>
     </div>
-    <div class="region-grid">${decision.regions.map((region) => regionMarkup(decision, region)).join("")}</div>
   </div>`;
+}
+
+function referenceSectionMarkup(decision) {
+  return `<div class="section-block reference-section" data-reference-section="${escapeHTML(decision.id)}">
+    <div class="section-heading reference-section__heading">
+      <div>
+        <h3>我的参考图</h3>
+        <p>图片只保存在本机浏览器 IndexedDB，不会上传到 Taste Map、Production、云端或任何服务器。</p>
+      </div>
+      <span class="reference-count-badge" data-reference-count-for="${escapeHTML(decision.id)}">0 张</span>
+    </div>
+    <div class="reference-upload" data-reference-dropzone="${escapeHTML(decision.id)}" tabindex="0" role="button" aria-label="为${escapeHTML(displayText(decision.title))}上传或粘贴参考图片">
+      <input class="reference-file-input" data-reference-file-input="${escapeHTML(decision.id)}" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+      <div class="reference-upload__icon" aria-hidden="true">＋</div>
+      <div class="reference-upload__copy">
+        <strong>上传我的参考图</strong>
+        <span>点击选择、拖拽多张 PNG / JPG / WEBP，或聚焦这里后按 ⌘V 粘贴。</span>
+      </div>
+      <div class="reference-upload__actions">
+        <button class="reference-choose-button" type="button">选择图片</button>
+        <button class="reference-paste-button" type="button">粘贴剪贴板图片</button>
+      </div>
+    </div>
+    <p class="reference-status" data-reference-status="${escapeHTML(decision.id)}" aria-live="polite"></p>
+    <div class="reference-list" data-reference-list="${escapeHTML(decision.id)}" aria-live="polite">
+      <div class="reference-empty"><strong>还没有我的参考图</strong><span>Current、Legacy 和 FUSE 都不准确时，把 Lafayette 自己的图直接放在这里。</span></div>
+    </div>
+  </div>`;
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function referenceImageURL(record) {
+  if (!referenceObjectURLs.has(record.id)) referenceObjectURLs.set(record.id, URL.createObjectURL(record.blob));
+  return referenceObjectURLs.get(record.id);
+}
+
+function referenceBadgeMarkup(record) {
+  const badges = [];
+  if (record.isFinal) badges.push('<strong class="reference-source-badge">LAFAYETTE 最终视觉参考</strong>');
+  if (record.strength === "geometry") badges.push('<span class="reference-strength-badge">几何 / 构图 Source of Truth</span>');
+  if (record.strength === "highFidelity") badges.push('<span class="reference-strength-badge">高度复刻参考</span>');
+  return badges.join("");
+}
+
+function referenceRecordMarkup(decision, record, index) {
+  const regions = new Set(record.regionIds || []);
+  const title = record.title || record.filename;
+  return `<article class="reference-card" data-reference-id="${escapeHTML(record.id)}" data-reference-item="${escapeHTML(decision.id)}">
+    <header class="reference-card__header">
+      <div><span class="reference-card__index">参考图 ${index + 1}</span><h4>${escapeHTML(title)}</h4><p>${escapeHTML(record.filename)} · ${formatFileSize(record.size)}</p></div>
+      <div class="reference-card__badges">${referenceBadgeMarkup(record)}</div>
+    </header>
+    <button class="visual-card__button reference-card__preview" type="button" data-image-src="${escapeHTML(referenceImageURL(record))}" data-image-title="${escapeHTML(title)}" data-image-kind="Lafayette 用户参考图" data-image-caption="${escapeHTML(record.notes || referenceStrengthLabels[record.strength] || "Lafayette 用户参考图")}" aria-label="放大查看 Lafayette 参考图：${escapeHTML(title)}">
+      <img src="${escapeHTML(referenceImageURL(record))}" alt="${escapeHTML(title)}">
+    </button>
+    <div class="reference-card__form">
+      <label class="reference-field reference-field--wide"><span>参考图名称</span><input data-reference-field="title" value="${escapeHTML(title)}" maxlength="120"></label>
+      <label class="reference-field"><span>用途</span><select data-reference-field="purpose">${Object.entries(referencePurposeLabels).map(([value, label]) => `<option value="${value}" ${record.purpose === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      <label class="reference-field"><span>参考强度</span><select data-reference-field="strength">${Object.entries(referenceStrengthLabels).map(([value, label]) => `<option value="${value}" ${record.strength === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      <label class="reference-final-toggle"><input type="checkbox" data-reference-field="isFinal" ${record.isFinal ? "checked" : ""}><span><strong>这是最终视觉方向</strong><small>显示“Lafayette 最终视觉参考”，后续实现必须先查看此图。</small></span></label>
+      <fieldset class="reference-regions"><legend>绑定区域（可多选；整页参考可不选）</legend><div>${decision.regions.map((region) => `<label><input type="checkbox" data-reference-region="${escapeHTML(region)}" ${regions.has(region) ? "checked" : ""}><span>${escapeHTML(displayText(region))}</span></label>`).join("")}</div></fieldset>
+      <label class="reference-field reference-field--notes"><span>这张图我主要想保留什么？</span><textarea data-reference-field="notes" placeholder="记录构图、层级、比例、留白、图片关系或必须保持的区域……">${escapeHTML(record.notes || "")}</textarea></label>
+    </div>
+    <footer class="reference-card__footer">
+      <span class="reference-saved-at">本机保存 · ${escapeHTML(new Date(record.updatedAt || record.createdAt).toLocaleString("zh-CN"))}</span>
+      <div>
+        <label class="reference-replace-button">替换图片<input type="file" data-reference-replace accept="image/png,image/jpeg,image/webp" hidden></label>
+        <button class="reference-delete-button" type="button">删除参考图</button>
+      </div>
+    </footer>
+  </article>`;
+}
+
+function referencesForItem(itemId) {
+  return referenceRecords.filter((record) => record.itemId === itemId);
+}
+
+function setReferenceStatus(itemId, message, tone = "") {
+  const status = document.querySelector(`[data-reference-status="${CSS.escape(itemId)}"]`);
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.tone = tone;
+}
+
+async function refreshReferenceCache() {
+  if (!referenceLibrary) return;
+  referenceRecords = await referenceLibrary.listAll();
+  decisions.forEach(renderReferenceList);
+  decisions.forEach((decision) => renderWorkspaceVisualPanel(decision.id));
+  updateReferenceProgress();
+  bindLightboxItems();
+}
+
+function renderReferenceList(decision) {
+  const list = document.querySelector(`[data-reference-list="${CSS.escape(decision.id)}"]`);
+  if (!list) return;
+  const records = referencesForItem(decision.id);
+  document.querySelector(`[data-reference-count-for="${CSS.escape(decision.id)}"]`).textContent = `${records.length} 张`;
+  list.innerHTML = records.length
+    ? records.map((record, index) => referenceRecordMarkup(decision, record, index)).join("")
+    : '<div class="reference-empty"><strong>还没有我的参考图</strong><span>Current、Legacy 和 FUSE 都不准确时，把 Lafayette 自己的图直接放在这里。</span></div>';
+  bindReferenceRecordControls(decision, list);
+}
+
+function updateReferenceProgress() {
+  document.querySelector("#reference-count").textContent = referenceRecords.length;
+  document.querySelector("#reference-source-count").textContent = referenceRecords.filter((record) => record.isFinal || record.strength === "geometry").length;
+}
+
+async function importReferenceFiles(itemId, files, sourceLabel) {
+  try {
+    const added = await referenceLibrary.addFiles(itemId, files);
+    await refreshReferenceCache();
+    setReferenceStatus(itemId, added.length ? `已从${sourceLabel}保存 ${added.length} 张图片到本机参考图库。` : "没有检测到可用图片。", added.length ? "success" : "");
+  } catch (error) {
+    setReferenceStatus(itemId, error.message || "图片保存失败。", "error");
+  }
+}
+
+async function pasteReferenceImages(itemId, event) {
+  const clipboardItems = Array.from(event?.clipboardData?.items || []);
+  const files = clipboardItems
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item, index) => {
+      const file = item.getAsFile();
+      return file && new File([file], `clipboard-${Date.now()}-${index + 1}.${file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg"}`, { type: file.type });
+    })
+    .filter(Boolean);
+  if (!files.length) return false;
+  event.preventDefault();
+  await importReferenceFiles(itemId, files, "剪贴板");
+  return true;
+}
+
+async function readClipboardImages(itemId) {
+  if (!navigator.clipboard?.read) {
+    setReferenceStatus(itemId, "当前浏览器需要先点击上传区域，再按 ⌘V 粘贴图片。", "error");
+    document.querySelector(`[data-reference-dropzone="${CSS.escape(itemId)}"]`)?.focus();
+    return;
+  }
+  try {
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const item of items) {
+      for (const type of item.types.filter((value) => value.startsWith("image/"))) {
+        const blob = await item.getType(type);
+        files.push(new File([blob], `clipboard-${Date.now()}-${files.length + 1}.${type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg"}`, { type }));
+      }
+    }
+    if (!files.length) throw new Error("剪贴板里没有 PNG、JPG 或 WEBP 图片");
+    await importReferenceFiles(itemId, files, "剪贴板");
+  } catch (error) {
+    setReferenceStatus(itemId, `${error.message || "无法读取剪贴板"}。也可以聚焦上传区域后按 ⌘V。`, "error");
+  }
+}
+
+function bindReferenceUploadControls() {
+  document.querySelectorAll("[data-reference-section]").forEach((section) => {
+    const itemId = section.dataset.referenceSection;
+    const input = section.querySelector("[data-reference-file-input]");
+    const dropzone = section.querySelector("[data-reference-dropzone]");
+    section.querySelector(".reference-choose-button").addEventListener("click", (event) => { event.stopPropagation(); input.click(); });
+    section.querySelector(".reference-paste-button").addEventListener("click", (event) => { event.stopPropagation(); readClipboardImages(itemId); });
+    input.addEventListener("change", async () => { await importReferenceFiles(itemId, input.files, "文件选择器"); input.value = ""; });
+    dropzone.addEventListener("click", (event) => { if (!event.target.closest("button")) input.click(); });
+    dropzone.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); input.click(); } });
+    ["dragenter", "dragover"].forEach((type) => dropzone.addEventListener(type, (event) => { event.preventDefault(); dropzone.dataset.dragging = "true"; }));
+    ["dragleave", "dragend"].forEach((type) => dropzone.addEventListener(type, () => { delete dropzone.dataset.dragging; }));
+    dropzone.addEventListener("drop", async (event) => { event.preventDefault(); delete dropzone.dataset.dragging; await importReferenceFiles(itemId, event.dataTransfer.files, "拖拽"); });
+    dropzone.addEventListener("paste", (event) => pasteReferenceImages(itemId, event));
+  });
+}
+
+function bindReferenceRecordControls(decision, list) {
+  list.querySelectorAll(".reference-card").forEach((card) => {
+    const id = card.dataset.referenceId;
+    const saveFields = async () => {
+      const regionIds = Array.from(card.querySelectorAll("[data-reference-region]:checked"), (input) => input.dataset.referenceRegion);
+      const changes = {
+        title: card.querySelector('[data-reference-field="title"]').value.trim() || "未命名参考图",
+        purpose: card.querySelector('[data-reference-field="purpose"]').value,
+        strength: card.querySelector('[data-reference-field="strength"]').value,
+        isFinal: card.querySelector('[data-reference-field="isFinal"]').checked,
+        notes: card.querySelector('[data-reference-field="notes"]').value,
+        regionIds,
+      };
+      try {
+        await referenceLibrary.update(id, changes);
+        await refreshReferenceCache();
+        setReferenceStatus(decision.id, "参考图用途、强度、区域和备注已保存在本机。", "success");
+      } catch (error) {
+        setReferenceStatus(decision.id, error.message || "参考图更新失败。", "error");
+      }
+    };
+    card.querySelectorAll("[data-reference-field], [data-reference-region]").forEach((control) => control.addEventListener("change", saveFields));
+    card.querySelector("[data-reference-replace]").addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        URL.revokeObjectURL(referenceObjectURLs.get(id));
+        referenceObjectURLs.delete(id);
+        await referenceLibrary.replaceImage(id, file);
+        await refreshReferenceCache();
+        setReferenceStatus(decision.id, "参考图片已替换，原有用途、强度、区域与备注保持不变。", "success");
+      } catch (error) {
+        setReferenceStatus(decision.id, error.message || "替换图片失败。", "error");
+      }
+    });
+    card.querySelector(".reference-delete-button").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      if (button.dataset.confirmDelete !== "true") {
+        button.dataset.confirmDelete = "true";
+        button.textContent = "再次点击确认删除";
+        window.setTimeout(() => { if (button.isConnected) { delete button.dataset.confirmDelete; button.textContent = "删除参考图"; } }, 3500);
+        return;
+      }
+      try {
+        await referenceLibrary.remove(id);
+        URL.revokeObjectURL(referenceObjectURLs.get(id));
+        referenceObjectURLs.delete(id);
+        await refreshReferenceCache();
+        setReferenceStatus(decision.id, "参考图已从本机图库删除。", "success");
+      } catch (error) {
+        setReferenceStatus(decision.id, error.message || "删除参考图失败。", "error");
+      }
+    });
+  });
 }
 
 function decisionMarkup(decision, index) {
@@ -582,6 +1022,7 @@ function decisionMarkup(decision, index) {
   return `<section class="decision-card" id="${decision.id}" data-decision-id="${decision.id}" data-decided="${saved.decision ? "true" : "false"}">
     <header class="decision-card__header"><div class="decision-number">${String(index + 1).padStart(2, "0")}</div><div><h2>${escapeHTML(displayText(decision.title))}</h2><p class="decision-card__summary">${escapeHTML(displayText(decision.summary))}</p></div><span class="status-badge">${saved.decision ? `已选 · ${escapeHTML(displayDirection(saved.decision))}` : "待决定"}</span></header>
     <div class="section-block"><div class="section-heading"><h3>现版 iOS 与旧版 / 已确认历史参考</h3><p>所有旧版图片均来自 fb127e9 实际运行截图。</p></div><div class="image-track">${decision.visuals.map((item) => visualMarkup(item, decision.title)).join("")}</div></div>
+    ${referenceSectionMarkup(decision)}
     ${fuseMarkup(decision)}
     <div class="section-block"><div class="recommendation"><div class="recommendation__mark">荐</div><div><strong>Codex 建议（不自动批准）</strong><p>${escapeHTML(displayText(decision.recommendation))}</p></div></div></div>
     ${regionReviewMarkup(decision)}
@@ -590,7 +1031,7 @@ function decisionMarkup(decision, index) {
         <article><strong>旧版</strong><p>历史版本整体布局、构图和信息架构作为视觉骨架；现版新增且已确认的能力以最小侵入方式嵌入。它不代表回滚代码、删除现版功能或恢复旧数据架构。</p></article>
         <article><strong>融合版</strong><p>旧版与现版都只取部分结构，形成新的融合构图。它不同于直接采用完整旧版页面骨架。</p></article>
       </div>
-      ${decision.directionLocked ? `<p class="storage-note"><strong>第一轮方向已锁定：</strong>${escapeHTML(displayDirection(decision.direction))}。本轮请使用区域反馈和“我的备注”审批真实候选。</p>` : ""}
+      ${decision.directionLocked ? `<p class="storage-note"><strong>${escapeHTML(window.visualApprovalPreviousRoundLabel || "第一轮")}方向已锁定：</strong>${escapeHTML(displayDirection(decision.direction))}。本轮请使用区域反馈和“我的备注”审批真实候选。</p>` : ""}
       <div class="decision-options">${choices.map((choice) => `<label class="decision-choice"><input type="radio" name="decision-${decision.id}" value="${choice.value}" ${saved.decision === choice.value ? "checked" : ""} ${decision.directionLocked ? "disabled" : ""}><span>${choice.label}</span></label>`).join("")}</div><label class="notes-label">页面备注<textarea data-notes-for="${decision.id}" placeholder="记录整个页面的总体决定……">${escapeHTML(saved.notes || "")}</textarea></label><p class="storage-note">记录仅保存在当前浏览器，不写入 Taste Map、Git、数据库或服务器。</p></div>
   </section>`;
 }
@@ -598,7 +1039,132 @@ function decisionMarkup(decision, index) {
 function render() {
   document.querySelector("#decision-list").innerHTML = decisions.map(decisionMarkup).join("");
   document.querySelector("#jump-nav").innerHTML = decisions.map((decision, index) => `<a href="#${decision.id}" data-nav-id="${decision.id}" data-decided="${Boolean(pageState(decision.id).decision)}"><span class="jump-nav__number">${index + 1}</span><span>${escapeHTML(displayText(decision.shortTitle))}</span></a>`).join("");
-  bindControls(); bindLightboxItems(); updateProgress();
+  bindControls();
+  bindReferenceUploadControls();
+  decisions.forEach(renderReferenceList);
+  bindLightboxItems();
+  updateProgress();
+  updateReferenceProgress();
+}
+
+function decisionFor(id) {
+  return decisions.find((decision) => decision.id === id);
+}
+
+function renderWorkspaceVisualPanel(id) {
+  const decision = decisionFor(id);
+  const panel = document.querySelector(`[data-visual-panel="${CSS.escape(id)}"]`);
+  if (!decision || !panel) return;
+  const replacement = document.createElement("div");
+  replacement.innerHTML = stickyVisualPanelMarkup(decision).trim();
+  const nextPanel = replacement.firstElementChild;
+  panel.replaceWith(nextPanel);
+  bindVisualPanelControls(nextPanel, decision);
+  bindLightboxItems();
+}
+
+function syncRegionCard(card, decision, region) {
+  const state = pageState(decision.id).regions[region] || {};
+  card.dataset.frozen = state.frozen ? "true" : "false";
+  card.classList.toggle("is-active", workspaceState.activePage === decision.id && workspaceState.activeRegion === region);
+  card.querySelector(".region-source").textContent = `当前来源：${sourceFor(state.choice)}`;
+  card.querySelector(".freeze-badge").textContent = state.frozen ? "已冻结" : "待决定";
+  card.querySelectorAll("[data-region-choice]").forEach((button) => {
+    button.setAttribute("aria-pressed", button.dataset.regionChoice === state.choice ? "true" : "false");
+    button.disabled = Boolean(state.frozen);
+  });
+  const unfreeze = card.querySelector(".unfreeze-region");
+  unfreeze.setAttribute("aria-hidden", state.frozen ? "false" : "true");
+  unfreeze.disabled = !state.frozen;
+  const clear = card.querySelector(".clear-region-choice");
+  const canClear = Boolean(state.choice) && !state.frozen;
+  clear.setAttribute("aria-hidden", canClear ? "false" : "true");
+  clear.disabled = !canClear;
+  const indexButton = document.querySelector(`[data-region-summary="${CSS.escape(decision.id)}"] [data-select-region="${CSS.escape(region)}"]`);
+  if (indexButton) {
+    indexButton.classList.toggle("is-active", workspaceState.activePage === decision.id && workspaceState.activeRegion === region);
+    indexButton.querySelector("small").textContent = state.frozen ? "已冻结" : "选择";
+  }
+}
+
+function updateRegionSummary(decision) {
+  const container = document.querySelector(`[data-region-summary="${CSS.escape(decision.id)}"]`);
+  if (!container) return;
+  const state = pageState(decision.id);
+  const frozen = decision.regions.filter((region) => state.regions[region]?.frozen).length;
+  const approved = Boolean(state.decision) && frozen === decision.regions.length;
+  container.querySelector(".frozen-count").textContent = `已冻结 ${frozen}`;
+  container.querySelector(".pending-region-count").textContent = `待修改 ${decision.regions.length - frozen}`;
+  const final = container.querySelector(".final-approval");
+  final.textContent = approved ? "最终确认" : "尚未最终确认";
+  final.classList.toggle("is-approved", approved);
+}
+
+function setActiveRegion(id, region, { reveal = false, focus = false } = {}) {
+  workspaceState.activePage = id;
+  workspaceState.activeRegion = region;
+  persistWorkspaceState();
+  document.querySelectorAll(".region-card.is-active, .region-index button.is-active").forEach((element) => element.classList.remove("is-active"));
+  const card = document.querySelector(`.region-card[data-region-page="${CSS.escape(id)}"][data-region-name="${CSS.escape(region)}"]`);
+  const indexButton = document.querySelector(`[data-region-summary="${CSS.escape(id)}"] [data-select-region="${CSS.escape(region)}"]`);
+  card?.classList.add("is-active");
+  indexButton?.classList.add("is-active");
+  if (reveal) {
+    card?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    window.setTimeout(() => {
+      if (!card) return;
+      card.dataset.approvalViewportY = String(window.scrollY);
+      lastStableScrollY = window.scrollY;
+      workspaceState.scrollY = window.scrollY;
+      persistWorkspaceState();
+    }, 260);
+  }
+  if (focus) window.setTimeout(() => (card?.querySelector('input[type="radio"]:not(:disabled)') || card)?.focus({ preventScroll: true }), 180);
+}
+
+function pendingRegionAfter(decision, currentRegion) {
+  const regions = reviewRegions(decision);
+  const start = Math.max(-1, regions.indexOf(currentRegion));
+  for (let offset = 1; offset <= regions.length; offset += 1) {
+    const region = regions[(start + offset) % regions.length];
+    if (!pageState(decision.id).regions[region]?.frozen) return { decision, region };
+  }
+  const startPage = decisions.indexOf(decision);
+  for (let pageOffset = 1; pageOffset <= decisions.length; pageOffset += 1) {
+    const nextDecision = decisions[(startPage + pageOffset) % decisions.length];
+    const region = reviewRegions(nextDecision).find((item) => !pageState(nextDecision.id).regions[item]?.frozen);
+    if (region) return { decision: nextDecision, region };
+  }
+  return null;
+}
+
+function bindVisualPanelControls(panel, decision) {
+  panel.querySelectorAll("[data-pin-visual]").forEach((button) => button.addEventListener("click", () => {
+    const state = pageWorkspaceState(decision.id);
+    const value = button.dataset.pinVisual;
+    state.pinned = value === "multi" ? ["current", "legacy", "fuse", "reference", "lafayette", "option-a", "option-b"] : [value];
+    state.locked = true;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  }));
+  panel.querySelector("[data-unpin-visual]")?.addEventListener("click", () => {
+    const state = pageWorkspaceState(decision.id);
+    state.pinned = ["current", "legacy", "fuse", "reference", "lafayette", "option-a", "option-b"];
+    state.locked = false;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  });
+  panel.querySelector("[data-clean-preview]")?.addEventListener("change", (event) => {
+    pageWorkspaceState(decision.id).clean = event.target.checked;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  });
+  panel.querySelector(".collapse-visual-panel")?.addEventListener("click", () => {
+    const state = pageWorkspaceState(decision.id);
+    state.collapsed = !state.collapsed;
+    persistWorkspaceState();
+    renderWorkspaceVisualPanel(decision.id);
+  });
 }
 
 function bindControls() {
@@ -607,21 +1173,87 @@ function bindControls() {
     card.querySelectorAll(`input[name="decision-${id}"]`).forEach((input) => input.addEventListener("change", () => { pageState(id).decision = input.value; persistState(); updateDecisionStatus(card, id); updateProgress(); }));
     card.querySelector(`[data-notes-for="${id}"]`).addEventListener("input", (event) => { pageState(id).notes = event.target.value; persistState(); });
   });
-  document.querySelectorAll(".region-card").forEach((card) => {
+  bindRegionDelegation();
+  document.querySelectorAll("[data-region-summary]").forEach((summary) => {
+    const decision = decisionFor(summary.dataset.regionSummary);
+    summary.querySelectorAll("[data-select-region]").forEach((button) => button.addEventListener("click", () => setActiveRegion(decision.id, button.dataset.selectRegion, { reveal: true, focus: true })));
+    summary.querySelector(".next-pending-region")?.addEventListener("click", () => {
+      const next = pendingRegionAfter(decision, workspaceState.activePage === decision.id ? workspaceState.activeRegion : "");
+      if (next) setActiveRegion(next.decision.id, next.region, { reveal: true, focus: true });
+      else summary.querySelector(".next-pending-region").textContent = "全部区域均已冻结";
+    });
+    bindVisualPanelControls(summary.querySelector("[data-visual-panel]"), decision);
+  });
+}
+
+function bindRegionDelegation() {
+  const root = document.querySelector("#decision-list");
+  if (root.dataset.regionEventsBound === "true") return;
+  root.dataset.regionEventsBound = "true";
+  const context = (target) => {
+    const card = target.closest(".region-card");
+    if (!card) return null;
     const id = card.dataset.regionPage;
     const region = card.dataset.regionName;
-    card.querySelectorAll('input[type="radio"]').forEach((input) => input.addEventListener("change", () => {
-      const state = pageState(id); state.regions[region] ||= {}; state.regions[region].choice = input.value; state.regions[region].frozen = input.value.startsWith("KEEP "); persistState(); render(); document.querySelector(`#${id}-fuse`)?.scrollIntoView({ block: "start" });
-    }));
-    card.querySelector("textarea").addEventListener("input", (event) => { const state = pageState(id); state.regions[region] ||= {}; state.regions[region].notes = event.target.value; persistState(); });
-    card.querySelector(".unfreeze-region")?.addEventListener("click", () => {
-      const regionState = pageState(id).regions[region];
-      regionState.frozen = false;
-      regionState.choice = "";
-      persistState();
-      render();
-      document.querySelector(`#${id}-fuse`)?.scrollIntoView({ block: "start" });
-    });
+    return { card, id, region, decision: decisionFor(id), state: pageState(id).regions[region] || (pageState(id).regions[region] = {}) };
+  };
+  const sync = ({ card, id, region, decision }) => {
+    const storedAnchor = Number(card.dataset.approvalViewportY);
+    const inferredAnchor = Math.abs(window.scrollY - lastStableScrollY) <= 240 ? lastStableScrollY : window.scrollY;
+    const viewport = { x: window.scrollX, y: Number.isFinite(storedAnchor) ? storedAnchor : inferredAnchor };
+    card.dataset.approvalViewportY = String(viewport.y);
+    persistState();
+    setActiveRegion(id, region);
+    syncRegionCard(card, decision, region);
+    updateRegionSummary(decision);
+    updateProgress();
+    holdViewport(viewport.y, viewport.x);
+    workspaceState.scrollY = viewport.y;
+    persistWorkspaceState();
+  };
+  root.addEventListener("pointerdown", (event) => {
+    const value = context(event.target);
+    if (!value) return;
+    const returnY = lastStableScrollY;
+    setActiveRegion(value.id, value.region);
+    if (Math.abs(window.scrollY - returnY) <= 240) holdViewport(returnY);
+  });
+  root.addEventListener("focusin", (event) => {
+    const value = context(event.target);
+    if (!value) return;
+    const returnY = lastStableScrollY;
+    if (event.target.matches(".region-notes textarea")) value.card.dataset.notesViewportY = String(returnY);
+    setActiveRegion(value.id, value.region);
+    if (Math.abs(window.scrollY - returnY) <= 240) {
+      holdViewport(returnY);
+    }
+  });
+  root.addEventListener("input", (event) => {
+    const value = context(event.target);
+    if (!value || !event.target.matches(".region-notes textarea")) return;
+    value.state.notes = event.target.value;
+    persistState();
+    const returnY = Number(value.card.dataset.notesViewportY || lastStableScrollY);
+    if (Math.abs(window.scrollY - returnY) <= 240) {
+      holdViewport(returnY);
+    }
+  });
+  root.addEventListener("click", (event) => {
+    const value = context(event.target);
+    if (!value) return;
+    if (Math.abs(window.scrollY - lastStableScrollY) <= 240) holdViewport(lastStableScrollY);
+    const choiceButton = event.target.closest("[data-region-choice]");
+    if (choiceButton) {
+      value.state.choice = choiceButton.dataset.regionChoice;
+      value.state.frozen = value.state.choice.startsWith("KEEP ");
+      sync(value);
+      return;
+    }
+    if (event.target.closest(".unfreeze-region") || event.target.closest(".clear-region-choice")) {
+      value.state.frozen = false;
+      value.state.choice = "";
+      sync(value);
+    }
   });
 }
 
@@ -634,25 +1266,74 @@ function updateDecisionStatus(card, id) {
 
 function updateProgress() {
   const decided = decisions.filter((item) => pageState(item.id).decision).length;
+  const fullyFrozen = decisions.filter((item) => {
+    const state = pageState(item.id);
+    return Boolean(state.decision) && item.regions.every((region) => state.regions[region]?.frozen);
+  }).length;
+  document.querySelector("#hero-total-count").textContent = decisions.length;
+  document.querySelector("#total-count").textContent = decisions.length;
   document.querySelector("#decided-count").textContent = decided;
   document.querySelector("#pending-count").textContent = decisions.length - decided;
   document.querySelector("#progress-meter-fill").style.width = `${(decided / decisions.length) * 100}%`;
   document.querySelector("#fuse-available-count").textContent = decisions.filter((item) => item.fuseVisuals.length).length;
   document.querySelector("#fuse-missing-count").textContent = decisions.filter((item) => !item.fuseVisuals.length).length;
-  document.querySelector("#fuse-na-count").textContent = decisions.filter((item) => item.direction === "Current").length;
+  document.querySelector("#fuse-na-count").textContent = fullyFrozen;
 }
 
 function bindLightboxItems() {
   lightboxItems = Array.from(document.querySelectorAll(".visual-card__button"));
-  lightboxItems.forEach((button, index) => button.addEventListener("click", () => openLightbox(index)));
+  lightboxItems.forEach((button) => {
+    if (button.dataset.lightboxBound === "true") return;
+    button.dataset.lightboxBound = "true";
+    button.addEventListener("click", () => openLightbox(lightboxItems.indexOf(button)));
+  });
 }
-function openLightbox(index) { lightboxIndex = index; zoom = 1; updateLightbox(); document.querySelector("#lightbox").showModal(); }
-function updateLightbox() { const item = lightboxItems[lightboxIndex]; if (!item) return; const image = document.querySelector("#lightbox-image"); image.src = item.dataset.imageSrc; image.alt = item.dataset.imageTitle; image.style.transform = `scale(${zoom})`; document.querySelector("#lightbox-kind").textContent = item.dataset.imageKind; document.querySelector("#lightbox-title").textContent = item.dataset.imageTitle; document.querySelector("#lightbox-caption").textContent = item.dataset.imageCaption; document.querySelector("#zoom-value").textContent = `${Math.round(zoom * 100)}%`; }
+function openLightbox(index) {
+  lightboxReturnScrollY = window.scrollY;
+  lightboxIndex = index;
+  const requestedZoom = Number(workspaceState.lightbox?.zoom || 1);
+  zoom = Number.isFinite(requestedZoom) ? requestedZoom : 1;
+  updateLightbox();
+  document.querySelector("#lightbox").showModal();
+}
+function updateLightbox() {
+  const item = lightboxItems[lightboxIndex];
+  if (!item) return;
+  const image = document.querySelector("#lightbox-image");
+  image.src = item.dataset.imageSrc;
+  image.alt = item.dataset.imageTitle;
+  image.style.transform = `scale(${zoom})`;
+  document.querySelector("#lightbox-kind").textContent = item.dataset.imageKind;
+  document.querySelector("#lightbox-title").textContent = item.dataset.imageTitle;
+  document.querySelector("#lightbox-caption").textContent = item.dataset.imageCaption;
+  document.querySelector("#zoom-value").textContent = `${Math.round(zoom * 100)}%`;
+  workspaceState.lightbox = { selectedImage: item.dataset.imageSrc, zoom };
+  persistWorkspaceState();
+}
 function changeZoom(delta) { zoom = Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))); updateLightbox(); }
 function moveLightbox(delta) { lightboxIndex = (lightboxIndex + delta + lightboxItems.length) % lightboxItems.length; zoom = 1; updateLightbox(); }
 
+function referenceSummaryLines(decision) {
+  const records = referencesForItem(decision.id);
+  if (!records.length) return ["", "Lafayette 视觉参考：", "- 暂无"];
+  const lines = ["", "Lafayette 视觉参考："];
+  records.forEach((record, index) => {
+    lines.push(`- ${index + 1}. ${record.title || record.filename}`);
+    lines.push(`  原始文件：${record.filename}`);
+    lines.push(`  用途：${referencePurposeLabels[record.purpose] || record.purpose}`);
+    lines.push(`  参考强度：${referenceStrengthLabels[record.strength] || record.strength}`);
+    lines.push(`  绑定区域：${(record.regionIds || []).map(displayText).join("、") || "整页 / 未单独绑定"}`);
+    lines.push(`  Lafayette 最终视觉参考：${record.isFinal ? "是" : "否"}`);
+    lines.push(`  我的备注：${record.notes?.trim() || "—"}`);
+    if (record.isFinal || record.strength === "geometry" || record.strength === "highFidelity") {
+      lines.push("  后续执行要求：必须先查看审批包中的这张图片，完成 Reference Decomposition 与 Layout Contract 后再实现，不得只根据文字摘要凭感觉重画。");
+    }
+  });
+  return lines;
+}
+
 function approvalSummary() {
-  const lines = ["# Taste Map — Lafayette 第二轮视觉审批记录", "", "视觉证据：真实 SwiftUI 构建 + 固定模拟器", ""];
+  const lines = [window.visualApprovalSummaryTitle || "# Taste Map — Lafayette 第二轮视觉审批记录", "", "视觉证据：真实 SwiftUI 构建 + 固定模拟器", ""];
   decisions.forEach((decision, index) => {
     const saved = pageState(decision.id);
     lines.push(`## ${index + 1}. ${displayText(decision.title)}`, "", `记录方向：${displayDirection(decision.direction, true)}`, `页面选择：${displayDirection(saved.decision, true)}`, `候选版本：${displayText(decision.candidateVersion || "—")}`, "", "旧版基础：");
@@ -660,18 +1341,90 @@ function approvalSummary() {
     lines.push("", "需要保留的现版新增能力："); decision.currentAdditions.forEach((item) => lines.push(`- ${displayText(item)}`));
     lines.push("", "区域审批：");
     decision.regions.forEach((region) => { const state = saved.regions[region] || {}; lines.push(`- ${displayText(region)}：${displayChoice(state.choice, true)} | 当前来源：${sourceFor(state.choice)} | 状态：${state.frozen ? "已冻结" : "待决定"}`); if (state.notes?.trim()) lines.push(`  我的备注：${displayNote(state.notes.trim())}`); });
+    lines.push(...referenceSummaryLines(decision));
     lines.push("", "页面备注：", saved.notes?.trim() || "—", "");
   });
   return lines.join("\n");
 }
 
 async function copySummary() {
-  const button = document.querySelector("#copy-summary"); const content = approvalSummary();
-  try { await navigator.clipboard.writeText(content); } catch { const helper = document.createElement("textarea"); helper.value = content; helper.style.position = "fixed"; helper.style.opacity = "0"; document.body.append(helper); helper.select(); document.execCommand("copy"); helper.remove(); }
-  const previous = button.textContent; button.textContent = "已复制审批摘要"; window.setTimeout(() => { button.textContent = previous; }, 1600);
+  const button = document.querySelector("#copy-summary");
+  const previous = button.textContent;
+  try {
+    referenceRecords = referenceLibrary ? await referenceLibrary.listAll() : [];
+    const content = approvalSummary();
+    try { await navigator.clipboard.writeText(content); } catch { const helper = document.createElement("textarea"); helper.value = content; helper.style.position = "fixed"; helper.style.opacity = "0"; document.body.append(helper); helper.select(); document.execCommand("copy"); helper.remove(); }
+    button.textContent = "已复制审批摘要";
+  } catch (error) {
+    button.textContent = "复制失败，请重试";
+  }
+  window.setTimeout(() => { button.textContent = previous; }, 1600);
+}
+
+function parseStoredApproval(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
+}
+
+function approvalPackagePayload() {
+  return {
+    schema: "com.tastemap.lafayette.visual-approval",
+    version: 1,
+    activeRound: window.visualApprovalSummaryTitle || "当前视觉审批",
+    activeStorageKey: storageKey,
+    round2: parseStoredApproval("tastemap.visualApproval.round2"),
+    current: structuredClone(reviewState),
+    pages: decisions.map((decision) => ({
+      id: decision.id,
+      title: displayText(decision.title),
+      direction: decision.direction,
+      decision: pageState(decision.id).decision || "",
+      candidateVersion: displayText(decision.candidateVersion || ""),
+      notes: pageState(decision.id).notes || "",
+      regions: decision.regions.map((region) => ({
+        id: region,
+        label: displayText(region),
+        choice: pageState(decision.id).regions[region]?.choice || "",
+        frozen: Boolean(pageState(decision.id).regions[region]?.frozen),
+        notes: pageState(decision.id).regions[region]?.notes || "",
+      })),
+    })),
+  };
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function exportApprovalPackage() {
+  const button = document.querySelector("#export-approval");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在生成审批包…";
+  try {
+    const result = await referenceLibrary.createApprovalPackage(approvalPackagePayload());
+    button.dataset.exportBytes = String(result.blob.size);
+    button.dataset.exportSignature = await result.blob.slice(0, 2).text();
+    button.dataset.exportReferences = String(result.payload.references.length);
+    button.dataset.exportPages = String(result.payload.pages.length);
+    downloadBlob(result.blob, "TasteMap-Lafayette-Visual-Approval.zip");
+    button.textContent = `已导出 ${result.payload.references.length} 张参考图`;
+  } catch (error) {
+    button.textContent = "导出失败，请重试";
+    console.error("Visual approval export failed", error);
+  }
+  window.setTimeout(() => { button.textContent = previous; button.disabled = false; }, 2200);
 }
 
 document.querySelector("#copy-summary").addEventListener("click", copySummary);
+document.querySelector("#export-approval").addEventListener("click", exportApprovalPackage);
 document.querySelector("#lightbox-close").addEventListener("click", () => document.querySelector("#lightbox").close());
 document.querySelector("#zoom-out").addEventListener("click", () => changeZoom(-0.25));
 document.querySelector("#zoom-in").addEventListener("click", () => changeZoom(0.25));
@@ -680,5 +1433,35 @@ document.querySelector("#lightbox-previous").addEventListener("click", () => mov
 document.querySelector("#lightbox-next").addEventListener("click", () => moveLightbox(1));
 document.querySelector("#fullscreen").addEventListener("click", async () => { const box = document.querySelector("#lightbox"); if (!document.fullscreenElement && box.requestFullscreen) await box.requestFullscreen(); else if (document.exitFullscreen) await document.exitFullscreen(); });
 document.addEventListener("keydown", (event) => { if (!document.querySelector("#lightbox").open) return; if (event.key === "ArrowLeft") moveLightbox(-1); if (event.key === "ArrowRight") moveLightbox(1); if (event.key === "+" || event.key === "=") changeZoom(0.25); if (event.key === "-") changeZoom(-0.25); });
+document.querySelector("#lightbox").addEventListener("close", () => {
+  holdViewport(lightboxReturnScrollY);
+});
+document.querySelector("#jump-nav").addEventListener("click", (event) => {
+  const link = event.target.closest("[data-nav-id]");
+  if (!link) return;
+  workspaceState.activePage = link.dataset.navId;
+  persistWorkspaceState();
+});
+window.addEventListener("scroll", () => {
+  if (document.querySelector("#lightbox").open || scrollSaveFrame) return;
+  scrollSaveFrame = window.requestAnimationFrame(() => {
+    scrollSaveFrame = 0;
+    workspaceState.scrollY = window.scrollY;
+    persistWorkspaceState();
+  });
+  window.clearTimeout(scrollStableTimer);
+  scrollStableTimer = window.setTimeout(() => { lastStableScrollY = window.scrollY; }, 140);
+}, { passive: true });
+window.addEventListener("beforeunload", () => referenceObjectURLs.forEach((url) => URL.revokeObjectURL(url)));
 
 render();
+refreshReferenceCache().catch((error) => {
+  console.error("Visual reference library failed to load", error);
+  decisions.forEach((decision) => setReferenceStatus(decision.id, "本机参考图库暂时无法读取，请刷新页面重试。", "error"));
+});
+window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+  const savedY = Number(workspaceState.scrollY || 0);
+  if (savedY > 0) window.scrollTo({ top: savedY, behavior: "instant" });
+  lastStableScrollY = savedY;
+  if (workspaceState.activePage && workspaceState.activeRegion) setActiveRegion(workspaceState.activePage, workspaceState.activeRegion);
+}));

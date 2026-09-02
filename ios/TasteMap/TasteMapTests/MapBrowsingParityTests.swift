@@ -5,6 +5,19 @@ import Testing
 @Suite("02 Map browsing parity")
 @MainActor
 struct MapBrowsingParityTests {
+    @Test("Restaurant score colors preserve the approved Legacy five-band language")
+    func restaurantScoreColors() {
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: nil) == .init(hex: 0x9ea3a0))
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: 1) == .init(hex: 0x851522))
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: 2.9) == .init(hex: 0xcb4650))
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: 3) == .init(hex: 0xdfa04d))
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: 5) == .init(hex: 0x9178bd))
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: 7) == .init(hex: 0x6594d3))
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: 9) == .init(hex: 0x46a47b))
+        #expect(RestaurantScoreColorPolicy.color(forTenPointScore: 10) == .init(hex: 0x176f49))
+        #expect(RestaurantScoreColorPolicy.color(forFivePointRating: 4.5) == .init(hex: 0x46a47b))
+    }
+
     @Test("Personal search matches every formal Web field and excludes tombstones")
     func fullFieldSearch() throws {
         let restaurant = makeRestaurant(1, name: "山岚小馆", status: .visited)
