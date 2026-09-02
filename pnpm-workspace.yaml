@@ -1,0 +1,6 @@
+packages:
+  - hybrid-poc/capacitor-shell
+
+allowBuilds:
+  esbuild: true
+  workerd: true

@@ -1,0 +1,15 @@
+{
+  "appId": "com.lafayette.tastemap.hybridpoc",
+  "appName": "Taste Map Hybrid POC",
+  "webDir": "../../dist",
+  "loggingBehavior": "debug",
+  "ios": {
+    "contentInset": "never",
+    "preferredContentMode": "mobile",
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "hostname": "localhost",
+    "iosScheme": "capacitor"
+  }
+}

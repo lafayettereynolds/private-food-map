@@ -1,0 +1,18 @@
+{
+  "name": "tastemap-capacitor-poc-shell",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "cap": "cap",
+    "sync": "cap sync ios",
+    "copy": "cap copy ios",
+    "open": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.5.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.1",
+    "@capacitor/ios": "8.5.1"
+  }
+}
