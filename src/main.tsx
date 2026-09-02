@@ -1,20 +1,22 @@
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { PublicRestaurantPage } from './components/PublicRestaurantPage'
 import { PublicSharePage } from './components/PublicSharePage'
-import { HybridPOCApp } from './hybrid-poc/HybridPOCApp'
-import { shouldRenderHybridPOC } from './platform/tasteMapPlatformResolver'
+import { shouldRenderHybridShell } from './platform/tasteMapPlatformResolver'
 import './styles/global.css'
 
 const publicRestaurantMatch = window.location.pathname.match(/^\/restaurant\/([a-f0-9]{24})\/?$/)
 const publicShareMatch = window.location.pathname.match(/^\/share\/([A-Za-z0-9_-]{32})\/?$/)
-const hybridPOC = shouldRenderHybridPOC()
+const hybridShell = shouldRenderHybridShell()
+const HybridAppShell = lazy(async () => ({
+  default: (await import('./hybrid/app/HybridAppShell')).HybridAppShell,
+}))
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {hybridPOC
-      ? <HybridPOCApp />
+    {hybridShell
+      ? <Suspense fallback={<main aria-live="polite">正在启动 Taste Map…</main>}><HybridAppShell /></Suspense>
       : publicShareMatch
       ? <PublicSharePage shareId={publicShareMatch[1]} />
       : publicRestaurantMatch
