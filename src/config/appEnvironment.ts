@@ -33,7 +33,11 @@ export const DATABASE_NAME = IS_DEVELOPMENT
 export const ENVIRONMENT_LABEL = IS_DEVELOPMENT ? '测试环境' : '正式环境'
 
 export function localTestHeaders(): Record<string, string> {
-  return IS_DEVELOPMENT ? { 'X-Taste-Map-Test-User': LOCAL_TEST_VIEWER_ID } : {}
+  // Keep the test-auth header out of production bundles entirely. Vite folds
+  // this build-time branch for Release instead of retaining a dormant runtime
+  // implementation in the Capacitor local Web assets.
+  if (import.meta.env.VITE_APP_ENV !== 'development') return {}
+  return { 'X-Taste-Map-Test-User': LOCAL_TEST_VIEWER_ID }
 }
 
 export const BACKUP_FILE_PREFIX = IS_DEVELOPMENT

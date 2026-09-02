@@ -1,7 +1,7 @@
 {
   "profile": {
     "user": {
-      "id": "tm_capacitor_poc",
+      "id": "tm_hybrid_debug",
       "nickname": "Lafayette 的味觉地图",
       "email": null,
       "bio": "认真记录每一次值得记住的饭。",
@@ -25,9 +25,9 @@
   "restaurants": [
     {
       "id": "11111111-1111-4111-8111-111111111111",
-      "userId": "tm_capacitor_poc",
-      "amapPoiId": "B0FFFPOC01",
-      "placeIdentities": [{ "provider": "amap", "externalId": "B0FFFPOC01", "isPrimary": true }],
+      "userId": "tm_hybrid_debug",
+      "amapPoiId": "B0FFHYBRID01",
+      "placeIdentities": [{ "provider": "amap", "externalId": "B0FFHYBRID01", "isPrimary": true }],
       "name": "湖滨二十八号 · 江南味道",
       "address": "杭州市上城区湖滨路 28 号",
       "city": "杭州",
@@ -66,7 +66,7 @@
       "visits": [
         {
           "id": "21111111-1111-4111-8111-111111111111",
-          "userId": "tm_capacitor_poc",
+          "userId": "tm_hybrid_debug",
           "restaurantId": "11111111-1111-4111-8111-111111111111",
           "visitedAt": "2026-08-24T11:30:00.000Z",
           "rating": 4.5,
@@ -111,7 +111,7 @@
         },
         {
           "id": "21111111-1111-4111-8111-111111111112",
-          "userId": "tm_capacitor_poc",
+          "userId": "tm_hybrid_debug",
           "restaurantId": "11111111-1111-4111-8111-111111111111",
           "visitedAt": "2026-02-14T11:30:00.000Z",
           "rating": 4.5,
@@ -156,8 +156,8 @@
     },
     {
       "id": "12222222-2222-4222-8222-222222222222",
-      "userId": "tm_capacitor_poc",
-      "amapPoiId": "B0FFFPOC02",
+      "userId": "tm_hybrid_debug",
+      "amapPoiId": "B0FFHYBRID02",
       "name": "山葵家 · 湖滨银泰店",
       "address": "杭州市上城区延安路 258 号",
       "city": "杭州",
@@ -194,8 +194,8 @@
     },
     {
       "id": "13333333-3333-4333-8333-333333333333",
-      "userId": "tm_capacitor_poc",
-      "amapPoiId": "B0FFFPOC03",
+      "userId": "tm_hybrid_debug",
+      "amapPoiId": "B0FFHYBRID03",
       "name": "桂语山房",
       "address": "杭州市西湖区满觉陇路 2 号",
       "city": "杭州",
@@ -232,8 +232,8 @@
     },
     {
       "id": "14444444-4444-4444-8444-444444444444",
-      "userId": "tm_capacitor_poc",
-      "amapPoiId": "B0FFFPOC04",
+      "userId": "tm_hybrid_debug",
+      "amapPoiId": "B0FFHYBRID04",
       "name": "福缘居酒楼",
       "address": "杭州市上城区河坊街 35 号",
       "city": "杭州",
@@ -270,8 +270,8 @@
     },
     {
       "id": "15555555-5555-4555-8555-555555555555",
-      "userId": "tm_capacitor_poc",
-      "amapPoiId": "B0FFFPOC05",
+      "userId": "tm_hybrid_debug",
+      "amapPoiId": "B0FFHYBRID05",
       "name": "OAK 炭火牛排馆",
       "address": "杭州市拱墅区武林路 9 号",
       "city": "杭州",

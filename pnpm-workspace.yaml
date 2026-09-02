@@ -1,5 +1,5 @@
 packages:
-  - hybrid-poc/capacitor-shell
+  - hybrid/capacitor-shell
 
 allowBuilds:
   esbuild: true

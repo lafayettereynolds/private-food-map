@@ -1,8 +1,8 @@
 {
-  "appId": "com.lafayette.tastemap.hybridpoc",
-  "appName": "Taste Map Hybrid POC",
+  "appId": "com.lafayette.tastemap.hybrid.internal",
+  "appName": "Taste Map Hybrid",
   "webDir": "../../dist",
-  "loggingBehavior": "debug",
+  "loggingBehavior": "none",
   "ios": {
     "contentInset": "never",
     "preferredContentMode": "mobile",

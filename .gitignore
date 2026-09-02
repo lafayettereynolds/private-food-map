@@ -8,6 +8,8 @@ coverage/
 .env
 .env.*
 !.env.example
+!.env.hybrid
+!.env.hybrid-debug
 *.local
 
 # Logs and generated build metadata
@@ -35,8 +37,15 @@ Thumbs.db
 # Xcode user state and generated build output
 xcuserdata/
 DerivedData/
+.build/
+build/
 *.xcuserstate
 
 # ChatGPT project mirror metadata (not application source)
 sources/
+# The managed Capacitor Swift package contains real source code. macOS treats
+# `Sources` case-insensitively, so explicitly keep this package source tracked.
+!hybrid/capacitor-shell/ios/App/CapApp-SPM/Sources/
+!hybrid/capacitor-shell/ios/App/CapApp-SPM/Sources/CapApp-SPM/
+!hybrid/capacitor-shell/ios/App/CapApp-SPM/Sources/CapApp-SPM/TasteMapHybridExports.swift
 AGENTS.md
