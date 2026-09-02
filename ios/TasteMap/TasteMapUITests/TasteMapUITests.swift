@@ -3512,6 +3512,9 @@ final class TasteMapUITests: XCTestCase {
 
         let webView = app.webViews.firstMatch
         XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        let profileTab = webView.buttons["我的"]
+        XCTAssertTrue(profileTab.waitForExistence(timeout: 8))
+        profileTab.tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 15))
 
         let visited = webView.buttons.matching(
@@ -3526,7 +3529,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(restaurant.waitForExistence(timeout: 8))
         restaurant.tap()
 
-        let hybridBack = webView.buttons["返回我的页面"]
+        let hybridBack = webView.buttons["返回上一页"]
         XCTAssertTrue(hybridBack.waitForExistence(timeout: 12))
         hybridBack.tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 10))
@@ -3542,6 +3545,55 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(nativeBack.waitForExistence(timeout: 8))
         nativeBack.tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testHybridPhase2BMapListScopeAndDetailState() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        let listSwitch = webView.buttons["切换到我的列表"]
+        XCTAssertTrue(listSwitch.waitForExistence(timeout: 15))
+
+        let wantedScope = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "想吃")
+        ).firstMatch
+        XCTAssertTrue(wantedScope.waitForExistence(timeout: 8))
+        wantedScope.tap()
+
+        listSwitch.tap()
+        let mapSwitch = webView.buttons["切换到我的地图"]
+        XCTAssertTrue(mapSwitch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 6")
+        ).firstMatch.waitForExistence(timeout: 8))
+
+        mapSwitch.tap()
+        XCTAssertTrue(webView.buttons["切换到我的列表"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 6")
+        ).firstMatch.waitForExistence(timeout: 8))
+
+        let visitedScope = webView.buttons["去过"]
+        visitedScope.tap()
+        let marker = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
+        ).firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 10))
+        marker.tap()
+        let details = webView.buttons["查看详情"]
+        XCTAssertTrue(details.waitForExistence(timeout: 8))
+        details.tap()
+
+        let hybridBack = webView.buttons["返回上一页"]
+        XCTAssertTrue(hybridBack.waitForExistence(timeout: 12))
+        hybridBack.tap()
+        XCTAssertTrue(webView.buttons["查看详情"].waitForExistence(timeout: 8))
+        XCTAssertTrue(visitedScope.exists)
     }
 
     @MainActor

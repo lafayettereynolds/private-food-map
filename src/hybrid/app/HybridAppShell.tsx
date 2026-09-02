@@ -161,7 +161,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       : route.surface === 'restaurant'
         ? restaurant
           ? <main className="tm-hybrid-detail">
-              <button aria-label="返回我的页面" className="tm-hybrid-detail__back" onClick={() => void navigateBack()} type="button"><ArrowLeft aria-hidden="true" size={18} />返回我的页面</button>
+              <button aria-label="返回上一页" className="tm-hybrid-detail__back" onClick={() => void navigateBack()} type="button"><ArrowLeft aria-hidden="true" size={18} />返回</button>
               <RestaurantPreviewCard
                 additionalUserPhotos={restaurant.restaurant.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] })))}
                 historyRestaurants={profile.restaurants}

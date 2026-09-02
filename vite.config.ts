@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
   const hybridPhotoAssets = fileURLToPath(new URL('./src/hybrid/platform/HybridPhotoAssets.ts', import.meta.url))
   return {
     root: isHybridBundle ? fileURLToPath(new URL('./hybrid/app/', import.meta.url)) : repositoryRoot,
+    // Hybrid builds use a dedicated HTML root, but their checked-in mode files
+    // intentionally live at the repository root. Keep Vite's environment lookup
+    // anchored there so Debug-only preview settings cannot silently disappear.
+    envDir: repositoryRoot,
     publicDir: fileURLToPath(new URL('./public/', import.meta.url)),
     plugins: [
       isHybridBundle ? {

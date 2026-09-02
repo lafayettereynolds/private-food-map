@@ -218,8 +218,12 @@ function MyRestaurantList({ items, images, loading, scope, onOpen }: { items: Re
 
 function RestaurantImage({ descriptor, restaurantName }: { descriptor?: TasteMapImageDescriptor; restaurantName: string }) {
   const [failed, setFailed] = useState(false)
-  if (!descriptor || descriptor.kind === 'foodDiningFallback' || failed) return <span className="tm-restaurant-image is-fallback"><Utensils aria-label={`${restaurantName} 餐饮图示`} size={23} /></span>
-  return <span className="tm-restaurant-image"><img alt={descriptor.accessibilityLabel} onError={() => setFailed(true)} src={descriptor.resourceURL} /></span>
+  const [loaded, setLoaded] = useState(false)
+  const usesImage = descriptor && descriptor.kind !== 'foodDiningFallback' && !failed
+  return <span className={`tm-restaurant-image${loaded && usesImage ? '' : ' is-fallback'}`}>
+    {!loaded || !usesImage ? <Utensils aria-label={`${restaurantName} 餐饮图示`} size={23} /> : null}
+    {usesImage ? <img alt={descriptor.accessibilityLabel} hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={descriptor.resourceURL} /> : null}
+  </span>
 }
 
 function FullFilterSheet({ filters, onChange, onClose, options }: { filters: TasteMapMapFilters; onChange: (value: TasteMapMapFilters) => void; onClose: () => void; options: TasteMapMapBrowseOptions }) {

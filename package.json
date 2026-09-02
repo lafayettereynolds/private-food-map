@@ -51,6 +51,7 @@
     "hybrid:build": "pnpm run typecheck && vite build --mode hybrid && node hybrid/scripts/verify-foundation.mjs --release",
     "hybrid:build:debug": "pnpm run typecheck && vite build --mode hybrid-debug && node hybrid/scripts/install-debug-fixture.mjs && node hybrid/scripts/verify-foundation.mjs --debug",
     "hybrid:stage:formal": "pnpm run hybrid:build && node hybrid/scripts/stage-production-app-shell.mjs",
+    "hybrid:stage:formal:debug": "pnpm run hybrid:build:debug && node hybrid/scripts/stage-debug-app-shell.mjs",
     "hybrid:sync": "pnpm --dir hybrid/capacitor-shell sync && node hybrid/scripts/configure-capacitor-package.mjs",
     "hybrid:sync:debug": "pnpm run hybrid:build:debug && pnpm run hybrid:sync",
     "hybrid:sync:release": "pnpm run hybrid:build && pnpm run hybrid:sync",

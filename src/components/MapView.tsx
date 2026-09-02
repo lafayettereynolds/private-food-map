@@ -234,12 +234,12 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, curre
   if (imageSource) {
     const image = document.createElement('img')
     image.alt = ''
-    image.addEventListener('error', () => { image.remove(); renderFoodDiningFallback(visual) }, { once: true })
+    image.addEventListener('load', () => visual.replaceChildren(image), { once: true })
+    image.addEventListener('error', () => image.remove(), { once: true })
     const directNativeResource = imageSource.startsWith('tastemap-resource://')
     const resolved = directNativeResource ? Promise.resolve(imageSource) : resolvePhotoSource(imageSource, restaurant.markerPhotoId)
     void resolved.then((source) => {
       if (!source) return
-      visual.replaceChildren(image)
       image.src = source
     }).catch(() => undefined)
   }
@@ -356,12 +356,18 @@ function OfflineRestaurantMap({ restaurants, selectedRestaurant, currentUser, cu
 
 function OfflineMarkerVisual({ restaurant }: { restaurant: RestaurantSummary }) {
   const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const source = restaurant.markerImageData || restaurant.merchantImageUrl
   return <span className="private-image-marker__visual">
+    {!loaded || failed || !source ? <FoodDiningFallbackIcon /> : null}
     {source && !failed
-      ? <img alt="" onError={() => setFailed(true)} src={source} />
-      : <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v8M4.5 3v5.5A2.5 2.5 0 0 0 7 11M9.5 3v5.5A2.5 2.5 0 0 1 7 11v10M16 3c-2 2.2-3 5-3 8h4v10M16 3c2 2.2 3 5 3 8h-2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" /></svg>}
+      ? <img alt="" hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={source} />
+      : null}
   </span>
+}
+
+function FoodDiningFallbackIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v8M4.5 3v5.5A2.5 2.5 0 0 0 7 11M9.5 3v5.5A2.5 2.5 0 0 1 7 11v10M16 3c-2 2.2-3 5-3 8h4v10M16 3c2 2.2 3 5 3 8h-2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" /></svg>
 }
 
 function OfflineUserMarker({ point, user }: { point: { x: number; y: number }; user: UserProfile }) {
