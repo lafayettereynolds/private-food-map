@@ -1,4 +1,5 @@
 import AuthenticationServices
+import CoreLocation
 import Foundation
 import Observation
 import SwiftData
@@ -13,6 +14,8 @@ final class TasteMapHybridRuntime {
     private let container: ModelContainer
     private let authServices: NativeAuthServices
     private let premiumEntitlementService: PremiumEntitlementService
+    private let photoFiles: any LocalPhotoFileStoring
+    private let locationPermissionManager = LocationPermissionManager()
     private weak var plugin: TasteMapProductionNativePlugin?
     private var pendingEvents: [TasteMapHybridEventEnvelope] = []
     private var sequence = 0
@@ -24,12 +27,14 @@ final class TasteMapHybridRuntime {
         mode: TasteMapHybridRuntimeMode,
         container: ModelContainer,
         authServices: NativeAuthServices,
-        premiumEntitlementService: PremiumEntitlementService
+        premiumEntitlementService: PremiumEntitlementService,
+        photoFiles: any LocalPhotoFileStoring
     ) {
         self.mode = mode
         self.container = container
         self.authServices = authServices
         self.premiumEntitlementService = premiumEntitlementService
+        self.photoFiles = photoFiles
         navigation.didChange = { [weak self] state in
             self?.emit(.navigationRoute, payload: state)
         }
@@ -100,6 +105,7 @@ final class TasteMapHybridRuntime {
                 .appleSignIn: true,
                 .logout: true,
                 .nativeNavigation: true,
+                .location: true,
             ],
             asynchronousAction: { [weak self] method, payload in
                 guard let self else { throw Self.bridgeError("hybrid_runtime_unavailable", recoverable: true) }
@@ -118,6 +124,42 @@ final class TasteMapHybridRuntime {
             // Unsupported URLs remain with the current owner. They are never
             // converted into an arbitrary React or SwiftUI type name.
         }
+    }
+
+    /// Resolves only owner-scoped photo descriptors emitted by the typed
+    /// bridge. JavaScript never receives an absolute file path.
+    func resourceData(for url: URL) async throws -> (data: Data, mimeType: String) {
+        guard url.scheme == "tastemap-resource" else {
+            throw TasteMapHybridResourceError.unsupportedResource
+        }
+        let parts = [url.host].compactMap { $0 } + url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 3,
+              parts[0] == "photo" || parts[0] == "public-photo" else {
+            throw TasteMapHybridResourceError.unsupportedResource
+        }
+        let identifier = parts[1].removingPercentEncoding ?? parts[1]
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
+            throw TasteMapHybridResourceError.authRequired
+        }
+        let context = ModelContext(container)
+        guard let photo = try context.fetch(FetchDescriptor<PhotoAsset>()).first(where: {
+            $0.ownerUserID == ownerUserID
+                && $0.deletedAt == nil
+                && $0.binaryDeletedAt == nil
+                && ($0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame
+                    || $0.remoteID?.caseInsensitiveCompare(identifier) == .orderedSame)
+        }) else { throw TasteMapHybridResourceError.notFound }
+        let relativePath = photo.thumbnailFileRelativePath
+            ?? photo.displayFileRelativePath
+            ?? photo.localFileRelativePath
+        if let relativePath {
+            return (try await photoFiles.load(relativePath: relativePath), photo.mimeType)
+        }
+        if parts[0] == "public-photo" {
+            let remoteID = UUID(uuidString: identifier) ?? photo.id
+            return (try await authServices.photoAPI.download(photoID: remoteID, variant: .thumbnail), photo.mimeType)
+        }
+        throw TasteMapHybridResourceError.notFound
     }
 
     func receive(sharedImport: PendingRestaurantImport) {
@@ -166,8 +208,50 @@ final class TasteMapHybridRuntime {
             return try encode(navigation.back())
         case .navigationCurrent:
             return try encode(navigation.current)
+        case .locationCurrent:
+            return try await currentLocation()
         default:
             throw Self.bridgeError("capability_unavailable", method: method)
+        }
+    }
+
+    private func currentLocation() async throws -> TasteMapHybridJSONValue {
+        do {
+            let location = try await locationPermissionManager.requestCurrentLocation()
+            let value = TasteMapHybridLocationDTO(
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                timestamp: Self.dateFormatter.string(from: location.timestamp),
+                horizontalAccuracy: location.horizontalAccuracy,
+                accuracyAuthorization: locationPermissionManager.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
+                authorizationStatus: "allowed"
+            )
+            emit(.locationChanged, payload: value)
+            return try encode(value)
+        } catch RestaurantLocationError.permissionDenied {
+            throw TasteMapHybridBridgeErrorDTO(
+                code: "location_permission_denied",
+                message: "定位权限未开启，可在系统设置中允许 Taste Map 使用位置。",
+                recoverable: true,
+                details: ["authorizationStatus": .string(locationAuthorizationStatus)]
+            )
+        } catch RestaurantLocationError.staleOrInaccurate {
+            throw TasteMapHybridBridgeErrorDTO(
+                code: "location_stale_or_inaccurate",
+                message: "暂时无法取得足够新鲜且准确的位置。",
+                recoverable: true,
+                details: nil
+            )
+        }
+    }
+
+    private var locationAuthorizationStatus: String {
+        switch locationPermissionManager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse: "allowed"
+        case .denied: "denied"
+        case .restricted: "restricted"
+        case .notDetermined: "notDetermined"
+        @unknown default: "restricted"
         }
     }
 
@@ -258,6 +342,16 @@ final class TasteMapHybridRuntime {
             details: method.map { ["method": .string($0.rawValue)] }
         )
     }
+
+    private static let dateFormatter: ISO8601DateFormatter = {
+        let value = ISO8601DateFormatter()
+        value.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return value
+    }()
+}
+
+private enum TasteMapHybridResourceError: Error {
+    case unsupportedResource, authRequired, notFound
 }
 
 private struct TasteMapHybridShareEventPayload: Codable {

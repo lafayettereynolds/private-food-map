@@ -10,6 +10,7 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'profile.getCurrent',
   'restaurant.get',
   'restaurant.list',
+  'map.viewport',
   'visit.contract',
   'sync.status',
   'sync.run',
@@ -31,6 +32,7 @@ export type TasteMapCapability =
   | 'logout'
   | 'profileRead'
   | 'restaurantRead'
+  | 'mapBrowse'
   | 'visitContract'
   | 'sync'
   | 'haptics'
@@ -157,6 +159,51 @@ export interface TasteMapRestaurantListRequest {
   limit?: number
 }
 
+export type TasteMapMapScope = 'visited' | 'wantToGo' | 'recommended'
+export type TasteMapMapSort = 'recent' | 'rating' | 'visits' | 'distance'
+
+export interface TasteMapMapBounds {
+  north: number
+  south: number
+  east: number
+  west: number
+}
+
+export interface TasteMapMapFilters {
+  city?: string
+  minimumScoreOutOfTen?: number
+  maximumSpend?: number
+  minimumVisitCount?: number
+  companion?: string
+  cuisine?: string
+  recommendationSource?: string
+}
+
+export interface TasteMapMapBrowseRequest {
+  requestID: string
+  scope: TasteMapMapScope
+  bounds?: TasteMapMapBounds
+  filters: TasteMapMapFilters
+  sort: TasteMapMapSort
+  search: string
+  limit?: number
+  currentLocation?: { latitude: number; longitude: number }
+}
+
+export interface TasteMapMapBrowseOptions {
+  cities: string[]
+  companions: string[]
+  cuisines: string[]
+  recommendationSources: string[]
+}
+
+export interface TasteMapMapBrowseResponse {
+  requestID: string
+  items: TasteMapRestaurantDTO[]
+  totalCount: number
+  options: TasteMapMapBrowseOptions
+}
+
 export interface TasteMapAuthSessionStatus {
   state: 'authenticated' | 'signedOut' | 'restoring'
   userID: string | null
@@ -181,6 +228,7 @@ export interface TasteMapLocationDTO {
   timestamp: string
   horizontalAccuracy: number
   accuracyAuthorization: 'full' | 'reduced'
+  authorizationStatus: 'allowed' | 'denied' | 'notDetermined' | 'restricted'
 }
 
 export interface TasteMapPhotoPickResult { photoIDs: string[] }
@@ -221,6 +269,7 @@ export type TasteMapHybridEvent =
   | { version: 1; sequence: number; name: 'deepLink.received'; payload: TasteMapNavigationStateDTO }
   | { version: 1; sequence: number; name: 'shareExtension.received'; payload: { fingerprint: string; target: TasteMapNavigationStateDTO } }
   | { version: 1; sequence: number; name: 'app.lifecycle'; payload: { state: TasteMapLifecycleState } }
+  | { version: 1; sequence: number; name: 'location.changed'; payload: TasteMapLocationDTO }
 
 export interface TasteMapEventSubscription { remove(): Promise<void> }
 
@@ -258,6 +307,7 @@ export interface TasteMapPlatform {
     get(id: string): Promise<TasteMapRestaurantDetailViewModel>
     list(request?: TasteMapRestaurantListRequest): Promise<TasteMapRestaurantDetailViewModel[]>
   }
+  map: { viewport(request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> }
   visit: { contract(): Promise<{ version: 1; writeUIReady: false }> }
   sync: {
     status(): Promise<TasteMapSyncStatusDTO>

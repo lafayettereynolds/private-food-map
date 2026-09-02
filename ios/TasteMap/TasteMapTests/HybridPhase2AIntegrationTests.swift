@@ -6,9 +6,11 @@ import Testing
 struct HybridPhase2AIntegrationTests {
     @Test func routeValidationAndOwnershipAreCanonical() throws {
         let profile = try TasteMapHybridRouteDTO(surface: .profile)
+        let map = try TasteMapHybridRouteDTO(surface: .map)
         let publicProfile = try TasteMapHybridRouteDTO(surface: .profile, identifier: "tm_public")
         let detail = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "restaurant-1")
         #expect(profile.owner == .hybrid)
+        #expect(map.owner == .hybrid)
         #expect(detail.owner == .hybrid)
         #expect(publicProfile.owner == .native)
         #expect(throws: TasteMapHybridRouteError.missingIdentifier) {

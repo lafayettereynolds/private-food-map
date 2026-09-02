@@ -1,6 +1,7 @@
 import Capacitor
 import Foundation
 import UIKit
+import WebKit
 
 @objc(TasteMapProductionNativePlugin)
 final class TasteMapProductionNativePlugin: CAPPlugin, CAPBridgedPlugin {
@@ -77,6 +78,7 @@ private enum TasteMapHybridPluginError: Error { case responseEncodingFailed }
 
 final class TasteMapHybridBridgeViewController: CAPBridgeViewController {
     private let runtime: TasteMapHybridRuntime
+    private lazy var resourceHandler = TasteMapHybridResourceSchemeHandler(runtime: runtime)
 
     init(runtime: TasteMapHybridRuntime) {
         self.runtime = runtime
@@ -85,6 +87,12 @@ final class TasteMapHybridBridgeViewController: CAPBridgeViewController {
 
     required init?(coder: NSCoder) { nil }
 
+    override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
+        let configuration = super.webViewConfiguration(for: instanceConfiguration)
+        configuration.setURLSchemeHandler(resourceHandler, forURLScheme: "tastemap-resource")
+        return configuration
+    }
+
     override func capacitorDidLoad() {
         let plugin = TasteMapProductionNativePlugin(runtime: runtime)
         bridge?.registerPluginInstance(plugin)
@@ -92,4 +100,51 @@ final class TasteMapHybridBridgeViewController: CAPBridgeViewController {
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
+}
+
+private final class TasteMapHybridResourceSchemeHandler: NSObject, WKURLSchemeHandler {
+    private weak var runtime: TasteMapHybridRuntime?
+    private let lock = NSLock()
+    private var requests: [ObjectIdentifier: Task<Void, Never>] = [:]
+
+    init(runtime: TasteMapHybridRuntime) { self.runtime = runtime }
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
+        let identifier = ObjectIdentifier(urlSchemeTask as AnyObject)
+        let request = Task { @MainActor [weak self, weak task = urlSchemeTask as AnyObject] in
+            guard let self, let runtime, let task = task as? WKURLSchemeTask,
+                  let url = task.request.url else { return }
+            do {
+                let resource = try await runtime.resourceData(for: url)
+                guard !Task.isCancelled else { return }
+                let response = URLResponse(
+                    url: url,
+                    mimeType: resource.mimeType,
+                    expectedContentLength: resource.data.count,
+                    textEncodingName: nil
+                )
+                task.didReceive(response)
+                task.didReceive(resource.data)
+                task.didFinish()
+            } catch {
+                guard !Task.isCancelled else { return }
+                task.didFailWithError(error)
+            }
+            self.finish(identifier)
+        }
+        lock.lock()
+        requests[identifier] = request
+        lock.unlock()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {
+        finish(ObjectIdentifier(urlSchemeTask as AnyObject))?.cancel()
+    }
+
+    @discardableResult
+    private func finish(_ identifier: ObjectIdentifier) -> Task<Void, Never>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests.removeValue(forKey: identifier)
+    }
 }

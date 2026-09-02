@@ -37,6 +37,7 @@ public final class TasteMapHybridBridgeDispatcher {
             .logout: false,
             .profileRead: dataReady,
             .restaurantRead: dataReady,
+            .mapBrowse: dataReady,
             .visitContract: true,
             .sync: false,
             .haptics: true,
@@ -122,6 +123,9 @@ public final class TasteMapHybridBridgeDispatcher {
             case .restaurantList:
                 let payload: TasteMapHybridRestaurantListRequest = try decodePayload(request.payload)
                 result = try encodeValue(requiredService().restaurants(request: payload))
+            case .mapViewport:
+                let payload: TasteMapHybridMapBrowseRequest = try decodePayload(request.payload)
+                result = try encodeValue(requiredService().mapViewport(request: payload))
             case .visitContract:
                 result = .object(["version": .number(1), "writeUIReady": .bool(false)])
             case .syncStatus:

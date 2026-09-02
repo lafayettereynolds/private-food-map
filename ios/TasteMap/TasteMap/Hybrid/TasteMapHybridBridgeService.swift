@@ -42,6 +42,7 @@ public protocol TasteMapHybridServiceProviding: AnyObject {
     func profileDashboard() throws -> TasteMapHybridProfileDTO
     func restaurantDetail(id: String) throws -> TasteMapHybridRestaurantDetailDTO
     func restaurants(request: TasteMapHybridRestaurantListRequest) throws -> [TasteMapHybridRestaurantDetailDTO]
+    func mapViewport(request: TasteMapHybridMapBrowseRequest) throws -> TasteMapHybridMapBrowseResponse
 }
 
 /// Typed, owner-scoped read facade for the first Hybrid-ready routes.
@@ -123,6 +124,79 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             .map(TasteMapHybridRestaurantDetailDTO.init(restaurant:))
     }
 
+    public func mapViewport(request: TasteMapHybridMapBrowseRequest) throws -> TasteMapHybridMapBrowseResponse {
+        guard request.requestID.count >= 8, request.requestID.count <= 128 else {
+            throw TasteMapHybridServiceError.invalidRequest
+        }
+        let all = try scopedRestaurants()
+        let options = TasteMapHybridMapBrowseOptions(
+            cities: stableValues(all.map(\.city)),
+            companions: stableValues(all.flatMap { $0.visits.flatMap(\.companions) }),
+            cuisines: stableValues(all.flatMap(\.tags)),
+            recommendationSources: stableValues(all.flatMap { $0.visits.map(\.recommendationSourceText) })
+        )
+        // Recommendation ownership remains with Discovery until that route is
+        // formally migrated; never synthesize recommendations from personal data.
+        guard request.scope != .recommended else {
+            return TasteMapHybridMapBrowseResponse(
+                requestID: request.requestID,
+                items: [],
+                totalCount: 0,
+                options: options
+            )
+        }
+        let desiredStatus = request.scope == .visited ? "visited" : "wantToGo"
+        let normalizedSearch = request.search.trimmingCharacters(in: .whitespacesAndNewlines).folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
+        var values = all.filter { item in
+            guard item.status == desiredStatus else { return false }
+            if let bounds = request.bounds, !Self.contains(item, in: bounds) { return false }
+            if let city = nonempty(request.filters.city), item.city != city { return false }
+            if let score = request.filters.minimumScoreOutOfTen, (item.scoreOutOfTen ?? -1) < score { return false }
+            if let spend = request.filters.maximumSpend, (item.referencePrice ?? .greatestFiniteMagnitude) > spend { return false }
+            if let visits = request.filters.minimumVisitCount, item.visitCount < visits { return false }
+            if let cuisine = nonempty(request.filters.cuisine), !item.tags.contains(cuisine) { return false }
+            if let companion = nonempty(request.filters.companion),
+               !item.visits.contains(where: { $0.companions.contains(companion) }) { return false }
+            if let source = nonempty(request.filters.recommendationSource),
+               !item.visits.contains(where: { $0.recommendationSourceText == source }) { return false }
+            guard !normalizedSearch.isEmpty else { return true }
+            return ([item.name, item.city, item.address] + item.tags)
+                .joined(separator: "\n")
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .contains(normalizedSearch)
+        }
+        values.sort { left, right in
+            switch request.sort {
+            case .rating:
+                if left.scoreOutOfTen != right.scoreOutOfTen { return (left.scoreOutOfTen ?? -1) > (right.scoreOutOfTen ?? -1) }
+            case .visits:
+                if left.visitCount != right.visitCount { return left.visitCount > right.visitCount }
+            case .distance:
+                if let origin = request.currentLocation {
+                    let leftDistance = Self.squaredDistance(left, from: origin)
+                    let rightDistance = Self.squaredDistance(right, from: origin)
+                    if leftDistance != rightDistance { return leftDistance < rightDistance }
+                }
+            case .recent:
+                if left.latestVisitDate != right.latestVisitDate {
+                    return (left.latestVisitDate ?? left.createdAt) > (right.latestVisitDate ?? right.createdAt)
+                }
+            }
+            return left.id < right.id
+        }
+        let totalCount = values.count
+        let maximum = min(max(request.limit ?? 300, 0), 500)
+        return TasteMapHybridMapBrowseResponse(
+            requestID: request.requestID,
+            items: Array(values.prefix(maximum)),
+            totalCount: totalCount,
+            options: options
+        )
+    }
+
     private func scopedRestaurants() throws -> [TasteMapHybridRestaurantDTO] {
         let restaurants = try context.fetch(FetchDescriptor<Restaurant>()).filter {
             $0.ownerUserID == ownerUserID && $0.deletedAt == nil
@@ -130,6 +204,14 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         let visits = try context.fetch(FetchDescriptor<Visit>()).filter {
             $0.ownerUserID == ownerUserID && $0.deletedAt == nil
         }
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+        let photos = try context.fetch(FetchDescriptor<PhotoAsset>()).filter {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
+        }
+        let photosByRestaurant = Dictionary(grouping: photos.compactMap { photo in
+            photo.restaurantId.map { ($0, photo) }
+        }, by: \.0)
+#endif
         let visitsByRestaurant = Dictionary(grouping: visits, by: \Visit.restaurantId)
         return restaurants.sorted { lhs, rhs in
             if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
@@ -141,7 +223,32 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             }
             let rated = restaurantVisits.compactMap(\.rating)
             let averageRating = rated.isEmpty ? nil : rounded(rated.reduce(0, +) / Double(rated.count), places: 1)
-            let metadata = metadataByRestaurantID[restaurant.id] ?? TasteMapHybridRestaurantMetadata()
+#if TASTEMAP_HYBRID_BRIDGE_CORE
+            // The standalone Bridge package intentionally excludes the App's
+            // full photo/storage contracts. Its deterministic fixture injects
+            // equivalent safe metadata; the shipping App follows the canonical
+            // RestaurantImagePriorityPolicy path below.
+            let persistedMetadata = TasteMapHybridRestaurantMetadata()
+#else
+            let contract = restaurant.remoteRecordData.flatMap {
+                try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+            }
+            let preferredPhoto = RestaurantImagePhotoSelectionPolicy.preferredPhoto(
+                restaurantID: restaurant.id,
+                photos: (photosByRestaurant[restaurant.id] ?? []).map(\.1),
+                referencedPhotoID: contract?.markerPhotoId
+            )
+            let persistedMetadata = TasteMapHybridRestaurantMetadata(
+                tags: contract?.tags ?? [],
+                phone: contract?.phone,
+                openingHours: contract?.openingHours,
+                referencePrice: contract?.pricePerPerson,
+                localUserPhotoID: preferredPhoto?.id,
+                publicOrCachedPhotoID: contract?.markerPhotoId,
+                providerMerchantImageURL: contract?.merchantImageUrl
+            )
+#endif
+            let metadata = metadataByRestaurantID[restaurant.id] ?? persistedMetadata
             let referencePrice = metadata.referencePrice ?? median(restaurantVisits.compactMap(decimalDouble))
             return TasteMapHybridRestaurantDTO(
                 id: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
@@ -245,6 +352,29 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     private func rounded(_ value: Double, places: Int) -> Double {
         let scale = pow(10, Double(places))
         return (value * scale).rounded() / scale
+    }
+
+    private func stableValues(_ values: [String]) -> [String] {
+        Array(Set(values.compactMap(nonempty))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private func nonempty(_ value: String?) -> String? {
+        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized?.isEmpty == false ? normalized : nil
+    }
+
+    private static func contains(_ item: TasteMapHybridRestaurantDTO, in bounds: TasteMapHybridMapBounds) -> Bool {
+        let longitudeMatches = bounds.west <= bounds.east
+            ? item.longitude >= bounds.west && item.longitude <= bounds.east
+            : item.longitude >= bounds.west || item.longitude <= bounds.east
+        return item.latitude >= bounds.south && item.latitude <= bounds.north && longitudeMatches
+    }
+
+    private static func squaredDistance(
+        _ item: TasteMapHybridRestaurantDTO,
+        from origin: TasteMapHybridMapCoordinate
+    ) -> Double {
+        pow(item.latitude - origin.latitude, 2) + pow(item.longitude - origin.longitude, 2)
     }
 
     private static let dateFormatter: ISO8601DateFormatter = {

@@ -10,12 +10,13 @@ import {
   type TasteMapBridgeRequestEnvelope,
   type TasteMapBridgeResponseEnvelope,
   type TasteMapCapabilityRegistry,
+  type TasteMapMapBrowseRequest,
   type TasteMapProfileDashboardDTO,
   type TasteMapProfileDashboardViewModel,
 } from './TasteMapPlatform'
 
 const capabilities: TasteMapCapabilityRegistry = {
-  appleSignIn: false, logout: false, profileRead: true, restaurantRead: true,
+  appleSignIn: false, logout: false, profileRead: true, restaurantRead: true, mapBrowse: true,
   visitContract: true, sync: false, haptics: true, share: false,
   location: false, photoPicker: false, premium: false, nativeNavigation: false,
   backup: false, accountDelete: false,
@@ -114,6 +115,28 @@ describe('TasteMapBrowserAdapter', () => {
     const adapter = new TasteMapBrowserAdapter({ profile: async () => browserProfile })
     await expect(adapter.restaurant.get('missing')).rejects.toMatchObject({ code: 'restaurant_not_found' })
   })
+
+  it('uses the same owner-scoped viewport contract for Browser Map and List', async () => {
+    const adapter = new TasteMapBrowserAdapter({ profile: async () => browserProfile })
+    const request: TasteMapMapBrowseRequest = {
+      requestID: 'viewport-1', scope: 'visited', filters: {}, sort: 'rating', search: '', limit: 300,
+    }
+    const visited = await adapter.map.viewport(request)
+    expect(visited.requestID).toBe(request.requestID)
+    expect(visited.items.length).toBeGreaterThan(0)
+    expect(visited.items.every((item) => item.status === 'visited')).toBe(true)
+    expect(visited.items.every((item) => item.id && Number.isFinite(item.latitude) && Number.isFinite(item.longitude))).toBe(true)
+    expect(visited.items.every((item) => item.image.kind !== 'foodDiningFallback' || !item.image.resourceURL)).toBe(true)
+
+    const filtered = await adapter.map.viewport({
+      ...request, requestID: 'viewport-2', filters: { city: visited.items[0].city, minimumVisitCount: 1 },
+    })
+    expect(filtered.items.every((item) => item.city === visited.items[0].city && item.visitCount >= 1)).toBe(true)
+
+    const recommended = await adapter.map.viewport({ ...request, requestID: 'viewport-3', scope: 'recommended' })
+    expect(recommended.items).toEqual([])
+    expect(recommended.totalCount).toBe(0)
+  })
 })
 
 describe('TasteMapNativeAdapter', () => {
@@ -136,6 +159,15 @@ describe('TasteMapNativeAdapter', () => {
         supportedCapabilities: capabilities,
       }
       else if (request.method === 'profile.getCurrent') result = bridgeProfile
+      else if (request.method === 'map.viewport') {
+        const payload = request.payload as TasteMapMapBrowseRequest
+        result = {
+          requestID: payload.requestID,
+          items: bridgeProfile.restaurants.filter((item) => item.status === (payload.scope === 'visited' ? 'visited' : 'wantToGo')),
+          totalCount: bridgeProfile.restaurants.length,
+          options: { cities: ['杭州'], companions: [], cuisines: [], recommendationSources: [] },
+        }
+      }
       else if (request.method === 'restaurant.get') {
         const id = (request.payload as { id: string }).id
         const restaurant = fixture.restaurants.find((item) => item.id === id)!
@@ -173,6 +205,15 @@ describe('TasteMapNativeAdapter', () => {
       expect(request.requestId).toMatch(/^tm-|^[0-9a-f-]{36}$/)
       expect(request.method).toContain('.')
     }
+  })
+
+  it('passes a single versioned viewport request and preserves its request ID', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    const response = await adapter.map.viewport({ requestID: 'latest-viewport', scope: 'visited', filters: {}, sort: 'recent', search: '' })
+    expect(response.requestID).toBe('latest-viewport')
+    expect(response.items.every((item) => item.status === 'visited')).toBe(true)
+    expect(invoke.mock.calls.some((call) => call[0].request.method === 'map.viewport')).toBe(true)
   })
 
   it('rejects incompatible envelopes and structured native errors', async () => {

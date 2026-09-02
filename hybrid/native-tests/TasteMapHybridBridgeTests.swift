@@ -103,6 +103,57 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         }
     }
 
+    func testViewportQueryIsBatchedOwnerScopedAndPreservesRequestIdentity() throws {
+        let service = try makeService()
+        let request = TasteMapHybridMapBrowseRequest(
+            requestID: "viewport-12345678",
+            scope: .visited,
+            bounds: nil,
+            filters: TasteMapHybridMapFilters(
+                city: "杭州",
+                minimumScoreOutOfTen: nil,
+                maximumSpend: nil,
+                minimumVisitCount: 1,
+                companion: nil,
+                cuisine: nil,
+                recommendationSource: nil
+            ),
+            sort: .rating,
+            search: "",
+            limit: 300,
+            currentLocation: nil
+        )
+        let response = try service.mapViewport(request: request)
+        XCTAssertEqual(response.requestID, request.requestID)
+        XCTAssertFalse(response.items.isEmpty)
+        XCTAssertTrue(response.items.allSatisfy { $0.status == "visited" })
+        XCTAssertTrue(response.items.allSatisfy { $0.city == "杭州" })
+        XCTAssertTrue(response.items.allSatisfy { $0.visitCount >= 1 })
+        XCTAssertTrue(response.items.allSatisfy { !$0.id.isEmpty })
+        XCTAssertTrue(response.items.allSatisfy { $0.image.accessibilityLabel.contains($0.name) })
+
+        let recommended = try service.mapViewport(request: TasteMapHybridMapBrowseRequest(
+            requestID: "viewport-recommended",
+            scope: .recommended,
+            bounds: nil,
+            filters: TasteMapHybridMapFilters(
+                city: nil,
+                minimumScoreOutOfTen: nil,
+                maximumSpend: nil,
+                minimumVisitCount: nil,
+                companion: nil,
+                cuisine: nil,
+                recommendationSource: nil
+            ),
+            sort: .recent,
+            search: "",
+            limit: 300,
+            currentLocation: nil
+        ))
+        XCTAssertTrue(recommended.items.isEmpty)
+        XCTAssertEqual(recommended.totalCount, 0)
+    }
+
     private func response(
         _ dispatcher: TasteMapHybridBridgeDispatcher,
         method: TasteMapHybridBridgeMethod,

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum TasteMapHybridCapability: String, Codable, CaseIterable, Sendable {
-    case appleSignIn, logout, profileRead, restaurantRead, visitContract, sync
+    case appleSignIn, logout, profileRead, restaurantRead, mapBrowse, visitContract, sync
     case haptics, share, location, photoPicker, premium, nativeNavigation, backup, accountDelete
 }
 
@@ -76,7 +76,7 @@ public struct TasteMapHybridRouteDTO: Codable, Equatable, Identifiable, Sendable
 
     public var owner: TasteMapHybridRouteOwner {
         switch surface {
-        case .restaurant: .hybrid
+        case .map, .restaurant: .hybrid
         case .profile where identifier == nil: .hybrid
         default: .native
         }
@@ -112,6 +112,7 @@ public enum TasteMapHybridEventName: String, Codable, Sendable {
     case deepLinkReceived = "deepLink.received"
     case shareExtensionReceived = "shareExtension.received"
     case appLifecycle = "app.lifecycle"
+    case locationChanged = "location.changed"
 }
 
 public struct TasteMapHybridEventEnvelope: Codable, Sendable {
@@ -256,6 +257,70 @@ public struct TasteMapHybridRestaurantGetRequest: Codable, Sendable {
     public let id: String
 }
 
+public enum TasteMapHybridMapScope: String, Codable, Sendable {
+    case visited, wantToGo, recommended
+}
+
+public enum TasteMapHybridMapSort: String, Codable, Sendable {
+    case recent, rating, visits, distance
+}
+
+public struct TasteMapHybridMapBounds: Codable, Sendable {
+    public let north: Double
+    public let south: Double
+    public let east: Double
+    public let west: Double
+}
+
+public struct TasteMapHybridMapFilters: Codable, Sendable {
+    public let city: String?
+    public let minimumScoreOutOfTen: Double?
+    public let maximumSpend: Double?
+    public let minimumVisitCount: Int?
+    public let companion: String?
+    public let cuisine: String?
+    public let recommendationSource: String?
+}
+
+public struct TasteMapHybridMapCoordinate: Codable, Sendable {
+    public let latitude: Double
+    public let longitude: Double
+}
+
+public struct TasteMapHybridMapBrowseRequest: Codable, Sendable {
+    public let requestID: String
+    public let scope: TasteMapHybridMapScope
+    public let bounds: TasteMapHybridMapBounds?
+    public let filters: TasteMapHybridMapFilters
+    public let sort: TasteMapHybridMapSort
+    public let search: String
+    public let limit: Int?
+    public let currentLocation: TasteMapHybridMapCoordinate?
+}
+
+public struct TasteMapHybridMapBrowseOptions: Codable, Sendable {
+    public let cities: [String]
+    public let companions: [String]
+    public let cuisines: [String]
+    public let recommendationSources: [String]
+}
+
+public struct TasteMapHybridMapBrowseResponse: Codable, Sendable {
+    public let requestID: String
+    public let items: [TasteMapHybridRestaurantDTO]
+    public let totalCount: Int
+    public let options: TasteMapHybridMapBrowseOptions
+}
+
+public struct TasteMapHybridLocationDTO: Codable, Sendable {
+    public let latitude: Double
+    public let longitude: Double
+    public let timestamp: String
+    public let horizontalAccuracy: Double
+    public let accuracyAuthorization: String
+    public let authorizationStatus: String
+}
+
 public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case runtimeInfo = "runtime.info"
     case authSessionStatus = "auth.sessionStatus"
@@ -264,6 +329,7 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case profileGetCurrent = "profile.getCurrent"
     case restaurantGet = "restaurant.get"
     case restaurantList = "restaurant.list"
+    case mapViewport = "map.viewport"
     case visitContract = "visit.contract"
     case syncStatus = "sync.status"
     case syncRun = "sync.run"

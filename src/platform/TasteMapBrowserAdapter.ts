@@ -7,6 +7,8 @@ import {
   capabilityUnavailable,
   type TasteMapCapabilityRegistry,
   type TasteMapImageDescriptor,
+  type TasteMapMapBrowseRequest,
+  type TasteMapMapBrowseResponse,
   type TasteMapPlatform,
   type TasteMapPremiumStatusDTO,
   type TasteMapProfileDashboardViewModel,
@@ -44,6 +46,7 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
   logout: false,
   profileRead: true,
   restaurantRead: true,
+  mapBrowse: true,
   visitContract: true,
   sync: false,
   haptics: false,
@@ -103,6 +106,13 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     },
   }
 
+  map = {
+    viewport: async (request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> => {
+      const profile = await this.loadProfile()
+      return projectBrowserMapViewport(profile, request)
+    },
+  }
+
   visit = { contract: async () => ({ version: 1 as const, writeUIReady: false as const }) }
   sync = {
     status: async () => ({ state: 'unavailable' as const, pendingMutationCount: 0, lastSuccessfulSyncAt: null, errorCode: null }),
@@ -135,6 +145,89 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     this.profilePromise ??= this.dataSource.profile()
     return this.profilePromise
   }
+}
+
+function projectBrowserMapViewport(
+  profile: TasteMapProfileDashboardViewModel,
+  request: TasteMapMapBrowseRequest,
+): TasteMapMapBrowseResponse {
+  const all = profile.restaurants
+  const options = {
+    cities: stableValues(all.map((item) => item.city)),
+    companions: stableValues(profile.visits.flatMap((visit) => visit.companions)),
+    cuisines: stableValues(all.flatMap((item) => item.tags)),
+    recommendationSources: stableValues(profile.visits.map((visit) => visit.recommendationSourceText ?? '')),
+  }
+  // Personal Map does not invent recommendation records. Discovery remains the
+  // authoritative recommendation source until its formal migration.
+  if (request.scope === 'recommended') return { requestID: request.requestID, items: [], totalCount: 0, options }
+  const normalizedSearch = request.search.trim().toLocaleLowerCase()
+  const requestedStatus = request.scope === 'visited' ? 'visited' : 'wantToGo'
+  const matches = all.filter((item) => {
+    if (item.status !== requestedStatus) return false
+    if (request.bounds && !coordinateIsInBounds(item, request.bounds)) return false
+    if (request.filters.city && item.city !== request.filters.city) return false
+    if (request.filters.minimumScoreOutOfTen && (item.scoreOutOfTen ?? -1) < request.filters.minimumScoreOutOfTen) return false
+    if (request.filters.maximumSpend && (item.averagePricePerPerson ?? item.pricePerPerson ?? Number.POSITIVE_INFINITY) > request.filters.maximumSpend) return false
+    if (request.filters.minimumVisitCount && item.visitCount < request.filters.minimumVisitCount) return false
+    if (request.filters.cuisine && !item.tags.includes(request.filters.cuisine)) return false
+    if (request.filters.companion && !item.visits.some((visit) => visit.companions.includes(request.filters.companion!))) return false
+    if (request.filters.recommendationSource && !item.visits.some((visit) => visit.recommendationSourceText === request.filters.recommendationSource)) return false
+    return !normalizedSearch || [item.name, item.city, item.address, ...item.tags].join('\n').toLocaleLowerCase().includes(normalizedSearch)
+  })
+  const sorted = [...matches].sort((left, right) => compareMapItems(left, right, request))
+  const totalCount = sorted.length
+  const items = sorted.slice(0, Math.max(0, Math.min(request.limit ?? 300, 500))).map((restaurant) => {
+    const image = profile.restaurantImages[restaurant.id] ?? browserImageDescriptor(restaurant)
+    return bridgeDTOFromBrowser(restaurant, image)
+  })
+  return { requestID: request.requestID, items, totalCount, options }
+}
+
+function bridgeDTOFromBrowser(restaurant: RestaurantSummary, image: TasteMapImageDescriptor) {
+  return {
+    id: restaurant.id, name: restaurant.name, address: restaurant.address, city: restaurant.city,
+    latitude: restaurant.latitude, longitude: restaurant.longitude, status: restaurant.status,
+    tags: restaurant.tags, phone: restaurant.phone ?? null, openingHours: restaurant.openingHours ?? null,
+    referencePrice: restaurant.averagePricePerPerson ?? restaurant.pricePerPerson,
+    visitCount: restaurant.visitCount, averageRating: restaurant.averageRating,
+    scoreOutOfTen: restaurant.scoreOutOfTen, latestVisitDate: restaurant.latestVisitDate,
+    createdAt: restaurant.createdAt, updatedAt: restaurant.updatedAt, visits: restaurant.visits.map((visit) => ({
+      id: visit.id, restaurantId: visit.restaurantId, visitedAt: visit.visitedAt, rating: visit.rating,
+      valueRating: visit.valueRating, environmentRating: visit.environmentRating, serviceRating: visit.serviceRating,
+      myActualSpend: visit.myActualSpend, totalPrice: visit.totalPrice, pricePerPerson: visit.pricePerPerson,
+      diningMode: visit.diningMode, visibility: visit.visibility, paymentMode: visit.paymentMode,
+      queueDuration: visit.queueDuration, diningOccasions: visit.diningOccasions,
+      diningOccasionText: visit.diningOccasionText ?? '', valueTags: visit.valueTags,
+      environmentTags: visit.environmentTags, serviceTags: visit.serviceTags, companions: visit.companions,
+      companionIds: visit.companionIds, recommendationSourceText: visit.recommendationSourceText ?? '',
+      partySize: visit.partySize, note: visit.note ?? '', createdAt: visit.createdAt, updatedAt: visit.updatedAt,
+    })), image,
+  }
+}
+
+function compareMapItems(left: RestaurantSummary, right: RestaurantSummary, request: TasteMapMapBrowseRequest) {
+  if (request.sort === 'rating') return (right.scoreOutOfTen ?? -1) - (left.scoreOutOfTen ?? -1) || left.id.localeCompare(right.id)
+  if (request.sort === 'visits') return right.visitCount - left.visitCount || left.id.localeCompare(right.id)
+  if (request.sort === 'distance' && request.currentLocation) {
+    return squaredDistance(left, request.currentLocation) - squaredDistance(right, request.currentLocation) || left.id.localeCompare(right.id)
+  }
+  return (right.latestVisitDate ?? right.createdAt).localeCompare(left.latestVisitDate ?? left.createdAt) || left.id.localeCompare(right.id)
+}
+
+function squaredDistance(value: { latitude: number; longitude: number }, origin: { latitude: number; longitude: number }) {
+  return (value.latitude - origin.latitude) ** 2 + (value.longitude - origin.longitude) ** 2
+}
+
+function coordinateIsInBounds(value: { latitude: number; longitude: number }, bounds: import('./TasteMapPlatform').TasteMapMapBounds) {
+  const longitudeMatch = bounds.west <= bounds.east
+    ? value.longitude >= bounds.west && value.longitude <= bounds.east
+    : value.longitude >= bounds.west || value.longitude <= bounds.east
+  return value.latitude >= bounds.south && value.latitude <= bounds.north && longitudeMatch
+}
+
+function stableValues(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'zh-CN'))
 }
 
 function browserImageDescriptor(restaurant: RestaurantSummary): TasteMapImageDescriptor {
