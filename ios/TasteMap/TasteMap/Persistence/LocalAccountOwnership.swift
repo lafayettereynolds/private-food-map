@@ -15,7 +15,7 @@ nonisolated enum LocalAccountOwner {
     }
 }
 
-#if !TASTEMAP_HYBRID_POC_CORE
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
 
 nonisolated enum LocalAccountScope: Equatable, Sendable {
     case restoring

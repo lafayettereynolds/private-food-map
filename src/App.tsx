@@ -67,7 +67,6 @@ import { useCloudSync } from './services/useCloudSync'
 import { initializePhotoSync } from './services/photoSync'
 import { fetchFollows, fetchFriendRecommendations, fetchUserProfile, sendFriendRequest, setFollow, type DiscoveryMode, type FriendRecommendation } from './services/socialApi'
 import {
-  queueDurationApproximateMinutes,
   scoreBandFromScore,
   type RestaurantStatus,
   type RestaurantSummary,
@@ -78,7 +77,7 @@ import {
   type UserProfile,
   type Visit,
 } from './types/domain'
-import { restaurantPriceInsight } from './services/priceIntelligence'
+import { buildRestaurantSummaries } from './services/restaurantSummaryProjection'
 import { visitPhotoLimit } from './services/featurePolicy'
 import { buildRecommendationEmptyState, candidateCentroid, distanceKilometers, resolveRecommendationFilters, sameCity, type RelaxationSuggestion } from './services/recommendationFilterResolver'
 import { MEMBERSHIP_CHANGED_EVENT, MembershipService } from './services/membershipService'
@@ -210,53 +209,8 @@ export default function App() {
   }, [allVisits])
 
   const summaries = useMemo<RestaurantSummary[]>(
-    () =>
-      allRestaurants.flatMap((restaurant) => {
-        const restaurantVisits = visitsByRestaurant.get(restaurant.id) ?? []
-        // Old development builds could pull public demo restaurants into the
-        // owner's IndexedDB and mark them as visited without an owner Visit.
-        // Keep legitimate no-detail Hangzhou memories, but never present
-        // foreign-city demo rows as the current user's visit history.
-        if (
-          IS_DEVELOPMENT &&
-          restaurant.status === 'visited' &&
-          restaurantVisits.length === 0 &&
-          !restaurant.city.includes('杭州')
-        ) return []
-        const ratedVisits = restaurantVisits.filter((visit) => visit.rating !== null)
-        const priceInsight = restaurantPriceInsight(restaurant, restaurantVisits)
-        const queuedVisits = restaurantVisits
-          .map((visit) => queueDurationApproximateMinutes(visit.queueDuration))
-          .filter((minutes): minutes is number => minutes !== null)
-        const averageRating = ratedVisits.length
-          ? Math.round((ratedVisits.reduce((sum, visit) => sum + (visit.rating ?? 0), 0) / ratedVisits.length) * 10) / 10
-          : null
-        const averagePricePerPerson = priceInsight.referencePrice
-        const averageQueueMinutes = queuedVisits.length
-          ? queuedVisits.reduce((sum, minutes) => sum + minutes, 0) / queuedVisits.length
-          : null
-        return [{
-          ...restaurant,
-          markerType: restaurant.markerType || 'emoji',
-          markerImageData: restaurant.markerImageData ?? null,
-          markerPhotoId: restaurant.markerPhotoId ?? null,
-          merchantImageUrl: restaurant.merchantImageUrl ?? null,
-          markerEmoji: restaurant.markerEmoji || '🍽️',
-          pricePerPerson: restaurant.pricePerPerson ?? null,
-          visitCount: restaurantVisits.length,
-          averageRating,
-          scoreOutOfTen: restaurant.overallRating ?? (averageRating !== null ? Math.round(averageRating * 20) / 10 : null),
-          latestVisitDate: restaurantVisits[0]?.visitedAt ?? null,
-          latestVisit: restaurantVisits[0] ?? null,
-          visits: restaurantVisits,
-          averagePricePerPerson,
-          priceConfidence: priceInsight.confidence,
-          priceSource: priceInsight.source,
-          priceSampleCount: priceInsight.sampleCount,
-          averageQueueMinutes,
-        }]
-      }),
-    [allRestaurants, visitsByRestaurant],
+    () => buildRestaurantSummaries(allRestaurants, allVisits, { development: IS_DEVELOPMENT }),
+    [allRestaurants, allVisits],
   )
 
   const selectedRestaurant = summaries.find((item) => item.id === selectedId)

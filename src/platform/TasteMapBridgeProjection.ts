@@ -1,0 +1,140 @@
+import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import { CURRENT_USER_ID } from '../db/social'
+import type {
+  TasteMapProfileDashboardDTO,
+  TasteMapProfileDashboardViewModel,
+  TasteMapRestaurantDTO,
+  TasteMapRestaurantDetailDTO,
+  TasteMapRestaurantDetailViewModel,
+  TasteMapUserDTO,
+  TasteMapVisitDTO,
+} from './TasteMapPlatform'
+
+export function projectBridgeProfile(dto: TasteMapProfileDashboardDTO): TasteMapProfileDashboardViewModel {
+  const restaurants = dto.restaurants.map(projectRestaurant)
+  return {
+    user: projectUser(dto.user),
+    restaurants,
+    visits: restaurants.flatMap((restaurant) => restaurant.visits),
+    followerCount: dto.followerCount,
+    followingCount: dto.followingCount,
+    restaurantImages: Object.fromEntries(dto.restaurants.map((restaurant) => [restaurant.id, restaurant.image])),
+  }
+}
+
+export function projectBridgeRestaurant(dto: TasteMapRestaurantDetailDTO): TasteMapRestaurantDetailViewModel {
+  return { restaurant: projectRestaurant(dto.restaurant), image: dto.restaurant.image }
+}
+
+function projectUser(user: TasteMapUserDTO): UserProfile {
+  return {
+    id: user.id,
+    nickname: user.nickname,
+    email: null,
+    bio: user.bio,
+    city: user.city,
+    avatarImageData: null,
+    avatarPhotoId: user.avatarPhotoId,
+    avatarPresetId: user.avatarPresetId,
+    membershipTier: user.membershipTier,
+    mapSharingEnabled: user.mapSharingEnabled,
+    mapVisibility: user.mapVisibility,
+    authProvider: 'apple',
+    authSubject: null,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    deletedAt: null,
+  }
+}
+
+function projectRestaurant(restaurant: TasteMapRestaurantDTO): RestaurantSummary {
+  const visits = restaurant.visits.map(projectVisit)
+  const imageURL = restaurant.image.kind === 'foodDiningFallback' ? null : restaurant.image.resourceURL
+  return {
+    id: restaurant.id,
+    // The shared React presentation model uses this stable viewer sentinel to
+    // distinguish the current owner's records from public/community records.
+    // The real Taste Map user ID remains on the profile DTO and never changes.
+    userId: CURRENT_USER_ID,
+    amapPoiId: '',
+    placeIdentities: [],
+    name: restaurant.name,
+    address: restaurant.address,
+    city: restaurant.city,
+    latitude: restaurant.latitude,
+    longitude: restaurant.longitude,
+    status: restaurant.status,
+    preferenceLevel: 'normal',
+    overallRating: restaurant.averageRating,
+    foodRating: null,
+    environmentRating: null,
+    serviceRating: null,
+    valueRating: null,
+    tags: restaurant.tags,
+    longTermNote: '',
+    pricePerPerson: restaurant.referencePrice,
+    phone: restaurant.phone,
+    openingHours: restaurant.openingHours,
+    markerType: imageURL ? 'image' : 'emoji',
+    markerImageData: imageURL,
+    markerPhotoId: restaurant.image.kind === 'nativeResource' || restaurant.image.kind === 'publicOrCached' ? restaurant.image.photoID : null,
+    merchantImageUrl: restaurant.image.kind === 'providerMerchant' ? restaurant.image.resourceURL : null,
+    markerEmoji: '',
+    createdAt: restaurant.createdAt,
+    updatedAt: restaurant.updatedAt,
+    deletedAt: null,
+    visitCount: restaurant.visitCount,
+    averageRating: restaurant.averageRating,
+    scoreOutOfTen: restaurant.scoreOutOfTen,
+    latestVisitDate: restaurant.latestVisitDate,
+    latestVisit: visits[0] ?? null,
+    visits,
+    averagePricePerPerson: restaurant.referencePrice,
+    averageQueueMinutes: null,
+  }
+}
+
+function projectVisit(visit: TasteMapVisitDTO): Visit {
+  return {
+    id: visit.id,
+    userId: CURRENT_USER_ID,
+    restaurantId: visit.restaurantId,
+    visitedAt: visit.visitedAt,
+    rating: visit.rating,
+    visibility: visit.visibility,
+    diningMode: visit.diningMode,
+    totalPrice: visit.totalPrice,
+    myActualSpend: visit.myActualSpend,
+    paymentMode: visit.paymentMode,
+    pricePerPerson: visit.pricePerPerson,
+    partySize: visit.partySize,
+    queueDuration: visit.queueDuration,
+    diningOccasions: visit.diningOccasions,
+    diningOccasion: null,
+    diningOccasionText: visit.diningOccasionText,
+    valueRating: visit.valueRating,
+    environmentRating: visit.environmentRating,
+    serviceRating: visit.serviceRating,
+    valueTags: visit.valueTags,
+    environmentTags: visit.environmentTags,
+    serviceTags: visit.serviceTags,
+    noiseLevel: null,
+    diningDuration: null,
+    portionLevel: null,
+    transportConvenience: null,
+    specialNotes: '',
+    recommendationSourceType: null,
+    recommendationSourceUserId: null,
+    recommendationSourceText: visit.recommendationSourceText,
+    sharedMealId: null,
+    companions: visit.companions,
+    companionIds: visit.companionIds,
+    dishes: [],
+    note: visit.note,
+    photos: [],
+    photoIds: [],
+    createdAt: visit.createdAt,
+    updatedAt: visit.updatedAt,
+    deletedAt: null,
+  }
+}

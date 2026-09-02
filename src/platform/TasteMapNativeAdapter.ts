@@ -1,21 +1,30 @@
 import {
   TASTE_MAP_NATIVE_BRIDGE_VERSION,
   TasteMapPlatformError,
+  makeBridgeRequestID,
   type TasteMapAuthResult,
   type TasteMapAuthSessionStatus,
+  type TasteMapBridgeMethod,
+  type TasteMapBridgeRequestEnvelope,
+  type TasteMapBridgeResponseEnvelope,
+  type TasteMapLocationDTO,
+  type TasteMapNativeRouteRequest,
+  type TasteMapPhotoPickResult,
   type TasteMapPlatform,
-  type TasteMapProfileSnapshot,
+  type TasteMapPremiumStatusDTO,
+  type TasteMapProfileDashboardDTO,
+  type TasteMapProfileDashboardViewModel,
+  type TasteMapRestaurantDetailDTO,
+  type TasteMapRestaurantDetailViewModel,
+  type TasteMapRestaurantListRequest,
   type TasteMapRuntimeInfo,
+  type TasteMapSharePayload,
+  type TasteMapSyncStatusDTO,
 } from './TasteMapPlatform'
-import type { RestaurantSummary } from '../types/domain'
+import { projectBridgeProfile, projectBridgeRestaurant } from './TasteMapBridgeProjection'
 
 interface TasteMapNativeV1Plugin {
-  runtimeInfo(): Promise<TasteMapRuntimeInfo>
-  profileGetCurrent(): Promise<TasteMapProfileSnapshot>
-  restaurantGet(options: { id: string }): Promise<RestaurantSummary>
-  hapticsSelection(): Promise<Record<string, never>>
-  authSessionStatus(): Promise<TasteMapAuthSessionStatus>
-  authSignInWithApple(): Promise<TasteMapAuthResult>
+  invoke(options: { request: TasteMapBridgeRequestEnvelope<unknown> }): Promise<TasteMapBridgeResponseEnvelope<unknown>>
 }
 
 interface CapacitorWindow extends Window {
@@ -29,6 +38,7 @@ interface CapacitorWindow extends Window {
 export class TasteMapNativeAdapter implements TasteMapPlatform {
   readonly kind = 'native' as const
   private readonly plugin: TasteMapNativeV1Plugin
+  private runtimePromise: Promise<TasteMapRuntimeInfo> | null = null
 
   constructor(target: CapacitorWindow = window as CapacitorWindow) {
     const plugin = target.Capacitor?.Plugins?.TasteMapNative
@@ -36,22 +46,60 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
     this.plugin = plugin
   }
 
-  runtime = {
-    info: async () => {
-      const info = await this.plugin.runtimeInfo()
+  runtime = { info: () => this.runtimeInfo() }
+  auth = {
+    sessionStatus: () => this.call<TasteMapAuthSessionStatus>('auth.sessionStatus'),
+    signInWithApple: () => this.call<TasteMapAuthResult>('auth.signInWithApple'),
+    logout: () => this.call<TasteMapAuthSessionStatus>('auth.logout'),
+  }
+  profile = { getCurrent: async (): Promise<TasteMapProfileDashboardViewModel> => projectBridgeProfile(await this.call<TasteMapProfileDashboardDTO>('profile.getCurrent')) }
+  restaurant = {
+    get: async (id: string): Promise<TasteMapRestaurantDetailViewModel> => projectBridgeRestaurant(await this.call<TasteMapRestaurantDetailDTO>('restaurant.get', { id })),
+    list: async (request: TasteMapRestaurantListRequest = {}) => (await this.call<TasteMapRestaurantDetailDTO[]>('restaurant.list', request)).map(projectBridgeRestaurant),
+  }
+  visit = { contract: () => this.call<{ version: 1; writeUIReady: false }>('visit.contract') }
+  sync = {
+    status: () => this.call<TasteMapSyncStatusDTO>('sync.status'),
+    run: () => this.call<TasteMapSyncStatusDTO>('sync.run'),
+  }
+  haptics = { selection: async () => { await this.call<Record<string, never>>('haptics.selection') } }
+  share = { open: async (payload: TasteMapSharePayload) => { await this.call<Record<string, never>>('share.open', payload) } }
+  location = { current: () => this.call<TasteMapLocationDTO>('location.current') }
+  photo = { pick: () => this.call<TasteMapPhotoPickResult>('photo.pick') }
+  premium = { status: () => this.call<TasteMapPremiumStatusDTO>('premium.status') }
+  navigation = { openNative: async (request: TasteMapNativeRouteRequest) => { await this.call<Record<string, never>>('navigation.openNative', request) } }
+
+  private runtimeInfo() {
+    this.runtimePromise ??= this.call<TasteMapRuntimeInfo>('runtime.info', {}, false).then((info) => {
       if (info.bridgeVersion !== TASTE_MAP_NATIVE_BRIDGE_VERSION) {
         throw new TasteMapPlatformError(`Unsupported bridge version ${info.bridgeVersion}.`, 'bridge_version_mismatch')
       }
       return info
-    },
+    })
+    return this.runtimePromise
   }
 
-  profile = { getCurrent: () => this.plugin.profileGetCurrent() }
-  restaurant = { get: (id: string) => this.plugin.restaurantGet({ id }) }
-  haptics = { selection: async () => { await this.plugin.hapticsSelection() } }
-  auth = {
-    sessionStatus: () => this.plugin.authSessionStatus(),
-    signInWithApple: () => this.plugin.authSignInWithApple(),
+  private async call<TResult>(method: TasteMapBridgeMethod, payload: unknown = {}, verifyRuntime = true): Promise<TResult> {
+    if (verifyRuntime && method !== 'runtime.info') await this.runtimeInfo()
+    const requestId = makeBridgeRequestID()
+    const request: TasteMapBridgeRequestEnvelope<unknown> = {
+      version: TASTE_MAP_NATIVE_BRIDGE_VERSION,
+      requestId,
+      method,
+      payload,
+    }
+    const response = await this.plugin.invoke({ request })
+    if (response.version !== TASTE_MAP_NATIVE_BRIDGE_VERSION) {
+      throw new TasteMapPlatformError('The native bridge returned an incompatible envelope.', 'bridge_version_mismatch')
+    }
+    if (response.requestId !== requestId) {
+      throw new TasteMapPlatformError('The native bridge response did not match the request.', 'bridge_request_mismatch')
+    }
+    if (response.error) throw TasteMapPlatformError.fromBridge(response.error)
+    if (!Object.prototype.hasOwnProperty.call(response, 'result')) {
+      throw new TasteMapPlatformError('The native bridge response contained no result.', 'bridge_result_missing')
+    }
+    return response.result as TResult
   }
 }
 
