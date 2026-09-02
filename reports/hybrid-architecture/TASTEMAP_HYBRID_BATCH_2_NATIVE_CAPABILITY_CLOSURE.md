@@ -5,6 +5,11 @@ Branch: `feature/hybrid-remaining-ui-batch`
 Production owner: SwiftUI (`NATIVE_PRIMARY`)
 Batch 3: **NOT STARTED**
 
+> 2026-09-03 map-gate correction: Batch 2 capability code is complete, but the
+> fixed Simulator is currently rendering the non-interactive static map fallback.
+> `REAL AMAP INTERACTION = BLOCKED BY DEVELOPMENT AMAP CREDENTIAL`. Batch 3 must
+> remain not started until live AMap pan, pinch zoom and viewport mutation pass.
+
 ## Outcome
 
 Batch 2 closes the remaining React → `TasteMapNative.v1` → existing Native service boundaries needed by the integrated Hybrid Product UI. JavaScript does not own SwiftData, authentication, Keychain, photo files, synchronization, StoreKit entitlement, location/provider policy, Backup/Import transactions or destructive account behavior.
@@ -81,13 +86,14 @@ The fixed Simulator preview remains a Debug Rich Demo / Premium Active session o
 
 ## Manual gates retained
 
-1. Lafayette visual review of remaining subjective spacing/composition in Batch 1 pages.
-2. Real-iPhone camera, Photos limited/denied, local-original, upload retry/delete smoke.
-3. Real-iPhone fresh GPS/Nearby/provider and Share Extension smoke.
-4. App Store Connect Product IDs/subscription setup plus Sandbox/TestFlight StoreKit verification.
-5. Non-destructive real-device Backup Export/Import navigation smoke; no second destructive real-user import.
-6. Account Delete may be tested only with an authorized disposable account; no real account deletion was performed.
-7. Production, TestFlight, App Store submission and `HYBRID_PRIMARY` remain outside this batch.
+1. **Blocking before Batch 3:** inject a Development-only AMap Web（JS API）key/security code, then pass live pan/pinch/center/zoom/bounds and viewport restoration on the fixed Simulator.
+2. Lafayette visual review of remaining subjective spacing/composition in Batch 1 pages.
+3. Real-iPhone camera, Photos limited/denied, local-original, upload retry/delete smoke.
+4. Real-iPhone fresh GPS/Nearby/provider and Share Extension smoke.
+5. App Store Connect Product IDs/subscription setup plus Sandbox/TestFlight StoreKit verification.
+6. Non-destructive real-device Backup Export/Import navigation smoke; no second destructive real-user import.
+7. Account Delete may be tested only with an authorized disposable account; no real account deletion was performed.
+8. Production, TestFlight, App Store submission and `HYBRID_PRIMARY` remain outside this batch.
 
 ## Stop boundary
 

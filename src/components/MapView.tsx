@@ -209,7 +209,11 @@ export function MapView({
     selectedRestaurant={selectedRestaurant}
   />
   return <>
-    <div className="amap-container" ref={containerRef} />
+    <div
+      className="amap-container"
+      data-map-runtime={mapReady ? 'amap-ready' : 'amap-loading'}
+      ref={containerRef}
+    />
     {loading ? <div className="map-loading"><LoaderCircle className="spin" size={23} /> 正在加载地图</div> : null}
     {!loading && restaurants.length === 0 ? <div className="map-empty-tip"><MapPin size={18} />当前筛选下没有餐厅</div> : null}
   </>
@@ -332,7 +336,13 @@ function OfflineRestaurantMap({ restaurants, selectedRestaurant, currentUser, cu
   message: string
 }) {
   const projection = useMemo(() => coordinateProjection(restaurants, currentCoordinates), [currentCoordinates, restaurants])
-  return <div className="tm-offline-map" onClick={onClearSelection} role="group" aria-label="离线餐厅地图">
+  return <div
+    aria-label="静态餐厅位置预览，不支持地图平移或缩放"
+    className="tm-offline-map"
+    data-map-runtime="fallback-static"
+    onClick={onClearSelection}
+    role="group"
+  >
     <div aria-hidden="true" className="map-grid" />
     <p className="tm-offline-map__notice"><KeyRound aria-hidden="true" size={13} />{message}</p>
     {restaurants.map((restaurant) => {

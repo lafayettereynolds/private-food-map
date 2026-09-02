@@ -27,4 +27,16 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(shell).toContain("active={route.surface === 'map'}")
     expect(shell).toContain("navigate({ surface: 'restaurant', id: restaurantID })")
   })
+
+  it('distinguishes a real AMap runtime from the non-interactive fallback', () => {
+    const map = source('../../src/components/MapView.tsx')
+    expect(map).toContain("data-map-runtime={mapReady ? 'amap-ready' : 'amap-loading'}")
+    expect(map).toContain('data-map-runtime="fallback-static"')
+    expect(map).toContain('静态餐厅位置预览，不支持地图平移或缩放')
+    expect(map).toContain("map.on('moveend', publishViewport)")
+    expect(map).toContain("map.on('zoomend', publishViewport)")
+    expect(map).toContain('bounds = map.getBounds()')
+    expect(map).toContain('center = map.getCenter()')
+    expect(map).toContain('zoom: map.getZoom()')
+  })
 })

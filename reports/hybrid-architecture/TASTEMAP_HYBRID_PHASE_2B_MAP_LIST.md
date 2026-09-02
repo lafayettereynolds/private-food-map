@@ -7,9 +7,26 @@ Branch: `feature/hybrid-phase-2b-map-list`
 Baseline: `659d5b87f0cd3ad798a2f7954dad27403c1c7de8`
 Production accessed: **NO**
 
+## Superseding real-map interaction status — 2026-09-03
+
+`REAL AMAP INTERACTION = BLOCKED BY DEVELOPMENT AMAP CREDENTIAL`
+
+The fixed-Simulator surface previously used for Phase 2B evidence is the explicit
+`OfflineRestaurantMap` fallback, not a live `AMap.Map`. The fallback is a static
+React projection and does not support pan, pinch zoom or changing geographic
+bounds. Therefore the earlier **CONDITIONAL PASS** applies only to the Map/List
+product shell, data, marker, state and navigation contracts. It must never be
+interpreted as live-map interaction acceptance.
+
+Batch 3 must not start until a Development Web（JS API）key and its matching
+security code are injected through the ignored local configuration, followed by
+the fixed-Simulator pan/pinch/viewport acceptance run. See
+`TASTEMAP_HYBRID_MAP_REAL_INTERACTION_BLOCKER.md` for runtime evidence and the
+non-secret configuration procedure.
+
 ## Executive answers
 
-1. **Phase 2B PASS / FAIL:** **CONDITIONAL PASS**. All autonomous implementation, data/ownership, navigation, offline, Browser, state, build, test and Release-purity gates pass. Live AMap tile pan/zoom remains an external Development configuration gate because no Development Web Key/security code is configured in this repository; it was not faked with a Production credential.
+1. **Phase 2B PASS / FAIL:** **PRODUCT SHELL PASS / REAL AMAP INTERACTION BLOCKED**. All autonomous data/ownership, navigation, offline, Browser, state, build, test and Release-purity gates pass. The real map interaction contract does not pass because no Development Web Key/security code is configured; it was not faked with a Production credential.
 2. **My Map 是否 Hybrid:** **YES — `HYBRID_INTEGRATED`**, not Hybrid-primary.
 3. **My List 是否 Hybrid:** **YES — `HYBRID_INTEGRATED`**, sharing the same page/state/query as My Map.
 4. **no-cluster 是否保持:** **YES**. No numeric cluster or Food/Dining count cluster exists at any zoom level.
@@ -26,7 +43,7 @@ Production accessed: **NO**
 15. **Release purity 是否 CLEAN:** **YES**. The formal Release app and signed Web resources contain no Debug fixture, rich-demo identity, Development URL, local path, test account/header, Premium bypass, token/secret/private-key marker or remote `server.url`.
 16. **Release default 是否仍为 Native:** **YES**.
 17. **Native Map rollback 是否仍完整:** **YES**. No SwiftUI Map/List implementation was removed or replaced.
-18. **下一阶段推荐迁什么:** **Discovery / Community**, only after Lafayette visually accepts Phase 2B and the Development AMap/live gesture gate is checked. This task does **not** start it.
+18. **下一阶段推荐迁什么:** **Do not start Batch 3.** Close the Development AMap/live gesture gate first. Previously migrated Batch 1/2 routes remain intact.
 
 ## Scope and architecture
 
