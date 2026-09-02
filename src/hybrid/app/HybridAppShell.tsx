@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, CloudOff, RotateCcw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeft, CloudOff, Globe2, Map as MapIcon, Plus, RotateCcw, UserRound } from 'lucide-react'
+import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
 import { ProfilePage } from '../../components/ProfilePage'
 import { RestaurantPreviewCard } from '../../components/RestaurantPreviewCard'
 import { resolveTasteMapPlatform } from '../../platform/tasteMapPlatformResolver'
@@ -21,6 +22,8 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const [routeError, setRouteError] = useState<string | null>(null)
   const [online, setOnline] = useState(() => navigator.onLine)
   const [generation, setGeneration] = useState(0)
+  const [mapWasActivated, setMapWasActivated] = useState(() => initialRoute().surface === 'map')
+  const didSynchronizeInitialRoute = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -43,7 +46,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   }, [platform])
 
   useEffect(() => {
-    if (!window.location.hash) window.history.replaceState(null, '', routeHash({ surface: 'profile' }))
+    if (!window.location.hash) window.history.replaceState(null, '', routeHash(initialRoute()))
     const updateRoute = () => setRoute(routeFromLocation(window.location))
     const updateOnline = () => setOnline(navigator.onLine)
     window.addEventListener('hashchange', updateRoute)
@@ -55,6 +58,12 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       window.removeEventListener('offline', updateOnline)
     }
   }, [])
+
+  useEffect(() => {
+    if (didSynchronizeInitialRoute.current || platform.kind !== 'native') return
+    didSynchronizeInitialRoute.current = true
+    if (route.surface === 'map') void platform.navigation.openHybrid({ surface: 'map' })
+  }, [platform, route.surface])
 
   useEffect(() => {
     let active = true
@@ -93,6 +102,10 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     return () => { active = false }
   }, [platform, route])
 
+  useEffect(() => {
+    if (route.surface === 'map') setMapWasActivated(true)
+  }, [route.surface])
+
   const navigate = async (nextRoute: HybridRoute) => {
     if (platform.kind === 'native') await platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute))
     updateLocation(nextRoute)
@@ -120,7 +133,14 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const { profile, runtime } = bootstrap
   return <div className="tm-hybrid-shell" data-adapter={platform.kind} data-bridge-version={runtime.bridgeVersion} data-route={route.surface}>
     {!online ? <div className="tm-hybrid-shell__offline" role="status"><CloudOff aria-hidden="true" size={15} />离线模式 · 正在使用本地数据</div> : null}
-    {route.surface === 'profile'
+    {mapWasActivated ? <MyMapBrowsePage
+      active={route.surface === 'map'}
+      onAddRestaurant={() => void openNativeRoute(platform, 'add')}
+      onOpenRestaurant={(restaurantID) => void navigate({ surface: 'restaurant', id: restaurantID })}
+      platform={platform}
+      profile={profile}
+    /> : null}
+    {route.surface === 'map' ? null : route.surface === 'profile'
       ? <ProfilePage
           connections={<p>用户搜索仍由原生主路径承载。</p>}
           followerConnections={<p>关注者列表仍由原生主路径承载。</p>}
@@ -160,6 +180,12 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
             </main>
           : <ShellState kind="loading" message={routeError ?? '正在读取餐厅详情…'} />
         : <NativePrimaryHandoff route={route} onBack={() => navigate({ surface: 'profile' })} />}
+    <nav aria-label="主要功能" className="tm-hybrid-bottom-nav">
+      <button aria-current={route.surface === 'map' ? 'page' : undefined} className={route.surface === 'map' ? 'is-active' : ''} onClick={() => void navigate({ surface: 'map' })} type="button"><MapIcon size={19} /><span>地图</span></button>
+      <button className={route.surface === 'discovery' ? 'is-active' : ''} onClick={() => void openNativeRoute(platform, 'discovery')} type="button"><Globe2 size={19} /><span>发现</span></button>
+      <button aria-label="添加餐厅" className="is-add" onClick={() => void openNativeRoute(platform, 'add')} type="button"><Plus size={21} /><span>添加</span></button>
+      <button aria-current={route.surface === 'profile' ? 'page' : undefined} className={route.surface === 'profile' ? 'is-active' : ''} onClick={() => void navigate({ surface: 'profile' })} type="button"><UserRound size={19} /><span>我的</span></button>
+    </nav>
     {import.meta.env.DEV && import.meta.env.VITE_HYBRID_INTERNAL === 'true'
       ? <output className="tm-hybrid-shell__diagnostics" aria-label="Hybrid 开发诊断">{platform.kind} · bridge v{runtime.bridgeVersion} · {runtime.dataSource}</output>
       : null}
@@ -176,7 +202,7 @@ function ShellState({ kind, message, code, action }: { kind: 'loading' | 'auth' 
   </main>
 }
 
-function NativePrimaryHandoff({ route, onBack }: { route: Exclude<HybridRoute, { surface: 'profile' } | { surface: 'restaurant'; id: string }>; onBack: () => void }) {
+function NativePrimaryHandoff({ route, onBack }: { route: Exclude<HybridRoute, { surface: 'map' } | { surface: 'profile' } | { surface: 'restaurant'; id: string }>; onBack: () => void }) {
   return <main className="tm-hybrid-state is-native-primary">
     <h1>此功能仍由原生界面承载</h1>
     <p>{route.surface} 当前状态为 {surfaceStatus(route.surface)}，Phase 1 没有迁移这个页面。</p>
@@ -184,7 +210,7 @@ function NativePrimaryHandoff({ route, onBack }: { route: Exclude<HybridRoute, {
   </main>
 }
 
-async function openNativeRoute(platform: TasteMapPlatform, route: 'visit' | 'roulette' | 'settings', identifier?: string) {
+async function openNativeRoute(platform: TasteMapPlatform, route: 'discovery' | 'add' | 'visit' | 'roulette' | 'settings', identifier?: string) {
   try { await platform.navigation.openNative({ route, identifier }) }
   catch (reason) {
     if (reason instanceof TasteMapPlatformError && reason.code === 'capability_unavailable') {

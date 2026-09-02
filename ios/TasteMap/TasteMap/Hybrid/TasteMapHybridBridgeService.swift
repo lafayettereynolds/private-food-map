@@ -324,7 +324,8 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 accessibilityLabel: label
             )
         case .publicOrCachedPhoto(let id):
-            let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+            let segmentCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+            let encoded = id.addingPercentEncoding(withAllowedCharacters: segmentCharacters) ?? id
             return TasteMapHybridImageDescriptor(
                 kind: .publicOrCached,
                 resourceURL: "tastemap-resource://public-photo/\(encoded)/display",

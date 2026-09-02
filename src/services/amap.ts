@@ -62,14 +62,16 @@ export interface AMapInstance {
   addControl(control: unknown): void
   setFitView(overlays?: unknown[], immediately?: boolean, avoid?: number[]): void
   getZoom(): number
+  getCenter(): AMapLngLat
+  getBounds(): { getNorthEast(): AMapLngLat; getSouthWest(): AMapLngLat }
   setZoomAndCenter(
     zoom: number,
     center: [number, number] | AMapLngLat,
     immediately?: boolean,
     duration?: number,
   ): void
-  on(event: 'click', handler: (event?: unknown) => void): void
-  off(event: 'click', handler: (event?: unknown) => void): void
+  on(event: 'click' | 'moveend' | 'zoomend', handler: (event?: unknown) => void): void
+  off(event: 'click' | 'moveend' | 'zoomend', handler: (event?: unknown) => void): void
 }
 
 export interface AMapMarkerInstance {
@@ -83,42 +85,12 @@ export interface AMapMarkerInstance {
   setTop(isTop: boolean): void
 }
 
-export interface AMapMarkerClusterPoint {
-  lnglat: [number, number]
-  restaurantId: string
-  weight?: number
-}
-
-export interface AMapMarkerClusterRenderContext {
-  count: number
-  marker: AMapMarkerInstance
-}
-
-export interface AMapMarkerClusterInstance {
-  setMap(map: AMapInstance | null): void
-  setData(points: AMapMarkerClusterPoint[]): void
-  on(event: 'click', handler: (event: unknown) => void): void
-}
-
 export interface AMapNamespace {
   Map: new (
     container: HTMLElement,
     options: Record<string, unknown>,
   ) => AMapInstance
   Marker: new (options: Record<string, unknown>) => AMapMarkerInstance
-  MarkerCluster: new (
-    map: AMapInstance,
-    points: AMapMarkerClusterPoint[],
-    options: {
-      gridSize?: number
-      maxZoom?: number
-      averageCenter?: boolean
-      clusterByZoomChange?: boolean
-      renderClusterMarker?: (context: AMapMarkerClusterRenderContext) => void
-      renderMarker?: (context: AMapMarkerClusterRenderContext) => void
-      [key: string]: unknown
-    },
-  ) => AMapMarkerClusterInstance
   Pixel: new (x: number, y: number) => unknown
   ToolBar: new (options?: Record<string, unknown>) => unknown
   Scale: new (options?: Record<string, unknown>) => unknown
@@ -189,7 +161,6 @@ export function loadAmap(): Promise<AMapNamespace> {
         'AMap.ToolBar',
         'AMap.Scale',
         'AMap.Geocoder',
-        'AMap.MarkerCluster',
       ],
     }) as Promise<AMapNamespace>
   }

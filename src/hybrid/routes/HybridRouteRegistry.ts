@@ -8,7 +8,7 @@ export type HybridRouteStatus =
   | 'RETIRED_AFTER_MIGRATION'
 
 export const HYBRID_ROUTE_REGISTRY = {
-  map: 'NATIVE_PRIMARY',
+  map: 'HYBRID_INTEGRATED',
   discovery: 'NATIVE_PRIMARY',
   add: 'NATIVE_PRIMARY',
   restaurant: 'HYBRID_INTEGRATED',
@@ -64,7 +64,7 @@ export interface TasteMapDeepLinkRoute {
 }
 
 export function isHybridOwnedRoute(route: HybridRoute) {
-  return route.surface === 'restaurant' || (route.surface === 'profile' && !route.id)
+  return route.surface === 'map' || route.surface === 'restaurant' || (route.surface === 'profile' && !route.id)
 }
 
 /** Parses only the allowlisted local/deep-link contract; it never navigates. */

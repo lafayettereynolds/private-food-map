@@ -227,7 +227,7 @@ export interface TasteMapLocationDTO {
   longitude: number
   timestamp: string
   horizontalAccuracy: number
-  accuracyAuthorization: 'full' | 'reduced'
+  accuracyMode: 'full' | 'reduced'
   authorizationStatus: 'allowed' | 'denied' | 'notDetermined' | 'restricted'
 }
 

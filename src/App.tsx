@@ -21,6 +21,7 @@ import { PlusAction } from './components/PlusAction'
 import { AddVisitModal } from './components/AddVisitModal'
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal'
 import { MapView } from './components/MapView'
+import { MyMapBrowsePage } from './components/MyMapBrowsePage'
 import { RestaurantEditorModal } from './components/RestaurantEditorModal'
 import {
   RestaurantFilters,
@@ -81,6 +82,7 @@ import { buildRestaurantSummaries } from './services/restaurantSummaryProjection
 import { visitPhotoLimit } from './services/featurePolicy'
 import { buildRecommendationEmptyState, candidateCentroid, distanceKilometers, resolveRecommendationFilters, sameCity, type RelaxationSuggestion } from './services/recommendationFilterResolver'
 import { MEMBERSHIP_CHANGED_EVENT, MembershipService } from './services/membershipService'
+import { TasteMapBrowserAdapter } from './platform/TasteMapBrowserAdapter'
 
 type ActiveList = RestaurantStatus | 'recommended' | 'footprints'
 type ActiveView = 'map' | 'community' | 'profile'
@@ -94,6 +96,7 @@ function switchTestAccount(account: 'premium' | 'free') {
 }
 
 export default function App() {
+  const browserPlatform = useMemo(() => new TasteMapBrowserAdapter(), [])
   const restaurants = useLiveQuery(
     () => db.restaurants.orderBy('createdAt').reverse().filter((restaurant) => !restaurant.deletedAt && restaurant.userId === CURRENT_USER_ID).toArray(),
     [],
@@ -941,7 +944,16 @@ export default function App() {
         </div>
       </header>
 
-      {activeView === 'map' ? <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}${selectedRestaurant ? ' has-selection' : ''}`}>
+      {activeView === 'map' && currentUser ? <MyMapBrowsePage
+        active
+        onAddRestaurant={() => setShowAddModal(true)}
+        onOpenRestaurant={(restaurantID) => {
+          const restaurant = summaries.find((item) => item.id === restaurantID)
+          if (restaurant) setStandaloneRestaurant(restaurant)
+        }}
+        platform={browserPlatform}
+        profile={{ user: currentUser, restaurants: summaries, visits: allVisits, followerCount, followingCount, restaurantImages: {} }}
+      /> : activeView === 'map' ? <section className={`workspace${isSidebarOpen ? '' : ' is-sidebar-collapsed'}${selectedRestaurant ? ' has-selection' : ''}`}>
         <aside aria-label="我的美食清单" className={`sidebar${isSidebarOpen ? '' : ' is-collapsed'}${showFilters && isSidebarOpen ? ' has-open-filters' : ''}${selectedRestaurant && isSidebarOpen ? ' has-detail' : ''}`}>
           {isSidebarOpen ? <>
             <div className="sidebar-heading">

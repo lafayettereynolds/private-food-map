@@ -317,7 +317,7 @@ public struct TasteMapHybridLocationDTO: Codable, Sendable {
     public let longitude: Double
     public let timestamp: String
     public let horizontalAccuracy: Double
-    public let accuracyAuthorization: String
+    public let accuracyMode: String
     public let authorizationStatus: String
 }
 

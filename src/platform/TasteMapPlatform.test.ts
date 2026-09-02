@@ -126,7 +126,7 @@ describe('TasteMapBrowserAdapter', () => {
     expect(visited.items.length).toBeGreaterThan(0)
     expect(visited.items.every((item) => item.status === 'visited')).toBe(true)
     expect(visited.items.every((item) => item.id && Number.isFinite(item.latitude) && Number.isFinite(item.longitude))).toBe(true)
-    expect(visited.items.every((item) => item.image.kind !== 'foodDiningFallback' || !item.image.resourceURL)).toBe(true)
+    expect(visited.items.every((item) => !('resourceURL' in item.image) || !item.image.resourceURL.startsWith('file://'))).toBe(true)
 
     const filtered = await adapter.map.viewport({
       ...request, requestID: 'viewport-2', filters: { city: visited.items[0].city, minimumVisitCount: 1 },

@@ -223,7 +223,7 @@ final class TasteMapHybridRuntime {
                 longitude: location.coordinate.longitude,
                 timestamp: Self.dateFormatter.string(from: location.timestamp),
                 horizontalAccuracy: location.horizontalAccuracy,
-                accuracyAuthorization: locationPermissionManager.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
+                accuracyMode: locationPermissionManager.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
                 authorizationStatus: "allowed"
             )
             emit(.locationChanged, payload: value)
