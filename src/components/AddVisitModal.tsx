@@ -33,10 +33,11 @@ interface AddVisitModalProps {
   onDelete?: () => Promise<void>
   onSave: (input: AddVisitInput) => Promise<void>
   onPickNativePhotos?: (availableSlots: number) => Promise<Array<{ source: string; photoID: string }>>
+  onCaptureNativePhoto?: () => Promise<{ source: string; photoID: string } | null>
   onRemoveNativePhoto?: (photoID: string) => Promise<void>
 }
 
-export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onDelete, onSave, onPickNativePhotos, onRemoveNativePhoto }: AddVisitModalProps) {
+export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onDelete, onSave, onPickNativePhotos, onCaptureNativePhoto, onRemoveNativePhoto }: AddVisitModalProps) {
   const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
@@ -98,6 +99,16 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
     await onRemoveNativePhoto(photoID)
     setNativeDraftPhotoIDs((current) => current.filter((value) => value !== photoID))
     setDirty(true)
+  }
+
+  async function captureNativePhoto() {
+    if (!onCaptureNativePhoto) return null
+    const selected = await onCaptureNativePhoto()
+    if (selected) {
+      setNativeDraftPhotoIDs((current) => [...new Set([...current, selected.photoID])])
+      setDirty(true)
+    }
+    return selected
   }
 
   async function closeEditor() {
@@ -184,7 +195,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
           restaurant={restaurant}
         />
         <div className="restaurant-record-form-divider"><span>{initialVisit ? '修改这次到访' : '这次到访'}</span></div>
-        <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
+        <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea aria-label="到访笔记" maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
         <label className="field"><span>个人评价 <small>可选</small></span><StarRating onChange={(value) => { setRating(value); setDirty(true) }} value={rating} /></label>
         <VisitExtraFields friendOptions={friendOptions} onChange={(value) => { setExtraFields(value); setDirty(true) }} section="primary" value={extraFields} />
         <div className="field-grid visit-time-grid">
@@ -197,7 +208,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
           <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
         </div>
         <QueueDurationPicker onChange={(value) => { setQueueDuration(value); setDirty(true) }} value={queueDuration} />
-        <VisitPhotoPicker maxPhotos={maxPhotos} onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds); setDirty(true) }} onPickNative={onPickNativePhotos ? pickNativePhotos : undefined} onRemoveNative={onRemoveNativePhoto ? removeNativePhoto : undefined} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
+        <VisitPhotoPicker maxPhotos={maxPhotos} onCaptureNative={onCaptureNativePhoto ? captureNativePhoto : undefined} onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds); setDirty(true) }} onPickNative={onPickNativePhotos ? pickNativePhotos : undefined} onRemoveNative={onRemoveNativePhoto ? removeNativePhoto : undefined} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
         <DishEditor onChange={(value) => { setDishes(value); setDirty(true) }} onPickNativePhoto={onPickNativePhotos ? async () => (await pickNativePhotos(1))[0] ?? null : undefined} onRemoveNativePhoto={onRemoveNativePhoto ? removeNativePhoto : undefined} value={dishes} />
         <VisitExtraFields friendOptions={friendOptions} onChange={(value) => { setExtraFields(value); setDirty(true) }} section="details" value={extraFields} />
         {initialVisit && onDelete ? <button className="danger-ghost-button visit-delete-action" disabled={saving} onClick={() => {

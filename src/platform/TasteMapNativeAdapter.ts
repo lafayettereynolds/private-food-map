@@ -21,6 +21,9 @@ import {
   type TasteMapPhotoPickResult,
   type TasteMapPlatform,
   type TasteMapPremiumStatusDTO,
+  type TasteMapPremiumProductDTO,
+  type TasteMapPremiumActionResultDTO,
+  type TasteMapPermissionsStatusDTO,
   type TasteMapProfileDashboardDTO,
   type TasteMapProfileDashboardViewModel,
   type TasteMapRestaurantDetailDTO,
@@ -92,10 +95,26 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
   location = { current: () => this.call<TasteMapLocationDTO>('location.current') }
   photo = {
     pick: (selectionLimit: number) => this.call<TasteMapPhotoPickResult>('photo.pick', { selectionLimit }),
+    capture: () => this.call<TasteMapPhotoPickResult>('photo.capture'),
     discard: async (photoID: string) => { await this.call<Record<string, never>>('photo.discard', { photoID }) },
     retry: async (photoID: string) => { await this.call<Record<string, never>>('photo.retry', { photoID }) },
   }
-  premium = { status: () => this.call<TasteMapPremiumStatusDTO>('premium.status') }
+  premium = {
+    status: () => this.call<TasteMapPremiumStatusDTO>('premium.status'),
+    products: () => this.call<TasteMapPremiumProductDTO[]>('premium.products'),
+    purchase: (productID: string) => this.call<TasteMapPremiumActionResultDTO>('premium.purchase', { productID }),
+    restore: () => this.call<TasteMapPremiumActionResultDTO>('premium.restore'),
+    manage: () => this.call<TasteMapPremiumActionResultDTO>('premium.manage'),
+  }
+  permissions = {
+    status: () => this.call<TasteMapPermissionsStatusDTO>('permissions.status'),
+    openSystemSettings: async () => { await this.call<Record<string, never>>('permissions.openSettings') },
+  }
+  backup = {
+    openExport: async () => { await this.call<Record<string, never>>('backup.openExport') },
+    openImport: async () => { await this.call<Record<string, never>>('backup.openImport') },
+  }
+  account = { openDelete: async () => { await this.call<Record<string, never>>('account.openDelete') } }
   navigation = {
     openNative: async (request: TasteMapNativeRouteRequest) => { await this.call<Record<string, never>>('navigation.openNative', request) },
     openHybrid: (route: TasteMapHybridRoute) => this.call<TasteMapNavigationStateDTO>('navigation.openHybrid', route),

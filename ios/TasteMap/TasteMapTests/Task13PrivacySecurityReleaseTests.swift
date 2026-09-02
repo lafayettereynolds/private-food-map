@@ -75,8 +75,9 @@ struct Task13PrivacySecurityReleaseTests {
         #expect(project.contains("show nearby restaurants and your position on the map"))
         #expect(project.contains("INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription"))
         #expect(project.contains("save your taste profile poster to Photos"))
+        #expect(project.contains("INFOPLIST_KEY_NSCameraUsageDescription"))
+        #expect(project.contains("only when you choose to photograph a dining visit or dish"))
         #expect(!project.contains("INFOPLIST_KEY_NSPhotoLibraryUsageDescription"))
-        #expect(!project.contains("INFOPLIST_KEY_NSCameraUsageDescription"))
         #expect(!project.contains("INFOPLIST_KEY_NSMicrophoneUsageDescription"))
     }
 

@@ -129,6 +129,14 @@ private struct TasteMapHybridNativeRouteHost: View {
             TasteMapHybridNativeSettingsRoute()
         case .settingsNative:
             TasteMapHybridNativeSettingsRoute()
+        case .dataBackup:
+            TasteMapHybridNativeDataBackupRoute()
+        case .permissions:
+            PermissionsSettingsView(permissionOverride: nil)
+        case .storage:
+            StorageSettingsView(snapshotOverride: nil)
+        case .accountDelete:
+            TasteMapHybridNativeAccountDeleteRoute()
         case .socialNative:
             DiscoverHubView()
         case .profileEdit:
@@ -575,5 +583,40 @@ private struct TasteMapHybridNativeSettingsRoute: View {
     private var avatar: PhotoAsset? {
         guard let id = profile?.avatarPhotoID else { return nil }
         return photos.first { ($0.remoteID ?? $0.id.uuidString.lowercased()) == id && $0.deletedAt == nil }
+    }
+}
+
+private struct TasteMapHybridNativeDataBackupRoute: View {
+    @Environment(TasteMapHybridRuntime.self) private var runtime
+    @State private var user: AuthenticatedUserV1?
+
+    var body: some View {
+        DataBackupSettingsView(
+            isAuthenticated: user != nil,
+            currentTasteMapUserID: user?.id,
+            allowsImport: true
+        )
+        .task { user = await runtime.restoredUser() }
+    }
+}
+
+private struct TasteMapHybridNativeAccountDeleteRoute: View {
+    @Environment(TasteMapHybridRuntime.self) private var runtime
+    @State private var user: AuthenticatedUserV1?
+
+    var body: some View {
+        Group {
+            if let user {
+                AccountDeletionView(
+                    currentUserID: user.id,
+                    completionAction: SettingsAccountDeletedAction(perform: {
+                        await runtime.accountDeletionDidComplete()
+                    })
+                )
+            } else {
+                unauthorized("登录后才能删除账户")
+            }
+        }
+        .task { user = await runtime.restoredUser() }
     }
 }

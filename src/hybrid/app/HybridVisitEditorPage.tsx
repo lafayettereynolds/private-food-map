@@ -56,6 +56,10 @@ export function HybridVisitEditorPage({ platform, restaurantID, visitID, restaur
       source: photo.preview.resourceURL,
       photoID: photo.photoID,
     }))}
+    onCaptureNativePhoto={async () => {
+      const photo = (await platform.photo.capture()).photos[0]
+      return photo ? { source: photo.preview.resourceURL, photoID: photo.photoID } : null
+    }}
     onRemoveNativePhoto={(photoID) => platform.photo.discard(photoID)}
     photoUpgradeAvailable={false}
     restaurant={restaurant}

@@ -47,6 +47,7 @@ public final class TasteMapHybridBridgeDispatcher {
             .location: false,
             .photoPicker: false,
             .premium: false,
+            .permissions: false,
             .nativeNavigation: false,
             .backup: false,
             .accountDelete: false,
@@ -78,9 +79,12 @@ public final class TasteMapHybridBridgeDispatcher {
 
     public func dispatchAsync(_ request: TasteMapHybridBridgeRequest) async -> TasteMapHybridBridgeResponse {
         switch request.method {
-        case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
+        case .authSignInWithApple, .authLogout, .syncStatus, .syncRun, .shareOpen, .locationCurrent,
                 .acquisitionSearch, .acquisitionNearby, .acquisitionShared, .acquisitionManual, .acquisitionSelect,
-                .photoPick, .photoDiscard, .photoRetry, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
+                .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumStatus, .premiumProducts, .premiumPurchase,
+                .premiumRestore, .premiumManage, .permissionsStatus, .permissionsOpenSettings,
+                .backupOpenExport, .backupOpenImport, .accountOpenDelete,
+                .navigationOpenNative, .navigationOpenHybrid,
                 .navigationBack, .navigationCurrent:
             guard request.version == Self.bridgeVersion else {
                 return failure(request, code: "bridge_version_mismatch", message: "This bridge version is not supported.")
@@ -139,19 +143,15 @@ public final class TasteMapHybridBridgeDispatcher {
             case .visitDelete:
                 let payload: TasteMapHybridVisitDeleteRequest = try decodePayload(request.payload)
                 result = try encodeValue(requiredService().deleteVisit(id: payload.visitID))
-            case .syncStatus:
-                result = .object([
-                    "state": .string("unavailable"),
-                    "pendingMutationCount": .number(0),
-                    "lastSuccessfulSyncAt": .null,
-                    "errorCode": .null,
-                ])
             case .hapticsSelection:
                 try nativeAction(.hapticsSelection)
                 result = .object([:])
-            case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
+            case .authSignInWithApple, .authLogout, .syncStatus, .syncRun, .shareOpen, .locationCurrent,
                     .acquisitionSearch, .acquisitionNearby, .acquisitionShared, .acquisitionManual, .acquisitionSelect,
-                    .photoPick, .photoDiscard, .photoRetry, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
+                    .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumStatus, .premiumProducts, .premiumPurchase,
+                    .premiumRestore, .premiumManage, .permissionsStatus, .permissionsOpenSettings,
+                    .backupOpenExport, .backupOpenImport, .accountOpenDelete,
+                    .navigationOpenNative, .navigationOpenHybrid,
                     .navigationBack, .navigationCurrent:
                 throw TasteMapHybridBridgeErrorDTO(
                     code: "capability_unavailable",

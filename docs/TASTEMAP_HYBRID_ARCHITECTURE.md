@@ -1,6 +1,6 @@
 # Taste Map Hybrid Architecture
 
-Status: Batch 1 shared product UI plus Batch 2 Visit/Dish/Photo and Add/Nearby/Share capability integration in progress; production route switch not approved.
+Status: Batch 1 shared Product UI and Batch 2 typed Native capability closure complete; production route switch not approved.
 Contract: `TasteMapNative.v1`
 Updated: 2026-09-02
 
@@ -11,7 +11,7 @@ Taste Map will converge on one React product UI that runs in two hosts:
 - Browser: React → `TasteMapBrowserAdapter` → IndexedDB / existing Web services.
 - iOS: the same React pages in a Capacitor `WKWebView` → `TasteMapNativeAdapter` → `TasteMapNative.v1` → native services and current-user SwiftData.
 
-SwiftUI remains the production default and rollback implementation during incremental migration. Phase 2A embeds the signed local Hybrid runtime in the existing Taste Map target and promotes Profile and Restaurant Detail to `HYBRID_INTEGRATED`. Phase 2B adds My Map / My List to that same persistent runtime, but it does not switch the Release root and it does not migrate Discovery, Community, Add Restaurant or Nearby.
+SwiftUI remains the production default and rollback implementation during incremental migration. Phase 2A embeds the signed local Hybrid runtime in the existing Taste Map target and promotes Profile and Restaurant Detail to `HYBRID_INTEGRATED`. Phase 2B adds My Map / My List. Batch 1 integrates the remaining Product UI through the same React/CSS and Batch 2 connects its writes and system actions to existing Native services. None of these statuses switches the Release root.
 
 ```text
 Canonical Page Templates + shared React components
@@ -71,10 +71,12 @@ The v1 contract defines:
 - Restaurant get/list and owner-scoped batched map viewport queries;
 - Visit contract readiness;
 - Sync status/run;
-- haptics, share, location, photo picker, Premium status;
+- haptics, system share, fresh location, photo-library pick and camera capture;
+- StoreKit products/purchase/restore/manage and server-backed Premium status;
+- permissions status/System Settings, Backup/Import and Account Delete route handoff;
 - navigation back to native-owned routes.
 
-Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `location.current`, and throttled `location.changed` delivery. Batch 2 capability integration adds typed owner-scoped Visit/Dish/photo writes and Restaurant acquisition methods without moving persistence or provider policy into JavaScript. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Unmigrated business capabilities still remain native-owned and are entered through typed handoff routes; unsupported bridge operations return `capability_unavailable` rather than pretending to be implemented.
+Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `location.current`, and throttled `location.changed` delivery. Batch 2 adds typed owner-scoped Visit/Dish/photo writes, Restaurant acquisition, camera/photo-library input, StoreKit, Sync, permissions and data/account route actions without moving persistence, ownership, provider, entitlement or security policy into JavaScript. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Native-owned high-risk workflows keep their established Native screens/services behind specific typed methods; unsupported operations return `capability_unavailable` rather than pretending to succeed.
 
 ## 4. Security and ownership boundary
 
@@ -93,16 +95,19 @@ Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Pr
 
 The typed route model is the only identity exchanged between native and Hybrid navigation. Every route has a validated `surface`, an optional bounded identifier and an explicit owner. JavaScript can never request an arbitrary Swift type or selector.
 
-Phase 2B ownership is:
+Current integrated-route ownership is:
 
-- Hybrid: My Map / My List, current-user Profile and Restaurant Detail.
-- Native: Discovery, Community, Add Restaurant, Nearby, Visit, Lists, Public Profile/List/Activity, Roulette, Analytics, Premium and Settings.
+- Hybrid: My Map / My List, Discovery/Community, Add Restaurant/Nearby, current-user Profile, Restaurant Detail, Visit editor, Lists/Public Lists, public Activity presentation, Roulette, Analytics/Posters, Premium and Settings Product UI.
+- Native: auth and account scope, persistence/write services, photo files/camera/Photos, location/provider, Sync, StoreKit/entitlement, Backup/Import, permissions/System Settings and destructive-account boundaries. SwiftUI continues to own the Release root and remains rollback UI.
 
-The Hybrid shell supports canonical local routes:
+The Hybrid shell supports canonical local routes including:
 
 - `#/profile`
 - `#/restaurant/:id`
 - `#/map`
+- `#/discovery`, `#/add`, `#/visit/:id`, `#/visitEdit/:id`
+- `#/lists`, `#/publicList/:id`, `#/activity/:id`, `#/roulette`
+- `#/analytics/:mode`, `#/premium`, `#/settings`
 
 React is the navigation truth while a Hybrid-owned page is visible. `TasteMapHybridNavigationCoordinator` is the transition boundary, not a second business stack: it keeps one Hybrid history plus at most one native presentation. The contract exposes `navigation.openHybrid`, `navigation.openNative`, `navigation.back`, and `navigation.current`, all with validation and structured errors.
 

@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent } from 'react'
-import { ImagePlus, Sparkles, Trash2 } from 'lucide-react'
+import { Camera, Images, Sparkles, Trash2 } from 'lucide-react'
 import { optimizeVisitPhoto } from '../utils/images'
 import { SyncedImage } from './SyncedImage'
 import { openPremiumPaywall } from '../services/premiumPaywall'
@@ -11,10 +11,11 @@ interface VisitPhotoPickerProps {
   upgradeAvailable?: boolean
   onChange: (value: string[], photoIds: Array<string | null>) => void
   onPickNative?: (availableSlots: number) => Promise<Array<{ source: string; photoID: string }>>
+  onCaptureNative?: () => Promise<{ source: string; photoID: string } | null>
   onRemoveNative?: (photoID: string) => Promise<void>
 }
 
-export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvailable = false, onChange, onPickNative, onRemoveNative }: VisitPhotoPickerProps) {
+export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvailable = false, onChange, onPickNative, onCaptureNative, onRemoveNative }: VisitPhotoPickerProps) {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
 
@@ -66,6 +67,21 @@ export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvail
     }
   }
 
+  async function handleNativeCapture() {
+    const availableSlots = Math.max(0, maxPhotos - value.length)
+    if (!availableSlots || !onCaptureNative) return
+    setProcessing(true)
+    setError('')
+    try {
+      const captured = await onCaptureNative()
+      if (captured) onChange([...value, captured.source], [...photoIds, captured.photoID])
+    } catch (photoError) {
+      setError(photoError instanceof Error ? photoError.message : '相机没有完成拍摄。')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   async function removePhoto(index: number) {
     const photoID = photoIds[index]
     if (photoID && onRemoveNative) {
@@ -92,11 +108,15 @@ export function VisitPhotoPicker({ value, photoIds, maxPhotos = 20, upgradeAvail
             <button aria-label={`删除第 ${index + 1} 张照片`} disabled={processing} onClick={() => void removePhoto(index)} type="button"><Trash2 size={13} /></button>
           </figure>
         ))}
-        {value.length < maxPhotos && onPickNative ? <button className="visit-photo-picker__add" disabled={processing} onClick={() => void handleNativePick()} type="button">
-          <ImagePlus size={20} />
-          <span>{processing ? '处理中…' : value.length ? '继续添加' : '上传照片'}</span>
+        {value.length < maxPhotos && onCaptureNative ? <button aria-label="拍摄到访照片" className="visit-photo-picker__add" disabled={processing} onClick={() => void handleNativeCapture()} type="button">
+          <Camera size={20} />
+          <span>{processing ? '处理中…' : '拍照'}</span>
+        </button> : null}
+        {value.length < maxPhotos && onPickNative ? <button aria-label="从照片图库选择" className="visit-photo-picker__add" disabled={processing} onClick={() => void handleNativePick()} type="button">
+          <Images size={20} />
+          <span>{processing ? '处理中…' : '照片图库'}</span>
         </button> : value.length < maxPhotos ? <label className="visit-photo-picker__add">
-          <ImagePlus size={20} />
+          <Images size={20} />
           <span>{processing ? '处理中…' : value.length ? '继续添加' : '上传照片'}</span>
           <input accept="image/*" disabled={processing} hidden multiple onChange={handleFiles} type="file" />
         </label> : upgradeAvailable ? <button className="visit-photo-picker__add is-premium-limit" onClick={() => openPremiumPaywall('visit_photo_limit')} type="button"><Sparkles size={20} /><span>继续添加</span></button> : null}

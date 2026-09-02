@@ -23,11 +23,12 @@ Shared AddVisitModal / DishEditor / VisitPhotoPicker
     -> existing SwiftData / photo upload queue
 ```
 
-Browser continues to use its existing browser file input and Web behavior. Capacitor uses `PHPickerViewController`; the shared components are not forked.
+Browser continues to use its existing browser file input and Web behavior. Capacitor uses `PHPickerViewController` for the photo library and `UIImagePickerController` for explicit camera capture; both feed the same native preparation/attachment pipeline and the shared components are not forked.
 
 ## Photo contract
 
 - `photo.pick` accepts a bounded selection limit and returns opaque `photoID` values plus native-resource thumbnails.
+- `photo.capture` requests camera access only after the explicit “拍照” action, returns one opaque draft, and fails honestly when the camera is unavailable or permission is denied.
 - `photo.discard` removes only an owner-visible pending selection or owned photo.
 - `photo.retry` reaches the existing upload retry path for the current owner only.
 - Pending Visit and Dish attachments are expressed as `photoID` plus an optional Dish draft ID.
@@ -51,20 +52,24 @@ Visit and Dish writes remain the primary transaction. A photo attachment/upload 
 
 | Gate | Result |
 | --- | --- |
-| TypeScript typecheck | PASS |
-| Hybrid platform/route tests | PASS — 13 tests |
-| Hybrid Swift package tests | PASS — 6 tests |
-| Hybrid Phase 2A integration + P2-B photo tests | PASS — 15 tests |
+| TypeScript / React / Worker tests | PASS — 56 files, 391 tests |
+| TypeScript + Worker typecheck | PASS |
+| Hybrid platform/route contract tests | PASS |
+| Focused iOS Native capability regression | PASS — 16 suites, 167 tests |
+| Full iOS unit/integration regression | PASS — 65 suites, 639 tests |
+| Relevant Hybrid UI E2E | PASS — 3/3 |
 | Debug Simulator build | PASS |
 | Release Simulator build | PASS |
-| Formal Release bundle scan | PASS — 38 app files, 16 signed Web files |
-| Release Debug/fixture/Development URL/local path/secret scan | PASS |
+| Generic iOS Device Release build | PASS |
+| Release Simulator bundle scan | PASS — 38 app files, 16 signed Web files |
+| Generic Device formal Release scan | PASS — 36 app files, 16 signed Web files |
+| Release Debug/fixture/Development URL/local path/secret scan | PASS — none found |
 | Credential surface in React | PASS — none |
 
 ## Remaining gates
 
 - Lafayette visual acceptance of the shared Visit/Dish/Photo editor.
-- Real-iPhone Photos picker, limited-library, permission, upload/retry, offline, and delete smoke.
+- Real-iPhone camera, Photos picker, limited-library, permission, upload/retry, offline, and delete smoke.
 - Explicit Lafayette approval before any `HYBRID_PRIMARY` switch.
 
 This phase does not change the production owner and does not start Batch 3.

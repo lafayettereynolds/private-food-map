@@ -20,7 +20,7 @@ const capabilities: TasteMapCapabilityRegistry = {
   appleSignIn: false, logout: false, profileRead: true, restaurantRead: true, restaurantAcquisition: true, mapBrowse: true,
   contentRead: true,
   visitContract: true, sync: false, haptics: true, share: false,
-  location: false, photoPicker: false, premium: false, nativeNavigation: false,
+  location: false, photoPicker: false, premium: false, permissions: false, nativeNavigation: false,
   backup: false, accountDelete: false,
 }
 
@@ -200,7 +200,7 @@ describe('TasteMapNativeAdapter', () => {
         result = { restaurantID: payload.restaurantID, visitID: payload.visitID ?? 'visit-created-1', updatedAt: '2026-09-03T00:00:00.000Z' }
       } else if (request.method === 'visit.delete') {
         result = { restaurantID: fixture.restaurants[0].id, visitID: (request.payload as { visitID: string }).visitID, updatedAt: '2026-09-03T00:00:00.000Z' }
-      } else if (request.method === 'photo.pick') {
+      } else if (request.method === 'photo.pick' || request.method === 'photo.capture') {
         result = { photos: [{
           photoID: 'pending-photo-1',
           preview: { kind: 'nativeResource', resourceURL: 'tastemap-resource://photo-draft/pending-photo-1/thumbnail', photoID: 'pending-photo-1', accessibilityLabel: '待保存的到访照片' },
@@ -222,6 +222,18 @@ describe('TasteMapNativeAdapter', () => {
         }
       } else if (request.method === 'acquisition.select') {
         result = { restaurantID: 'amap:candidate-1', duplicateKind: 'none', existingRestaurantID: null }
+      } else if (request.method === 'premium.status') {
+        result = { state: 'free', expiresAt: null }
+      } else if (request.method === 'premium.products') {
+        result = [{ id: 'store-product', displayName: '年度会员', valueDescription: '正式商品', displayPrice: '¥88.00', period: 'annual', billingPeriodDescription: '每年续订' }]
+      } else if (request.method === 'premium.purchase' || request.method === 'premium.restore') {
+        result = { outcome: 'completed', status: { state: 'premium', expiresAt: null } }
+      } else if (request.method === 'premium.manage') {
+        result = { outcome: 'opened', status: { state: 'premium', expiresAt: null } }
+      } else if (request.method === 'sync.status' || request.method === 'sync.run') {
+        result = { state: 'idle', pendingMutationCount: 2, pendingPhotoCount: 1, failedPhotoCount: 0, conflictCount: 0, lastSuccessfulSyncAt: null, errorCode: null }
+      } else if (request.method === 'permissions.status') {
+        result = { location: 'denied', camera: 'notDetermined', photoAddOnly: 'allowed', canOpenSystemSettings: true }
       } else result = {}
       return { version, requestId: request.requestId, result } as TasteMapBridgeResponseEnvelope
     })
@@ -329,14 +341,19 @@ describe('TasteMapNativeAdapter', () => {
     const { invoke, target } = nativeTarget()
     const adapter = new TasteMapNativeAdapter(target as never)
     const picked = await adapter.photo.pick(3)
+    const captured = await adapter.photo.capture()
     expect(picked.photos).toEqual([expect.objectContaining({
       photoID: 'pending-photo-1',
       preview: expect.objectContaining({ kind: 'nativeResource' }),
     })])
+    expect(captured.photos).toEqual([expect.objectContaining({ photoID: 'pending-photo-1' })])
     await adapter.photo.discard('pending-photo-1')
     await adapter.photo.retry('existing-photo-1')
     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
       request: expect.objectContaining({ method: 'photo.pick', payload: { selectionLimit: 3 } }),
+    }))
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({ method: 'photo.capture', payload: {} }),
     }))
     const serialized = JSON.stringify(invoke.mock.calls)
     expect(serialized).not.toMatch(/file:\/\/|\/Users\/|base64|imageData|ownerUserID|bearer/i)
@@ -353,6 +370,27 @@ describe('TasteMapNativeAdapter', () => {
     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
       request: expect.objectContaining({ method: 'acquisition.select', payload: { candidateID: 'candidate-1', confirmProbableMatch: true } }),
     }))
+    expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|authorization|bearer|keychain/i)
+  })
+
+  it('routes StoreKit, sync, permissions, backup and account actions through typed v1 methods', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    expect((await adapter.premium.products())[0]).toMatchObject({ id: 'store-product', displayPrice: '¥88.00' })
+    expect((await adapter.premium.purchase('store-product')).status.state).toBe('premium')
+    expect((await adapter.premium.restore()).outcome).toBe('completed')
+    expect((await adapter.premium.manage()).outcome).toBe('opened')
+    expect((await adapter.sync.status()).pendingPhotoCount).toBe(1)
+    expect((await adapter.sync.run()).pendingMutationCount).toBe(2)
+    expect(await adapter.permissions.status()).toMatchObject({ location: 'denied', camera: 'notDetermined', canOpenSystemSettings: true })
+    await adapter.permissions.openSystemSettings()
+    await adapter.backup.openExport()
+    await adapter.backup.openImport()
+    await adapter.account.openDelete()
+    const methods = invoke.mock.calls.map((call) => call[0].request.method)
+    for (const method of ['premium.products', 'premium.purchase', 'premium.restore', 'premium.manage', 'sync.status', 'sync.run', 'permissions.status', 'permissions.openSettings', 'backup.openExport', 'backup.openImport', 'account.openDelete']) {
+      expect(methods).toContain(method)
+    }
     expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|authorization|bearer|keychain/i)
   })
 })

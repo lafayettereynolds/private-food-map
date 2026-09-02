@@ -26,9 +26,19 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'share.open',
   'location.current',
   'photo.pick',
+  'photo.capture',
   'photo.discard',
   'photo.retry',
   'premium.status',
+  'premium.products',
+  'premium.purchase',
+  'premium.restore',
+  'premium.manage',
+  'permissions.status',
+  'permissions.openSettings',
+  'backup.openExport',
+  'backup.openImport',
+  'account.openDelete',
   'navigation.openNative',
   'navigation.openHybrid',
   'navigation.back',
@@ -52,6 +62,7 @@ export type TasteMapCapability =
   | 'location'
   | 'photoPicker'
   | 'premium'
+  | 'permissions'
   | 'nativeNavigation'
   | 'backup'
   | 'accountDelete'
@@ -348,6 +359,9 @@ export interface TasteMapAuthResult {
 export interface TasteMapSyncStatusDTO {
   state: 'idle' | 'syncing' | 'offline' | 'error' | 'unavailable'
   pendingMutationCount: number
+  pendingPhotoCount?: number
+  failedPhotoCount?: number
+  conflictCount?: number
   lastSuccessfulSyncAt: string | null
   errorCode: string | null
 }
@@ -470,6 +484,27 @@ export interface TasteMapPremiumStatusDTO {
   expiresAt: string | null
 }
 
+export interface TasteMapPremiumProductDTO {
+  id: string
+  displayName: string
+  valueDescription: string
+  displayPrice: string
+  period: 'monthly' | 'annual' | 'lifetime'
+  billingPeriodDescription: string
+}
+
+export interface TasteMapPremiumActionResultDTO {
+  outcome: 'completed' | 'pending' | 'cancelled' | 'opened'
+  status: TasteMapPremiumStatusDTO
+}
+
+export interface TasteMapPermissionsStatusDTO {
+  location: 'allowed' | 'limited' | 'denied' | 'restricted' | 'notDetermined'
+  camera: 'allowed' | 'denied' | 'restricted' | 'notDetermined'
+  photoAddOnly: 'allowed' | 'limited' | 'denied' | 'restricted' | 'notDetermined'
+  canOpenSystemSettings: boolean
+}
+
 export interface TasteMapSharePayload {
   title?: string
   text?: string
@@ -483,6 +518,7 @@ export interface TasteMapNativeRouteRequest {
   route:
     | 'map' | 'discovery' | 'add' | 'visit' | 'visitEdit' | 'lists' | 'roulette' | 'analytics' | 'premium' | 'settings'
     | 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative'
+    | 'dataBackup' | 'permissions' | 'storage' | 'accountDelete'
     | 'profileEdit' | 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo'
   identifier?: string
 }
@@ -491,7 +527,7 @@ export type TasteMapHybridRoute =
   | { surface: 'profile'; identifier?: string }
   | { surface: 'restaurant'; identifier: string }
   | { surface: 'map' | 'discovery' | 'add' | 'visit' | 'visitEdit' | 'lists' | 'publicList' | 'activity' | 'roulette' | 'analytics' | 'premium' | 'settings'; identifier?: string }
-  | { surface: 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative'; identifier?: string }
+  | { surface: 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative' | 'dataBackup' | 'permissions' | 'storage' | 'accountDelete'; identifier?: string }
   | { surface: 'profileEdit'; identifier?: string }
   | { surface: 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo'; identifier: string }
 
@@ -570,10 +606,26 @@ export interface TasteMapPlatform {
   location: { current(): Promise<TasteMapLocationDTO> }
   photo: {
     pick(selectionLimit: number): Promise<TasteMapPhotoPickResult>
+    capture(): Promise<TasteMapPhotoPickResult>
     discard(photoID: string): Promise<void>
     retry(photoID: string): Promise<void>
   }
-  premium: { status(): Promise<TasteMapPremiumStatusDTO> }
+  premium: {
+    status(): Promise<TasteMapPremiumStatusDTO>
+    products(): Promise<TasteMapPremiumProductDTO[]>
+    purchase(productID: string): Promise<TasteMapPremiumActionResultDTO>
+    restore(): Promise<TasteMapPremiumActionResultDTO>
+    manage(): Promise<TasteMapPremiumActionResultDTO>
+  }
+  permissions: {
+    status(): Promise<TasteMapPermissionsStatusDTO>
+    openSystemSettings(): Promise<void>
+  }
+  backup: {
+    openExport(): Promise<void>
+    openImport(): Promise<void>
+  }
+  account: { openDelete(): Promise<void> }
   navigation: {
     openNative(request: TasteMapNativeRouteRequest): Promise<void>
     openHybrid(route: TasteMapHybridRoute): Promise<TasteMapNavigationStateDTO>

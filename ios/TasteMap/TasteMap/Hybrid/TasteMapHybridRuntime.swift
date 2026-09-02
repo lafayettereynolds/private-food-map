@@ -1,7 +1,9 @@
 import AuthenticationServices
+import AVFoundation
 import CoreLocation
 import Foundation
 import Observation
+import Photos
 import PhotosUI
 import SwiftData
 import UIKit
@@ -16,6 +18,7 @@ final class TasteMapHybridRuntime {
     private let container: ModelContainer
     private let authServices: NativeAuthServices
     private let premiumEntitlementService: PremiumEntitlementService
+    private let syncCoordinator: SyncCoordinator
     private let photoFiles: any LocalPhotoFileStoring
     private let photoTransferCoordinator: PhotoTransferCoordinator
     private let locationPermissionManager = LocationPermissionManager()
@@ -29,12 +32,14 @@ final class TasteMapHybridRuntime {
     private var pendingPhotoSelections: [String: PendingHybridPhotoSelection] = [:]
     private var pendingAcquisitionCandidates: [String: PendingHybridAcquisitionCandidate] = [:]
     private var photoPickerSession: HybridPhotoPickerSession?
+    private var cameraCaptureSession: HybridCameraCaptureSession?
 
     init(
         mode: TasteMapHybridRuntimeMode,
         container: ModelContainer,
         authServices: NativeAuthServices,
         premiumEntitlementService: PremiumEntitlementService,
+        syncCoordinator: SyncCoordinator,
         photoFiles: any LocalPhotoFileStoring,
         photoTransferCoordinator: PhotoTransferCoordinator
     ) {
@@ -42,6 +47,7 @@ final class TasteMapHybridRuntime {
         self.container = container
         self.authServices = authServices
         self.premiumEntitlementService = premiumEntitlementService
+        self.syncCoordinator = syncCoordinator
         self.photoFiles = photoFiles
         self.photoTransferCoordinator = photoTransferCoordinator
         navigation.didChange = { [weak self] state in
@@ -134,6 +140,10 @@ final class TasteMapHybridRuntime {
                 .restaurantAcquisition: true,
                 .location: true,
                 .premium: true,
+                .permissions: true,
+                .sync: true,
+                .backup: true,
+                .accountDelete: true,
                 .share: true,
                 .photoPicker: true,
             ],
@@ -319,10 +329,33 @@ final class TasteMapHybridRuntime {
             return try selectRestaurantCandidate(payload)
         case .premiumStatus:
             return premiumStatus()
+        case .premiumProducts:
+            return try await premiumProducts()
+        case .premiumPurchase:
+            return try await purchasePremium(payload)
+        case .premiumRestore:
+            return try await restorePremium()
+        case .premiumManage:
+            return try await managePremium()
+        case .syncStatus:
+            return try encode(syncStatus())
+        case .syncRun:
+            await syncCoordinator.synchronizeNow()
+            return try encode(syncStatus())
+        case .permissionsStatus:
+            return try encode(permissionsStatus())
+        case .permissionsOpenSettings:
+            return try await openSystemSettings()
+        case .backupOpenExport, .backupOpenImport:
+            return try openNativeRoute(.dataBackup)
+        case .accountOpenDelete:
+            return try openNativeRoute(.accountDelete)
         case .shareOpen:
             return try await openShareSheet(payload)
         case .photoPick:
             return try await pickPhotos(payload)
+        case .photoCapture:
+            return try await capturePhoto()
         case .photoDiscard:
             return try await discardPhoto(payload)
         case .photoRetry:
@@ -585,26 +618,13 @@ final class TasteMapHybridRuntime {
             do {
                 let provider = result.itemProvider
                 let data = try await Self.photoData(from: provider)
-                let prepared = try await photoTransferCoordinator.preparePhoto(
+                picked.append(try await registerPendingPhoto(
                     data: data,
                     suggestedContentType: provider.registeredTypeIdentifiers.compactMap {
                         UTType($0)?.preferredMIMEType
                     }.first,
-                    originalFileName: provider.suggestedName
-                )
-                let identifier = prepared.id.uuidString.lowercased()
-                pendingPhotoSelections[identifier] = PendingHybridPhotoSelection(
-                    ownerUserID: ownerUserID,
-                    prepared: prepared
-                )
-                picked.append(TasteMapHybridPhotoPickItemDTO(
-                    photoID: identifier,
-                    preview: TasteMapHybridImageDescriptor(
-                        kind: .nativeResource,
-                        resourceURL: "tastemap-resource://photo-draft/\(identifier)/thumbnail",
-                        photoID: identifier,
-                        accessibilityLabel: "待保存的到访照片"
-                    )
+                    originalFileName: provider.suggestedName,
+                    ownerUserID: ownerUserID
                 ))
             } catch {
                 // One bad selection does not discard other prepared photos or
@@ -613,6 +633,67 @@ final class TasteMapHybridRuntime {
             }
         }
         return try encode(TasteMapHybridPhotoPickResultDTO(photos: picked))
+    }
+
+    private func capturePhoto() async throws -> TasteMapHybridJSONValue {
+        guard let presenter = presentationController else {
+            throw Self.bridgeError("presentation_anchor_unavailable", method: .photoCapture, recoverable: true)
+        }
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
+            throw Self.bridgeError("auth_required", method: .photoCapture)
+        }
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            throw Self.bridgeError("camera_unavailable", method: .photoCapture, recoverable: true)
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .denied, .restricted:
+            throw Self.bridgeError("camera_permission_denied", method: .photoCapture, recoverable: true)
+        case .notDetermined:
+            guard await AVCaptureDevice.requestAccess(for: .video) else {
+                throw Self.bridgeError("camera_permission_denied", method: .photoCapture, recoverable: true)
+            }
+        case .authorized:
+            break
+        @unknown default:
+            throw Self.bridgeError("camera_permission_unavailable", method: .photoCapture, recoverable: true)
+        }
+        guard let data = await presentCamera(from: presenter) else {
+            return try encode(TasteMapHybridPhotoPickResultDTO(photos: []))
+        }
+        let item = try await registerPendingPhoto(
+            data: data,
+            suggestedContentType: UTType.jpeg.preferredMIMEType,
+            originalFileName: "tastemap-camera-\(UUID().uuidString.lowercased()).jpg",
+            ownerUserID: ownerUserID
+        )
+        return try encode(TasteMapHybridPhotoPickResultDTO(photos: [item]))
+    }
+
+    private func registerPendingPhoto(
+        data: Data,
+        suggestedContentType: String?,
+        originalFileName: String?,
+        ownerUserID: String
+    ) async throws -> TasteMapHybridPhotoPickItemDTO {
+        let prepared = try await photoTransferCoordinator.preparePhoto(
+            data: data,
+            suggestedContentType: suggestedContentType,
+            originalFileName: originalFileName
+        )
+        let identifier = prepared.id.uuidString.lowercased()
+        pendingPhotoSelections[identifier] = PendingHybridPhotoSelection(
+            ownerUserID: ownerUserID,
+            prepared: prepared
+        )
+        return TasteMapHybridPhotoPickItemDTO(
+            photoID: identifier,
+            preview: TasteMapHybridImageDescriptor(
+                kind: .nativeResource,
+                resourceURL: "tastemap-resource://photo-draft/\(identifier)/thumbnail",
+                photoID: identifier,
+                accessibilityLabel: "待保存的到访照片"
+            )
+        )
     }
 
     private func discardPhoto(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
@@ -728,6 +809,24 @@ final class TasteMapHybridRuntime {
         }
     }
 
+    private func presentCamera(from presenter: UIViewController) async -> Data? {
+        await withCheckedContinuation { continuation in
+            let picker = UIImagePickerController()
+            picker.sourceType = .camera
+            picker.cameraCaptureMode = .photo
+            picker.mediaTypes = [UTType.image.identifier]
+            let session = HybridCameraCaptureSession { [weak self, weak picker] data in
+                picker?.dismiss(animated: true) {
+                    self?.cameraCaptureSession = nil
+                    continuation.resume(returning: data)
+                }
+            }
+            cameraCaptureSession = session
+            picker.delegate = session
+            presenter.present(picker, animated: true)
+        }
+    }
+
     private static func photoData(from provider: NSItemProvider) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
@@ -750,6 +849,128 @@ final class TasteMapHybridRuntime {
                 .string(Self.dateFormatter.string(from: $0))
             } ?? .null,
         ])
+    }
+
+    private func premiumProducts() async throws -> TasteMapHybridJSONValue {
+        do {
+            let products = try await premiumEntitlementService.productsProvider.products().map {
+                TasteMapHybridPremiumProductDTO(
+                    id: $0.id,
+                    displayName: $0.displayName,
+                    valueDescription: $0.valueDescription,
+                    displayPrice: $0.displayPrice,
+                    period: $0.period.rawValue,
+                    billingPeriodDescription: $0.billingPeriodDescription
+                )
+            }
+            return try encode(products)
+        } catch {
+            throw Self.bridgeError("premium_products_unavailable", method: .premiumProducts, recoverable: true)
+        }
+    }
+
+    private func purchasePremium(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: HybridPremiumPurchaseRequest = try decode(payload)
+        let productID = request.productID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !productID.isEmpty, productID.count <= 240 else {
+            throw Self.bridgeError("invalid_premium_product", method: .premiumPurchase)
+        }
+        do {
+            let result = try await premiumEntitlementService.productsProvider.purchase(productID: productID)
+            if result.requiresEntitlementRefresh { await premiumEntitlementService.refresh() }
+            return try encode(TasteMapHybridPremiumActionResultDTO(
+                outcome: Self.premiumOutcome(result.outcome),
+                status: premiumStatus()
+            ))
+        } catch {
+            throw Self.bridgeError("premium_purchase_failed", method: .premiumPurchase, recoverable: true)
+        }
+    }
+
+    private func restorePremium() async throws -> TasteMapHybridJSONValue {
+        do {
+            let result = try await premiumEntitlementService.productsProvider.restore()
+            if result.requiresEntitlementRefresh { await premiumEntitlementService.refresh() }
+            return try encode(TasteMapHybridPremiumActionResultDTO(
+                outcome: Self.premiumOutcome(result.outcome),
+                status: premiumStatus()
+            ))
+        } catch {
+            throw Self.bridgeError("premium_restore_failed", method: .premiumRestore, recoverable: true)
+        }
+    }
+
+    private func managePremium() async throws -> TasteMapHybridJSONValue {
+        do {
+            try await premiumEntitlementService.productsProvider.manageSubscription()
+            return try encode(TasteMapHybridPremiumActionResultDTO(outcome: "opened", status: premiumStatus()))
+        } catch {
+            throw Self.bridgeError("premium_management_unavailable", method: .premiumManage, recoverable: true)
+        }
+    }
+
+    private func syncStatus() -> HybridSyncStatusDTO {
+        let value = syncCoordinator.presentation
+        let state: String = switch value.phase {
+        case .synced, .pending: "idle"
+        case .waitingForNetwork: "offline"
+        case .syncing: "syncing"
+        case .failed, .conflicted: "error"
+        case .signedOut: "unavailable"
+        }
+        return HybridSyncStatusDTO(
+            state: state,
+            pendingMutationCount: value.pendingCount,
+            pendingPhotoCount: value.pendingPhotoCount,
+            failedPhotoCount: value.failedPhotoCount,
+            conflictCount: value.conflictCount,
+            lastSuccessfulSyncAt: value.lastSyncedAt.map(Self.dateFormatter.string(from:)),
+            errorCode: value.diagnostic?.category.rawValue ?? (value.phase == .conflicted ? "conflict" : nil)
+        )
+    }
+
+    private func permissionsStatus() -> TasteMapHybridPermissionsStatusDTO {
+        let value = SettingsPermissionSnapshot.live(locationStatus: locationPermissionManager.authorizationStatus)
+        let camera = switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: "allowed"
+        case .denied: "denied"
+        case .restricted: "restricted"
+        case .notDetermined: "notDetermined"
+        @unknown default: "restricted"
+        }
+        return TasteMapHybridPermissionsStatusDTO(
+            location: value.location.rawValue,
+            camera: camera,
+            photoAddOnly: value.photoAddOnly.rawValue,
+            canOpenSystemSettings: value.location.canOpenSystemSettings
+                || value.photoAddOnly.canOpenSystemSettings
+                || camera == "denied"
+                || camera == "restricted"
+        )
+    }
+
+    private func openSystemSettings() async throws -> TasteMapHybridJSONValue {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            throw Self.bridgeError("system_settings_unavailable", method: .permissionsOpenSettings)
+        }
+        let opened = await UIApplication.shared.open(url)
+        guard opened else {
+            throw Self.bridgeError("system_settings_unavailable", method: .permissionsOpenSettings, recoverable: true)
+        }
+        return .object([:])
+    }
+
+    private func openNativeRoute(_ surface: TasteMapHybridRouteSurface) throws -> TasteMapHybridJSONValue {
+        _ = try navigation.openNative(TasteMapHybridRouteDTO(surface: surface))
+        return .object([:])
+    }
+
+    private static func premiumOutcome(_ outcome: MembershipPurchaseOutcome) -> String {
+        switch outcome {
+        case .completed: "completed"
+        case .pending: "pending"
+        case .userCancelled: "cancelled"
+        }
     }
 
     private func openShareSheet(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
@@ -838,6 +1059,7 @@ final class TasteMapHybridRuntime {
             pendingPhotoSelections.removeAll(keepingCapacity: false)
             try LocalAccountOwnershipMigrator(context: container.mainContext).activate(userID: user.id)
             await premiumEntitlementService.activate(userID: user.id)
+            await syncCoordinator.sessionDidBecomeAvailable(userID: user.id)
             let session = TasteMapHybridAuthStateDTO(state: "authenticated", userID: user.id, displayName: nil)
             resetToCurrentProfileIfNeeded()
             emit(.authChanged, payload: session)
@@ -855,10 +1077,22 @@ final class TasteMapHybridRuntime {
         pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
         pendingPhotoSelections.removeAll(keepingCapacity: false)
         premiumEntitlementService.sessionDidEnd()
+        syncCoordinator.sessionDidEnd()
         resetToCurrentProfileIfNeeded()
         let session = TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil)
         emit(.authChanged, payload: session)
         return (try? encode(session)) ?? .object(["state": .string("signedOut"), "userID": .null, "displayName": .null])
+    }
+
+    func accountDeletionDidComplete() async {
+        authServices.endLocalAccountSession()
+        pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
+        pendingPhotoSelections.removeAll(keepingCapacity: false)
+        premiumEntitlementService.sessionDidEnd()
+        syncCoordinator.sessionDidEnd()
+        resetToCurrentProfileIfNeeded()
+        let session = TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil)
+        emit(.authChanged, payload: session)
     }
 
     private func safeSessionState() async -> TasteMapHybridAuthStateDTO {
@@ -950,6 +1184,20 @@ private struct HybridShareRequest: Decodable {
     let imageDataURL: String?
 }
 
+private struct HybridPremiumPurchaseRequest: Decodable {
+    let productID: String
+}
+
+private struct HybridSyncStatusDTO: Encodable {
+    let state: String
+    let pendingMutationCount: Int
+    let pendingPhotoCount: Int
+    let failedPhotoCount: Int
+    let conflictCount: Int
+    let lastSuccessfulSyncAt: String?
+    let errorCode: String?
+}
+
 private struct PendingHybridPhotoSelection {
     let ownerUserID: String
     let prepared: PreparedLocalPhoto
@@ -973,6 +1221,27 @@ private final class HybridPhotoPickerSession: NSObject, PHPickerViewControllerDe
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         completion(results)
+    }
+}
+
+@MainActor
+private final class HybridCameraCaptureSession: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    private let completion: (Data?) -> Void
+
+    init(completion: @escaping (Data?) -> Void) {
+        self.completion = completion
+    }
+
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        completion(nil)
+    }
+
+    func imagePickerController(
+        _ picker: UIImagePickerController,
+        didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+    ) {
+        let image = info[.originalImage] as? UIImage
+        completion(image?.jpegData(compressionQuality: 0.94))
     }
 }
 

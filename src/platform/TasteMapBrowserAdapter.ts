@@ -62,6 +62,7 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
   location: false,
   photoPicker: false,
   premium: true,
+  permissions: false,
   nativeNavigation: false,
   backup: false,
   accountDelete: false,
@@ -227,6 +228,7 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
   location = { current: async () => capabilityUnavailable('location') }
   photo = {
     pick: async () => capabilityUnavailable('photoPicker'),
+    capture: async () => capabilityUnavailable('photoPicker'),
     discard: async () => capabilityUnavailable('photoPicker'),
     retry: async () => capabilityUnavailable('photoPicker'),
   }
@@ -235,7 +237,20 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       state: (await this.loadProfile()).user.membershipTier === 'member' ? 'premium' : 'free',
       expiresAt: null,
     }),
+    products: async () => [],
+    purchase: async () => capabilityUnavailable('premium'),
+    restore: async () => capabilityUnavailable('premium'),
+    manage: async () => capabilityUnavailable('premium'),
   }
+  permissions = {
+    status: async () => capabilityUnavailable('permissions'),
+    openSystemSettings: async () => capabilityUnavailable('permissions'),
+  }
+  backup = {
+    openExport: async () => capabilityUnavailable('backup'),
+    openImport: async () => capabilityUnavailable('backup'),
+  }
+  account = { openDelete: async () => capabilityUnavailable('accountDelete') }
   navigation = {
     openNative: async () => capabilityUnavailable('nativeNavigation'),
     openHybrid: async (route: import('./TasteMapPlatform').TasteMapHybridRoute) => ({ route, owner: 'hybrid' as const, canGoBack: false }),

@@ -16,6 +16,9 @@ struct HybridPhase2AIntegrationTests {
         let restaurantDelete = try TasteMapHybridRouteDTO(surface: .restaurantDelete, identifier: "restaurant-1")
         let restaurantAddToList = try TasteMapHybridRouteDTO(surface: .restaurantAddToList, identifier: "restaurant-1")
         let restaurantWantToGo = try TasteMapHybridRouteDTO(surface: .restaurantWantToGo, identifier: "restaurant-1")
+        let dataBackup = try TasteMapHybridRouteDTO(surface: .dataBackup)
+        let permissions = try TasteMapHybridRouteDTO(surface: .permissions)
+        let accountDelete = try TasteMapHybridRouteDTO(surface: .accountDelete)
         #expect(profile.owner == .hybrid)
         #expect(map.owner == .hybrid)
         #expect(detail.owner == .hybrid)
@@ -26,6 +29,9 @@ struct HybridPhase2AIntegrationTests {
         #expect(restaurantDelete.owner == .native)
         #expect(restaurantAddToList.owner == .native)
         #expect(restaurantWantToGo.owner == .native)
+        #expect(dataBackup.owner == .native)
+        #expect(permissions.owner == .native)
+        #expect(accountDelete.owner == .native)
         #expect(throws: TasteMapHybridRouteError.missingIdentifier) {
             try TasteMapHybridRouteDTO(surface: .restaurant)
         }

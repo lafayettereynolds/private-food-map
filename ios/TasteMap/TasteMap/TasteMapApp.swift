@@ -213,6 +213,7 @@ struct TasteMapApp: App {
             container: container,
             authServices: authServices,
             premiumEntitlementService: premiumService,
+            syncCoordinator: coordinator,
             photoFiles: photoFiles,
             photoTransferCoordinator: transferCoordinator
         )

@@ -237,6 +237,26 @@ describe('Hybrid global Product Contract', () => {
     expect(shell).not.toContain('HYBRID_ROUTE_REGISTRY.map')
     expect(shell.match(/data-product-contract="bottom-navigation"/g)).toHaveLength(1)
   })
+
+  it('keeps Batch 2 system capabilities typed and owned by existing Native services', () => {
+    const platform = source('../../src/platform/TasteMapPlatform.ts')
+    const settings = source('../../src/components/TasteMapPremiumSettingsPages.tsx')
+    const runtime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
+    for (const method of [
+      'premium.products', 'premium.purchase', 'premium.restore', 'premium.manage',
+      'sync.status', 'sync.run', 'permissions.status', 'permissions.openSettings',
+      'backup.openExport', 'backup.openImport', 'account.openDelete', 'photo.pick', 'photo.capture',
+    ]) expect(platform).toContain(`'${method}'`)
+    expect(runtime).toContain('premiumEntitlementService.productsProvider')
+    expect(runtime).toContain('syncCoordinator.synchronizeNow()')
+    expect(runtime).toContain('SettingsPermissionSnapshot.live')
+    expect(runtime).toContain('photoTransferCoordinator.preparePhoto')
+    expect(runtime).toContain('UIImagePickerController.isSourceTypeAvailable(.camera)')
+    expect(settings).toContain('platform.backup.openExport()')
+    expect(settings).toContain('platform.backup.openImport()')
+    expect(settings).toContain('platform.account.openDelete()')
+    expect(settings).not.toMatch(/fake Product|fake product|isPremium\s*=\s*true/)
+  })
 })
 
 describe('Hybrid forbidden Product patterns', () => {

@@ -3,7 +3,7 @@ import Foundation
 public enum TasteMapHybridCapability: String, Codable, CaseIterable, Sendable {
     case appleSignIn, logout, profileRead, restaurantRead, restaurantAcquisition, mapBrowse, visitContract, sync
     case contentRead
-    case haptics, share, location, photoPicker, premium, nativeNavigation, backup, accountDelete
+    case haptics, share, location, photoPicker, premium, permissions, nativeNavigation, backup, accountDelete
 }
 
 public struct TasteMapHybridRuntimeDTO: Codable, Sendable {
@@ -50,6 +50,7 @@ public enum TasteMapHybridRouteSurface: String, Codable, CaseIterable, Sendable 
     case map, discovery, add, profile, restaurant, visit, visitEdit, lists, publicList, activity
     case roulette, analytics, premium, settings
     case acquisitionNative, listManage, premiumStore, settingsNative, socialNative
+    case dataBackup, permissions, storage, accountDelete
     case profileEdit, restaurantEdit, restaurantDelete, restaurantAddToList, restaurantWantToGo
 }
 
@@ -615,6 +616,27 @@ public struct TasteMapHybridAcquisitionSelectionDTO: Codable, Sendable {
     public let existingRestaurantID: String?
 }
 
+public struct TasteMapHybridPremiumProductDTO: Codable, Equatable, Sendable {
+    public let id: String
+    public let displayName: String
+    public let valueDescription: String
+    public let displayPrice: String
+    public let period: String
+    public let billingPeriodDescription: String
+}
+
+public struct TasteMapHybridPremiumActionResultDTO: Codable, Sendable {
+    public let outcome: String
+    public let status: TasteMapHybridJSONValue
+}
+
+public struct TasteMapHybridPermissionsStatusDTO: Codable, Equatable, Sendable {
+    public let location: String
+    public let camera: String
+    public let photoAddOnly: String
+    public let canOpenSystemSettings: Bool
+}
+
 public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case runtimeInfo = "runtime.info"
     case authSessionStatus = "auth.sessionStatus"
@@ -639,9 +661,19 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case shareOpen = "share.open"
     case locationCurrent = "location.current"
     case photoPick = "photo.pick"
+    case photoCapture = "photo.capture"
     case photoDiscard = "photo.discard"
     case photoRetry = "photo.retry"
     case premiumStatus = "premium.status"
+    case premiumProducts = "premium.products"
+    case premiumPurchase = "premium.purchase"
+    case premiumRestore = "premium.restore"
+    case premiumManage = "premium.manage"
+    case permissionsStatus = "permissions.status"
+    case permissionsOpenSettings = "permissions.openSettings"
+    case backupOpenExport = "backup.openExport"
+    case backupOpenImport = "backup.openImport"
+    case accountOpenDelete = "account.openDelete"
     case navigationOpenNative = "navigation.openNative"
     case navigationOpenHybrid = "navigation.openHybrid"
     case navigationBack = "navigation.back"

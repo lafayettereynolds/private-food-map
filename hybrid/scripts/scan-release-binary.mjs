@@ -31,23 +31,48 @@ const forbiddenMarkers = [
   'TasteMapHybridDebugFixture',
   'VITE_HYBRID_DEBUG_ROUTE',
   'X-Taste-Map-Test-User',
-  'authorizationCode',
-  'refreshToken',
   '__TASTEMAP_UI_TEST_RUNTIME',
   'api-dev.tastemap.cn',
   'BEGIN PRIVATE KEY',
   '/Users/lafayette',
+  '--tastemap-hybrid-development',
+  'TASTEMAP_VISUAL_QA_MODE',
 ]
 
 for (const marker of forbiddenMarkers) {
   assert.equal(releaseText.includes(marker), false, `Release App contains forbidden test/development marker: ${marker}`)
 }
 
+// Native AuthSessionManager must retain its Keychain-backed credential model.
+// The Release security boundary is that credential vocabulary never enters
+// the signed React bundle or bridge DTO surface.
+const publicRoot = resolve(appPath, 'public')
+const webEntries = await filesIn(publicRoot)
+const webText = []
+for (const path of [
+  ...webEntries,
+  resolve(appPath, 'capacitor.config.json'),
+  resolve(appPath, 'hybrid-bundle-manifest.json'),
+]) {
+  webText.push(await readFile(path, 'utf8'))
+}
+const signedWebText = webText.join('\n')
+for (const marker of [
+  'accessToken',
+  'refreshToken',
+  'identityToken',
+  'authorizationCode',
+  'Authorization',
+  'Bearer ',
+]) {
+  assert.equal(signedWebText.includes(marker), false, `Formal Hybrid Web bundle exposes credential marker: ${marker}`)
+}
+
 const bundledConfig = JSON.parse(await readFile(resolve(appPath, 'capacitor.config.json'), 'utf8'))
 assert.equal(bundledConfig.server?.url, undefined, 'Release App must load its UI from the signed local bundle.')
 assert.equal(entries.some((path) => path.includes('/_hybrid_debug/')), false, 'Debug fixture directory entered Release App.')
 
-console.log(`Hybrid Release purity scan passed: ${entries.length} files, no test fixture, debug route, test auth, development URL, secret, or remote server.url markers.`)
+console.log(`Hybrid Release purity scan passed: ${entries.length} app files, ${webEntries.length} signed Web files; no test fixture, debug route, test auth, development URL, secret, remote server.url, or React credential markers.`)
 
 async function filesIn(directory) {
   const values = []

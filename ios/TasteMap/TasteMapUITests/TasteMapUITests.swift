@@ -3694,7 +3694,7 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testHybridVisitHistoryEditUsesOwnedNativeEditorAndRefreshesDetail() throws {
+    func testHybridVisitHistoryEditUsesOwnedHybridEditorAndRefreshesDetail() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
         app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
@@ -3726,16 +3726,17 @@ final class TasteMapUITests: XCTestCase {
         ).count, 4)
         editVisit.tap()
 
-        XCTAssertTrue(app.navigationBars["编辑到访"].waitForExistence(timeout: 10))
-        let note = app.descendants(matching: .any)["visit-editor-note"]
+        XCTAssertTrue(webView.staticTexts["编辑到访记录"].waitForExistence(timeout: 10))
+        let note = webView.textViews["到访笔记"]
         scrollUntilVisible(note, in: app)
         XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.clearAndType("Batch 1 Native 编辑后刷新")
-        app.buttons["visit-editor-save"].tap()
+        note.tap()
+        note.typeText(" Batch 2 Hybrid 编辑后刷新")
+        webView.buttons["保存修改"].tap()
 
         XCTAssertTrue(webView.buttons["返回上一页"].waitForExistence(timeout: 12))
         let refreshedNote = webView.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS %@", "Batch 1 Native 编辑后刷新")
+            NSPredicate(format: "label CONTAINS %@", "Batch 2 Hybrid 编辑后刷新")
         ).firstMatch
         scrollUntilVisible(refreshedNote, in: app)
         XCTAssertTrue(refreshedNote.waitForExistence(timeout: 8))
