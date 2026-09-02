@@ -15,6 +15,8 @@ nonisolated enum LocalAccountOwner {
     }
 }
 
+#if !TASTEMAP_HYBRID_POC_CORE
+
 nonisolated enum LocalAccountScope: Equatable, Sendable {
     case restoring
     case guest
@@ -185,3 +187,4 @@ struct LocalAccountOwnershipMigrator {
         }
     }
 }
+#endif

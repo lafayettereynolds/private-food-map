@@ -27,6 +27,7 @@ export interface RestaurantSummarySectionProps {
     required?: boolean
   }
   personalRatingOverride?: PersonalRatingOverride
+  remoteStatsEnabled?: boolean
   referencePrice?: number | null
   className?: string
 }
@@ -42,6 +43,7 @@ export function RestaurantSummarySection({
   actions,
   addressEditor,
   personalRatingOverride,
+  remoteStatsEnabled = true,
   referencePrice,
   className = '',
 }: RestaurantSummarySectionProps) {
@@ -107,6 +109,7 @@ export function RestaurantSummarySection({
       amapPoiId={restaurant.amapPoiId}
       historyRestaurants={historyRestaurants}
       personalRatingOverride={personalRatingOverride}
+      remoteStatsEnabled={remoteStatsEnabled}
       restaurant={restaurant}
     />
 

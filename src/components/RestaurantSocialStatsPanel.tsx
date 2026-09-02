@@ -14,15 +14,20 @@ export interface PersonalRatingOverride {
   description?: string
 }
 
-export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyRestaurants = [], personalRatingOverride }: { amapPoiId: string; restaurant: RestaurantSummary; historyRestaurants?: RestaurantSummary[]; personalRatingOverride?: PersonalRatingOverride }) {
+export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyRestaurants = [], personalRatingOverride, remoteStatsEnabled = true }: { amapPoiId: string; restaurant: RestaurantSummary; historyRestaurants?: RestaurantSummary[]; personalRatingOverride?: PersonalRatingOverride; remoteStatsEnabled?: boolean }) {
   const [stats, setStats] = useState<RestaurantSocialStats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(remoteStatsEnabled)
   const personalVisits = restaurant.visits.filter((visit) => visit.userId === CURRENT_USER_ID)
   const personalRating = personalRestaurantRating(personalVisits, CURRENT_USER_ID)
   const isCurrentUsersVisitedRestaurant = !restaurant.isRecommendation && restaurant.userId === CURRENT_USER_ID && restaurant.status === 'visited'
   const prediction = isCurrentUsersVisitedRestaurant ? null : predictPersonalTasteScore(restaurant, historyRestaurants)
 
   useEffect(() => {
+    if (!remoteStatsEnabled) {
+      setStats(null)
+      setLoading(false)
+      return
+    }
     const controller = new AbortController()
     setLoading(true)
     void fetchRestaurantSocialStats(amapPoiId, controller.signal)
@@ -30,7 +35,7 @@ export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyResta
       .catch(() => setStats(null))
       .finally(() => setLoading(false))
     return () => controller.abort()
-  }, [amapPoiId])
+  }, [amapPoiId, remoteStatsEnabled])
 
   return <section className="restaurant-social-stats" aria-label="评分参考" data-summary-module="rating-reference">
     <header><span><UsersRound size={13} />评分参考</span>{loading ? <RefreshCw className="is-spinning" size={12} /> : null}</header>

@@ -988,6 +988,12 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .profile-follow-button:disabled { opacity: .58; cursor: default; }
 .profile-edit-button { min-height: 32px; padding: 0 14px; border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-divider)); border-radius: 999px; color: var(--color-primary); background: rgba(255,255,255,.84); font-size: 9px; font-weight: 740; cursor: pointer; }
 .profile-dashboard__counts { margin: 0 0 -1px; padding: 9px 0; border-top: 1px solid var(--color-divider); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; background: transparent; box-shadow: none; }
+.profile-dashboard__social-counts { width: min(310px, 100%); margin: 0 auto; padding: 4px 0 10px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.profile-dashboard__social-counts > button { min-height: 50px; padding: 4px 12px; border: 0; border-right: 1px solid var(--color-divider); display: grid; align-content: center; justify-items: center; gap: 3px; color: inherit; background: transparent; cursor: pointer; }
+.profile-dashboard__social-counts > button:last-child { border-right: 0; }
+.profile-dashboard__counts--primary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.profile-dashboard__social-counts strong { color: var(--color-text-primary); font-size: 16px; line-height: 1; }
+.profile-dashboard__social-counts small { color: var(--color-text-secondary); font-size: 9px; font-weight: 650; }
 .profile-dashboard__counts.is-public { grid-template-columns: repeat(2, minmax(0, 180px)); justify-content: center; }
 .profile-dashboard__counts > span, .profile-dashboard__counts > button, .profile-data-grid span { min-width: 0; min-height: 62px; padding: 5px; display: grid; align-content: center; justify-items: center; gap: 4px; border: 0; border-right: 1px solid var(--color-divider); color: inherit; background: transparent; }
 .profile-dashboard__counts > button { cursor: pointer; }

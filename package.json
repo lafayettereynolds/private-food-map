@@ -47,6 +47,7 @@
     "test:p4f:development": "node scripts/test-restaurant-lists-development.mjs",
     "test:p4h": "vitest run worker/membershipV1.test.ts worker/authV1.integration.test.js worker/discoveryV1.integration.test.js worker/syncV1.integration.test.js src/services/featurePolicy.test.ts",
     "test:f1b1": "vitest run src/contracts/backupV1.test.ts src/contracts/restaurantContract.test.ts src/contracts/syncV1.test.ts",
+    "test:hybrid-poc": "vitest run src/platform/TasteMapPlatform.test.ts && node hybrid-poc/scripts/verify-local-bundle.mjs",
     "preview": "vite preview --config vite.config.ts",
     "cloudflare:dev": "pnpm run build && wrangler dev --local",
     "d1:migrate:local": "wrangler d1 migrations apply food-map-db --local",

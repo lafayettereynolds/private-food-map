@@ -103,6 +103,7 @@ nonisolated enum RestaurantImagePriorityPolicy {
     }
 }
 
+#if !TASTEMAP_HYBRID_POC_CORE
 /// One deterministic local-photo selector. A referenced marker photo is
 /// preferred, followed by a Restaurant marker photo and then the newest valid
 /// user photo. Page-specific renderers must not invent another ordering.
@@ -386,3 +387,4 @@ struct TasteMapRestaurantImage: View {
         finished = true
     }
 }
+#endif

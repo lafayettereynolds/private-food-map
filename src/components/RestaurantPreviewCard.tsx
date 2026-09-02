@@ -21,6 +21,8 @@ interface RestaurantPreviewCardProps {
   viewerStatus?: RestaurantSummary['status'] | null
   /** Public discovery details are view-only even when their source visit belongs to another user. */
   readOnly?: boolean
+  /** Allows an isolated/local renderer to keep the shared detail body offline. */
+  remoteStatsEnabled?: boolean
 }
 
 export function RestaurantPreviewCard({
@@ -38,6 +40,7 @@ export function RestaurantPreviewCard({
   onAddToWant,
   viewerStatus,
   readOnly = false,
+  remoteStatsEnabled = true,
 }: RestaurantPreviewCardProps) {
   const recordedSpend = restaurant.visits.map((visit) => visit.myActualSpend ?? visit.pricePerPerson).filter((value): value is number => value !== null)
   const averageActualSpend = recordedSpend.length ? Math.round(recordedSpend.reduce((sum, value) => sum + value, 0) / recordedSpend.length) : null
@@ -59,6 +62,7 @@ export function RestaurantPreviewCard({
         additionalUserPhotos={additionalUserPhotos}
         className="is-detail-card"
         historyRestaurants={historyRestaurants}
+        remoteStatsEnabled={remoteStatsEnabled}
         restaurant={restaurant}
       />
       {showPersonalHistory ? <section className="restaurant-visit-overview" aria-label="我的到访概览">
