@@ -32,6 +32,7 @@ enum FuseVisualCandidateKind: String, CaseIterable {
 
 enum FuseVisualCandidateRuntime {
     static let argument = "-fuse-candidate"
+    static let cleanPreviewArgument = "-fuse-clean-preview"
 
     static var current: FuseVisualCandidateKind? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -43,6 +44,10 @@ enum FuseVisualCandidateRuntime {
         }
         return nil
     }
+
+    static var isCleanPreview: Bool {
+        ProcessInfo.processInfo.arguments.contains(cleanPreviewArgument)
+    }
 }
 
 struct FuseVisualCandidateHost: View {
@@ -51,26 +56,26 @@ struct FuseVisualCandidateHost: View {
     var body: some View {
         Group {
             switch kind {
-            case .profile: FuseProfileCandidate()
+            case .profile: FuseProfileCandidateV4()
             case .visitEditor: FuseVisitEditorCandidate()
             case .dishPhoto: FuseDishPhotoCandidate()
             case .publicProfile: FusePublicProfileCandidate()
             case .lists: FuseListsCandidate()
-            case .analyticsCompanion: FuseAnalysisCandidate(kind: .companion)
-            case .analyticsSource: FuseAnalysisCandidate(kind: .source)
-            case .analyticsMonthly: FuseAnalysisCandidate(kind: .monthly)
-            case .analyticsAnnual: FuseAnalysisCandidate(kind: .annual)
-            case .posterTaste: FusePosterCandidate(kind: .taste, style: .storyMap)
+            case .analyticsCompanion: LafayetteAnalyticsCandidateV3(kind: .companion)
+            case .analyticsSource: LafayetteAnalyticsCandidateV3(kind: .source)
+            case .analyticsMonthly: LafayetteAnalyticsCandidateV3(kind: .monthly)
+            case .analyticsAnnual: LafayetteAnalyticsCandidateV3(kind: .annual)
+            case .posterTaste: LafayettePosterCandidateV3(kind: .taste)
             case .posterTasteB: FusePosterCandidate(kind: .taste, style: .editorial)
-            case .posterCompanion: FusePosterCandidate(kind: .companion, style: .storyMap)
+            case .posterCompanion: LafayettePosterCandidateV3(kind: .companion)
             case .posterCompanionB: FusePosterCandidate(kind: .companion, style: .editorial)
-            case .posterSource: FusePosterCandidate(kind: .source, style: .storyMap)
+            case .posterSource: LafayettePosterCandidateV3(kind: .source)
             case .posterSourceB: FusePosterCandidate(kind: .source, style: .editorial)
-            case .posterMonthly: FusePosterCandidate(kind: .monthly, style: .storyMap)
+            case .posterMonthly: LafayettePosterCandidateV3(kind: .monthly)
             case .posterMonthlyB: FusePosterCandidate(kind: .monthly, style: .editorial)
-            case .posterAnnual: FusePosterCandidate(kind: .annual, style: .storyMap)
+            case .posterAnnual: LafayettePosterCandidateV3(kind: .annual)
             case .posterAnnualB: FusePosterCandidate(kind: .annual, style: .editorial)
-            case .paywall: FusePaywallCandidate()
+            case .paywall: FusePaywallCandidateV3()
             case .settings: FuseSettingsCandidate()
             }
         }
@@ -115,19 +120,21 @@ private struct FusePage<Content: View>: View {
                         Text(title)
                             .font(.title2.weight(.bold))
                             .foregroundStyle(TasteMapCoreTheme.textPrimary)
-                        if let subtitle {
+                        if let subtitle, !FuseVisualCandidateRuntime.isCleanPreview {
                             Text(subtitle)
                                 .font(.caption)
                                 .foregroundStyle(TasteMapCoreTheme.textSecondary)
                         }
                     }
                     Spacer()
-                    Text(badge)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(TasteMapCoreTheme.brandDeep)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(TasteMapCoreTheme.brandSoft, in: Capsule())
+                    if !FuseVisualCandidateRuntime.isCleanPreview {
+                        Text(badge)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(TasteMapCoreTheme.brandSoft, in: Capsule())
+                    }
                 }
                 content
             }
@@ -1482,5 +1489,1031 @@ private struct FuseSettingsGroup<Content: View>: View {
     @ViewBuilder let content: Content
     init(title: String, @ViewBuilder content: () -> Content) { self.title = title; self.content = content() }
     var body: some View { FuseSection(title) { VStack(spacing: 0) { content }.tasteMapCoreCard(radius: 16) } }
+}
+
+// MARK: - Lafayette approval package candidates (2026-09-02)
+
+/// V4 changes only the one open Profile region: Core Entries. Every other
+/// region is copied from the previously frozen V3 composition.
+private struct FuseProfileCandidateV4: View {
+    var body: some View {
+        Group {
+            if FuseVisualCandidateRuntime.isCleanPreview {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.section) {
+                        candidateContent
+                    }
+                    .padding(.horizontal, TasteMapDesignTokens.Layout.pageInset)
+                    .padding(.top, 12)
+                    .padding(.bottom, 34)
+                }
+                .tasteMapCorePage()
+            } else {
+                FusePage(
+                    "我的",
+                    subtitle: "只重做核心入口 · 其余 7 个区域保持冻结",
+                    badge: "FUSE V4"
+                ) {
+                    candidateContent
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var candidateContent: some View {
+        frozenHeader
+        FuseSection("核心入口") {
+            HStack(alignment: .top, spacing: 10) {
+                FuseCoreEntryTileV4(
+                    title: "今天吃什么",
+                    detail: "从 10 家候选中转出今天这一家",
+                    kind: .genericDining,
+                    accent: TasteMapCoreTheme.brand
+                )
+                FuseCoreEntryTileV4(
+                    title: "我的口味档案",
+                    detail: "查看日料、火锅与咖啡的长期偏好",
+                    kind: .food,
+                    accent: TasteMapAnalysisTheme.ingredientRed
+                )
+            }
+        }
+        frozenMemories
+        frozenLists
+        frozenInsights
+        frozenSettings
+    }
+
+    private var frozenHeader: some View {
+        VStack(spacing: 13) {
+            HStack {
+                Label("添加好友", systemImage: "person.badge.plus")
+                    .font(.caption.weight(.semibold))
+                    .frame(minHeight: 44)
+                Spacer()
+                Image(systemName: "gearshape")
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("设置")
+            }
+            ZStack {
+                Circle().fill(TasteMapCoreTheme.brandSoft)
+                Text("L").font(.title.bold()).foregroundStyle(TasteMapCoreTheme.brandDeep)
+            }
+            .frame(width: 76, height: 76)
+            HStack(spacing: 7) {
+                Text(FuseFixture.name).font(.title2.bold())
+                PremiumBurgerBadge().frame(width: 24, height: 24)
+            }
+            HStack(spacing: 16) {
+                Label("关注 \(FuseFixture.following)", systemImage: "person.2")
+                Label("粉丝 \(FuseFixture.followers)", systemImage: "person.2.fill")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(TasteMapCoreTheme.textSecondary)
+            Text(FuseFixture.joined).font(.caption).foregroundStyle(TasteMapCoreTheme.textSecondary)
+            HStack(spacing: 7) {
+                Button("编辑资料") { }.buttonStyle(.bordered).controlSize(.small)
+                Button { } label: { Image(systemName: "square.and.arrow.up") }
+                    .buttonStyle(.bordered).controlSize(.small).accessibilityLabel("分享个人主页")
+            }
+            HStack(spacing: 0) {
+                FuseMetric(value: FuseFixture.visited, label: "去过")
+                Divider().frame(height: 34)
+                FuseMetric(value: FuseFixture.want, label: "想去")
+                Divider().frame(height: 34)
+                FuseMetric(value: FuseFixture.spending, label: "总消费")
+            }
+            .padding(.top, 11)
+            .overlay(alignment: .top) { Divider() }
+        }
+        .padding(15)
+        .tasteMapCoreCard(radius: 20)
+    }
+
+    private var frozenMemories: some View {
+        FuseSection("回味", trailing: "查看全部") {
+            HStack(spacing: 8) {
+                FuseMemoryTile(title: "本月回顾", value: "18 次", kind: .calendar)
+                FuseMemoryTile(title: "年度回顾", value: "96 家", kind: .trend)
+                FuseMemoryTile(title: "那年今日", value: "3 条", kind: .time)
+            }
+        }
+    }
+
+    private var frozenLists: some View {
+        FuseSection("我的食单", trailing: "5 个食单") {
+            HStack(spacing: 8) {
+                ForEach(Array(FuseFixture.restaurants.enumerated()), id: \.offset) { _, item in
+                    FuseRestaurantImage(asset: item.3, name: item.0, height: 96)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
+            }
+        }
+    }
+
+    private var frozenInsights: some View {
+        FuseSection("发现与洞察") {
+            VStack(spacing: 8) {
+                FuseEntry(title: "最佳饭搭子", detail: "Mia · 一起吃过 42 次", kind: .sharedMeal)
+                FuseEntry(title: "谁最会种草", detail: "小红书最常记录，Mia 平均分最高", kind: .discovery)
+            }
+        }
+    }
+
+    private var frozenSettings: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "gearshape")
+                .foregroundStyle(TasteMapCoreTheme.brand)
+                .frame(width: 32, height: 32)
+                .background(TasteMapCoreTheme.brandSoft, in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("设置与数据").font(.subheadline.weight(.semibold))
+                Text("同步、备份、隐私和账户").font(.caption).foregroundStyle(TasteMapCoreTheme.textSecondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(TasteMapCoreTheme.textSecondary)
+        }
+        .padding(13)
+        .tasteMapCoreCard(radius: 15)
+    }
+}
+
+private struct FuseCoreEntryTileV4: View {
+    let title: String
+    let detail: String
+    let kind: FoodDiningVisualKind
+    let accent: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                FoodDiningVisualIcon(
+                    kind: kind,
+                    usage: .dataLinked,
+                    size: 42,
+                    foregroundColor: accent,
+                    backgroundColor: accent.opacity(0.11)
+                )
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(TasteMapCoreTheme.textSecondary)
+            }
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                .lineLimit(2)
+                .frame(minHeight: 38, alignment: .topLeading)
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                .lineLimit(3)
+                .frame(minHeight: 44, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, minHeight: 158, alignment: .topLeading)
+        .padding(13)
+        .tasteMapCoreCard(radius: 17)
+    }
+}
+
+private struct LafayetteAnalyticsCandidateV3: View {
+    let kind: FuseAnalysisKind
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 44, height: 44)
+                    Spacer()
+                    Text(kind.title).font(.headline)
+                    Spacer()
+                    Image(systemName: "square.and.arrow.up")
+                        .frame(width: 44, height: 44)
+                        .accessibilityLabel("分享")
+                }
+                if !FuseVisualCandidateRuntime.isCleanPreview {
+                    Label("真实 SwiftUI 候选 V3 · 待 Lafayette 审批", systemImage: "hammer")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(TasteMapAnalysisTheme.brand)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(TasteMapAnalysisTheme.brandSoft, in: Capsule())
+                }
+                LafayetteAnalyticsInfographic(kind: kind)
+                    .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .shadow(color: TasteMapAnalysisTheme.ink.opacity(0.10), radius: 16, y: 8)
+                Button { } label: {
+                    Label("生成分享海报", systemImage: "rectangle.portrait.and.arrow.right")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(TasteMapAnalysisTheme.brand)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 24)
+        }
+        .background(TasteMapAnalysisTheme.canvas.ignoresSafeArea())
+    }
+}
+
+private struct LafayetteAnalyticsInfographic: View {
+    let kind: FuseAnalysisKind
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let s = w / 680
+            ZStack(alignment: .topLeading) {
+                Color(red: 0.985, green: 0.978, blue: 0.955)
+                Circle()
+                    .fill(TasteMapAnalysisTheme.creamSoft.opacity(0.58))
+                    .frame(width: w * 0.46)
+                    .position(x: w * 0.48, y: h * 0.30)
+                LafayetteAnalyticsConnectors()
+                    .stroke(
+                        TasteMapAnalysisTheme.secondaryInk.opacity(0.32),
+                        style: StrokeStyle(lineWidth: max(0.65, 1.2 * s), dash: [4 * s, 5 * s])
+                    )
+                    .frame(width: w * 0.52, height: h * 0.27)
+                    .position(x: w * 0.48, y: h * 0.30)
+
+                analyticsHeader(scale: s)
+                    .frame(width: w * 0.30, alignment: .leading)
+                    .position(x: w * 0.18, y: h * 0.10)
+
+                Image(kind.heroAsset)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: w * 0.29, height: w * 0.29)
+                    .clipShape(Circle())
+                    .overlay { Circle().stroke(.white, lineWidth: 8 * s) }
+                    .shadow(color: TasteMapAnalysisTheme.ink.opacity(0.16), radius: 16 * s, y: 9 * s)
+                    .position(x: w * 0.48, y: h * 0.30)
+
+                ForEach(Array(kind.lafayetteNodes.enumerated()), id: \.offset) { index, node in
+                    LafayetteAnalyticsNode(node: node, scale: s)
+                        .frame(width: w * 0.16, height: h * 0.09)
+                        .position(nodePosition(index, width: w, height: h))
+                }
+
+                LafayetteOverviewPanel(kind: kind, scale: s)
+                    .frame(width: w * 0.27, height: h * 0.23)
+                    .position(x: w * 0.845, y: h * 0.145)
+                LafayetteInsightPanel(kind: kind, scale: s)
+                    .frame(width: w * 0.27, height: h * 0.18)
+                    .position(x: w * 0.845, y: h * 0.37)
+                LafayetteTopThreePanel(kind: kind, scale: s)
+                    .frame(width: w * 0.27, height: h * 0.24)
+                    .position(x: w * 0.155, y: h * 0.48)
+                LafayettePreferencePanel(kind: kind, scale: s)
+                    .frame(width: w * 0.43, height: h * 0.16)
+                    .position(x: w * 0.49, y: h * 0.55)
+                LafayetteSpendPanel(kind: kind, scale: s)
+                    .frame(width: w * 0.30, height: h * 0.15)
+                    .position(x: w * 0.17, y: h * 0.72)
+                LafayettePricePanel(kind: kind, scale: s)
+                    .frame(width: w * 0.27, height: h * 0.15)
+                    .position(x: w * 0.49, y: h * 0.72)
+                LafayetteCityPanel(kind: kind, scale: s)
+                    .frame(width: w * 0.33, height: h * 0.15)
+                    .position(x: w * 0.80, y: h * 0.72)
+                LafayetteCompanionPanel(kind: kind, scale: s)
+                    .frame(width: w * 0.47, height: h * 0.13)
+                    .position(x: w * 0.255, y: h * 0.88)
+                LafayetteMealTimePanel(kind: kind, scale: s)
+                    .frame(width: w * 0.44, height: h * 0.13)
+                    .position(x: w * 0.75, y: h * 0.88)
+                HStack(spacing: 5 * s) {
+                    PremiumBurgerBadge().frame(width: 24 * s, height: 24 * s)
+                    Text("TASTE MAP · 基于真实记录生成")
+                        .font(.system(size: 11 * s, weight: .bold))
+                        .tracking(1.1 * s)
+                        .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                }
+                .position(x: w * 0.50, y: h * 0.975)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(kind.title)信息图候选")
+    }
+
+    private func analyticsHeader(scale: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 7 * scale) {
+            Text(kind.eyebrow)
+                .font(.system(size: 12 * scale, weight: .medium))
+                .tracking(2.2 * scale)
+                .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+            Text(kind.title)
+                .font(.system(size: 34 * scale, weight: .heavy, design: .rounded))
+                .foregroundStyle(TasteMapAnalysisTheme.ink)
+            Rectangle()
+                .fill(TasteMapAnalysisTheme.ingredientRed)
+                .frame(width: 58 * scale, height: 3 * scale)
+            Text(kind.lafayetteSubtitle)
+                .font(.system(size: 11 * scale, weight: .medium))
+                .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func nodePosition(_ index: Int, width: CGFloat, height: CGFloat) -> CGPoint {
+        let points: [CGPoint] = [
+            .init(x: 0.34, y: 0.20), .init(x: 0.49, y: 0.17), .init(x: 0.63, y: 0.21),
+            .init(x: 0.65, y: 0.36), .init(x: 0.49, y: 0.42), .init(x: 0.33, y: 0.36),
+        ]
+        let point = points[index % points.count]
+        return CGPoint(x: width * point.x, y: height * point.y)
+    }
+}
+
+private struct LafayetteAnalyticsConnectors: Shape {
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let points = [
+            CGPoint(x: rect.width * 0.23, y: rect.height * 0.14),
+            CGPoint(x: rect.width * 0.50, y: 0),
+            CGPoint(x: rect.width * 0.78, y: rect.height * 0.15),
+            CGPoint(x: rect.width, y: rect.height * 0.72),
+            CGPoint(x: rect.width * 0.50, y: rect.height),
+            CGPoint(x: 0, y: rect.height * 0.72),
+        ]
+        var path = Path()
+        for point in points {
+            path.move(to: center)
+            path.addLine(to: point)
+        }
+        return path
+    }
+}
+
+private struct LafayetteNodeDatum {
+    let value: String
+    let label: String
+    let kind: FoodDiningVisualKind
+    let color: Color
+}
+
+private struct LafayetteAnalyticsNode: View {
+    let node: LafayetteNodeDatum
+    let scale: CGFloat
+
+    var body: some View {
+        VStack(spacing: 2 * scale) {
+            FoodDiningVisualIcon(
+                kind: node.kind,
+                usage: .dataLinked,
+                size: 34 * scale,
+                foregroundColor: node.color,
+                backgroundColor: node.color.opacity(0.10)
+            )
+            Text(node.value).font(.system(size: 16 * scale, weight: .heavy)).foregroundStyle(TasteMapAnalysisTheme.ink)
+            Text(node.label).font(.system(size: 9 * scale, weight: .medium)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+        }
+    }
+}
+
+private struct LafayettePaperPanel<Content: View>: View {
+    let title: String
+    let icon: FoodDiningVisualKind
+    let scale: CGFloat
+    @ViewBuilder let content: Content
+
+    init(title: String, icon: FoodDiningVisualKind, scale: CGFloat, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.icon = icon
+        self.scale = scale
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6 * scale) {
+            HStack(spacing: 5 * scale) {
+                FoodDiningVisualIcon(kind: icon, usage: .dataLinked, size: 22 * scale)
+                Text(title).font(.system(size: 13 * scale, weight: .bold)).foregroundStyle(TasteMapAnalysisTheme.ink)
+            }
+            Rectangle().fill(TasteMapAnalysisTheme.hairline).frame(height: max(0.5, scale))
+            content
+        }
+        .padding(10 * scale)
+        .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: 12 * scale, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 12 * scale).stroke(TasteMapAnalysisTheme.hairline) }
+        .shadow(color: TasteMapAnalysisTheme.ink.opacity(0.055), radius: 7 * scale, y: 3 * scale)
+    }
+}
+
+private struct LafayetteOverviewPanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "数据总览", icon: .restaurant, scale: scale) {
+            ForEach(kind.lafayetteOverview, id: \.0) { row in
+                HStack {
+                    Text(row.0).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                    Spacer()
+                    Text(row.1).fontWeight(.bold).foregroundStyle(TasteMapAnalysisTheme.ink)
+                }
+                .font(.system(size: 10 * scale))
+            }
+        }
+    }
+}
+
+private struct LafayetteInsightPanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "近期洞察", icon: .discovery, scale: scale) {
+            ForEach(kind.lafayetteInsights, id: \.self) { item in
+                HStack(alignment: .top, spacing: 5 * scale) {
+                    Circle().fill(TasteMapAnalysisTheme.leafGreen).frame(width: 5 * scale, height: 5 * scale).padding(.top, 3 * scale)
+                    Text(item).font(.system(size: 9 * scale)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                }
+            }
+        }
+    }
+}
+
+private struct LafayetteTopThreePanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "TOP 3", icon: .rating, scale: scale) {
+            ForEach(Array(kind.lafayetteTopThree.enumerated()), id: \.offset) { index, row in
+                HStack(spacing: 5 * scale) {
+                    Text("\(index + 1)")
+                        .font(.system(size: 10 * scale, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 18 * scale, height: 18 * scale)
+                        .background(TasteMapAnalysisTheme.ingredientRed, in: Circle())
+                    Image(row.1).resizable().scaledToFill().frame(width: 24 * scale, height: 24 * scale).clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.0).font(.system(size: 9 * scale, weight: .bold)).lineLimit(1)
+                        Text(row.2).font(.system(size: 7 * scale)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk).lineLimit(1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct LafayettePreferencePanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: kind.lafayettePreferenceTitle, icon: .food, scale: scale) {
+            HStack(alignment: .bottom, spacing: 7 * scale) {
+                ForEach(kind.lafayettePreferences, id: \.0) { row in
+                    VStack(spacing: 3 * scale) {
+                        FoodDiningVisualIcon(kind: row.2, usage: .dataLinked, size: 24 * scale)
+                        Text(row.0).font(.system(size: 8 * scale, weight: .semibold)).lineLimit(1)
+                        Capsule().fill(row.3.opacity(0.22)).frame(height: 5 * scale)
+                            .overlay(alignment: .leading) { Capsule().fill(row.3).frame(width: 26 * scale * row.1) }
+                        Text("\(Int(row.1 * 100))%").font(.system(size: 8 * scale, weight: .bold))
+                    }.frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+}
+
+private struct LafayetteSpendPanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "消费分布", icon: .receipt, scale: scale) {
+            HStack(spacing: 8 * scale) {
+                ZStack {
+                    Circle().stroke(TasteMapAnalysisTheme.brandSoft, lineWidth: 10 * scale)
+                    Circle().trim(from: 0, to: 0.62).stroke(TasteMapAnalysisTheme.ingredientRed, style: StrokeStyle(lineWidth: 10 * scale, lineCap: .butt)).rotationEffect(.degrees(-90))
+                    Text(kind.lafayetteSpendCenter).font(.system(size: 8 * scale, weight: .bold))
+                }.frame(width: 60 * scale, height: 60 * scale)
+                VStack(alignment: .leading, spacing: 4 * scale) {
+                    Text("正餐 62%")
+                    Text("咖啡甜点 18%")
+                    Text("小吃饮品 20%")
+                }.font(.system(size: 8 * scale)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+            }
+        }
+    }
+}
+
+private struct LafayettePricePanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "人均消费区间", icon: .receipt, scale: scale) {
+            VStack(alignment: .leading, spacing: 4 * scale) {
+                Text("¥0–100　18%")
+                Text(kind.lafayettePriceHighlight).fontWeight(.heavy).foregroundStyle(TasteMapAnalysisTheme.ingredientRed)
+                Text("¥300+　12%")
+                Rectangle().fill(TasteMapAnalysisTheme.ink).frame(height: 11 * scale)
+                    .mask(HStack(spacing: 2 * scale) { ForEach(0..<13, id: \.self) { _ in Rectangle().frame(width: scale) } })
+            }.font(.system(size: 9 * scale)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+        }
+    }
+}
+
+private struct LafayetteCityPanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "城市足迹 TOP 5", icon: .location, scale: scale) {
+            HStack(alignment: .center, spacing: 7 * scale) {
+                VStack(alignment: .leading, spacing: 3 * scale) {
+                    ForEach(kind.lafayetteCities, id: \.0) { city in
+                        Text("\(city.0)　\(city.1)").font(.system(size: 8 * scale))
+                    }
+                }
+                Spacer()
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9 * scale).fill(TasteMapAnalysisTheme.creamSoft)
+                    Image(systemName: "map").font(.system(size: 28 * scale)).foregroundStyle(TasteMapAnalysisTheme.caramel)
+                    Circle().fill(TasteMapAnalysisTheme.ingredientRed).frame(width: 7 * scale, height: 7 * scale).offset(x: 12 * scale, y: -8 * scale)
+                }.frame(width: 60 * scale, height: 54 * scale)
+            }
+        }
+    }
+}
+
+private struct LafayetteCompanionPanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "常见饭搭子", icon: .sharedMeal, scale: scale) {
+            HStack(spacing: 8 * scale) {
+                ForEach(Array(kind.lafayetteCompanions.enumerated()), id: \.offset) { index, name in
+                    VStack(spacing: 2 * scale) {
+                        Circle().fill([TasteMapAnalysisTheme.brandSoft, TasteMapAnalysisTheme.leafGreenSoft, TasteMapAnalysisTheme.creamSoft][index % 3])
+                            .overlay { Text(String(name.prefix(1))).font(.system(size: 11 * scale, weight: .bold)) }
+                            .frame(width: 28 * scale, height: 28 * scale)
+                        Text(name).font(.system(size: 7 * scale)).lineLimit(1)
+                    }.frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+}
+
+private struct LafayetteMealTimePanel: View {
+    let kind: FuseAnalysisKind
+    let scale: CGFloat
+    var body: some View {
+        LafayettePaperPanel(title: "用餐时间偏好", icon: .time, scale: scale) {
+            HStack(spacing: 7 * scale) {
+                ZStack {
+                    Circle().stroke(TasteMapAnalysisTheme.hairline, lineWidth: 6 * scale)
+                    Circle().trim(from: 0, to: 0.46).stroke(TasteMapAnalysisTheme.ingredientRed, lineWidth: 6 * scale).rotationEffect(.degrees(-90))
+                    Image(systemName: "clock").font(.system(size: 16 * scale)).foregroundStyle(TasteMapAnalysisTheme.ink)
+                }.frame(width: 52 * scale, height: 52 * scale)
+                VStack(alignment: .leading, spacing: 3 * scale) {
+                    Text("午餐 34%")
+                    Text("晚餐 46%").fontWeight(.heavy).foregroundStyle(TasteMapAnalysisTheme.ingredientRed)
+                    Text("夜宵 13%")
+                }.font(.system(size: 8 * scale))
+            }
+        }
+    }
+}
+
+private extension FuseAnalysisKind {
+    var lafayetteSubtitle: String {
+        switch self {
+        case .companion: "基于共同到访、评分、回头率与消费生成的双人餐桌画像。"
+        case .source: "区分推荐数量、真实命中率与踩坑记录，不把声量当准确度。"
+        case .monthly: "把这个月真实发生的到访、消费、城市与饭搭子装进一张信息图。"
+        case .annual: "沿着四季、城市和代表餐厅，回看这一年的味觉轨迹。"
+        }
+    }
+
+    var lafayetteNodes: [LafayetteNodeDatum] {
+        switch self {
+        case .companion:
+            [
+                .init(value: "42次", label: "共同到访", kind: .sharedMeal, color: TasteMapAnalysisTheme.ingredientRed),
+                .init(value: "4.7", label: "共同评分", kind: .rating, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "31%", label: "日料", kind: .food, color: TasteMapAnalysisTheme.leafGreen),
+                .init(value: "¥286", label: "双人人均", kind: .receipt, color: TasteMapAnalysisTheme.brand),
+                .init(value: "38%", label: "回头率", kind: .repeatVisit, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "11天", label: "最近一次", kind: .calendar, color: TasteMapAnalysisTheme.ingredientRed),
+            ]
+        case .source:
+            [
+                .init(value: "4.72", label: "Mia命中", kind: .rating, color: TasteMapAnalysisTheme.ingredientRed),
+                .init(value: "28次", label: "小红书", kind: .menu, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "16家", label: "新店", kind: .discovery, color: TasteMapAnalysisTheme.leafGreen),
+                .init(value: "6次", label: "回头", kind: .repeatVisit, color: TasteMapAnalysisTheme.brand),
+                .init(value: "3家", label: "踩坑", kind: .receipt, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "日料", label: "最常命中", kind: .food, color: TasteMapAnalysisTheme.ingredientRed),
+            ]
+        case .monthly:
+            [
+                .init(value: "18次", label: "本月到访", kind: .calendar, color: TasteMapAnalysisTheme.ingredientRed),
+                .init(value: "12家", label: "餐厅", kind: .restaurant, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "7家", label: "新店", kind: .discovery, color: TasteMapAnalysisTheme.leafGreen),
+                .init(value: "¥4.3k", label: "消费", kind: .receipt, color: TasteMapAnalysisTheme.brand),
+                .init(value: "4.6", label: "平均分", kind: .rating, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "夜宵", label: "时间主线", kind: .time, color: TasteMapAnalysisTheme.ingredientRed),
+            ]
+        case .annual:
+            [
+                .init(value: "278次", label: "全年到访", kind: .calendar, color: TasteMapAnalysisTheme.ingredientRed),
+                .init(value: "96家", label: "餐厅", kind: .restaurant, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "23城", label: "城市", kind: .location, color: TasteMapAnalysisTheme.leafGreen),
+                .init(value: "¥36.8k", label: "消费", kind: .receipt, color: TasteMapAnalysisTheme.brand),
+                .init(value: "41%", label: "回头率", kind: .repeatVisit, color: TasteMapAnalysisTheme.caramel),
+                .init(value: "4.7", label: "平均分", kind: .rating, color: TasteMapAnalysisTheme.ingredientRed),
+            ]
+        }
+    }
+
+    var lafayetteOverview: [(String, String)] {
+        switch self {
+        case .companion: [("一起吃过", "42 次"), ("共同餐厅", "28 家"), ("共同消费", "¥12,480"), ("默契评分", "4.7 / 5")]
+        case .source: [("推荐记录", "83 条"), ("来源", "12 个"), ("命中新店", "31 家"), ("平均评分", "4.5 / 5")]
+        case .monthly: [("记录餐厅", "12 家"), ("记录菜品", "38 道"), ("实际消费", "¥4,286"), ("平均评分", "4.6 / 5")]
+        case .annual: [("记录餐厅", "96 家"), ("记录菜品", "356 道"), ("总消费", "¥36,842"), ("城市足迹", "23 个")]
+        }
+    }
+
+    var lafayetteInsights: [String] {
+        switch self {
+        case .companion: ["周末晚餐是共同高峰", "一起吃日料时评分最高", "鮨一成为最稳定回访"]
+        case .source: ["朋友推荐比平台高 0.4 分", "Mia 推荐的日料最稳定", "同事群带来的踩坑最多"]
+        case .monthly: ["夜宵比上月增加 18%", "新增 7 家餐厅", "火锅成为本月主线"]
+        case .annual: ["今年更爱日料", "周末是觅食高峰", "杭州记录 82 家"]
+        }
+    }
+
+    var lafayetteTopThree: [(String, String, String)] {
+        switch self {
+        case .companion: [("Mia", "FoodHeroJapanese", "42 次 · 4.7"), ("Alex", "FoodHeroWestern", "27 次 · 4.5"), ("家人", "FoodHeroMixed", "19 次 · 4.6")]
+        case .source: [("Mia", "FoodHeroJapanese", "命中 18 家"), ("小红书", "FoodHeroCafe", "记录 28 次"), ("朋友群", "FoodHeroMixed", "命中 11 家")]
+        case .monthly: [("鮨一", "FoodHeroJapanese", "2 次 · 4.8"), ("山野火锅", "FoodHeroHotpotGrill", "3 次 · 4.7"), ("湖畔咖啡", "FoodHeroCafe", "4 次 · 4.6")]
+        case .annual: [("鮨一", "FoodHeroJapanese", "23 次 · 4.8"), ("番茄肉酱意面", "FoodHeroWestern", "18 次 · 4.4"), ("豚骨拉面", "FoodHeroMixed", "14 次 · 4.3")]
+        }
+    }
+
+    var lafayettePreferenceTitle: String { self == .source ? "来源偏好" : "口味偏好" }
+    var lafayettePreferences: [(String, Double, FoodDiningVisualKind, Color)] {
+        switch self {
+        case .source:
+            [("朋友", 0.78, .sharedMeal, TasteMapAnalysisTheme.ingredientRed), ("内容", 0.62, .menu, TasteMapAnalysisTheme.caramel), ("路过", 0.34, .location, TasteMapAnalysisTheme.leafGreen)]
+        default:
+            [("偏鲜", 0.68, .food, TasteMapAnalysisTheme.ingredientRed), ("偏辣", 0.41, .food, TasteMapAnalysisTheme.caramel), ("清淡", 0.22, .food, TasteMapAnalysisTheme.leafGreen)]
+        }
+    }
+    var lafayetteSpendCenter: String { self == .companion ? "双人消费" : "消费占比" }
+    var lafayettePriceHighlight: String { self == .annual ? "¥100–300　52%" : "¥100–200　45%" }
+    var lafayetteCities: [(String, String)] {
+        self == .annual ? [("杭州", "82家"), ("上海", "36家"), ("北京", "21家"), ("深圳", "18家")] : [("杭州", "12家"), ("上海", "4家"), ("苏州", "2家")]
+    }
+    var lafayetteCompanions: [String] {
+        switch self { case .companion: ["Mia", "Alex", "家人", "一个人"]; default: ["一个人", "朋友", "伴侣", "家人"] }
+    }
+}
+
+private struct LafayettePosterCandidateV3: View {
+    let kind: FusePosterKind
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = min(proxy.size.width - 18, 390)
+            let height = width * 16 / 9
+            ScrollView {
+                VStack(spacing: 8) {
+                    if !FuseVisualCandidateRuntime.isCleanPreview {
+                        Text("真实 SwiftUI 9:16 候选 V3 · 待 Lafayette 审批")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(TasteMapAnalysisTheme.brand)
+                    }
+                    LafayettePosterCanvasV3(kind: kind)
+                        .frame(width: width, height: height)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+                        .padding(.vertical, 6)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .background(Color(white: 0.91).ignoresSafeArea())
+        }
+    }
+}
+
+private struct LafayettePosterCanvasV3: View {
+    let kind: FusePosterKind
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let s = w / 390
+            ZStack(alignment: .topLeading) {
+                Color(red: 0.985, green: 0.978, blue: 0.955)
+                Circle().fill(TasteMapAnalysisTheme.creamSoft.opacity(0.62))
+                    .frame(width: w * 0.70).position(x: w * 0.84, y: h * 0.10)
+                Circle().fill(TasteMapAnalysisTheme.leafGreenSoft.opacity(0.42))
+                    .frame(width: w * 0.58).position(x: w * 0.08, y: h * 0.78)
+                posterHeader(scale: s)
+                    .frame(width: w * 0.86, alignment: .leading)
+                    .position(x: w * 0.50, y: h * 0.105)
+                posterStory(width: w, height: h, scale: s)
+                LafayettePosterEvidenceStrip(kind: kind, scale: s)
+                    .frame(width: w * 0.86, height: h * 0.17)
+                    .position(x: w * 0.50, y: h * 0.72)
+                SharePosterBrandFooter(
+                    supportingText: kind.lafayetteFooter,
+                    configuration: SharePosterBrandConfiguration(qrDestinationURL: nil)
+                )
+                .scaleEffect(0.78 * s, anchor: .bottomLeading)
+                .frame(width: w * 1.08, height: h * 0.11, alignment: .bottomLeading)
+                .position(x: w * 0.53, y: h * 0.925)
+            }
+        }
+        .preferredColorScheme(.light)
+        .accessibilityLabel("\(kind.title)九比十六海报候选")
+    }
+
+    private func posterHeader(scale: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 5 * scale) {
+            Text(kind.eyebrow)
+                .font(.system(size: 10 * scale, weight: .heavy))
+                .tracking(2.1 * scale)
+                .foregroundStyle(TasteMapAnalysisTheme.brand)
+            Text(kind.title)
+                .font(.system(size: 29 * scale, weight: .heavy, design: .rounded))
+                .foregroundStyle(TasteMapAnalysisTheme.ink)
+            Text(kind.statement)
+                .font(.system(size: 13 * scale, weight: .semibold, design: .rounded))
+                .foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func posterStory(width: CGFloat, height: CGFloat, scale: CGFloat) -> some View {
+        switch kind {
+        case .taste:
+            LafayetteTastePosterStory(kind: kind, scale: scale)
+                .frame(width: width * 0.88, height: height * 0.42)
+                .position(x: width * 0.50, y: height * 0.40)
+        case .companion:
+            LafayetteCompanionPosterStory(kind: kind, scale: scale)
+                .frame(width: width * 0.88, height: height * 0.42)
+                .position(x: width * 0.50, y: height * 0.40)
+        case .source:
+            LafayetteSourcePosterStory(kind: kind, scale: scale)
+                .frame(width: width * 0.88, height: height * 0.42)
+                .position(x: width * 0.50, y: height * 0.40)
+        case .monthly:
+            LafayetteMonthlyPosterStory(kind: kind, scale: scale)
+                .frame(width: width * 0.88, height: height * 0.42)
+                .position(x: width * 0.50, y: height * 0.40)
+        case .annual:
+            LafayetteAnnualPosterStory(kind: kind, scale: scale)
+                .frame(width: width * 0.88, height: height * 0.42)
+                .position(x: width * 0.50, y: height * 0.40)
+        }
+    }
+}
+
+private struct LafayetteTastePosterStory: View {
+    let kind: FusePosterKind
+    let scale: CGFloat
+    var body: some View {
+        ZStack {
+            LafayettePosterConnectors().stroke(TasteMapAnalysisTheme.brand.opacity(0.28), style: StrokeStyle(lineWidth: 1.1 * scale, dash: [4, 5]))
+            Image(kind.hero).resizable().scaledToFill().frame(width: 158 * scale, height: 158 * scale).clipShape(Circle())
+                .overlay { Circle().stroke(.white, lineWidth: 6 * scale) }.shadow(radius: 12 * scale, y: 6 * scale)
+            posterNode("42%", "日料", .food).offset(x: -116 * scale, y: -70 * scale)
+            posterNode("¥188", "人均", .receipt).offset(x: 116 * scale, y: -70 * scale)
+            posterNode("41%", "回头", .repeatVisit).offset(x: -116 * scale, y: 75 * scale)
+            posterNode("4.7", "均分", .rating).offset(x: 116 * scale, y: 75 * scale)
+        }
+    }
+    private func posterNode(_ value: String, _ label: String, _ visual: FoodDiningVisualKind) -> some View {
+        VStack(spacing: 2) {
+            FoodDiningVisualIcon(kind: visual, usage: .dataLinked, size: 28 * scale)
+            Text(value).font(.system(size: 12 * scale, weight: .heavy))
+            Text(label).font(.system(size: 8 * scale)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+        }.frame(width: 76 * scale).padding(.vertical, 6 * scale).background(.white.opacity(0.93), in: RoundedRectangle(cornerRadius: 13 * scale))
+    }
+}
+
+private struct LafayettePosterConnectors: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for point in [CGPoint(x: 0, y: 0), CGPoint(x: rect.maxX, y: 0), CGPoint(x: 0, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY)] {
+            path.move(to: CGPoint(x: rect.midX, y: rect.midY))
+            path.addLine(to: point)
+        }
+        return path
+    }
+}
+
+private struct LafayetteCompanionPosterStory: View {
+    let kind: FusePosterKind
+    let scale: CGFloat
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 30 * scale).fill(TasteMapAnalysisTheme.creamSoft.opacity(0.70))
+            Image(kind.hero).resizable().scaledToFill().frame(width: 154 * scale, height: 154 * scale).clipShape(Circle())
+                .offset(x: -54 * scale, y: -18 * scale).overlay { Circle().stroke(.white, lineWidth: 6 * scale).offset(x: -54 * scale, y: -18 * scale) }
+            Image("FoodHeroWestern").resizable().scaledToFill().frame(width: 130 * scale, height: 130 * scale).clipShape(Circle())
+                .offset(x: 69 * scale, y: 45 * scale).overlay { Circle().stroke(.white, lineWidth: 6 * scale).offset(x: 69 * scale, y: 45 * scale) }
+            FoodDiningVisualIcon(kind: .sharedMeal, usage: .dataLinked, size: 54 * scale)
+                .background(.white, in: Circle()).offset(x: 12 * scale, y: 4 * scale)
+            VStack(alignment: .leading, spacing: 4 * scale) {
+                Text("LAFAYETTE × MIA").font(.system(size: 11 * scale, weight: .heavy)).tracking(1.1)
+                Text("42 次共同到访").font(.system(size: 18 * scale, weight: .heavy))
+                Text("日料 · 周末晚餐 · 4.7 分").font(.system(size: 9 * scale)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+            }.padding(10 * scale).background(.white.opacity(0.90), in: ReceiptShape()).offset(y: 102 * scale)
+        }
+    }
+}
+
+private struct LafayetteSourcePosterStory: View {
+    let kind: FusePosterKind
+    let scale: CGFloat
+    var body: some View {
+        HStack(alignment: .center, spacing: 12 * scale) {
+            VStack(alignment: .leading, spacing: 9 * scale) {
+                Text("推荐来源收据").font(.system(size: 12 * scale, weight: .heavy))
+                sourceRow("Mia", "4.72", .sharedMeal)
+                sourceRow("小红书", "28 次", .menu)
+                sourceRow("朋友群", "11 家", .discovery)
+                Divider()
+                Text("最坑：同事群 · 3 家").font(.system(size: 10 * scale, weight: .bold)).foregroundStyle(TasteMapAnalysisTheme.ingredientRed)
+            }.padding(13 * scale).background(.white.opacity(0.92), in: ReceiptShape()).frame(maxWidth: .infinity)
+            VStack(spacing: 8 * scale) {
+                Image(kind.hero).resizable().scaledToFill().frame(width: 138 * scale, height: 138 * scale).clipShape(Circle())
+                    .overlay { Circle().stroke(.white, lineWidth: 6 * scale) }
+                Text("靠谱不是声量\n而是真正吃过后的评分")
+                    .font(.system(size: 10 * scale, weight: .semibold)).multilineTextAlignment(.center)
+            }.frame(maxWidth: .infinity)
+        }
+    }
+    private func sourceRow(_ name: String, _ value: String, _ visual: FoodDiningVisualKind) -> some View {
+        HStack { FoodDiningVisualIcon(kind: visual, usage: .dataLinked, size: 24 * scale); Text(name); Spacer(); Text(value).fontWeight(.bold) }
+            .font(.system(size: 9 * scale))
+    }
+}
+
+private struct LafayetteMonthlyPosterStory: View {
+    let kind: FusePosterKind
+    let scale: CGFloat
+    var body: some View {
+        VStack(spacing: 9 * scale) {
+            HStack(alignment: .top, spacing: 10 * scale) {
+                ZStack(alignment: .bottomLeading) {
+                    Image(kind.hero).resizable().scaledToFill().frame(height: 170 * scale).clipped()
+                    LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
+                    Text("九月主线 · 火锅与夜宵").font(.system(size: 12 * scale, weight: .heavy)).foregroundStyle(.white).padding(10 * scale)
+                }.clipShape(RoundedRectangle(cornerRadius: 18 * scale)).frame(maxWidth: .infinity)
+                VStack(spacing: 6 * scale) {
+                    monthMetric("18", "到访", .calendar)
+                    monthMetric("12", "餐厅", .restaurant)
+                    monthMetric("¥4.3k", "消费", .receipt)
+                }.frame(width: 96 * scale)
+            }
+            HStack(spacing: 5 * scale) {
+                ForEach(["W1 4次", "W2 5次", "W3 3次", "W4 6次"], id: \.self) { value in
+                    Text(value).font(.system(size: 8 * scale, weight: .bold)).frame(maxWidth: .infinity).padding(.vertical, 7 * scale)
+                        .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: 9 * scale))
+                }
+            }
+        }
+    }
+    private func monthMetric(_ value: String, _ label: String, _ visual: FoodDiningVisualKind) -> some View {
+        VStack(spacing: 2 * scale) { FoodDiningVisualIcon(kind: visual, usage: .dataLinked, size: 26 * scale); Text(value).font(.system(size: 13 * scale, weight: .heavy)); Text(label).font(.system(size: 8 * scale)) }
+            .frame(maxWidth: .infinity).padding(.vertical, 6 * scale).background(.white.opacity(0.90), in: RoundedRectangle(cornerRadius: 11 * scale))
+    }
+}
+
+private struct LafayetteAnnualPosterStory: View {
+    let kind: FusePosterKind
+    let scale: CGFloat
+    var body: some View {
+        ZStack {
+            Path { path in
+                path.move(to: CGPoint(x: 30 * scale, y: 210 * scale))
+                path.addCurve(to: CGPoint(x: 300 * scale, y: 48 * scale), control1: CGPoint(x: 100 * scale, y: 225 * scale), control2: CGPoint(x: 214 * scale, y: 44 * scale))
+            }.stroke(TasteMapAnalysisTheme.brand.opacity(0.38), style: StrokeStyle(lineWidth: 2 * scale, dash: [5, 5]))
+            Image(kind.hero).resizable().scaledToFill().frame(width: 152 * scale, height: 152 * scale).clipShape(Circle())
+                .overlay { Circle().stroke(.white, lineWidth: 6 * scale) }.offset(x: 34 * scale, y: -14 * scale)
+            ForEach(Array([("春", "48次"), ("夏", "66次"), ("秋", "81次"), ("冬", "83次")].enumerated()), id: \.offset) { index, item in
+                VStack(spacing: 1) { Text(item.0).fontWeight(.heavy); Text(item.1) }.font(.system(size: 9 * scale))
+                    .frame(width: 56 * scale, height: 46 * scale).background(.white.opacity(0.92), in: Circle())
+                    .offset(x: CGFloat(index - 2) * 78 * scale + 20 * scale, y: CGFloat(2 - index) * 42 * scale + 42 * scale)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("2026").font(.system(size: 42 * scale, weight: .black, design: .rounded)).foregroundStyle(TasteMapAnalysisTheme.ingredientRed)
+                Text("278 次到访 · 96 家餐厅 · 23 座城市").font(.system(size: 10 * scale, weight: .semibold))
+            }.offset(x: -68 * scale, y: -105 * scale)
+        }
+    }
+}
+
+private struct LafayettePosterEvidenceStrip: View {
+    let kind: FusePosterKind
+    let scale: CGFloat
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6 * scale) {
+            HStack {
+                Text("代表餐厅与真实证据").font(.system(size: 11 * scale, weight: .heavy)).foregroundStyle(TasteMapAnalysisTheme.brand)
+                Spacer()
+                Text(kind.lafayetteEvidenceCaption).font(.system(size: 8 * scale)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)
+            }
+            HStack(spacing: 7 * scale) {
+                ForEach(Array(FuseFixture.restaurants.enumerated()), id: \.offset) { index, item in
+                    FuseRestaurantImage(asset: item.3, name: "#\(index + 1) \(item.0)", height: 66 * scale)
+                        .clipShape(RoundedRectangle(cornerRadius: 10 * scale))
+                }
+            }
+            HStack(spacing: 6 * scale) {
+                ForEach(kind.editorialTags.prefix(4), id: \.self) { tag in
+                    Text(tag).font(.system(size: 8 * scale, weight: .bold)).padding(.horizontal, 7 * scale).padding(.vertical, 4 * scale)
+                        .background(.white.opacity(0.84), in: Capsule()).overlay { Capsule().stroke(TasteMapAnalysisTheme.hairline) }
+                }
+            }
+        }
+    }
+}
+
+private extension FusePosterKind {
+    var lafayetteFooter: String {
+        switch self {
+        case .taste: "Taste Map · 我的真实口味档案"
+        case .companion: "Taste Map · 我们一起吃过的故事"
+        case .source: "Taste Map · 真实吃过才算种草"
+        case .monthly: "Taste Map · 九月味觉回顾"
+        case .annual: "Taste Map · 2026 年度味觉轨迹"
+        }
+    }
+    var lafayetteEvidenceCaption: String {
+        switch self {
+        case .taste: "偏好与回头率"
+        case .companion: "共同到访"
+        case .source: "来源命中"
+        case .monthly: "本月记录"
+        case .annual: "全年轨迹"
+        }
+    }
+}
+
+/// The V2 bespoke redraw was rejected. V3 deliberately returns to the
+/// repository's approved historical PremiumBurgerBadge and only proposes a
+/// calmer medallion treatment around that asset.
+private struct FusePaywallCandidateV3: View {
+    var body: some View {
+        FusePage(
+            "Taste Map Premium",
+            subtitle: "只重做汉堡主视觉 · 其余 7 个区域保持冻结",
+            badge: "候选 V3"
+        ) {
+            VStack(spacing: 13) {
+                ZStack {
+                    Circle().fill(TasteMapAnalysisTheme.creamSoft)
+                    Circle().stroke(TasteMapCoreTheme.brand.opacity(0.22), lineWidth: 1)
+                    Circle().stroke(.white.opacity(0.9), lineWidth: 8).padding(12)
+                    PremiumBurgerBadge().padding(29)
+                }
+                .frame(width: 142, height: 142)
+                .shadow(color: TasteMapCoreTheme.brand.opacity(0.12), radius: 14, y: 7)
+                Text("把每一顿饭，变成更完整的味觉记忆")
+                    .font(.title3.bold())
+                    .multilineTextAlignment(.center)
+                Text("沿用已确认的历史汉堡画法，不再另画一枚平行资产")
+                    .font(.caption)
+                    .foregroundStyle(TasteMapCoreTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            FuseSection("Premium 包含") {
+                VStack(spacing: 8) {
+                    FusePremiumBenefit(title: "完整分析与五类分享海报", detail: "口味、饭搭子、种草、本月与年度")
+                    FusePremiumBenefit(title: "高级筛选与照片能力", detail: "沿用当前 Premium Feature Registry")
+                    FusePremiumBenefit(title: "更丰富的食单与回顾", detail: "正式权益仍由 StoreKit 与服务端判定")
+                }
+            }
+            VStack(spacing: 9) {
+                Button("查看 App Store 方案") { }
+                    .font(.headline).frame(maxWidth: .infinity).frame(height: 50)
+                    .foregroundStyle(.white)
+                    .background(TasteMapCoreTheme.brand, in: RoundedRectangle(cornerRadius: 15))
+                Button("恢复购买") { }.font(.subheadline.weight(.semibold))
+                Text("订阅、续期、退款与撤销仍由当前 StoreKit 2 / server entitlement 架构处理。")
+                    .font(.caption2).foregroundStyle(TasteMapCoreTheme.textSecondary).multilineTextAlignment(.center)
+            }
+            HStack { Button("隐私政策") { }; Spacer(); Button("服务条款") { } }.font(.caption)
+        }
+    }
 }
 #endif

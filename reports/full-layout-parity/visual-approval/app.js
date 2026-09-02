@@ -643,17 +643,7 @@ function visualCategory(visual) {
   return "current";
 }
 
-function profileFuseV2Visual() {
-  return {
-    kind: "FUSE CANDIDATE — REAL IMPLEMENTATION",
-    title: "我的页面融合候选版 V2",
-    src: "round-2/candidates/profile-fuse-v2.png",
-    caption: "固定审批对照：我的页面融合候选版 V2。顶部身份区与设置保持冻结；右侧只审批关注数据、主统计、核心入口、回味、我的食单和洞察。",
-  };
-}
-
 function staticWorkspaceVisuals(decision) {
-  if (decision.id === "profile-density") return [...decision.visuals, profileFuseV2Visual()];
   return [...decision.visuals, ...decision.fuseVisuals];
 }
 
@@ -710,7 +700,7 @@ function visualPinButtons(decision) {
   const controls = [
     ["current", "锁定现版"],
     ["legacy", "锁定旧版"],
-    ["fuse", decision.id === "profile-density" ? "锁定我的页面融合候选版 V2" : "锁定融合版"],
+    ["fuse", decision.id === "profile-density" ? `锁定${displayText(decision.candidateVersion || "我的页面融合候选版")}` : "锁定融合版"],
     ["reference", "锁定已确认参考"],
     ["lafayette", "锁定我的参考图"],
     ["option-a", "锁定方案 A"],
@@ -727,7 +717,7 @@ function stickyVisualPanelMarkup(decision) {
   const fixed = fixedRegions(decision);
   return `<aside class="visual-reference-panel${state.collapsed ? " is-collapsed" : ""}" data-visual-panel="${escapeHTML(decision.id)}">
     <div class="visual-reference-panel__header">
-      <div><span>固定视觉对照</span><strong>${decision.id === "profile-density" ? "我的页面融合候选版 V2" : "当前页面参考图"}</strong></div>
+      <div><span>固定视觉对照</span><strong>${decision.id === "profile-density" ? escapeHTML(displayText(decision.candidateVersion || "我的页面融合候选版")) : "当前页面参考图"}</strong></div>
       <button type="button" class="collapse-visual-panel">${state.collapsed ? "展开参考图" : "收起参考图"}</button>
     </div>
     <div class="visual-reference-panel__body">

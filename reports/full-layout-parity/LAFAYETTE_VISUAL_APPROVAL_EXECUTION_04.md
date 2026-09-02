@@ -50,15 +50,17 @@
 
 Discovery、Add Restaurant/Nearby、global Restaurant Detail、Roulette、Visit Editor、Dish/Photo、Lists 和 Settings 的已冻结结构保持不动。相关业务能力、数据来源和入口没有被候选实现替换。
 
-## 4. 仍需真实候选、尚未正式批准
+## 4. 已生成真实候选、仍未正式批准
 
-- Profile：核心入口。
-- Analytics × 4：顶部、Food Hero、周边节点、核心洞察、TOP 3、分布、代表餐厅图片、底部品牌区。
-- 五类分享海报：所有构图区，必须是实际 SwiftUI 9:16 renderer。
-- Premium Paywall：只有汉堡 Hero。
+- Profile：核心入口 V4 已生成，等待 Lafayette 审批。
+- Analytics × 4：V3 真实 SwiftUI 信息图已生成，八个区域继续等待 Lafayette 审批。
+- 五类分享海报：V3 原生 9:16 renderer 已生成，所有构图区继续等待 Lafayette 审批。
+- Premium Paywall：已恢复正式 approved hamburger asset 的 V3 候选，只等待 Hamburger Hero 审批。
 - Public Profile：Header machine choice 为空白，等待 Lafayette 明确选择。
 
 以上候选只能存在于独立 DEBUG 候选分支；正式 Release 不包含 Candidate Version、FUSE V1/V2/V3、Frozen/Pending 或 launch-argument 候选入口。
+
+完整候选证据与 Clean Preview 见 [LAFAYETTE_VISUAL_APPROVAL_EXECUTION_05.md](LAFAYETTE_VISUAL_APPROVAL_EXECUTION_05.md)。
 
 ## 5. 自动验证
 
