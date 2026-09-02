@@ -10,6 +10,11 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'profile.getCurrent',
   'restaurant.get',
   'restaurant.list',
+  'acquisition.search',
+  'acquisition.nearby',
+  'acquisition.shared',
+  'acquisition.manual',
+  'acquisition.select',
   'map.viewport',
   'content.snapshot',
   'visit.contract',
@@ -37,6 +42,7 @@ export type TasteMapCapability =
   | 'logout'
   | 'profileRead'
   | 'restaurantRead'
+  | 'restaurantAcquisition'
   | 'mapBrowse'
   | 'contentRead'
   | 'visitContract'
@@ -355,6 +361,43 @@ export interface TasteMapLocationDTO {
   authorizationStatus: 'allowed' | 'denied' | 'notDetermined' | 'restricted'
 }
 
+export interface TasteMapAcquisitionCandidateDTO {
+  id: string
+  name: string
+  address: string
+  city: string
+  district: string
+  latitude: number
+  longitude: number
+  distanceMeters: number | null
+  phone: string | null
+  openingHours: string | null
+  image: TasteMapImageDescriptor
+  duplicateKind: 'none' | 'exactProvider' | 'probableCrossProvider'
+  existingRestaurantID: string | null
+}
+
+export interface TasteMapAcquisitionResultsDTO {
+  candidates: TasteMapAcquisitionCandidateDTO[]
+  location: TasteMapLocationDTO | null
+  message: string | null
+  sharedImportFingerprint: string | null
+}
+
+export interface TasteMapManualRestaurantDraftDTO {
+  name: string
+  city: string
+  address: string
+  latitude?: number | null
+  longitude?: number | null
+}
+
+export interface TasteMapAcquisitionSelectionDTO {
+  restaurantID: string
+  duplicateKind: TasteMapAcquisitionCandidateDTO['duplicateKind']
+  existingRestaurantID: string | null
+}
+
 export interface TasteMapPhotoPickItemDTO {
   photoID: string
   preview: Extract<TasteMapImageDescriptor, { kind: 'nativeResource' }>
@@ -503,6 +546,13 @@ export interface TasteMapPlatform {
   restaurant: {
     get(id: string): Promise<TasteMapRestaurantDetailViewModel>
     list(request?: TasteMapRestaurantListRequest): Promise<TasteMapRestaurantDetailViewModel[]>
+  }
+  acquisition: {
+    search(query: string, city: string): Promise<TasteMapAcquisitionResultsDTO>
+    nearby(): Promise<TasteMapAcquisitionResultsDTO>
+    shared(): Promise<TasteMapAcquisitionResultsDTO>
+    manual(draft: TasteMapManualRestaurantDraftDTO): Promise<TasteMapAcquisitionResultsDTO>
+    select(candidateID: string, confirmProbableMatch?: boolean): Promise<TasteMapAcquisitionSelectionDTO>
   }
   map: { viewport(request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> }
   content: { snapshot(): Promise<TasteMapHybridContentSnapshotDTO> }

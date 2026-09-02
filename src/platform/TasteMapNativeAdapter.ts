@@ -8,6 +8,9 @@ import {
   type TasteMapBridgeRequestEnvelope,
   type TasteMapBridgeResponseEnvelope,
   type TasteMapLocationDTO,
+  type TasteMapAcquisitionResultsDTO,
+  type TasteMapAcquisitionSelectionDTO,
+  type TasteMapManualRestaurantDraftDTO,
   type TasteMapHybridContentSnapshotDTO,
   type TasteMapMapBrowseRequest,
   type TasteMapMapBrowseResponse,
@@ -65,6 +68,13 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
   restaurant = {
     get: async (id: string): Promise<TasteMapRestaurantDetailViewModel> => projectBridgeRestaurant(await this.call<TasteMapRestaurantDetailDTO>('restaurant.get', { id })),
     list: async (request: TasteMapRestaurantListRequest = {}) => (await this.call<TasteMapRestaurantDetailDTO[]>('restaurant.list', request)).map(projectBridgeRestaurant),
+  }
+  acquisition = {
+    search: (query: string, city: string) => this.call<TasteMapAcquisitionResultsDTO>('acquisition.search', { query, city }),
+    nearby: () => this.call<TasteMapAcquisitionResultsDTO>('acquisition.nearby'),
+    shared: () => this.call<TasteMapAcquisitionResultsDTO>('acquisition.shared'),
+    manual: (draft: TasteMapManualRestaurantDraftDTO) => this.call<TasteMapAcquisitionResultsDTO>('acquisition.manual', draft),
+    select: (candidateID: string, confirmProbableMatch = false) => this.call<TasteMapAcquisitionSelectionDTO>('acquisition.select', { candidateID, confirmProbableMatch }),
   }
   map = { viewport: (request: TasteMapMapBrowseRequest) => this.call<TasteMapMapBrowseResponse>('map.viewport', request) }
   content = { snapshot: () => this.call<TasteMapHybridContentSnapshotDTO>('content.snapshot') }

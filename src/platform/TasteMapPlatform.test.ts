@@ -17,7 +17,7 @@ import {
 } from './TasteMapPlatform'
 
 const capabilities: TasteMapCapabilityRegistry = {
-  appleSignIn: false, logout: false, profileRead: true, restaurantRead: true, mapBrowse: true,
+  appleSignIn: false, logout: false, profileRead: true, restaurantRead: true, restaurantAcquisition: true, mapBrowse: true,
   contentRead: true,
   visitContract: true, sync: false, haptics: true, share: false,
   location: false, photoPicker: false, premium: false, nativeNavigation: false,
@@ -205,6 +205,23 @@ describe('TasteMapNativeAdapter', () => {
           photoID: 'pending-photo-1',
           preview: { kind: 'nativeResource', resourceURL: 'tastemap-resource://photo-draft/pending-photo-1/thumbnail', photoID: 'pending-photo-1', accessibilityLabel: '待保存的到访照片' },
         }] }
+      } else if (request.method === 'acquisition.search' || request.method === 'acquisition.nearby' || request.method === 'acquisition.shared' || request.method === 'acquisition.manual') {
+        result = {
+          candidates: [{
+            id: 'candidate-1', name: '湖滨候选餐厅', address: '平海路 1 号', city: '杭州', district: '上城区',
+            latitude: 30.25, longitude: 120.16, distanceMeters: request.method === 'acquisition.nearby' ? 42 : null,
+            phone: null, openingHours: null,
+            image: { kind: 'providerMerchant', resourceURL: 'https://images.example.test/candidate.jpg', accessibilityLabel: '湖滨候选餐厅餐厅图片' },
+            duplicateKind: 'none', existingRestaurantID: null,
+          }],
+          location: request.method === 'acquisition.nearby'
+            ? { latitude: 30.25, longitude: 120.16, timestamp: '2026-09-03T00:00:00.000Z', horizontalAccuracy: 8, accuracyMode: 'full', authorizationStatus: 'allowed' }
+            : null,
+          message: null,
+          sharedImportFingerprint: request.method === 'acquisition.shared' ? 'share-fingerprint' : null,
+        }
+      } else if (request.method === 'acquisition.select') {
+        result = { restaurantID: 'amap:candidate-1', duplicateKind: 'none', existingRestaurantID: null }
       } else result = {}
       return { version, requestId: request.requestId, result } as TasteMapBridgeResponseEnvelope
     })
@@ -323,5 +340,19 @@ describe('TasteMapNativeAdapter', () => {
     }))
     const serialized = JSON.stringify(invoke.mock.calls)
     expect(serialized).not.toMatch(/file:\/\/|\/Users\/|base64|imageData|ownerUserID|bearer/i)
+  })
+
+  it('uses typed Restaurant acquisition envelopes and never passes an owner or credential', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    expect((await adapter.acquisition.search('湖滨', '杭州')).candidates[0].name).toBe('湖滨候选餐厅')
+    expect((await adapter.acquisition.nearby()).candidates[0].distanceMeters).toBe(42)
+    expect((await adapter.acquisition.shared()).sharedImportFingerprint).toBe('share-fingerprint')
+    expect((await adapter.acquisition.manual({ name: '手动餐厅', city: '杭州', address: '西湖边' })).candidates).toHaveLength(1)
+    expect((await adapter.acquisition.select('candidate-1', true)).restaurantID).toBe('amap:candidate-1')
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({ method: 'acquisition.select', payload: { candidateID: 'candidate-1', confirmProbableMatch: true } }),
+    }))
+    expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|authorization|bearer|keychain/i)
   })
 })

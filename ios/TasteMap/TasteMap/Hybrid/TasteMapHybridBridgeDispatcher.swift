@@ -37,6 +37,7 @@ public final class TasteMapHybridBridgeDispatcher {
             .logout: false,
             .profileRead: dataReady,
             .restaurantRead: dataReady,
+            .restaurantAcquisition: false,
             .mapBrowse: dataReady,
             .contentRead: dataReady,
             .visitContract: true,
@@ -78,6 +79,7 @@ public final class TasteMapHybridBridgeDispatcher {
     public func dispatchAsync(_ request: TasteMapHybridBridgeRequest) async -> TasteMapHybridBridgeResponse {
         switch request.method {
         case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
+                .acquisitionSearch, .acquisitionNearby, .acquisitionShared, .acquisitionManual, .acquisitionSelect,
                 .photoPick, .photoDiscard, .photoRetry, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
                 .navigationBack, .navigationCurrent:
             guard request.version == Self.bridgeVersion else {
@@ -148,6 +150,7 @@ public final class TasteMapHybridBridgeDispatcher {
                 try nativeAction(.hapticsSelection)
                 result = .object([:])
             case .authSignInWithApple, .authLogout, .syncRun, .shareOpen, .locationCurrent,
+                    .acquisitionSearch, .acquisitionNearby, .acquisitionShared, .acquisitionManual, .acquisitionSelect,
                     .photoPick, .photoDiscard, .photoRetry, .premiumStatus, .navigationOpenNative, .navigationOpenHybrid,
                     .navigationBack, .navigationCurrent:
                 throw TasteMapHybridBridgeErrorDTO(

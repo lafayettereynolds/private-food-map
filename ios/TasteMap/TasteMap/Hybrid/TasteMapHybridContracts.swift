@@ -1,7 +1,7 @@
 import Foundation
 
 public enum TasteMapHybridCapability: String, Codable, CaseIterable, Sendable {
-    case appleSignIn, logout, profileRead, restaurantRead, mapBrowse, visitContract, sync
+    case appleSignIn, logout, profileRead, restaurantRead, restaurantAcquisition, mapBrowse, visitContract, sync
     case contentRead
     case haptics, share, location, photoPicker, premium, nativeNavigation, backup, accountDelete
 }
@@ -568,6 +568,53 @@ public struct TasteMapHybridLocationDTO: Codable, Sendable {
     public let authorizationStatus: String
 }
 
+public struct TasteMapHybridAcquisitionSearchRequest: Codable, Sendable {
+    public let query: String
+    public let city: String
+}
+
+public struct TasteMapHybridAcquisitionCandidateDTO: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let address: String
+    public let city: String
+    public let district: String
+    public let latitude: Double
+    public let longitude: Double
+    public let distanceMeters: Double?
+    public let phone: String?
+    public let openingHours: String?
+    public let image: TasteMapHybridImageDescriptor
+    public let duplicateKind: String
+    public let existingRestaurantID: String?
+}
+
+public struct TasteMapHybridAcquisitionResultsDTO: Codable, Sendable {
+    public let candidates: [TasteMapHybridAcquisitionCandidateDTO]
+    public let location: TasteMapHybridLocationDTO?
+    public let message: String?
+    public let sharedImportFingerprint: String?
+}
+
+public struct TasteMapHybridManualRestaurantDraftDTO: Codable, Sendable {
+    public let name: String
+    public let city: String
+    public let address: String
+    public let latitude: Double?
+    public let longitude: Double?
+}
+
+public struct TasteMapHybridAcquisitionSelectionRequest: Codable, Sendable {
+    public let candidateID: String
+    public let confirmProbableMatch: Bool
+}
+
+public struct TasteMapHybridAcquisitionSelectionDTO: Codable, Sendable {
+    public let restaurantID: String
+    public let duplicateKind: String
+    public let existingRestaurantID: String?
+}
+
 public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case runtimeInfo = "runtime.info"
     case authSessionStatus = "auth.sessionStatus"
@@ -576,6 +623,11 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case profileGetCurrent = "profile.getCurrent"
     case restaurantGet = "restaurant.get"
     case restaurantList = "restaurant.list"
+    case acquisitionSearch = "acquisition.search"
+    case acquisitionNearby = "acquisition.nearby"
+    case acquisitionShared = "acquisition.shared"
+    case acquisitionManual = "acquisition.manual"
+    case acquisitionSelect = "acquisition.select"
     case mapViewport = "map.viewport"
     case contentSnapshot = "content.snapshot"
     case visitContract = "visit.contract"

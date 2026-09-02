@@ -1,6 +1,6 @@
 # Taste Map Hybrid Architecture
 
-Status: Phase 2B My Map / My List formal runtime integration complete; production route switch not approved.
+Status: Batch 1 shared product UI plus Batch 2 Visit/Dish/Photo and Add/Nearby/Share capability integration in progress; production route switch not approved.
 Contract: `TasteMapNative.v1`
 Updated: 2026-09-02
 
@@ -74,7 +74,7 @@ The v1 contract defines:
 - haptics, share, location, photo picker, Premium status;
 - navigation back to native-owned routes.
 
-Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `location.current`, and throttled `location.changed` delivery. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Unmigrated business capabilities still remain native-owned and are entered through typed handoff routes; unsupported bridge operations return `capability_unavailable` rather than pretending to be implemented.
+Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `location.current`, and throttled `location.changed` delivery. Batch 2 capability integration adds typed owner-scoped Visit/Dish/photo writes and Restaurant acquisition methods without moving persistence or provider policy into JavaScript. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Unmigrated business capabilities still remain native-owned and are entered through typed handoff routes; unsupported bridge operations return `capability_unavailable` rather than pretending to be implemented.
 
 ## 4. Security and ownership boundary
 
@@ -143,7 +143,7 @@ Safe-area CSS uses `env(safe-area-inset-*)`; the host disables remote UI loading
 - `app.lifecycle` for foreground, background, resume and memory warning.
 - `location.changed` after a meaningful fresh Native location update.
 
-Events queued before the Capacitor plugin attaches are delivered after attachment. Lifecycle resume never reloads React. Share Extension ingestion remains native: the existing normalized payload store is retained, the handoff opens the native Add Restaurant route because it is still `NATIVE_PRIMARY`, and only a non-sensitive fingerprint/route state crosses the bridge.
+Events queued before the Capacitor plugin attaches are delivered after attachment. Lifecycle resume never reloads React. Share Extension ingestion remains native: the existing normalized payload store is retained, the handoff opens the persistent Hybrid Add Restaurant route because that surface is `HYBRID_INTEGRATED`, and only a non-sensitive fingerprint/route state crosses the bridge. React requests normalized candidates through the typed acquisition service; it never receives an App Group path or unrestricted shared payload.
 
 ## 8. Persistent WebView
 

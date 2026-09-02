@@ -8,12 +8,15 @@ import {
   TASTE_MAP_NATIVE_BRIDGE_VERSION,
   capabilityUnavailable,
   type TasteMapCapabilityRegistry,
+  type TasteMapAcquisitionCandidateDTO,
+  type TasteMapAcquisitionResultsDTO,
   type TasteMapImageDescriptor,
   type TasteMapMapBrowseRequest,
   type TasteMapMapBrowseResponse,
   type TasteMapPlatform,
   type TasteMapPremiumStatusDTO,
   type TasteMapProfileDashboardViewModel,
+  type TasteMapRestaurantDetailViewModel,
   type TasteMapRestaurantListRequest,
   type TasteMapRuntimeInfo,
   type TasteMapVisitWriteDraftDTO,
@@ -49,6 +52,7 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
   logout: false,
   profileRead: true,
   restaurantRead: true,
+  restaurantAcquisition: true,
   mapBrowse: true,
   contentRead: true,
   visitContract: true,
@@ -66,6 +70,7 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
 export class TasteMapBrowserAdapter implements TasteMapPlatform {
   readonly kind = 'browser' as const
   private profilePromise: Promise<TasteMapProfileDashboardViewModel> | null = null
+  private readonly acquisitionCandidates = new Map<string, TasteMapAcquisitionCandidateDTO>()
 
   constructor(private readonly dataSource: TasteMapBrowserDataSource = new IndexedDBTasteMapDataSource()) {}
 
@@ -97,7 +102,11 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     get: async (id: string) => {
       const profile = await this.loadProfile()
       const restaurant = profile.restaurants.find((item) => item.id === id)
-      if (!restaurant) throw new TasteMapPlatformError(`Restaurant ${id} was not found.`, 'restaurant_not_found')
+      if (!restaurant) {
+        const candidate = this.acquisitionCandidates.get(id)
+        if (candidate) return browserCandidateDetail(candidate)
+        throw new TasteMapPlatformError(`Restaurant ${id} was not found.`, 'restaurant_not_found')
+      }
       return {
         restaurant,
         image: profile.restaurantImages[id] ?? browserImageDescriptor(restaurant),
@@ -119,6 +128,51 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
           editableVisitIDs: restaurant.visits.map((visit) => visit.id),
           capabilities: ownedRestaurantCapabilities(),
         }))
+    },
+  }
+
+  acquisition = {
+    search: async (query: string, city: string): Promise<TasteMapAcquisitionResultsDTO> => {
+      const { mapService } = await import('../services/mapService')
+      if (!mapService.isConfigured) return { candidates: [], location: null, message: '地图服务尚未配置，仍可手动添加。', sharedImportFingerprint: null }
+      const candidates = (await mapService.searchRestaurantPois(query, city)).map((value) => this.cacheBrowserCandidate(value))
+      return { candidates, location: null, message: candidates.length ? null : '没有找到匹配的餐厅。', sharedImportFingerprint: null }
+    },
+    nearby: async (): Promise<TasteMapAcquisitionResultsDTO> => {
+      const { mapService } = await import('../services/mapService')
+      if (!mapService.isConfigured) return { candidates: [], location: null, message: '地图服务尚未配置，搜索和手动添加仍可使用。', sharedImportFingerprint: null }
+      const coordinates = await mapService.detectCurrentCoordinates()
+      const values = await mapService.searchNearbyRestaurantPois(coordinates, undefined, { radiusMeters: 3_000 })
+      const candidates = values.map((value) => this.cacheBrowserCandidate(value, distanceBetween(coordinates, value)))
+        .filter((value) => (value.distanceMeters ?? Number.POSITIVE_INFINITY) <= 3_000)
+        .sort((left, right) => (left.distanceMeters ?? Number.POSITIVE_INFINITY) - (right.distanceMeters ?? Number.POSITIVE_INFINITY))
+      return { candidates, location: null, message: candidates.length ? null : '3 公里内没有找到餐厅。', sharedImportFingerprint: null }
+    },
+    shared: async (): Promise<TasteMapAcquisitionResultsDTO> => ({ candidates: [], location: null, message: '浏览器请使用系统分享或正式网页导入入口。', sharedImportFingerprint: null }),
+    manual: async (draft: import('./TasteMapPlatform').TasteMapManualRestaurantDraftDTO): Promise<TasteMapAcquisitionResultsDTO> => {
+      const { mapService } = await import('../services/mapService')
+      const coordinates = draft.latitude != null && draft.longitude != null
+        ? { latitude: draft.latitude, longitude: draft.longitude }
+        : await mapService.resolveAddressLocation(draft.address, draft.city)
+      const candidate = this.cacheBrowserCandidate({
+        amapPoiId: `manual-${crypto.randomUUID()}`,
+        name: draft.name,
+        city: draft.city,
+        address: draft.address,
+        district: '',
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+        merchantImageUrl: null,
+        phone: null,
+        openingHours: null,
+      })
+      return { candidates: [candidate], location: null, message: '请确认餐厅信息。', sharedImportFingerprint: null }
+    },
+    select: async (candidateID: string, confirmProbableMatch = false) => {
+      const candidate = this.acquisitionCandidates.get(candidateID)
+      if (!candidate) throw new TasteMapPlatformError('餐厅候选已失效，请重新搜索。', 'candidate_not_found', true)
+      if (candidate.duplicateKind === 'probableCrossProvider' && !confirmProbableMatch) throw new TasteMapPlatformError('请先确认可能重复的餐厅。', 'probable_match_confirmation_required', true)
+      return { restaurantID: candidateID, duplicateKind: candidate.duplicateKind, existingRestaurantID: candidate.existingRestaurantID }
     },
   }
 
@@ -200,6 +254,84 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     const { loadTasteMapBrowserDebugFixture } = await import('./TasteMapBrowserDebugFixture')
     return loadTasteMapBrowserDebugFixture()
   }
+
+  private cacheBrowserCandidate(value: import('../types/domain').PoiSearchResult, distanceMeters: number | null = null) {
+    const id = `browser-candidate-${value.amapPoiId}`
+    const candidate: TasteMapAcquisitionCandidateDTO = {
+      id,
+      name: value.name,
+      address: value.address,
+      city: value.city,
+      district: value.district,
+      latitude: value.latitude,
+      longitude: value.longitude,
+      distanceMeters,
+      phone: value.phone ?? null,
+      openingHours: value.openingHours ?? null,
+      image: value.merchantImageUrl ? { kind: 'providerMerchant', resourceURL: value.merchantImageUrl, accessibilityLabel: `${value.name}餐厅图片` } : { kind: 'foodDiningFallback', stableSeed: id, accessibilityLabel: `${value.name}餐厅图片占位` },
+      duplicateKind: 'none',
+      existingRestaurantID: null,
+    }
+    this.acquisitionCandidates.set(id, candidate)
+    return candidate
+  }
+}
+
+function browserCandidateDetail(candidate: TasteMapAcquisitionCandidateDTO): TasteMapRestaurantDetailViewModel {
+  const now = new Date().toISOString()
+  const restaurant: RestaurantSummary = {
+    id: candidate.id,
+    userId: CURRENT_USER_ID,
+    amapPoiId: candidate.id,
+    name: candidate.name,
+    address: candidate.address,
+    city: candidate.city,
+    latitude: candidate.latitude,
+    longitude: candidate.longitude,
+    status: 'wantToGo',
+    preferenceLevel: 'normal',
+    overallRating: null,
+    foodRating: null,
+    environmentRating: null,
+    serviceRating: null,
+    valueRating: null,
+    tags: [],
+    longTermNote: '',
+    pricePerPerson: null,
+    phone: candidate.phone,
+    openingHours: candidate.openingHours,
+    markerType: candidate.image.kind === 'providerMerchant' ? 'image' : 'emoji',
+    markerImageData: null,
+    markerPhotoId: null,
+    merchantImageUrl: candidate.image.kind === 'providerMerchant' ? candidate.image.resourceURL : null,
+    markerEmoji: '',
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    visitCount: 0,
+    averageRating: null,
+    scoreOutOfTen: null,
+    latestVisitDate: null,
+    latestVisit: null,
+    visits: [],
+    averagePricePerPerson: null,
+    averageQueueMinutes: null,
+  }
+  return {
+    restaurant,
+    image: candidate.image,
+    viewerState: 'none' as const,
+    editableVisitIDs: [],
+    capabilities: candidateRestaurantCapabilities(),
+  }
+}
+
+function distanceBetween(origin: { latitude: number; longitude: number }, target: { latitude: number; longitude: number }) {
+  const radians = (value: number) => value * Math.PI / 180
+  const latitudeDelta = radians(target.latitude - origin.latitude)
+  const longitudeDelta = radians(target.longitude - origin.longitude)
+  const a = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(radians(origin.latitude)) * Math.cos(radians(target.latitude)) * Math.sin(longitudeDelta / 2) ** 2
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
 function browserVisitInput(draft: TasteMapVisitWriteDraftDTO): AddVisitInput {
@@ -255,6 +387,18 @@ function ownedRestaurantCapabilities() {
     canAddToWantToGo: true,
     canAddToList: true,
     canAddToRoulette: true,
+    canShare: true,
+  } as const
+}
+
+function candidateRestaurantCapabilities() {
+  return {
+    canEditRestaurant: false,
+    canDeleteRestaurant: false,
+    canRecordVisit: true,
+    canAddToWantToGo: true,
+    canAddToList: true,
+    canAddToRoulette: false,
     canShare: true,
   } as const
 }

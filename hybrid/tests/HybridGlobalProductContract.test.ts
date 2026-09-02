@@ -77,6 +77,17 @@ describe('Hybrid global Product Contract', () => {
     expect(nativeAdd).not.toContain('RestaurantCandidateConfirmationView')
   })
 
+  it('keeps the Hybrid-owned Add route in React for Share handoff and typed acquisition actions', () => {
+    const add = source('../../src/hybrid/app/HybridAddRestaurantPage.tsx')
+    const runtime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
+    for (const method of ['search', 'nearby', 'shared', 'manual', 'select']) {
+      expect(add).toContain(`platform.acquisition.${method}`)
+    }
+    expect(add).not.toContain('acquisitionNative')
+    expect(runtime).toContain('let state = try navigation.openHybrid(target)')
+    expect(runtime).not.toMatch(/receive\(sharedImport:[\s\S]{0,400}navigation\.openNative\(target\)/)
+  })
+
   it('locks exact Map scopes and forbids the superseded label and segmented Map/List row', () => {
     expect(HYBRID_MAP_PRIMARY_SCOPES.map((item) => item[1])).toEqual(['去过', '想吃', '推荐'])
     const map = source('../../src/components/MyMapBrowsePage.tsx')
@@ -163,7 +174,8 @@ describe('Hybrid global Product Contract', () => {
     })
     expect(detail.match(/data-product-contract="visit-edit-entry"/g)).toHaveLength(1)
     expect(detail).toContain('canEditVisit ? canEditVisit(visit) : !readOnly')
-    expect(shell).toContain("openNativeRoute(platform, 'visitEdit', visit.id)")
+    expect(shell).toContain("navigate({ surface: 'visitEdit', id: visit.id })")
+    expect(shell).not.toContain("openNativeRoute(platform, 'visitEdit', visit.id)")
     expect(shell).toContain('restaurant.editableVisitIDs.includes(visit.id)')
     expect(shell).not.toMatch(/visit\.userId\s*===|CURRENT_USER_ID.*visit/)
   })

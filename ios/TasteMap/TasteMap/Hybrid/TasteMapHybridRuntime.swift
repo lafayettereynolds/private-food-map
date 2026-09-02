@@ -19,6 +19,7 @@ final class TasteMapHybridRuntime {
     private let photoFiles: any LocalPhotoFileStoring
     private let photoTransferCoordinator: PhotoTransferCoordinator
     private let locationPermissionManager = LocationPermissionManager()
+    private let restaurantSearchService: any RestaurantSearching = MapKitRestaurantSearchService()
     private weak var plugin: TasteMapProductionNativePlugin?
     private var pendingEvents: [TasteMapHybridEventEnvelope] = []
     private var sequence = 0
@@ -26,6 +27,7 @@ final class TasteMapHybridRuntime {
     private var bridgeControllerStorage: TasteMapHybridBridgeViewController?
     private(set) var pendingSharedImport: PendingRestaurantImport?
     private var pendingPhotoSelections: [String: PendingHybridPhotoSelection] = [:]
+    private var pendingAcquisitionCandidates: [String: PendingHybridAcquisitionCandidate] = [:]
     private var photoPickerSession: HybridPhotoPickerSession?
 
     init(
@@ -129,6 +131,7 @@ final class TasteMapHybridRuntime {
                 .appleSignIn: true,
                 .logout: true,
                 .nativeNavigation: true,
+                .restaurantAcquisition: true,
                 .location: true,
                 .premium: true,
                 .share: true,
@@ -260,7 +263,7 @@ final class TasteMapHybridRuntime {
         pendingSharedImport = sharedImport
         do {
             let target = try TasteMapHybridRouteDTO(surface: .add)
-            let state = try navigation.openNative(target)
+            let state = try navigation.openHybrid(target)
             emit(.shareExtensionReceived, payload: TasteMapHybridShareEventPayload(
                 fingerprint: sharedImport.id,
                 target: state
@@ -304,6 +307,16 @@ final class TasteMapHybridRuntime {
             return try encode(navigation.current)
         case .locationCurrent:
             return try await currentLocation()
+        case .acquisitionSearch:
+            return try await searchRestaurants(payload)
+        case .acquisitionNearby:
+            return try await nearbyRestaurants()
+        case .acquisitionShared:
+            return try await sharedRestaurantCandidates()
+        case .acquisitionManual:
+            return try await manualRestaurantCandidate(payload)
+        case .acquisitionSelect:
+            return try selectRestaurantCandidate(payload)
         case .premiumStatus:
             return premiumStatus()
         case .shareOpen:
@@ -316,6 +329,239 @@ final class TasteMapHybridRuntime {
             return try retryPhoto(payload)
         default:
             throw Self.bridgeError("capability_unavailable", method: method)
+        }
+    }
+
+    private func searchRestaurants(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridAcquisitionSearchRequest = try decode(payload)
+        let query = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let city = request.city.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, query.count <= 200, city.count <= 120 else {
+            throw Self.bridgeError("invalid_acquisition_search", method: .acquisitionSearch)
+        }
+        let values = try await restaurantSearchService.search(
+            query: query,
+            scope: RestaurantSearchScope(city: city)
+        )
+        return try encode(acquisitionResults(
+            candidates: Array(values.prefix(20)),
+            location: nil,
+            message: values.isEmpty ? "没有找到匹配的餐厅，请换一个名称、地址或城市。" : nil
+        ))
+    }
+
+    private func nearbyRestaurants() async throws -> TasteMapHybridJSONValue {
+        let fix = try await freshLocationFix(method: .acquisitionNearby)
+        let center = RestaurantCoordinate(
+            latitude: fix.location.coordinate.latitude,
+            longitude: fix.location.coordinate.longitude
+        )
+        let values = try await restaurantSearchService.nearby(center: center, radiusMeters: 3_000)
+        let ordered = RestaurantDistanceOrdering.measuringAndSorting(values, from: center)
+            .filter { ($0.distanceMeters ?? .greatestFiniteMagnitude) <= 3_000 }
+        return try encode(acquisitionResults(
+            candidates: Array(ordered.prefix(12)),
+            location: fix.dto,
+            message: ordered.isEmpty ? "3 公里内暂时没有找到餐厅；搜索和手动添加仍可使用。" : nil
+        ))
+    }
+
+    private func sharedRestaurantCandidates() async throws -> TasteMapHybridJSONValue {
+        guard let shared = pendingSharedImport, !shared.isExpired else {
+            return try encode(TasteMapHybridAcquisitionResultsDTO(
+                candidates: [],
+                location: nil,
+                message: "当前没有待处理的外部分享。",
+                sharedImportFingerprint: nil
+            ))
+        }
+        let text = shared.acquisitionText
+        var candidates: [RestaurantCandidate] = []
+        var message: String? = nil
+        let parsed = try? ExternalRestaurantLinkParser.parse(text, currentCity: "")
+        if let direct = parsed?.candidate {
+            candidates = [direct]
+            message = "已从分享内容提取餐厅，请确认具体门店。"
+        } else {
+            do {
+                let response = try await authServices.externalRestaurantLinkAPI.resolve(text: text, currentCity: "")
+                candidates = response.candidates.map(\.restaurantCandidate)
+                message = response.message
+                if candidates.isEmpty, let fallback = response.searchFallback {
+                    let center = fallback.latitude.flatMap { latitude in
+                        fallback.longitude.map { RestaurantCoordinate(latitude: latitude, longitude: $0) }
+                    }
+                    candidates = try await restaurantSearchService.search(
+                        query: fallback.keyword,
+                        scope: RestaurantSearchScope(city: fallback.city, center: center, radiusMeters: center == nil ? 20_000 : 3_000)
+                    )
+                }
+            } catch {
+                if let parsed,
+                   let semantic = [parsed.name, parsed.address]
+                       .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+                       .first(where: { !$0.isEmpty }) {
+                    candidates = (try? await restaurantSearchService.search(
+                        query: semantic,
+                        scope: RestaurantSearchScope(city: parsed.city, center: parsed.coordinate)
+                    )) ?? []
+                }
+                message = candidates.isEmpty
+                    ? "分享内容暂时无法识别；仍可按名称搜索或手动添加。"
+                    : "已从分享文字提取关键词，请确认具体门店。"
+            }
+        }
+        return try encode(acquisitionResults(
+            candidates: Array(candidates.prefix(20)),
+            location: nil,
+            message: message,
+            sharedImportFingerprint: shared.id
+        ))
+    }
+
+    private func manualRestaurantCandidate(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let draft: TasteMapHybridManualRestaurantDraftDTO = try decode(payload)
+        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let city = draft.city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = draft.address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !city.isEmpty, !address.isEmpty,
+              name.count <= 200, city.count <= 120, address.count <= 500 else {
+            throw Self.bridgeError("invalid_manual_restaurant", method: .acquisitionManual)
+        }
+        let coordinate: RestaurantCoordinate
+        if let latitude = draft.latitude, let longitude = draft.longitude {
+            coordinate = RestaurantCoordinate(latitude: latitude, longitude: longitude)
+            guard coordinate.isValid else { throw Self.bridgeError("invalid_coordinate", method: .acquisitionManual) }
+        } else {
+            do { coordinate = try await restaurantSearchService.coordinate(for: address, city: city) }
+            catch { throw Self.bridgeError("manual_address_not_found", method: .acquisitionManual, recoverable: true) }
+        }
+        let candidate = RestaurantCandidate.manual(name: name, city: city, address: address, coordinate: coordinate)
+        return try encode(acquisitionResults(
+            candidates: [candidate],
+            location: nil,
+            message: "请确认餐厅信息。"
+        ))
+    }
+
+    private func selectRestaurantCandidate(_ payload: TasteMapHybridJSONValue) throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridAcquisitionSelectionRequest = try decode(payload)
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope,
+              let pending = pendingAcquisitionCandidates[request.candidateID],
+              pending.ownerUserID == ownerUserID else {
+            throw Self.bridgeError("candidate_not_found", method: .acquisitionSelect, recoverable: true)
+        }
+        if pending.duplicateKind == "probableCrossProvider", !request.confirmProbableMatch {
+            throw Self.bridgeError("probable_match_confirmation_required", method: .acquisitionSelect, recoverable: true)
+        }
+        let restaurantID: String
+        if pending.duplicateKind == "exactProvider", let existing = pending.existingRestaurantID {
+            restaurantID = existing
+        } else {
+            restaurantID = try TasteMapHybridRestaurantReferenceResolver.cacheCandidate(
+                pending.candidate,
+                ownerUserID: ownerUserID,
+                context: container.mainContext
+            )
+        }
+        if pending.sharedImportFingerprint != nil { consumePendingSharedImport() }
+        return try encode(TasteMapHybridAcquisitionSelectionDTO(
+            restaurantID: restaurantID,
+            duplicateKind: pending.duplicateKind,
+            existingRestaurantID: pending.existingRestaurantID
+        ))
+    }
+
+    private func acquisitionResults(
+        candidates: [RestaurantCandidate],
+        location: TasteMapHybridLocationDTO?,
+        message: String?,
+        sharedImportFingerprint: String? = nil
+    ) -> TasteMapHybridAcquisitionResultsDTO {
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
+            return TasteMapHybridAcquisitionResultsDTO(candidates: [], location: location, message: "请先登录。", sharedImportFingerprint: sharedImportFingerprint)
+        }
+        let restaurants = ((try? container.mainContext.fetch(FetchDescriptor<Restaurant>())) ?? [])
+            .filter { $0.ownerUserID == ownerUserID && $0.deletedAt == nil }
+        let values = candidates.map { candidate -> TasteMapHybridAcquisitionCandidateDTO in
+            let match = RestaurantDeduplicator.classifiedMatch(for: candidate, in: restaurants)
+            let duplicateKind: String
+            switch match?.kind {
+            case .exactProviderIdentity: duplicateKind = "exactProvider"
+            case .probableCrossProvider: duplicateKind = "probableCrossProvider"
+            case nil: duplicateKind = "none"
+            }
+            let existingID = match.map { $0.restaurant.remoteID ?? $0.restaurant.id.uuidString.lowercased() }
+            let token = candidate.id.uuidString.lowercased()
+            pendingAcquisitionCandidates[token] = PendingHybridAcquisitionCandidate(
+                ownerUserID: ownerUserID,
+                candidate: candidate,
+                duplicateKind: duplicateKind,
+                existingRestaurantID: existingID,
+                sharedImportFingerprint: sharedImportFingerprint
+            )
+            let image: TasteMapHybridImageDescriptor
+            if let url = candidate.photoURL, url.scheme?.lowercased() == "https" {
+                image = TasteMapHybridImageDescriptor(
+                    kind: .providerMerchant,
+                    resourceURL: url.absoluteString,
+                    photoID: nil,
+                    stableSeed: nil,
+                    accessibilityLabel: "\(candidate.name)餐厅图片"
+                )
+            } else {
+                image = TasteMapHybridImageDescriptor(
+                    kind: .foodDiningFallback,
+                    resourceURL: nil,
+                    photoID: nil,
+                    stableSeed: token,
+                    accessibilityLabel: "\(candidate.name)餐厅图片占位"
+                )
+            }
+            return TasteMapHybridAcquisitionCandidateDTO(
+                id: token,
+                name: candidate.name,
+                address: candidate.address,
+                city: candidate.city,
+                district: candidate.district,
+                latitude: candidate.latitude,
+                longitude: candidate.longitude,
+                distanceMeters: candidate.distanceMeters,
+                phone: candidate.phone,
+                openingHours: candidate.openingHours,
+                image: image,
+                duplicateKind: duplicateKind,
+                existingRestaurantID: existingID
+            )
+        }
+        return TasteMapHybridAcquisitionResultsDTO(
+            candidates: values,
+            location: location,
+            message: message,
+            sharedImportFingerprint: sharedImportFingerprint
+        )
+    }
+
+    private func freshLocationFix(method: TasteMapHybridBridgeMethod) async throws -> (location: CLLocation, dto: TasteMapHybridLocationDTO) {
+        do {
+            let location = try await locationPermissionManager.requestCurrentLocation()
+            guard RestaurantLocationFixPolicy.isUsable(location, accuracyAuthorization: locationPermissionManager.accuracyAuthorization) else {
+                throw RestaurantLocationError.staleOrInaccurate
+            }
+            let dto = TasteMapHybridLocationDTO(
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                timestamp: Self.dateFormatter.string(from: location.timestamp),
+                horizontalAccuracy: location.horizontalAccuracy,
+                accuracyMode: locationPermissionManager.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
+                authorizationStatus: "allowed"
+            )
+            emit(.locationChanged, payload: dto)
+            return (location, dto)
+        } catch RestaurantLocationError.permissionDenied {
+            throw Self.bridgeError("location_permission_denied", method: method, recoverable: true)
+        } catch {
+            throw Self.bridgeError("location_stale_or_inaccurate", method: method, recoverable: true)
         }
     }
 
@@ -588,6 +834,8 @@ final class TasteMapHybridRuntime {
         do {
             let user = try await authServices.appleSignIn.signIn(presentationAnchor: window)
             authServices.activateLocalAccount(user)
+            pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
+            pendingPhotoSelections.removeAll(keepingCapacity: false)
             try LocalAccountOwnershipMigrator(context: container.mainContext).activate(userID: user.id)
             await premiumEntitlementService.activate(userID: user.id)
             let session = TasteMapHybridAuthStateDTO(state: "authenticated", userID: user.id, displayName: nil)
@@ -604,6 +852,8 @@ final class TasteMapHybridRuntime {
         do { try await authServices.sessionManager.logout() }
         catch { /* Local logout is authoritative; server revocation remains bounded by expiry. */ }
         authServices.endLocalAccountSession()
+        pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
+        pendingPhotoSelections.removeAll(keepingCapacity: false)
         premiumEntitlementService.sessionDidEnd()
         resetToCurrentProfileIfNeeded()
         let session = TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil)
@@ -703,6 +953,14 @@ private struct HybridShareRequest: Decodable {
 private struct PendingHybridPhotoSelection {
     let ownerUserID: String
     let prepared: PreparedLocalPhoto
+}
+
+private struct PendingHybridAcquisitionCandidate {
+    let ownerUserID: String
+    let candidate: RestaurantCandidate
+    let duplicateKind: String
+    let existingRestaurantID: String?
+    let sharedImportFingerprint: String?
 }
 
 @MainActor
