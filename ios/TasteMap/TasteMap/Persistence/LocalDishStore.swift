@@ -69,6 +69,39 @@ struct LocalDishStore {
         saveChanges: Bool = true
     ) throws -> [UUID: Dish] {
         let parents = try activeParents(restaurantID: restaurantID, visitID: visitID)
+        return try reconcile(parents: parents, drafts: drafts, saveChanges: saveChanges)
+    }
+
+    /// Reconciles against already-resolved parents inside a larger transaction.
+    /// This is required when a candidate Restaurant and its first Visit were
+    /// inserted in the same transaction and are not fetch-visible yet.
+    func reconcile(
+        restaurant: Restaurant,
+        visit: Visit,
+        drafts: [DishDraft],
+        pruneExistingAssociations: Bool = true,
+        saveChanges: Bool = true
+    ) throws -> [UUID: Dish] {
+        guard restaurant.deletedAt == nil,
+              visit.deletedAt == nil,
+              visit.restaurantId == restaurant.id,
+              visit.ownerUserID == restaurant.ownerUserID else {
+            throw LocalDishStoreError.visitNotFound
+        }
+        return try reconcile(
+            parents: (restaurant: restaurant, visit: visit),
+            drafts: drafts,
+            pruneExistingAssociations: pruneExistingAssociations,
+            saveChanges: saveChanges
+        )
+    }
+
+    private func reconcile(
+        parents: (restaurant: Restaurant, visit: Visit),
+        drafts: [DishDraft],
+        pruneExistingAssociations: Bool = true,
+        saveChanges: Bool
+    ) throws -> [UUID: Dish] {
         let validated = try drafts.map { try $0.validated() }
         var result: [UUID: Dish] = [:]
         var desiredDishIDs = Set<UUID>()
@@ -84,8 +117,10 @@ struct LocalDishStore {
             result[draft.id] = dish
         }
 
-        for association in try activeAssociations(visitID: visitID) where !desiredDishIDs.contains(association.dishId) {
-            try remove(association, saveChanges: false)
+        if pruneExistingAssociations {
+            for association in try activeAssociations(visitID: parents.visit.id) where !desiredDishIDs.contains(association.dishId) {
+                try remove(association, saveChanges: false)
+            }
         }
         if saveChanges { try context.save() }
         return result
@@ -179,7 +214,7 @@ struct LocalDishStore {
             existing.deletedAt = nil
             existing.sortOrder = sortOrder
             existing.updatedAt = .now
-            try enqueue(existing)
+            try enqueue(existing, restaurant: restaurant, visit: visit, dish: dish)
             return existing
         }
         guard let visitRemoteID = visit.remoteID, let dishRemoteID = dish.remoteID else {
@@ -203,7 +238,7 @@ struct LocalDishStore {
             remoteID: associationRemoteID
         )
         context.insert(association)
-        try enqueue(association)
+        try enqueue(association, restaurant: restaurant, visit: visit, dish: dish)
         return association
     }
 
@@ -230,6 +265,43 @@ struct LocalDishStore {
               let dish = try context.fetch(FetchDescriptor<Dish>()).first(where: { $0.id == association.dishId }),
               let restaurantRemoteID = restaurant.remoteID, let visitRemoteID = visit.remoteID,
               let dishRemoteID = dish.remoteID else { throw LocalDishStoreError.missingRemoteMapping }
+        let remoteID = association.remoteID ?? DishIdentity.associationRemoteID(
+            visitRemoteID: visitRemoteID,
+            dishRemoteID: dishRemoteID
+        )
+        association.remoteID = remoteID
+        association.syncStatus = .pending
+        try SwiftDataSyncQueue(context: context, ownerUserID: association.ownerUserID).enqueueUpsert(
+            entityType: .visitDish,
+            entityID: remoteID,
+            baseVersion: association.serverVersion,
+            payload: SyncRecordMapper.visitDishPayload(
+                association,
+                restaurantRemoteID: restaurantRemoteID,
+                visitRemoteID: visitRemoteID,
+                dishRemoteID: dishRemoteID
+            ),
+            timestamp: association.updatedAt
+        )
+    }
+
+    private func enqueue(
+        _ association: VisitDish,
+        restaurant: Restaurant,
+        visit: Visit,
+        dish: Dish
+    ) throws {
+        guard restaurant.id == association.restaurantId,
+              visit.id == association.visitId,
+              dish.id == association.dishId,
+              restaurant.ownerUserID == association.ownerUserID,
+              visit.ownerUserID == association.ownerUserID,
+              dish.ownerUserID == association.ownerUserID,
+              let restaurantRemoteID = restaurant.remoteID,
+              let visitRemoteID = visit.remoteID,
+              let dishRemoteID = dish.remoteID else {
+            throw LocalDishStoreError.missingRemoteMapping
+        }
         let remoteID = association.remoteID ?? DishIdentity.associationRemoteID(
             visitRemoteID: visitRemoteID,
             dishRemoteID: dishRemoteID

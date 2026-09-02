@@ -10,6 +10,7 @@ import { routeFromLocation, routeFromStartupLocation, routeHash, surfaceStatus, 
 import './hybridShell.css'
 import { HybridDiscoveryPage } from './HybridDiscoveryPage'
 import { HybridAddRestaurantPage } from './HybridAddRestaurantPage'
+import { HybridVisitEditorPage } from './HybridVisitEditorPage'
 import { TasteMapListsPage } from '../../components/TasteMapListsPage'
 import { TasteMapAnalyticsPage, type AnalyticsMode } from '../../components/TasteMapAnalyticsPage'
 import { TasteMapPremiumPage, TasteMapSettingsPage } from '../../components/TasteMapPremiumSettingsPages'
@@ -209,11 +210,11 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
                 onAddToRoulette={restaurant.capabilities.canAddToRoulette ? () => setRouletteRestaurantIDs((ids) => ids.includes(restaurant.restaurant.id) ? ids.filter((id) => id !== restaurant.restaurant.id) : [...ids, restaurant.restaurant.id]) : undefined}
                 onAddToList={restaurant.capabilities.canAddToList ? () => void openNativeRoute(platform, 'restaurantAddToList', restaurant.restaurant.id) : undefined}
                 onAddToWant={restaurant.capabilities.canAddToWantToGo && restaurant.viewerState === 'none' ? () => void openNativeRoute(platform, 'restaurantWantToGo', restaurant.restaurant.id) : undefined}
-                onAddVisit={restaurant.capabilities.canRecordVisit ? () => void openNativeRoute(platform, 'visit', restaurant.restaurant.id) : undefined}
+                onAddVisit={restaurant.capabilities.canRecordVisit ? () => void navigate({ surface: 'visit', id: restaurant.restaurant.id }) : undefined}
                 onClose={() => void navigateBack()}
                 onDelete={restaurant.capabilities.canDeleteRestaurant ? () => void openNativeRoute(platform, 'restaurantDelete', restaurant.restaurant.id) : undefined}
                 onEdit={restaurant.capabilities.canEditRestaurant ? () => void openNativeRoute(platform, 'restaurantEdit', restaurant.restaurant.id) : undefined}
-                onEditVisit={(visit) => void openNativeRoute(platform, 'visitEdit', visit.id)}
+                onEditVisit={(visit) => void navigate({ surface: 'visitEdit', id: visit.id })}
                 onShare={restaurant.capabilities.canShare ? () => void platform.share.open({ title: restaurant.restaurant.name, text: `${restaurant.restaurant.name} · ${restaurant.restaurant.address}` }) : undefined}
                 canEditVisit={(visit) => restaurant.editableVisitIDs.includes(visit.id)}
                 readOnly={!restaurant.capabilities.canEditRestaurant && !restaurant.capabilities.canDeleteRestaurant}
@@ -227,6 +228,20 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
           ? <HybridDiscoveryPage content={content} onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} />
         : route.surface === 'add'
           ? <HybridAddRestaurantPage onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} />
+        : route.surface === 'visit' || route.surface === 'visitEdit'
+          ? <HybridVisitEditorPage
+              onClose={() => void navigateBack()}
+              onSaved={(restaurantID) => {
+                setGeneration((value) => value + 1)
+                setDetailRevision((value) => value + 1)
+                void navigate({ surface: 'restaurant', id: restaurantID })
+              }}
+              platform={platform}
+              restaurantID={route.surface === 'visit' ? route.id : undefined}
+              restaurants={profile.restaurants}
+              visitID={route.surface === 'visitEdit' ? route.id : undefined}
+              visits={profile.visits}
+            />
         : route.surface === 'lists' || route.surface === 'publicList'
           ? <TasteMapListsPage lists={content.lists} onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} />
         : route.surface === 'roulette'
@@ -280,14 +295,10 @@ function NativePrimaryHandoff({ route, onBack }: { route: Exclude<HybridRoute, {
   </main>
 }
 
-async function openNativeRoute(platform: TasteMapPlatform, route: 'visit' | 'visitEdit' | 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo', identifier: string) {
+async function openNativeRoute(platform: TasteMapPlatform, route: 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo', identifier: string) {
   try { await platform.navigation.openNative({ route, identifier }) }
   catch (reason) {
     if (reason instanceof TasteMapPlatformError && reason.code === 'capability_unavailable') {
-      // The formal Browser App already owns its complete Visit editor. The
-      // internal Hybrid browser preview never invents a second write surface.
-      if (route === 'visitEdit' || route === 'restaurantEdit' || route === 'restaurantDelete' || route === 'restaurantAddToList' || route === 'restaurantWantToGo') return
-      window.location.hash = routeHash({ surface: route, id: identifier })
       return
     }
     throw reason

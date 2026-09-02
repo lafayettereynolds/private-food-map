@@ -523,6 +523,43 @@ export async function updateVisit(id: string, input: AddVisitInput) {
   return updatedVisit
 }
 
+export async function deleteVisit(id: string) {
+  const now = new Date().toISOString()
+  let restaurantId: string | null = null
+  await db.transaction('rw', db.restaurants, db.visits, db.photos, db.syncQueue, async () => {
+    const visit = await db.visits.get(id)
+    if (!visit || visit.deletedAt) throw new Error('没有找到要删除的到访记录。')
+    const restaurant = await db.restaurants.get(visit.restaurantId)
+    if (!restaurant || restaurant.deletedAt) throw new Error('没有找到这家餐厅。')
+    restaurantId = restaurant.id
+    await db.visits.put({ ...visit, deletedAt: now, updatedAt: now })
+    const photoIDs = [...visit.photoIds, ...visit.dishes.map((dish) => dish.photoId)]
+      .filter((photoID): photoID is string => Boolean(photoID))
+    if (photoIDs.length) {
+      await db.photos.where('id').anyOf(photoIDs).modify({
+        localState: 'delete-pending',
+        updatedAt: now,
+        lastError: null,
+      })
+    }
+    const remaining = (await db.visits.where('restaurantId').equals(restaurant.id).toArray())
+      .filter((item) => !item.deletedAt && item.id !== id)
+    const ratings = remaining.map((item) => item.rating).filter((rating): rating is StarRating => rating !== null)
+    const averageRating = ratings.length ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length : null
+    await db.restaurants.update(restaurant.id, {
+      preferenceLevel: legacyPreferenceLevelFromRating(averageRating),
+      updatedAt: now,
+    })
+    await db.syncQueue.bulkPut([
+      { id: syncQueueId('visit', id), entityType: 'visit', entityId: id, updatedAt: now },
+      { id: syncQueueId('restaurant', restaurant.id), entityType: 'restaurant', entityId: restaurant.id, updatedAt: now },
+    ])
+  })
+  requestCloudSync()
+  if (!restaurantId) throw new Error('到访记录没有删除成功。')
+  return { restaurantId, visitId: id, updatedAt: now }
+}
+
 export async function deleteRestaurant(id: string) {
   const now = new Date().toISOString()
   await db.transaction('rw', db.restaurants, db.visits, db.photos, db.syncQueue, async () => {

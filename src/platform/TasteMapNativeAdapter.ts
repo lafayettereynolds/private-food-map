@@ -26,6 +26,8 @@ import {
   type TasteMapRuntimeInfo,
   type TasteMapSharePayload,
   type TasteMapSyncStatusDTO,
+  type TasteMapVisitMutationResultDTO,
+  type TasteMapVisitWriteRequest,
 } from './TasteMapPlatform'
 import { projectBridgeProfile, projectBridgeRestaurant } from './TasteMapBridgeProjection'
 
@@ -66,7 +68,11 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
   }
   map = { viewport: (request: TasteMapMapBrowseRequest) => this.call<TasteMapMapBrowseResponse>('map.viewport', request) }
   content = { snapshot: () => this.call<TasteMapHybridContentSnapshotDTO>('content.snapshot') }
-  visit = { contract: () => this.call<{ version: 1; writeUIReady: false }>('visit.contract') }
+  visit = {
+    contract: () => this.call<{ version: 1; writeUIReady: true }>('visit.contract'),
+    save: (request: TasteMapVisitWriteRequest) => this.call<TasteMapVisitMutationResultDTO>('visit.save', request),
+    delete: (visitID: string) => this.call<TasteMapVisitMutationResultDTO>('visit.delete', { visitID }),
+  }
   sync = {
     status: () => this.call<TasteMapSyncStatusDTO>('sync.status'),
     run: () => this.call<TasteMapSyncStatusDTO>('sync.run'),

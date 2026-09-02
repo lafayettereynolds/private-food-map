@@ -13,7 +13,8 @@ export const HYBRID_ROUTE_REGISTRY = {
   add: 'HYBRID_INTEGRATED',
   restaurant: 'HYBRID_INTEGRATED',
   profile: 'HYBRID_INTEGRATED',
-  visit: 'NATIVE_PRIMARY',
+  visit: 'HYBRID_INTEGRATED',
+  visitEdit: 'HYBRID_INTEGRATED',
   lists: 'HYBRID_INTEGRATED',
   roulette: 'HYBRID_INTEGRATED',
   analytics: 'HYBRID_INTEGRATED',
@@ -76,7 +77,7 @@ export interface TasteMapDeepLinkRoute {
 }
 
 export function isHybridOwnedRoute(route: HybridRoute) {
-  return route.surface !== 'visit' && (route.surface !== 'profile' || !route.id)
+  return route.surface !== 'profile' || !route.id
 }
 
 /** Parses only the allowlisted local/deep-link contract; it never navigates. */

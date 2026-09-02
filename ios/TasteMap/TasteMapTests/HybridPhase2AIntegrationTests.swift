@@ -20,7 +20,7 @@ struct HybridPhase2AIntegrationTests {
         #expect(map.owner == .hybrid)
         #expect(detail.owner == .hybrid)
         #expect(publicProfile.owner == .native)
-        #expect(visitEdit.owner == .native)
+        #expect(visitEdit.owner == .hybrid)
         #expect(profileEdit.owner == .native)
         #expect(restaurantEdit.owner == .native)
         #expect(restaurantDelete.owner == .native)
@@ -43,16 +43,16 @@ struct HybridPhase2AIntegrationTests {
     @Test func hybridAndNativeHandoffMaintainOneCurrentOwnerAndBackStack() throws {
         let coordinator = TasteMapHybridNavigationCoordinator()
         let restaurant = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "restaurant-1")
-        let visit = try TasteMapHybridRouteDTO(surface: .visit, identifier: "visit-1")
+        let visit = try TasteMapHybridRouteDTO(surface: .visit, identifier: "restaurant-1")
         let visitEdit = try TasteMapHybridRouteDTO(surface: .visitEdit, identifier: "visit-1")
 
         #expect(try coordinator.openHybrid(restaurant).owner == .hybrid)
-        #expect(try coordinator.openNative(visit).owner == .native)
+        #expect(try coordinator.openHybrid(visit).owner == .hybrid)
         #expect(coordinator.current.route.surface == .visit)
         #expect(coordinator.back().route.surface == .restaurant)
         #expect(coordinator.back().route.surface == .profile)
         #expect(try coordinator.openHybrid(restaurant).route.surface == .restaurant)
-        #expect(try coordinator.openNative(visitEdit).route.surface == .visitEdit)
+        #expect(try coordinator.openHybrid(visitEdit).route.surface == .visitEdit)
         #expect(coordinator.back().route.surface == .restaurant)
         #expect(throws: TasteMapHybridRouteError.unsupportedRoute) {
             try coordinator.openNative(restaurant)
@@ -187,5 +187,147 @@ struct HybridPhase2AIntegrationTests {
         #expect(detail.capabilities.canAddToWantToGo)
         #expect(!detail.capabilities.canEditRestaurant)
         #expect(detail.editableVisitIDs.isEmpty)
+
+        let saved = try TasteMapHybridBridgeService(
+            container: container,
+            ownerUserID: owner
+        ).saveVisit(request: .init(
+            restaurantID: identifier,
+            visitID: nil,
+            draft: TasteMapHybridVisitWriteDraftDTO(
+                visitedAt: "2026-09-03T00:00:00.000Z",
+                rating: 4,
+                visibility: "private",
+                diningMode: "dine_in",
+                totalPrice: nil,
+                myActualSpend: nil,
+                paymentMode: nil,
+                partySize: 1,
+                queueDuration: nil,
+                diningOccasions: [],
+                diningOccasionText: "",
+                valueRating: nil,
+                environmentRating: nil,
+                serviceRating: nil,
+                valueTags: [],
+                environmentTags: [],
+                serviceTags: [],
+                noiseLevel: nil,
+                diningDuration: nil,
+                portionLevel: nil,
+                transportConvenience: nil,
+                specialNotes: "",
+                recommendationSourceType: nil,
+                recommendationSourceUserID: nil,
+                recommendationSourceText: "",
+                sharedParticipantUserIDs: [],
+                companions: [],
+                dishes: [],
+                note: "从公开候选记录"
+            )
+        ))
+        let savedRestaurant = try #require(context.fetch(FetchDescriptor<Restaurant>()).first { $0.ownerUserID == owner })
+        let savedVisit = try #require(context.fetch(FetchDescriptor<Visit>()).first { $0.ownerUserID == owner })
+        #expect(saved.restaurantID == savedRestaurant.remoteID)
+        #expect(saved.visitID == savedVisit.remoteID)
+        #expect(savedRestaurant.remoteRecordData != nil)
+        #expect(savedVisit.note == "从公开候选记录")
+    }
+
+    @Test func typedVisitWriteUsesExistingOwnerScopedStoreDishGraphAndMutationQueue() throws {
+        let owner = "tm_hybrid_visit_owner"
+        let foreignOwner = "tm_hybrid_visit_foreign"
+        let container = try TasteMapPersistence.makeContainer(
+            inMemory: true,
+            configurationName: "HybridVisitWrite"
+        )
+        let context = ModelContext(container)
+        let restaurant = Restaurant(
+            ownerUserID: owner,
+            name: "写入测试餐厅",
+            address: "湖滨路 8 号",
+            latitude: 30.25,
+            longitude: 120.16,
+            city: "杭州"
+        )
+        let foreign = Restaurant(
+            ownerUserID: foreignOwner,
+            name: "其他账号餐厅",
+            address: "不可写",
+            latitude: 31,
+            longitude: 121,
+            city: "上海"
+        )
+        context.insert(restaurant)
+        context.insert(foreign)
+        try context.save()
+
+        let service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner)
+        let draft = TasteMapHybridVisitWriteDraftDTO(
+            visitedAt: "2026-09-03T00:00:00.000Z",
+            rating: 4.5,
+            visibility: "private",
+            diningMode: "dine_in",
+            totalPrice: 300,
+            myActualSpend: 150,
+            paymentMode: "aa",
+            partySize: 2,
+            queueDuration: "under15",
+            diningOccasions: ["friends"],
+            diningOccasionText: "",
+            valueRating: 4.5,
+            environmentRating: 4,
+            serviceRating: 4,
+            valueTags: ["值得"],
+            environmentTags: ["安静"],
+            serviceTags: ["周到"],
+            noiseLevel: "quiet",
+            diningDuration: "under120",
+            portionLevel: "normal",
+            transportConvenience: "convenient",
+            specialNotes: "",
+            recommendationSourceType: "friend",
+            recommendationSourceUserID: nil,
+            recommendationSourceText: "朋友",
+            sharedParticipantUserIDs: [],
+            companions: ["小王"],
+            dishes: [TasteMapHybridVisitWriteDishDTO(
+                id: UUID().uuidString,
+                name: "招牌菜",
+                taste: "鲜",
+                rating: 4.5,
+                price: 88,
+                photoID: nil
+            )],
+            note: "会再来"
+        )
+        let saved = try service.saveVisit(request: .init(
+            restaurantID: restaurant.remoteID!,
+            visitID: nil,
+            draft: draft
+        ))
+        let visits = try context.fetch(FetchDescriptor<Visit>()).filter { $0.ownerUserID == owner && $0.deletedAt == nil }
+        let dishes = try context.fetch(FetchDescriptor<Dish>()).filter { $0.ownerUserID == owner && $0.deletedAt == nil }
+        let links = try context.fetch(FetchDescriptor<VisitDish>()).filter { $0.ownerUserID == owner && $0.deletedAt == nil }
+        let mutations = try context.fetch(FetchDescriptor<SyncMutation>()).filter { $0.ownerUserID == owner }
+        #expect(visits.count == 1)
+        #expect(dishes.count == 1)
+        #expect(links.count == 1)
+        #expect(visits[0].note == "会再来")
+        #expect(visits[0].companionNames == ["小王"])
+        #expect(mutations.contains { $0.entityType == .visit })
+        #expect(mutations.contains { $0.entityType == .dish })
+        #expect(throws: TasteMapHybridServiceError.restaurantMissing) {
+            try service.saveVisit(request: .init(
+                restaurantID: foreign.remoteID!,
+                visitID: nil,
+                draft: draft
+            ))
+        }
+
+        _ = try service.deleteVisit(id: saved.visitID)
+        let verificationContext = ModelContext(container)
+        #expect(try verificationContext.fetch(FetchDescriptor<Visit>()).filter { $0.ownerUserID == owner }.isEmpty)
+        #expect(try verificationContext.fetch(FetchDescriptor<Visit>()).filter { $0.ownerUserID == foreignOwner }.isEmpty)
     }
 }

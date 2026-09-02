@@ -83,7 +83,14 @@ final class TasteMapHybridRuntime {
             service = try TasteMapHybridBridgeService(
                 container: container,
                 ownerUserID: userID,
-                membershipTier: [.premium, .gracePeriod].contains(premiumEntitlementService.membershipStatus) ? "member" : "free"
+                membershipTier: [.premium, .gracePeriod].contains(premiumEntitlementService.membershipStatus) ? "member" : "free",
+                enqueueSharedMealInvitations: { [authServices = self.authServices] sourceVisitID, participantUserIDs in
+                    try authServices.socialCollaborationOutbox.enqueue(
+                        ownerUserID: userID,
+                        sourceVisitID: sourceVisitID,
+                        participantUserIDs: participantUserIDs
+                    )
+                }
             )
         } else {
             service = nil

@@ -82,8 +82,8 @@ public struct TasteMapHybridRouteDTO: Codable, Equatable, Identifiable, Sendable
 
     public var owner: TasteMapHybridRouteOwner {
         switch surface {
-        case .map, .restaurant, .discovery, .add, .lists, .publicList, .activity,
-                .roulette, .analytics, .premium, .settings: .hybrid
+        case .map, .restaurant, .discovery, .add, .visit, .visitEdit, .lists,
+                .publicList, .activity, .roulette, .analytics, .premium, .settings: .hybrid
         case .profile where identifier == nil: .hybrid
         default: .native
         }
@@ -186,12 +186,88 @@ public struct TasteMapHybridVisitDTO: Codable, Sendable {
     public let valueTags: [String]
     public let environmentTags: [String]
     public let serviceTags: [String]
+    public let noiseLevel: String?
+    public let diningDuration: String?
+    public let portionLevel: String?
+    public let transportConvenience: String?
+    public let specialNotes: String
     public let companions: [String]
     public let companionIds: [String]
+    public let recommendationSourceType: String?
+    public let recommendationSourceUserId: String?
     public let recommendationSourceText: String
+    public let sharedMealId: String?
     public let partySize: Int?
     public let note: String
+    public let dishes: [TasteMapHybridVisitDishDTO]
+    public let photos: [TasteMapHybridImageDescriptor]
     public let createdAt: String
+    public let updatedAt: String
+}
+
+public struct TasteMapHybridVisitDishDTO: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let taste: String
+    public let rating: Double?
+    public let price: Double?
+    public let photoID: String?
+}
+
+public struct TasteMapHybridVisitWriteDraftDTO: Codable, Sendable {
+    public let visitedAt: String
+    public let rating: Double?
+    public let visibility: String
+    public let diningMode: String
+    public let totalPrice: Double?
+    public let myActualSpend: Double?
+    public let paymentMode: String?
+    public let partySize: Int
+    public let queueDuration: String?
+    public let diningOccasions: [String]
+    public let diningOccasionText: String
+    public let valueRating: Double?
+    public let environmentRating: Double?
+    public let serviceRating: Double?
+    public let valueTags: [String]
+    public let environmentTags: [String]
+    public let serviceTags: [String]
+    public let noiseLevel: String?
+    public let diningDuration: String?
+    public let portionLevel: String?
+    public let transportConvenience: String?
+    public let specialNotes: String
+    public let recommendationSourceType: String?
+    public let recommendationSourceUserID: String?
+    public let recommendationSourceText: String
+    public let sharedParticipantUserIDs: [String]
+    public let companions: [String]
+    public let dishes: [TasteMapHybridVisitWriteDishDTO]
+    public let note: String
+}
+
+public struct TasteMapHybridVisitWriteDishDTO: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let taste: String
+    public let rating: Double?
+    public let price: Double?
+    public let photoID: String?
+}
+
+public struct TasteMapHybridVisitWriteRequest: Codable, Sendable {
+    public let restaurantID: String
+    public let visitID: String?
+    public let draft: TasteMapHybridVisitWriteDraftDTO
+}
+
+public struct TasteMapHybridVisitDeleteRequest: Codable, Sendable {
+    public let visitID: String
+}
+
+public struct TasteMapHybridVisitMutationResultDTO: Codable, Sendable {
+    public let restaurantID: String
+    public let visitID: String
     public let updatedAt: String
 }
 
@@ -467,6 +543,8 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case mapViewport = "map.viewport"
     case contentSnapshot = "content.snapshot"
     case visitContract = "visit.contract"
+    case visitSave = "visit.save"
+    case visitDelete = "visit.delete"
     case syncStatus = "sync.status"
     case syncRun = "sync.run"
     case hapticsSelection = "haptics.selection"

@@ -13,6 +13,8 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'map.viewport',
   'content.snapshot',
   'visit.contract',
+  'visit.save',
+  'visit.delete',
   'sync.status',
   'sync.run',
   'haptics.selection',
@@ -99,11 +101,21 @@ export interface TasteMapVisitDTO {
   valueTags: string[]
   environmentTags: string[]
   serviceTags: string[]
+  noiseLevel: Visit['noiseLevel']
+  diningDuration: Visit['diningDuration']
+  portionLevel: Visit['portionLevel']
+  transportConvenience: Visit['transportConvenience']
+  specialNotes: string
   companions: string[]
   companionIds: string[]
+  recommendationSourceType: Visit['recommendationSourceType']
+  recommendationSourceUserId: string | null
   recommendationSourceText: string
+  sharedMealId: string | null
   partySize: number | null
   note: string
+  dishes: TasteMapVisitWriteDishDTO[]
+  photos: TasteMapImageDescriptor[]
   createdAt: string
   updatedAt: string
 }
@@ -343,6 +355,59 @@ export interface TasteMapLocationDTO {
 
 export interface TasteMapPhotoPickResult { photoIDs: string[] }
 
+export interface TasteMapVisitWriteDishDTO {
+  id: string
+  name: string
+  taste: string
+  rating: number | null
+  price: number | null
+  photoID: string | null
+}
+
+export interface TasteMapVisitWriteDraftDTO {
+  visitedAt: string
+  rating: number | null
+  visibility: Visit['visibility']
+  diningMode: Visit['diningMode']
+  totalPrice: number | null
+  myActualSpend: number | null
+  paymentMode: Visit['paymentMode']
+  partySize: number
+  queueDuration: Visit['queueDuration']
+  diningOccasions: Visit['diningOccasions']
+  diningOccasionText: string
+  valueRating: number | null
+  environmentRating: number | null
+  serviceRating: number | null
+  valueTags: string[]
+  environmentTags: string[]
+  serviceTags: string[]
+  noiseLevel: Visit['noiseLevel']
+  diningDuration: Visit['diningDuration']
+  portionLevel: Visit['portionLevel']
+  transportConvenience: Visit['transportConvenience']
+  specialNotes: string
+  recommendationSourceType: Visit['recommendationSourceType']
+  recommendationSourceUserID: string | null
+  recommendationSourceText: string
+  sharedParticipantUserIDs: string[]
+  companions: string[]
+  dishes: TasteMapVisitWriteDishDTO[]
+  note: string
+}
+
+export interface TasteMapVisitWriteRequest {
+  restaurantID: string
+  visitID: string | null
+  draft: TasteMapVisitWriteDraftDTO
+}
+
+export interface TasteMapVisitMutationResultDTO {
+  restaurantID: string
+  visitID: string
+  updatedAt: string
+}
+
 export interface TasteMapPremiumStatusDTO {
   state: 'free' | 'premium' | 'unavailable'
   expiresAt: string | null
@@ -427,7 +492,11 @@ export interface TasteMapPlatform {
   }
   map: { viewport(request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> }
   content: { snapshot(): Promise<TasteMapHybridContentSnapshotDTO> }
-  visit: { contract(): Promise<{ version: 1; writeUIReady: false }> }
+  visit: {
+    contract(): Promise<{ version: 1; writeUIReady: true }>
+    save(request: TasteMapVisitWriteRequest): Promise<TasteMapVisitMutationResultDTO>
+    delete(visitID: string): Promise<TasteMapVisitMutationResultDTO>
+  }
   sync: {
     status(): Promise<TasteMapSyncStatusDTO>
     run(): Promise<TasteMapSyncStatusDTO>

@@ -30,10 +30,11 @@ interface AddVisitModalProps {
   photoUpgradeAvailable?: boolean
   restaurant: RestaurantSummary
   onClose: () => void
+  onDelete?: () => Promise<void>
   onSave: (input: AddVisitInput) => Promise<void>
 }
 
-export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onSave }: AddVisitModalProps) {
+export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onDelete, onSave }: AddVisitModalProps) {
   const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
@@ -167,6 +168,14 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         <VisitPhotoPicker maxPhotos={maxPhotos} onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds) }} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
         <DishEditor onChange={setDishes} value={dishes} />
         <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
+        {initialVisit && onDelete ? <button className="danger-ghost-button visit-delete-action" disabled={saving} onClick={() => {
+          if (!window.confirm('删除这次到访记录？这不会删除餐厅。')) return
+          setSaving(true)
+          setError('')
+          void onDelete().catch((reason) => {
+            setError(reason instanceof Error ? reason.message : '删除失败，请稍后重试。')
+          }).finally(() => setSaving(false))
+        }} type="button">删除这次到访</button> : null}
         </div>
         <StickyFormActionBar
           primaryLabel={initialVisit ? '保存修改' : '保存到我的地图'}

@@ -1,6 +1,7 @@
 import { db } from '../db/appDb'
 import { CURRENT_USER_ID, ensureCurrentUser } from '../db/social'
 import { buildRestaurantSummaries } from '../services/restaurantSummaryProjection'
+import { addVisit, deleteVisit, updateVisit, type AddVisitInput } from '../db/restaurants'
 import type { RestaurantListCollection, RestaurantListItem } from '../types/domain'
 import type { RestaurantSummary } from '../types/domain'
 import {
@@ -15,6 +16,7 @@ import {
   type TasteMapProfileDashboardViewModel,
   type TasteMapRestaurantListRequest,
   type TasteMapRuntimeInfo,
+  type TasteMapVisitWriteDraftDTO,
   TasteMapPlatformError,
 } from './TasteMapPlatform'
 
@@ -140,7 +142,23 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     },
   }
 
-  visit = { contract: async () => ({ version: 1 as const, writeUIReady: false as const }) }
+  visit = {
+    contract: async () => ({ version: 1 as const, writeUIReady: true as const }),
+    save: async (request: import('./TasteMapPlatform').TasteMapVisitWriteRequest) => {
+      const input = browserVisitInput(request.draft)
+      const visit = request.visitID
+        ? await updateVisit(request.visitID, input)
+        : await addVisit(request.restaurantID, input)
+      if (!visit) throw new TasteMapPlatformError('到访记录没有保存成功。', 'visit_save_failed', true)
+      this.profilePromise = null
+      return { restaurantID: visit.restaurantId, visitID: visit.id, updatedAt: visit.updatedAt }
+    },
+    delete: async (visitID: string) => {
+      const result = await deleteVisit(visitID)
+      this.profilePromise = null
+      return { restaurantID: result.restaurantId, visitID: result.visitId, updatedAt: result.updatedAt }
+    },
+  }
   sync = {
     status: async () => ({ state: 'unavailable' as const, pendingMutationCount: 0, lastSuccessfulSyncAt: null, errorCode: null }),
     run: async () => capabilityUnavailable('sync'),
@@ -177,6 +195,51 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     if (import.meta.env.VITE_HYBRID_INTERNAL !== 'true') return null
     const { loadTasteMapBrowserDebugFixture } = await import('./TasteMapBrowserDebugFixture')
     return loadTasteMapBrowserDebugFixture()
+  }
+}
+
+function browserVisitInput(draft: TasteMapVisitWriteDraftDTO): AddVisitInput {
+  return {
+    visitedAt: draft.visitedAt,
+    rating: draft.rating as AddVisitInput['rating'],
+    visibility: draft.visibility,
+    diningMode: draft.diningMode,
+    totalPrice: draft.totalPrice,
+    myActualSpend: draft.myActualSpend,
+    paymentMode: draft.paymentMode,
+    partySize: draft.partySize,
+    queueDuration: draft.queueDuration ?? 'none',
+    diningOccasions: draft.diningOccasions,
+    diningOccasion: draft.diningOccasions[0] ?? null,
+    diningOccasionText: draft.diningOccasionText,
+    valueRating: draft.valueRating as AddVisitInput['valueRating'],
+    environmentRating: draft.environmentRating as AddVisitInput['environmentRating'],
+    serviceRating: draft.serviceRating as AddVisitInput['serviceRating'],
+    valueTags: draft.valueTags,
+    environmentTags: draft.environmentTags,
+    serviceTags: draft.serviceTags,
+    noiseLevel: draft.noiseLevel,
+    diningDuration: draft.diningDuration,
+    portionLevel: draft.portionLevel,
+    transportConvenience: draft.transportConvenience,
+    specialNotes: draft.specialNotes,
+    recommendationSourceType: draft.recommendationSourceType,
+    recommendationSourceUserId: draft.recommendationSourceUserID,
+    recommendationSourceText: draft.recommendationSourceText,
+    sharedParticipantUserIds: draft.sharedParticipantUserIDs,
+    companions: draft.companions,
+    dishes: draft.dishes.map((dish) => ({
+      id: dish.id,
+      name: dish.name,
+      taste: dish.taste,
+      rating: dish.rating as import('../types/domain').StarRating | null,
+      price: dish.price,
+      imageData: null,
+      photoId: dish.photoID,
+    })),
+    note: draft.note,
+    photos: [],
+    photoIds: [],
   }
 }
 
@@ -292,9 +355,22 @@ function bridgeDTOFromBrowser(restaurant: RestaurantSummary, image: TasteMapImag
       diningMode: visit.diningMode, visibility: visit.visibility, paymentMode: visit.paymentMode,
       queueDuration: visit.queueDuration, diningOccasions: visit.diningOccasions,
       diningOccasionText: visit.diningOccasionText ?? '', valueTags: visit.valueTags,
-      environmentTags: visit.environmentTags, serviceTags: visit.serviceTags, companions: visit.companions,
-      companionIds: visit.companionIds, recommendationSourceText: visit.recommendationSourceText ?? '',
-      partySize: visit.partySize, note: visit.note ?? '', createdAt: visit.createdAt, updatedAt: visit.updatedAt,
+      environmentTags: visit.environmentTags, serviceTags: visit.serviceTags,
+      noiseLevel: visit.noiseLevel, diningDuration: visit.diningDuration, portionLevel: visit.portionLevel,
+      transportConvenience: visit.transportConvenience, specialNotes: visit.specialNotes,
+      companions: visit.companions, companionIds: visit.companionIds,
+      recommendationSourceType: visit.recommendationSourceType,
+      recommendationSourceUserId: visit.recommendationSourceUserId,
+      recommendationSourceText: visit.recommendationSourceText ?? '', sharedMealId: visit.sharedMealId,
+      partySize: visit.partySize, note: visit.note ?? '',
+      dishes: visit.dishes.map((dish) => ({ id: dish.id, name: dish.name, taste: dish.taste, rating: dish.rating, price: dish.price, photoID: dish.photoId })),
+      photos: visit.photos.map((resourceURL, index) => ({
+        kind: 'publicOrCached' as const,
+        resourceURL,
+        photoID: visit.photoIds[index] ?? '',
+        accessibilityLabel: `${restaurant.name} 的用户实拍`,
+      })),
+      createdAt: visit.createdAt, updatedAt: visit.updatedAt,
     })), image,
   }
 }

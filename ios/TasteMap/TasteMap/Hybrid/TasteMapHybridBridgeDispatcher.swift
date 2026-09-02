@@ -130,7 +130,13 @@ public final class TasteMapHybridBridgeDispatcher {
             case .contentSnapshot:
                 result = try encodeValue(requiredService().contentSnapshot())
             case .visitContract:
-                result = .object(["version": .number(1), "writeUIReady": .bool(false)])
+                result = .object(["version": .number(1), "writeUIReady": .bool(true)])
+            case .visitSave:
+                let payload: TasteMapHybridVisitWriteRequest = try decodePayload(request.payload)
+                result = try encodeValue(requiredService().saveVisit(request: payload))
+            case .visitDelete:
+                let payload: TasteMapHybridVisitDeleteRequest = try decodePayload(request.payload)
+                result = try encodeValue(requiredService().deleteVisit(id: payload.visitID))
             case .syncStatus:
                 result = .object([
                     "state": .string("unavailable"),

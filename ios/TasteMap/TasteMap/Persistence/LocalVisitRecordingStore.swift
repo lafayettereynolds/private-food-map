@@ -57,7 +57,8 @@ struct LocalVisitRecordingStore {
                 resolvedRestaurant = try tasteMapStore.restaurant(
                     for: candidate,
                     among: allRestaurants,
-                    status: .visited
+                    status: .visited,
+                    actorUserID: actorUserID
                 )
             } else {
                 throw LocalVisitRecordingStoreError.missingRestaurant
@@ -83,9 +84,10 @@ struct LocalVisitRecordingStore {
             }
 
             let dishMap = try LocalDishStore(context: context).reconcile(
-                restaurantID: resolvedRestaurant.id,
-                visitID: savedVisit.id,
+                restaurant: resolvedRestaurant,
+                visit: savedVisit,
                 drafts: dishDrafts,
+                pruneExistingAssociations: existingVisit != nil,
                 saveChanges: false
             )
             result = VisitRecordingCommitResult(

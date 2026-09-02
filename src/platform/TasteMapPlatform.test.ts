@@ -13,6 +13,7 @@ import {
   type TasteMapMapBrowseRequest,
   type TasteMapProfileDashboardDTO,
   type TasteMapProfileDashboardViewModel,
+  type TasteMapVisitWriteRequest,
 } from './TasteMapPlatform'
 
 const capabilities: TasteMapCapabilityRegistry = {
@@ -192,6 +193,13 @@ describe('TasteMapNativeAdapter', () => {
         result = { route: request.payload, owner: 'hybrid', canGoBack: true }
       } else if (request.method === 'navigation.back' || request.method === 'navigation.current') {
         result = { route: { surface: 'profile' }, owner: 'hybrid', canGoBack: false }
+      } else if (request.method === 'visit.contract') {
+        result = { version: 1, writeUIReady: true }
+      } else if (request.method === 'visit.save') {
+        const payload = request.payload as TasteMapVisitWriteRequest
+        result = { restaurantID: payload.restaurantID, visitID: payload.visitID ?? 'visit-created-1', updatedAt: '2026-09-03T00:00:00.000Z' }
+      } else if (request.method === 'visit.delete') {
+        result = { restaurantID: fixture.restaurants[0].id, visitID: (request.payload as { visitID: string }).visitID, updatedAt: '2026-09-03T00:00:00.000Z' }
       } else result = {}
       return { version, requestId: request.requestId, result } as TasteMapBridgeResponseEnvelope
     })
@@ -265,15 +273,33 @@ describe('TasteMapNativeAdapter', () => {
     expect(native.remove).toHaveBeenCalledOnce()
   })
 
-  it('routes Visit edits through the typed Native handoff without embedding ownership decisions in JavaScript', async () => {
+  it('uses typed Visit save/delete envelopes without embedding owner identity in JavaScript', async () => {
     const { invoke, target } = nativeTarget()
     const adapter = new TasteMapNativeAdapter(target as never)
-    await adapter.navigation.openNative({ route: 'visitEdit', identifier: 'visit-owned-1' })
+    const request: TasteMapVisitWriteRequest = {
+      restaurantID: fixture.restaurants[0].id,
+      visitID: 'visit-owned-1',
+      draft: {
+        visitedAt: '2026-09-03T00:00:00.000Z', rating: 4.5, visibility: 'private', diningMode: 'dine_in',
+        totalPrice: 300, myActualSpend: 150, paymentMode: 'aa', partySize: 2, queueDuration: 'under15',
+        diningOccasions: ['friends'], diningOccasionText: '', valueRating: 4.5, environmentRating: 4,
+        serviceRating: 4, valueTags: ['值得'], environmentTags: ['安静'], serviceTags: ['周到'],
+        noiseLevel: 'quiet', diningDuration: 'under120', portionLevel: 'normal',
+        transportConvenience: 'convenient', specialNotes: '', recommendationSourceType: 'friend',
+        recommendationSourceUserID: null, recommendationSourceText: '朋友', sharedParticipantUserIDs: [],
+        companions: ['小王'], dishes: [{ id: 'dish-1', name: '招牌菜', taste: '鲜', rating: 4.5, price: 88, photoID: null }],
+        note: '会再来',
+      },
+    }
+    expect(await adapter.visit.contract()).toEqual({ version: 1, writeUIReady: true })
+    expect((await adapter.visit.save(request)).visitID).toBe('visit-owned-1')
+    expect((await adapter.visit.delete('visit-owned-1')).visitID).toBe('visit-owned-1')
     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
       request: expect.objectContaining({
-        method: 'navigation.openNative',
-        payload: { route: 'visitEdit', identifier: 'visit-owned-1' },
+        method: 'visit.save',
+        payload: request,
       }),
     }))
+    expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|bearer/i)
   })
 })
