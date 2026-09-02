@@ -198,7 +198,7 @@ Automated results:
 
 - Hybrid Web adapter/contract: **4 passed**.
 - Hybrid Native SwiftData: **3 passed**.
-- Existing affected Web Profile/Restaurant regressions: **27 passed**.
+- Relevant Web Profile/Restaurant regression suite: **27 passed total, including the 4 hybrid adapter tests**.
 - Existing formal iOS Profile/Restaurant/Image targeted regressions: **45 passed**.
 - Web TypeScript + production Vite build: **PASS**.
 - Capacitor POC Debug Simulator build: **PASS**.
