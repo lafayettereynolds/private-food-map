@@ -1,6 +1,6 @@
 # Taste Map Hybrid Architecture
 
-Status: Phase 2A formal runtime integration complete; production route switch not approved.
+Status: Phase 2B My Map / My List formal runtime integration complete; production route switch not approved.
 Contract: `TasteMapNative.v1`
 Updated: 2026-09-02
 
@@ -11,7 +11,7 @@ Taste Map will converge on one React product UI that runs in two hosts:
 - Browser: React → `TasteMapBrowserAdapter` → IndexedDB / existing Web services.
 - iOS: the same React pages in a Capacitor `WKWebView` → `TasteMapNativeAdapter` → `TasteMapNative.v1` → native services and current-user SwiftData.
 
-SwiftUI remains the production default and rollback implementation during incremental migration. Phase 2A embeds the signed local Hybrid runtime in the existing Taste Map target and promotes Profile and Restaurant Detail to `HYBRID_INTEGRATED`, but it does not switch the Release root or migrate any additional page.
+SwiftUI remains the production default and rollback implementation during incremental migration. Phase 2A embeds the signed local Hybrid runtime in the existing Taste Map target and promotes Profile and Restaurant Detail to `HYBRID_INTEGRATED`. Phase 2B adds My Map / My List to that same persistent runtime, but it does not switch the Release root and it does not migrate Discovery, Community, Add Restaurant or Nearby.
 
 ```text
 Canonical Page Templates + shared React components
@@ -37,7 +37,9 @@ The UI layer never imports Capacitor or native implementation details. Platform 
 | `src/platform/TasteMapBrowserAdapter.ts` | Browser implementation using the existing data layer or an injected source |
 | `src/platform/TasteMapNativeAdapter.ts` | Capacitor host detection, v1 envelopes, validation, structured error mapping |
 | `src/platform/TasteMapBridgeProjection.ts` | Explicit DTO → shared Web presentation-model projection |
-| `src/hybrid/app/HybridAppShell.tsx` | Shared app shell, auth bootstrap, event subscription and Hybrid/native route rendering |
+| `src/hybrid/app/HybridAppShell.tsx` | Shared app shell, auth bootstrap, event subscription and persistent Hybrid/native route rendering |
+| `src/components/MyMapBrowsePage.tsx` | Canonical My Map / My List React page and shared `MapBrowseState` |
+| `src/components/MapView.tsx` | Shared Browser/Capacitor map renderer, natural overlap and deterministic marker layering |
 | `src/hybrid/routes/HybridRouteRegistry.ts` | Route readiness, hashes, deep-link parser and ownership declaration |
 | `ios/TasteMap/TasteMap/Hybrid/` | Native DTOs, current-user data service, dispatcher, navigation coordinator and persistent production host |
 | `ios/TasteMap/HybridRuntimeResources/` | Signed local React bundle and Capacitor configuration embedded in the formal Taste Map target |
@@ -66,13 +68,13 @@ The v1 contract defines:
 - runtime and capability negotiation;
 - auth status/sign-in/logout shapes (no token fields);
 - current Profile;
-- Restaurant get/list;
+- Restaurant get/list and owner-scoped batched map viewport queries;
 - Visit contract readiness;
 - Sync status/run;
 - haptics, share, location, photo picker, Premium status;
 - navigation back to native-owned routes.
 
-Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Unmigrated business capabilities still remain native-owned and are entered through typed handoff routes; unsupported bridge operations return `capability_unavailable` rather than pretending to be implemented.
+Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `location.current`, and throttled `location.changed` delivery. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Unmigrated business capabilities still remain native-owned and are entered through typed handoff routes; unsupported bridge operations return `capability_unavailable` rather than pretending to be implemented.
 
 ## 4. Security and ownership boundary
 
@@ -80,7 +82,7 @@ Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Pr
 - Keychain remains native-only.
 - SwiftData model instances never cross the bridge; the service creates lean, Codable DTOs.
 - Native queries are scoped by the current Taste Map user ID through existing ownership predicates.
-- Images cross as allowlisted descriptors (`nativeResource`, `publicOrCached`, `providerMerchant`, `foodDiningFallback`), not arbitrary filesystem paths.
+- Images cross as allowlisted descriptors (`nativeResource`, `publicOrCached`, `providerMerchant`, `foodDiningFallback`), not arbitrary filesystem paths. Local resources are read through the allowlisted `tastemap-resource://` scheme handler.
 - The selection policy remains: current user's real photo → legal public/cached photo → legal provider merchant photo → Food & Dining fallback.
 - Error logs contain method, opaque request ID and duration only. They do not log payloads, tokens or user content.
 - The `HYBRID_DEVELOPMENT` runtime case and launch argument are compiled under `#if DEBUG`; Release has only `NATIVE_PRIMARY`.
@@ -91,19 +93,20 @@ Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Pr
 
 The typed route model is the only identity exchanged between native and Hybrid navigation. Every route has a validated `surface`, an optional bounded identifier and an explicit owner. JavaScript can never request an arbitrary Swift type or selector.
 
-Phase 2A ownership is:
+Phase 2B ownership is:
 
-- Hybrid: current-user Profile and Restaurant Detail.
-- Native: Map, Discovery, Add Restaurant, Visit, Lists, Public Profile/List/Activity, Roulette, Analytics, Premium and Settings.
+- Hybrid: My Map / My List, current-user Profile and Restaurant Detail.
+- Native: Discovery, Community, Add Restaurant, Nearby, Visit, Lists, Public Profile/List/Activity, Roulette, Analytics, Premium and Settings.
 
 The Hybrid shell supports canonical local routes:
 
 - `#/profile`
 - `#/restaurant/:id`
+- `#/map`
 
 React is the navigation truth while a Hybrid-owned page is visible. `TasteMapHybridNavigationCoordinator` is the transition boundary, not a second business stack: it keeps one Hybrid history plus at most one native presentation. The contract exposes `navigation.openHybrid`, `navigation.openNative`, `navigation.back`, and `navigation.current`, all with validation and structured errors.
 
-Profile → Restaurant appends one Hybrid history entry. Hybrid → Native presents an existing SwiftUI route without destroying the persistent WebView. Back dismisses that native presentation first; otherwise it pops Hybrid history. Native → Hybrid delivers the canonical route to the same long-lived shell. This prevents double back buttons, duplicate route state and reload-driven session loss.
+Profile → Restaurant and Map → Restaurant append one Hybrid history entry. Hybrid → Native presents an existing SwiftUI route without destroying the persistent WebView. Back dismisses that native presentation first; otherwise it pops Hybrid history. Native → Hybrid delivers the canonical route to the same long-lived shell. My Map / My List keeps one `MapBrowseState` containing mode, scope, filters, sort, city, search, viewport and selection; changing mode or returning from Restaurant Detail does not construct a second query state. This prevents double back buttons, duplicate route state and reload-driven session loss.
 
 Deep links are parsed only for allowlisted `restaurant`, `profile`, `list`, and `activity` shapes, reject credentials/malformed identifiers, resolve to a typed route, and are handed to the declared owner. Production AASA/domain validation and public-link privacy remain separate native/backend release gates.
 
@@ -129,13 +132,14 @@ Safe-area CSS uses `env(safe-area-inset-*)`; the host disables remote UI loading
 
 ## 7. Event channel, lifecycle and share handoff
 
-`TasteMapNative.v1` events use a versioned envelope, monotonic sequence, typed event name and JSON-safe payload. Phase 2A emits:
+`TasteMapNative.v1` events use a versioned envelope, monotonic sequence, typed event name and JSON-safe payload. The integrated runtime emits:
 
 - `auth.changed` after sign-in/logout;
 - `navigation.route` for ownership transitions;
 - `deepLink.received` after canonical parsing;
 - `shareExtension.received` for a normalized share fingerprint and target route;
 - `app.lifecycle` for foreground, background, resume and memory warning.
+- `location.changed` after a meaningful fresh Native location update.
 
 Events queued before the Capacitor plugin attaches are delivered after attachment. Lifecycle resume never reloads React. Share Extension ingestion remains native: the existing normalized payload store is retained, the handoff opens the native Add Restaurant route because it is still `NATIVE_PRIMARY`, and only a non-sensitive fingerprint/route state crosses the bridge.
 
@@ -145,7 +149,9 @@ Events queued before the Capacitor plugin attaches are delivered after attachmen
 
 ## 9. Browser parity
 
-Browser and Capacitor reuse `ProfilePage`, `RestaurantPreviewCard`, the canonical Restaurant Detail body, shared CSS/tokens, image policy and Web presentation models. The adapters are allowed to differ only in how DTOs are obtained. They are not allowed to fork content order, user-visible labels, rating semantics, image priority or layout.
+Browser and Capacitor reuse `ProfilePage`, `RestaurantPreviewCard`, `MyMapBrowsePage`, `MapView`, the canonical Restaurant Detail body, shared CSS/tokens, image policy and Web presentation models. The adapters are allowed to differ only in how DTOs, location and image resources are obtained. They are not allowed to fork content order, user-visible labels, rating semantics, image priority or layout.
+
+The map product contract forbids numeric or food-count clusters at every zoom level. Every Restaurant remains an independent marker. Normal layout uses natural overlap without default offset, dispersion or spiderfy. Layer priority is deterministic: selected Restaurant → rating → visit count → stable Restaurant ID. The current-user avatar location marker is a separate layer and never participates in the Restaurant comparator. A missing/unavailable map SDK degrades to the local neutral map shell with independent markers and working list/detail navigation rather than a blank page.
 
 `TasteMapBridgeProjection` is an anti-corruption layer for legacy Web presentation sentinels. It does not rewrite real user IDs in DTOs or native storage.
 
@@ -163,7 +169,7 @@ Mandatory Release properties:
 - no Premium/auth bypass;
 - Release App resources and executable pass `hybrid:scan:release`.
 
-The Phase 1 internal shell remains a diagnostic host. Phase 2A adds Capacitor 8.5.1 and the signed local bundle to the existing `com.lafayette.tastemap` target without changing Team, signing, Bundle ID, App Group, Sign in with Apple, Share Extension or other capabilities. Debug can opt into `HYBRID_DEVELOPMENT` with `--tastemap-hybrid-development`; that mode and switch do not compile into Release. Release remains `NATIVE_PRIMARY` until Lafayette separately approves `HYBRID_PRIMARY`.
+The Phase 1 internal shell remains a diagnostic host. Phase 2A adds Capacitor 8.5.1 and the signed local bundle to the existing `com.lafayette.tastemap` target without changing Team, signing, Bundle ID, App Group, Sign in with Apple, Share Extension or other capabilities. Phase 2B adds a reproducible Debug-only staging command for fixed-Simulator evidence; the fixture and Debug default route are rejected by Release verification and restored out of the formal Release resources before commit/build. Debug can opt into `HYBRID_DEVELOPMENT` with `--tastemap-hybrid-development`; that mode and switch do not compile into Release. Release remains `NATIVE_PRIMARY` until Lafayette separately approves `HYBRID_PRIMARY`.
 
 ## 11. Migration lifecycle
 
@@ -190,4 +196,6 @@ See `TASTEMAP_HYBRID_MIGRATION_STATUS.md` for the current route matrix.
 - Do not remove current SwiftUI rollback code without separate approval.
 - Do not create a new WebView per route or native handoff.
 - Do not pass tokens, authorization headers or cloud-provider credential code into the formal Hybrid React bundle.
-- Do not begin a new route migration merely because Phase 2A infrastructure is ready.
+- Do not reintroduce clusters, default offset/spiderfy/dispersion, platform-specific Map page forks or a second Map/List query state.
+- Do not let React resolve private native paths or independently change the canonical Restaurant image source identity.
+- Do not begin a new route migration merely because Phase 2B infrastructure is ready.

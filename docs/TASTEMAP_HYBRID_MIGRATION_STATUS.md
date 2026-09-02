@@ -20,7 +20,7 @@ Production default: `NATIVE_PRIMARY` (current SwiftUI application)
 
 | Surface | Status | Phase 1 evidence | Production owner | Next gate |
 | --- | --- | --- | --- | --- |
-| My Map / My List | `NATIVE_PRIMARY` | Platform/native-navigation contract only | SwiftUI | Separate page migration and visual approval |
+| My Map / My List | `HYBRID_INTEGRATED` | Shared `MyMapBrowsePage`/`MapView`, owner-scoped `map.viewport`, Native location/avatar, canonical image descriptors, shared state, formal signed local bundle and fixed-Simulator evidence | SwiftUI | Development AMap key/live-tile pan-zoom acceptance, Lafayette Product Acceptance, real-device smoke and explicit `HYBRID_PRIMARY` approval |
 | Discovery / Community | `NATIVE_PRIMARY` | Platform/native-navigation contract only | SwiftUI | Separate data/interaction parity phase |
 | Add Restaurant / Nearby | `NATIVE_PRIMARY` | Platform/native-navigation/location contracts only | SwiftUI | GPS/provider/write-flow migration phase |
 | Profile / My | `HYBRID_INTEGRATED` | Shared `ProfilePage`, real AuthSessionManager/current-user DTO, formal signed local bundle, native/Hybrid handoff and Debug fixed-Simulator evidence | SwiftUI | Lafayette Product Acceptance, real-device smoke, performance acceptance and explicit `HYBRID_PRIMARY` approval |
@@ -32,11 +32,11 @@ Production default: `NATIVE_PRIMARY` (current SwiftUI application)
 | Premium / Paywall | `NATIVE_PRIMARY` | Premium status contract only; unavailable in Phase 1 host | SwiftUI/StoreKit | StoreKit/entitlement bridge and Release verification |
 | Settings / Data / Backup | `NATIVE_PRIMARY` | Native-navigation contract only | SwiftUI | Separate security-sensitive migration |
 
-## Phase 2A completion boundary
+## Phase 2B completion boundary
 
-Phase 2A embeds the signed local Capacitor/React runtime in the formal Taste Map target and connects Profile and Restaurant Detail to the existing native auth, owner-scoped data, typed navigation, deep-link/share/lifecycle event contracts and persistent WebView. Debug internal acceptance can opt into `HYBRID_DEVELOPMENT`; Release contains no such runtime mode or launch switch and continues to open the current SwiftUI application.
+Phase 2A embeds the signed local Capacitor/React runtime in the formal Taste Map target and connects Profile and Restaurant Detail to the existing native auth, owner-scoped data, typed navigation, deep-link/share/lifecycle event contracts and persistent WebView. Phase 2B adds My Map / My List using the same React/CSS in Browser and Capacitor, an owner-scoped batched viewport bridge, native location updates, canonical image descriptors and one persistent Map/List query state. Debug internal acceptance can opt into `HYBRID_DEVELOPMENT`; Release contains no such runtime mode or launch switch and continues to open the current SwiftUI application.
 
-All other routes remain `NATIVE_PRIMARY` and are reached by typed handoff. Current SwiftUI Profile and Restaurant Detail remain intact as rollback. No Bundle ID, Team, capability, SwiftData schema, SyncEngine, Worker, D1, R2, StoreKit configuration or Production state is changed.
+Discovery/Community, Add Restaurant/Nearby and all other routes remain `NATIVE_PRIMARY` and are reached by typed handoff. Current SwiftUI Map/List, Profile and Restaurant Detail remain intact as rollback. No Bundle ID, Team, capability, SwiftData schema, SyncEngine, Worker, D1, R2, StoreKit configuration or Production state is changed.
 
 ## Required update rule
 
