@@ -64,3 +64,22 @@ Do not leave a lasting design decision only in chat, a temporary report, a scree
 UI acceptance must verify information architecture, section order, control placement and weight, image placement, horizontal/vertical relationships, spacing, density, shared-component reuse, accessibility, state coverage, and the applicable Web/approved reference—not only titles, buttons, build success, or test success.
 
 Final UI/UX reports must include a Design System Compliance section covering Core UI, Food & Dining visuals, Canonical Page Templates, remaining duplicate components, default-SwiftUI visual regressions, and remaining design-system gaps.
+
+## Hybrid UI architecture (mandatory)
+
+Taste Map's approved migration direction is one React product UI rendered in both the Browser and the iOS Capacitor shell, with native capabilities retained behind a typed platform boundary. Before changing a Hybrid route, read `docs/TASTEMAP_HYBRID_ARCHITECTURE.md` and `docs/TASTEMAP_HYBRID_MIGRATION_STATUS.md` in full in addition to the product design rules above.
+
+The following rules are project-level constraints:
+
+1. Product UI may depend only on `TasteMapPlatform`; it must not call Capacitor, Swift, Keychain, SwiftData, URLSession, StoreKit, Photos, Location, or iOS APIs directly.
+2. Browser and Capacitor must render the same React component and page-template implementation. Do not create separate "Browser UI" and "iOS Web UI" forks.
+3. Native calls use the versioned `TasteMapNative.v1` request/response envelope and capability registry. Never expose Apple tokens, refresh tokens, credentials, Keychain values, raw local file paths, SwiftData model objects, or unrestricted native method invocation to JavaScript.
+4. The Browser adapter and Native adapter must preserve the same DTO semantics, UI states, image-priority policy, errors, and route contracts. Add contract tests whenever a method or DTO changes.
+5. iOS Release UI assets must be signed local bundle resources. A production Capacitor `server.url`, remote UI dependency, development URL, test user header, fixture identity, debug route, or Premium/test bypass is forbidden.
+6. Debug fixtures and preview routes must be both build-time gated and excluded from Release artifacts. A runtime-only flag is insufficient. Re-run the Release App binary/resource purity scan after changing build inputs.
+7. `HYBRID_READY` does not mean `HYBRID_PRIMARY`. The current SwiftUI implementation remains the default production route and rollback path until Lafayette explicitly approves a route switch. Do not delete or retire it automatically.
+8. Update `docs/TASTEMAP_HYBRID_MIGRATION_STATUS.md` in the same change whenever route ownership or readiness changes. Valid states are `NATIVE_PRIMARY`, `HYBRID_POC`, `HYBRID_READY`, `HYBRID_PRIMARY`, `NATIVE_ROLLBACK`, and `RETIRED_AFTER_MIGRATION`.
+9. Profile and Restaurant Detail are the Phase 1 reference routes. All other routes remain native-primary until a separately authorized migration phase.
+10. Native service queries must be current-user scoped. Bridge DTOs are lean, explicit, deterministic, and backward-compatible within their major version. Do not pass a database or network client through the bridge.
+
+When a durable Hybrid architecture decision changes, update both Hybrid documents and add focused TypeScript/Swift contract coverage. Build success alone is not acceptance: verify Browser behavior, fixed-Simulator Capacitor behavior, back navigation, safe areas, offline local boot, structured error states, performance, and Release purity.
