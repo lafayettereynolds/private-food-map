@@ -4192,6 +4192,32 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridFollowingOpensPeopleListInsteadOfRestaurantDiscovery() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+
+        let following = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "关注 ")
+        ).firstMatch
+        XCTAssertTrue(following.waitForExistence(timeout: 8))
+        following.tap()
+
+        XCTAssertTrue(app.navigationBars["好友与关注"].waitForExistence(timeout: 8))
+        XCTAssertTrue(segmentedOption("关注", in: app).exists)
+        XCTAssertTrue(app.staticTexts["我关注的"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts["发现"].exists)
+        XCTAssertFalse(webView.buttons["为你推荐"].isHittable)
+        keepScreenshot(named: "Hybrid Following Native People List", of: app)
+    }
+
+    @MainActor
     func testHybridVisitRatingSetsEveryTargetInOneInteraction() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
