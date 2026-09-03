@@ -186,7 +186,8 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).toContain('aria-label="记录 ')
     expect(html).toContain('aria-label="已去过 ')
     expect(html).toContain('aria-label="加入转盘 ')
-    expect(html).toContain('lucide-notebook-pen')
+    expect(html).toContain('lucide-plus')
+    expect(html).not.toContain('lucide-notebook-pen')
     const restaurantActions = html.match(/data-activity-region="restaurant-actions">([\s\S]*?)<\/div><\/footer>/)?.[1] ?? ''
     expect(restaurantActions).toContain('data-tastemap-semantic-icon="visited"')
     expect(restaurantActions).toContain('lucide-check')
@@ -197,8 +198,20 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).not.toContain('lucide-list-plus')
     expect(html).not.toContain('lucide-bookmark-plus')
     const socialActions = html.match(/data-activity-region="like-comment-more-share">([\s\S]*?)<\/div><div class="tm-activity-card__restaurant-actions"/)?.[1] ?? ''
+    expect(socialActions).toContain('lucide-send')
+    expect(socialActions).not.toContain('lucide-share-2')
     expect(socialActions.match(/<button/g)).toHaveLength(3)
     expect(restaurantActions.match(/<button/g)).toHaveLength(3)
+  })
+
+  it('shows a concise similar-taste rating label without repeating the known user name', () => {
+    const similarTasteContent = structuredClone(content) as TasteMapHybridContentSnapshotDTO
+    similarTasteContent.discovery.forYou = [{ ...similarTasteContent.discovery.forYou[0], mode: 'similar_taste' }]
+    const html = renderToStaticMarkup(
+      <HybridDiscoveryPage content={similarTasteContent} onOpenRestaurant={() => undefined} platform={platform} />,
+    )
+    expect(html).toContain('<small>评分</small>')
+    expect(html).not.toContain('的评分</small>')
   })
 
   it('treats Swift JSONEncoder omitted optionals as honest missing values instead of crashing', () => {

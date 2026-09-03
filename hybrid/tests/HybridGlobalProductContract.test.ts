@@ -412,7 +412,8 @@ describe('Hybrid global Product Contract', () => {
     const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const platform = source('../../src/platform/TasteMapPlatform.ts')
-    for (const icon of ['NotebookPen', 'Bookmark', 'Dices']) expect(discovery).toContain(icon)
+    for (const icon of ['Plus', 'Bookmark', 'Dices', 'SendIcon']) expect(discovery).toContain(icon)
+    for (const removedIcon of ['NotebookPen', 'Share2']) expect(discovery).not.toContain(removedIcon)
     for (const removed of ['ListPlus', 'CirclePlus', 'BookmarkPlus', '食单 ', "route: 'restaurantAddToList'"]) {
       expect(discovery).not.toContain(removed)
     }

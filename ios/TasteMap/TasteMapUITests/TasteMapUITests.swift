@@ -4085,10 +4085,17 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(similarTaste.waitForExistence(timeout: 8))
         similarTaste.tap()
 
-        XCTAssertTrue(webView.staticTexts["林夏"].waitForExistence(timeout: 8))
         XCTAssertTrue(webView.buttons["查看同味来源用户 林夏"].waitForExistence(timeout: 8))
         XCTAssertTrue(webView.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH %@", "林夏本次到访评分")
+        ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts["评分"].waitForExistence(timeout: 8))
+        XCTAssertFalse(webView.staticTexts["林夏的评分"].exists)
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "记录 ")
+        ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "分享动态 ")
         ).firstMatch.waitForExistence(timeout: 8))
         XCTAssertTrue(webView.staticTexts["同味推荐依据"].waitForExistence(timeout: 8))
         XCTAssertFalse(webView.staticTexts["大家评分"].exists)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowDownUp, Bookmark, Building2, Dices, Ellipsis, Heart, MapPin,
-  MessageCircle, NotebookPen, Send as SendIcon, Share2, SlidersHorizontal, Star,
+  MessageCircle, Plus, Send as SendIcon, SlidersHorizontal, Star,
 } from 'lucide-react'
 import {
   TasteMapActivityCardFrame,
@@ -280,7 +280,7 @@ function RecommendationCard({ item, platform, onOpenRestaurant, engagement, view
   const target = item.interaction
   return <TasteMapActivityCardFrame
     activityRating={similarTasteSource
-      ? <span className="tm-activity-card__similar-rating"><small>{similarTasteSource.name}的评分</small><TasteMapActivityRatingBadge prefix={`${similarTasteSource.name}本次到访`} rating={item.activityRating} /></span>
+      ? <span className="tm-activity-card__similar-rating"><small>评分</small><TasteMapActivityRatingBadge prefix={`${similarTasteSource.name}本次到访`} rating={item.activityRating} /></span>
       : <CommunityRatingSummary item={item} />}
     body={<section className="tm-activity-card__recommendation-reason"><strong>{item.mode === 'for_you' ? '为什么适合你' : item.mode === 'similar_taste' ? '同味推荐依据' : '近期趋势依据'}</strong><p>{item.reason}</p>{facts.length ? <ul>{facts.map((fact) => <li key={fact}>{fact}</li>)}</ul> : null}</section>}
     header={similarTasteSource ? <><button aria-label={`查看同味来源用户 ${similarTasteSource.name}`} className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: similarTasteSource.id })} type="button"><span className="tm-hybrid-avatar-seed">{similarTasteSource.name.slice(0, 1)}</span><span><strong>{similarTasteSource.name}</strong><small>{item.activityVisitedAt ? `${formatEventTime(item.activityVisitedAt)} · 公开到访` : '与你口味相近'}</small></span></button>{item.similarityPercent != null ? <span className="similarity-pill">口味相似 {item.similarityPercent}%</span> : null}</> : undefined}
@@ -288,14 +288,14 @@ function RecommendationCard({ item, platform, onOpenRestaurant, engagement, view
     onOpen={() => onOpenRestaurant(item.restaurant.id)}
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
     restaurantActions={<>
-      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><NotebookPen aria-hidden="true" size={18} /></button>
+      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><Plus aria-hidden="true" size={18} /></button>
       <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button">{viewerState === 'visited' ? <TasteMapVisitedIcon size={18} /> : <Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} />}</button>
       <button aria-label={`加入转盘 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => onOpenRoulette(item.restaurant.id)} title="加入转盘" type="button"><Dices aria-hidden="true" size={18} /></button>
     </>}
     socialActions={<>
       {target ? <button aria-busy={likePending} aria-label={`${engagement.likedByViewer ? '取消点赞' : '点赞'} ${item.restaurant.name}`} aria-pressed={engagement.likedByViewer} disabled={likePending} onClick={() => onLike(target)} title="点赞" type="button"><Heart aria-hidden="true" fill={engagement.likedByViewer ? 'currentColor' : 'none'} size={19} />{engagement.likeCount}</button> : null}
       {target ? <button aria-label={`评论 ${item.restaurant.name}`} onClick={() => onComment(target)} title="评论" type="button"><MessageCircle aria-hidden="true" size={19} />{engagement.commentCount}</button> : null}
-      <button aria-label={`分享动态 ${item.restaurant.name}`} onClick={share} title="分享" type="button"><Share2 aria-hidden="true" size={19} /></button>
+      <button aria-label={`分享动态 ${item.restaurant.name}`} onClick={share} title="分享" type="button"><SendIcon aria-hidden="true" size={19} /></button>
     </>}
     variant="recommendation"
   />
@@ -315,14 +315,14 @@ function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerStat
     onOpen={() => onOpenRestaurant(item.restaurant.id)}
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
     restaurantActions={<>
-      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><NotebookPen aria-hidden="true" size={18} /></button>
+      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><Plus aria-hidden="true" size={18} /></button>
       <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button">{viewerState === 'visited' ? <TasteMapVisitedIcon size={18} /> : <Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} />}</button>
       <button aria-label={`加入转盘 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => onOpenRoulette(item.restaurant.id)} title="加入转盘" type="button"><Dices aria-hidden="true" size={18} /></button>
     </>}
     socialActions={<>
       {target ? <button aria-busy={likePending} aria-label={`${engagement.likedByViewer ? '取消点赞' : '点赞'} ${item.restaurant.name}`} aria-pressed={engagement.likedByViewer} disabled={likePending} onClick={() => onLike(target)} type="button"><Heart fill={engagement.likedByViewer ? 'currentColor' : 'none'} size={18} />{engagement.likeCount}</button> : null}
       {target ? <button aria-label={`评论 ${item.restaurant.name}`} onClick={() => onComment(target)} type="button"><MessageCircle size={18} />{engagement.commentCount}</button> : null}
-      <button aria-label={`分享动态 ${item.restaurant.name}`} onClick={() => void platform.share.open({ title: item.restaurant.name, text: `${item.user.name} 在 Taste Map 记录了 ${item.restaurant.name}` })} title="分享" type="button"><Share2 aria-hidden="true" size={19} /></button>
+      <button aria-label={`分享动态 ${item.restaurant.name}`} onClick={() => void platform.share.open({ title: item.restaurant.name, text: `${item.user.name} 在 Taste Map 记录了 ${item.restaurant.name}` })} title="分享" type="button"><SendIcon aria-hidden="true" size={19} /></button>
     </>}
     variant="activity"
   />
