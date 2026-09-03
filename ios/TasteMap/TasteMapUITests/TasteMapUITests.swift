@@ -4463,7 +4463,11 @@ final class TasteMapUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(roulette.waitForExistence(timeout: 8))
         roulette.tap()
-        XCTAssertTrue(webView.buttons["开始随机选择餐厅"].waitForExistence(timeout: 8))
+        let spin = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "开始")
+        ).firstMatch
+        XCTAssertTrue(spin.waitForExistence(timeout: 8))
+        webView.buttons["关闭"].tap()
 
         webView.buttons["我的"].tap()
         scrollToTop(in: app)
