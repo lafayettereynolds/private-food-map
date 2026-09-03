@@ -369,7 +369,8 @@ The four rating references are `我的评分 / 全部用户 / 好友评分 / 同
 - City scope uses a building/city/map-region icon. GPS/target icons are reserved for live current-location and Nearby status.
 - Search, Nearby, Share, and Manual Add share icon-container, row-height, divider, focus, pressed, disabled, loading, empty, and error grammar while retaining their approved primary/secondary weights.
 - Manual paste is not a primary in-app section; parsers remain available to the Share Extension.
-- Nearby uses a fresh CLLocation after checking authorization, accuracy, timestamp, and horizontal accuracy. City center or map camera center can never impersonate GPS.
+- Nearby uses a fresh CLLocation after checking authorization, accuracy, timestamp, and horizontal accuracy. Full-accuracy authorization alone does not make the first delivered coordinate precise: the shared location provider must reject coarse fixes, continue long enough to select the best acceptable update, and prefer a meter-level fix before starting the provider query. City center or map camera center can never impersonate GPS.
+- Nearby provider coverage begins with a coordinate-centered food/dining point-of-interest radius request, then merges the established Restaurant/Food/Dining keyword searches, deduplicates provider identities, recomputes straight-line distance from the same accepted GPS fix, applies the 3 km bound, and sorts nearest first. Provider relevance ranking alone must not hide genuinely nearer small Restaurants.
 - A successful precise Nearby result proceeds directly to candidates; do not add a redundant location-success banner or GPS-sorting footer. Keep compact loading, reduced-accuracy, permission, error/retry, and no-result feedback.
 - Selection shows the standard Restaurant Detail foundation before Want to Go or Record Visit.
 - Provider identity aids dedupe but is never the Taste Map primary key.
@@ -450,6 +451,8 @@ Candidate code, screenshots, recommendations, and approval-tool selections do no
 - Do not promote manual link pasting as Add Restaurant's main entry.
 - Do not use a successful fresh location as a reason to add a redundant `当前位置已更新`/precision/GPS-sorting notice above or below Nearby results.
 - Do not use city center, map camera center, or stale coordinates as Nearby GPS.
+- Do not treat the first Core Location update or full-accuracy permission as proof that a fix is precise; a coarse first update must never become the Nearby query center while a better update is still arriving.
+- Do not use only natural-language provider ranking for Nearby; it must be merged with coordinate-centered food/dining POIs before distance sorting so prominent Restaurants cannot crowd out closer small shops.
 - Do not render system emoji as formal Food/Dining artwork.
 - Do not let Food/Dining fallback cover an available lawful real Restaurant image.
 - Do not let Restaurant-facing pages invent independent image-source resolvers instead of the canonical policy and renderer.

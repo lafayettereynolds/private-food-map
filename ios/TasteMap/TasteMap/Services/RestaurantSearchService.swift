@@ -90,6 +90,12 @@ enum RestaurantDistanceOrdering {
 
 enum RestaurantNearbySearchPolicy {
     static let keywords = ["餐厅", "美食", "饭店"]
+    static let pointOfInterestCategories: [MKPointOfInterestCategory] = [
+        .restaurant,
+        .cafe,
+        .bakery,
+        .foodMarket,
+    ]
 
     static func merge(
         _ batches: [[RestaurantCandidate]],
@@ -150,6 +156,10 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
 
     func nearby(center: RestaurantCoordinate, radiusMeters: Double = 3_000) async throws -> [RestaurantCandidate] {
         guard center.isValid else { throw RestaurantSearchError.invalidCoordinate }
+        async let proximityBatch = nearbyPointsOfInterest(
+            center: center,
+            radiusMeters: radiusMeters
+        )
         async let restaurantBatch = nearbyCandidates(
             matching: RestaurantNearbySearchPolicy.keywords[0],
             center: center,
@@ -165,7 +175,7 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
             center: center,
             radiusMeters: radiusMeters
         )
-        let outcomes = await [restaurantBatch, foodBatch, diningBatch]
+        let outcomes = await [proximityBatch, restaurantBatch, foodBatch, diningBatch]
         let successfulBatches = outcomes.compactMap { $0 }
         guard !successfulBatches.isEmpty else { throw RestaurantSearchError.locationNotFound }
         return RestaurantNearbySearchPolicy.merge(
@@ -173,6 +183,21 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
             from: center,
             radiusMeters: radiusMeters
         )
+    }
+
+    private func nearbyPointsOfInterest(
+        center: RestaurantCoordinate,
+        radiusMeters: Double
+    ) async -> [RestaurantCandidate]? {
+        let request = MKLocalPointsOfInterestRequest(
+            center: center.clLocationCoordinate,
+            radius: radiusMeters
+        )
+        request.pointOfInterestFilter = MKPointOfInterestFilter(
+            including: RestaurantNearbySearchPolicy.pointOfInterestCategories
+        )
+        guard let response = try? await MKLocalSearch(request: request).start() else { return nil }
+        return candidates(from: response.mapItems, city: "")
     }
 
     private func nearbyCandidates(

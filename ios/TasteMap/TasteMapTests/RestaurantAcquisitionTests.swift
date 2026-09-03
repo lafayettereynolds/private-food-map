@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import MapKit
 import SwiftData
 import Testing
 @testable import TasteMap
@@ -35,6 +36,74 @@ struct RestaurantAcquisitionTests {
 
         #expect(RestaurantLocationFixPolicy.isUsable(fresh, accuracyAuthorization: .fullAccuracy, now: now))
         #expect(!RestaurantLocationFixPolicy.isUsable(stale, accuracyAuthorization: .fullAccuracy, now: now))
+    }
+
+    @Test("Nearby does not accept the first coarse full-accuracy fix")
+    func preciseLocationPolicyWaitsForAnAccurateFix() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let coarse = acquisitionLocation(
+            latitude: 30.281,
+            longitude: 120.161,
+            timestamp: now,
+            horizontalAccuracy: 450
+        )
+        let acceptable = acquisitionLocation(
+            latitude: 30.2744,
+            longitude: 120.1554,
+            timestamp: now.addingTimeInterval(1),
+            horizontalAccuracy: 82
+        )
+        let preferred = acquisitionLocation(
+            latitude: 30.2741,
+            longitude: 120.1551,
+            timestamp: now.addingTimeInterval(2),
+            horizontalAccuracy: 18
+        )
+
+        #expect(!RestaurantLocationFixPolicy.isUsable(
+            coarse,
+            accuracyAuthorization: .fullAccuracy,
+            now: now
+        ))
+        #expect(RestaurantLocationFixPolicy.isUsable(
+            acceptable,
+            accuracyAuthorization: .fullAccuracy,
+            now: now.addingTimeInterval(1)
+        ))
+        #expect(!RestaurantLocationFixPolicy.isPreferred(
+            acceptable,
+            accuracyAuthorization: .fullAccuracy,
+            now: now.addingTimeInterval(1)
+        ))
+        #expect(RestaurantLocationFixPolicy.isPreferred(
+            preferred,
+            accuracyAuthorization: .fullAccuracy,
+            now: now.addingTimeInterval(2)
+        ))
+
+        let selected = try #require(RestaurantLocationFixPolicy.bestUsableLocation(
+            in: [coarse, acceptable, preferred],
+            comparedWith: nil,
+            accuracyAuthorization: .fullAccuracy,
+            now: now.addingTimeInterval(2)
+        ))
+        #expect(selected.horizontalAccuracy == 18)
+        #expect(selected.coordinate.latitude == preferred.coordinate.latitude)
+        #expect(selected.coordinate.longitude == preferred.coordinate.longitude)
+    }
+
+    @Test("Reduced Accuracy remains usable but is never presented as meter-level precision")
+    func reducedLocationPolicyRemainsHonest() {
+        let location = acquisitionLocation(horizontalAccuracy: 3_000)
+
+        #expect(!RestaurantLocationFixPolicy.isUsable(
+            location,
+            accuracyAuthorization: .fullAccuracy
+        ))
+        #expect(RestaurantLocationFixPolicy.isPreferred(
+            location,
+            accuracyAuthorization: .reducedAccuracy
+        ))
     }
 
     @Test("Delayed first fix remains locating and does not search from a fallback center")
@@ -161,7 +230,7 @@ struct RestaurantAcquisitionTests {
         #expect((sorted[1].distanceMeters ?? 0) > 419)
     }
 
-    @Test("Nearby uses the same broad restaurant query vocabulary as Web and merges provider duplicates")
+    @Test("Nearby combines coordinate-first food POIs with the Web query vocabulary and merges provider duplicates")
     func nearbyQueryCoverageAndMerge() {
         let origin = RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)
         let sharedIdentity = "apple-shared-nearby"
@@ -201,6 +270,12 @@ struct RestaurantAcquisitionTests {
         )
 
         #expect(RestaurantNearbySearchPolicy.keywords == ["餐厅", "美食", "饭店"])
+        #expect(RestaurantNearbySearchPolicy.pointOfInterestCategories == [
+            .restaurant,
+            .cafe,
+            .bakery,
+            .foodMarket,
+        ])
         #expect(merged.map(\.name) == ["最近餐厅", "较远餐厅"])
         #expect(merged.first?.distanceMeters != nil)
     }

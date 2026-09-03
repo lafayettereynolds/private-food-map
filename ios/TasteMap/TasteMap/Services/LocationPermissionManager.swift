@@ -19,8 +19,10 @@ protocol RestaurantLocationProviding: AnyObject {
 enum RestaurantLocationFixPolicy {
     static let maximumAge: TimeInterval = 15
     static let maximumFutureSkew: TimeInterval = 5
-    static let maximumPreciseHorizontalAccuracy: CLLocationAccuracy = 1_000
+    static let preferredPreciseHorizontalAccuracy: CLLocationAccuracy = 50
+    static let maximumPreciseHorizontalAccuracy: CLLocationAccuracy = 100
     static let maximumReducedHorizontalAccuracy: CLLocationAccuracy = 10_000
+    static let preciseFixSettlingDuration: Duration = .seconds(3)
 
     static func isUsable(
         _ location: CLLocation,
@@ -38,6 +40,37 @@ enum RestaurantLocationFixPolicy {
             : maximumPreciseHorizontalAccuracy
         return location.horizontalAccuracy <= maximumAccuracy
     }
+
+    static func isPreferred(
+        _ location: CLLocation,
+        accuracyAuthorization: CLAccuracyAuthorization,
+        now: Date = Date()
+    ) -> Bool {
+        guard isUsable(
+            location,
+            accuracyAuthorization: accuracyAuthorization,
+            now: now
+        ) else { return false }
+        if accuracyAuthorization == .reducedAccuracy { return true }
+        return location.horizontalAccuracy <= preferredPreciseHorizontalAccuracy
+    }
+
+    static func bestUsableLocation(
+        in locations: [CLLocation],
+        comparedWith current: CLLocation?,
+        accuracyAuthorization: CLAccuracyAuthorization,
+        now: Date = Date()
+    ) -> CLLocation? {
+        let candidates = ([current].compactMap { $0 } + locations).filter {
+            isUsable($0, accuracyAuthorization: accuracyAuthorization, now: now)
+        }
+        return candidates.min { left, right in
+            if left.horizontalAccuracy != right.horizontalAccuracy {
+                return left.horizontalAccuracy < right.horizontalAccuracy
+            }
+            return left.timestamp > right.timestamp
+        }
+    }
 }
 
 @MainActor
@@ -49,6 +82,8 @@ final class LocationPermissionManager: NSObject, ObservableObject, CLLocationMan
     private let locationManager: CLLocationManager
     private var continuation: CheckedContinuation<CLLocation, Error>?
     private var timeoutTask: Task<Void, Never>?
+    private var preciseFixSettlingTask: Task<Void, Never>?
+    private var bestUsableLocation: CLLocation?
 
     override init() {
         let locationManager = CLLocationManager()
@@ -87,6 +122,9 @@ final class LocationPermissionManager: NSObject, ObservableObject, CLLocationMan
         }
 
         isLocating = true
+        bestUsableLocation = nil
+        preciseFixSettlingTask?.cancel()
+        preciseFixSettlingTask = nil
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 self.continuation = continuation
@@ -116,18 +154,35 @@ final class LocationPermissionManager: NSObject, ObservableObject, CLLocationMan
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.reversed().first(where: {
-            RestaurantLocationFixPolicy.isUsable(
-                $0,
-                accuracyAuthorization: manager.accuracyAuthorization
-            )
-        }) else { return }
-        currentLocation = location
-        finish(with: .success(location))
+        guard let location = RestaurantLocationFixPolicy.bestUsableLocation(
+            in: locations,
+            comparedWith: bestUsableLocation,
+            accuracyAuthorization: manager.accuracyAuthorization
+        ) else { return }
+        bestUsableLocation = location
+
+        if RestaurantLocationFixPolicy.isPreferred(
+            location,
+            accuracyAuthorization: manager.accuracyAuthorization
+        ) {
+            finish(with: .success(location))
+            return
+        }
+
+        guard preciseFixSettlingTask == nil else { return }
+        preciseFixSettlingTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: RestaurantLocationFixPolicy.preciseFixSettlingDuration)
+            guard !Task.isCancelled, let self, let location = self.bestUsableLocation else { return }
+            self.finish(with: .success(location))
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         if let locationError = error as? CLError, locationError.code == .locationUnknown {
+            return
+        }
+        if let bestUsableLocation {
+            finish(with: .success(bestUsableLocation))
             return
         }
         finish(with: .failure(error))
@@ -139,7 +194,12 @@ final class LocationPermissionManager: NSObject, ObservableObject, CLLocationMan
         timeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(12))
             guard !Task.isCancelled else { return }
-            self?.finish(with: .failure(RestaurantLocationError.staleOrInaccurate))
+            guard let self else { return }
+            if let bestUsableLocation = self.bestUsableLocation {
+                self.finish(with: .success(bestUsableLocation))
+            } else {
+                self.finish(with: .failure(RestaurantLocationError.staleOrInaccurate))
+            }
         }
     }
 
@@ -148,7 +208,13 @@ final class LocationPermissionManager: NSObject, ObservableObject, CLLocationMan
         self.continuation = nil
         timeoutTask?.cancel()
         timeoutTask = nil
+        preciseFixSettlingTask?.cancel()
+        preciseFixSettlingTask = nil
         locationManager.stopUpdatingLocation()
+        if case .success(let location) = result {
+            currentLocation = location
+        }
+        bestUsableLocation = nil
         isLocating = false
         continuation.resume(with: result)
     }
