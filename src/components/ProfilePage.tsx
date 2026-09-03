@@ -19,7 +19,7 @@ import { buildPublicProfileMap, hasPublicTasteSummary, selectPublicProfileActivi
 import { MapView } from './MapView'
 import type { FriendRecommendation } from '../services/socialApi'
 import { PremiumBurgerBadge } from './PremiumBurgerBadge'
-import { publicProfileTabLabels, selectUniqueProfileRestaurants, shouldShowMutualWant, shouldShowPremiumBurger, visibleProfileBio } from '../services/profileTopStats'
+import { publicProfileTabLabels, selectUniqueProfileRestaurants, shouldShowMutualWant, shouldShowPremiumBurger } from '../services/profileTopStats'
 import { buildCompanionShareData, buildOnThisDayShareData, buildPeriodReviewShareData, buildRecommendationSourceShareData, buildTasteProfileShareData } from '../services/analysisShare'
 import { AnalysisShareAction } from './AnalysisShareSheet'
 import type { AnalysisShareData } from '../types/analysisShare'
@@ -95,10 +95,10 @@ export function ProfilePage({ user, restaurants = [], viewerRestaurants = [], vi
         <button aria-label={editable ? '编辑个人资料' : `${user.nickname} 的头像`} className="profile-avatar profile-dashboard__avatar" disabled={!editable || (!onEditProfile && !onSave)} onClick={openEditor} type="button"><UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></button>
         <div className="profile-dashboard__identity">
           <h1><span>{user.nickname}</span>{shouldShowPremiumBurger(user.membershipTier) ? <button aria-label="查看 Premium 会员状态" className="profile-premium-badge-entry" onClick={() => openPremiumPaywall('profile_entry')} title="查看 Premium 会员状态" type="button"><PremiumBurgerBadge /></button> : null}</h1>
+          <button className="profile-user-id profile-user-id--under-name" onClick={() => void copyUserId()} title="复制用户 ID" type="button"><span>ID {numericUserId}</span>{copiedUserId ? <Check size={13} /> : <Copy size={13} />}</button>
           {editable ? <div aria-label="关注数据" className="profile-dashboard__social-counts"><ProfileStat icon={<UserCheck size={16} />} label="关注" onClick={() => openConnections('following')} value={followingCount} /><ProfileStat icon={<UsersRound size={16} />} label="被关注" onClick={() => openConnections('followers')} value={followerCount} /></div> : null}
-          {visibleProfileBio(user.bio) ? <p>{visibleProfileBio(user.bio)}</p> : null}
           {formatJoinedMonth(user.createdAt) ? <small className="profile-joined-at">{formatJoinedMonth(user.createdAt)} 加入 Taste Map</small> : null}
-          <div className="profile-dashboard__identity-actions"><button className="profile-user-id" onClick={() => void copyUserId()} title="复制用户 ID" type="button"><span>ID {numericUserId}</span>{copiedUserId ? <Check size={13} /> : <Copy size={13} />}</button>{editable ? <><button className="profile-edit-button" disabled={!onEditProfile && !onSave} onClick={openEditor} type="button">编辑资料</button>{user.membershipTier !== 'member' ? <button className="profile-premium-entry" onClick={() => openPremiumPaywall('profile_entry')} type="button"><Sparkles size={14} />开通 Premium</button> : null}</> : <button className={`profile-follow-button${isFollowing ? ' is-following' : ''}`} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button>}</div>
+          <div className="profile-dashboard__identity-actions">{editable ? <><button className="profile-edit-button" disabled={!onEditProfile && !onSave} onClick={openEditor} type="button">编辑资料</button>{user.membershipTier !== 'member' ? <button className="profile-premium-entry" onClick={() => openPremiumPaywall('profile_entry')} type="button"><Sparkles size={14} />开通 Premium</button> : null}</> : <button className={`profile-follow-button${isFollowing ? ' is-following' : ''}`} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button>}</div>
         </div>
       </header>
       {editable ? <div className="profile-dashboard__counts profile-dashboard__counts--primary"><ProfileStat icon={<TasteMapVisitedIcon size={18} />} label="去过" onClick={() => setRestaurantListOpen('visited')} value={visitedRestaurants.length} /><ProfileStat icon={<Bookmark size={18} />} label="想去" onClick={() => setRestaurantListOpen('wantToGo')} value={wantToGoRestaurants.length} /><ProfileStat className="is-currency" icon={<WalletCards size={18} />} label="总消费" onClick={() => setDetail('data')} value={`¥${Math.round(totalSpend).toLocaleString('zh-CN')}`} /></div> : <div className="profile-dashboard__counts is-public"><span><strong>{visits.length}</strong><small>公开记录</small></span><span><strong>{restaurants.filter((item) => item.status === 'visited').length}</strong><small>去过餐厅</small></span></div>}
@@ -213,7 +213,7 @@ function PublicUserProfile({ user, restaurants, viewerRestaurants, visits, follo
       <div className="public-user-profile__top"><button onClick={onBack} type="button"><ArrowLeft size={19} /><span>返回</span></button><div><button aria-label="分享主页" onClick={() => void shareProfile()} type="button">{shared ? <Check size={19} /> : <Share2 size={19} />}</button><button aria-label="更多" type="button"><MoreHorizontal size={21} /></button></div></div>
       <div className="public-user-profile__identity">
         <span className="public-user-profile__avatar"><UserAvatar alt={user.nickname} avatarImageData={user.avatarImageData} avatarPhotoId={user.avatarPhotoId} avatarPresetId={user.avatarPresetId} membershipTier={user.membershipTier} /></span>
-        <div><h1><span>{user.nickname}</span>{shouldShowPremiumBurger(user.membershipTier) ? <PremiumBurgerBadge /> : null}</h1><strong>@{publicHandle(user)}</strong><p>{user.city || '未设置城市'}</p>{visibleProfileBio(user.bio) ? <p className="public-user-profile__bio">{visibleProfileBio(user.bio)}</p> : null}{formatJoinedMonth(user.createdAt) ? <small className="profile-joined-at">{formatJoinedMonth(user.createdAt)} 加入 Taste Map</small> : null}<span><BadgeCheck size={13} />ID {numericUserId}</span></div>
+        <div><h1><span>{user.nickname}</span>{shouldShowPremiumBurger(user.membershipTier) ? <PremiumBurgerBadge /> : null}</h1><span><BadgeCheck size={13} />ID {numericUserId}</span><strong>@{publicHandle(user)}</strong><p>{user.city || '未设置城市'}</p>{formatJoinedMonth(user.createdAt) ? <small className="profile-joined-at">{formatJoinedMonth(user.createdAt)} 加入 Taste Map</small> : null}</div>
       </div>
       <div className="public-user-profile__actions"><button className={isFollowing ? 'is-following' : ''} disabled={followPending || !onToggleFollow} onClick={onToggleFollow} type="button">{isFollowing ? <UserCheck size={16} /> : <UserPlus size={16} />}{followPending ? '处理中…' : isFollowing ? '已关注' : '关注'}</button><button disabled={friendPending || friendStatus === 'accepted' || friendStatus === 'pending' || !onAddFriend} onClick={onAddFriend} type="button"><UsersRound size={16} />{friendLabel}</button></div>
       <div className="public-user-profile__metrics"><button onClick={() => openView('following')} type="button"><strong>{followingCount}</strong><small>关注</small></button><button onClick={() => openView('followers')} type="button"><strong>{followerCount}</strong><small>粉丝</small></button><button onClick={() => openView('visited')} type="button"><strong>{visitedRestaurants.length}</strong><small>去过餐厅</small></button><button onClick={() => openView('want')} type="button"><strong>{wantRestaurants.length}</strong><small>想去餐厅</small></button></div>
@@ -270,7 +270,7 @@ function PublicActivityCard({ activity, onSelectRestaurant }: { activity: Public
 }
 
 function PublicProfilePeopleRows({ users, emptyText, onSelectUser }: { users: UserProfile[]; emptyText: string; onSelectUser?: (user: UserProfile) => void }) {
-  return <div className="public-profile-people-rows">{users.length ? users.map((person) => <button disabled={!onSelectUser} key={person.id} onClick={() => onSelectUser?.(person)} type="button"><UserAvatar alt={person.nickname} avatarImageData={person.avatarImageData} avatarPhotoId={person.avatarPhotoId} avatarPresetId={person.avatarPresetId} membershipTier={person.membershipTier} /><span><strong>{person.nickname}{shouldShowPremiumBurger(person.membershipTier) ? <PremiumBurgerBadge /> : null}</strong><small>{person.city || '未设置城市'}{visibleProfileBio(person.bio) ? ` · ${visibleProfileBio(person.bio)}` : ''}</small></span><ChevronRight size={17} /></button>) : <p className="public-profile-empty">{emptyText}</p>}</div>
+  return <div className="public-profile-people-rows">{users.length ? users.map((person) => <button disabled={!onSelectUser} key={person.id} onClick={() => onSelectUser?.(person)} type="button"><UserAvatar alt={person.nickname} avatarImageData={person.avatarImageData} avatarPhotoId={person.avatarPhotoId} avatarPresetId={person.avatarPresetId} membershipTier={person.membershipTier} /><span><strong>{person.nickname}{shouldShowPremiumBurger(person.membershipTier) ? <PremiumBurgerBadge /> : null}</strong><small>{person.city || '未设置城市'}</small></span><ChevronRight size={17} /></button>) : <p className="public-profile-empty">{emptyText}</p>}</div>
 }
 
 function PublicRestaurantRows({ restaurants, emptyText, onSelectRestaurant }: { restaurants: RestaurantSummary[]; emptyText: string; onSelectRestaurant?: (restaurant: RestaurantSummary) => void }) {
@@ -453,7 +453,6 @@ function TasteProfileDetails({ profile, restaurants }: { profile: TasteProfile; 
 function ProfileEditorModal({ user, onSave, onClose }: { user: UserProfile; onSave: (changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'>) => Promise<unknown>; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [nickname, setNickname] = useState(user.nickname)
-  const [bio, setBio] = useState(user.bio)
   const [city, setCity] = useState(user.city)
   const [avatarImageData, setAvatarImageData] = useState(user.avatarImageData)
   const [avatarPhotoId, setAvatarPhotoId] = useState(user.avatarPhotoId)
@@ -461,7 +460,6 @@ function ProfileEditorModal({ user, onSave, onClose }: { user: UserProfile; onSa
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const hasChanges = nickname !== user.nickname
-    || bio !== (user.bio ?? '')
     || city !== (user.city ?? '')
     || avatarImageData !== (user.avatarImageData ?? null)
     || avatarPhotoId !== (user.avatarPhotoId ?? null)
@@ -472,7 +470,7 @@ function ProfileEditorModal({ user, onSave, onClose }: { user: UserProfile; onSa
     setSaving(true)
     setMessage('')
     try {
-      await onSave({ nickname, bio, city, avatarImageData, avatarPhotoId, avatarPresetId })
+      await onSave({ nickname, bio: user.bio ?? '', city, avatarImageData, avatarPhotoId, avatarPresetId })
       setMessage('个人资料已保存并等待云端同步')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存失败，请重试')
@@ -480,13 +478,13 @@ function ProfileEditorModal({ user, onSave, onClose }: { user: UserProfile; onSa
       setSaving(false)
     }
   }
-  return <ModalShell description="头像、昵称、城市和简介统一在这里修改。" onClose={onClose} size="large" title="编辑资料">
+  return <ModalShell description="头像、昵称和城市统一在这里修改。" onClose={onClose} size="large" title="编辑资料">
     <form className="sticky-action-form" onSubmit={submit}>
       <div className="profile-editor-modal sticky-action-form__content">
         <div className="avatar-preset-grid">{AVATAR_PRESETS.map((preset) => <button aria-label={preset.label} className={avatarPresetId === preset.id && !avatarImageData && !avatarPhotoId ? 'is-active' : ''} key={preset.id} onClick={() => { setAvatarPresetId(preset.id); setAvatarImageData(null); setAvatarPhotoId(null) }} type="button"><PresetAvatar id={preset.id} /><small>{preset.label}</small></button>)}</div>
         {user.membershipTier === 'member' ? <button className="custom-avatar-upload" onClick={() => inputRef.current?.click()} type="button">自定义上传头像</button> : <button className="custom-avatar-locked" onClick={() => openPremiumPaywall('custom_avatar')} type="button"><LockKeyhole size={14} />会员可上传自定义头像；预设头像均可直接使用。</button>}
         <input accept="image/*" hidden onChange={chooseAvatar} ref={inputRef} type="file" />
-        <div className="profile-editor-modal__fields"><label className="field"><span>昵称</span><input maxLength={30} onChange={(event) => setNickname(event.target.value)} required value={nickname} /></label><label className="field"><span>城市</span><input maxLength={30} onChange={(event) => setCity(event.target.value)} placeholder="例如：杭州" value={city} /></label><label className="field"><span>个人简介</span><textarea maxLength={160} onChange={(event) => setBio(event.target.value)} rows={3} value={bio} /></label></div>
+        <div className="profile-editor-modal__fields"><label className="field"><span>昵称</span><input maxLength={30} onChange={(event) => setNickname(event.target.value)} required value={nickname} /></label><label className="field"><span>城市</span><input maxLength={30} onChange={(event) => setCity(event.target.value)} placeholder="例如：杭州" value={city} /></label></div>
       </div>
       <StickyFormActionBar
         primaryDisabled={!nickname.trim() || !hasChanges}

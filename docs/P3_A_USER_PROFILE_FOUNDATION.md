@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- |
 | Taste Map User ID | `UserProfile.id`, `users.id` | Stable business identity; native auth creates `tm_...` | Reused unchanged as the only owner/social identity | `users`, `auth_identities` |
 | Display Name | `UserProfile.nickname` | Editable, duplicates allowed, Web max 30 | Migrated as `displayName`; trimmed, required, max 30 for new edits, Unicode/emoji allowed | `user_profiles.display_name` |
-| Bio | `UserProfile.bio` | Editable, public page displays it, max 160 | Migrated | `user_profiles.bio` |
+| Bio | `UserProfile.bio` | Retired from display and editing; legacy read/sync/backup compatibility only | Schema retained; no product UI | `user_profiles.bio` |
 | City | `UserProfile.city` | Editable and visible on the existing public page, max 30 | Migrated | `user_profiles.city` |
 | Avatar photo | `avatarPhotoId` / `Photo.kind = avatar` | Stable photo ID; Web also has legacy inline image data | Migrated by ID and reuses P2 Photo/R2/cache pipeline; inline base64 is legacy-only | `photos`, R2, `user_profiles.avatar_photo_id` |
 | Preset avatar | `avatarPresetId` | 16 local sprite presets in `public/taste-map-avatar-presets.png` | Migrated with the same IDs and local asset | App Assets, `user_profiles.avatar_preset_id` |

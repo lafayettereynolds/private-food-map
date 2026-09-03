@@ -333,6 +333,7 @@ The four rating references are `我的评分 / 全部用户 / 好友评分 / 同
 
 - The root App Shell contains exactly `地图 / 发现 / 我的`; `添加` is forbidden as a fourth bottom tab.
 - `添加餐厅` appears exactly once as the Map-owned floating primary CTA and routes to the formal Add Restaurant flow.
+- Adding a Restaurant to Roulette never opens the wheel automatically. Once the current-session candidate pool is non-empty, My Map shows the shared bottom candidate dock above the root navigation with the exact selected count, candidate review/removal/clear controls, and a one-tap `开始抽` action that remains disabled until at least two real candidates exist. The dock uses the same candidate IDs as the Roulette page, survives Restaurant Detail return and Map/List switching, disappears when cleared, and never becomes a fourth bottom tab.
 - Centered `我的地图` or `我的列表` title with the adjacent view-switch icon.
 - Primary scopes are `去过 / 想吃 / 推荐`.
 - Every primary scope visibly includes its stable total Restaurant count. Counts are current-owner scoped and count unique Restaurants, never Visits or only the currently visible map bounds; an unavailable real recommendation set is honestly `0`.
@@ -397,6 +398,7 @@ Rating circles mean: large circle = score, small circle = sample count. Nil neve
 - Top statistics are unique visited Restaurants, Want to Go Restaurants, and valid actual spend.
 - The three top statistics remain one coherent group. Each uses an icon-and-value line with the label below; the longer currency value receives sufficient width and a restrained fitting size so it does not overpower or collide with the two Restaurant counts.
 - Roulette and Taste Profile are paired; Monthly, Annual, and On This Day share one Memories section; Lists and Insights retain their own sections.
+- The stable numeric public user ID appears immediately below the account display name on owner and public Profile headers. Profile bio/signature is retired: it has no display surface and no edit control. The legacy schema field remains read-compatible only so older sync/backup payloads are not broken.
 - Lists support real create/add/reorder/edit/remove/visibility/persistence behavior; decorative empty art never masquerades as list data.
 
 ## Roulette

@@ -64,12 +64,13 @@ interface MyMapBrowsePageProps {
   onOpenRestaurant: (restaurantID: string) => void
   onAddRestaurant: () => void
   MapSurface: ComponentType<MyMapSurfaceProps>
+  controlOverlayRevision?: string
 }
 
 const emptyOptions: TasteMapMapBrowseOptions = { cities: [], companions: [], cuisines: [], recommendationSources: [] }
 const snapshotFreshnessMilliseconds = 30_000
 
-export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, onAddRestaurant, MapSurface }: MyMapBrowsePageProps) {
+export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, onAddRestaurant, MapSurface, controlOverlayRevision = '' }: MyMapBrowsePageProps) {
   const [browseState, dispatch] = useReducer(mapBrowseReducer, initialMapBrowseState)
   const { mode, scope, filters, sort, search, viewport, selectedRestaurantID, revision } = browseState
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null)
@@ -341,7 +342,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
           onError={setNativeMapError}
           onSelect={openRestaurant}
           onViewportChange={commitViewport}
-          overlayRevision={`${selectedRestaurantID ?? ''}|${error ?? ''}|${locationMessage ?? ''}|filter:${fullFilterOpen}`}
+          overlayRevision={`${selectedRestaurantID ?? ''}|${error ?? ''}|${locationMessage ?? ''}|filter:${fullFilterOpen}|controls:${controlOverlayRevision}`}
           platform={platform}
           restaurants={items}
           scope={scope}

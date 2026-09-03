@@ -188,7 +188,6 @@ struct PublicShareLandingView: View {
             PublicSharedRestaurantDetailBody(value: value)
         case .profile(let value):
             shareCard(title: value.displayName, subtitle: value.city ?? "Taste Map 用户", imageURL: nil) {
-                if let bio = value.bio { Text(bio).foregroundStyle(.secondary) }
                 HStack {
                     Label("\(value.statistics.restaurantCount) 家公开餐厅", systemImage: "fork.knife")
                     Spacer()

@@ -3,7 +3,6 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Bookmark,
   CheckCircle2,
-  Dices,
   Globe2,
   List,
   Map as MapIcon,
@@ -43,6 +42,7 @@ import { CommunityPage } from './components/CommunityPage'
 import { FriendsPage } from './components/FriendsPage'
 import { ProfilePage } from './components/ProfilePage'
 import { RestaurantRoulette, type RouletteTemporaryCandidate } from './components/RestaurantRoulette'
+import { RouletteCandidateDock } from './components/RouletteCandidateDock'
 import { TasteFootprints } from './components/TasteFootprints'
 import { PublicRestaurantListRoute } from './components/RestaurantListsPanel'
 import { PremiumBurgerBadge } from './components/PremiumBurgerBadge'
@@ -1082,16 +1082,14 @@ export default function App() {
       {activeView === 'map' && selectedRestaurant && isSidebarOpen ? <section className="app-restaurant-detail" aria-label={`${selectedRestaurant.name} 餐厅详情`}><RestaurantPreviewCard historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(selectedRestaurant.id)} onAddToRoulette={addSelectedRestaurantToRoulette} onAddToWant={() => void handleToggleDiscoveryWant(selectedRestaurant)} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /></section> : null}
       {standaloneRestaurant ? <section className="app-restaurant-detail" aria-label={`${standaloneRestaurant.name} 餐厅详情`}><RestaurantPreviewCard historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(standaloneRestaurant.id)} onAddToRoulette={() => toggleRouletteRestaurant(standaloneRestaurant)} onAddToWant={() => void handleToggleDiscoveryWant(standaloneRestaurant)} onAddVisit={() => void openQuickVisit(standaloneRestaurant).then(() => setStandaloneRestaurant(null))} onClose={() => setStandaloneRestaurant(null)} onDelete={() => { setSelectedId(standaloneRestaurant.id); setShowDeleteConfirm(true) }} onEdit={() => { setSelectedId(standaloneRestaurant.id); setShowEditor(true) }} onEditVisit={(visit) => { setSelectedId(standaloneRestaurant.id); setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={() => void handleToggleDiscoveryWant(standaloneRestaurant)} restaurant={standaloneRestaurant} /></section> : null}
 
-      {activeView === 'map' && rouletteCandidates.length ? <aside className="wheel-candidate-bar" aria-label="抽签候选">
-        <strong>已选 {rouletteCandidates.length}/10</strong>
-        <button onClick={() => setShowRouletteCandidates((visible) => !visible)} type="button">查看</button>
-        <button className="is-primary" disabled={rouletteCandidates.length < 2} onClick={() => setShowRoulette(true)} title={rouletteCandidates.length < 2 ? '至少选择 2 家餐厅' : '开始抽'} type="button"><Dices size={15} /> 开始抽</button>
-        {showRouletteCandidates ? <div className="wheel-candidate-popover">
-          <header><strong>当前候选</strong><button onClick={clearRouletteCandidates} type="button">清空</button></header>
-          <div>{rouletteCandidates.map((item) => <span key={item.id}>{item.name}<button aria-label={`移除 ${item.name}`} onClick={() => removeRouletteCandidate(item.id)} type="button"><X size={12} /></button></span>)}</div>
-          {rouletteCandidates.length < 2 ? <p>至少再选 1 家餐厅才能开始抽</p> : null}
-        </div> : null}
-      </aside> : null}
+      {activeView === 'map' ? <RouletteCandidateDock
+        candidates={rouletteCandidates}
+        expanded={showRouletteCandidates}
+        onClear={clearRouletteCandidates}
+        onExpandedChange={setShowRouletteCandidates}
+        onOpen={() => setShowRoulette(true)}
+        onRemove={removeRouletteCandidate}
+      /> : null}
 
       <nav aria-label="主要功能" className="bottom-navigation" data-product-contract="bottom-navigation">
         <button className={activeView === 'map' && !isSidebarOpen ? 'is-active' : ''} onClick={() => { setActiveView('map'); setSelectedId(null); setIsSidebarOpen(false) }} type="button"><MapIcon size={18} /><span>地图</span></button>

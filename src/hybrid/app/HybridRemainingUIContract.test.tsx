@@ -102,17 +102,20 @@ describe('Hybrid remaining product UI contract', () => {
   it('keeps Profile relationship counts with identity and balances the currency statistic', () => {
     const owner = renderToStaticMarkup(<ProfilePage followerCount={9} followingCount={14} restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
     const nameIndex = owner.indexOf(profile.user.nickname)
+    const userIDIndex = owner.indexOf('profile-user-id--under-name')
     const socialIndex = owner.indexOf('class="profile-dashboard__social-counts"')
     const actionsIndex = owner.indexOf('class="profile-dashboard__identity-actions"')
     const primaryStatsIndex = owner.indexOf('profile-dashboard__counts profile-dashboard__counts--primary')
     expect(owner.match(/profile-dashboard__social-counts/g)).toHaveLength(1)
-    expect([nameIndex, socialIndex, actionsIndex, primaryStatsIndex].every((index) => index >= 0)).toBe(true)
-    expect(nameIndex).toBeLessThan(socialIndex)
+    expect([nameIndex, userIDIndex, socialIndex, actionsIndex, primaryStatsIndex].every((index) => index >= 0)).toBe(true)
+    expect(nameIndex).toBeLessThan(userIDIndex)
+    expect(userIDIndex).toBeLessThan(socialIndex)
     expect(socialIndex).toBeLessThan(actionsIndex)
     expect(actionsIndex).toBeLessThan(primaryStatsIndex)
     expect(owner).toContain('class="is-currency"')
     expect(owner).toContain('aria-label="关注 14"')
     expect(owner).toContain('aria-label="被关注 9"')
+    expect(owner).not.toContain(profile.user.bio)
   })
 
   it('keeps every owner memory action free of the stray top-right chevron', () => {

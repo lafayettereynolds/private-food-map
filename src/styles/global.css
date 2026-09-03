@@ -994,6 +994,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .profile-dashboard__identity-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
 .profile-user-id { min-width: 0; max-width: min(100%, 320px); min-height: 30px; padding: 0 10px; border: 1px solid var(--color-divider); border-radius: 999px; display: inline-flex; align-items: center; gap: 7px; color: var(--color-text-secondary); background: var(--color-surface); font-size: 9px; cursor: pointer; }
 .profile-user-id span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-user-id--under-name { min-height: 24px; margin: -2px 0 5px; padding: 0 5px; border: 0; background: transparent; }
 .profile-follow-button { min-height: 32px; padding: 0 14px; border: 1px solid var(--color-primary); border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; color: #fff; background: var(--color-primary); font-size: 10px; font-weight: 760; cursor: pointer; }
 .profile-follow-button.is-following { color: var(--color-primary-dark); background: var(--color-primary-light); }
 .profile-follow-button:disabled { opacity: .58; cursor: default; }

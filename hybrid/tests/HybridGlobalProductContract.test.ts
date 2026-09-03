@@ -46,6 +46,21 @@ describe('Hybrid global Product Contract', () => {
     expect(css).not.toMatch(/\.profile-dashboard--owner \.profile-dashboard__hero \{[^}]*border:\s*1px/)
   })
 
+  it('places the public user ID directly under the account name and retires profile bios from product UI', () => {
+    const profile = source('../../src/components/ProfilePage.tsx')
+    const nativeProfile = source('../../ios/TasteMap/TasteMap/Features/Profile/ProfileView.swift')
+    const nativeSocial = source('../../ios/TasteMap/TasteMap/Features/Profile/SocialViews.swift')
+    expect(profile.indexOf('<h1><span>{user.nickname}</span>')).toBeLessThan(profile.indexOf('profile-user-id--under-name'))
+    expect(profile).not.toContain('visibleProfileBio')
+    expect(profile).not.toContain('<span>个人简介</span>')
+    expect(profile).not.toContain('setBio')
+    expect(nativeProfile).toContain('.accessibilityIdentifier("profile-user-id")')
+    expect(nativeProfile).not.toContain('.accessibilityIdentifier("profile-bio")')
+    expect(nativeProfile).not.toContain('.accessibilityIdentifier("profile-bio-text")')
+    expect(nativeSocial).not.toContain('Text([item.profile.city, item.profile.bio]')
+    expect(nativeSocial).not.toContain('Text(bio)')
+  })
+
   it('keeps exactly one Add Restaurant primary entry as the Map floating CTA', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const map = source('../../src/components/MyMapBrowsePage.tsx')

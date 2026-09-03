@@ -122,6 +122,23 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(bridge).not.toContain('let scoped = try scopedRestaurants()')
   })
 
+  it('restores the shared Web candidate dock after Map Detail adds a Roulette candidate', () => {
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const dock = source('../../src/components/RouletteCandidateDock.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    expect(shell).toContain('<RouletteCandidateDock')
+    expect(shell).toContain("route.surface === 'map'")
+    expect(shell).toContain('toggleDetailRoulette(detailRestaurant)')
+    expect(shell).toContain("navigate({ surface: 'roulette' })")
+    expect(shell).not.toContain('didInitializeRoulette')
+    expect(dock).toContain('data-product-contract="map-roulette-candidate-dock"')
+    expect(dock).toContain('已选 {candidates.length}/10')
+    expect(dock).toContain("disabled={candidates.length < 2}")
+    expect(dock).toContain('onRemove(item.id)')
+    expect(nativeSurface).toContain("'.wheel-candidate-bar'")
+    expect(nativeSurface).toContain("'.wheel-candidate-popover'")
+  })
+
   it('uses the same evidence-based food emoji fallback in Browser and Native MapKit markers', () => {
     const browserMap = source('../../src/components/MapView.tsx')
     const nativeSurface = source('../../src/components/NativeMapSurface.tsx')

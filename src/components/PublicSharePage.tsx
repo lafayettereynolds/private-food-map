@@ -54,7 +54,6 @@ function ProfileShare({ entity }: { entity: Record<string, unknown> }) {
     <div className="public-share-body"><span className="eyebrow">TASTE MAP PROFILE</span>
       <h1>{stringValue(entity.displayName)}</h1>
       {stringValue(entity.city) ? <p><MapPin size={17} />{stringValue(entity.city)}</p> : null}
-      {stringValue(entity.bio) ? <p>{stringValue(entity.bio)}</p> : null}
       <div className="public-share-stats"><strong>{numberValue(statistics.restaurantCount)} 家公开餐厅</strong><strong>{numberValue(statistics.visitCount)} 次公开到访</strong></div>
       <OpenTasteMap />
     </div>

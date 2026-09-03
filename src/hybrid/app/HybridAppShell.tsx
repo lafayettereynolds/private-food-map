@@ -5,6 +5,7 @@ import { NativeMapSurface } from '../../components/NativeMapSurface'
 import { ProfilePage } from '../../components/ProfilePage'
 import { RestaurantPreviewCard } from '../../components/RestaurantPreviewCard'
 import { RestaurantRoulette, type RouletteTemporaryCandidate } from '../../components/RestaurantRoulette'
+import { RouletteCandidateDock } from '../../components/RouletteCandidateDock'
 import { resolveTasteMapPlatform } from '../../platform/tasteMapPlatformResolver'
 import { TasteMapPlatformError, type TasteMapHybridContentSnapshotDTO, type TasteMapHybridRoute as PlatformRoute, type TasteMapPlatform, type TasteMapProfileDashboardViewModel, type TasteMapRestaurantDetailViewModel, type TasteMapRuntimeInfo } from '../../platform/TasteMapPlatform'
 import { routeFromLocation, routeFromStartupLocation, routeHash, surfaceStatus, type HybridRoute } from '../routes/HybridRouteRegistry'
@@ -39,10 +40,10 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const [rouletteRestaurantIDs, setRouletteRestaurantIDs] = useState<string[]>([])
   const [rouletteExternalRestaurants, setRouletteExternalRestaurants] = useState<RestaurantSummary[]>([])
   const [rouletteTemporaryItems, setRouletteTemporaryItems] = useState<RouletteTemporaryCandidate[]>([])
+  const [showRouletteCandidates, setShowRouletteCandidates] = useState(false)
   const [visitReturnToDiscovery, setVisitReturnToDiscovery] = useState(false)
   const [detailRevision, setDetailRevision] = useState(0)
   const didSynchronizeInitialRoute = useRef(false)
-  const didInitializeRoulette = useRef(false)
   const pendingHybridNavigation = useRef<{ hash: string; expiresAt: number } | null>(null)
   const restaurantDetailCache = useRef(new Map<string, TasteMapRestaurantDetailViewModel>())
 
@@ -170,15 +171,6 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     if (route.surface === 'profile') setProfileWasActivated(true)
   }, [route.surface])
 
-  useEffect(() => {
-    if (bootstrap.state !== 'ready' || didInitializeRoulette.current) return
-    didInitializeRoulette.current = true
-    setRouletteRestaurantIDs(bootstrap.profile.restaurants
-      .filter((item) => item.status === 'visited' || item.status === 'wantToGo')
-      .slice(0, 5)
-      .map((item) => item.id))
-  }, [bootstrap])
-
   const navigate = (nextRoute: HybridRoute) => {
     commitLocalRoute(nextRoute, setRoute)
     if (platform.kind === 'native') {
@@ -231,6 +223,33 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     }).catch((reason: unknown) => setRouteError(normalizeError(reason).message))
   }
 
+  const toggleDetailRoulette = (detail: TasteMapRestaurantDetailViewModel) => {
+    const restaurantID = detail.restaurant.id
+    if (rouletteRestaurantIDs.includes(restaurantID)) {
+      setRouletteRestaurantIDs((current) => current.filter((id) => id !== restaurantID))
+      return
+    }
+    if (rouletteRestaurantIDs.length + rouletteTemporaryItems.length >= 10) return
+    setRouletteExternalRestaurants((current) => current.some((item) => item.id === restaurantID)
+      ? current
+      : [...current, detail.restaurant])
+    setRouletteRestaurantIDs((current) => current.includes(restaurantID) ? current : [...current, restaurantID])
+  }
+
+  const removeRouletteCandidate = (candidateID: string) => {
+    if (rouletteTemporaryItems.some((item) => item.id === candidateID)) {
+      setRouletteTemporaryItems((current) => current.filter((item) => item.id !== candidateID))
+    } else {
+      setRouletteRestaurantIDs((current) => current.filter((id) => id !== candidateID))
+    }
+  }
+
+  const clearRouletteCandidates = () => {
+    setRouletteRestaurantIDs([])
+    setRouletteTemporaryItems([])
+    setShowRouletteCandidates(false)
+  }
+
   const toggleDetailCollection = async (detail: TasteMapRestaurantDetailViewModel) => {
     if (!detail.capabilities.canAddToWantToGo || detail.viewerState === 'visited') return
     const result = await platform.restaurant.setWantToGo(
@@ -256,6 +275,17 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   }
 
   const { profile, runtime, content, contentReady } = bootstrap
+  const rouletteRestaurants = [
+    ...profile.restaurants.filter((item) => item.status === 'visited' || item.status === 'wantToGo'),
+    ...rouletteExternalRestaurants.filter((external) => !profile.restaurants.some((item) => item.id === external.id)),
+  ]
+  const rouletteCandidates = [
+    ...rouletteRestaurantIDs.flatMap((id) => {
+      const selected = rouletteRestaurants.find((item) => item.id === id)
+      return selected ? [{ id, name: selected.name }] : []
+    }),
+    ...rouletteTemporaryItems,
+  ]
   const detailRestaurant = route.surface === 'restaurant'
     ? restaurant && sameRestaurantID(restaurant.restaurant.id, route.id)
       ? restaurant
@@ -266,6 +296,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     {mapWasActivated ? <MyMapBrowsePage
       MapSurface={NativeMapSurface}
       active={route.surface === 'map'}
+      controlOverlayRevision={`roulette:${rouletteCandidates.length}:${showRouletteCandidates}`}
       onAddRestaurant={() => void navigate({ surface: 'add' })}
       onOpenRestaurant={(restaurantID) => void navigate({ surface: 'restaurant', id: restaurantID })}
       platform={platform}
@@ -312,7 +343,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
                 additionalUserPhotos={detailRestaurant.restaurant.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] })))}
                 historyRestaurants={profile.restaurants}
                 isInRoulette={rouletteRestaurantIDs.includes(detailRestaurant.restaurant.id)}
-                onAddToRoulette={detailRestaurant.capabilities.canAddToRoulette ? () => setRouletteRestaurantIDs((ids) => ids.includes(detailRestaurant.restaurant.id) ? ids.filter((id) => id !== detailRestaurant.restaurant.id) : [...ids, detailRestaurant.restaurant.id]) : undefined}
+                onAddToRoulette={detailRestaurant.capabilities.canAddToRoulette ? () => toggleDetailRoulette(detailRestaurant) : undefined}
                 onAddToList={detailRestaurant.capabilities.canAddToList ? () => void openNativeRoute(platform, 'restaurantAddToList', detailRestaurant.restaurant.id) : undefined}
                 onAddToWant={detailRestaurant.capabilities.canAddToWantToGo && detailRestaurant.viewerState !== 'visited' ? () => void toggleDetailCollection(detailRestaurant) : undefined}
                 onAddVisit={detailRestaurant.capabilities.canRecordVisit ? () => void navigate({ surface: 'visit', id: detailRestaurant.restaurant.id }) : undefined}
@@ -359,7 +390,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
               onSelectRestaurant={(item) => void navigate({ surface: 'restaurant', id: item.id })}
               onSelectedRestaurantIdsChange={setRouletteRestaurantIDs}
               onTemporaryItemsChange={setRouletteTemporaryItems}
-              restaurants={[...profile.restaurants.filter((item) => item.status === 'visited' || item.status === 'wantToGo'), ...rouletteExternalRestaurants.filter((external) => !profile.restaurants.some((item) => item.id === external.id))]}
+              restaurants={rouletteRestaurants}
               selectedRestaurantIds={rouletteRestaurantIDs}
               temporaryItems={rouletteTemporaryItems}
             />
@@ -370,6 +401,14 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
         : route.surface === 'settings'
           ? <TasteMapSettingsPage onOpenPremium={() => void navigate({ surface: 'premium' })} platform={platform} profile={profile} />
         : <NativePrimaryHandoff route={route} onBack={() => navigate({ surface: 'profile' })} />}
+    {route.surface === 'map' ? <RouletteCandidateDock
+      candidates={rouletteCandidates}
+      expanded={showRouletteCandidates}
+      onClear={clearRouletteCandidates}
+      onExpandedChange={setShowRouletteCandidates}
+      onOpen={() => void navigate({ surface: 'roulette' })}
+      onRemove={removeRouletteCandidate}
+    /> : null}
     <nav aria-label="主要功能" className="tm-hybrid-bottom-nav" data-product-contract="bottom-navigation">
       {HYBRID_BOTTOM_NAVIGATION.map((item) => <button
         aria-current={route.surface === item.surface ? 'page' : undefined}

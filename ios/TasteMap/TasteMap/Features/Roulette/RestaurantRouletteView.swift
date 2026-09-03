@@ -6,6 +6,7 @@ struct RestaurantRouletteScreen: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(NativeAuthServices.self) private var authServices
     @Environment(\.localAccountScope) private var accountScope
+    @Environment(\.restaurantRouletteSession) private var rouletteSession
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
     @Query private var photos: [PhotoAsset]
@@ -44,6 +45,8 @@ struct RestaurantRouletteScreen: View {
             photos: owned.photos,
             preferredCity: preferredCity,
             initialResultGlobalKey: initialResultGlobalKey,
+            initialSelectedGlobalKeys: initialSessionGlobalKeys,
+            onSelectedGlobalKeysChange: synchronizeSession,
             onSearch: { isShowingSearch = true },
             onAddCustom: { isShowingManualAdd = true }
         )
@@ -94,6 +97,24 @@ struct RestaurantRouletteScreen: View {
         guard let initialRestaurantID else { return nil }
         return candidates.first(where: { $0.restaurantID == initialRestaurantID })?.globalKey
     }
+
+    private var initialSessionGlobalKeys: Set<String>? {
+        guard let rouletteSession, rouletteSession.hasExplicitSelection else { return nil }
+        let restaurantIDs = Set(rouletteSession.restaurantIDs)
+        return Set(candidates.compactMap { candidate in
+            guard let restaurantID = candidate.restaurantID,
+                  restaurantIDs.contains(restaurantID) else { return nil }
+            return candidate.globalKey
+        })
+    }
+
+    private func synchronizeSession(_ selectedGlobalKeys: Set<String>) {
+        guard let rouletteSession else { return }
+        rouletteSession.replace(with: candidates.compactMap { candidate in
+            guard selectedGlobalKeys.contains(candidate.globalKey) else { return nil }
+            return candidate.restaurantID
+        })
+    }
 }
 
 struct RestaurantRouletteExperienceView: View {
@@ -106,6 +127,7 @@ struct RestaurantRouletteExperienceView: View {
     let preferredCity: String?
     let onSearch: () -> Void
     let onAddCustom: () -> Void
+    let onSelectedGlobalKeysChange: (Set<String>) -> Void
     let forceReducedMotion: Bool
 
     @State private var source: RouletteCandidateSource
@@ -132,7 +154,9 @@ struct RestaurantRouletteExperienceView: View {
         initialCity: String? = nil,
         excludedGlobalKeys: Set<String> = [],
         initialResultGlobalKey: String? = nil,
+        initialSelectedGlobalKeys: Set<String>? = nil,
         forceReducedMotion: Bool = false,
+        onSelectedGlobalKeysChange: @escaping (Set<String>) -> Void = { _ in },
         onSearch: @escaping () -> Void = {},
         onAddCustom: @escaping () -> Void = {}
     ) {
@@ -142,6 +166,7 @@ struct RestaurantRouletteExperienceView: View {
         self.preferredCity = preferredCity
         self.onSearch = onSearch
         self.onAddCustom = onAddCustom
+        self.onSelectedGlobalKeysChange = onSelectedGlobalKeysChange
         self.forceReducedMotion = forceReducedMotion
         let initialResult = candidates.first { $0.globalKey == initialResultGlobalKey }
         let resolvedInitialCity = initialCity
@@ -151,14 +176,16 @@ struct RestaurantRouletteExperienceView: View {
             candidates,
             by: RouletteFilter(source: initialSource, city: resolvedInitialCity)
         ).filter { !excludedGlobalKeys.contains($0.globalKey) }
-        let initialSelection = RestaurantRouletteEngine.defaultActiveGlobalKeys(
-            from: initialCandidates,
-            preferredGlobalKey: initialResultGlobalKey
-        )
+        let availableInitialKeys = Set(initialCandidates.map(\.globalKey))
+        let initialSelection = initialSelectedGlobalKeys.map { $0.intersection(availableInitialKeys) }
+            ?? RestaurantRouletteEngine.defaultActiveGlobalKeys(
+                from: initialCandidates,
+                preferredGlobalKey: initialResultGlobalKey
+            )
         _source = State(initialValue: initialSource)
         _selectedCity = State(initialValue: resolvedInitialCity)
         _selectedGlobalKeys = State(initialValue: initialSelection)
-        _selectionWasInitialized = State(initialValue: !candidates.isEmpty)
+        _selectionWasInitialized = State(initialValue: initialSelectedGlobalKeys != nil || !candidates.isEmpty)
         _result = State(initialValue: initialResult)
         _lastResultGlobalKey = State(initialValue: initialResultGlobalKey)
         _cityWasInitialized = State(initialValue: !candidates.isEmpty || initialCity != nil)
@@ -274,6 +301,9 @@ struct RestaurantRouletteExperienceView: View {
         .task { initializeCityIfNeeded() }
         .onChange(of: candidates.map(\.globalKey)) { _, _ in
             reconcileCityAndResult()
+        }
+        .onChange(of: selectedGlobalKeys) { _, keys in
+            onSelectedGlobalKeysChange(keys)
         }
         .onChange(of: stateKey) { _, _ in
             guard let result,

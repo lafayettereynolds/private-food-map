@@ -13,6 +13,8 @@ export const hybridMapReactControlSelector = [
   '.tm-my-map__location-note',
   '.tm-map-error',
   '.tm-map-filter-sheet',
+  '.wheel-candidate-bar',
+  '.wheel-candidate-popover',
   '.tm-hybrid-bottom-nav',
 ].join(',')
 

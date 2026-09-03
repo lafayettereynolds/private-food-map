@@ -24,6 +24,7 @@ struct RestaurantDetailView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @Environment(\.localAccountScope) private var accountScope
+    @Environment(\.restaurantRouletteSession) private var rouletteSession
     @Query private var allVisits: [Visit]
     @Query private var allPhotos: [PhotoAsset]
     @Query private var allDishes: [Dish]
@@ -146,12 +147,19 @@ struct RestaurantDetailView: View {
                         canDelete: canMutateRestaurant,
                         canAddToList: currentUserID != nil,
                         canAddToRoulette: currentUserID != nil,
+                        isInRoulette: rouletteSession?.contains(restaurant.id) == true,
                         identifiers: .local,
                         onRecordVisit: { isAddingVisit = true },
                         onMarkWantToGo: markWantToGo,
                         onEdit: { isEditingRestaurant = true },
                         onAddToList: { isAddingToList = true },
-                        onAddToRoulette: { isShowingRoulette = true },
+                        onAddToRoulette: {
+                            if let rouletteSession {
+                                _ = rouletteSession.toggle(restaurant.id)
+                            } else {
+                                isShowingRoulette = true
+                            }
+                        },
                         onCopyName: { UIPasteboard.general.string = restaurant.name },
                         onCopyAddress: { UIPasteboard.general.string = restaurant.address },
                         onDelete: { isConfirmingRestaurantDeletion = true }

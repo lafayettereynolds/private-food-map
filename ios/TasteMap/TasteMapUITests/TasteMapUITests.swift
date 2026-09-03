@@ -79,6 +79,14 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(want.isHittable)
         XCTAssertTrue(roulette.isHittable)
 
+        roulette.tap()
+        let rouletteDock = app.descendants(matching: .any)["map-roulette-candidate-dock"]
+        XCTAssertTrue(rouletteDock.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["已选 1/10"].exists)
+        XCTAssertFalse(app.buttons["开始抽"].isEnabled)
+        roulette.tap()
+        XCTAssertFalse(rouletteDock.waitForExistence(timeout: 2))
+
         record.tap()
         XCTAssertTrue(app.navigationBars["新增到访"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.navigationBars["餐厅详情"].exists)
@@ -969,18 +977,16 @@ final class TasteMapUITests: XCTestCase {
         let city = app.textFields["profile-city"]
         city.tap()
         city.clearAndType("上海")
-        let bio = app.textFields["profile-bio"]
-        bio.tap()
-        bio.clearAndType("每一顿都值得认真记录")
+        XCTAssertFalse(app.textFields["profile-bio"].exists)
+        XCTAssertFalse(app.staticTexts["个人简介"].exists)
         let otter = app.buttons["profile-avatar-preset-otter"]
         scrollUntilVisible(otter, in: app)
         otter.tap()
         app.buttons["profile-save-button"].tap()
 
         XCTAssertTrue(app.staticTexts["离线美食家 🍜"].waitForExistence(timeout: 5))
-        let savedBio = app.staticTexts["profile-bio-text"]
-        XCTAssertTrue(savedBio.waitForExistence(timeout: 5))
-        XCTAssertEqual(savedBio.label, "每一顿都值得认真记录")
+        XCTAssertTrue(app.buttons["profile-user-id"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["profile-bio-text"].exists)
         XCTAssertEqual(app.staticTexts["profile-city-text"].label, "上海")
 
         app.terminate()
@@ -992,7 +998,8 @@ final class TasteMapUITests: XCTestCase {
         app.launch()
         app.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["离线美食家 🍜"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["profile-bio-text"].label, "每一顿都值得认真记录")
+        XCTAssertTrue(app.buttons["profile-user-id"].exists)
+        XCTAssertFalse(app.staticTexts["profile-bio-text"].exists)
         XCTAssertEqual(app.staticTexts["profile-city-text"].label, "上海")
         XCTAssertTrue(app.buttons["profile-edit-button"].exists)
     }
@@ -3652,6 +3659,10 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(profileTab.waitForExistence(timeout: 8))
         profileTab.tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 15))
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "ID ")
+        ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertFalse(webView.staticTexts["认真记录每一次值得记住的饭。"].exists)
 
         let visited = webView.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@", "去过")
@@ -3744,9 +3755,17 @@ final class TasteMapUITests: XCTestCase {
 
         let hybridBack = webView.buttons["返回上一页"]
         XCTAssertTrue(hybridBack.waitForExistence(timeout: 12))
+        let addToRoulette = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "加入转盘 青岚寿司 1")
+        ).firstMatch
+        XCTAssertTrue(addToRoulette.waitForExistence(timeout: 8))
+        addToRoulette.tap()
         hybridBack.tap()
         XCTAssertTrue(webView.buttons["切换到我的列表"].waitForExistence(timeout: 8))
         XCTAssertTrue(visitedScope.exists)
+        XCTAssertTrue(webView.staticTexts["已选 1/10"].waitForExistence(timeout: 5))
+        XCTAssertTrue(webView.buttons["查看"].exists)
+        XCTAssertFalse(webView.buttons["开始抽"].isEnabled)
     }
 
     @MainActor

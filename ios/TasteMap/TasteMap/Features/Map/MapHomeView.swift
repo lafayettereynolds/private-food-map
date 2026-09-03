@@ -16,6 +16,7 @@ struct MapHomeView: View {
     @Environment(\.photoTransferCoordinator) private var photoCoordinator
     @Environment(\.localAccountScope) private var accountScope
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.restaurantRouletteSession) private var rouletteSession
     @StateObject private var locationPermission = LocationPermissionManager()
     @State private var selectedSegment: RestaurantBrowseSegment = .visited
     @State private var browseMode: MapBrowseMode = .map
@@ -26,7 +27,6 @@ struct MapHomeView: View {
     @State private var selectedRestaurantID: UUID?
     @State private var detailDestination: RestaurantBrowseSelection?
     @State private var visitEditorDestination: RestaurantBrowseSelection?
-    @State private var rouletteDestination: RestaurantBrowseSelection?
     @State private var quickActionMessage: String?
     @State private var cameraFitRequestID = UUID()
     @State private var locationRequestID: UUID?
@@ -108,7 +108,7 @@ struct MapHomeView: View {
                             toggleWantToGo($0.restaurant)
                         },
                         onOpenRoulette: {
-                            rouletteDestination = RestaurantBrowseSelection(id: $0.restaurant.id)
+                            _ = rouletteSession?.toggle($0.restaurant.id)
                         },
                         usesSystemSearch: false,
                         showsContextHeader: true,
@@ -184,11 +184,6 @@ struct MapHomeView: View {
                         systemImage: "fork.knife",
                         presentation: .embedded
                     )
-                }
-            }
-            .sheet(item: $rouletteDestination) { destination in
-                NavigationStack {
-                    RestaurantRouletteScreen(initialRestaurantID: destination.id)
                 }
             }
             .sheet(item: $filterFocus) { focus in

@@ -550,6 +550,7 @@ struct ProfileBasicStatistics: Equatable {
 
 private struct ProfileIdentityCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var didCopyUserID = false
     let profile: UserProfile?
     let avatarPhoto: PhotoAsset?
     let isSignedIn: Bool
@@ -645,17 +646,26 @@ private struct ProfileIdentityCard: View {
                         .accessibilityIdentifier("profile-premium-badge-entry")
                     }
                 }
+                Button {
+                    UIPasteboard.general.string = TasteMapPublicUserID.numeric(from: profile.tasteMapUserID)
+                    didCopyUserID = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Text("ID \(TasteMapPublicUserID.numeric(from: profile.tasteMapUserID))")
+                            .font(.caption2.monospacedDigit())
+                        Image(systemName: didCopyUserID ? "checkmark" : "doc.on.doc")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: 24)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(didCopyUserID ? "用户 ID 已复制" : "复制用户 ID")
+                .accessibilityValue("ID \(TasteMapPublicUserID.numeric(from: profile.tasteMapUserID))")
+                .accessibilityIdentifier("profile-user-id")
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 16) { connectionButtons }
                     VStack(spacing: 4) { connectionButtons }
-                }
-                if !profile.bio.isEmpty {
-                    Text(profile.bio)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("profile-bio-text")
                 }
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { profileMetadata(profile) }
@@ -969,7 +979,6 @@ struct ProfileEditorSheet: View {
     let profile: UserProfile
     let avatarPhoto: PhotoAsset?
     @State private var displayName: String
-    @State private var bio: String
     @State private var city: String
     @State private var selectedPreset: ProfileAvatarPreset
     @State private var avatarPhotoID: String?
@@ -983,7 +992,6 @@ struct ProfileEditorSheet: View {
         self.profile = profile
         self.avatarPhoto = avatarPhoto
         _displayName = State(initialValue: profile.displayName)
-        _bio = State(initialValue: profile.bio)
         _city = State(initialValue: profile.city)
         _selectedPreset = State(initialValue: profile.avatarPreset)
         _avatarPhotoID = State(initialValue: profile.avatarPhotoID)
@@ -1055,9 +1063,6 @@ struct ProfileEditorSheet: View {
                         .accessibilityIdentifier("profile-display-name")
                     TextField("城市（可选）", text: $city)
                         .accessibilityIdentifier("profile-city")
-                    TextField("个人简介（可选）", text: $bio, axis: .vertical)
-                        .lineLimit(3...6)
-                        .accessibilityIdentifier("profile-bio")
                 }
                 Section("个人主页可见范围") {
                     TasteMapSegmentedControl(
@@ -1067,7 +1072,7 @@ struct ProfileEditorSheet: View {
                         },
                         accessibilityIdentifier: "profile-visibility"
                     )
-                    Text("公开资料只包含头像、显示名称、简介、城市和基于公开到访计算的统计。")
+                    Text("公开资料只包含头像、显示名称、城市和基于公开到访计算的统计。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1130,7 +1135,7 @@ struct ProfileEditorSheet: View {
             try LocalUserProfileStore(context: modelContext).update(
                 profile,
                 displayName: displayName,
-                bio: bio,
+                bio: profile.bio,
                 city: city,
                 avatarPhotoID: newAvatarPhotoID,
                 avatarPreset: selectedPreset,

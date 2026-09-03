@@ -35,6 +35,7 @@ struct RestaurantQuickActionsSection: View {
     let canDelete: Bool
     let canAddToList: Bool
     let canAddToRoulette: Bool
+    var isInRoulette = false
     let identifiers: RestaurantQuickActionIdentifiers
     let onRecordVisit: () -> Void
     let onMarkWantToGo: () -> Void
@@ -66,9 +67,10 @@ struct RestaurantQuickActionsSection: View {
                     )
                     .accessibilityIdentifier(identifiers.wantToGo)
                     circularAction(
-                        "加入抽签",
+                        isInRoulette ? "移出转盘" : "加入转盘",
                         systemImage: "dice.fill",
                         enabled: canAddToRoulette,
+                        isSelected: isInRoulette,
                         action: onAddToRoulette
                     )
                     .accessibilityIdentifier(identifiers.addToRoulette)
@@ -127,23 +129,24 @@ struct RestaurantQuickActionsSection: View {
         _ title: String,
         systemImage: String,
         enabled: Bool = true,
+        isSelected: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            circularActionLabel(title, systemImage: systemImage)
+            circularActionLabel(title, systemImage: systemImage, isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.48)
     }
 
-    private func circularActionLabel(_ title: String, systemImage: String) -> some View {
+    private func circularActionLabel(_ title: String, systemImage: String, isSelected: Bool = false) -> some View {
         VStack(spacing: 5) {
             Image(systemName: systemImage)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                .foregroundStyle(isSelected ? Color.white : TasteMapCoreTheme.brandDeep)
                 .frame(width: 44, height: 44)
-                .background(TasteMapCoreTheme.brandSoft, in: Circle())
+                .background(isSelected ? TasteMapCoreTheme.brand : TasteMapCoreTheme.brandSoft, in: Circle())
                 .overlay { Circle().stroke(TasteMapCoreTheme.border) }
             Text(title)
                 .font(.caption.weight(.semibold))

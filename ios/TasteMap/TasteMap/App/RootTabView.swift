@@ -12,8 +12,10 @@ struct RootTabView: View {
     @State private var requestedVisitCandidate: RestaurantCandidate?
     @State private var visitCandidate: RestaurantCandidate?
     @State private var isBottomNavigationHidden = false
+    @State private var isShowingRoulette = false
     @State private var pendingSharedImport: PendingRestaurantImport?
     @State private var publicShareRoute: PublicShareRouteSelection?
+    @State private var rouletteSession = RestaurantRouletteSession()
 
     init() {
 #if DEBUG
@@ -29,17 +31,33 @@ struct RootTabView: View {
 
     var body: some View {
         activeView
+            .environment(\.restaurantRouletteSession, rouletteSession)
             .onPreferenceChange(TasteMapBottomNavigationHiddenPreferenceKey.self) {
                 isBottomNavigationHidden = $0
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !isBottomNavigationHidden {
-                    TasteMapBottomNavigation(
-                        selection: $selectedTab,
-                        showsAddRestaurant: selectedTab == .map,
-                        onAddRestaurant: { isShowingSearch = true }
-                    )
+                    VStack(spacing: 0) {
+                        if selectedTab == .map, rouletteSession.shouldShowMapDock {
+                            TasteMapRouletteCandidateDock(
+                                count: rouletteSession.restaurantIDs.count,
+                                onReview: { isShowingRoulette = true },
+                                onStart: { isShowingRoulette = true }
+                            )
+                        }
+                        TasteMapBottomNavigation(
+                            selection: $selectedTab,
+                            showsAddRestaurant: selectedTab == .map && !rouletteSession.shouldShowMapDock,
+                            onAddRestaurant: { isShowingSearch = true }
+                        )
+                    }
                 }
+            }
+            .sheet(isPresented: $isShowingRoulette) {
+                NavigationStack {
+                    RestaurantRouletteScreen()
+                }
+                .environment(\.restaurantRouletteSession, rouletteSession)
             }
             .sheet(isPresented: $isShowingSearch, onDismiss: {
                 presentRequestedVisitAfterAcquisitionDismissal()

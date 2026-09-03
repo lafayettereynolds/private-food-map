@@ -253,7 +253,7 @@ struct SocialHubView: View {
                         .frame(width: 48, height: 48).clipShape(Circle())
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.profile.displayName).font(.headline).foregroundStyle(.primary)
-                        Text([item.profile.city, item.profile.bio].compactMap { $0 }.joined(separator: " · "))
+                        Text(item.profile.city ?? "未设置城市")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
@@ -722,16 +722,12 @@ struct SocialPublicProfileView: View {
                 .font(.title3.bold())
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
+            Text("ID \(TasteMapPublicUserID.numeric(from: item.profile.userId))")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
             if let city = item.profile.city {
                 Label(city, systemImage: "building.2")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if let bio = item.profile.bio {
-                Text(bio)
-                    .font(.subheadline)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
             }
         }

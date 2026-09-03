@@ -102,3 +102,40 @@ struct TasteMapBottomNavigation: View {
         .accessibilityIdentifier("addRestaurantButton")
     }
 }
+
+struct TasteMapRouletteCandidateDock: View {
+    let count: Int
+    let onReview: () -> Void
+    let onStart: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label("已选 \(count)/10", systemImage: "dice.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(TasteMapCoreTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button("查看", action: onReview)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+            Button(action: onStart) {
+                Label("开始抽", systemImage: "dice")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(count < 2)
+            .accessibilityHint(count < 2 ? "至少选择 2 家餐厅" : "打开今天吃什么转盘")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(TasteMapCoreTheme.surface.opacity(0.98))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(TasteMapCoreTheme.border.opacity(0.85))
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("map-roulette-candidate-dock")
+    }
+}

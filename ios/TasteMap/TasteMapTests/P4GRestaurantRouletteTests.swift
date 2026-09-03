@@ -4,6 +4,30 @@ import Testing
 
 @Suite("P4-G Restaurant Roulette")
 struct P4GRestaurantRouletteTests {
+    @Test("Map candidate dock follows the explicit current-session pool")
+    func mapCandidateSession() {
+        let session = RestaurantRouletteSession()
+        let ids = (0..<12).map { uuid(80_000 + $0) }
+
+        #expect(!session.shouldShowMapDock)
+        #expect(session.toggle(ids[0]))
+        #expect(session.shouldShowMapDock)
+        #expect(session.restaurantIDs == [ids[0]])
+        #expect(session.toggle(ids[1]))
+        #expect(session.restaurantIDs == [ids[0], ids[1]])
+        #expect(session.toggle(ids[0]))
+        #expect(session.restaurantIDs == [ids[1]])
+
+        session.replace(with: ids)
+        #expect(session.restaurantIDs.count == RestaurantRouletteEngine.maximumActiveCandidateCount)
+        #expect(!session.toggle(ids[10]))
+
+        session.clear()
+        #expect(session.hasExplicitSelection)
+        #expect(!session.shouldShowMapDock)
+        #expect(session.restaurantIDs.isEmpty)
+    }
+
     @Test("Empty, single and multiple candidate selection remain inside the pool")
     func basicSelection() {
         var generator = SeededRouletteGenerator(seed: 7)

@@ -6,6 +6,12 @@ import Testing
 @Suite("P3-A User Profile foundation", .serialized)
 @MainActor
 struct P3AProfileTests {
+    @Test("Numeric public user ID stays aligned with the Web projection")
+    func numericPublicUserID() {
+        #expect(TasteMapPublicUserID.numeric(from: "tm_contract") == "395932615433")
+        #expect(TasteMapPublicUserID.numeric(from: "tm_hybrid_debug") == "601372693425")
+    }
+
     @Test("Profile initialization is one-to-one and idempotent")
     func initializationIsIdempotent() throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
