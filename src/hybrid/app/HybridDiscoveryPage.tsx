@@ -18,6 +18,7 @@ import type {
   TasteMapPlatform,
 } from '../../platform/TasteMapPlatform'
 import { HybridRestaurantImage, HybridState } from '../../components/TasteMapHybridShared'
+import { TasteMapVisitedIcon } from '../../components/TasteMapStatusIcons'
 import { HYBRID_DISCOVERY_PRIMARY_TABS } from './HybridProductContracts'
 import { ModalShell } from '../../components/ModalShell'
 
@@ -284,7 +285,7 @@ function RecommendationCard({ item, platform, onOpenRestaurant, engagement, view
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
     restaurantActions={<>
       <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><NotebookPen aria-hidden="true" size={18} /></button>
-      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button"><Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} /></button>
+      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button">{viewerState === 'visited' ? <TasteMapVisitedIcon size={18} /> : <Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} />}</button>
       <button aria-label={`轮盘 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => onOpenRoulette(item.restaurant.id)} title="加入抽签" type="button"><Dices aria-hidden="true" size={18} /></button>
     </>}
     socialActions={<>
@@ -311,7 +312,7 @@ function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerStat
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
     restaurantActions={<>
       <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><NotebookPen aria-hidden="true" size={18} /></button>
-      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button"><Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} /></button>
+      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button">{viewerState === 'visited' ? <TasteMapVisitedIcon size={18} /> : <Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} />}</button>
       <button aria-label={`轮盘 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => onOpenRoulette(item.restaurant.id)} title="加入抽签" type="button"><Dices aria-hidden="true" size={18} /></button>
     </>}
     socialActions={<>

@@ -182,7 +182,7 @@ Templates define information architecture, section order, control and image plac
 - top breathing space;
 - centered `我的地图` / `我的列表` plus the adjacent clickable view-switch icon as one group;
 - `去过 / 想吃 / 推荐` using the shared primary tab bar;
-- each scope uses one semantic line icon plus its text (`去过` = footprints/check, `想吃` = bookmark, `推荐` = star); the three items share icon size, baseline, spacing, selected treatment, and a minimum 44-point hit target;
+- each scope uses one semantic line icon plus its text (`去过` = the canonical plain checkmark, `想吃` = bookmark, `推荐` = star); the three items share icon size, baseline, spacing, selected treatment, and a minimum 44-point hit target;
 - scope selection feedback is committed immediately and never waits for data, images, a Native bridge response, or map work;
 - shared compact horizontal FilterBar;
 - Map or List content backed by the same query/filter/sort state;
@@ -258,6 +258,7 @@ Taste Profile, Best Companion, Recommendation Source, Monthly, and Annual belong
 - Ambiguous data dimensions use icon plus a short label or current value.
 - Siblings in one component group either all use semantic icons or all omit them.
 - A static city filter uses a building/city symbol, never GPS, location, or current-position imagery.
+- An already-visited Restaurant uses the one canonical plain checkmark in every status/scope surface across React, Capacitor, and Native rollback UI. Footprints/tableware remain reserved for visit-count, visit-history, and dining concepts; the plus remains the add/record-Visit action. Do not substitute a bookmark, map pin, fork-and-knife, or circled-check variant for the visited-state glyph.
 - Decorative Food/Dining visuals are not functional icons and never imply data unless explicitly selected from real data.
 
 ## Shared Components
@@ -304,6 +305,7 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - `添加餐厅` appears exactly once as the Map-owned floating primary CTA and routes to the formal Add Restaurant flow.
 - Centered `我的地图` or `我的列表` title with the adjacent view-switch icon.
 - Primary scopes are `去过 / 想吃 / 推荐`.
+- The `去过` scope/status glyph is always the canonical plain checkmark; do not regress it to footprints, tableware, map pins, bookmarks, or a circled-check variant.
 - No separate Map/List segmented row.
 - Map/List switching preserves scope, filters, sort, city, and search.
 - Scope switching preserves map instance identity, center, zoom, bounds, filters, sort, search, and Map/List state. A scope value must not participate in the camera-fit identity.

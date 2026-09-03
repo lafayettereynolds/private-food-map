@@ -16,6 +16,7 @@ import {
 import { CompanionPicker } from './CompanionPicker'
 import { ModalShell } from './ModalShell'
 import { StickyFormActionBar } from './StickyFormActionBar'
+import { TasteMapVisitedIcon } from './TasteMapStatusIcons'
 import { DishEditor } from './DishEditor'
 import { MarkerStyleField } from './MarkerStyleField'
 import { QueueDurationPicker } from './QueueDurationPicker'
@@ -426,7 +427,7 @@ export function AddRestaurantModal({
           />
 
           <div className="collection-choice" aria-label="餐厅状态" data-record-section="visit-mode-selector">
-            <button className={status === 'visited' ? 'is-active' : ''} onClick={() => setStatus('visited')} type="button"><Check size={15} /> 我去过</button>
+            <button className={status === 'visited' ? 'is-active' : ''} onClick={() => setStatus('visited')} type="button"><TasteMapVisitedIcon size={15} /> 我去过</button>
             <button className={status === 'wantToGo' ? 'is-active' : ''} onClick={() => setStatus('wantToGo')} type="button"><MapPin size={15} /> 我想去</button>
           </div>
 

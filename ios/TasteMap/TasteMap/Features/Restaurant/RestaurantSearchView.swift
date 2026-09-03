@@ -101,7 +101,10 @@ struct RestaurantSearchView: View {
                                 Button {
                                     perform(.recordVisit, candidate: candidate)
                                 } label: {
-                                    Label("记录去过", systemImage: "fork.knife")
+                                    Label(
+                                        "记录去过",
+                                        systemImage: RestaurantStatus.visited.systemImage
+                                    )
                                         .frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(.borderedProminent)

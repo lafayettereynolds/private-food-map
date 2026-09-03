@@ -71,6 +71,10 @@ describe('Hybrid remaining product UI contract', () => {
     for (const label of ['去过', '想吃', '推荐']) {
       expect(html).toContain(`aria-label="${label}"`)
     }
+    const scopeTabs = html.match(/<nav aria-label="地图范围"[\s\S]*?<\/nav>/)?.[0] ?? ''
+    expect(scopeTabs).toContain('data-tastemap-semantic-icon="visited"')
+    expect(scopeTabs).toContain('lucide-check')
+    expect(scopeTabs).not.toContain('lucide-footprints')
     expect(html).toContain('role="tab"')
     expect(html).not.toContain('适合你')
   })
@@ -111,14 +115,16 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).toContain('aria-label="已去过 ')
     expect(html).toContain('aria-label="轮盘 ')
     expect(html).toContain('lucide-notebook-pen')
-    expect(html).toContain('lucide-bookmark')
+    const restaurantActions = html.match(/data-activity-region="restaurant-actions">([\s\S]*?)<\/div><\/footer>/)?.[1] ?? ''
+    expect(restaurantActions).toContain('data-tastemap-semantic-icon="visited"')
+    expect(restaurantActions).toContain('lucide-check')
+    expect(restaurantActions).not.toContain('lucide-bookmark')
     expect(html).not.toContain('aria-label="食单 ')
     expect(html).not.toContain('title="加入食单"')
     expect(html).not.toContain('lucide-circle-plus')
     expect(html).not.toContain('lucide-list-plus')
     expect(html).not.toContain('lucide-bookmark-plus')
     const socialActions = html.match(/data-activity-region="like-comment-more-share">([\s\S]*?)<\/div><div class="tm-activity-card__restaurant-actions"/)?.[1] ?? ''
-    const restaurantActions = html.match(/data-activity-region="restaurant-actions">([\s\S]*?)<\/div><\/footer>/)?.[1] ?? ''
     expect(socialActions.match(/<button/g)).toHaveLength(3)
     expect(restaurantActions.match(/<button/g)).toHaveLength(3)
   })

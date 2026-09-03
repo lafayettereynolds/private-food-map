@@ -349,7 +349,9 @@ struct RestaurantRouletteExperienceView: View {
         conditionChip(
             symbol: source == .all
                 ? "fork.knife"
-                : source == .wantToGo ? "bookmark.fill" : "checkmark.circle.fill",
+                : source == .wantToGo
+                    ? "bookmark.fill"
+                    : RestaurantStatus.visited.systemImage,
             text: source.title
         )
         if let selectedCity {

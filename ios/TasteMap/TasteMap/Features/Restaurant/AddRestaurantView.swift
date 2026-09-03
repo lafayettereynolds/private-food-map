@@ -444,7 +444,9 @@ private struct RestaurantCandidateConfirmationView: View {
                         )
 
                         AcquisitionMessage(
-                            icon: selection == .visited ? "fork.knife" : "bookmark",
+                            icon: selection == .visited
+                                ? RestaurantStatus.visited.systemImage
+                                : "bookmark",
                             title: selection == .visited ? "记录这次体验" : "加入想吃清单",
                             message: selection == .visited
                                 ? "继续后填写日期、评分、消费、菜品和照片。"
@@ -458,7 +460,9 @@ private struct RestaurantCandidateConfirmationView: View {
                         } label: {
                             Label(
                                 actionTitle,
-                                systemImage: selection == .visited ? "fork.knife" : "bookmark.fill"
+                                systemImage: selection == .visited
+                                    ? RestaurantStatus.visited.systemImage
+                                    : "bookmark.fill"
                             )
                             .frame(maxWidth: .infinity, minHeight: 50)
                         }

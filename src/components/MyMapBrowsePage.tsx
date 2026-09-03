@@ -29,6 +29,7 @@ import {
 } from './mapScopePerformance'
 import { TasteMapPrimaryTabBar, type TasteMapPrimaryTab } from './TasteMapDiscoveryShared'
 import { HybridRestaurantImage } from './TasteMapHybridShared'
+import { TasteMapVisitedIcon } from './TasteMapStatusIcons'
 import './myMapBrowsePage.css'
 
 export interface MyMapSurfaceProps {
@@ -68,7 +69,7 @@ const mapScopeTabs: ReadonlyArray<TasteMapPrimaryTab<TasteMapMapScope>> = HYBRID
   value,
   label,
   icon: value === 'visited'
-    ? <Footprints />
+    ? <TasteMapVisitedIcon />
     : value === 'wantToGo'
       ? <Bookmark />
       : <Star />,

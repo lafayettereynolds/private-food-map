@@ -58,7 +58,9 @@ struct RestaurantQuickActionsSection: View {
                     .accessibilityIdentifier(identifiers.recordVisit)
                     circularAction(
                         wantToGoTitle,
-                        systemImage: "bookmark.fill",
+                        systemImage: status == .visited
+                            ? RestaurantStatus.visited.systemImage
+                            : "bookmark.fill",
                         enabled: canMarkWantToGo,
                         action: onMarkWantToGo
                     )

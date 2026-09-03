@@ -853,7 +853,9 @@ struct DiscoveryRestaurantQuickActions: View {
         } else {
             Label(
                 viewerState == .visited ? "去过" : "已想吃",
-                systemImage: viewerState == .visited ? "checkmark.circle.fill" : "bookmark.fill"
+                systemImage: viewerState == .visited
+                    ? RestaurantStatus.visited.systemImage
+                    : "bookmark.fill"
             )
             .font(.caption.weight(.semibold))
             .foregroundStyle(viewerState == .visited ? .green : .blue)

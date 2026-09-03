@@ -46,6 +46,7 @@ import { RestaurantRoulette, type RouletteTemporaryCandidate } from './component
 import { TasteFootprints } from './components/TasteFootprints'
 import { PublicRestaurantListRoute } from './components/RestaurantListsPanel'
 import { PremiumBurgerBadge } from './components/PremiumBurgerBadge'
+import { TasteMapVisitedIcon } from './components/TasteMapStatusIcons'
 import { PremiumPaywallHost } from './components/PremiumPaywall'
 import { TasteMapAnalyticsPage, type AnalyticsMode } from './components/TasteMapAnalyticsPage'
 import { TasteMapListsPage } from './components/TasteMapListsPage'
@@ -1129,7 +1130,7 @@ function CollectionTabs({
   showFootprints?: boolean
 }) {
   return <div className={`collection-tabs${showFootprints ? ' has-footprints' : ''}${className ? ` ${className}` : ''}`} aria-label="餐厅列表分类">
-    <button className={activeList === 'visited' ? 'is-active' : ''} onClick={() => onChoose('visited')} type="button"><span><CheckCircle2 size={11} /> 去过</span><strong>{counts.visited}</strong></button>
+    <button className={activeList === 'visited' ? 'is-active' : ''} onClick={() => onChoose('visited')} type="button"><span><TasteMapVisitedIcon size={11} /> 去过</span><strong>{counts.visited}</strong></button>
     <button className={activeList === 'wantToGo' ? 'is-active' : ''} onClick={() => onChoose('wantToGo')} type="button"><span><Bookmark size={11} /> 想吃</span><strong>{counts.wantToGo}</strong></button>
     <button className={activeList === 'recommended' ? 'is-active' : ''} onClick={() => onChoose('recommended')} type="button"><span><Sparkles size={11} /> 推荐</span><strong>{counts.recommended}</strong></button>
     {showFootprints ? <button className={activeList === 'footprints' ? 'is-active' : ''} onClick={() => onChoose('footprints')} type="button"><span>味觉足迹</span><strong>{counts.footprints}</strong></button> : null}

@@ -783,7 +783,7 @@ private struct ProfileStatisticsSection: View {
             Button(action: onVisited) {
                 statistic(
                     "去过", value: "\(statistics.visitedRestaurantCount)",
-                    systemImage: "checkmark.circle.fill"
+                    systemImage: RestaurantStatus.visited.systemImage
                 )
             }
             .buttonStyle(.plain)

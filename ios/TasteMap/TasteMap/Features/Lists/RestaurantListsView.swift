@@ -462,7 +462,12 @@ struct RestaurantListAddRestaurantSheet: View {
                     ForEach(available) { restaurant in
                         Button { add(restaurant) } label: {
                             HStack {
-                                Text(restaurant.status == .visited ? "✓" : "♡")
+                                if restaurant.status == .visited {
+                                    Image(systemName: RestaurantStatus.visited.systemImage)
+                                        .accessibilityHidden(true)
+                                } else {
+                                    Text("♡")
+                                }
                                 VStack(alignment: .leading) {
                                     Text(restaurant.name).foregroundStyle(.primary)
                                     Text(restaurant.address).font(.caption).foregroundStyle(.secondary).lineLimit(1)

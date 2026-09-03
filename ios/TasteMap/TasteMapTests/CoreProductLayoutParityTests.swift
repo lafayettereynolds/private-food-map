@@ -24,6 +24,13 @@ struct CoreProductLayoutParityTests {
         #expect(RestaurantBrowseSegment.allCases.map(\.title) == ["去过", "想吃", "推荐"])
     }
 
+    @Test("Visited state uses the one canonical checkmark semantic")
+    func visitedIconContract() {
+        #expect(RestaurantStatus.visited.systemImage == "checkmark")
+        #expect(RestaurantBrowseSegment.visited.systemImage == RestaurantStatus.visited.systemImage)
+        #expect(RestaurantStatus.visited.systemImage != TasteMapFilterSemantic.visitCount.systemImage)
+    }
+
     @Test("My Map control layers follow the confirmed independent hierarchy")
     func mapControlHierarchy() {
         #expect(MapHomeControlLayer.allCases == [

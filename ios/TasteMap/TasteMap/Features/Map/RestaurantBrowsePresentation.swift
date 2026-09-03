@@ -17,7 +17,7 @@ enum RestaurantBrowseSegment: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .visited: "fork.knife.circle"
+        case .visited: RestaurantStatus.visited.systemImage
         case .wantToGo: "bookmark.circle"
         case .forYou: "sparkles"
         }

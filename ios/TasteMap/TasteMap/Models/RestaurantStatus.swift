@@ -13,7 +13,7 @@ enum RestaurantStatus: String, Codable, CaseIterable, Sendable {
 
     var systemImage: String {
         switch self {
-        case .visited: "fork.knife"
+        case .visited: "checkmark"
         case .wantToGo: "bookmark.fill"
         }
     }
