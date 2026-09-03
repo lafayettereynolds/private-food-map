@@ -89,7 +89,7 @@ enum RestaurantDistanceOrdering {
 }
 
 enum RestaurantNearbySearchPolicy {
-    static let keywords = ["餐厅", "美食", "饭店"]
+    static let keywords = ["餐厅", "美食", "饭店", "小吃"]
     static let pointOfInterestCategories: [MKPointOfInterestCategory] = [
         .restaurant,
         .cafe,
@@ -175,7 +175,12 @@ struct MapKitRestaurantSearchService: RestaurantSearching {
             center: center,
             radiusMeters: radiusMeters
         )
-        let outcomes = await [proximityBatch, restaurantBatch, foodBatch, diningBatch]
+        async let localFoodBatch = nearbyCandidates(
+            matching: RestaurantNearbySearchPolicy.keywords[3],
+            center: center,
+            radiusMeters: radiusMeters
+        )
+        let outcomes = await [proximityBatch, restaurantBatch, foodBatch, diningBatch, localFoodBatch]
         let successfulBatches = outcomes.compactMap { $0 }
         guard !successfulBatches.isEmpty else { throw RestaurantSearchError.locationNotFound }
         return RestaurantNearbySearchPolicy.merge(

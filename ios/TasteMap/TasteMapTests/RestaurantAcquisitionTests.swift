@@ -230,7 +230,7 @@ struct RestaurantAcquisitionTests {
         #expect((sorted[1].distanceMeters ?? 0) > 419)
     }
 
-    @Test("Nearby combines coordinate-first food POIs with the Web query vocabulary and merges provider duplicates")
+    @Test("Nearby combines coordinate-first food POIs with broad local queries and merges provider duplicates")
     func nearbyQueryCoverageAndMerge() {
         let origin = RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)
         let sharedIdentity = "apple-shared-nearby"
@@ -269,7 +269,7 @@ struct RestaurantAcquisitionTests {
             radiusMeters: 3_000
         )
 
-        #expect(RestaurantNearbySearchPolicy.keywords == ["餐厅", "美食", "饭店"])
+        #expect(RestaurantNearbySearchPolicy.keywords == ["餐厅", "美食", "饭店", "小吃"])
         #expect(RestaurantNearbySearchPolicy.pointOfInterestCategories == [
             .restaurant,
             .cafe,
