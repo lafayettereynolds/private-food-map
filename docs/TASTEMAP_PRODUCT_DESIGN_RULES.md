@@ -190,6 +190,7 @@ Templates define information architecture, section order, control and image plac
 - content may update asynchronously from an owner-scoped, versioned, bounded presentation snapshot; Native/SwiftData remains the source of truth, stale responses are rejected, and the cache is invalidated by owner/data changes;
 - markers reconcile by stable Restaurant ID and reuse unchanged marker/image identity rather than performing a full teardown; image loading never blocks selected-state feedback and cached Restaurant images do not reload solely because the scope changed;
 - independent Restaurant markers at every zoom, with natural overlap and deterministic layer order rather than numeric clusters;
+- Restaurant markers do not carry repetitive visited/want/recommended status badges; the selected scope already communicates that state, so the Restaurant image/rating ring remains visually clean;
 - no default forced offset, spiderfy, collision dispersion, zoom-driven separation, or “coin wall” whose purpose is to expose every marker;
 - marker layer order is `selected → rating → visit count → stable Restaurant ID`; pan and zoom must not randomize it;
 - optional expand/spiderfy is allowed only after the user explicitly asks to inspect a highly overlapped area;
@@ -313,6 +314,7 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - Marker updates use a stable-ID diff and retain unchanged marker/image identity. A scope change must not destroy/recreate every marker, reload cached Restaurant images, or rebuild the map.
 - Filters use the shared components.
 - Every Restaurant remains an independent marker at every zoom; no numeric or Food/Dining count clusters.
+- Do not place a checkmark or other scope-status badge beneath each Restaurant marker; `去过 / 想吃 / 推荐` belongs to the shared scope control, not repeated marker chrome.
 - Markers may overlap naturally. Ordinary rendering does not force offset, spiderfy, collision dispersion, zoom separation, or full visibility.
 - Layering is deterministic: `selected → rating → visit count → stable Restaurant ID`.
 - Selected is always topmost; higher-rated Restaurants cover lower-rated Restaurants; visit count breaks equal-rating ties; stable ID is the final tie-break.

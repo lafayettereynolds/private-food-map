@@ -467,7 +467,6 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     private let visualContainer = UIView()
     private let imageView = UIImageView()
     private let fallbackImageView = UIImageView()
-    private let statusBadge = UIImageView()
     private var representedRestaurantID: UUID?
     private var categoryVisualID: FoodCategoryVisualID = .other
     private var markerStatus: RestaurantMapMarkerStatus = .visited
@@ -488,13 +487,10 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         imageView.clipsToBounds = true
         fallbackImageView.contentMode = .scaleAspectFit
         fallbackImageView.tintColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
-        statusBadge.contentMode = .center
-        statusBadge.tintColor = .white
 
         addSubview(visualContainer)
         visualContainer.addSubview(imageView)
         visualContainer.addSubview(fallbackImageView)
-        addSubview(statusBadge)
         isAccessibilityElement = true
     }
 
@@ -531,8 +527,6 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         imageView.frame = visualContainer.bounds.insetBy(dx: 3, dy: 3)
         imageView.layer.cornerRadius = max(0, (diameter - 6) / 2)
         fallbackImageView.frame = visualContainer.bounds.insetBy(dx: 10, dy: 10)
-        statusBadge.frame = CGRect(x: diameter - 8, y: diameter - 10, width: 18, height: 18)
-        statusBadge.layer.cornerRadius = 9
     }
 
     func configure(_ marker: RestaurantMapMarkerPresentation) {
@@ -542,11 +536,6 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         if case let .category(value) = marker.visual { categoryVisualID = value }
         fallbackImageView.tintColor = nil
         visualContainer.layer.borderColor = ratingColor(marker.averageRating).cgColor
-        statusBadge.backgroundColor = statusColor(marker.status)
-        statusBadge.image = UIImage(
-            systemName: statusSymbol(marker.status),
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .bold)
-        )
         imageView.image = nil
         showFallback()
         accessibilityIdentifier = "restaurant-map-marker-\(marker.id.uuidString)"
@@ -570,25 +559,9 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         )
     }
 
-    private func statusColor(_ status: RestaurantMapMarkerStatus) -> UIColor {
-        switch status {
-        case .visited: UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
-        case .wantToGo: UIColor(red: 0.45, green: 0.57, blue: 0.67, alpha: 1)
-        case .recommended: UIColor(red: 0.38, green: 0.49, blue: 0.61, alpha: 1)
-        }
-    }
-
     private func ratingColor(_ rating: Double?) -> UIColor {
         let color = RestaurantScoreColorPolicy.color(forFivePointRating: rating)
         return UIColor(red: color.red, green: color.green, blue: color.blue, alpha: 1)
-    }
-
-    private func statusSymbol(_ status: RestaurantMapMarkerStatus) -> String {
-        switch status {
-        case .visited: "checkmark"
-        case .wantToGo: "bookmark.fill"
-        case .recommended: "sparkles"
-        }
     }
 
 }
