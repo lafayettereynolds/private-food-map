@@ -3192,6 +3192,88 @@ final class TasteMapUITests: XCTestCase {
         start.press(forDuration: 0.05, thenDragTo: end)
     }
 
+    @MainActor
+    private func launchHybridDiscoveryFooter() -> (XCUIApplication, XCUIElement) {
+        var lastApp: XCUIApplication?
+        for _ in 0..<2 {
+            let app = XCUIApplication()
+            lastApp = app
+            app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+            app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+            app.launch()
+            let webView = app.webViews.firstMatch
+            guard webView.waitForExistence(timeout: 20) else {
+                app.terminate()
+                continue
+            }
+            let discovery = webView.buttons["发现"]
+            guard discovery.waitForExistence(timeout: 8) else {
+                app.terminate()
+                continue
+            }
+            discovery.tap()
+            guard webView.buttons["为你推荐"].waitForExistence(timeout: 12) else {
+                // The iOS 26.5 simulator occasionally loses WebKit's
+                // accessibility tree between rapid independent launches.
+                app.terminate()
+                continue
+            }
+            let record = webView.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "记录 ")
+            ).firstMatch
+            guard record.waitForExistence(timeout: 8) else {
+                app.terminate()
+                continue
+            }
+            scrollDiscoveryCardIntoView(in: app)
+            return (app, webView)
+        }
+
+        XCTFail("Unable to open the Hybrid Discovery footer after one accessibility relaunch")
+        let app = lastApp ?? XCUIApplication()
+        return (app, app.webViews.firstMatch)
+    }
+
+    /// Selects the first card's restaurant-qualified action. The accessible
+    /// label includes the Restaurant name, so this never scans every repeated
+    /// action in WebKit's full offscreen tree.
+    @MainActor
+    private func visibleDiscoveryAction(
+        _ label: String,
+        in webView: XCUIElement,
+        app: XCUIApplication,
+        near preferredFrame: CGRect? = nil
+    ) -> XCUIElement {
+        let query = webView.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH %@", "\(label) ")
+        )
+        let action = query.firstMatch
+        XCTAssertTrue(action.waitForExistence(timeout: 8), "Missing Discovery action named \(label)")
+        XCTAssertTrue(action.isHittable, "Discovery action named \(label) is not visible")
+        if let preferredFrame {
+            XCTAssertLessThan(abs(action.frame.midY - preferredFrame.midY), 80, "Discovery action changed a different Card")
+        }
+        return action
+    }
+
+    @MainActor
+    private func tapVisibleFrame(of element: XCUIElement, in app: XCUIApplication) {
+        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        origin.withOffset(CGVector(dx: element.frame.midX, dy: element.frame.midY)).tap()
+    }
+
+    @MainActor
+    private func waitUntilEnabled(_ element: XCUIElement, timeout: TimeInterval = 8) {
+        let enabled = NSPredicate { value, _ in
+            (value as? XCUIElement)?.isEnabled == true
+        }
+        let result = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: enabled, object: element)],
+            timeout: timeout
+        )
+        XCTAssertEqual(result, .completed, "Discovery mutation did not reach its authoritative settled state")
+    }
+
     /// Scrolls read-only section containers into the visible viewport without
     /// requiring them to become hittable. Structural accessibility elements
     /// intentionally have no tap action, so using `isHittable` would always
@@ -4066,10 +4148,12 @@ final class TasteMapUITests: XCTestCase {
         scrollDiscoveryCardIntoView(in: app)
         XCTAssertTrue(recommendationReason.waitForExistence(timeout: 8))
         for label in ["记录", "食单", "轮盘"] {
-            XCTAssertTrue(webView.buttons[label].firstMatch.waitForExistence(timeout: 8), "Missing Restaurant action: \(label)")
+            XCTAssertTrue(webView.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "\(label) ")
+            ).firstMatch.waitForExistence(timeout: 8), "Missing Restaurant action: \(label)")
         }
         XCTAssertTrue(webView.buttons.matching(
-            NSPredicate(format: "label IN %@", ["想吃", "已想吃", "已去过"])
+            NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@", "想吃 ", "移出想吃 ", "已去过 ")
         ).firstMatch.waitForExistence(timeout: 8), "Missing WantToGo state action")
 
         webView.buttons["同味之选"].tap()
@@ -4079,18 +4163,18 @@ final class TasteMapUITests: XCTestCase {
 
         webView.buttons["关注"].tap()
         let followingLike = webView.switches.matching(
-            NSPredicate(format: "label IN %@", ["点赞", "取消点赞"])
+            NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "点赞 ", "取消点赞 ")
         ).firstMatch
         XCTAssertTrue(followingLike.waitForExistence(timeout: 8))
         scrollUntilVisible(followingLike, in: app)
-        XCTAssertTrue(webView.buttons["评论"].firstMatch.waitForExistence(timeout: 8))
-        XCTAssertTrue(webView.buttons["分享动态"].firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "评论 ")).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "分享动态 ")).firstMatch.waitForExistence(timeout: 8))
 
         for label in ["同味之选", "最新", "趋势", "为你推荐"] {
             webView.buttons[label].tap()
             XCTAssertTrue(webView.buttons[label].isSelected)
         }
-        let recordAction = webView.buttons["记录"].firstMatch
+        let recordAction = webView.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "记录 ")).firstMatch
         scrollDiscoveryCardIntoView(in: app)
         XCTAssertTrue(recordAction.waitForExistence(timeout: 8))
         XCTAssertTrue(recordAction.isHittable)
@@ -4098,115 +4182,122 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testHybridDiscoveryCardInteractionEvidence() throws {
-        func launchAtFooter() -> (XCUIApplication, XCUIElement) {
-            var lastApp: XCUIApplication?
-            for _ in 0..<2 {
-                let app = XCUIApplication()
-                lastApp = app
-                app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
-                app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
-                app.launch()
-                let webView = app.webViews.firstMatch
-                guard webView.waitForExistence(timeout: 20) else {
-                    app.terminate()
-                    continue
-                }
-                let discovery = webView.buttons["发现"]
-                guard discovery.waitForExistence(timeout: 8) else {
-                    app.terminate()
-                    continue
-                }
-                discovery.tap()
-                guard webView.buttons["为你推荐"].waitForExistence(timeout: 12) else {
-                    // The iOS 26.5 simulator occasionally loses WebKit's
-                    // accessibility tree between rapid independent launches.
-                    // Relaunch once so the evidence probe does not confuse
-                    // that simulator condition with a product-route result.
-                    app.terminate()
-                    continue
-                }
-                let record = webView.buttons["记录"].firstMatch
-                guard record.waitForExistence(timeout: 8) else {
-                    app.terminate()
-                    continue
-                }
-                scrollDiscoveryCardIntoView(in: app)
-                return (app, webView)
-            }
+    func testHybridDiscoveryLikeInteractionEvidence() throws {
+        let (app, webView) = launchHybridDiscoveryFooter()
+        let like = visibleDiscoveryAction("点赞", in: webView, app: app)
+        let likeFrame = like.frame
+        tapVisibleFrame(of: like, in: app)
+        let unlike = visibleDiscoveryAction("取消点赞", in: webView, app: app, near: likeFrame)
+        waitUntilEnabled(unlike)
+        keepScreenScreenshot(named: "Batch 01 Discovery Like After")
+        tapVisibleFrame(of: unlike, in: app)
+        let restoredLike = visibleDiscoveryAction("点赞", in: webView, app: app, near: likeFrame)
+        waitUntilEnabled(restoredLike)
+        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
+        print("DISCOVERY_INTERACTION_EVIDENCE like=optimistic-authoritative-toggle-pass")
+    }
 
-            XCTFail("Unable to open the Hybrid Discovery footer after one accessibility relaunch")
-            let app = lastApp ?? XCUIApplication()
-            return (app, app.webViews.firstMatch)
-        }
+    @MainActor
+    func testHybridDiscoveryCommentInteractionEvidence() throws {
+        let (app, webView) = launchHybridDiscoveryFooter()
+        tapVisibleFrame(of: visibleDiscoveryAction("评论", in: webView, app: app), in: app)
+        let input = webView.textFields["写下评论"]
+        XCTAssertTrue(input.waitForExistence(timeout: 8))
+        input.tap()
+        input.typeText("真机交互验收评论")
+        let send = webView.buttons["发送评论"]
+        XCTAssertTrue(send.isHittable)
+        send.tap()
+        let submittedComment = webView.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "真机交互验收评论")
+        ).firstMatch
+        XCTAssertTrue(submittedComment.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.navigationBars["评论"].exists || webView.staticTexts["评论"].exists)
+        keepScreenScreenshot(named: "Batch 01 Discovery Comment Target")
+        webView.buttons["关闭"].tap()
+        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
+        _ = visibleDiscoveryAction("评论", in: webView, app: app)
+        print("DISCOVERY_INTERACTION_EVIDENCE comment=visit-targeted-create-and-return-pass")
+    }
 
-        do {
-            let (app, webView) = launchAtFooter()
-            let like = webView.buttons["点赞"].firstMatch
-            like.tap()
-            XCTAssertTrue(app.staticTexts["discovery-header"].waitForExistence(timeout: 8))
-            print("DISCOVERY_INTERACTION_EVIDENCE like=native-social-hub-no-inline-state-change")
-            app.terminate()
-        }
+    @MainActor
+    func testHybridDiscoveryRecordVisitInteractionEvidence() throws {
+        let (app, webView) = launchHybridDiscoveryFooter()
+        tapVisibleFrame(of: visibleDiscoveryAction("记录", in: webView, app: app), in: app)
+        let save = webView.buttons["保存到我的地图"]
+        XCTAssertTrue(save.waitForExistence(timeout: 8))
+        keepScreenScreenshot(named: "Batch 01 Discovery Visit Editor")
+        save.tap()
+        XCTAssertTrue(webView.buttons["为你推荐"].waitForExistence(timeout: 12))
+        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
+        _ = visibleDiscoveryAction("记录", in: webView, app: app)
+        print("DISCOVERY_INTERACTION_EVIDENCE record-visit=hybrid-editor-save-refresh-return-pass")
+    }
 
-        do {
-            let (app, webView) = launchAtFooter()
-            let comment = webView.buttons["评论"].firstMatch
-            comment.tap()
-            XCTAssertTrue(app.staticTexts["discovery-header"].waitForExistence(timeout: 8))
-            print("DISCOVERY_INTERACTION_EVIDENCE comment=native-social-hub-no-comment-target")
-            app.terminate()
-        }
+    @MainActor
+    func testHybridDiscoveryWantToGoInteractionEvidence() throws {
+        let (app, webView) = launchHybridDiscoveryFooter()
+        let wantToGo = visibleDiscoveryAction("想吃", in: webView, app: app)
+        let wantFrame = wantToGo.frame
+        tapVisibleFrame(of: wantToGo, in: app)
+        let remove = visibleDiscoveryAction("移出想吃", in: webView, app: app, near: wantFrame)
+        waitUntilEnabled(remove)
+        keepScreenScreenshot(named: "Batch 01 Discovery WantToGo After Add")
+        tapVisibleFrame(of: remove, in: app)
+        let restoredWant = visibleDiscoveryAction("想吃", in: webView, app: app, near: wantFrame)
+        waitUntilEnabled(restoredWant)
+        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
+        print("DISCOVERY_INTERACTION_EVIDENCE want-to-go=authoritative-add-remove-pass")
+    }
 
-        do {
-            let (app, webView) = launchAtFooter()
-            let record = webView.buttons["记录"].firstMatch
-            record.tap()
-            let opened = app.buttons["visit-editor-save"].waitForExistence(timeout: 8)
-            print("DISCOVERY_INTERACTION_EVIDENCE record-visit=\(opened ? "native-visit-editor" : "native-route-not-observable") state=\(app.state.rawValue)")
-            app.terminate()
-        }
+    @MainActor
+    func testHybridDiscoveryListInteractionEvidence() throws {
+        let (app, webView) = launchHybridDiscoveryFooter()
+        let list = visibleDiscoveryAction("食单", in: webView, app: app)
+        tapVisibleFrame(of: list, in: app)
+        XCTAssertTrue(app.navigationBars["加入榜单"].waitForExistence(timeout: 8))
+        keepScreenScreenshot(named: "Batch 01 Discovery List Handoff")
+        app.buttons["完成"].tap()
+        XCTAssertTrue(webView.buttons["为你推荐"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
+        _ = visibleDiscoveryAction("食单", in: webView, app: app)
+        print("DISCOVERY_INTERACTION_EVIDENCE list=native-list-sheet-correct-restaurant-return-pass")
+    }
 
-        do {
-            let (app, webView) = launchAtFooter()
-            let wantToGo = webView.buttons.matching(
-                NSPredicate(format: "label IN %@", ["想吃", "已想吃", "已去过"])
-            ).firstMatch
-            XCTAssertTrue(wantToGo.exists)
-            XCTAssertFalse(wantToGo.isEnabled)
-            wantToGo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            print("DISCOVERY_INTERACTION_EVIDENCE want-to-go=disabled-control-no-route")
-            app.terminate()
-        }
+    @MainActor
+    func testHybridDiscoveryRouletteInteractionEvidence() throws {
+        let (app, webView) = launchHybridDiscoveryFooter()
+        let roulette = visibleDiscoveryAction("轮盘", in: webView, app: app)
+        tapVisibleFrame(of: roulette, in: app)
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "随机选一家")
+        ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["返回"].exists, "Hybrid-owned Roulette must not be sent to openNative")
+        keepScreenScreenshot(named: "Batch 01 Discovery Roulette Route")
+        webView.buttons["关闭"].tap()
+        XCTAssertTrue(webView.buttons["为你推荐"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
+        _ = visibleDiscoveryAction("轮盘", in: webView, app: app)
+        print("DISCOVERY_INTERACTION_EVIDENCE roulette=hybrid-route-candidate-return-pass")
+    }
 
-        do {
-            let (app, webView) = launchAtFooter()
-            let list = webView.buttons["食单"].firstMatch
-            list.tap()
-            let opened = app.navigationBars["加入榜单"].waitForExistence(timeout: 8)
-            print("DISCOVERY_INTERACTION_EVIDENCE list=\(opened ? "native-list-sheet" : "native-route-not-observable") state=\(app.state.rawValue)")
-            app.terminate()
+    @MainActor
+    func testHybridDiscoveryShareInteractionEvidence() throws {
+        let (app, webView) = launchHybridDiscoveryFooter()
+        let share = visibleDiscoveryAction("分享动态", in: webView, app: app)
+        tapVisibleFrame(of: share, in: app)
+        Thread.sleep(forTimeInterval: 2)
+        keepScreenScreenshot(named: "Batch 01 Discovery Share Handoff")
+        let systemSheet = app.sheets.firstMatch
+        XCTAssertTrue(systemSheet.exists || app.otherElements["ActivityListView"].exists)
+        if systemSheet.exists {
+            systemSheet.swipeDown()
+        } else if app.buttons["关闭"].exists {
+            app.buttons["关闭"].tap()
         }
-
-        do {
-            let (app, webView) = launchAtFooter()
-            let roulette = webView.buttons["轮盘"].firstMatch
-            roulette.tap()
-            let opened = webView.buttons["开始随机选择餐厅"].waitForExistence(timeout: 8)
-            XCTAssertFalse(app.buttons["返回"].exists, "Hybrid-owned Roulette must not be sent to openNative")
-            print("DISCOVERY_INTERACTION_EVIDENCE roulette=\(opened ? "hybrid-route-no-native-sheet" : "hybrid-route-not-observable")")
-            app.terminate()
-        }
-
-        do {
-            let (app, webView) = launchAtFooter()
-            let share = webView.buttons["分享动态"].firstMatch
-            share.tap()
-            Thread.sleep(forTimeInterval: 2)
-            keepScreenScreenshot(named: "Batch 01 Discovery Share Handoff")
-            print("DISCOVERY_INTERACTION_EVIDENCE share=system-share-handoff state=\(app.state.rawValue)")
-            app.terminate()
-        }
+        XCTAssertTrue(webView.buttons["为你推荐"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
+        print("DISCOVERY_INTERACTION_EVIDENCE share=system-share-handoff-return-pass state=\(app.state.rawValue)")
     }
 
     @MainActor

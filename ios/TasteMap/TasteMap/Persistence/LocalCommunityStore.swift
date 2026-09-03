@@ -71,4 +71,20 @@ struct LocalCommunityStore {
         }
         try context.save()
     }
+
+    /// Reconciles the server-authoritative engagement result into every cached
+    /// feed copy of the same public Visit.
+    func updateEngagement(
+        visitID: String,
+        currentUserID: String,
+        engagement: CommunityEngagementSummaryV1
+    ) throws {
+        for cached in try context.fetch(FetchDescriptor<CachedCommunityContent>())
+        where cached.currentUserID == currentUserID {
+            guard var item = cached.item, item.visit?.id == visitID else { continue }
+            item.engagement = engagement
+            cached.payload = try JSONEncoder().encode(item)
+        }
+        try context.save()
+    }
 }

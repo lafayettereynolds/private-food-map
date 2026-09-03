@@ -3,6 +3,7 @@ import Foundation
 public enum TasteMapHybridCapability: String, Codable, CaseIterable, Sendable {
     case appleSignIn, logout, profileRead, restaurantRead, restaurantAcquisition, mapBrowse, visitContract, sync
     case contentRead
+    case communityInteraction, restaurantViewerState
     case haptics, share, location, photoPicker, premium, permissions, nativeNavigation, backup, accountDelete
 }
 
@@ -602,6 +603,10 @@ public struct TasteMapHybridDiscoveryItemDTO: Codable, Sendable {
     public let sourceUser: TasteMapHybridPersonDTO?
     public let activityRating: Double?
     public let activityVisitedAt: String?
+    public let interaction: TasteMapHybridActivityInteractionDTO?
+    public let likedByViewer: Bool
+    public let likeCount: Int
+    public let commentCount: Int
     public let communityRating: TasteMapHybridRatingSummaryDTO
     public let reason: String
     public let similarityPercent: Int?
@@ -618,12 +623,71 @@ public struct TasteMapHybridActivityItemDTO: Codable, Sendable {
     public let user: TasteMapHybridPersonDTO
     public let restaurant: TasteMapHybridContentRestaurantDTO
     public let visitID: String?
+    public let interaction: TasteMapHybridActivityInteractionDTO?
     public let visitRating: Double?
     public let note: String?
     public let viewerState: String
     public let likedByViewer: Bool
     public let likeCount: Int
     public let commentCount: Int
+}
+
+public struct TasteMapHybridActivityInteractionDTO: Codable, Sendable {
+    public let activityID: String?
+    public let visitID: String
+    public let authorID: String
+    public let restaurantID: String
+}
+
+public struct TasteMapHybridInteractionRequest: Codable, Sendable {
+    public let target: TasteMapHybridActivityInteractionDTO
+}
+
+public struct TasteMapHybridLikeRequest: Codable, Sendable {
+    public let target: TasteMapHybridActivityInteractionDTO
+    public let liked: Bool
+}
+
+public struct TasteMapHybridCommunityEngagementDTO: Codable, Sendable {
+    public let likedByViewer: Bool
+    public let likeCount: Int
+    public let commentCount: Int
+}
+
+public struct TasteMapHybridCommunityCommentDTO: Codable, Sendable {
+    public let id: String
+    public let visitID: String
+    public let body: String
+    public let author: TasteMapHybridPersonDTO
+    public let createdAt: String
+}
+
+public struct TasteMapHybridCommunityCommentPageDTO: Codable, Sendable {
+    public let items: [TasteMapHybridCommunityCommentDTO]
+    public let nextCursor: String?
+}
+
+public struct TasteMapHybridAddCommentRequest: Codable, Sendable {
+    public let target: TasteMapHybridActivityInteractionDTO
+    public let body: String
+}
+
+public struct TasteMapHybridCommunityCommentMutationDTO: Codable, Sendable {
+    public let likedByViewer: Bool
+    public let likeCount: Int
+    public let commentCount: Int
+    public let comment: TasteMapHybridCommunityCommentDTO
+}
+
+public struct TasteMapHybridRestaurantViewerStateRequest: Codable, Sendable {
+    public let restaurantID: String
+    public let wanted: Bool
+}
+
+public struct TasteMapHybridRestaurantViewerStateMutationDTO: Codable, Sendable {
+    public let restaurantID: String
+    public let viewerState: String
+    public let updatedAt: String
 }
 
 public struct TasteMapHybridListRestaurantDTO: Codable, Sendable {
@@ -763,6 +827,10 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case mapViewport = "map.viewport"
     case mapSurfaceUpdate = "map.surface.update"
     case contentSnapshot = "content.snapshot"
+    case communitySetLike = "community.setLike"
+    case communityComments = "community.comments"
+    case communityAddComment = "community.addComment"
+    case restaurantSetWantToGo = "restaurant.setWantToGo"
     case visitContract = "visit.contract"
     case visitSave = "visit.save"
     case visitDelete = "visit.delete"

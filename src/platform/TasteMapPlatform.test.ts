@@ -20,6 +20,8 @@ import {
 const capabilities: TasteMapCapabilityRegistry = {
   appleSignIn: false, logout: false, profileRead: true, restaurantRead: true, restaurantAcquisition: true, mapBrowse: true,
   contentRead: true,
+  communityInteraction: true,
+  restaurantViewerState: true,
   visitContract: true, sync: false, haptics: true, share: false,
   location: false, photoPicker: false, premium: false, permissions: false, nativeNavigation: false,
   backup: false, accountDelete: false,
@@ -261,6 +263,19 @@ describe('TasteMapNativeAdapter', () => {
         result = { restaurantID: payload.restaurantID, visitID: payload.visitID ?? 'visit-created-1', updatedAt: '2026-09-03T00:00:00.000Z' }
       } else if (request.method === 'visit.delete') {
         result = { restaurantID: fixture.restaurants[0].id, visitID: (request.payload as { visitID: string }).visitID, updatedAt: '2026-09-03T00:00:00.000Z' }
+      } else if (request.method === 'community.setLike') {
+        result = { likedByViewer: (request.payload as { liked: boolean }).liked, likeCount: 13, commentCount: 2 }
+      } else if (request.method === 'community.comments') {
+        result = { items: [], nextCursor: null }
+      } else if (request.method === 'community.addComment') {
+        const payload = request.payload as { target: { visitID: string }; body: string }
+        result = {
+          likedByViewer: true, likeCount: 13, commentCount: 3,
+          comment: { id: 'comment-1', visitID: payload.target.visitID, body: payload.body, author: { id: 'viewer', name: '我', city: '杭州', avatarPhotoID: null, avatarPresetID: 'otter', isFollowing: false }, createdAt: '2026-09-03T00:00:00.000Z' },
+        }
+      } else if (request.method === 'restaurant.setWantToGo') {
+        const payload = request.payload as { restaurantID: string; wanted: boolean }
+        result = { restaurantID: payload.restaurantID, viewerState: payload.wanted ? 'want_to_go' : 'none', updatedAt: '2026-09-03T00:00:00.000Z' }
       } else if (request.method === 'photo.pick' || request.method === 'photo.capture') {
         result = { photos: [{
           photoID: 'pending-photo-1',
@@ -416,6 +431,26 @@ describe('TasteMapNativeAdapter', () => {
       }),
     }))
     expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|bearer/i)
+  })
+
+  it('routes Activity identity and viewer-state mutations through dedicated typed methods', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    const interaction = {
+      activityID: 'activity-1', visitID: 'visit-1', authorID: 'author-1', restaurantID: 'restaurant-1',
+    }
+    expect(await adapter.community.setLike(interaction, true)).toEqual({ likedByViewer: true, likeCount: 13, commentCount: 2 })
+    expect(await adapter.community.comments(interaction)).toEqual({ items: [], nextCursor: null })
+    expect((await adapter.community.addComment(interaction, '真不错')).comment).toMatchObject({ visitID: 'visit-1', body: '真不错' })
+    expect((await adapter.restaurant.setWantToGo('restaurant-1', true)).viewerState).toBe('want_to_go')
+    const requests = invoke.mock.calls.map((call) => call[0].request)
+    expect(requests).toEqual(expect.arrayContaining([
+      expect.objectContaining({ method: 'community.setLike', payload: { target: interaction, liked: true } }),
+      expect.objectContaining({ method: 'community.comments', payload: { target: interaction } }),
+      expect.objectContaining({ method: 'community.addComment', payload: { target: interaction, body: '真不错' } }),
+      expect.objectContaining({ method: 'restaurant.setWantToGo', payload: { restaurantID: 'restaurant-1', wanted: true } }),
+    ]))
+    expect(JSON.stringify(requests)).not.toMatch(/ownerUserID|accessToken|refreshToken|authorization|bearer/i)
   })
 
   it('uses opaque Native photo descriptors without paths or image bytes', async () => {

@@ -19,6 +19,10 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'map.viewport',
   'map.surface.update',
   'content.snapshot',
+  'community.setLike',
+  'community.comments',
+  'community.addComment',
+  'restaurant.setWantToGo',
   'visit.contract',
   'visit.save',
   'visit.delete',
@@ -57,6 +61,8 @@ export type TasteMapCapability =
   | 'restaurantAcquisition'
   | 'mapBrowse'
   | 'contentRead'
+  | 'communityInteraction'
+  | 'restaurantViewerState'
   | 'visitContract'
   | 'sync'
   | 'haptics'
@@ -373,6 +379,10 @@ export interface TasteMapHybridDiscoveryItemDTO {
   sourceUser: TasteMapHybridPersonDTO | null
   activityRating: number | null
   activityVisitedAt: string | null
+  interaction: TasteMapHybridActivityInteractionDTO | null
+  likedByViewer: boolean
+  likeCount: number
+  commentCount: number
   communityRating: {
     valueOutOfFive: number | null
     sampleCount: number
@@ -392,12 +402,51 @@ export interface TasteMapHybridActivityItemDTO {
   user: TasteMapHybridPersonDTO
   restaurant: TasteMapHybridContentRestaurantDTO
   visitID: string | null
+  interaction: TasteMapHybridActivityInteractionDTO | null
   visitRating: number | null
   note: string | null
   viewerState: 'none' | 'want_to_go' | 'visited'
   likedByViewer: boolean
   likeCount: number
   commentCount: number
+}
+
+/** Explicit identity chain for an interaction. A recommendation without a
+ * concrete Visit never receives a fabricated social target. */
+export interface TasteMapHybridActivityInteractionDTO {
+  activityID: string | null
+  visitID: string
+  authorID: string
+  restaurantID: string
+}
+
+export interface TasteMapCommunityEngagementDTO {
+  likedByViewer: boolean
+  likeCount: number
+  commentCount: number
+}
+
+export interface TasteMapCommunityCommentDTO {
+  id: string
+  visitID: string
+  body: string
+  author: TasteMapHybridPersonDTO
+  createdAt: string
+}
+
+export interface TasteMapCommunityCommentPageDTO {
+  items: TasteMapCommunityCommentDTO[]
+  nextCursor: string | null
+}
+
+export interface TasteMapCommunityCommentMutationDTO extends TasteMapCommunityEngagementDTO {
+  comment: TasteMapCommunityCommentDTO
+}
+
+export interface TasteMapRestaurantViewerStateMutationDTO {
+  restaurantID: string
+  viewerState: 'none' | 'want_to_go' | 'visited'
+  updatedAt: string
 }
 
 export interface TasteMapHybridListDTO {
@@ -598,12 +647,13 @@ export interface TasteMapSharePayload {
   imageDataURL?: string
 }
 
+/** Native-only capabilities. Hybrid pages are intentionally impossible to
+ * pass to openNative at the TypeScript boundary. */
 export interface TasteMapNativeRouteRequest {
   route:
-    | 'map' | 'discovery' | 'add' | 'visit' | 'visitEdit' | 'lists' | 'roulette' | 'analytics' | 'premium' | 'settings'
     | 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative'
     | 'dataBackup' | 'permissions' | 'storage' | 'accountDelete'
-    | 'profileEdit' | 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo'
+    | 'profileEdit' | 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList'
   identifier?: string
 }
 
@@ -668,6 +718,7 @@ export interface TasteMapPlatform {
   restaurant: {
     get(id: string): Promise<TasteMapRestaurantDetailViewModel>
     list(request?: TasteMapRestaurantListRequest): Promise<TasteMapRestaurantDetailViewModel[]>
+    setWantToGo(restaurantID: string, wanted: boolean): Promise<TasteMapRestaurantViewerStateMutationDTO>
   }
   acquisition: {
     search(query: string, city: string): Promise<TasteMapAcquisitionResultsDTO>
@@ -681,6 +732,11 @@ export interface TasteMapPlatform {
     updateNativeSurface(request: TasteMapNativeMapSurfaceUpdateRequest): Promise<TasteMapNativeMapSurfaceUpdateResponse>
   }
   content: { snapshot(): Promise<TasteMapHybridContentSnapshotDTO> }
+  community: {
+    setLike(target: TasteMapHybridActivityInteractionDTO, liked: boolean): Promise<TasteMapCommunityEngagementDTO>
+    comments(target: TasteMapHybridActivityInteractionDTO): Promise<TasteMapCommunityCommentPageDTO>
+    addComment(target: TasteMapHybridActivityInteractionDTO, body: string): Promise<TasteMapCommunityCommentMutationDTO>
+  }
   visit: {
     contract(): Promise<{ version: 1; writeUIReady: true }>
     save(request: TasteMapVisitWriteRequest): Promise<TasteMapVisitMutationResultDTO>

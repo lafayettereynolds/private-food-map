@@ -126,6 +126,7 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
     isFollowing: index % 2 === 0,
   }))
   const discovery: TasteMapHybridDiscoveryItemDTO[] = profile.restaurants.slice(0, 12).map((restaurant, index) => {
+    const sourceUser = sourceUsers[index]
     return {
       id: `hybrid-discovery-${index}`,
       mode: 'for_you',
@@ -141,6 +142,15 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
       sourceUser: null,
       activityRating: null,
       activityVisitedAt: null,
+      interaction: {
+        activityID: null,
+        visitID: `demo-visit-${index}`,
+        authorID: sourceUser.id,
+        restaurantID: restaurant.id,
+      },
+      likedByViewer: index === 1,
+      likeCount: 12 + index * 5,
+      commentCount: 2 + index,
       communityRating: {
         valueOutOfFive: restaurant.averageRating == null ? null : Math.max(0, restaurant.averageRating - 0.05),
         sampleCount: restaurant.averageRating == null ? 0 : 10 + index,
@@ -196,6 +206,12 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
         : categoryDescriptor(profile.restaurants[index]),
     },
     visitID: index % 5 === 4 ? null : `demo-visit-${index}`,
+    interaction: index % 5 === 4 ? null : {
+      activityID: `hybrid-activity-${index}`,
+      visitID: `demo-visit-${index}`,
+      authorID: sourceUsers[index].id,
+      restaurantID: item.restaurant.id,
+    },
     visitRating: index % 5 === 4 ? null : profile.restaurants[index]?.averageRating ?? null,
     note: index % 5 === 4 ? null : ['值得专程来吃，服务也很细致。', '今天最惊喜的是招牌菜。', '和朋友一起吃很舒服。', '会为了这道菜再来一次。'][index % 4],
     viewerState: item.viewerState,

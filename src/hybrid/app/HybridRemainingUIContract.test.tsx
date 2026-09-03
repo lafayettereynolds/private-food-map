@@ -34,7 +34,7 @@ const image = profile.restaurantImages[fixture.restaurants[0].id]
 const content: TasteMapHybridContentSnapshotDTO = {
   generatedAt: '2026-09-02T00:00:00Z',
   discovery: {
-    forYou: [{ id: 'for-you', mode: 'for_you', restaurant: { ...fixture.restaurants[0], referencePrice: 229, image }, viewerState: 'visited', sourceUser: null, activityRating: null, activityVisitedAt: null, communityRating: { valueOutOfFive: 4.45, sampleCount: 10 }, reason: '与你常吃的菜系接近', similarityPercent: 96, sharedRestaurantCount: 3, uniqueVisitorCount: null, wantToGoCount: null, rank: 1 }],
+    forYou: [{ id: 'for-you', mode: 'for_you', restaurant: { ...fixture.restaurants[0], referencePrice: 229, image }, viewerState: 'visited', sourceUser: { id: 'source-user', name: '林夏', city: '杭州', avatarPhotoID: null, avatarPresetID: 'otter', isFollowing: true }, activityRating: 4.5, activityVisitedAt: '2026-08-24T12:00:00Z', interaction: { activityID: null, visitID: 'visit-source', authorID: 'source-user', restaurantID: fixture.restaurants[0].id }, likedByViewer: false, likeCount: 8, commentCount: 2, communityRating: { valueOutOfFive: 4.45, sampleCount: 10 }, reason: '与你常吃的菜系接近', similarityPercent: 96, sharedRestaurantCount: 3, uniqueVisitorCount: null, wantToGoCount: null, rank: 1 }],
     similarTaste: [],
     trending: [],
   },
@@ -111,6 +111,17 @@ describe('Hybrid remaining product UI contract', () => {
     expect(renderToStaticMarkup(
       <HybridDiscoveryPage content={omittedOptionals} onOpenRestaurant={() => undefined} platform={platform} />,
     )).toContain('大家评分')
+  })
+
+  it('only exposes Like and Comment when the recommendation carries a concrete Visit identity', () => {
+    const systemRecommendation = structuredClone(content) as TasteMapHybridContentSnapshotDTO
+    systemRecommendation.discovery.forYou[0].interaction = null
+    const html = renderToStaticMarkup(
+      <HybridDiscoveryPage content={systemRecommendation} onOpenRestaurant={() => undefined} platform={platform} />,
+    )
+    expect(html).not.toContain('aria-label="点赞"')
+    expect(html).not.toContain('aria-label="评论"')
+    expect(html).toContain('aria-label="分享动态 ')
   })
 
   it('keeps the approved stacked Add Restaurant acquisition order without a second tab layer', () => {
