@@ -183,6 +183,12 @@ struct MapBrowsingParityTests {
 
     @Test("Marker selection and the formal Web want-to-go distance scale remain deterministic")
     func markerMetrics() {
+        #expect(RestaurantMapMarkerRingPolicy.isDashed(status: .wantToGo))
+        #expect(!RestaurantMapMarkerRingPolicy.isDashed(status: .visited))
+        #expect(!RestaurantMapMarkerRingPolicy.isDashed(status: .recommended))
+        #expect(RestaurantMapMarkerRingPolicy.wantedDashPattern == [3, 3])
+        #expect(RestaurantMapMarkerRingPolicy.opacity(status: .wantToGo) == 0.82)
+        #expect(RestaurantMapMarkerRingPolicy.opacity(status: .visited) == 1)
         #expect(RestaurantMapMarkerMetrics.diameter(
             status: .visited, distanceKilometers: nil, isSelected: false
         ) == 44)

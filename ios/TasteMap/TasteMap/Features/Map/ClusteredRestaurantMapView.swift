@@ -468,6 +468,7 @@ private final class TasteMapUserLocationAnnotationView: MKAnnotationView {
 @MainActor
 private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     private let visualContainer = UIView()
+    private let dashedRingLayer = CAShapeLayer()
     private let imageView = UIImageView()
     private let emojiLabel = UILabel()
     private var representedRestaurantID: UUID?
@@ -486,6 +487,8 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
 
         visualContainer.clipsToBounds = true
         visualContainer.backgroundColor = .secondarySystemBackground
+        dashedRingLayer.fillColor = UIColor.clear.cgColor
+        dashedRingLayer.lineCap = .butt
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         emojiLabel.adjustsFontSizeToFitWidth = true
@@ -494,6 +497,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         emojiLabel.textAlignment = .center
 
         addSubview(visualContainer)
+        visualContainer.layer.addSublayer(dashedRingLayer)
         visualContainer.addSubview(imageView)
         visualContainer.addSubview(emojiLabel)
         isAccessibilityElement = true
@@ -528,7 +532,16 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         centerOffset = CGPoint(x: 0, y: -(diameter / 2))
         visualContainer.frame = CGRect(x: 4, y: 2, width: diameter, height: diameter)
         visualContainer.layer.cornerRadius = diameter / 2
-        visualContainer.layer.borderWidth = isSelected ? 4 : 3
+        let borderWidth: CGFloat = isSelected ? 4 : 3
+        let usesDashedRing = RestaurantMapMarkerRingPolicy.isDashed(status: markerStatus)
+        visualContainer.layer.borderWidth = usesDashedRing ? 0 : borderWidth
+        dashedRingLayer.isHidden = !usesDashedRing
+        dashedRingLayer.frame = visualContainer.bounds
+        dashedRingLayer.path = UIBezierPath(
+            ovalIn: visualContainer.bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
+        ).cgPath
+        dashedRingLayer.lineWidth = borderWidth
+        dashedRingLayer.lineDashPattern = RestaurantMapMarkerRingPolicy.wantedDashPattern.map(NSNumber.init(value:))
         imageView.frame = visualContainer.bounds.insetBy(dx: 3, dy: 3)
         imageView.layer.cornerRadius = max(0, (diameter - 6) / 2)
         emojiLabel.frame = visualContainer.bounds.insetBy(dx: 6, dy: 6)
@@ -546,7 +559,10 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         )
         case .photo: fallbackEmoji = FoodCategoryEmojiResolver.resolve(name: marker.name)
         }
-        visualContainer.layer.borderColor = ratingColor(marker.averageRating).cgColor
+        let ringColor = ratingColor(marker.averageRating).cgColor
+        visualContainer.layer.borderColor = ringColor
+        dashedRingLayer.strokeColor = ringColor
+        visualContainer.alpha = RestaurantMapMarkerRingPolicy.opacity(status: marker.status)
         imageView.image = nil
         showFallback()
         accessibilityIdentifier = "restaurant-map-marker-\(marker.id.uuidString)"

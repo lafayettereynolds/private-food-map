@@ -132,13 +132,15 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(nativeMap).toContain('RestaurantMapMarkerVisual.emoji')
   })
 
-  it('keeps Restaurant score rings clean and independent from the active scope status', () => {
+  it('restores the historical dashed wanted ring in Browser and Native MapKit', () => {
     const browserMap = source('../../src/components/MapView.tsx')
     const browserCSS = source('../../src/styles/global.css')
     const nativeMap = source('../../ios/TasteMap/TasteMap/Features/Map/ClusteredRestaurantMapView.swift')
     expect(browserMap).toContain("marker.style.setProperty('--marker-color', scoreColor(restaurant.scoreOutOfTen))")
-    expect(browserMap).not.toContain('is-wanted')
-    expect(browserCSS).not.toContain('.private-image-marker.is-wanted')
+    expect(browserMap).toContain("restaurant.status === 'wantToGo' ? ' is-wanted' : ''")
+    expect(browserCSS).toMatch(/\.private-image-marker\.is-wanted \{[^}]*border-style:\s*dashed;[^}]*opacity:\s*\.82;/)
+    expect(nativeMap).toContain('RestaurantMapMarkerRingPolicy.isDashed(status: markerStatus)')
+    expect(nativeMap).toContain('dashedRingLayer.lineDashPattern')
     expect(nativeMap).toContain('RestaurantScoreColorPolicy.color(forFivePointRating: rating)')
   })
 })

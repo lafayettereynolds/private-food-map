@@ -294,7 +294,7 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, curre
   const scoreText = restaurant.scoreOutOfTen !== null ? `${restaurant.scoreOutOfTen.toFixed(1)} 分` : '想去'
   const marker = document.createElement('button')
   marker.type = 'button'
-  marker.className = 'private-image-marker'
+  marker.className = `private-image-marker${restaurant.status === 'wantToGo' ? ' is-wanted' : ''}`
   marker.style.setProperty('--marker-color', scoreColor(restaurant.scoreOutOfTen))
   const distanceKilometers = currentCoordinates ? distanceBetweenCoordinates(currentCoordinates, restaurant) : null
   if (restaurant.status === 'wantToGo' && distanceKilometers !== null) {
@@ -454,7 +454,7 @@ function OfflineRestaurantMap({ restaurants, selectedRestaurant, currentUser, cu
       const selected = restaurant.id === selectedRestaurant?.id
       return <button
         aria-label={`${restaurant.name}，${restaurant.scoreOutOfTen?.toFixed(1) ?? '尚未评分'}，去过 ${restaurant.visitCount} 次`}
-        className={`private-image-marker tm-offline-map__marker${selected ? ' is-selected' : ''}`}
+        className={`private-image-marker tm-offline-map__marker${selected ? ' is-selected' : ''}${restaurant.status === 'wantToGo' ? ' is-wanted' : ''}`}
         key={restaurant.id}
         onClick={(event) => { event.stopPropagation(); onSelect(restaurant) }}
         style={{ '--marker-color': scoreColor(restaurant.scoreOutOfTen), left: `${point.x}%`, top: `${point.y}%`, zIndex: markerLayerPriority(restaurant, selected) } as CSSProperties}

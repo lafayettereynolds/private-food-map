@@ -3714,6 +3714,10 @@ final class TasteMapUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(wantedScope.waitForExistence(timeout: 8))
         wantedScope.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "青岚寿司 6", "想吃")
+        ).firstMatch.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Wanted Restaurants Dashed Markers", of: app)
 
         listSwitch.tap()
         let mapSwitch = webView.buttons["切换到我的地图"]

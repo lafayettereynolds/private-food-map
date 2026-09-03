@@ -15,6 +15,22 @@ enum RestaurantMapMarkerStatus: String, Equatable {
     }
 }
 
+/// Restores the established Web distinction for saved-but-unvisited places:
+/// wanted Restaurants use a quiet dashed ring while visited/recommended
+/// Restaurants keep the score-colored solid ring.
+enum RestaurantMapMarkerRingPolicy {
+    static let wantedOpacity = 0.82
+    static let wantedDashPattern = [3.0, 3.0]
+
+    static func isDashed(status: RestaurantMapMarkerStatus) -> Bool {
+        status == .wantToGo
+    }
+
+    static func opacity(status: RestaurantMapMarkerStatus) -> Double {
+        isDashed(status: status) ? wantedOpacity : 1
+    }
+}
+
 enum RestaurantMapMarkerVisual: Equatable {
     case photo(UUID)
     case category(FoodCategoryVisualID)
