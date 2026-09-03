@@ -8,6 +8,7 @@
 .tm-my-map__scopes button { position: relative; border: 0; gap: 6px; color: #71808b; background: transparent; font-size: 12px; font-weight: 680; }
 .tm-my-map__scopes .tm-primary-tab-bar__icon,
 .tm-my-map__scopes .tm-primary-tab-bar__icon svg { width: 16px; height: 16px; }
+.tm-my-map__scopes .tm-primary-tab-bar__count { min-width: 19px; height: 19px; padding-inline: 5px; }
 .tm-my-map__scopes button.is-active { color: #164f79; font-weight: 800; }
 .tm-my-map__scopes button.is-active::after { content: ''; position: absolute; left: 28%; right: 28%; bottom: -1px; height: 2px; border-radius: 999px; background: #2c6d9d; }
 .tm-map-filter-bar { min-width: 0; display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }

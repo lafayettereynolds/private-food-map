@@ -280,12 +280,19 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
     struct Item: Identifiable {
         let option: Option
         let title: String
+        var count: Int?
         var accessibilityIdentifier: String?
         var id: String { String(describing: option) }
 
-        init(_ option: Option, title: String, accessibilityIdentifier: String? = nil) {
+        init(
+            _ option: Option,
+            title: String,
+            count: Int? = nil,
+            accessibilityIdentifier: String? = nil
+        ) {
             self.option = option
             self.title = title
+            self.count = count
             self.accessibilityIdentifier = accessibilityIdentifier
         }
     }
@@ -318,20 +325,41 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
                     selection = item.option
                 } label: {
                     VStack(spacing: 7) {
-                        Text(item.title)
-                            .font(
-                                selection == item.option
-                                    ? TasteMapDesignTokens.Typography.primaryTabSelected
-                                    : TasteMapDesignTokens.Typography.primaryTab
-                            )
-                            .foregroundStyle(
-                                selection == item.option
-                                    ? TasteMapCoreTheme.textPrimary
-                                    : TasteMapCoreTheme.textSecondary
-                            )
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.82)
-                            .multilineTextAlignment(.center)
+                        HStack(spacing: 5) {
+                            Text(item.title)
+                                .font(
+                                    selection == item.option
+                                        ? TasteMapDesignTokens.Typography.primaryTabSelected
+                                        : TasteMapDesignTokens.Typography.primaryTab
+                                )
+                                .foregroundStyle(
+                                    selection == item.option
+                                        ? TasteMapCoreTheme.textPrimary
+                                        : TasteMapCoreTheme.textSecondary
+                                )
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.82)
+                                .multilineTextAlignment(.center)
+                            if let count = item.count {
+                                Text(count.formatted(.number.grouping(.automatic)))
+                                    .font(.caption2.weight(.bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(
+                                        selection == item.option
+                                            ? Color.white
+                                            : TasteMapCoreTheme.brandDeep
+                                    )
+                                    .padding(.horizontal, 5)
+                                    .frame(minWidth: 18, minHeight: 18)
+                                    .background(
+                                        selection == item.option
+                                            ? TasteMapCoreTheme.brand
+                                            : TasteMapCoreTheme.brandSoft,
+                                        in: Capsule()
+                                    )
+                                    .accessibilityHidden(true)
+                            }
+                        }
                         Capsule()
                             .fill(selection == item.option ? TasteMapCoreTheme.brand : .clear)
                             .frame(height: TasteMapDesignTokens.Control.primaryTabIndicatorHeight)
@@ -350,7 +378,9 @@ struct TasteMapPrimaryTabBar<Option: Hashable>: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(item.title)
+                .accessibilityLabel(
+                    item.count.map { "\(item.title)，\($0) 家餐厅" } ?? item.title
+                )
                 .accessibilityValue(selection == item.option ? "已选择" : "未选择")
                 .accessibilityAddTraits(selection == item.option ? .isSelected : [])
                 .accessibilityIdentifier(

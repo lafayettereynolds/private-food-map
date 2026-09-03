@@ -99,6 +99,47 @@ struct HybridPhase2AIntegrationTests {
         #expect(!text.contains("file://"))
     }
 
+    @Test func mapScopeCountsRemainOwnerScopedUniqueAndStableAcrossViewportFilters() throws {
+        let owner = "tm_hybrid_scope_counts"
+        let foreignOwner = "tm_hybrid_scope_counts_foreign"
+        let container = try TasteMapPersistence.makeContainer(
+            inMemory: true,
+            configurationName: "HybridMapScopeCounts"
+        )
+        let context = ModelContext(container)
+        context.insert(Restaurant(ownerUserID: owner, name: "去过一", address: "A", latitude: 30.2, longitude: 120.1, city: "杭州", status: .visited))
+        context.insert(Restaurant(ownerUserID: owner, name: "去过二", address: "B", latitude: 30.3, longitude: 120.2, city: "上海", status: .visited))
+        context.insert(Restaurant(ownerUserID: owner, name: "想吃一", address: "C", latitude: 30.4, longitude: 120.3, city: "杭州", status: .wantToGo))
+        context.insert(Restaurant(ownerUserID: foreignOwner, name: "其他账户", address: "D", latitude: 30.5, longitude: 120.4, city: "杭州", status: .visited))
+        try context.save()
+
+        let response = try TasteMapHybridBridgeService(
+            container: container,
+            ownerUserID: owner
+        ).mapViewport(request: .init(
+            requestID: "scope-counts-request",
+            scope: .visited,
+            bounds: .init(north: 30.25, south: 30.15, east: 120.15, west: 120.05),
+            filters: .init(
+                city: "杭州",
+                minimumScoreOutOfTen: nil,
+                maximumSpend: nil,
+                minimumVisitCount: nil,
+                companion: nil,
+                cuisine: nil,
+                recommendationSource: nil
+            ),
+            sort: .recent,
+            search: "",
+            limit: 300,
+            currentLocation: nil
+        ))
+
+        #expect(response.items.count == 1)
+        #expect(response.totalCount == 1)
+        #expect(response.scopeCounts == .init(visited: 2, wantToGo: 1, recommended: 0))
+    }
+
     @Test func ownerVisibleCachedRestaurantUsesCanonicalDetailWithoutGrantingEditRights() throws {
         let owner = "tm_hybrid_public_detail"
         let container = try TasteMapPersistence.makeContainer(

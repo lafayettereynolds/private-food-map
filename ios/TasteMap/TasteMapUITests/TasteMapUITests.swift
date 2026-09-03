@@ -3354,7 +3354,12 @@ final class TasteMapUITests: XCTestCase {
             if restoredOption.exists { return restoredOption }
         }
         let nativeOption = app.segmentedControls.buttons[label]
-        return nativeOption.exists ? nativeOption : app.buttons[label]
+        if nativeOption.exists { return nativeOption }
+        let exactButton = app.buttons[label]
+        if exactButton.exists { return exactButton }
+        return app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "\(label)，")
+        ).firstMatch
     }
 
     @MainActor
@@ -3673,6 +3678,9 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(webView.waitForExistence(timeout: 20))
         let listSwitch = webView.buttons["切换到我的列表"]
         XCTAssertTrue(listSwitch.waitForExistence(timeout: 15))
+        XCTAssertTrue(webView.buttons["去过，90 家餐厅"].waitForExistence(timeout: 12))
+        XCTAssertTrue(webView.buttons["想吃，25 家餐厅"].waitForExistence(timeout: 12))
+        XCTAssertTrue(webView.buttons["推荐，18 家餐厅"].waitForExistence(timeout: 12))
 
         let wantedScope = webView.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@", "想吃")
@@ -3693,7 +3701,9 @@ final class TasteMapUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "青岚寿司 6")
         ).firstMatch.waitForExistence(timeout: 8))
 
-        let visitedScope = webView.buttons["去过"]
+        let visitedScope = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "去过")
+        ).firstMatch
         visitedScope.tap()
         let marker = app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import type {
   TasteMapImageDescriptor, TasteMapMapBrowseOptions, TasteMapMapBrowseRequest,
-  TasteMapMapFilters, TasteMapMapScope, TasteMapMapSort, TasteMapPlatform,
+  TasteMapMapFilters, TasteMapMapScope, TasteMapMapScopeCounts, TasteMapMapSort, TasteMapPlatform,
   TasteMapProfileDashboardViewModel, TasteMapNativeMapViewport,
 } from '../platform/TasteMapPlatform'
 import { projectBridgeRestaurant } from '../platform/TasteMapBridgeProjection'
@@ -65,15 +65,6 @@ interface MyMapBrowsePageProps {
 
 const emptyOptions: TasteMapMapBrowseOptions = { cities: [], companions: [], cuisines: [], recommendationSources: [] }
 const snapshotFreshnessMilliseconds = 30_000
-const mapScopeTabs: ReadonlyArray<TasteMapPrimaryTab<TasteMapMapScope>> = HYBRID_MAP_PRIMARY_SCOPES.map(([value, label]) => ({
-  value,
-  label,
-  icon: value === 'visited'
-    ? <TasteMapVisitedIcon />
-    : value === 'wantToGo'
-      ? <Bookmark />
-      : <Star />,
-}))
 
 export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, onAddRestaurant, MapSurface }: MyMapBrowsePageProps) {
   const [browseState, dispatch] = useReducer(mapBrowseReducer, initialMapBrowseState)
@@ -83,6 +74,12 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
   const [items, setItems] = useState<RestaurantSummary[]>([])
   const [images, setImages] = useState<Record<string, TasteMapImageDescriptor>>({})
   const [options, setOptions] = useState<TasteMapMapBrowseOptions>(emptyOptions)
+  const profileScopeCounts = useMemo<TasteMapMapScopeCounts>(() => ({
+    visited: profile.restaurants.filter((restaurant) => restaurant.status === 'visited').length,
+    wantToGo: profile.restaurants.filter((restaurant) => restaurant.status === 'wantToGo').length,
+    recommended: 0,
+  }), [profile.restaurants])
+  const [scopeCounts, setScopeCounts] = useState<TasteMapMapScopeCounts>(profileScopeCounts)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nativeMapError, setNativeMapError] = useState<string | null>(null)
@@ -110,6 +107,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       setItems(snapshot.items)
       setImages(snapshot.images)
       setOptions(snapshot.options)
+      setScopeCounts(snapshot.scopeCounts)
       setLoading(false)
       setError(null)
     }
@@ -151,7 +149,8 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
 
   useEffect(() => {
     snapshotCache.current.clear()
-  }, [dataVersion, profile.user.id])
+    setScopeCounts(profileScopeCounts)
+  }, [dataVersion, profile.user.id, profileScopeCounts])
 
   useEffect(() => {
     if (!active || !platform.runtime) return
@@ -221,6 +220,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
           items: projected.map((value) => value.restaurant),
           images: Object.fromEntries(projected.map((value) => [value.restaurant.id, value.image])),
           options: response.options,
+          scopeCounts: response.scopeCounts,
           capturedAt: Date.now(),
         }
         snapshotCache.current.set(snapshotKey, snapshot)
@@ -260,6 +260,16 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
   }, [items, platform])
 
   const selected = useMemo(() => items.find((item) => item.id === selectedRestaurantID), [items, selectedRestaurantID])
+  const mapScopeTabs = useMemo<ReadonlyArray<TasteMapPrimaryTab<TasteMapMapScope>>>(() => HYBRID_MAP_PRIMARY_SCOPES.map(([value, label]) => ({
+    value,
+    label,
+    count: scopeCounts[value],
+    icon: value === 'visited'
+      ? <TasteMapVisitedIcon />
+      : value === 'wantToGo'
+        ? <Bookmark />
+        : <Star />,
+  })), [scopeCounts])
   const activeFilterCount = Object.values(filters).filter((value) => value !== undefined && value !== '').length
   const openRestaurant = (restaurant: RestaurantSummary) => {
     dispatch({ type: 'selection', value: restaurant.id })

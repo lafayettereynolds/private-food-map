@@ -5,6 +5,7 @@ export interface TasteMapPrimaryTab<Value extends string> {
   value: Value
   label: string
   icon?: ReactNode
+  count?: number
 }
 
 export function TasteMapPrimaryTabBar<Value extends string>({
@@ -27,14 +28,14 @@ export function TasteMapPrimaryTabBar<Value extends string>({
     style={{ '--tm-tab-count': items.length } as CSSProperties}
   >
     {items.map((item) => <button
-      aria-label={item.label}
+      aria-label={item.count === undefined ? item.label : `${item.label}，${item.count} 家餐厅`}
       aria-selected={item.value === value}
       className={item.value === value ? 'is-active' : ''}
       key={item.value}
       onClick={() => onChange(item.value)}
       role="tab"
       type="button"
-    >{item.icon ? <span aria-hidden="true" className="tm-primary-tab-bar__icon">{item.icon}</span> : null}<span>{item.label}</span></button>)}
+    >{item.icon ? <span aria-hidden="true" className="tm-primary-tab-bar__icon">{item.icon}</span> : null}<span className="tm-primary-tab-bar__label">{item.label}</span>{item.count === undefined ? null : <span aria-hidden="true" className="tm-primary-tab-bar__count">{item.count.toLocaleString('zh-CN')}</span>}</button>)}
   </nav>
 }
 

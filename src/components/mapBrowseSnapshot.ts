@@ -3,6 +3,7 @@ import type {
   TasteMapMapBrowseOptions,
   TasteMapMapFilters,
   TasteMapMapScope,
+  TasteMapMapScopeCounts,
   TasteMapMapSort,
 } from '../platform/TasteMapPlatform'
 import type { Coordinates, RestaurantSummary } from '../types/domain'
@@ -14,6 +15,7 @@ export interface MapBrowsePresentationSnapshot {
   items: RestaurantSummary[]
   images: Record<string, TasteMapImageDescriptor>
   options: TasteMapMapBrowseOptions
+  scopeCounts: TasteMapMapScopeCounts
   capturedAt: number
 }
 

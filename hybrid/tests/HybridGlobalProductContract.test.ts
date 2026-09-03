@@ -121,8 +121,18 @@ describe('Hybrid global Product Contract', () => {
   it('locks exact Map scopes and forbids the superseded label and segmented Map/List row', () => {
     expect(HYBRID_MAP_PRIMARY_SCOPES.map((item) => item[1])).toEqual(['去过', '想吃', '推荐'])
     const map = source('../../src/components/MyMapBrowsePage.tsx')
+    const sharedTabs = source('../../src/components/TasteMapDiscoveryShared.tsx')
+    const nativeTabs = source('../../ios/TasteMap/TasteMap/Components/TasteMapCoreTheme.swift')
+    const nativeMap = source('../../ios/TasteMap/TasteMap/Features/Map/MapHomeView.swift')
     expect(map).not.toContain('适合你')
     expect(map).toContain('tm-my-map__title-switch')
+    expect(map).toContain('count: scopeCounts[value]')
+    expect(sharedTabs).toContain('tm-primary-tab-bar__count')
+    expect(sharedTabs).toContain('${item.label}，${item.count} 家餐厅')
+    expect(nativeTabs).toContain('item.count.map { "\\(item.title)，\\($0) 家餐厅" }')
+    expect(nativeMap).toContain('count: scopeCounts[.visited]')
+    expect(nativeMap).toContain('count: scopeCounts[.wantToGo]')
+    expect(nativeMap).toContain('count: scopeCounts[.forYou]')
     expect(map).not.toMatch(/地图\s*\/\s*列表|map-list-mode-picker|地图.*segmented|列表.*segmented/i)
   })
 

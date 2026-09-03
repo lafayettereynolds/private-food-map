@@ -279,10 +279,18 @@ export interface TasteMapMapBrowseOptions {
   recommendationSources: string[]
 }
 
+export type TasteMapMapScopeCounts = Record<TasteMapMapScope, number>
+
 export interface TasteMapMapBrowseResponse {
   requestID: string
   items: TasteMapRestaurantDTO[]
   totalCount: number
+  /**
+   * Owner-scoped unique Restaurant totals for every primary scope. Viewport,
+   * filters and search are deliberately excluded so the scope labels remain a
+   * stable description of the user's collection while browsing.
+   */
+  scopeCounts: TasteMapMapScopeCounts
   options: TasteMapMapBrowseOptions
 }
 

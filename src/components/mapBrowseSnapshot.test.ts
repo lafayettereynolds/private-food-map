@@ -13,7 +13,14 @@ const restaurants = fixture.restaurants as unknown as RestaurantSummary[]
 const options = { cities: ['杭州'], companions: [], cuisines: [], recommendationSources: [] }
 
 function snapshot(scope: 'visited' | 'wantToGo' | 'recommended'): MapBrowsePresentationSnapshot {
-  return { scope, items: restaurants, images: {}, options, capturedAt: Date.now() }
+  return {
+    scope,
+    items: restaurants,
+    images: {},
+    options,
+    scopeCounts: { visited: 3, wantToGo: 2, recommended: 1 },
+    capturedAt: Date.now(),
+  }
 }
 
 describe('MapBrowse snapshot and request performance contract', () => {

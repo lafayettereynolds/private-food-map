@@ -199,6 +199,7 @@ Templates define information architecture, section order, control and image plac
 - centered `我的地图` / `我的列表` plus the adjacent clickable view-switch icon as one group;
 - `去过 / 想吃 / 推荐` using the shared primary tab bar;
 - each scope uses one semantic line icon plus its text (`去过` = the canonical plain checkmark, `想吃` = bookmark, `推荐` = star); the three items share icon size, baseline, spacing, selected treatment, and a minimum 44-point hit target;
+- each scope also shows its owner-scoped unique Restaurant count as a compact adjacent badge. `去过 / 想吃` count Restaurants rather than Visits; `推荐` counts only the real recommendation projection. These scope totals stay stable during pan, zoom, search, and filtering so the tabs describe the user's overall collection instead of the current viewport;
 - scope selection feedback is committed immediately and never waits for data, images, a Native bridge response, or map work;
 - shared compact horizontal FilterBar;
 - Map or List content backed by the same query/filter/sort state;
@@ -300,7 +301,7 @@ All compact product filters use `TasteMapFilterBar`, `TasteMapFilterChip`, and `
 
 ### Primary Tabs
 
-My Map's three scopes and Discovery's five scopes use `TasteMapPrimaryTabBar`: equal distribution, the same typography, a two-point selected indicator, and a 44-point hit target. My Map supplies semantic icon-plus-text items for every scope—never one isolated icon, raw emoji, or a FilterChip/pill treatment. Accessibility exposes each control's text and selected state; the decorative glyph itself stays hidden from assistive technology.
+My Map's three scopes and Discovery's five scopes use `TasteMapPrimaryTabBar`: equal distribution, the same typography, a two-point selected indicator, and a 44-point hit target. My Map supplies semantic icon-plus-text items plus the stable Restaurant-count badge for every scope—never one isolated icon, raw emoji, or a FilterChip/pill treatment. Discovery may omit counts when they are not part of that tab's semantics. Accessibility exposes each control's text, exact Restaurant count when present, and selected state; decorative glyphs and the visually repeated count badge stay hidden from assistive technology.
 
 ### Activity and Discovery Cards
 
@@ -328,6 +329,7 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - `添加餐厅` appears exactly once as the Map-owned floating primary CTA and routes to the formal Add Restaurant flow.
 - Centered `我的地图` or `我的列表` title with the adjacent view-switch icon.
 - Primary scopes are `去过 / 想吃 / 推荐`.
+- Every primary scope visibly includes its stable total Restaurant count. Counts are current-owner scoped and count unique Restaurants, never Visits or only the currently visible map bounds; an unavailable real recommendation set is honestly `0`.
 - The `去过` scope/status glyph is always the canonical plain checkmark; do not regress it to footprints, tableware, map pins, bookmarks, or a circled-check variant.
 - No separate Map/List segmented row.
 - Map/List switching preserves scope, filters, sort, city, and search.
@@ -337,6 +339,7 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - Filters use the shared components.
 - Every Restaurant remains an independent marker at every zoom; no numeric or Food/Dining count clusters.
 - Do not place a checkmark or other scope-status badge beneath each Restaurant marker; `去过 / 想吃 / 推荐` belongs to the shared scope control, not repeated marker chrome.
+- Do not hide scope Restaurant totals or substitute current viewport Marker count, filtered-result count, or Visit count for them.
 - Markers may overlap naturally. Ordinary rendering does not force offset, spiderfy, collision dispersion, zoom separation, or full visibility.
 - Layering is deterministic: `selected → rating → visit count → stable Restaurant ID`.
 - Selected is always topmost; higher-rated Restaurants cover lower-rated Restaurants; visit count breaks equal-rating ties; stable ID is the final tie-break.

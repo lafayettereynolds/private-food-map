@@ -6,7 +6,10 @@
 .tm-primary-tab-bar button { position: relative; min-width: 0; min-height: 44px; padding: 0 3px; border: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; color: var(--color-text-secondary, #74838e); background: transparent; font-size: 12px; font-weight: 690; white-space: nowrap; }
 .tm-primary-tab-bar__icon { width: 15px; height: 15px; display: inline-grid; place-items: center; flex: 0 0 15px; }
 .tm-primary-tab-bar__icon svg { width: 15px; height: 15px; stroke-width: 1.8; }
+.tm-primary-tab-bar__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tm-primary-tab-bar__count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center; color: var(--color-primary-dark, #436278); background: #edf2f5; font-size: 9px; font-variant-numeric: tabular-nums; font-weight: 780; line-height: 1; }
 .tm-primary-tab-bar button.is-active, .tm-primary-tab-bar button[aria-selected="true"] { color: var(--color-primary-dark, #254d68); font-weight: 820; }
+.tm-primary-tab-bar button.is-active .tm-primary-tab-bar__count, .tm-primary-tab-bar button[aria-selected="true"] .tm-primary-tab-bar__count { color: #fff; background: var(--color-primary, #54799a); }
 .tm-primary-tab-bar button.is-active::after, .tm-primary-tab-bar button[aria-selected="true"]::after { content: ''; position: absolute; left: 20%; right: 20%; bottom: -1px; height: 2px; border-radius: 999px; background: var(--color-primary, #54799a); }
 .tm-discovery-page__filters { border-bottom: 1px solid var(--color-divider, #dfe6ea); background: var(--color-background, #f7f9fa); }
 .tm-shared-filter-bar { min-width: 0; padding: 4px 10px; display: flex; align-items: center; gap: 7px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
@@ -96,6 +99,7 @@
   .tm-discovery-page { color: #e6eef2; }
   .tm-discovery-page__header h1 { color: #e6eef2; }
   .tm-discovery-page__filters { border-color: #354650; background: #17242c; }
+  .tm-primary-tab-bar__count { color: #c8d6df; background: #2b3b45; }
   .tm-shared-filter-bar > button::before, .tm-shared-filter-bar > label::before { border-color: #3a4c57; background: #243640; }
   .tm-activity-card { color: #e6eef2; border-color: #3a4b56; background: #1d2b34; }
   .tm-activity-card__media { background: #253640; }

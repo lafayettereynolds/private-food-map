@@ -644,18 +644,22 @@ function projectBrowserMapViewport(
     cuisines: stableValues(all.flatMap((item) => item.tags)),
     recommendationSources: stableValues(profile.visits.map((visit) => visit.recommendationSourceText ?? '')),
   }
-  // Shipping Browser data never invents recommendations. The isolated Hybrid
-  // Debug fixture alone exposes a deterministic rich recommendation state for
-  // visual/performance QA.
-  if (request.scope === 'recommended' && !includeDebugRecommendations) return { requestID: request.requestID, items: [], totalCount: 0, options }
   const normalizedSearch = request.search.trim().toLocaleLowerCase()
-  const requestedStatus = request.scope === 'wantToGo' ? 'wantToGo' : 'visited'
-  const source = request.scope === 'recommended'
-    ? [...all].filter((item) => item.status === 'visited').sort((left, right) => (right.scoreOutOfTen ?? -1) - (left.scoreOutOfTen ?? -1) || left.id.localeCompare(right.id)).slice(0, 18)
-    : all
-  const matches = source.filter((item) => {
+  const sourceFor = (scope: TasteMapMapBrowseRequest['scope']) => {
+    // Shipping Browser data never invents recommendations. The isolated
+    // Hybrid Debug fixture alone exposes a deterministic rich recommendation
+    // state for visual/performance QA.
+    if (scope !== 'recommended') return all
+    if (!includeDebugRecommendations) return []
+    return [...all]
+      .filter((item) => item.status === 'visited')
+      .sort((left, right) => (right.scoreOutOfTen ?? -1) - (left.scoreOutOfTen ?? -1) || left.id.localeCompare(right.id))
+      .slice(0, 18)
+  }
+  const matchesScope = (scope: TasteMapMapBrowseRequest['scope'], includeBounds: boolean) => sourceFor(scope).filter((item) => {
+    const requestedStatus = scope === 'wantToGo' ? 'wantToGo' : 'visited'
     if (item.status !== requestedStatus) return false
-    if (request.bounds && !coordinateIsInBounds(item, request.bounds)) return false
+    if (includeBounds && request.bounds && !coordinateIsInBounds(item, request.bounds)) return false
     if (request.filters.city && item.city !== request.filters.city) return false
     if (request.filters.minimumScoreOutOfTen && (item.scoreOutOfTen ?? -1) < request.filters.minimumScoreOutOfTen) return false
     if (request.filters.maximumSpend && (item.averagePricePerPerson ?? item.pricePerPerson ?? Number.POSITIVE_INFINITY) > request.filters.maximumSpend) return false
@@ -665,13 +669,23 @@ function projectBrowserMapViewport(
     if (request.filters.recommendationSource && !item.visits.some((visit) => visit.recommendationSourceText === request.filters.recommendationSource)) return false
     return !normalizedSearch || [item.name, item.city, item.address, ...item.tags].join('\n').toLocaleLowerCase().includes(normalizedSearch)
   })
+  const scopeTotal = (scope: TasteMapMapBrowseRequest['scope']) => {
+    const requestedStatus = scope === 'wantToGo' ? 'wantToGo' : 'visited'
+    return sourceFor(scope).filter((item) => item.status === requestedStatus).length
+  }
+  const scopeCounts = {
+    visited: scopeTotal('visited'),
+    wantToGo: scopeTotal('wantToGo'),
+    recommended: scopeTotal('recommended'),
+  }
+  const matches = matchesScope(request.scope, true)
   const sorted = [...matches].sort((left, right) => compareMapItems(left, right, request))
   const totalCount = sorted.length
   const items = sorted.slice(0, Math.max(0, Math.min(request.limit ?? 300, 500))).map((restaurant) => {
     const image = profile.restaurantImages[restaurant.id] ?? browserImageDescriptor(restaurant)
     return bridgeDTOFromBrowser(restaurant, image)
   })
-  return { requestID: request.requestID, items, totalCount, options }
+  return { requestID: request.requestID, items, totalCount, scopeCounts, options }
 }
 
 function bridgeDTOFromBrowser(restaurant: RestaurantSummary, image: TasteMapImageDescriptor) {

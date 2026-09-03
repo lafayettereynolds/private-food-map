@@ -120,7 +120,12 @@ struct MapHomeView: View {
                 controls(
                     resultCount: displayedItems.count,
                     activeFilterCount: filterResult.activeFilterCount,
-                    options: snapshot.filterOptions
+                    options: snapshot.filterOptions,
+                    scopeCounts: [
+                        .visited: snapshot.visited.count,
+                        .wantToGo: snapshot.wantToGo.count,
+                        .forYou: 0,
+                    ]
                 )
             }
             .background(TasteMapCoreTheme.page)
@@ -218,7 +223,8 @@ struct MapHomeView: View {
     private func controls(
         resultCount: Int,
         activeFilterCount: Int,
-        options: PersonalRestaurantFilterOptions
+        options: PersonalRestaurantFilterOptions,
+        scopeCounts: [RestaurantBrowseSegment: Int]
     ) -> some View {
         VStack(spacing: 5) {
             MapBrowseTitleSwitch(browseMode: $browseMode)
@@ -227,9 +233,9 @@ struct MapHomeView: View {
             TasteMapPrimaryTabBar(
                 selection: $selectedSegment,
                 items: [
-                    .init(.visited, title: "去过", accessibilityIdentifier: "map-scope-visited"),
-                    .init(.wantToGo, title: "想吃", accessibilityIdentifier: "map-scope-wantToGo"),
-                    .init(.forYou, title: "推荐", accessibilityIdentifier: "map-scope-forYou"),
+                    .init(.visited, title: "去过", count: scopeCounts[.visited], accessibilityIdentifier: "map-scope-visited"),
+                    .init(.wantToGo, title: "想吃", count: scopeCounts[.wantToGo], accessibilityIdentifier: "map-scope-wantToGo"),
+                    .init(.forYou, title: "推荐", count: scopeCounts[.forYou], accessibilityIdentifier: "map-scope-forYou"),
                 ],
                 accessibilityIdentifier: "map-content-segment"
             )

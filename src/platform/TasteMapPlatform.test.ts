@@ -139,15 +139,18 @@ describe('TasteMapBrowserAdapter', () => {
     expect(visited.items.every((item) => item.status === 'visited')).toBe(true)
     expect(visited.items.every((item) => item.id && Number.isFinite(item.latitude) && Number.isFinite(item.longitude))).toBe(true)
     expect(visited.items.every((item) => !('resourceURL' in item.image) || !item.image.resourceURL.startsWith('file://'))).toBe(true)
+    expect(visited.scopeCounts).toEqual({ visited: 3, wantToGo: 2, recommended: 0 })
 
     const filtered = await adapter.map.viewport({
       ...request, requestID: 'viewport-2', filters: { city: visited.items[0].city, minimumVisitCount: 1 },
     })
     expect(filtered.items.every((item) => item.city === visited.items[0].city && item.visitCount >= 1)).toBe(true)
+    expect(filtered.scopeCounts).toEqual(visited.scopeCounts)
 
     const recommended = await adapter.map.viewport({ ...request, requestID: 'viewport-3', scope: 'recommended' })
     expect(recommended.items).toEqual([])
     expect(recommended.totalCount).toBe(0)
+    expect(recommended.scopeCounts).toEqual({ visited: 3, wantToGo: 2, recommended: 0 })
   })
 
   it('reuses the Browser canonical Restaurant image plan for an existing acquisition match', async () => {
@@ -226,6 +229,7 @@ describe('TasteMapNativeAdapter', () => {
           requestID: payload.requestID,
           items: bridgeProfile.restaurants.filter((item) => item.status === (payload.scope === 'visited' ? 'visited' : 'wantToGo')),
           totalCount: bridgeProfile.restaurants.length,
+          scopeCounts: { visited: 3, wantToGo: 2, recommended: 0 },
           options: { cities: ['杭州'], companions: [], cuisines: [], recommendationSources: [] },
         }
       }

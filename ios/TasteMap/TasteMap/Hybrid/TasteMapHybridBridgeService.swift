@@ -241,50 +241,64 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             cuisines: stableValues(all.flatMap(\.tags)),
             recommendationSources: stableValues(all.flatMap { $0.visits.map(\.recommendationSourceText) })
         )
-        var source = all
-        if request.scope == .recommended {
-#if DEBUG
-            // The isolated Hybrid Visual QA owner carries deterministic
-            // recommendation fixtures so performance is measured against a
-            // real content state. Shipping owners still use Discovery as the
-            // recommendation authority and never synthesize personal results.
-            if ownerUserID == "tm_hybrid_debug" {
-                source = Array(all.filter { $0.status == "visited" }.sorted {
-                    if $0.scoreOutOfTen != $1.scoreOutOfTen {
-                        return ($0.scoreOutOfTen ?? -1) > ($1.scoreOutOfTen ?? -1)
-                    }
-                    return $0.id < $1.id
-                }.prefix(18))
-            } else {
-                source = []
-            }
-#else
-            source = []
-#endif
-        }
-        let desiredStatus = request.scope == .wantToGo ? "wantToGo" : "visited"
         let normalizedSearch = request.search.trimmingCharacters(in: .whitespacesAndNewlines).folding(
             options: [.caseInsensitive, .diacriticInsensitive],
             locale: .current
         )
-        var values = source.filter { item in
-            guard item.status == desiredStatus else { return false }
-            if let bounds = request.bounds, !Self.contains(item, in: bounds) { return false }
-            if let city = nonempty(request.filters.city), item.city != city { return false }
-            if let score = request.filters.minimumScoreOutOfTen, (item.scoreOutOfTen ?? -1) < score { return false }
-            if let spend = request.filters.maximumSpend, (item.referencePrice ?? .greatestFiniteMagnitude) > spend { return false }
-            if let visits = request.filters.minimumVisitCount, item.visitCount < visits { return false }
-            if let cuisine = nonempty(request.filters.cuisine), !item.tags.contains(cuisine) { return false }
-            if let companion = nonempty(request.filters.companion),
-               !item.visits.contains(where: { $0.companions.contains(companion) }) { return false }
-            if let source = nonempty(request.filters.recommendationSource),
-               !item.visits.contains(where: { $0.recommendationSourceText == source }) { return false }
-            guard !normalizedSearch.isEmpty else { return true }
-            return ([item.name, item.city, item.address] + item.tags)
-                .joined(separator: "\n")
-                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                .contains(normalizedSearch)
+        let recommendationSource: [TasteMapHybridRestaurantDTO]
+#if DEBUG
+        // The isolated Hybrid Visual QA owner carries deterministic
+        // recommendation fixtures so performance is measured against a real
+        // content state. Shipping owners never synthesize personal results.
+        if ownerUserID == TasteMapHybridDebugFixture.ownerUserID || TasteMapUITestFixtures.usesVisualQA {
+            recommendationSource = Array(all.filter { $0.status == "visited" }.sorted {
+                if $0.scoreOutOfTen != $1.scoreOutOfTen {
+                    return ($0.scoreOutOfTen ?? -1) > ($1.scoreOutOfTen ?? -1)
+                }
+                return $0.id < $1.id
+            }.prefix(18))
+        } else {
+            recommendationSource = []
         }
+#else
+        recommendationSource = []
+#endif
+        func filteredValues(
+            for scope: TasteMapHybridMapScope,
+            includeBounds: Bool
+        ) -> [TasteMapHybridRestaurantDTO] {
+            let source = scope == .recommended ? recommendationSource : all
+            let desiredStatus = scope == .wantToGo ? "wantToGo" : "visited"
+            return source.filter { item in
+                guard item.status == desiredStatus else { return false }
+                if includeBounds, let bounds = request.bounds, !Self.contains(item, in: bounds) { return false }
+                if let city = nonempty(request.filters.city), item.city != city { return false }
+                if let score = request.filters.minimumScoreOutOfTen, (item.scoreOutOfTen ?? -1) < score { return false }
+                if let spend = request.filters.maximumSpend, (item.referencePrice ?? .greatestFiniteMagnitude) > spend { return false }
+                if let visits = request.filters.minimumVisitCount, item.visitCount < visits { return false }
+                if let cuisine = nonempty(request.filters.cuisine), !item.tags.contains(cuisine) { return false }
+                if let companion = nonempty(request.filters.companion),
+                   !item.visits.contains(where: { $0.companions.contains(companion) }) { return false }
+                if let source = nonempty(request.filters.recommendationSource),
+                   !item.visits.contains(where: { $0.recommendationSourceText == source }) { return false }
+                guard !normalizedSearch.isEmpty else { return true }
+                return ([item.name, item.city, item.address] + item.tags)
+                    .joined(separator: "\n")
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    .contains(normalizedSearch)
+            }
+        }
+        func scopeTotal(_ scope: TasteMapHybridMapScope) -> Int {
+            let source = scope == .recommended ? recommendationSource : all
+            let desiredStatus = scope == .wantToGo ? "wantToGo" : "visited"
+            return source.filter { $0.status == desiredStatus }.count
+        }
+        let scopeCounts = TasteMapHybridMapScopeCounts(
+            visited: scopeTotal(.visited),
+            wantToGo: scopeTotal(.wantToGo),
+            recommended: scopeTotal(.recommended)
+        )
+        var values = filteredValues(for: request.scope, includeBounds: true)
         values.sort { left, right in
             switch request.sort {
             case .rating:
@@ -310,6 +324,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             requestID: request.requestID,
             items: Array(values.prefix(maximum)),
             totalCount: totalCount,
+            scopeCounts: scopeCounts,
             options: options
         )
     }

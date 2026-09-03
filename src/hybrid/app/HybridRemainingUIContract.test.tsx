@@ -69,13 +69,17 @@ describe('Hybrid remaining product UI contract', () => {
     const html = renderToStaticMarkup(<MyMapBrowsePage MapSurface={TestMapSurface} active onAddRestaurant={() => undefined} onOpenRestaurant={() => undefined} platform={platform} profile={profile} />)
     expect(html).toContain('aria-label="地图范围"')
     expect(html.match(/class="tm-primary-tab-bar__icon"/g)).toHaveLength(3)
-    for (const label of ['去过', '想吃', '推荐']) {
-      expect(html).toContain(`aria-label="${label}"`)
-    }
+    expect(html).toContain('aria-label="去过，3 家餐厅"')
+    expect(html).toContain('aria-label="想吃，2 家餐厅"')
+    expect(html).toContain('aria-label="推荐，0 家餐厅"')
+    expect(html.match(/class="tm-primary-tab-bar__count"/g)).toHaveLength(3)
     const scopeTabs = html.match(/<nav aria-label="地图范围"[\s\S]*?<\/nav>/)?.[0] ?? ''
     expect(scopeTabs).toContain('data-tastemap-semantic-icon="visited"')
     expect(scopeTabs).toContain('lucide-check')
     expect(scopeTabs).not.toContain('lucide-footprints')
+    expect(scopeTabs).toContain('>3</span>')
+    expect(scopeTabs).toContain('>2</span>')
+    expect(scopeTabs).toContain('>0</span>')
     expect(html).toContain('role="tab"')
     expect(html).not.toContain('适合你')
   })

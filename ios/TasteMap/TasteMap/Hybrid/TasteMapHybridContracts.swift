@@ -501,10 +501,17 @@ public struct TasteMapHybridMapBrowseOptions: Codable, Sendable {
     public let recommendationSources: [String]
 }
 
+public struct TasteMapHybridMapScopeCounts: Codable, Equatable, Sendable {
+    public let visited: Int
+    public let wantToGo: Int
+    public let recommended: Int
+}
+
 public struct TasteMapHybridMapBrowseResponse: Codable, Sendable {
     public let requestID: String
     public let items: [TasteMapHybridRestaurantDTO]
     public let totalCount: Int
+    public let scopeCounts: TasteMapHybridMapScopeCounts
     public let options: TasteMapHybridMapBrowseOptions
 }
 
