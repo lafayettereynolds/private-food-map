@@ -44,7 +44,7 @@
 .tm-map-error { position: absolute; z-index: 30; inset: 50% auto auto 50%; width: min(300px, calc(100% - 32px)); padding: 17px; transform: translate(-50%, -50%); border: 1px solid #d9e2e8; border-radius: 15px; color: #344c5e; background: rgba(255,255,255,.97); box-shadow: 0 12px 35px rgba(32,52,68,.16); text-align: center; }
 .tm-map-error p { color: #75828c; font-size: 10px; }
 .tm-map-error button { min-height: 36px; padding: 0 12px; border: 0; border-radius: 9px; display: inline-flex; align-items: center; gap: 5px; color: #fff; background: #2c678f; }
-.tm-map-filter-sheet { position: fixed; z-index: 100; inset: 0; display: flex; align-items: flex-end; background: rgba(21,31,40,.28); }
+.tm-map-filter-sheet { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: flex-end; background: rgba(21,31,40,.28); }
 .tm-map-filter-sheet > section { width: 100%; max-height: min(78dvh, 640px); padding: 18px 16px max(18px, env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; overflow-y: auto; background: #fff; box-shadow: 0 -8px 28px rgba(29,44,56,.16); }
 .tm-map-filter-sheet header { display: flex; align-items: center; justify-content: space-between; }
 .tm-map-filter-sheet header button { border: 0; color: #2c668f; background: transparent; }

@@ -1,4 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ArrowDownUp, Bookmark, Building2, Footprints, List, Map as MapIcon, MapPin, Plus,
   ReceiptText, RotateCcw, Search, SlidersHorizontal, Star, Users, Utensils,
@@ -15,6 +16,7 @@ import { initialMapBrowseState, mapBrowseReducer } from './mapBrowseState'
 import {
   MapBrowseSnapshotCache,
   LatestMapRequestGate,
+  LatestMapViewportCommitScheduler,
   mapBrowseCameraFitKey,
   mapBrowseDataVersion,
   mapBrowseSnapshotKey,
@@ -34,6 +36,7 @@ import './myMapBrowsePage.css'
 
 export interface MyMapSurfaceProps {
   active: boolean
+  interactionBlocked: boolean
   platform: TasteMapPlatform
   restaurants: RestaurantSummary[]
   images: Record<string, TasteMapImageDescriptor>
@@ -85,6 +88,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
   const [nativeMapError, setNativeMapError] = useState<string | null>(null)
   const [fullFilterOpen, setFullFilterOpen] = useState(false)
   const requestGate = useRef(new LatestMapRequestGate())
+  const viewportCommitScheduler = useRef(new LatestMapViewportCommitScheduler())
   const rootRef = useRef<HTMLElement>(null)
   const snapshotCache = useRef(new MapBrowseSnapshotCache())
   const activeMeasurement = useRef<{ id: string | null; scope: TasteMapMapScope } | null>(null)
@@ -242,27 +246,42 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
     onOpenRestaurant(restaurant.id)
   }, [onOpenRestaurant, platform])
 
+  const commitViewport = useCallback((value: TasteMapNativeMapViewport) => {
+    viewportCommitScheduler.current.schedule(value, (settledViewport) => {
+      dispatch({ type: 'viewport', value: settledViewport })
+    })
+  }, [])
+
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+
   useEffect(() => {
     let remove: (() => Promise<void>) | undefined
+    let disposed = false
     void platform.events.subscribe((event) => {
       if (event.name === 'location.changed') {
         snapshotCache.current.clear()
         setCoordinates({ latitude: event.payload.latitude, longitude: event.payload.longitude })
       } else if (event.name === 'map.viewport.changed') {
-        dispatch({ type: 'viewport', value: event.payload })
+        commitViewport(event.payload)
       } else if (event.name === 'map.restaurant.selected') {
         if (!event.payload.restaurantID) dispatch({ type: 'selection', value: null })
         else {
-          const restaurant = items.find((item) => item.id === event.payload.restaurantID)
+          const restaurant = itemsRef.current.find((item) => item.id === event.payload.restaurantID)
           if (restaurant) openRestaurant(restaurant, false)
         }
       } else if (event.name === 'auth.changed' || (event.name === 'app.lifecycle' && ['foreground', 'resume'].includes(event.payload.state))) {
         snapshotCache.current.clear()
         dispatch({ type: 'retry' })
       }
-    }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
-    return () => { void remove?.() }
-  }, [items, openRestaurant, platform])
+    }).then((subscription) => {
+      if (disposed) void subscription.remove()
+      else remove = () => subscription.remove()
+    }).catch(() => undefined)
+    return () => { disposed = true; void remove?.() }
+  }, [commitViewport, openRestaurant, platform])
+
+  useEffect(() => () => viewportCommitScheduler.current.cancel(), [])
 
   const mapScopeTabs = useMemo<ReadonlyArray<TasteMapPrimaryTab<TasteMapMapScope>>>(() => HYBRID_MAP_PRIMARY_SCOPES.map(([value, label]) => ({
     value,
@@ -317,11 +336,12 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
           filters={filters}
           images={images}
           initialViewport={viewport}
+          interactionBlocked={fullFilterOpen}
           onClearSelection={() => dispatch({ type: 'selection', value: null })}
           onError={setNativeMapError}
           onSelect={openRestaurant}
-          onViewportChange={(value) => dispatch({ type: 'viewport', value })}
-          overlayRevision={`${selectedRestaurantID ?? ''}|${error ?? ''}|${locationMessage ?? ''}`}
+          onViewportChange={commitViewport}
+          overlayRevision={`${selectedRestaurantID ?? ''}|${error ?? ''}|${locationMessage ?? ''}|filter:${fullFilterOpen}`}
           platform={platform}
           restaurants={items}
           scope={scope}
@@ -345,7 +365,10 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       <button aria-label="添加餐厅" className="tm-my-map__add" data-product-contract="add-restaurant-primary-entry" onClick={onAddRestaurant} type="button"><Plus aria-hidden="true" size={17} />添加餐厅</button>
     </section>
 
-    {fullFilterOpen ? <FullFilterSheet filters={filters} onChange={(value) => dispatch({ type: 'filters', value })} onClose={() => setFullFilterOpen(false)} options={options} /> : null}
+    {fullFilterOpen ? createPortal(
+      <FullFilterSheet filters={filters} onChange={(value) => dispatch({ type: 'filters', value })} onClose={() => setFullFilterOpen(false)} options={options} />,
+      document.body,
+    ) : null}
   </main>
 }
 

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import fixture from '../../hybrid/fixtures/profile-restaurant-rich.json'
 import type { RestaurantSummary } from '../types/domain'
 import {
   LatestMapRequestGate,
+  LatestMapViewportCommitScheduler,
   MapBrowseSnapshotCache,
   mapBrowseCameraFitKey,
   mapBrowseSnapshotKey,
@@ -24,6 +25,8 @@ function snapshot(scope: 'visited' | 'wantToGo' | 'recommended'): MapBrowsePrese
 }
 
 describe('MapBrowse snapshot and request performance contract', () => {
+  afterEach(() => vi.useRealTimers())
+
   it('keys each owner/scope/query while excluding scope from the camera-fit identity', () => {
     const base = {
       ownerUserID: 'tm_owner', dataVersion: '5:2:v1', mode: 'map' as const,
@@ -59,5 +62,24 @@ describe('MapBrowse snapshot and request performance contract', () => {
     expect(gate.accepts('recommended-request')).toBe(true)
     gate.invalidate()
     expect(gate.accepts('recommended-request')).toBe(false)
+  })
+
+  it('coalesces rapid viewport changes into one settled data refresh', () => {
+    vi.useFakeTimers()
+    const scheduler = new LatestMapViewportCommitScheduler(160)
+    const commits: number[] = []
+    const viewport = (zoom: number) => ({
+      zoom,
+      center: { latitude: 30.27, longitude: 120.15 },
+      bounds: { north: 30.3, east: 120.2, south: 30.2, west: 120.1 },
+    })
+
+    scheduler.schedule(viewport(13), (value) => commits.push(value.zoom))
+    scheduler.schedule(viewport(14), (value) => commits.push(value.zoom))
+    scheduler.schedule(viewport(15), (value) => commits.push(value.zoom))
+    vi.advanceTimersByTime(159)
+    expect(commits).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(commits).toEqual([15])
   })
 })

@@ -41,7 +41,7 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(shell).toContain('mapWasActivated ? <MyMapBrowsePage')
     expect(shell).toContain("active={route.surface === 'map'}")
     expect(shell).toContain("navigate({ surface: 'restaurant', id: restaurantID })")
-    expect(nativeSurface).toContain('markers: active ? restaurants.map')
+    expect(nativeSurface).toContain('markers: visible ? restaurants.map')
     expect(nativeHost).toContain('guard request.visible else')
     expect(nativeHost).not.toContain('model.update(request, resources: resources)\n            return')
     expect(nativeRuntime).toContain('if !request.visible')
@@ -79,6 +79,22 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(page).toContain("event.name === 'map.restaurant.selected'")
     expect(pageCSS).toContain('--tm-map-header-safe-top')
     expect(pageCSS).toContain('inset: calc(151px + var(--tm-map-header-safe-top))')
+  })
+
+  it('reveals the full filter sheet above MapKit and coalesces viewport refreshes', () => {
+    const page = source('../../src/components/MyMapBrowsePage.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    const performance = source('../../src/components/mapBrowseSnapshot.ts')
+    expect(page).toContain("active={active && mode === 'map'}")
+    expect(page).toContain('interactionBlocked={fullFilterOpen}')
+    expect(page).toContain('createPortal(')
+    expect(page).toContain('document.body')
+    expect(page).toContain('commitViewport(event.payload)')
+    expect(page).toContain('onViewportChange={commitViewport}')
+    expect(nativeSurface).toContain("'.tm-map-filter-sheet'")
+    expect(nativeSurface).toContain('const visible = active && !interactionBlocked')
+    expect(nativeSurface).toContain('lastSurfaceSignature')
+    expect(performance).toContain('class LatestMapViewportCommitScheduler')
   })
 
   it('keeps missing GPS quiet on the shared Map surface', () => {

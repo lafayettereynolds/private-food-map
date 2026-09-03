@@ -3835,6 +3835,43 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridNativeMapFullFilterSheetStaysAboveMapKit() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = [
+            "TASTEMAP_VISUAL_QA_MODE": "rich",
+            "TASTEMAP_CORE_PARITY_INITIAL_TAB": "map",
+        ]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        let filter = webView.buttons["筛选"]
+        if !filter.waitForExistence(timeout: 2) {
+            let mapTab = webView.buttons["地图"]
+            XCTAssertTrue(mapTab.waitForExistence(timeout: 5))
+            mapTab.tap()
+        }
+        XCTAssertTrue(filter.waitForExistence(timeout: 15))
+
+        let map = app.descendants(matching: .any)["restaurant-map"]
+        XCTAssertTrue(map.waitForExistence(timeout: 15))
+        XCTAssertTrue(map.isHittable)
+
+        filter.tap()
+        XCTAssertTrue(webView.staticTexts["筛选餐厅"].waitForExistence(timeout: 5))
+        let done = webView.buttons["查看结果"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        keepScreenshot(named: "Hybrid Native Map Full Filter", of: app)
+        XCTAssertTrue(done.isHittable, "Full Filter sheet must own touches instead of remaining behind MapKit")
+        XCTAssertFalse(map.isHittable, "MapKit must yield while the full Filter sheet is presented")
+
+        done.tap()
+        XCTAssertTrue(map.waitForExistence(timeout: 8))
+        XCTAssertTrue(map.isHittable)
+    }
+
+    @MainActor
     func testHybridNativeMapKitSustainedGesturePerformance() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]

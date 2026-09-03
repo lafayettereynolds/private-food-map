@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type {
+  TasteMapNativeMapSurfaceUpdateRequest,
   TasteMapNativeMapSurfaceRect,
 } from '../platform/TasteMapPlatform'
 import { resolveRestaurantFoodEmoji } from '../visuals/FoodCategoryVisualContract'
@@ -11,6 +12,7 @@ export const hybridMapReactControlSelector = [
   '.tm-my-map__add',
   '.tm-my-map__location-note',
   '.tm-map-error',
+  '.tm-map-filter-sheet',
   '.tm-hybrid-bottom-nav',
 ].join(',')
 
@@ -27,12 +29,13 @@ export function isRenderedHybridMapReactControl(value: Pick<HTMLElement, 'getCli
  * rectangle while cutting out React-owned floating controls.
  */
 export function NativeMapSurface({
-  active, platform, restaurants, images, selectedRestaurantID, scope, filters,
+  active, interactionBlocked, platform, restaurants, images, selectedRestaurantID, scope, filters,
   sort, search, cameraFitKey, currentUser, overlayRevision, onError,
 }: NativeMapSurfaceProps) {
   const elementRef = useRef<HTMLDivElement>(null)
   const latestRequestID = useRef('')
   const scheduledFrame = useRef<number | null>(null)
+  const lastSurfaceSignature = useRef('')
   const lastFrame = useRef<TasteMapNativeMapSurfaceRect>({ x: 0, y: 0, width: 1, height: 1 })
 
   const updateSurface = useCallback(() => {
@@ -44,10 +47,10 @@ export function NativeMapSurface({
       if (!frame) return
       lastFrame.current = rect(frame)
       const requestID = globalThis.crypto?.randomUUID?.() ?? `mapkit-${Date.now()}-${Math.random()}`
-      latestRequestID.current = requestID
-      const request = {
+      const visible = active && !interactionBlocked
+      const request: TasteMapNativeMapSurfaceUpdateRequest = {
         requestID,
-        visible: active,
+        visible,
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
         frame: rect(frame),
@@ -62,7 +65,7 @@ export function NativeMapSurface({
         selectedRestaurantID,
         userAvatarPresetID: currentUser.avatarPresetId,
         userAvatarPhotoID: currentUser.avatarPhotoId ?? null,
-        markers: active ? restaurants.map((restaurant) => ({
+        markers: visible ? restaurants.map((restaurant) => ({
           id: restaurant.id,
           name: restaurant.name,
           latitude: restaurant.latitude,
@@ -78,30 +81,39 @@ export function NativeMapSurface({
           },
         })) : [],
       }
+      const signature = JSON.stringify({ ...request, requestID: '' })
+      if (signature === lastSurfaceSignature.current) return
+      lastSurfaceSignature.current = signature
+      latestRequestID.current = requestID
       void platform.map.updateNativeSurface(request).then((response) => {
         if (latestRequestID.current !== response.requestID) return
         onError(null)
       }).catch((reason: unknown) => {
         if (latestRequestID.current !== requestID) return
+        lastSurfaceSignature.current = ''
         onError(reason instanceof Error ? reason.message : '原生 MapKit 地图暂时不可用。')
       })
     })
-  }, [active, cameraFitKey, currentUser.avatarPhotoId, currentUser.avatarPresetId, filters, images, onError, platform, restaurants, scope, search, selectedRestaurantID, sort])
+  }, [active, cameraFitKey, currentUser.avatarPhotoId, currentUser.avatarPresetId, filters, images, interactionBlocked, onError, platform, restaurants, scope, search, selectedRestaurantID, sort])
+
+  const updateSurfaceRef = useRef(updateSurface)
+  updateSurfaceRef.current = updateSurface
 
   useLayoutEffect(updateSurface, [overlayRevision, updateSurface])
 
   useEffect(() => {
     const element = elementRef.current
     if (!element) return
-    const observer = new ResizeObserver(updateSurface)
+    const requestUpdate = () => updateSurfaceRef.current()
+    const observer = new ResizeObserver(requestUpdate)
     observer.observe(element)
-    window.addEventListener('resize', updateSurface)
+    window.addEventListener('resize', requestUpdate)
     return () => {
       observer.disconnect()
-      window.removeEventListener('resize', updateSurface)
+      window.removeEventListener('resize', requestUpdate)
       if (scheduledFrame.current != null) cancelAnimationFrame(scheduledFrame.current)
     }
-  }, [updateSurface])
+  }, [])
 
   useEffect(() => () => {
     void platform.map.updateNativeSurface({

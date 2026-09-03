@@ -73,6 +73,31 @@ export class LatestMapRequestGate {
   }
 }
 
+/**
+ * Coalesces the duplicate viewport notifications emitted while a map gesture
+ * settles. Querying and re-projecting every intermediate region is expensive,
+ * especially when the Native surface is also updating dozens of annotations.
+ */
+export class LatestMapViewportCommitScheduler {
+  private timeout: ReturnType<typeof setTimeout> | undefined
+
+  constructor(private readonly delayMilliseconds = 160) {}
+
+  schedule(viewport: TasteMapMapViewport, commit: (value: TasteMapMapViewport) => void) {
+    this.cancel()
+    this.timeout = globalThis.setTimeout(() => {
+      this.timeout = undefined
+      commit(viewport)
+    }, this.delayMilliseconds)
+  }
+
+  cancel() {
+    if (this.timeout === undefined) return
+    globalThis.clearTimeout(this.timeout)
+    this.timeout = undefined
+  }
+}
+
 export function mapBrowseDataVersion(restaurants: RestaurantSummary[]) {
   const newest = restaurants.reduce((value, restaurant) => restaurant.updatedAt > value ? restaurant.updatedAt : value, '')
   const visitCount = restaurants.reduce((value, restaurant) => value + restaurant.visits.length, 0)
