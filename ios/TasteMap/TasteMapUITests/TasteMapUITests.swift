@@ -4254,6 +4254,8 @@ final class TasteMapUITests: XCTestCase {
         tapVisibleFrame(of: visibleDiscoveryAction("评论", in: webView, app: app), in: app)
         let input = webView.textFields["写下评论"]
         XCTAssertTrue(input.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts["招牌菜很好吃，下次还会再来。"].waitForExistence(timeout: 8))
+        XCTAssertFalse(webView.staticTexts["还没有评论，来说说你的想法。"].exists)
         input.tap()
         input.typeText("真机交互验收评论")
         let send = webView.buttons["发送评论"]

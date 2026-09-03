@@ -2,6 +2,7 @@ import type { RestaurantSummary, StarRating, UserProfile, Visit } from '../types
 import fixtureSource from '../../hybrid/fixtures/profile-restaurant-rich.json'
 import type {
   TasteMapHybridActivityItemDTO,
+  TasteMapCommunityCommentDTO,
   TasteMapHybridContentRestaurantDTO,
   TasteMapHybridContentSnapshotDTO,
   TasteMapHybridDiscoveryItemDTO,
@@ -23,6 +24,7 @@ interface DebugFixtureRoot {
 export interface TasteMapBrowserDebugFixtureSnapshot {
   profile: TasteMapProfileDashboardViewModel
   content: TasteMapHybridContentSnapshotDTO
+  commentsByVisit: Record<string, TasteMapCommunityCommentDTO[]>
 }
 
 let snapshotPromise: Promise<TasteMapBrowserDebugFixtureSnapshot> | null = null
@@ -44,7 +46,8 @@ function buildSnapshot(fixture: DebugFixtureRoot): TasteMapBrowserDebugFixtureSn
     followingCount: fixture.profile.followingCount,
     restaurantImages,
   }
-  return { profile, content: buildContent(profile) }
+  const content = buildContent(profile)
+  return { profile, content, commentsByVisit: buildComments(content) }
 }
 
 /** Mirrors the Native Debug fixture scale without adding any Release data. */
@@ -248,6 +251,36 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
     community: { following: activities.filter((item) => item.user.isFollowing), latest: activities },
     lists,
   }
+}
+
+function buildComments(content: TasteMapHybridContentSnapshotDTO): Record<string, TasteMapCommunityCommentDTO[]> {
+  const names = ['周予安', '林夏', '陈屿', '西湖小柚']
+  const bodies = [
+    '招牌菜很好吃，下次还会再来。',
+    '环境舒服，适合和朋友一起吃。',
+    '这家已经收藏，准备再试其他菜。',
+    '服务很细致，整体体验不错。',
+  ]
+  const generatedAt = new Date(content.generatedAt).getTime()
+  return Object.fromEntries(content.discovery.forYou.flatMap((item, itemIndex) => {
+    const visitID = item.interaction?.visitID
+    if (!visitID) return []
+    const comments = Array.from({ length: item.commentCount }, (_, commentIndex): TasteMapCommunityCommentDTO => ({
+      id: `demo-comment-${itemIndex}-${commentIndex}`,
+      visitID,
+      body: bodies[commentIndex % bodies.length],
+      author: {
+        id: `tm_demo_commenter_${commentIndex % names.length}`,
+        name: names[commentIndex % names.length],
+        city: item.restaurant.city,
+        avatarPhotoID: null,
+        avatarPresetID: (['fox', 'otter', 'capybara', 'polar-bear'][commentIndex % 4] ?? 'otter') as UserProfile['avatarPresetId'],
+        isFollowing: commentIndex % 2 === 0,
+      },
+      createdAt: new Date(generatedAt - (itemIndex * 24 + commentIndex + 1) * 3_600_000).toISOString(),
+    }))
+    return [[visitID, comments] as const]
+  }))
 }
 
 function contentRestaurant(profile: TasteMapProfileDashboardViewModel, restaurant: RestaurantSummary): TasteMapHybridContentRestaurantDTO {

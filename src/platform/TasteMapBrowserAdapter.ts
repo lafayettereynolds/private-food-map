@@ -272,7 +272,7 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       return next
     },
     comments: async (target: TasteMapHybridActivityInteractionDTO) => ({
-      items: this.commentsByVisit.get(target.visitID) ?? [],
+      items: await this.commentsFor(target.visitID),
       nextCursor: null,
     }),
     addComment: async (target: TasteMapHybridActivityInteractionDTO, body: string) => {
@@ -288,7 +288,7 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
         },
         createdAt: new Date().toISOString(),
       }
-      const values = [...(this.commentsByVisit.get(target.visitID) ?? []), comment]
+      const values = [...await this.commentsFor(target.visitID), comment]
       this.commentsByVisit.set(target.visitID, values)
       const current = await this.engagementFor(target.visitID)
       const next = { ...current, commentCount: current.commentCount + 1 }
@@ -388,6 +388,15 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       commentCount: item.commentCount,
     } : { likedByViewer: false, likeCount: 0, commentCount: 0 }
     this.engagement.set(visitID, initial)
+    return initial
+  }
+
+  private async commentsFor(visitID: string) {
+    const stored = this.commentsByVisit.get(visitID)
+    if (stored) return stored
+    const fixture = await this.loadDebugFixture()
+    const initial = [...(fixture?.commentsByVisit[visitID] ?? [])]
+    this.commentsByVisit.set(visitID, initial)
     return initial
   }
 

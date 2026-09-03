@@ -490,7 +490,7 @@ final class TasteMapHybridRuntime {
         if TasteMapUITestFixtures.usesVisualQA {
             try validateDebugInteractionTarget(request.target)
             return try encode(TasteMapHybridCommunityCommentPageDTO(
-                items: debugCommentsByVisit[request.target.visitID] ?? [], nextCursor: nil
+                items: debugComments(request.target.visitID), nextCursor: nil
             ))
         }
 #endif
@@ -525,7 +525,9 @@ final class TasteMapHybridRuntime {
                 ),
                 createdAt: ISO8601DateFormatter().string(from: .now)
             )
-            debugCommentsByVisit[request.target.visitID, default: []].append(comment)
+            var comments = debugComments(request.target.visitID)
+            comments.append(comment)
+            debugCommentsByVisit[request.target.visitID] = comments
             let current = debugEngagement(request.target.visitID)
             let engagement = TasteMapHybridCommunityEngagementDTO(
                 likedByViewer: current.likedByViewer, likeCount: current.likeCount,
@@ -678,6 +680,37 @@ final class TasteMapHybridRuntime {
         if let value = debugEngagementByVisit[visitID] { return value }
         let index = Int(visitID.split(separator: "-").last ?? "0") ?? 0
         return .init(likedByViewer: index == 1, likeCount: 12 + index * 5, commentCount: 2 + index)
+    }
+
+    private func debugComments(_ visitID: String) -> [TasteMapHybridCommunityCommentDTO] {
+        if let values = debugCommentsByVisit[visitID] { return values }
+        let index = Int(visitID.split(separator: "-").last ?? "0") ?? 0
+        let names = ["周予安", "林夏", "陈屿", "西湖小柚"]
+        let bodies = [
+            "招牌菜很好吃，下次还会再来。",
+            "环境舒服，适合和朋友一起吃。",
+            "这家已经收藏，准备再试其他菜。",
+            "服务很细致，整体体验不错。",
+        ]
+        let presets = ["fox", "otter", "capybara", "polar-bear"]
+        let count = debugEngagement(visitID).commentCount
+        let values = (0..<count).map { commentIndex in
+            TasteMapHybridCommunityCommentDTO(
+                id: "demo-comment-\(index)-\(commentIndex)", visitID: visitID,
+                body: bodies[commentIndex % bodies.count],
+                author: .init(
+                    id: "tm_demo_commenter_\(commentIndex % names.count)",
+                    name: names[commentIndex % names.count], city: "杭州", avatarPhotoID: nil,
+                    avatarPresetID: presets[commentIndex % presets.count], isFollowing: commentIndex.isMultiple(of: 2)
+                ),
+                createdAt: String(
+                    format: "2026-08-%02dT%02d:00:00Z",
+                    min(28, 18 + index), max(0, 20 - commentIndex)
+                )
+            )
+        }
+        debugCommentsByVisit[visitID] = values
+        return values
     }
 #endif
     private func searchRestaurants(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {

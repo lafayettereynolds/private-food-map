@@ -18,4 +18,13 @@ describe('Restaurant visual product fixture', () => {
     const latestImage = content.community.latest[0].restaurant.image
     expect(latestImage.kind === 'activityPhoto' ? latestImage.exportAllowed : null).toBe(false)
   })
+
+  it('keeps every visible comment count backed by the same visit comment collection', async () => {
+    const { commentsByVisit, content } = await loadTasteMapBrowserDebugFixture()
+    for (const item of content.discovery.forYou) {
+      expect(item.interaction).not.toBeNull()
+      expect(commentsByVisit[item.interaction!.visitID]).toHaveLength(item.commentCount)
+      expect(commentsByVisit[item.interaction!.visitID].every((comment) => comment.visitID === item.interaction!.visitID)).toBe(true)
+    }
+  })
 })

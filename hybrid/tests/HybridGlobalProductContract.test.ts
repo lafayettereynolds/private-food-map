@@ -329,6 +329,17 @@ describe('Hybrid global Product Contract', () => {
     expect(runtime).toContain('hybrid_route_requires_openHybrid')
   })
 
+  it('backs debug comment badges with the same per-visit comment collections on Browser and Native', () => {
+    const fixture = source('../../src/platform/TasteMapBrowserDebugFixture.ts')
+    const browser = source('../../src/platform/TasteMapBrowserAdapter.ts')
+    const native = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
+    expect(fixture).toContain('commentsByVisit: buildComments(content)')
+    expect(browser).toContain('items: await this.commentsFor(target.visitID)')
+    expect(browser).toContain('const values = [...await this.commentsFor(target.visitID), comment]')
+    expect(native).toContain('items: debugComments(request.target.visitID)')
+    expect(native).toContain('var comments = debugComments(request.target.visitID)')
+  })
+
   it('keeps exactly three Discovery Restaurant actions without removing List elsewhere', () => {
     const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
