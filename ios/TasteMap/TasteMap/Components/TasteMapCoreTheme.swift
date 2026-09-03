@@ -406,15 +406,21 @@ struct TasteMapActivityRatingBadge: View {
     var prefix = "这次到访"
     var accessibilityIdentifier: String?
 
+    private var scoreColor: Color {
+        let value = RestaurantScoreColorPolicy.color(forFivePointRating: rating)
+        return Color(red: value.red, green: value.green, blue: value.blue)
+    }
+
     var body: some View {
-        Label(
-            rating.map { String(format: "\(prefix) %.1f", $0) } ?? "\(prefix) · 未评分",
-            systemImage: rating == nil ? "star.slash" : "star.fill"
-        )
-        .font(TasteMapDesignTokens.Typography.activityRating)
-        .foregroundStyle(rating == nil ? TasteMapCoreTheme.textSecondary : .orange)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-activity-rating")
+        Text(rating.map { String(format: "%.1f", $0) } ?? "—")
+            .font(.system(size: 14, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(scoreColor)
+            .frame(width: 46, height: 46)
+            .background(scoreColor.opacity(0.04), in: Circle())
+            .overlay { Circle().stroke(scoreColor, lineWidth: 1.5) }
+            .accessibilityLabel(rating.map { String(format: "\(prefix)评分 %.1f", $0) } ?? "\(prefix)未评分")
+            .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-activity-rating")
     }
 }
 

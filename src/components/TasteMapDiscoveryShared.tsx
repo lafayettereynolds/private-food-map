@@ -1,4 +1,5 @@
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import { scoreColor } from '../types/domain'
 import './tasteMapDiscoveryShared.css'
 
 export interface TasteMapPrimaryTab<Value extends string> {
@@ -41,6 +42,21 @@ export function TasteMapPrimaryTabBar<Value extends string>({
 
 export function TasteMapFilterBar({ children, ariaLabel = '筛选' }: { children: ReactNode; ariaLabel?: string }) {
   return <div aria-label={ariaLabel} className="tm-shared-filter-bar" role="toolbar">{children}</div>
+}
+
+/**
+ * The author's concrete Visit rating. Taste Map stores this on a five-point
+ * scale; color selection uses the canonical ten-point score palette.
+ */
+export function TasteMapActivityRatingBadge({ rating, prefix = '本次到访' }: { rating: number | null; prefix?: string }) {
+  const color = scoreColor(rating == null ? null : rating * 2)
+  return <span
+    aria-label={rating == null ? `${prefix}未评分` : `${prefix}评分 ${rating.toFixed(1)}`}
+    className={`tm-activity-rating-badge${rating == null ? ' is-unrated' : ''}`}
+    role="img"
+    style={{ '--tm-activity-rating-color': color } as CSSProperties}
+    title={rating == null ? `${prefix}未评分` : `${prefix} ${rating.toFixed(1)}`}
+  ><strong aria-hidden="true">{rating == null ? '—' : rating.toFixed(1)}</strong></span>
 }
 
 export function TasteMapDiscoveryScaffold<Value extends string>({
@@ -108,8 +124,13 @@ export function TasteMapActivityCardFrame({
     onClick={open}
   >
     {header ? <header data-activity-region="author-time-visibility">{header}</header> : null}
-    <div className="tm-activity-card__restaurant" data-activity-region="restaurant-name-address-context">{restaurant}</div>
-    {activityRating ? <div className="tm-activity-card__rating" data-activity-region="visit-rating">{activityRating}</div> : null}
+    {variant === 'activity' && activityRating ? <div className="tm-activity-card__restaurant-row">
+      <div className="tm-activity-card__restaurant" data-activity-region="restaurant-name-address-context">{restaurant}</div>
+      <div className="tm-activity-card__rating" data-activity-region="visit-rating">{activityRating}</div>
+    </div> : <>
+      <div className="tm-activity-card__restaurant" data-activity-region="restaurant-name-address-context">{restaurant}</div>
+      {activityRating ? <div className="tm-activity-card__rating" data-activity-region="visit-rating">{activityRating}</div> : null}
+    </>}
     {media ? <div className="tm-activity-card__media" data-activity-region="restaurant-image">{media}</div> : null}
     {body ? <div className="tm-activity-card__body" data-activity-region={variant === 'recommendation' ? 'recommendation-reason' : 'activity-context'}>{body}</div> : null}
     <footer>

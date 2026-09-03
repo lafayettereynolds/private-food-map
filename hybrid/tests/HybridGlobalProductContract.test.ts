@@ -415,11 +415,16 @@ describe('Hybrid forbidden Product patterns', () => {
   it('uses Activity/Visit rating and never substitutes Restaurant aggregate rating', () => {
     const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
     const formalWeb = source('../../src/components/CommunityPage.tsx')
+    const shared = source('../../src/components/TasteMapDiscoveryShared.tsx')
+    const nativeShared = source('../../ios/TasteMap/TasteMap/Components/TasteMapCoreTheme.swift')
     expect(discovery).toContain('item.activityRating')
     expect(discovery).toContain('item.visitRating')
     expect(discovery).not.toMatch(/item\.restaurant\.(averageRating|scoreOutOfTen)/)
     expect(formalWeb).toContain('const activityRating = item.visit.rating')
     expect(formalWeb).not.toMatch(/activityRating=\{[^}]*item\.restaurant\.(averageRating|scoreOutOfTen)/)
+    expect(shared).toContain("variant === 'activity' && activityRating")
+    expect(shared).toContain('scoreColor(rating == null ? null : rating * 2)')
+    expect(nativeShared).toContain('RestaurantScoreColorPolicy.color(forFivePointRating: rating)')
   })
 
   it('does not restore paste-link as the primary Add Restaurant flow', () => {

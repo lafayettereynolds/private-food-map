@@ -16,7 +16,7 @@ import { RestaurantShareSheet } from './RestaurantShareSheet'
 import { buildRestaurantShareModel, copyRestaurantShareLink, isShareCancellation, trackDiscoverShareEvent, type RestaurantShareModel } from '../services/restaurantShare'
 import { RestaurantQuickActions } from './RestaurantQuickActions'
 import { openPremiumPaywall } from '../services/premiumPaywall'
-import { TasteMapActivityCardFrame, TasteMapDiscoveryScaffold, TasteMapFilterBar } from './TasteMapDiscoveryShared'
+import { TasteMapActivityCardFrame, TasteMapActivityRatingBadge, TasteMapDiscoveryScaffold, TasteMapFilterBar } from './TasteMapDiscoveryShared'
 
 interface FeedItem {
   user: UserProfile
@@ -410,7 +410,7 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
   }
 
   return <TasteMapActivityCardFrame
-    activityRating={<>{mode === 'for_you' ? <span aria-label={publicRating.value === null ? `大家评分${publicRating.note}` : `大家评分 ${publicRating.value.toFixed(1)}，${publicRating.note}`} className="tm-activity-card__rating-summary" role="img"><span>大家评分</span><strong style={publicRating.value !== null ? { color: scoreColor(publicRating.value) } : undefined}>{publicRating.value === null ? '—' : publicRating.value.toFixed(1)}</strong><small>{publicRating.note}</small></span> : null}<span aria-label={activityRating == null ? '本次到访未评分' : `本次到访评分 ${activityRating.toFixed(1)}`} className="tm-activity-card__visit-rating" role="img">{activityRating == null ? '本次未评分' : <><Star aria-hidden="true" fill="currentColor" size={12} />本次到访 {activityRating.toFixed(1)}</>}</span></>}
+    activityRating={<>{mode === 'for_you' ? <span aria-label={publicRating.value === null ? `大家评分${publicRating.note}` : `大家评分 ${publicRating.value.toFixed(1)}，${publicRating.note}`} className="tm-activity-card__rating-summary" role="img"><span>大家评分</span><strong style={publicRating.value !== null ? { color: scoreColor(publicRating.value) } : undefined}>{publicRating.value === null ? '—' : publicRating.value.toFixed(1)}</strong><small>{publicRating.note}</small></span> : null}<TasteMapActivityRatingBadge rating={activityRating} /></>}
     body={<>
       {mode !== 'for_you' && item.visit.note ? <p className="community-note"><strong>笔记</strong>{item.visit.note}</p> : null}
       {mode === 'for_you' && primaryReasons.length ? <section className="recommendation-evidence"><strong>{evidenceTitle}</strong><ul>{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul>{cautionReason ? <div className="recommendation-evidence__caution"><strong>需要注意</strong><span>{cautionReason.text}</span></div> : null}<small>{recommendationEvidenceHint(item.recommendationConfidence)}</small>{canShowFullAnalysis ? <><button aria-expanded={showFullAnalysis} onClick={(event) => stopAndRun(event, () => setShowFullAnalysis((current) => !current))} type="button">查看完整分析 <ChevronDown className={showFullAnalysis ? 'is-open' : ''} size={15} /></button>{showFullAnalysis ? <ul className="recommendation-evidence__more">{secondaryReasons.map((reason, index) => <li key={`${reason.text}-detail-${index}`}>{reason.text}</li>)}</ul> : null}</> : null}</section> : primaryReasons.length ? <ul className="discovery-reasons">{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul> : null}

@@ -15,6 +15,7 @@ import { TasteMapPremiumPage, TasteMapSettingsPage } from '../../components/Tast
 import { ProfilePage } from '../../components/ProfilePage'
 import { RestaurantRoulette } from '../../components/RestaurantRoulette'
 import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
+import { TasteMapActivityCardFrame, TasteMapActivityRatingBadge } from '../../components/TasteMapDiscoveryShared'
 import {
   hybridMapReactControlSelector,
   isRenderedHybridMapReactControl,
@@ -125,6 +126,21 @@ describe('Hybrid remaining product UI contract', () => {
     for (const region of ['restaurant-image', 'restaurant-name-address-context', 'visit-rating', 'like-comment-more-share', 'restaurant-actions']) {
       expect(html).toContain(`data-activity-region="${region}"`)
     }
+  })
+
+  it('places an Activity Visit rating beside the Restaurant and colors it from that user rating', () => {
+    const html = renderToStaticMarkup(<TasteMapActivityCardFrame
+      activityRating={<TasteMapActivityRatingBadge rating={3.5} />}
+      restaurant={<span>测试餐厅</span>}
+      restaurantActions={<button type="button">记录</button>}
+      variant="activity"
+    />)
+    const restaurantIndex = html.indexOf('data-activity-region="restaurant-name-address-context"')
+    const ratingIndex = html.indexOf('data-activity-region="visit-rating"')
+    expect(html).toContain('class="tm-activity-card__restaurant-row"')
+    expect(ratingIndex).toBeGreaterThan(restaurantIndex)
+    expect(html).toContain('aria-label="本次到访评分 3.5"')
+    expect(html).toContain('--tm-activity-rating-color:#6594d3')
   })
 
   it('locks the approved high-density feed-card topology and separates rating semantics', () => {

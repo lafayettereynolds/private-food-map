@@ -33,6 +33,9 @@ The shared card preserves:
 
 Restaurant aggregate rating never substitutes for an Activity rating. Rich
 image media has stable ratio; missing media uses the canonical fallback.
+On ordinary Activity cards, the concrete Visit rating is a circular badge at
+the right of the Restaurant identity row. Its number and border use the
+canonical score color calculated from that same user's Visit rating.
 
 ## States
 

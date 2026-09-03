@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import {
   TasteMapActivityCardFrame,
+  TasteMapActivityRatingBadge,
   TasteMapDiscoveryScaffold,
   TasteMapFilterBar,
 } from '../../components/TasteMapDiscoveryShared'
@@ -304,7 +305,7 @@ function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerStat
 } & CardInteractionProps) {
   const target = item.interaction
   return <TasteMapActivityCardFrame
-    activityRating={<span aria-label={item.visitRating == null ? '本次到访未评分' : `本次到访评分 ${item.visitRating.toFixed(1)}`} className="tm-activity-card__visit-rating" role="img">{item.visitRating == null ? '本次未评分' : <><Star aria-hidden="true" fill="currentColor" size={12} />本次到访 {item.visitRating.toFixed(1)}</>}</span>}
+    activityRating={<TasteMapActivityRatingBadge rating={item.visitRating} />}
     body={item.note ? <p>“{item.note}”</p> : undefined}
     header={<><button className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.user.id })} type="button"><span className="tm-hybrid-avatar-seed">{item.user.name.slice(0, 1)}</span><span><strong>{item.user.name}</strong><small>{formatEventTime(item.eventAt)} · {item.kind === 'visit' ? '公开到访' : '加入想吃'}</small></span></button><button aria-label="更多操作：举报或拉黑" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.id })} type="button"><Ellipsis size={19} /></button></>}
     media={<button aria-label={`${item.restaurant.name} 餐厅图片`} onClick={() => onOpenRestaurant(item.restaurant.id)} type="button"><HybridRestaurantImage image={item.restaurant.image} name={item.restaurant.name} /></button>}
