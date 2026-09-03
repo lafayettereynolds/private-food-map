@@ -129,6 +129,14 @@ enum TasteMapVisualQAFixtures {
             (-0.000_12, 0.000_15), (0.000_08, 0.000_18),
         ]
         let restaurantCount = counts.visitedRestaurants + counts.wantToGoRestaurants
+        // Spread owner photos across the library so Map and list screenshots
+        // exercise owner-photo and category-visual markers at the same time.
+        let orderedPhotoRestaurantIndexes = Array(stride(from: 0, to: restaurantCount, by: 2))
+            + Array(stride(from: 1, to: restaurantCount, by: 2))
+        let photoRestaurantIndexes = Array(orderedPhotoRestaurantIndexes.prefix(counts.photos))
+        let photoSlotByRestaurant = Dictionary(uniqueKeysWithValues:
+            photoRestaurantIndexes.enumerated().map { ($0.element, $0.offset) }
+        )
         var restaurants: [Restaurant] = []
         restaurants.reserveCapacity(restaurantCount)
         for index in 0..<restaurantCount {
@@ -139,7 +147,9 @@ enum TasteMapVisualQAFixtures {
             let city = cities[index % cities.count]
             let id = uuid(32_000 + index)
             let hasImageFixture = mode != .missingPhoto
-            let localPhotoID = hasImageFixture && index < counts.photos ? uuid(35_000 + index) : nil
+            let localPhotoID = hasImageFixture
+                ? photoSlotByRestaurant[index].map { uuid(35_000 + $0) }
+                : nil
             let publicPhotoID = hasImageFixture
                 && index >= counts.photos
                 && index < min(restaurantCount, counts.photos + 20)
@@ -240,7 +250,7 @@ enum TasteMapVisualQAFixtures {
 
         if mode != .missingPhoto {
             for index in 0..<counts.photos {
-                let restaurant = restaurants[index]
+                let restaurant = restaurants[photoRestaurantIndexes[index]]
                 let visit = visits.first(where: { $0.restaurantId == restaurant.id })
                 let id = uuid(35_000 + index)
                 let path = "display/\(id.uuidString.lowercased()).jpg"

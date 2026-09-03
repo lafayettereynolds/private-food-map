@@ -4,6 +4,7 @@ import { buildRestaurantSummaries } from '../services/restaurantSummaryProjectio
 import { addVisit, deleteVisit, updateVisit, type AddVisitInput } from '../db/restaurants'
 import type { RestaurantListCollection, RestaurantListItem } from '../types/domain'
 import type { RestaurantSummary } from '../types/domain'
+import { resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
 import {
   TASTE_MAP_NATIVE_BRIDGE_VERSION,
   capabilityUnavailable,
@@ -135,14 +136,31 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
   acquisition = {
     search: async (query: string, city: string): Promise<TasteMapAcquisitionResultsDTO> => {
       const { mapService } = await import('../services/mapService')
-      if (!mapService.isConfigured) return { candidates: [], location: null, message: '地图服务尚未配置，仍可手动添加。', sharedImportFingerprint: null }
+      if (!mapService.isConfigured) {
+        const fixture = await this.loadDebugFixture()
+        if (fixture) {
+          const candidates = debugAcquisitionPOIs(city || '杭州')
+            .filter((value) => !query.trim() || `${value.name} ${value.address}`.toLocaleLowerCase('zh-CN').includes(query.trim().toLocaleLowerCase('zh-CN')))
+            .map((value) => this.cacheBrowserCandidate(value, null, fixture.profile))
+          return { candidates, location: null, message: candidates.length ? null : '没有找到匹配的餐厅。', sharedImportFingerprint: null }
+        }
+        return { candidates: [], location: null, message: '地图服务尚未配置，仍可手动添加。', sharedImportFingerprint: null }
+      }
       const profile = await this.loadProfile()
       const candidates = (await mapService.searchRestaurantPois(query, city)).map((value) => this.cacheBrowserCandidate(value, null, profile))
       return { candidates, location: null, message: candidates.length ? null : '没有找到匹配的餐厅。', sharedImportFingerprint: null }
     },
     nearby: async (): Promise<TasteMapAcquisitionResultsDTO> => {
       const { mapService } = await import('../services/mapService')
-      if (!mapService.isConfigured) return { candidates: [], location: null, message: '地图服务尚未配置，搜索和手动添加仍可使用。', sharedImportFingerprint: null }
+      if (!mapService.isConfigured) {
+        const fixture = await this.loadDebugFixture()
+        if (fixture) {
+          const candidates = debugAcquisitionPOIs('杭州').map((value, index) =>
+            this.cacheBrowserCandidate(value, 180 + index * 260, fixture.profile))
+          return { candidates, location: null, message: null, sharedImportFingerprint: null }
+        }
+        return { candidates: [], location: null, message: '地图服务尚未配置，搜索和手动添加仍可使用。', sharedImportFingerprint: null }
+      }
       const profile = await this.loadProfile()
       const coordinates = await mapService.detectCurrentCoordinates()
       const values = await mapService.searchNearbyRestaurantPois(coordinates, undefined, { radiusMeters: 3_000 })
@@ -282,19 +300,10 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     const id = `browser-candidate-${value.amapPoiId}`
     const existing = profile?.restaurants.find((restaurant) => restaurant.amapPoiId === value.amapPoiId)
     const existingImage = existing ? profile?.restaurantImages[existing.id] ?? browserImageDescriptor(existing) : null
-    const existingMarkerImage: TasteMapImageDescriptor | null = existing?.markerImageData
-      ? { kind: 'publicOrCached', resourceURL: existing.markerImageData, photoID: existing.markerPhotoId ?? '', accessibilityLabel: `${value.name}餐厅图片 · 已有餐厅照片` }
-      : null
-    const existingProviderImage: TasteMapImageDescriptor | null = existing?.merchantImageUrl
-      ? { kind: 'providerMerchant', resourceURL: existing.merchantImageUrl, accessibilityLabel: `${value.name}餐厅图片 · 已有商户图片` }
-      : null
-    const providerImage: TasteMapImageDescriptor | null = value.merchantImageUrl
-      ? { kind: 'providerMerchant', resourceURL: value.merchantImageUrl, accessibilityLabel: `${value.name}餐厅图片 · 商户图片` }
-      : null
-    const sources = [existingImage, existingMarkerImage, existingProviderImage, providerImage]
-      .filter((image): image is TasteMapImageDescriptor => image != null && image.kind !== 'foodDiningFallback')
+    const sources = [existingImage]
+      .filter((image): image is TasteMapImageDescriptor => image != null && image.kind !== 'foodDiningFallback' && image.kind !== 'foodCategoryVisual')
       .filter((image, index, values) => values.findIndex((candidate) => descriptorIdentity(candidate) === descriptorIdentity(image)) === index)
-    const fallback = { kind: 'foodDiningFallback' as const, stableSeed: existing?.id ?? id, accessibilityLabel: `${value.name}餐厅图片占位` }
+    const fallback = categoryImageDescriptor(value.name, existing?.tags ?? [], existing?.id ?? id)
     const candidate: TasteMapAcquisitionCandidateDTO = {
       id,
       name: value.name,
@@ -600,21 +609,53 @@ function browserImageDescriptor(restaurant: RestaurantSummary): TasteMapImageDes
   const userPhoto = restaurant.visits.flatMap((visit) => visit.photos.map((resourceURL, index) => ({
     resourceURL,
     photoID: visit.photoIds[index] ?? '',
+    visit,
   }))).find((item) => item.resourceURL)
   if (userPhoto) {
     return {
-      kind: 'publicOrCached',
+      kind: 'ownerPhoto',
       resourceURL: userPhoto.resourceURL,
       photoID: userPhoto.photoID,
+      restaurantID: restaurant.id,
+      visitID: userPhoto.visit.id,
+      sourceOwnerID: restaurant.userId,
+      visibility: userPhoto.visit.visibility,
+      exportAllowed: true,
+      attributionRequired: false,
       accessibilityLabel: `${restaurant.name} 的用户实拍`,
     }
   }
-  const source = restaurant.markerImageData || restaurant.merchantImageUrl
-  if (source) return { kind: 'providerMerchant', resourceURL: source, accessibilityLabel: `${restaurant.name} 餐厅图片` }
-  return { kind: 'foodDiningFallback', stableSeed: restaurant.id, accessibilityLabel: `${restaurant.name} 餐饮图示` }
+  if (restaurant.markerImageData) return {
+    kind: 'ownerPhoto', resourceURL: restaurant.markerImageData, photoID: restaurant.markerPhotoId ?? '',
+    restaurantID: restaurant.id, visitID: null, sourceOwnerID: restaurant.userId, visibility: 'private',
+    exportAllowed: true, attributionRequired: false, accessibilityLabel: `${restaurant.name} 的用户实拍`,
+  }
+  return categoryImageDescriptor(restaurant.name, restaurant.tags, restaurant.id)
+}
+
+function categoryImageDescriptor(name: string, tags: readonly string[], stableSeed: string): Extract<TasteMapImageDescriptor, { kind: 'foodCategoryVisual' }> {
+  return {
+    kind: 'foodCategoryVisual', categoryVisualID: resolveFoodCategoryVisualID({ name, tags }), stableSeed,
+    exportAllowed: false, accessibilityLabel: `${name} 餐饮分类图示`,
+  }
 }
 
 function normalizedLimit(value: number | undefined) {
   if (value === undefined) return Number.MAX_SAFE_INTEGER
   return Math.max(0, Math.min(Math.floor(value), 500))
+}
+
+function debugAcquisitionPOIs(city: string): import('../types/domain').PoiSearchResult[] {
+  return [
+    ['debug-hotpot', '雨巷火锅', '湖滨路 18 号'],
+    ['debug-sushi', '青岚寿司', '延安路 66 号'],
+    ['debug-noodles', '云边面馆', '平海路 21 号'],
+    ['debug-cafe', '桂雨咖啡', '龙翔桥 8 号'],
+    ['debug-western', '湖畔西餐', '东坡路 12 号'],
+    ['debug-dessert', '月白甜品', '学士路 9 号'],
+  ].map(([amapPoiId, name, address], index) => ({
+    amapPoiId, name, address, city, district: '上城区',
+    latitude: 30.266 + index * 0.001, longitude: 120.155 + index * 0.001,
+    merchantImageUrl: null, phone: null, openingHours: null,
+  }))
 }

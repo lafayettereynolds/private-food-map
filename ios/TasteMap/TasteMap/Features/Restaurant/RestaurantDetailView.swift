@@ -92,6 +92,13 @@ struct RestaurantDetailView: View {
         RestaurantDetailMetadata(restaurant: restaurant)
     }
 
+    private var categoryVisualID: FoodCategoryVisualID {
+        let tags = restaurant.remoteRecordData.flatMap {
+            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+        }?.tags ?? []
+        return FoodCategoryVisualResolver.resolve(name: restaurant.name, tags: tags)
+    }
+
     private var ratingReferences: [RestaurantRatingReference] {
         var values = RestaurantRatingReferenceResolver.resolve(
             metadata: metadata,
@@ -119,6 +126,7 @@ struct RestaurantDetailView: View {
                         publicPhotoID: metadata.markerPhotoID,
                         merchantImageURL: metadata.merchantImageURL,
                         markerEmoji: metadata.markerEmoji,
+                        categoryVisualID: categoryVisualID,
                         onSelect: { selectedPhoto = $0 },
                         onRetry: retryPhoto,
                         showsThumbnails: false

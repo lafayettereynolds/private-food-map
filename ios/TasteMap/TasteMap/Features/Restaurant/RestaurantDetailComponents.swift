@@ -105,6 +105,7 @@ struct RestaurantPhotoGallerySection: View {
     let publicPhotoID: String?
     let merchantImageURL: URL?
     let markerEmoji: String
+    var categoryVisualID: FoodCategoryVisualID = .other
     var photoAPI: (any PhotoBinaryAPI)? = nil
     let onSelect: (PhotoAsset) -> Void
     let onRetry: (PhotoAsset) -> Void
@@ -184,7 +185,7 @@ struct RestaurantPhotoGallerySection: View {
             resolution: RestaurantImagePriorityPolicy.resolution(
                 localUserPhotoID: primaryPhoto?.id,
                 publicOrCachedPhotoID: publicPhotoID,
-                providerMerchantImageURL: merchantImageURL
+                providerMerchantImageURL: nil as String?
             ),
             photosByID: Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) }),
             photoAPI: photoAPI,
@@ -193,6 +194,7 @@ struct RestaurantPhotoGallerySection: View {
             fallbackKind: FoodDiningVisualLibrary.kind(legacySymbol: markerEmoji),
             fallbackBackgroundColor: Color.accentColor.opacity(0.07),
             fallbackIconSize: 62,
+            categoryVisualID: categoryVisualID,
             accessibilityLabel: "餐厅主图"
         )
         .frame(maxWidth: .infinity)

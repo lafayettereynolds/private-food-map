@@ -21,6 +21,13 @@ export interface PublicContentPlaceIdentityV1 {
 export interface PublicContentPhotoV1 {
   photoId: string
   variant: 'thumbnail'
+  sourceType?: 'currentOwnerPhoto' | 'activityAuthorPhoto' | 'publicUGC'
+  restaurantId?: string
+  visitId?: string | null
+  ownerUserId?: string
+  visibility?: PublicContentVisibilityV1
+  createdAt?: string
+  exportAllowed?: boolean
 }
 
 /** Explicit allowlist. It is not a User row or an Own Profile contract. */

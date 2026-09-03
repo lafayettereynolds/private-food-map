@@ -1,4 +1,5 @@
 import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import type { FoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
 
 export const TASTE_MAP_NATIVE_BRIDGE_VERSION = 1 as const
 
@@ -81,16 +82,32 @@ export interface TasteMapRuntimeInfo {
   supportedCapabilities: TasteMapCapabilityRegistry
 }
 
+export type TasteMapUGCVisibility = 'private' | 'friends' | 'public'
+
+export interface TasteMapUGCImageMetadata {
+  photoID: string
+  restaurantID: string | null
+  visitID: string | null
+  sourceOwnerID: string
+  visibility: TasteMapUGCVisibility
+  exportAllowed: boolean
+  attributionRequired: boolean
+}
+
 export type TasteMapImageDescriptor =
+  | ({ kind: 'ownerPhoto'; resourceURL: string; accessibilityLabel: string } & TasteMapUGCImageMetadata)
+  | ({ kind: 'activityPhoto'; resourceURL: string; accessibilityLabel: string } & TasteMapUGCImageMetadata)
+  | ({ kind: 'publicUGC'; resourceURL: string; accessibilityLabel: string } & TasteMapUGCImageMetadata)
+  | { kind: 'foodCategoryVisual'; categoryVisualID: FoodCategoryVisualID; stableSeed: string; accessibilityLabel: string; exportAllowed: false }
   | { kind: 'nativeResource'; resourceURL: string; photoID: string; accessibilityLabel: string }
   | { kind: 'publicOrCached'; resourceURL: string; photoID: string; accessibilityLabel: string }
   | { kind: 'providerMerchant'; resourceURL: string; accessibilityLabel: string }
   | { kind: 'foodDiningFallback'; stableSeed: string; accessibilityLabel: string }
 
 export interface TasteMapImageResolutionDTO {
-  /** Ordered by the platform's canonical Restaurant image policy. */
+  /** Ordered by the platform's surface-aware Restaurant visual policy. */
   sources: TasteMapImageDescriptor[]
-  fallback: Extract<TasteMapImageDescriptor, { kind: 'foodDiningFallback' }>
+  fallback: Extract<TasteMapImageDescriptor, { kind: 'foodCategoryVisual' | 'foodDiningFallback' }>
 }
 
 export interface TasteMapUserDTO {

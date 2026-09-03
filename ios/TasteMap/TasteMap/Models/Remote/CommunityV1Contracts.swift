@@ -30,6 +30,13 @@ struct PublicContentPlaceIdentityV1: Codable, Equatable, Sendable {
 struct PublicContentPhotoV1: Codable, Equatable, Identifiable, Sendable {
     let photoId: String
     let variant: PhotoBinaryVariant
+    var sourceType: String? = nil
+    var restaurantId: String? = nil
+    var visitId: String? = nil
+    var ownerUserId: String? = nil
+    var visibility: String? = nil
+    var createdAt: String? = nil
+    var exportAllowed: Bool? = nil
     var id: String { photoId }
 }
 
@@ -82,7 +89,19 @@ struct PublicContentRestaurantV1: Codable, Equatable, Sendable {
             latitude: latitude, longitude: longitude, tags: tags,
             pricePerPerson: pricePerPerson, merchantImageUrl: merchantImageUrl,
             markerEmoji: markerEmoji,
-            photo: photo.map { .init(photoId: $0.photoId, variant: $0.variant) }
+            photo: photo.map {
+                .init(
+                    photoId: $0.photoId,
+                    variant: $0.variant,
+                    sourceType: $0.sourceType,
+                    restaurantId: $0.restaurantId,
+                    visitId: $0.visitId,
+                    ownerUserId: $0.ownerUserId,
+                    visibility: $0.visibility,
+                    createdAt: $0.createdAt,
+                    exportAllowed: $0.exportAllowed
+                )
+            }
         )
     }
 }

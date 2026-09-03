@@ -311,6 +311,7 @@ public struct TasteMapHybridPhotoIDRequest: Codable, Sendable {
 }
 
 public enum TasteMapHybridImageKind: String, Codable, Sendable {
+    case ownerPhoto, activityPhoto, publicUGC, foodCategoryVisual
     case nativeResource, publicOrCached, providerMerchant, foodDiningFallback
 }
 
@@ -319,6 +320,13 @@ public struct TasteMapHybridImageDescriptor: Codable, Sendable {
     public let resourceURL: String?
     public let photoID: String?
     public let stableSeed: String?
+    public let categoryVisualID: String?
+    public let restaurantID: String?
+    public let visitID: String?
+    public let sourceOwnerID: String?
+    public let visibility: String?
+    public let exportAllowed: Bool?
+    public let attributionRequired: Bool?
     public let accessibilityLabel: String
 
     public init(
@@ -326,12 +334,26 @@ public struct TasteMapHybridImageDescriptor: Codable, Sendable {
         resourceURL: String? = nil,
         photoID: String? = nil,
         stableSeed: String? = nil,
+        categoryVisualID: String? = nil,
+        restaurantID: String? = nil,
+        visitID: String? = nil,
+        sourceOwnerID: String? = nil,
+        visibility: String? = nil,
+        exportAllowed: Bool? = nil,
+        attributionRequired: Bool? = nil,
         accessibilityLabel: String
     ) {
         self.kind = kind
         self.resourceURL = resourceURL
         self.photoID = photoID
         self.stableSeed = stableSeed
+        self.categoryVisualID = categoryVisualID
+        self.restaurantID = restaurantID
+        self.visitID = visitID
+        self.sourceOwnerID = sourceOwnerID
+        self.visibility = visibility
+        self.exportAllowed = exportAllowed
+        self.attributionRequired = attributionRequired
         self.accessibilityLabel = accessibilityLabel
     }
 }

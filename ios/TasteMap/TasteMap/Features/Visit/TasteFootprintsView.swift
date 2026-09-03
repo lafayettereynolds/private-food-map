@@ -104,7 +104,11 @@ private struct TasteFootprintRow: View {
                         photo: item.photo,
                         publicPhotoID: item.publicPhotoID,
                         merchantImageURL: item.merchantImageURL,
-                        restaurantID: item.restaurant.id
+                        restaurantID: item.restaurant.id,
+                        restaurantName: item.restaurant.name,
+                        categoryTags: item.restaurant.remoteRecordData.flatMap {
+                            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+                        }?.tags ?? []
                     )
                         .frame(maxWidth: .infinity)
                         .frame(height: item.photo == nil ? 112 : 180)

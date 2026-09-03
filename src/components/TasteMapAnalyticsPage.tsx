@@ -182,13 +182,13 @@ function posterData(model: AnalyticsModel, profile: TasteMapProfileDashboardView
 
 function shareVisual(profile: TasteMapProfileDashboardViewModel, restaurantID: string, name: string) {
   const descriptor = profile.restaurantImages[restaurantID]
-  if (!descriptor || descriptor.kind === 'foodDiningFallback') {
+  if (!descriptor || descriptor.kind === 'foodDiningFallback' || descriptor.kind === 'foodCategoryVisual' || descriptor.kind === 'activityPhoto' || descriptor.kind === 'publicUGC') {
     return { source: null, photoId: null, origin: 'fallback' as const, label: name, restaurantId: restaurantID }
   }
   return {
     source: descriptor.resourceURL,
     photoId: 'photoID' in descriptor ? descriptor.photoID : null,
-    origin: descriptor.kind === 'nativeResource' ? 'visit' as const : descriptor.kind === 'providerMerchant' ? 'provider' as const : 'restaurant' as const,
+    origin: descriptor.kind === 'nativeResource' || descriptor.kind === 'ownerPhoto' ? 'visit' as const : descriptor.kind === 'providerMerchant' ? 'provider' as const : 'restaurant' as const,
     label: name,
     restaurantId: restaurantID,
   }

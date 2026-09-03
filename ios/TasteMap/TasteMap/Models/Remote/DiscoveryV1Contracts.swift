@@ -33,6 +33,13 @@ struct DiscoveryPlaceIdentityV1: Codable, Equatable, Sendable {
 struct DiscoveryPhotoProjectionV1: Codable, Equatable, Sendable {
     let photoId: String
     let variant: PhotoBinaryVariant
+    var sourceType: String? = nil
+    var restaurantId: String? = nil
+    var visitId: String? = nil
+    var ownerUserId: String? = nil
+    var visibility: String? = nil
+    var createdAt: String? = nil
+    var exportAllowed: Bool? = nil
 }
 
 struct DiscoveryRestaurantProjectionV1: Codable, Equatable, Identifiable, Sendable {

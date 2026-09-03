@@ -35,6 +35,7 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
     let photoURL: URL?
     let phone: String?
     let openingHours: String?
+    let categoryHints: [String]
 
     var coordinate: RestaurantCoordinate {
         RestaurantCoordinate(latitude: latitude, longitude: longitude)
@@ -53,7 +54,8 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         distanceMeters: Double? = nil,
         photoURL: URL? = nil,
         phone: String? = nil,
-        openingHours: String? = nil
+        openingHours: String? = nil,
+        categoryHints: [String] = []
     ) {
         self.id = id
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -72,6 +74,9 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         self.photoURL = photoURL
         self.phone = Self.normalizedOptional(phone)
         self.openingHours = Self.normalizedOptional(openingHours)
+        self.categoryHints = Array(Set(categoryHints.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })).sorted()
     }
 
     static func manual(
@@ -156,7 +161,8 @@ extension DiscoveryRestaurantProjectionV1 {
                     isPrimary: $0.isPrimary
                 )
             },
-            photoURL: merchantImageUrl.flatMap(URL.init(string:))
+            photoURL: merchantImageUrl.flatMap(URL.init(string:)),
+            categoryHints: tags
         )
     }
 }

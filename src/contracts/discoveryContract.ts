@@ -30,6 +30,13 @@ export interface DiscoveryPlaceIdentityV1 {
 export interface DiscoveryPhotoProjectionV1 {
   photoId: string
   variant: 'thumbnail'
+  sourceType?: 'currentOwnerPhoto' | 'activityAuthorPhoto' | 'publicUGC'
+  restaurantId?: string
+  visitId?: string | null
+  ownerUserId?: string
+  visibility?: 'private' | 'friends' | 'public'
+  createdAt?: string
+  exportAllowed?: boolean
 }
 
 export interface DiscoveryRestaurantProjectionV1 {

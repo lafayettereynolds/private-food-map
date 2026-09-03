@@ -4059,9 +4059,9 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(webView.images.matching(
             NSPredicate(format: "label BEGINSWITH %@", "大家评分")
         ).firstMatch.waitForExistence(timeout: 8))
-        XCTAssertTrue(webView.buttons.matching(
+        XCTAssertFalse(webView.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@", "查看推荐来源用户 ")
-        ).firstMatch.waitForExistence(timeout: 8))
+        ).firstMatch.exists, "For You must not turn a photo uploader into the recommender")
         let recommendationReason = webView.staticTexts["为什么适合你"]
         scrollDiscoveryCardIntoView(in: app)
         XCTAssertTrue(recommendationReason.waitForExistence(timeout: 8))
@@ -4071,6 +4071,11 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(webView.buttons.matching(
             NSPredicate(format: "label IN %@", ["想吃", "已想吃", "已去过"])
         ).firstMatch.waitForExistence(timeout: 8), "Missing WantToGo state action")
+
+        webView.buttons["同味之选"].tap()
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "查看同味来源用户 ")
+        ).firstMatch.waitForExistence(timeout: 8), "Same Taste keeps its real activity author")
 
         webView.buttons["关注"].tap()
         let followingLike = webView.switches.matching(

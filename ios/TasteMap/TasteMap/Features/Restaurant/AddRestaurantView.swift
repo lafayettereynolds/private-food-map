@@ -23,6 +23,7 @@ struct AddRestaurantView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.localAccountScope) private var accountScope
     @Query private var restaurants: [Restaurant]
+    @Query private var photos: [PhotoAsset]
     @StateObject private var viewModel: RestaurantAcquisitionViewModel
     @AppStorage("taste-map-last-search-city") private var city = ""
     @State private var query = ""
@@ -186,9 +187,11 @@ struct AddRestaurantView: View {
                     )
                 } else {
                     ForEach(viewModel.nearbyResults.prefix(8)) { candidate in
+                        let match = RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants)
                         RestaurantAcquisitionCandidateRow(
                             candidate: candidate,
-                            match: RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants),
+                            match: match,
+                            ownerPhoto: ownerPhoto(for: match),
                             onSelect: select
                         )
                     }
@@ -282,9 +285,11 @@ struct AddRestaurantView: View {
                 AcquisitionMessage(icon: "magnifyingglass", title: "搜索结果", message: message, retryTitle: nil, retry: nil)
             }
             ForEach(viewModel.searchResults) { candidate in
+                let match = RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants)
                 RestaurantAcquisitionCandidateRow(
                     candidate: candidate,
-                    match: RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants),
+                    match: match,
+                    ownerPhoto: ownerPhoto(for: match),
                     onSelect: select
                 )
             }
@@ -310,9 +315,11 @@ struct AddRestaurantView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(viewModel.linkResults) { candidate in
+                let match = RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants)
                 RestaurantAcquisitionCandidateRow(
                     candidate: candidate,
-                    match: RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants),
+                    match: match,
+                    ownerPhoto: ownerPhoto(for: match),
                     onSelect: select
                 )
             }
@@ -340,7 +347,28 @@ struct AddRestaurantView: View {
             }
             return
         }
-        selectedCandidate = RestaurantAcquisitionSelection(candidate: candidate, match: match)
+        selectedCandidate = RestaurantAcquisitionSelection(
+            candidate: candidate,
+            match: match,
+            ownerPhoto: ownerPhoto(for: match)
+        )
+    }
+
+    private func ownerPhoto(for match: RestaurantDeduplicator.Match?) -> PhotoAsset? {
+        guard let restaurant = match?.restaurant,
+              accountScope.contains(ownerUserID: restaurant.ownerUserID) else { return nil }
+        let active = photos.filter {
+            accountScope.contains(ownerUserID: $0.ownerUserID) && $0.restaurantId == restaurant.id &&
+                $0.deletedAt == nil && $0.binaryDeletedAt == nil && $0.uploadState != .deleted
+        }
+        let markerID = restaurant.remoteRecordData.flatMap {
+            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+        }?.markerPhotoId
+        return RestaurantImagePhotoSelectionPolicy.preferredPhoto(
+            restaurantID: restaurant.id,
+            photos: active,
+            referencedPhotoID: markerID
+        )
     }
 
     private func presentPendingManualCandidate() {
@@ -362,6 +390,7 @@ struct AddRestaurantView: View {
 private struct RestaurantAcquisitionSelection: Identifiable {
     let candidate: RestaurantCandidate
     let match: RestaurantDeduplicator.Match?
+    let ownerPhoto: PhotoAsset?
     var id: UUID { candidate.id }
 }
 
@@ -385,7 +414,7 @@ private struct RestaurantCandidateConfirmationView: View {
         NavigationStack {
             ScrollView {
                 RestaurantDetailStandardBody {
-                    RestaurantCandidateHero(candidate: candidate)
+                    RestaurantCandidateHero(candidate: candidate, ownerPhoto: acquisition.ownerPhoto)
                 } header: {
                     RestaurantDetailHeader(identity: RestaurantDetailIdentityPresentation(
                         name: candidate.name,
@@ -508,18 +537,21 @@ private struct RestaurantCandidateConfirmationView: View {
 
 private struct RestaurantCandidateHero: View {
     let candidate: RestaurantCandidate
+    let ownerPhoto: PhotoAsset?
 
     var body: some View {
         TasteMapRestaurantImage(
-            resolution: RestaurantImagePriorityPolicy.resolution(
-                localUserPhotoID: nil,
-                providerMerchantImageURL: candidate.photoURL
-            ),
+            resolution: RestaurantImageResolution(sources: ownerPhoto.map { [.localUserPhoto($0.id)] } ?? []),
+            photosByID: ownerPhoto.map { [$0.id: $0] } ?? [:],
             semanticID: candidate.id.uuidString,
             variant: .display,
             fallbackForegroundColor: AcquisitionPalette.brandDeep,
             fallbackBackgroundColor: AcquisitionPalette.brandSoft,
             fallbackIconSize: 62,
+            categoryVisualID: FoodCategoryVisualResolver.resolve(
+                name: candidate.name,
+                tags: candidate.categoryHints
+            ),
             accessibilityLabel: "\(candidate.name)餐厅图片"
         )
         .frame(maxWidth: .infinity)
@@ -828,19 +860,22 @@ private struct ManualRestaurantAddView: View {
 private struct RestaurantAcquisitionCandidateRow: View {
     let candidate: RestaurantCandidate
     let match: RestaurantDeduplicator.Match?
+    let ownerPhoto: PhotoAsset?
     let onSelect: (RestaurantCandidate, RestaurantDeduplicator.Match?) -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             TasteMapRestaurantImage(
-                resolution: RestaurantImagePriorityPolicy.resolution(
-                    localUserPhotoID: nil,
-                    providerMerchantImageURL: candidate.photoURL
-                ),
+                resolution: RestaurantImageResolution(sources: ownerPhoto.map { [.localUserPhoto($0.id)] } ?? []),
+                photosByID: ownerPhoto.map { [$0.id: $0] } ?? [:],
                 semanticID: candidate.id.uuidString,
                 fallbackForegroundColor: AcquisitionPalette.brand,
                 fallbackBackgroundColor: AcquisitionPalette.brandSoft,
                 fallbackIconSize: 28,
+                categoryVisualID: FoodCategoryVisualResolver.resolve(
+                    name: candidate.name,
+                    tags: candidate.categoryHints
+                ),
                 accessibilityLabel: "\(candidate.name)餐厅图片"
             )
             .frame(width: 44, height: 44)

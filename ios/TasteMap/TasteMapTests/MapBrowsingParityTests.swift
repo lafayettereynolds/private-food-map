@@ -63,7 +63,7 @@ struct MapBrowsingParityTests {
         #expect(markers(snapshot.visited, segment: .forYou).first?.status == .recommended)
     }
 
-    @Test("Marker visuals prefer every real local photo before provider merchant and decorative fallback")
+    @Test("Marker visuals use only current-owner photos or category visuals")
     func visualPriority() throws {
         let markerRestaurant = makeRestaurant(1, name: "正式标记照片", status: .visited)
         let markerPhoto = photo(301, restaurant: markerRestaurant, kind: .restaurantMarker, remoteID: "marker-photo")
@@ -106,11 +106,11 @@ struct MapBrowsingParityTests {
         ).map { ($0.id, $0.visual) })
 
         #expect(result[markerRestaurant.id] == .photo(markerPhoto.id))
-        #expect(result[merchantRestaurant.id] == .merchantImage(URL(string: "https://images.example.com/merchant.jpg")!))
+        #expect(result[merchantRestaurant.id] == .category(.other))
         #expect(result[localRestaurant.id] == .photo(localOnlyPhoto.id))
         #expect(snapshot.visited.first(where: { $0.id == localRestaurant.id })?.merchantImageURL?.host == "images.example.com")
-        #expect(result[emojiRestaurant.id] == .emoji("🍜"))
-        #expect(result[fallbackRestaurant.id] == .fallback)
+        #expect(result[emojiRestaurant.id] == .category(.other))
+        #expect(result[fallbackRestaurant.id] == .category(.other))
     }
 
     @Test("Deleted, cross-restaurant and unsafe image references safely degrade")
@@ -131,7 +131,7 @@ struct MapBrowsingParityTests {
         )
         let visual = markers(snapshot.visited, photos: [deleted, crossRestaurant])
             .first(where: { $0.id == restaurant.id })?.visual
-        #expect(visual == .emoji("🍛"))
+        #expect(visual == .category(.other))
     }
 
     @Test("Invalid coordinates and deleted Restaurants never become markers")
@@ -358,7 +358,7 @@ struct MapBrowsingParityTests {
     ) -> RestaurantMapMarkerPresentation {
         RestaurantMapMarkerPresentation(
             id: uuid(value), name: "餐厅 \(value)", latitude: latitude, longitude: longitude,
-            status: .visited, visual: .fallback, visitCount: visitCount, averageRating: rating,
+            status: .visited, visual: .category(.other), visitCount: visitCount, averageRating: rating,
             distanceKilometers: nil
         )
     }

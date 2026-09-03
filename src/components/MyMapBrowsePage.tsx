@@ -28,6 +28,7 @@ import {
   markMapScopeStaleResponse,
 } from './mapScopePerformance'
 import { TasteMapPrimaryTabBar, type TasteMapPrimaryTab } from './TasteMapDiscoveryShared'
+import { HybridRestaurantImage } from './TasteMapHybridShared'
 import './myMapBrowsePage.css'
 
 export interface MyMapSurfaceProps {
@@ -392,13 +393,7 @@ function MyRestaurantList({ items, images, loading, scope, onOpen }: { items: Re
 }
 
 function RestaurantImage({ descriptor, restaurantName }: { descriptor?: TasteMapImageDescriptor; restaurantName: string }) {
-  const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-  const usesImage = descriptor && descriptor.kind !== 'foodDiningFallback' && !failed
-  return <span className={`tm-restaurant-image${loaded && usesImage ? '' : ' is-fallback'}`}>
-    {!loaded || !usesImage ? <Utensils aria-label={`${restaurantName} 餐饮图示`} size={23} /> : null}
-    {usesImage ? <img alt={descriptor.accessibilityLabel} data-restaurant-image="true" hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={descriptor.resourceURL} /> : null}
-  </span>
+  return <span className="tm-restaurant-image"><HybridRestaurantImage image={descriptor} name={restaurantName} /></span>
 }
 
 function FullFilterSheet({ filters, onChange, onClose, options }: { filters: TasteMapMapFilters; onChange: (value: TasteMapMapFilters) => void; onClose: () => void; options: TasteMapMapBrowseOptions }) {

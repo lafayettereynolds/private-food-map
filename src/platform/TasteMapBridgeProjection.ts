@@ -58,7 +58,7 @@ function projectUser(user: TasteMapUserDTO): UserProfile {
 
 function projectRestaurant(restaurant: TasteMapRestaurantDTO): RestaurantSummary {
   const visits = restaurant.visits.map(projectVisit)
-  const imageURL = restaurant.image.kind === 'foodDiningFallback' ? null : restaurant.image.resourceURL
+  const imageURL = restaurant.image.kind === 'foodDiningFallback' || restaurant.image.kind === 'foodCategoryVisual' ? null : restaurant.image.resourceURL
   return {
     id: restaurant.id,
     // The shared React presentation model uses this stable viewer sentinel to
@@ -148,8 +148,8 @@ function projectVisit(visit: TasteMapVisitDTO): Visit {
       photoId: dish.photoID,
     })),
     note: visit.note,
-    photos: (visit.photos ?? []).map((photo) => photo.kind === 'foodDiningFallback' ? '' : photo.resourceURL),
-    photoIds: (visit.photos ?? []).map((photo) => photo.kind === 'nativeResource' || photo.kind === 'publicOrCached' ? photo.photoID : null),
+    photos: (visit.photos ?? []).map((photo) => photo.kind === 'foodDiningFallback' || photo.kind === 'foodCategoryVisual' ? '' : photo.resourceURL),
+    photoIds: (visit.photos ?? []).map((photo) => 'photoID' in photo ? photo.photoID : null),
     createdAt: visit.createdAt,
     updatedAt: visit.updatedAt,
     deletedAt: null,

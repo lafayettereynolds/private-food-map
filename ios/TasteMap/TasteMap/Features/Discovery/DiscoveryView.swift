@@ -1015,13 +1015,14 @@ struct DiscoveryRestaurantImage: View {
             resolution: RestaurantImagePriorityPolicy.resolution(
                 localUserPhotoID: nil,
                 publicOrCachedPhotoID: restaurant.photo?.photoId,
-                providerMerchantImageURL: allowsMerchantImageFallback ? restaurant.merchantImageUrl : nil
+                providerMerchantImageURL: nil as String?
             ),
             photoAPI: photoAPI,
             semanticID: restaurant.globalKey,
             fallbackKind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
             fallbackBackgroundColor: Color.accentColor.opacity(0.14),
             fallbackIconSize: 64,
+            categoryVisualID: FoodCategoryVisualResolver.resolve(name: restaurant.name, tags: restaurant.tags),
             accessibilityLabel: "\(restaurant.name)餐厅图片"
         )
     }

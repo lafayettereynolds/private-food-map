@@ -214,7 +214,11 @@ private struct RestaurantBrowseCard: View {
                 photo: item.photo,
                 publicPhotoID: item.publicPhotoID,
                 merchantImageURL: item.merchantImageURL,
-                restaurantID: item.restaurant.id
+                restaurantID: item.restaurant.id,
+                restaurantName: item.restaurant.name,
+                categoryTags: item.restaurant.remoteRecordData.flatMap {
+                    try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+                }?.tags ?? []
             )
                 .frame(width: 54, height: 54)
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -353,18 +357,24 @@ struct RestaurantBrowsePhoto: View {
     var publicPhotoID: String? = nil
     let merchantImageURL: URL?
     let restaurantID: UUID
+    var restaurantName: String = ""
+    var categoryTags: [String] = []
 
     var body: some View {
         TasteMapRestaurantImage(
             resolution: RestaurantImagePriorityPolicy.resolution(
                 localUserPhotoID: photo?.id,
                 publicOrCachedPhotoID: publicPhotoID,
-                providerMerchantImageURL: merchantImageURL
+                providerMerchantImageURL: nil as String?
             ),
             photosByID: photo.map { [$0.id: $0] } ?? [:],
             semanticID: restaurantID.uuidString,
             fallbackBackgroundColor: TasteMapCoreTheme.brandSoft,
             fallbackIconSize: 38,
+            categoryVisualID: FoodCategoryVisualResolver.resolve(
+                name: restaurantName,
+                tags: categoryTags
+            ),
             accessibilityLabel: "餐厅图片"
         )
     }

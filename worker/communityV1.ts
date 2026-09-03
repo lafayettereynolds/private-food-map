@@ -20,6 +20,13 @@ import type { ProfileAvatarPresetContract, ProfileVisibilityContract } from '../
 import type { RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
 import { consumePublicAPIQuota } from './publicAPIRateLimit'
 import { engagementForVisits } from './communityInteractionsV1'
+import {
+  isActiveRestaurantUGCPhoto,
+  RestaurantUGCImagePool,
+  resolveRestaurantVisualSelection,
+  type RestaurantUGCPhotoRecord,
+  type RestaurantUGCPhotoSelection,
+} from './restaurantUGCImagePool'
 
 const MAX_NOTE_LENGTH = 1_200
 
@@ -77,7 +84,13 @@ interface IdentityRow {
   is_primary: number
 }
 
-interface PhotoRow { id: string; visit_id: string; visibility: 'public' | 'friends' }
+interface CommunityPhotoRow extends RestaurantUGCPhotoRecord {
+  restaurant_name: string
+  address: string
+  city: string
+  latitude: number
+  longitude: number
+}
 interface FriendshipRow {
   id: string
   requester_id: string
@@ -256,14 +269,9 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
   if (!rows.length) return []
   const restaurantIDs = unique(rows.map((row) => row.restaurant_id))
   const visitIDs = unique(rows.map((row) => row.visit_id))
-  const [identityResult, photoResult, friendshipResult, followResult, viewerRestaurantResult, viewerIdentityResult] = await database.batch([
+  const [identityResult, friendshipResult, followResult, viewerRestaurantResult, viewerIdentityResult] = await database.batch([
     database.prepare(`SELECT restaurant_id, provider, external_id, is_primary FROM restaurant_place_identities
       WHERE restaurant_id IN (${placeholders(restaurantIDs)})`).bind(...restaurantIDs),
-    database.prepare(`SELECT p.id, p.visit_id, p.visibility FROM photos p JOIN visits v ON v.id = p.visit_id
-      WHERE p.visit_id IN (${placeholders(visitIDs)}) AND p.deleted_at IS NULL AND p.storage_provider = 'r2'
-        AND ((p.visibility = 'public' AND v.visibility = 'public') OR
-          (p.visibility = 'friends' AND v.visibility = 'friends'))
-      ORDER BY p.sort_order ASC, p.created_at DESC`).bind(...visitIDs),
     database.prepare(`SELECT id, requester_id, addressee_id, status, deleted_at FROM friendships
       WHERE requester_id = ? OR addressee_id = ?`).bind(viewerId, viewerId),
     database.prepare(`SELECT followed_user_id FROM follows WHERE follower_id = ? AND deleted_at IS NULL`).bind(viewerId),
@@ -274,7 +282,50 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
       WHERE r.user_id = ? AND r.deleted_at IS NULL`).bind(viewerId),
   ])
   const identities = identityMap(identityResult.results as unknown as IdentityRow[])
-  const photos = photoMap(photoResult.results as unknown as PhotoRow[])
+  const cities = unique(rows.map((row) => row.city))
+  const photoResult = await database.prepare(`SELECT p.id, p.restaurant_id, p.visit_id, p.user_id,
+      p.visibility, v.visibility AS visit_visibility, up.visibility AS profile_visibility,
+      p.created_at, p.sort_order, r.marker_photo_id, p.deleted_at,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM content_reports cr WHERE cr.status = 'actioned' AND (
+          (cr.content_type = 'visit' AND cr.content_id = p.visit_id) OR
+          (cr.content_type = 'user' AND cr.content_id = p.user_id)
+        )
+      ) THEN 0 ELSE 1 END AS moderation_eligible,
+      r.name AS restaurant_name, r.address, r.city, r.latitude, r.longitude
+    FROM photos p LEFT JOIN visits v ON v.id = p.visit_id AND v.user_id = p.user_id
+    JOIN restaurants r ON r.id = p.restaurant_id AND r.user_id = p.user_id
+    JOIN user_profiles up ON up.user_id = p.user_id AND up.deleted_at IS NULL
+    WHERE p.deleted_at IS NULL AND (v.id IS NULL OR v.deleted_at IS NULL)
+      AND r.deleted_at IS NULL AND p.storage_provider = 'r2'
+      AND r.city IN (${placeholders(cities)})
+      AND NOT EXISTS (
+        SELECT 1 FROM user_blocks pub WHERE pub.deleted_at IS NULL AND (
+          (pub.blocker_user_id = ? AND pub.blocked_user_id = p.user_id) OR
+          (pub.blocker_user_id = p.user_id AND pub.blocked_user_id = ?)
+        )
+      ) AND (
+        (p.visit_id IN (${placeholders(visitIDs)}) AND (
+          (p.visibility = 'public' AND (v.id IS NULL OR v.visibility = 'public')) OR
+          (p.visibility = 'friends' AND v.visibility = 'friends')
+        )) OR
+        (p.visibility = 'public' AND (v.id IS NULL OR v.visibility = 'public') AND up.visibility = 'public')
+      )
+    ORDER BY p.sort_order ASC, p.created_at DESC, p.id ASC LIMIT 2000`)
+    .bind(...cities, viewerId, viewerId, ...visitIDs).all<CommunityPhotoRow>()
+  const photoRows = photoResult.results
+  const photoRestaurantIDs = unique(photoRows.map((photo) => photo.restaurant_id))
+  const photoIdentityResult = photoRestaurantIDs.length
+    ? await database.prepare(`SELECT restaurant_id, provider, external_id, is_primary
+        FROM restaurant_place_identities WHERE restaurant_id IN (${placeholders(photoRestaurantIDs)})`)
+      .bind(...photoRestaurantIDs).all<IdentityRow>()
+    : { results: [] as IdentityRow[] }
+  const photoIdentities = identityMap(photoIdentityResult.results)
+  const imagePool = new RestaurantUGCImagePool(photoRows)
+  const photoGlobalKeys = new Map(photoRows.map((photo) => [
+    photo.restaurant_id,
+    globalPlaceKey(photoIdentities.get(photo.restaurant_id) ?? [], photo),
+  ]))
   const friendships = friendshipMap(friendshipResult.results as unknown as FriendshipRow[], viewerId)
   const follows = new Set((followResult.results as Array<{ followed_user_id: string }>).map((row) => row.followed_user_id))
   const viewerStates = buildViewerStates(
@@ -283,9 +334,20 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
   )
   const engagements = await engagementForVisits(database, viewerId, visitIDs)
   return rows.map((row) => {
-    const place = restaurantProjection(row, identities.get(row.restaurant_id) ?? [], photos.get(row.visit_id)?.[0] ?? null)
     const scope: PublicContentCacheScopeV1 = row.visit_visibility === 'friends' || row.profile_visibility === 'friends' ? 'friends' : 'public'
-    const visitPhotos = (photos.get(row.visit_id) ?? []).slice(0, 4)
+    const targetKey = globalPlaceKey(identities.get(row.restaurant_id) ?? [], row)
+    const relatedRestaurantIDs = unique([row.restaurant_id, ...photoRows.filter((photo) => photoGlobalKeys.get(photo.restaurant_id) === targetKey).map((photo) => photo.restaurant_id)])
+    const selectedPhoto = resolveRestaurantVisualSelection(imagePool, {
+      surface: 'latest',
+      restaurantIDs: relatedRestaurantIDs,
+      viewerID: viewerId,
+      activityVisitID: row.visit_id,
+      canSeeFriendsActivity: scope === 'friends',
+    })
+    const visitPhotos = photoRows.filter((photo) => photo.visit_id === row.visit_id && isActiveRestaurantUGCPhoto(photo))
+      .map((photo) => publicContentPhoto({ sourceType: 'activityAuthorPhoto', photo, exportAllowed: photo.user_id === viewerId })!)
+      .slice(0, 4)
+    const place = restaurantProjection(row, identities.get(row.restaurant_id) ?? [], publicContentPhoto(selectedPhoto))
     return {
       id: `visit:${row.visit_id}`,
       kind: 'visit',
@@ -589,10 +651,22 @@ function identityMap(rows: IdentityRow[]) {
   return result
 }
 
-function photoMap(rows: PhotoRow[]) {
-  const result = new Map<string, PublicContentPhotoV1[]>()
-  rows.forEach((row) => result.set(row.visit_id, [...(result.get(row.visit_id) ?? []), { photoId: row.id, variant: 'thumbnail' }]))
-  return result
+function publicContentPhoto(selection: RestaurantUGCPhotoSelection | null): PublicContentPhotoV1 | null
+function publicContentPhoto(selection: RestaurantUGCPhotoSelection): PublicContentPhotoV1
+function publicContentPhoto(selection: RestaurantUGCPhotoSelection | null): PublicContentPhotoV1 | null {
+  if (!selection) return null
+  const photo = selection.photo
+  return {
+    photoId: photo.id,
+    variant: 'thumbnail',
+    sourceType: selection.sourceType === 'nonPublic' ? undefined : selection.sourceType,
+    restaurantId: photo.restaurant_id,
+    visitId: photo.visit_id,
+    ownerUserId: photo.user_id,
+    visibility: photo.visibility === 'private' ? undefined : photo.visibility,
+    createdAt: photo.created_at,
+    exportAllowed: selection.exportAllowed,
+  }
 }
 
 function friendshipMap(rows: FriendshipRow[], viewerId: string) {

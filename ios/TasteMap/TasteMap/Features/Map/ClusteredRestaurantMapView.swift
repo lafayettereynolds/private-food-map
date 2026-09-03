@@ -469,7 +469,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     private let fallbackImageView = UIImageView()
     private let statusBadge = UIImageView()
     private var representedRestaurantID: UUID?
-    private var fallbackKind: FoodDiningVisualKind = .genericDining
+    private var categoryVisualID: FoodCategoryVisualID = .other
     private var markerStatus: RestaurantMapMarkerStatus = .visited
     private var distanceKilometers: Double?
 
@@ -539,13 +539,8 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         representedRestaurantID = marker.id
         markerStatus = marker.status
         distanceKilometers = marker.distanceKilometers
-        fallbackKind = {
-            if case let .emoji(value) = marker.visual {
-                return FoodDiningVisualLibrary.kind(legacySymbol: value)
-            }
-            return .genericDining
-        }()
-        fallbackImageView.tintColor = fallbackTint(fallbackKind)
+        if case let .category(value) = marker.visual { categoryVisualID = value }
+        fallbackImageView.tintColor = nil
         visualContainer.layer.borderColor = ratingColor(marker.averageRating).cgColor
         statusBadge.backgroundColor = statusColor(marker.status)
         statusBadge.image = UIImage(
@@ -569,9 +564,9 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     func showFallback() {
         imageView.image = nil
         fallbackImageView.isHidden = false
-        fallbackImageView.image = UIImage(
-            systemName: fallbackKind.systemImageName,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        fallbackImageView.image = FoodCategoryVisualRenderer.image(
+            id: categoryVisualID,
+            size: CGSize(width: 48, height: 48)
         )
     }
 
@@ -596,13 +591,4 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         }
     }
 
-    private func fallbackTint(_ kind: FoodDiningVisualKind) -> UIColor {
-        switch kind {
-        case .drink: UIColor(red: 0.34, green: 0.48, blue: 0.58, alpha: 1)
-        case .receipt, .menu, .takeaway: UIColor(red: 0.64, green: 0.45, blue: 0.29, alpha: 1)
-        case .rating, .discovery: UIColor(red: 0.82, green: 0.49, blue: 0.22, alpha: 1)
-        case .sharedMeal: UIColor(red: 0.42, green: 0.58, blue: 0.43, alpha: 1)
-        default: UIColor(red: 0.72, green: 0.36, blue: 0.31, alpha: 1)
-        }
-    }
 }

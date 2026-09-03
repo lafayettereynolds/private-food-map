@@ -17,9 +17,7 @@ enum RestaurantMapMarkerStatus: String, Equatable {
 
 enum RestaurantMapMarkerVisual: Equatable {
     case photo(UUID)
-    case merchantImage(URL)
-    case emoji(String)
-    case fallback
+    case category(FoodCategoryVisualID)
 }
 
 struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
@@ -64,23 +62,9 @@ struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
     var imageResolution: RestaurantImageResolution {
         switch visual {
         case .photo(let id):
-            RestaurantImagePriorityPolicy.resolution(
-                localUserPhotoID: id,
-                publicOrCachedPhotoID: publicPhotoID,
-                providerMerchantImageURL: fallbackMerchantImageURL
-            )
-        case .merchantImage(let url):
-            RestaurantImagePriorityPolicy.resolution(
-                localUserPhotoID: nil,
-                publicOrCachedPhotoID: publicPhotoID,
-                providerMerchantImageURL: url
-            )
-        case .emoji, .fallback:
-            RestaurantImagePriorityPolicy.resolution(
-                localUserPhotoID: nil,
-                publicOrCachedPhotoID: publicPhotoID,
-                providerMerchantImageURL: fallbackMerchantImageURL
-            )
+            RestaurantImageResolution(sources: [.localUserPhoto(id)])
+        case .category:
+            RestaurantImageResolution(sources: [])
         }
     }
 }
@@ -172,23 +156,13 @@ enum RestaurantMapMarkerBuilder {
                     isActive(photo) && photo.restaurantId == restaurant.id ? photo : nil
                 }
             let visual: RestaurantMapMarkerVisual
-            switch RestaurantImagePriorityPolicy.preferred(
-                localUserPhotoID: localPhoto?.id,
-                providerMerchantImageURL: record?.merchantImageUrl
-            ) {
-            case .localUserPhoto(let photoID):
+            if let photoID = localPhoto?.id {
                 visual = .photo(photoID)
-            case .providerMerchantImage(let url):
-                visual = .merchantImage(url)
-            case .publicOrCachedPhoto:
-                // Local Map data resolves cached/public photos to PhotoAsset first.
-                visual = .fallback
-            case .foodDiningFallback:
-                if let emoji = trimmed(record?.markerEmoji) {
-                    visual = .emoji(emoji)
-                } else {
-                    visual = .fallback
-                }
+            } else {
+                visual = .category(FoodCategoryVisualResolver.resolve(
+                    name: restaurant.name,
+                    tags: record?.tags ?? []
+                ))
             }
 
             return RestaurantMapMarkerPresentation(
@@ -198,10 +172,8 @@ enum RestaurantMapMarkerBuilder {
                 longitude: restaurant.longitude,
                 status: status(for: restaurant, segment: segment),
                 visual: visual,
-                publicPhotoID: record?.markerPhotoId,
-                fallbackMerchantImageURL: RestaurantImagePriorityPolicy.safeHTTPSURL(
-                    record?.merchantImageUrl
-                ),
+                publicPhotoID: nil,
+                fallbackMerchantImageURL: nil,
                 visitCount: item.visitCount,
                 averageRating: item.averageRating,
                 distanceKilometers: distanceKilometers(

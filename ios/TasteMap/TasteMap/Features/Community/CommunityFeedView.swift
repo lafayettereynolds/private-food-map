@@ -495,13 +495,14 @@ struct PublicContentThumbnail: View {
             resolution: RestaurantImagePriorityPolicy.resolution(
                 localUserPhotoID: nil,
                 publicOrCachedPhotoID: restaurant.photo?.photoId,
-                providerMerchantImageURL: restaurant.merchantImageUrl
+                providerMerchantImageURL: nil as String?
             ),
             photoAPI: photoAPI,
             semanticID: restaurant.globalKey,
             fallbackKind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
             fallbackBackgroundColor: Color.accentColor.opacity(0.14),
             fallbackIconSize: 62,
+            categoryVisualID: FoodCategoryVisualResolver.resolve(name: restaurant.name, tags: restaurant.tags),
             accessibilityLabel: "\(restaurant.name)餐厅图片"
         )
     }

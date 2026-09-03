@@ -89,11 +89,11 @@ function RecommendationCard({ item, platform, onOpenRestaurant }: { item: TasteM
     item.uniqueVisitorCount != null ? `近期有 ${item.uniqueVisitorCount} 位用户到访` : null,
     item.wantToGoCount != null ? `${item.wantToGoCount} 人想吃` : null,
   ].filter((value): value is string => Boolean(value))
-  const hasSourceActivity = Boolean(item.sourceUser && item.activityVisitedAt)
+  const identifiesSourceActivity = item.mode === 'similar_taste' && Boolean(item.sourceUser && item.activityVisitedAt)
   return <TasteMapActivityCardFrame
     activityRating={<>
       <CommunityRatingSummary item={item} />
-      {item.sourceUser ? <button aria-label={`查看推荐来源用户 ${item.sourceUser.name}`} className="tm-activity-card__source-inline" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.sourceUser!.id })} type="button"><span className="tm-hybrid-avatar-seed">{item.sourceUser.name.slice(0, 1)}</span><strong>{item.sourceUser.name}</strong>{item.activityRating == null ? <span className="tm-activity-card__visit-rating">本次未评分</span> : <span className="tm-activity-card__visit-rating"><Star aria-hidden="true" fill="currentColor" size={11} />{item.activityRating.toFixed(1)}</span>}{item.activityVisitedAt ? <time>{formatEventTime(item.activityVisitedAt)}</time> : null}</button> : item.activityRating != null ? <span aria-label={`本次到访评分 ${item.activityRating.toFixed(1)}`} className="tm-activity-card__visit-rating" role="img"><Star aria-hidden="true" fill="currentColor" size={12} />本次到访 {item.activityRating.toFixed(1)}</span> : null}
+      {identifiesSourceActivity && item.sourceUser ? <button aria-label={`查看同味来源用户 ${item.sourceUser.name}`} className="tm-activity-card__source-inline" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.sourceUser!.id })} type="button"><span className="tm-hybrid-avatar-seed">{item.sourceUser.name.slice(0, 1)}</span><strong>{item.sourceUser.name}</strong>{item.activityRating == null ? <span className="tm-activity-card__visit-rating">本次未评分</span> : <span className="tm-activity-card__visit-rating"><Star aria-hidden="true" fill="currentColor" size={11} />{item.activityRating.toFixed(1)}</span>}{item.activityVisitedAt ? <time>{formatEventTime(item.activityVisitedAt)}</time> : null}</button> : null}
     </>}
     body={<section className="tm-activity-card__recommendation-reason"><strong>{item.mode === 'for_you' ? '为什么适合你' : item.mode === 'similar_taste' ? '同味推荐依据' : '近期趋势依据'}</strong><p>{item.reason}</p>{facts.length ? <ul>{facts.map((fact) => <li key={fact}>{fact}</li>)}</ul> : null}</section>}
     media={<button aria-label={`${item.restaurant.name} 餐厅图片`} onClick={() => onOpenRestaurant(item.restaurant.id)} type="button"><HybridRestaurantImage image={item.restaurant.image} name={item.restaurant.name} /></button>}
@@ -106,8 +106,8 @@ function RecommendationCard({ item, platform, onOpenRestaurant }: { item: TasteM
       <button aria-label="轮盘" className="tm-activity-action" onClick={() => void platform.navigation.openHybrid({ surface: 'roulette' })} title="加入抽签" type="button"><Dices aria-hidden="true" size={18} /></button>
     </>}
     socialActions={<>
-      {hasSourceActivity ? <button aria-label="点赞" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.id })} title="点赞" type="button"><Heart aria-hidden="true" size={19} /></button> : null}
-      {hasSourceActivity ? <button aria-label="评论" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.id })} title="评论" type="button"><MessageCircle aria-hidden="true" size={19} /></button> : null}
+      {identifiesSourceActivity ? <button aria-label="点赞" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.id })} title="点赞" type="button"><Heart aria-hidden="true" size={19} /></button> : null}
+      {identifiesSourceActivity ? <button aria-label="评论" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.id })} title="评论" type="button"><MessageCircle aria-hidden="true" size={19} /></button> : null}
       <button aria-label="分享动态" onClick={share} title="分享" type="button"><Share2 aria-hidden="true" size={19} /></button>
     </>}
     variant="recommendation"

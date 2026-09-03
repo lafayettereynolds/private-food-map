@@ -82,7 +82,8 @@ describe('Discovery API V1 integration', () => {
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('deleted-rating')
     const trending = await jsonAPI(database, 'tm_a', '/api/v1/discovery/trending?city=杭州&window=7')
     const nilActivity = trending.items.find((item) => item.restaurant.name === 'nil-rating')
-    expect(nilActivity?.activity).toEqual(expect.objectContaining({ rating: null }))
+    expect(nilActivity?.activity).toBeNull()
+    expect(nilActivity?.sourceUser).toBeNull()
   })
 
   it('uses 7/30-day windows, unique users, stable tie breaks, and excludes old/private/tombstoned activity', async () => {
@@ -127,7 +128,8 @@ describe('Discovery API V1 integration', () => {
     page = await jsonAPI(database, 'tm_a', '/api/v1/discovery/for-you?city=杭州')
     const friendCard = page.items.find((item) => item.restaurant.name === 'friend-pick')
     expect(friendCard?.cacheScope).toBe('friends')
-    expect(friendCard?.sourceUser.userId).toBe('tm_b')
+    expect(friendCard?.sourceUser).toBeNull()
+    expect(friendCard?.activity).toBeNull()
     database.prepare("UPDATE friendships SET status = 'removed', deleted_at = ? WHERE pair_user_a = 'tm_a' AND pair_user_b = 'tm_b'").bind(iso()).run()
     page = await jsonAPI(database, 'tm_a', '/api/v1/discovery/for-you?city=杭州')
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('friend-pick')
@@ -140,12 +142,35 @@ describe('Discovery API V1 integration', () => {
     await seedPhoto(database, privateVisit, 'private')
     const page = await jsonAPI(database, 'tm_a', '/api/v1/discovery/for-you?city=杭州')
     const card = page.items.find((item) => item.restaurant.name === 'photo-public')
-    expect(Object.keys(card.sourceUser).sort()).toEqual([
-      'avatarPhotoId', 'avatarPresetId', 'bio', 'city', 'displayName', 'friendshipId',
-      'friendshipState', 'isFollowing', 'userId',
-    ])
-    expect(card.restaurant.photo).toMatchObject({ photoId: `photo-${publicVisit}`, variant: 'thumbnail' })
+    expect(card.sourceUser).toBeNull()
+    expect(card.activity).toBeNull()
+    expect(card.restaurant.photo).toMatchObject({
+      photoId: `photo-${publicVisit}`,
+      variant: 'thumbnail',
+      sourceType: 'publicUGC',
+      ownerUserId: 'tm_b',
+      visibility: 'public',
+      exportAllowed: false,
+    })
     expect(page.items.map((item) => item.restaurant.name)).not.toContain('photo-private')
+
+    database.prepare(`UPDATE photos SET visibility = 'private' WHERE id = ?`).bind(`photo-${publicVisit}`).run()
+    const downgraded = await jsonAPI(database, 'tm_a', '/api/v1/discovery/for-you?city=杭州')
+    expect(downgraded.items.find((item) => item.restaurant.name === 'photo-public')?.restaurant.photo).toBeNull()
+
+    database.prepare(`UPDATE photos SET visibility = 'public', deleted_at = ? WHERE id = ?`)
+      .bind(iso(), `photo-${publicVisit}`).run()
+    const deleted = await jsonAPI(database, 'tm_a', '/api/v1/discovery/for-you?city=杭州')
+    expect(deleted.items.find((item) => item.restaurant.name === 'photo-public')?.restaurant.photo).toBeNull()
+  })
+
+  it('never promotes another user private photo from a public Visit into system recommendations', async () => {
+    const visit = await seedVisit(database, { user: 'tm_b', slug: 'public-visit-private-photo', rating: 5 })
+    await seedPhoto(database, visit, 'private')
+    const page = await jsonAPI(database, 'tm_a', '/api/v1/discovery/for-you?city=杭州')
+    const card = page.items.find((item) => item.restaurant.name === 'public-visit-private-photo')
+    expect(card).toBeDefined()
+    expect(card.restaurant.photo).toBeNull()
   })
 
   it('ignores forged userId and keeps users isolated under authenticated actor', async () => {

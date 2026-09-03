@@ -141,7 +141,14 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     await seedPhoto(database, 'visit-tm_b-private-old', 'private')
     const page = await jsonAPI(database, 'tm_a', '/api/v1/community/users/tm_b/content?section=visits')
     expect(page.items[0].visit.photos).toEqual([
-      { photoId: 'photo-visit-tm_b-public-new', variant: 'thumbnail' },
+      expect.objectContaining({
+        photoId: 'photo-visit-tm_b-public-new',
+        variant: 'thumbnail',
+        sourceType: 'activityAuthorPhoto',
+        ownerUserId: 'tm_b',
+        visibility: 'public',
+        exportAllowed: false,
+      }),
     ])
     expect(JSON.stringify(page)).not.toContain('storage_key')
     expect(JSON.stringify(page)).not.toContain('users/tm_b/photos')

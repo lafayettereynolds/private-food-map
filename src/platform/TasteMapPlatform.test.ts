@@ -157,9 +157,15 @@ describe('TasteMapBrowserAdapter', () => {
       merchantImageUrl: 'https://images.example.test/existing-merchant.jpg',
     }
     const existingImage = {
-      kind: 'publicOrCached' as const,
+      kind: 'ownerPhoto' as const,
       resourceURL: 'blob:https://example.test/owner-visit',
       photoID: 'owner-visit-photo',
+      restaurantID: existing.id,
+      visitID: existing.visits[0]?.id ?? null,
+      sourceOwnerID: existing.userId,
+      visibility: 'private' as const,
+      exportAllowed: true,
+      attributionRequired: false,
       accessibilityLabel: '已有用户到访照片',
     }
     const profile = {
@@ -186,9 +192,8 @@ describe('TasteMapBrowserAdapter', () => {
 
     expect(candidate.existingRestaurantID).toBe(existing.id)
     expect(candidate.duplicateKind).toBe('exactProvider')
-    expect(candidate.imageResolution.sources.map((source) => source.kind)).toEqual([
-      'publicOrCached', 'publicOrCached', 'providerMerchant',
-    ])
+    expect(candidate.imageResolution.sources.map((source) => source.kind)).toEqual(['ownerPhoto'])
+    expect(candidate.imageResolution.fallback.kind).toBe('foodCategoryVisual')
     expect((await adapter.acquisition.select(candidate.id)).restaurantID).toBe(existing.id)
   })
 })

@@ -149,6 +149,9 @@ body { margin: 0; background: var(--tm-shell-background); overscroll-behavior-y:
 .tm-hybrid-inline-state button { min-height: 40px; margin-top: 4px; padding: 0 14px; border: 0; border-radius: 12px; color: #fff; background: #416d89; font-weight: 750; }
 .tm-hybrid-image-fallback { display: grid; place-items: center; align-content: center; gap: 5px; color: #527188; background: radial-gradient(circle at 35% 28%, #fff 0 8%, transparent 9%), linear-gradient(145deg, #edf3f5, #dfe9ed); }
 .tm-hybrid-image-fallback span { font-size: 9px; font-weight: 800; letter-spacing: .06em; }
+.tm-food-category-visual { display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 30% 22%, rgba(255,255,255,.78) 0 8%, transparent 9%), linear-gradient(145deg, color-mix(in srgb, var(--food-bg) 82%, white), var(--food-bg)); }
+.tm-food-category-visual svg { width: 68%; height: 68%; overflow: visible; }
+.tm-food-category-visual path, .tm-food-category-visual circle { fill: color-mix(in srgb, var(--food-accent) 16%, transparent); stroke: var(--food-ink); stroke-width: 4.2; stroke-linecap: round; stroke-linejoin: round; }
 .tm-hybrid-avatar-seed { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #40657d; background: #e5eef3; font-weight: 800; }
 .tm-hybrid-back { min-height: 44px; margin: -10px 0 8px; border: 0; color: #4c687a; background: transparent; font-weight: 750; }
 .tm-hybrid-segmented { width: fit-content; max-width: 100%; margin: 0 auto 18px; padding: 3px; border: 1px solid #dbe3e8; border-radius: 13px; display: flex; background: #edf2f5; }

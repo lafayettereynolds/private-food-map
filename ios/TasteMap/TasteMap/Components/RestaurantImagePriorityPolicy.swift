@@ -353,6 +353,7 @@ struct TasteMapRestaurantImage: View {
     var fallbackForegroundColor: Color = TasteMapCoreTheme.brandDeep
     var fallbackBackgroundColor: Color = TasteMapCoreTheme.surfaceSubtle
     var fallbackIconSize: CGFloat = 44
+    var categoryVisualID: FoodCategoryVisualID = .other
     var accessibilityLabel: String = "餐厅图片"
 
     @Environment(\.photoTransferCoordinator) private var coordinator
@@ -368,13 +369,8 @@ struct TasteMapRestaurantImage: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
             } else if finished || resolution.isFallbackOnly {
-                FoodDiningVisualIcon(
-                    kind: fallbackKind,
-                    usage: .decorative,
-                    size: fallbackIconSize,
-                    foregroundColor: fallbackForegroundColor,
-                    backgroundColor: fallbackBackgroundColor.opacity(0.84)
-                )
+                FoodCategoryVisual(id: categoryVisualID, accessibilityLabel: accessibilityLabel)
+                    .frame(width: fallbackIconSize, height: fallbackIconSize)
             } else {
                 ProgressView()
                     .tint(fallbackForegroundColor)

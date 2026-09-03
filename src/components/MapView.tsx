@@ -9,6 +9,8 @@ import { avatarPresetPosition } from '../utils/avatarPresets'
 import { wantedMarkerScale } from '../utils/mapMarkers'
 import { markerLayerPriority } from './mapMarkerPriority'
 import { recordMapInstanceCreation, recordMarkerReconciliation } from './mapScopePerformance'
+import { FoodCategoryVisual } from '../visuals/FoodCategoryVisual'
+import { foodCategoryVisualMarkup, resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
 
 export { markerLayerPriority } from './mapMarkerPriority'
 
@@ -288,7 +290,7 @@ export function restaurantMarkerReconciliationPlan(
 }
 
 function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, currentCoordinates: Coordinates | null) {
-  const imageSource = restaurant.markerImageData || restaurant.merchantImageUrl
+  const imageSource = restaurant.markerImageData
   const scoreText = restaurant.scoreOutOfTen !== null ? `${restaurant.scoreOutOfTen.toFixed(1)} 分` : '想去'
   const marker = document.createElement('button')
   marker.type = 'button'
@@ -302,7 +304,7 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, curre
   marker.setAttribute('aria-label', `${restaurant.name}，${scoreText}，去过 ${restaurant.visitCount} 次`)
   const visual = document.createElement('span')
   visual.className = 'private-image-marker__visual'
-  renderFoodDiningFallback(visual)
+  renderFoodCategoryFallback(visual, restaurant)
   if (imageSource) {
     const image = document.createElement('img')
     image.alt = ''
@@ -358,8 +360,8 @@ export function restaurantMarkerSignature(restaurant: RestaurantSummary, current
   })
 }
 
-function renderFoodDiningFallback(target: HTMLElement) {
-  target.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v8M4.5 3v5.5A2.5 2.5 0 0 0 7 11M9.5 3v5.5A2.5 2.5 0 0 1 7 11v10M16 3c-2 2.2-3 5-3 8h4v10M16 3c2 2.2 3 5 3 8h-2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"/></svg>'
+function renderFoodCategoryFallback(target: HTMLElement, restaurant: RestaurantSummary) {
+  target.innerHTML = foodCategoryVisualMarkup(resolveFoodCategoryVisualID(restaurant))
 }
 
 function createUserLocationContent(currentUser: UserProfile) {
@@ -465,17 +467,14 @@ function OfflineRestaurantMap({ restaurants, selectedRestaurant, currentUser, cu
 function OfflineMarkerVisual({ restaurant }: { restaurant: RestaurantSummary }) {
   const [failed, setFailed] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const source = restaurant.markerImageData || restaurant.merchantImageUrl
+  const source = restaurant.markerImageData
+  const category = resolveFoodCategoryVisualID(restaurant)
   return <span className="private-image-marker__visual">
-    {!loaded || failed || !source ? <FoodDiningFallbackIcon /> : null}
+    {!loaded || failed || !source ? <FoodCategoryVisual id={category} label={`${restaurant.name} 餐饮分类图示`} /> : null}
     {source && !failed
       ? <img alt="" data-restaurant-image="true" hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={source} />
       : null}
   </span>
-}
-
-function FoodDiningFallbackIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 3v8M4.5 3v5.5A2.5 2.5 0 0 0 7 11M9.5 3v5.5A2.5 2.5 0 0 1 7 11v10M16 3c-2 2.2-3 5-3 8h4v10M16 3c2 2.2 3 5 3 8h-2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" /></svg>
 }
 
 function OfflineUserMarker({ point, user }: { point: { x: number; y: number }; user: UserProfile }) {

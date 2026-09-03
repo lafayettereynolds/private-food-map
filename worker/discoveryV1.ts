@@ -18,6 +18,12 @@ import {
 import type { ProfileAvatarPresetContract } from '../src/contracts/profileContract'
 import type { RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
 import { calculateTasteSimilarities, MIN_TASTE_SIMILARITY, type TasteRatingSignal } from './tasteSimilarity'
+import {
+  RestaurantUGCImagePool,
+  resolveRestaurantVisualSelection,
+  type RestaurantUGCPhotoRecord,
+  type RestaurantUGCPhotoSelection,
+} from './restaurantUGCImagePool'
 
 const MAX_CANDIDATE_VISITS = 900
 const MAX_OWN_VISITS = 600
@@ -88,11 +94,6 @@ interface WantRow {
   marker_emoji: string
 }
 
-interface PhotoRow {
-  id: string
-  visit_id: string
-}
-
 interface PlaceGroup {
   globalKey: string
   restaurantIDs: string[]
@@ -113,7 +114,7 @@ export interface DiscoveryData {
   visits: DiscoveryVisitRow[]
   ownVisits: DiscoveryVisitRow[]
   identitiesByRestaurant: Map<string, DiscoveryPlaceIdentityV1[]>
-  photosByVisit: Map<string, string>
+  photos: RestaurantUGCPhotoRecord[]
   friendships: FriendshipRow[]
   following: Set<string>
   viewerRestaurants: ViewerRestaurantRow[]
@@ -193,7 +194,8 @@ export function rankDiscovery(
 ): RankedCard[] {
   const friendIDs = acceptedFriendIDs(data.friendships, data.viewerId)
   const relationshipByUser = relationshipMap(data.friendships, data.viewerId)
-  const allGroups = groupPlaces([...data.visits, ...data.ownVisits], data.identitiesByRestaurant, data.photosByVisit)
+  const allGroups = groupPlaces([...data.visits, ...data.ownVisits], data.identitiesByRestaurant)
+  const imagePool = new RestaurantUGCImagePool(data.photos)
   const groups = subsetGroups(allGroups, (visit) => visit.user_id !== data.viewerId)
   addWantOnlyGroups(groups, data.wants, data.identitiesByRestaurant)
   const ownGroups = subsetGroups(allGroups, (visit) => visit.user_id === data.viewerId)
@@ -211,22 +213,22 @@ export function rankDiscovery(
   if (mode === 'similar_taste') {
     ranked = similarTasteCards(
       data, groups, ownVisited, viewerState, friendIDs, relationshipByUser,
-      similarities, ownRatings,
+      similarities, ownRatings, imagePool,
     )
   } else if (mode === 'trending') {
     ranked = trendingCards(
       data, groups, viewerState, friendIDs, relationshipByUser,
-      similarities, ownRatings, trendWindow,
+      similarities, ownRatings, trendWindow, imagePool,
     )
   } else {
     ranked = forYouCards(
       data, groups, ownVisited, viewerState, friendIDs, relationshipByUser,
-      similarities, ownRatings, preferredTags,
+      similarities, ownRatings, preferredTags, imagePool,
     )
     if (!ranked.length || ratedOwnVisitCount(data.ownVisits) < 3) {
       ranked = trendingCards(
         data, groups, viewerState, friendIDs, relationshipByUser,
-        similarities, ownRatings, 30, true,
+        similarities, ownRatings, 30, imagePool, true,
       )
     }
   }
@@ -310,13 +312,29 @@ async function readDiscoveryData(
       WHERE r.deleted_at IS NULL AND r.city = ? AND r.status = 'wantToGo'
         AND (up.visibility = 'public' OR r.user_id = ?)`)
       .bind(city, viewerId, city, viewerId),
-    database.prepare(`SELECT p.id, p.visit_id FROM photos p
-      JOIN visits v ON v.id = p.visit_id AND v.user_id = p.user_id
-      JOIN restaurants r ON r.id = v.restaurant_id
-      JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
-      WHERE p.deleted_at IS NULL AND v.deleted_at IS NULL AND r.deleted_at IS NULL
-        AND r.city = ? AND p.storage_provider = 'r2' AND (
-          (p.visibility = 'public' AND v.visibility = 'public' AND up.visibility = 'public') OR (
+    database.prepare(`SELECT p.id, p.restaurant_id, p.visit_id, p.user_id, p.visibility,
+        v.visibility AS visit_visibility, up.visibility AS profile_visibility,
+        p.created_at, p.sort_order, r.marker_photo_id, p.deleted_at,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM content_reports cr WHERE cr.status = 'actioned' AND (
+            (cr.content_type = 'visit' AND cr.content_id = p.visit_id) OR
+            (cr.content_type = 'user' AND cr.content_id = p.user_id)
+          )
+        ) THEN 0 ELSE 1 END AS moderation_eligible
+      FROM photos p
+      LEFT JOIN visits v ON v.id = p.visit_id AND v.user_id = p.user_id
+      JOIN restaurants r ON r.id = p.restaurant_id AND r.user_id = p.user_id
+      JOIN user_profiles up ON up.user_id = p.user_id AND up.deleted_at IS NULL
+      WHERE p.deleted_at IS NULL AND (v.id IS NULL OR v.deleted_at IS NULL) AND r.deleted_at IS NULL
+        AND r.city = ? AND p.storage_provider = 'r2'
+        AND (p.user_id = ? OR NOT EXISTS (
+          SELECT 1 FROM user_blocks pub WHERE pub.deleted_at IS NULL AND (
+            (pub.blocker_user_id = ? AND pub.blocked_user_id = p.user_id) OR
+            (pub.blocker_user_id = p.user_id AND pub.blocked_user_id = ?)
+          )
+        )) AND (
+          p.user_id = ? OR
+          (p.visibility = 'public' AND (v.id IS NULL OR v.visibility = 'public') AND up.visibility = 'public') OR (
             p.visibility IN ('public', 'friends') AND v.visibility IN ('public', 'friends')
             AND up.visibility IN ('public', 'friends') AND EXISTS (
               SELECT 1 FROM friendships pf WHERE pf.status = 'accepted'
@@ -327,7 +345,8 @@ async function readDiscoveryData(
             )
           )
         )
-      ORDER BY p.sort_order ASC, p.created_at DESC LIMIT 1800`).bind(city, viewerId, viewerId),
+      ORDER BY p.sort_order ASC, p.created_at DESC, p.id ASC LIMIT 1800`)
+      .bind(city, viewerId, viewerId, viewerId, viewerId, viewerId, viewerId),
   ]
   const results = await database.batch(statements)
   return {
@@ -341,7 +360,7 @@ async function readDiscoveryData(
     following: new Set((results[4].results as Array<{ followed_user_id: string }>).map((row) => row.followed_user_id)),
     viewerRestaurants: results[5].results as unknown as ViewerRestaurantRow[],
     wants: results[6].results as unknown as WantRow[],
-    photosByVisit: new Map((results[7].results as unknown as PhotoRow[]).map((row) => [row.visit_id, row.id])),
+    photos: results[7].results as unknown as RestaurantUGCPhotoRecord[],
   }
 }
 
@@ -355,6 +374,7 @@ function forYouCards(
   similarities: Map<string, ReturnType<typeof calculateTasteSimilarities>[number]>,
   ownRatings: Map<string, number>,
   preferredTags: Map<string, number>,
+  imagePool: RestaurantUGCImagePool,
 ) {
   return [...groups.values()].flatMap((group): RankedCard[] => {
     if (ownVisited.has(group.globalKey)) return []
@@ -385,7 +405,7 @@ function forYouCards(
       card: card(
         'for_you', group, states, friendIDs, relationships, data.following,
         similarities, ownRatings, reasons, source, score,
-        null,
+        null, imagePool, data.viewerId,
       ),
     }]
   })
@@ -400,6 +420,7 @@ function similarTasteCards(
   relationships: Map<string, FriendshipRow>,
   similarities: Map<string, ReturnType<typeof calculateTasteSimilarities>[number]>,
   ownRatings: Map<string, number>,
+  imagePool: RestaurantUGCImagePool,
 ) {
   return [...groups.values()].flatMap((group): RankedCard[] => {
     if (ownVisited.has(group.globalKey)) return []
@@ -429,7 +450,7 @@ function similarTasteCards(
       card: card(
         'similar_taste', group, states, friendIDs, relationships, data.following,
         similarities, ownRatings, reasons, source, score,
-        { percent, sharedRestaurantCount: similar.sharedRestaurantCount },
+        { percent, sharedRestaurantCount: similar.sharedRestaurantCount }, imagePool, data.viewerId,
       ),
     }]
   })
@@ -444,6 +465,7 @@ function trendingCards(
   similarities: Map<string, ReturnType<typeof calculateTasteSimilarities>[number]>,
   ownRatings: Map<string, number>,
   windowDays: 7 | 30,
+  imagePool: RestaurantUGCImagePool,
   coldStart = false,
 ) {
   const wantPlaceKeys = new Map<string, Set<string>>()
@@ -486,7 +508,7 @@ function trendingCards(
       recencyScore(source?.visited_at ?? mostRecentWant?.created_at ?? new Date(0).toISOString(), data.now) * 2
     const base = card(
       coldStart ? 'for_you' : 'trending', group, states, friendIDs,
-      relationships, data.following, similarities, ownRatings, reasons, source, score, null,
+      relationships, data.following, similarities, ownRatings, reasons, source, score, null, imagePool, data.viewerId,
     )
     return [{
       score,
@@ -512,15 +534,27 @@ function card(
   source: DiscoveryVisitRow | null,
   score: number,
   similarity: { percent: number; sharedRestaurantCount: number } | null,
+  imagePool: RestaurantUGCImagePool,
+  viewerID: string,
 ): Omit<DiscoveryCardV1, 'rank'> {
   const publicVisits = group.visits.filter((visit) => visit.visibility === 'public')
   const friendVisits = group.visits.filter((visit) => friendIDs.has(visit.user_id))
   const similarVisits = group.visits.filter((visit) => similarities.has(visit.user_id))
+  const identifiesActivity = mode === 'similar_taste'
+  const selectedPhoto = resolveRestaurantVisualSelection(imagePool, {
+    surface: mode,
+    restaurantIDs: group.restaurantIDs,
+    viewerID,
+    activityVisitID: source?.visit_id,
+    canSeeFriendsActivity: source?.visibility === 'friends',
+  })
+  // A For You card may be ranked by a friends-only Visit even though the UI
+  // intentionally does not expose that Visit as an attribution source.
   const cacheScope: DiscoveryCacheScopeV1 = source?.visibility === 'friends' ? 'friends' : 'public'
   return {
     id: `${mode}:${group.globalKey}`,
     mode,
-    restaurant: group.restaurant,
+    restaurant: { ...group.restaurant, photo: photoProjection(selectedPhoto) },
     viewerState: states.get(group.globalKey) ?? 'none',
     ratings: {
       mine: ratingProjection(ownRatings.get(group.globalKey)),
@@ -529,8 +563,8 @@ function card(
       similarTaste: ratingFor(similarVisits),
     },
     reasons: reasons.slice(0, 3),
-    sourceUser: source ? publicUser(source, friendIDs, relationships, following) : null,
-    activity: source ? {
+    sourceUser: identifiesActivity && source ? publicUser(source, friendIDs, relationships, following) : null,
+    activity: identifiesActivity && source ? {
       visitId: source.visit_id,
       visitedAt: source.visited_at,
       rating: source.rating,
@@ -545,7 +579,6 @@ function card(
 function groupPlaces(
   visits: DiscoveryVisitRow[],
   identitiesByRestaurant: Map<string, DiscoveryPlaceIdentityV1[]>,
-  photosByVisit: Map<string, string>,
 ) {
   const restaurantIDs = unique(visits.map((visit) => visit.restaurant_id))
   const parent = new Map(restaurantIDs.map((id) => [id, id]))
@@ -601,7 +634,6 @@ function groupPlaces(
     )
     const globalKey = globalPlaceKey(externalIdentities, representative)
     const identities = normalizeIdentities(externalIdentities, globalKey)
-    const photoVisit = [...groupVisits].find((visit) => photosByVisit.has(visit.visit_id))
     result.set(globalKey, {
       globalKey,
       restaurantIDs: unique(groupVisits.map((visit) => visit.restaurant_id)),
@@ -619,11 +651,27 @@ function groupPlaces(
         pricePerPerson: representative.price_per_person,
         merchantImageUrl: safeHTTPSURL(representative.merchant_image_url),
         markerEmoji: representative.marker_emoji || '🍽️',
-        photo: photoVisit ? { photoId: photosByVisit.get(photoVisit.visit_id)!, variant: 'thumbnail' } : null,
+        photo: null,
       },
     })
   })
   return result
+}
+
+function photoProjection(selection: RestaurantUGCPhotoSelection | null): DiscoveryRestaurantProjectionV1['photo'] {
+  if (!selection) return null
+  const photo = selection.photo
+  return {
+    photoId: photo.id,
+    variant: 'thumbnail',
+    sourceType: selection.sourceType === 'nonPublic' ? undefined : selection.sourceType,
+    restaurantId: photo.restaurant_id,
+    visitId: photo.visit_id,
+    ownerUserId: photo.user_id,
+    visibility: photo.visibility,
+    createdAt: photo.created_at,
+    exportAllowed: selection.exportAllowed,
+  }
 }
 
 function addWantOnlyGroups(

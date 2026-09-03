@@ -9,6 +9,8 @@ public struct TasteMapHybridRestaurantMetadata: Sendable {
     public let localUserPhotoID: UUID?
     public let publicOrCachedPhotoID: String?
     public let providerMerchantImageURL: String?
+    public let localUserPhotoVisitID: String?
+    public let localUserPhotoVisibility: String?
 
     public init(
         tags: [String] = [],
@@ -17,7 +19,9 @@ public struct TasteMapHybridRestaurantMetadata: Sendable {
         referencePrice: Double? = nil,
         localUserPhotoID: UUID? = nil,
         publicOrCachedPhotoID: String? = nil,
-        providerMerchantImageURL: String? = nil
+        providerMerchantImageURL: String? = nil,
+        localUserPhotoVisitID: String? = nil,
+        localUserPhotoVisibility: String? = nil
     ) {
         self.tags = tags
         self.phone = phone
@@ -26,6 +30,8 @@ public struct TasteMapHybridRestaurantMetadata: Sendable {
         self.localUserPhotoID = localUserPhotoID
         self.publicOrCachedPhotoID = publicOrCachedPhotoID
         self.providerMerchantImageURL = providerMerchantImageURL
+        self.localUserPhotoVisitID = localUserPhotoVisitID
+        self.localUserPhotoVisibility = localUserPhotoVisibility
     }
 }
 
@@ -208,12 +214,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             createdAt: timestamp,
             updatedAt: timestamp,
             visits: [],
-            image: publicImageDescriptor(
-                photoID: value.photo?.photoId,
-                merchantURL: value.merchantImageUrl,
-                seed: value.globalKey,
-                name: value.name
-            )
+            image: publicUGCOrCategoryDescriptor(photo: value.photo, seed: value.globalKey, name: value.name, tags: value.tags)
         )
         return TasteMapHybridRestaurantDetailDTO(
             restaurant: restaurant,
@@ -604,21 +605,29 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         generatedAt: String
     ) -> TasteMapHybridContentSnapshotDTO {
         let names = ["林夏", "周舟", "陈一碗", "江南胃", "阿岚", "西湖小柚", "陆小满", "一只饭团"]
+        func person(_ index: Int, city: String) -> TasteMapHybridPersonDTO {
+            TasteMapHybridPersonDTO(
+                id: "tm_demo_\(index)", name: names[index % names.count], city: city,
+                avatarPhotoID: nil, avatarPresetID: ["otter", "polar-bear", "fox", "capybara"][index % 4],
+                isFollowing: index.isMultiple(of: 2)
+            )
+        }
         let discovery = Array(restaurants.prefix(12).enumerated()).map { index, value in
             let fixtureRating = index == 3 ? nil : max(3.5, 4.5 - Double(index) * 0.1)
             let activityRating = value.averageRating ?? fixtureRating
             let communityRating = activityRating.map { max(0, $0 - 0.05) }
             let ratingSampleCount = communityRating == nil ? 0 : max(10, value.visitCount)
-            let user = TasteMapHybridPersonDTO(
-                id: "tm_demo_\(index)", name: names[index % names.count], city: value.city,
-                avatarPhotoID: nil, avatarPresetID: ["otter", "polar-bear", "fox", "capybara"][index % 4],
-                isFollowing: index.isMultiple(of: 2)
+            let original = contentRestaurant(value)
+            let content = index == 0 ? original : replacingImage(
+                original,
+                with: index.isMultiple(of: 2)
+                    ? debugCategoryDescriptor(name: value.name, tags: value.tags, seed: value.id)
+                    : debugUGCDescriptor(value: value, ownerID: person(index, city: value.city).id, kind: .publicUGC)
             )
-            let content = contentRestaurant(value)
             return TasteMapHybridDiscoveryItemDTO(
                 id: "hybrid-discovery-\(index)", mode: "for_you", restaurant: content,
-                viewerState: value.status == "visited" ? "visited" : "want_to_go", sourceUser: user,
-                activityRating: activityRating, activityVisitedAt: value.latestVisitDate ?? generatedAt,
+                viewerState: value.status == "visited" ? "visited" : "want_to_go", sourceUser: nil,
+                activityRating: nil, activityVisitedAt: nil,
                 communityRating: .init(valueOutOfFive: communityRating, sampleCount: ratingSampleCount),
                 reason: index.isMultiple(of: 2) ? "与你常吃的菜系很接近" : "同城高质量真实记录",
                 similarityPercent: 82 - index * 3, sharedRestaurantCount: 6 + index,
@@ -626,22 +635,30 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 rank: index + 1
             )
         }
-        let similar = discovery.map { item in
-            TasteMapHybridDiscoveryItemDTO(
-                id: "similar-\(item.id)", mode: "similar_taste", restaurant: item.restaurant,
-                viewerState: item.viewerState, sourceUser: item.sourceUser,
-                activityRating: item.activityRating, activityVisitedAt: item.activityVisitedAt,
+        let similar = discovery.enumerated().map { index, item in
+            let user = person(index, city: item.restaurant.city)
+            let visual = index.isMultiple(of: 2)
+                ? debugUGCDescriptor(value: restaurants[index], ownerID: user.id, kind: .activityPhoto)
+                : debugCategoryDescriptor(name: item.restaurant.name, tags: item.restaurant.tags, seed: item.restaurant.id)
+            return TasteMapHybridDiscoveryItemDTO(
+                id: "similar-\(item.id)", mode: "similar_taste", restaurant: replacingImage(item.restaurant, with: visual),
+                viewerState: item.viewerState, sourceUser: user,
+                activityRating: restaurants[index].averageRating,
+                activityVisitedAt: restaurants[index].latestVisitDate ?? generatedAt,
                 communityRating: item.communityRating,
                 reason: "与这位用户有 \(item.sharedRestaurantCount ?? 0) 家共同到访",
                 similarityPercent: item.similarityPercent, sharedRestaurantCount: item.sharedRestaurantCount,
                 uniqueVisitorCount: nil, wantToGoCount: nil, rank: item.rank
             )
         }
-        let trending = discovery.map { item in
-            TasteMapHybridDiscoveryItemDTO(
-                id: "trending-\(item.id)", mode: "trending", restaurant: item.restaurant,
-                viewerState: item.viewerState, sourceUser: item.sourceUser,
-                activityRating: item.activityRating, activityVisitedAt: item.activityVisitedAt,
+        let trending = discovery.enumerated().map { index, item in
+            let visual = index.isMultiple(of: 2)
+                ? debugUGCDescriptor(value: restaurants[index], ownerID: person(index, city: item.restaurant.city).id, kind: .publicUGC)
+                : debugCategoryDescriptor(name: item.restaurant.name, tags: item.restaurant.tags, seed: item.restaurant.id)
+            return TasteMapHybridDiscoveryItemDTO(
+                id: "trending-\(item.id)", mode: "trending", restaurant: replacingImage(item.restaurant, with: visual),
+                viewerState: item.viewerState, sourceUser: nil,
+                activityRating: nil, activityVisitedAt: nil,
                 communityRating: item.communityRating,
                 reason: "最近 7 天有 \(item.uniqueVisitorCount ?? 0) 位用户到访",
                 similarityPercent: nil, sharedRestaurantCount: nil,
@@ -649,12 +666,16 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             )
         }
         let activities = discovery.enumerated().map { index, item in
-            TasteMapHybridActivityItemDTO(
+            let user = person(index, city: item.restaurant.city)
+            let visual = index.isMultiple(of: 2)
+                ? debugUGCDescriptor(value: restaurants[index], ownerID: user.id, kind: .activityPhoto)
+                : debugCategoryDescriptor(name: item.restaurant.name, tags: item.restaurant.tags, seed: item.restaurant.id)
+            return TasteMapHybridActivityItemDTO(
                 id: "hybrid-activity-\(index)", kind: index % 5 == 4 ? "want_to_go" : "visit",
-                eventAt: item.activityVisitedAt ?? generatedAt,
-                user: item.sourceUser!, restaurant: item.restaurant,
+                eventAt: restaurants[index].latestVisitDate ?? generatedAt,
+                user: user, restaurant: replacingImage(item.restaurant, with: visual),
                 visitID: index % 5 == 4 ? nil : "demo-visit-\(index)",
-                visitRating: index % 5 == 4 ? nil : item.activityRating,
+                visitRating: index % 5 == 4 ? nil : restaurants[index].averageRating,
                 note: index % 5 == 4 ? nil : ["值得专程来吃，服务也很细致。", "今天最惊喜的是招牌菜。", "和朋友一起吃很舒服。", "会为了这道菜再来一次。"][index % 4],
                 viewerState: item.viewerState, likedByViewer: index == 1,
                 likeCount: 12 + index * 5, commentCount: 2 + index
@@ -686,6 +707,54 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         )
     }
 
+    private func replacingImage(
+        _ value: TasteMapHybridContentRestaurantDTO,
+        with image: TasteMapHybridImageDescriptor
+    ) -> TasteMapHybridContentRestaurantDTO {
+        TasteMapHybridContentRestaurantDTO(
+            id: value.id, name: value.name, address: value.address, city: value.city,
+            latitude: value.latitude, longitude: value.longitude, tags: value.tags,
+            referencePrice: value.referencePrice, image: image
+        )
+    }
+
+    private func debugUGCDescriptor(
+        value: TasteMapHybridRestaurantDTO,
+        ownerID: String,
+        kind: TasteMapHybridImageKind
+    ) -> TasteMapHybridImageDescriptor {
+        guard let resourceURL = value.image.resourceURL, let photoID = value.image.photoID else {
+            return debugCategoryDescriptor(name: value.name, tags: value.tags, seed: value.id)
+        }
+        let visitID: String?
+        switch kind {
+        case .activityPhoto: visitID = "visual-qa-activity"
+        default: visitID = nil
+        }
+        return TasteMapHybridImageDescriptor(
+            kind: kind, resourceURL: resourceURL, photoID: photoID,
+            restaurantID: value.id, visitID: visitID, sourceOwnerID: ownerID,
+            visibility: "public", exportAllowed: false, attributionRequired: false,
+            accessibilityLabel: "\(value.name) 用户实拍"
+        )
+    }
+
+    private func debugCategoryDescriptor(
+        name: String,
+        tags: [String],
+        seed: String
+    ) -> TasteMapHybridImageDescriptor {
+#if TASTEMAP_HYBRID_BRIDGE_CORE
+        return TasteMapHybridImageDescriptor(
+            kind: .foodCategoryVisual, stableSeed: seed, categoryVisualID: "other",
+            exportAllowed: false, attributionRequired: false,
+            accessibilityLabel: "\(name) 餐饮分类图示"
+        )
+#else
+        return categoryDescriptor(name: name, tags: tags, seed: seed)
+#endif
+    }
+
     private func contentRestaurant(_ value: TasteMapHybridRestaurantDTO) -> TasteMapHybridContentRestaurantDTO {
         TasteMapHybridContentRestaurantDTO(
             id: value.id, name: value.name, address: value.address, city: value.city,
@@ -700,7 +769,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             id: value.globalKey, name: value.name, address: value.address, city: value.city,
             latitude: value.latitude, longitude: value.longitude, tags: value.tags,
             referencePrice: value.pricePerPerson,
-            image: publicImageDescriptor(photoID: value.photo?.photoId, merchantURL: value.merchantImageUrl, seed: value.globalKey, name: value.name)
+            image: publicUGCOrCategoryDescriptor(photo: value.photo, seed: value.globalKey, name: value.name, tags: value.tags)
         )
     }
 
@@ -796,6 +865,44 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         }
         return .init(kind: .foodDiningFallback, stableSeed: seed, accessibilityLabel: "\(name) 餐饮图示")
     }
+
+    private func publicUGCOrCategoryDescriptor(
+        photo: DiscoveryPhotoProjectionV1?, seed: String, name: String, tags: [String]
+    ) -> TasteMapHybridImageDescriptor {
+        guard let photo, !photo.photoId.isEmpty else {
+            return categoryDescriptor(name: name, tags: tags, seed: seed)
+        }
+        let encoded = photo.photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photo.photoId
+        let kind: TasteMapHybridImageKind
+        switch photo.sourceType {
+        case "currentOwnerPhoto": kind = .ownerPhoto
+        case "activityAuthorPhoto": kind = .activityPhoto
+        default: kind = .publicUGC
+        }
+        return .init(
+            kind: kind,
+            resourceURL: "tastemap-resource://public-photo/\(encoded)/display",
+            photoID: photo.photoId,
+            restaurantID: photo.restaurantId,
+            visitID: photo.visitId,
+            sourceOwnerID: photo.ownerUserId,
+            visibility: photo.visibility ?? "public",
+            exportAllowed: photo.exportAllowed ?? false,
+            attributionRequired: false,
+            accessibilityLabel: "\(name) 用户实拍"
+        )
+    }
+
+    private func categoryDescriptor(name: String, tags: [String], seed: String) -> TasteMapHybridImageDescriptor {
+        .init(
+            kind: .foodCategoryVisual,
+            stableSeed: seed,
+            categoryVisualID: FoodCategoryVisualResolver.resolve(name: name, tags: tags).rawValue,
+            exportAllowed: false,
+            attributionRequired: false,
+            accessibilityLabel: "\(name) 餐饮分类图示"
+        )
+    }
 #endif
 
     private func scopedRestaurants() throws -> [TasteMapHybridRestaurantDTO] {
@@ -850,7 +957,9 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 referencePrice: contract?.pricePerPerson,
                 localUserPhotoID: preferredPhoto?.id,
                 publicOrCachedPhotoID: contract?.markerPhotoId,
-                providerMerchantImageURL: contract?.merchantImageUrl
+                providerMerchantImageURL: contract?.merchantImageUrl,
+                localUserPhotoVisitID: preferredPhoto?.visitId.map { $0.uuidString.lowercased() },
+                localUserPhotoVisibility: preferredPhoto?.visibility.rawValue
             )
 #endif
             let metadata = metadataByRestaurantID[restaurant.id] ?? persistedMetadata
@@ -1012,24 +1121,37 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         switch resolution.preferredSource {
         case .localUserPhoto(let id):
             return TasteMapHybridImageDescriptor(
-                kind: .nativeResource,
+                kind: .ownerPhoto,
                 resourceURL: "tastemap-resource://photo/\(id.uuidString.lowercased())/display",
                 photoID: id.uuidString.lowercased(),
+                restaurantID: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
+                visitID: metadata.localUserPhotoVisitID,
+                sourceOwnerID: ownerUserID,
+                visibility: metadata.localUserPhotoVisibility ?? "private",
+                exportAllowed: true,
+                attributionRequired: false,
                 accessibilityLabel: label
             )
         case .publicOrCachedPhoto(let id):
             let segmentCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
             let encoded = id.addingPercentEncoding(withAllowedCharacters: segmentCharacters) ?? id
             return TasteMapHybridImageDescriptor(
-                kind: .publicOrCached,
+                kind: .publicUGC,
                 resourceURL: "tastemap-resource://public-photo/\(encoded)/display",
                 photoID: id,
+                restaurantID: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
+                sourceOwnerID: ownerUserID,
+                visibility: "public",
+                exportAllowed: false,
+                attributionRequired: false,
                 accessibilityLabel: label
             )
-        case .providerMerchantImage(let url):
-            return TasteMapHybridImageDescriptor(kind: .providerMerchant, resourceURL: url.absoluteString, accessibilityLabel: label)
-        case .foodDiningFallback:
-            return TasteMapHybridImageDescriptor(kind: .foodDiningFallback, stableSeed: restaurant.id.uuidString.lowercased(), accessibilityLabel: label)
+        case .providerMerchantImage, .foodDiningFallback:
+            return debugCategoryDescriptor(
+                name: restaurant.name,
+                tags: metadata.tags,
+                seed: restaurant.id.uuidString.lowercased()
+            )
         }
     }
 

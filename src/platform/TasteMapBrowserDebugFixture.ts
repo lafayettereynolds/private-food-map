@@ -9,6 +9,7 @@ import type {
   TasteMapImageDescriptor,
   TasteMapProfileDashboardViewModel,
 } from './TasteMapPlatform'
+import { resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
 
 interface DebugFixtureRoot {
   profile: {
@@ -116,23 +117,30 @@ function fixtureUUID(value: number) {
 function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybridContentSnapshotDTO {
   const generatedAt = new Date().toISOString()
   const names = ['林夏', '周舟', '陈一碗', '江南胃', '阿岚', '西湖小柚', '陆小满', '一只饭团']
+  const sourceUsers = profile.restaurants.slice(0, 12).map((restaurant, index) => ({
+    id: `tm_demo_${index}`,
+    name: names[index % names.length],
+    city: restaurant.city,
+    avatarPhotoID: null,
+    avatarPresetID: (['otter', 'polar-bear', 'fox', 'capybara'][index % 4] ?? 'otter') as UserProfile['avatarPresetId'],
+    isFollowing: index % 2 === 0,
+  }))
   const discovery: TasteMapHybridDiscoveryItemDTO[] = profile.restaurants.slice(0, 12).map((restaurant, index) => {
-    const sourceUser = {
-      id: `tm_demo_${index}`,
-      name: names[index % names.length],
-      city: restaurant.city,
-      avatarPhotoID: null,
-      avatarPresetID: (['otter', 'polar-bear', 'fox', 'capybara'][index % 4] ?? 'otter') as UserProfile['avatarPresetId'],
-      isFollowing: index % 2 === 0,
-    }
     return {
       id: `hybrid-discovery-${index}`,
       mode: 'for_you',
-      restaurant: contentRestaurant(profile, restaurant),
+      restaurant: {
+        ...contentRestaurant(profile, restaurant),
+        image: index === 0
+          ? profile.restaurantImages[restaurant.id]
+          : index % 2 === 0
+            ? categoryDescriptor(restaurant)
+            : fixtureUGCDescriptor(restaurant, sourceUsers[index].id, 'publicUGC', index),
+      },
       viewerState: restaurant.status === 'visited' ? 'visited' : 'want_to_go',
-      sourceUser,
-      activityRating: restaurant.averageRating,
-      activityVisitedAt: restaurant.latestVisitDate,
+      sourceUser: null,
+      activityRating: null,
+      activityVisitedAt: null,
       communityRating: {
         valueOutOfFive: restaurant.averageRating == null ? null : Math.max(0, restaurant.averageRating - 0.05),
         sampleCount: restaurant.averageRating == null ? 0 : 10 + index,
@@ -145,18 +153,33 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
       rank: index + 1,
     }
   })
-  const similarTaste: TasteMapHybridDiscoveryItemDTO[] = discovery.map((item) => ({
+  const similarTaste: TasteMapHybridDiscoveryItemDTO[] = discovery.map((item, index) => ({
     ...item,
     id: `similar-${item.id}`,
     mode: 'similar_taste',
+    restaurant: {
+      ...item.restaurant,
+      image: index % 2 === 0
+        ? fixtureUGCDescriptor(profile.restaurants[index], sourceUsers[index].id, 'activityPhoto', index)
+        : categoryDescriptor(profile.restaurants[index]),
+    },
+    sourceUser: sourceUsers[index],
+    activityRating: profile.restaurants[index]?.averageRating ?? null,
+    activityVisitedAt: profile.restaurants[index]?.latestVisitDate ?? generatedAt,
     reason: `与这位用户有 ${item.sharedRestaurantCount ?? 0} 家共同到访`,
     uniqueVisitorCount: null,
     wantToGoCount: null,
   }))
-  const trending: TasteMapHybridDiscoveryItemDTO[] = discovery.map((item) => ({
+  const trending: TasteMapHybridDiscoveryItemDTO[] = discovery.map((item, index) => ({
     ...item,
     id: `trending-${item.id}`,
     mode: 'trending',
+    restaurant: {
+      ...item.restaurant,
+      image: index % 2 === 0
+        ? fixtureUGCDescriptor(profile.restaurants[index], sourceUsers[index].id, 'publicUGC', index)
+        : categoryDescriptor(profile.restaurants[index]),
+    },
     reason: `最近 7 天有 ${item.uniqueVisitorCount ?? 0} 位用户到访`,
     similarityPercent: null,
     sharedRestaurantCount: null,
@@ -164,11 +187,16 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
   const activities: TasteMapHybridActivityItemDTO[] = discovery.map((item, index) => ({
     id: `hybrid-activity-${index}`,
     kind: index % 5 === 4 ? 'want_to_go' : 'visit',
-    eventAt: item.activityVisitedAt ?? generatedAt,
-    user: item.sourceUser!,
-    restaurant: item.restaurant,
+    eventAt: profile.restaurants[index]?.latestVisitDate ?? generatedAt,
+    user: sourceUsers[index],
+    restaurant: {
+      ...item.restaurant,
+      image: index % 2 === 0
+        ? fixtureUGCDescriptor(profile.restaurants[index], sourceUsers[index].id, 'activityPhoto', index)
+        : categoryDescriptor(profile.restaurants[index]),
+    },
     visitID: index % 5 === 4 ? null : `demo-visit-${index}`,
-    visitRating: index % 5 === 4 ? null : item.activityRating,
+    visitRating: index % 5 === 4 ? null : profile.restaurants[index]?.averageRating ?? null,
     note: index % 5 === 4 ? null : ['值得专程来吃，服务也很细致。', '今天最惊喜的是招牌菜。', '和朋友一起吃很舒服。', '会为了这道菜再来一次。'][index % 4],
     viewerState: item.viewerState,
     likedByViewer: index === 1,
@@ -221,16 +249,63 @@ function contentRestaurant(profile: TasteMapProfileDashboardViewModel, restauran
 }
 
 function imageDescriptor(restaurant: RestaurantSummary): TasteMapImageDescriptor {
+  const visitPhoto = restaurant.visits.flatMap((visit) => visit.photos.map((resourceURL, index) => ({
+    resourceURL,
+    photoID: visit.photoIds[index] ?? `debug-owner-${visit.id}-${index}`,
+    visit,
+  }))).find((value) => value.resourceURL)
+  if (visitPhoto) {
+    return {
+      kind: 'ownerPhoto', resourceURL: visitPhoto.resourceURL, photoID: visitPhoto.photoID,
+      restaurantID: restaurant.id, visitID: visitPhoto.visit.id, sourceOwnerID: restaurant.userId,
+      visibility: visitPhoto.visit.visibility, exportAllowed: true, attributionRequired: false,
+      accessibilityLabel: `${restaurant.name} 用户实拍`,
+    }
+  }
   if (restaurant.markerPhotoId) {
     return {
-      kind: 'publicOrCached',
+      kind: 'ownerPhoto',
       resourceURL: `tastemap-resource://public-photo/${encodeURIComponent(restaurant.markerPhotoId)}/display`,
       photoID: restaurant.markerPhotoId,
+      restaurantID: restaurant.id,
+      visitID: null,
+      sourceOwnerID: restaurant.userId,
+      visibility: 'private',
+      exportAllowed: true,
+      attributionRequired: false,
       accessibilityLabel: `${restaurant.name} 餐厅图片`,
     }
   }
-  if (restaurant.merchantImageUrl) {
-    return { kind: 'providerMerchant', resourceURL: restaurant.merchantImageUrl, accessibilityLabel: `${restaurant.name} 餐厅图片` }
+  return {
+    kind: 'foodCategoryVisual', categoryVisualID: resolveFoodCategoryVisualID(restaurant), stableSeed: restaurant.id,
+    exportAllowed: false, accessibilityLabel: `${restaurant.name} 餐饮分类图示`,
   }
-  return { kind: 'foodDiningFallback', stableSeed: restaurant.id, accessibilityLabel: `${restaurant.name} 餐饮图示` }
+}
+
+function categoryDescriptor(restaurant: RestaurantSummary): TasteMapImageDescriptor {
+  return {
+    kind: 'foodCategoryVisual', categoryVisualID: resolveFoodCategoryVisualID(restaurant), stableSeed: restaurant.id,
+    exportAllowed: false, accessibilityLabel: `${restaurant.name} 餐饮分类图示`,
+  }
+}
+
+function fixtureUGCDescriptor(
+  restaurant: RestaurantSummary,
+  sourceOwnerID: string,
+  kind: 'activityPhoto' | 'publicUGC',
+  index: number,
+): TasteMapImageDescriptor {
+  const assets = ['chinese.png', 'japanese.png', 'hotpot-grill.png', 'western.png', 'cafe.png']
+  return {
+    kind,
+    resourceURL: `/food-heroes/${assets[index % assets.length]}`,
+    photoID: `debug-${kind}-${index}`,
+    restaurantID: restaurant.id,
+    visitID: kind === 'activityPhoto' ? `debug-visit-${index}` : null,
+    sourceOwnerID,
+    visibility: 'public',
+    exportAllowed: false,
+    attributionRequired: false,
+    accessibilityLabel: `${restaurant.name} 用户实拍`,
+  }
 }

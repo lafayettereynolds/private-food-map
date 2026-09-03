@@ -122,7 +122,7 @@ struct Task10LargeDatasetPerformanceTests {
                 latitude: 30 + Double(index % 50) * 0.01,
                 longitude: 120 + Double(index / 50) * 0.01,
                 status: .visited,
-                visual: .fallback,
+                visual: .category(.other),
                 visitCount: index % 12,
                 averageRating: 4,
                 distanceKilometers: nil
@@ -151,12 +151,12 @@ struct Task10LargeDatasetPerformanceTests {
         let dateLineMarkers = [
             RestaurantMapMarkerPresentation(
                 id: uuid(200_001), name: "东侧", latitude: 10, longitude: 179.8,
-                status: .visited, visual: .fallback, visitCount: 1,
+                status: .visited, visual: .category(.other), visitCount: 1,
                 averageRating: nil, distanceKilometers: nil
             ),
             RestaurantMapMarkerPresentation(
                 id: uuid(200_002), name: "西侧", latitude: 10, longitude: -179.8,
-                status: .visited, visual: .fallback, visitCount: 1,
+                status: .visited, visual: .category(.other), visitCount: 1,
                 averageRating: nil, distanceKilometers: nil
             ),
         ]
