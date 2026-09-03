@@ -84,4 +84,14 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(page).not.toContain('>查看详情</button>')
     expect(nativeSurface).not.toContain("'.tm-map-selection'")
   })
+
+  it('uses the same evidence-based food emoji fallback in Browser and Native MapKit markers', () => {
+    const browserMap = source('../../src/components/MapView.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    const nativeMap = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift')
+    expect(browserMap).toContain('resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji)')
+    expect(nativeSurface).toContain('fallbackEmoji: resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji)')
+    expect(nativeMap).toContain('fallbackEmoji: value.fallbackEmoji')
+    expect(nativeMap).toContain('RestaurantMapMarkerVisual.emoji')
+  })
 })

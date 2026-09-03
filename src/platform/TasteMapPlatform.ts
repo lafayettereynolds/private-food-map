@@ -325,6 +325,7 @@ export interface TasteMapNativeMapSurfaceMarkerDTO {
   status: TasteMapMapScope
   visitCount: number
   averageRating: number | null
+  fallbackEmoji: string
   image: TasteMapImageDescriptor
 }
 

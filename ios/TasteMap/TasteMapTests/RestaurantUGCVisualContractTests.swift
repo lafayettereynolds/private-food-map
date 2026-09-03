@@ -16,6 +16,19 @@ struct RestaurantUGCVisualContractTests {
         #expect(FoodCategoryVisualResolver.resolve(name: "无分类餐厅") == .other)
     }
 
+    @Test("Restaurant food emoji follows explicit choice, food evidence, then category fallback")
+    func foodEmojiFallback() {
+        #expect(FoodCategoryEmojiResolver.resolve(name: "街角咖啡") == "☕️")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "经典牛排馆") == "🥩")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "青岚寿司") == "🍣")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "春日泰味") == "🍛")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "湖滨粤菜") == "🥟")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "山岚咖啡", preferredEmoji: "🍽️") == "☕️")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "山岚咖啡", preferredEmoji: "🍴") == "☕️")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "山岚小馆", preferredEmoji: "🌮") == "🌮")
+        #expect(FoodCategoryEmojiResolver.resolve(name: "无分类餐厅") == "🍽️")
+    }
+
     @Test("Owner, activity and public eligibility preserve privacy and export boundaries")
     func pool() {
         let owner = record(id: "owner", owner: "tm_viewer", visibility: "private")

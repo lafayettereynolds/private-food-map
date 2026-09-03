@@ -52,7 +52,7 @@
 .tm-map-filter-sheet__grid label { min-height: 42px; padding: 0 10px; border: 1px solid #d8e2e8; border-radius: 11px; display: flex; align-items: center; gap: 7px; }
 .tm-map-filter-sheet__grid select { min-width: 0; flex: 1; border: 0; background: transparent; }
 .tm-map-filter-sheet__done { width: 100%; min-height: 45px; border: 0; border-radius: 12px; color: #fff; background: #245f87; font-weight: 780; }
-.private-image-marker__visual svg { width: 19px; height: 19px; }
+.private-image-marker__visual .tm-restaurant-food-emoji { border-radius: inherit; }
 .tm-offline-map { position: absolute; inset: 0; overflow: hidden; background: #eaf0f3; }
 .tm-offline-map .map-grid { position: absolute; inset: 0; opacity: .72; background-image: linear-gradient(rgba(86,119,139,.11) 1px, transparent 1px), linear-gradient(90deg, rgba(86,119,139,.11) 1px, transparent 1px); background-size: 34px 34px; }
 .tm-offline-map__notice { position: absolute; z-index: 3; top: 9px; left: 50%; max-width: calc(100% - 24px); margin: 0; padding: 7px 10px; transform: translateX(-50%); border: 1px solid rgba(198,211,219,.9); border-radius: 999px; display: flex; align-items: center; gap: 5px; color: #5e6f7a; background: rgba(255,255,255,.9); font-size: 8px; white-space: nowrap; }

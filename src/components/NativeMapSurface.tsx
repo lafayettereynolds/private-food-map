@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type {
   TasteMapNativeMapSurfaceRect,
 } from '../platform/TasteMapPlatform'
+import { resolveRestaurantFoodEmoji } from '../visuals/FoodCategoryVisualContract'
 import type { MyMapSurfaceProps } from './MyMapBrowsePage'
 
 type NativeMapSurfaceProps = MyMapSurfaceProps
@@ -69,6 +70,7 @@ export function NativeMapSurface({
           status: scope === 'recommended' ? 'recommended' as const : restaurant.status,
           visitCount: restaurant.visitCount,
           averageRating: restaurant.averageRating,
+          fallbackEmoji: resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji),
           image: images[restaurant.id] ?? {
             kind: 'foodDiningFallback' as const,
             stableSeed: restaurant.id,

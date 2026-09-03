@@ -13,6 +13,51 @@ export interface FoodCategoryVisualEvidence {
   providerCategory?: string | null
 }
 
+const FOOD_EMOJI_MATCHERS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['☕️', ['咖啡', 'coffee', 'cafe', '咖啡馆', '咖啡店']],
+  ['🥩', ['牛排', 'steak', '扒房', '烤牛肉']],
+  ['🍕', ['披萨', 'pizza', '披萨店']],
+  ['🍝', ['意大利面', '意面', 'pasta', '意大利餐']],
+  ['🍣', ['寿司', '刺身', '日料', '日本料理', 'sushi', 'japanese']],
+  ['🫕', ['火锅', '锅物', '涮锅', 'hotpot']],
+  ['🍢', ['烧烤', '烤串', '串烧', '烧鸟', 'barbecue', 'bbq', 'yakitori']],
+  ['🥟', ['饺子', '馄饨', '包子', '小笼', '点心', '早茶', '粤菜', 'dim sum', 'dumpling']],
+  ['🍜', ['面馆', '面食', '拉面', '拌面', '米线', '米粉', '河粉', '粉店', 'ramen', 'noodle', '越南菜', '越南粉', 'pho']],
+  ['🍛', ['泰国菜', '泰餐', '泰味', '东南亚', '咖喱', 'curry', 'thai']],
+  ['🦞', ['龙虾', 'lobster']],
+  ['🦀', ['螃蟹', '蟹宴', 'crab']],
+  ['🦐', ['海鲜', '生蚝', '水产', 'seafood', 'oyster']],
+  ['🍰', ['甜品', '甜点', '蛋糕', '糖水', 'dessert', 'cake']],
+  ['🍨', ['冰淇淋', '冰激凌', 'gelato', 'ice cream']],
+  ['🧋', ['奶茶', '茶饮', '珍珠', 'boba', 'bubble tea']],
+  ['🥐', ['烘焙', '面包', 'bakery', '可颂', 'brunch', '早午餐']],
+  ['🍔', ['汉堡', 'burger', '快餐']],
+  ['🍗', ['炸鸡', '烤鸡', '鸡排', 'fried chicken']],
+  ['🥗', ['素食', '轻食', '沙拉', '健康餐', '低卡', 'vegetarian', 'vegan', 'salad', 'healthy']],
+  ['🍳', ['早餐', '早饭', 'breakfast']],
+  ['🍵', ['茶馆', '茶室', '茶楼', '抹茶', 'tea house', 'matcha']],
+  ['🍷', ['酒吧', '红酒', '葡萄酒', 'wine', 'bistro']],
+  ['🍺', ['啤酒', '精酿', 'beer', 'taproom']],
+  ['🌶️', ['川菜', '湘菜', '麻辣', '香辣', '川味', '辣子']],
+  ['🍲', ['韩餐', '韩国料理', '韩式', '石锅', '中餐', '中国菜', '杭帮菜', '江浙菜', '本帮菜', '鲁菜', '徽菜', '闽菜', '京菜', '东北菜', '云南菜', '贵州菜', '新疆菜']],
+]
+
+const FOOD_CATEGORY_DEFAULT_EMOJI: Record<FoodCategoryVisualID, string> = {
+  chinese: '🍲',
+  japaneseKorean: '🍣',
+  western: '🥩',
+  hotpotBBQ: '🫕',
+  noodles: '🍜',
+  cafeBakery: '☕️',
+  drinksDessert: '🍰',
+  seafood: '🦐',
+  fastFood: '🍔',
+  vegetarianLight: '🥗',
+  other: '🍽️',
+}
+
+const GENERIC_FOOD_EMOJIS = new Set(['🍽️', '🍴'])
+
 const MATCHERS: ReadonlyArray<readonly [FoodCategoryVisualID, readonly string[]]> = [
   ['hotpotBBQ', ['火锅', '锅物', '涮', '烧肉', '烤肉', '烧烤', '串烧', '烤串', 'bbq', 'barbecue', 'hotpot']],
   ['noodles', ['面馆', '面食', '拉面', '拌面', '米线', '米粉', '河粉', '粉店', '饺子', '馄饨', 'noodle', 'ramen']],
@@ -27,12 +72,34 @@ const MATCHERS: ReadonlyArray<readonly [FoodCategoryVisualID, readonly string[]]
 ]
 
 export function resolveFoodCategoryVisualID(evidence: FoodCategoryVisualEvidence): FoodCategoryVisualID {
-  const haystack = [evidence.name, ...(evidence.tags ?? []), evidence.providerCategory]
+  const haystack = normalizedFoodEvidence(evidence)
+  return MATCHERS.find(([, needles]) => needles.some((needle) => haystack.includes(needle)))?.[0] ?? 'other'
+}
+
+/**
+ * Restaurant avatars use the platform's color emoji when no eligible user
+ * photo exists. A deliberately chosen non-generic marker emoji remains
+ * authoritative; otherwise name/tag evidence selects the closest food theme.
+ */
+export function resolveRestaurantFoodEmoji(
+  evidence: FoodCategoryVisualEvidence,
+  preferredEmoji?: string | null,
+  fallbackCategory?: FoodCategoryVisualID,
+) {
+  const preferred = preferredEmoji?.trim()
+  if (preferred && !GENERIC_FOOD_EMOJIS.has(preferred)) return preferred
+  const haystack = normalizedFoodEvidence(evidence)
+  const matched = FOOD_EMOJI_MATCHERS.find(([, needles]) => needles.some((needle) => haystack.includes(needle)))?.[0]
+  if (matched) return matched
+  return FOOD_CATEGORY_DEFAULT_EMOJI[fallbackCategory ?? resolveFoodCategoryVisualID(evidence)]
+}
+
+function normalizedFoodEvidence(evidence: FoodCategoryVisualEvidence) {
+  return [evidence.name, ...(evidence.tags ?? []), evidence.providerCategory]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join('|')
     .normalize('NFKC')
     .toLocaleLowerCase('zh-CN')
-  return MATCHERS.find(([, needles]) => needles.some((needle) => haystack.includes(needle)))?.[0] ?? 'other'
 }
 
 export const foodCategoryVisualPalette: Record<FoodCategoryVisualID, { background: string; accent: string; ink: string }> = {

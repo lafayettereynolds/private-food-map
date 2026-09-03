@@ -1698,6 +1698,8 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .restaurant-avatar--large { width: 52px; height: 52px; font-size: 25px; }
 .restaurant-avatar img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .restaurant-avatar > span { line-height: 1; }
+.tm-restaurant-food-emoji { width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 30% 22%, rgba(255,255,255,.82) 0 8%, transparent 9%), linear-gradient(145deg, color-mix(in srgb, var(--food-bg) 82%, white), var(--food-bg)); }
+.tm-restaurant-food-emoji__glyph { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-size: max(18px, 58%); font-style: normal; font-weight: 400; line-height: 1; }
 .empty-icon { color: #333; background: #f2f2f2; }
 .text-button { color: #222; }
 .local-data-note { border-top-color: #eee; color: #aaa; }
@@ -1726,6 +1728,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .private-image-marker.is-selected { width: var(--map-marker-selected-size); height: var(--map-marker-selected-size); box-shadow: 0 0 0 3px #fff, 0 0 0 5px rgba(38,42,39,.82), 0 7px 17px rgba(31,36,31,.24); transform: translateY(-1px); }
 .private-image-marker__visual { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: #f4f3f0; font-size: 18px; line-height: 1; }
 .private-image-marker__visual img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.private-image-marker__visual > .tm-restaurant-food-emoji__glyph { font-size: 21px; }
 .private-image-marker__tooltip {
   position: absolute;
   z-index: 3;

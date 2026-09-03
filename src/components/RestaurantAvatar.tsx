@@ -1,5 +1,5 @@
-import { ImageIcon } from 'lucide-react'
 import { scoreColor, type RestaurantSummary } from '../types/domain'
+import { resolveRestaurantFoodEmoji } from '../visuals/FoodCategoryVisualContract'
 import { SyncedImage } from './SyncedImage'
 
 interface RestaurantAvatarProps {
@@ -8,8 +8,11 @@ interface RestaurantAvatarProps {
 }
 
 export function RestaurantAvatar({ restaurant, size = 'small' }: RestaurantAvatarProps) {
-  const imageSource = restaurant.markerImageData || restaurant.merchantImageUrl
+  // Merchant/provider artwork is not a user's Restaurant avatar. When the
+  // owner has not supplied a marker photo, use the themed food emoji instead.
+  const imageSource = restaurant.markerImageData
   const useImage = restaurant.markerType === 'image' && (imageSource || restaurant.markerPhotoId)
+  const fallback = <span>{resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji)}</span>
 
   return (
     <span
@@ -17,11 +20,9 @@ export function RestaurantAvatar({ restaurant, size = 'small' }: RestaurantAvata
       style={{ borderColor: scoreColor(restaurant.scoreOutOfTen) }}
     >
       {useImage ? (
-        <SyncedImage alt="" photoId={restaurant.markerPhotoId} source={imageSource} />
-      ) : restaurant.markerType === 'emoji' ? (
-        <span>{restaurant.markerEmoji || '🍽️'}</span>
+        <SyncedImage alt="" fallback={fallback} photoId={restaurant.markerPhotoId} source={imageSource} />
       ) : (
-        <ImageIcon size={16} />
+        fallback
       )}
     </span>
   )

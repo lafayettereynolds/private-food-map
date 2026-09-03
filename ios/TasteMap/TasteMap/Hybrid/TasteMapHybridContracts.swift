@@ -548,6 +548,7 @@ public struct TasteMapHybridMapSurfaceMarkerDTO: Codable, Sendable {
     public let status: TasteMapHybridMapScope
     public let visitCount: Int
     public let averageRating: Double?
+    public let fallbackEmoji: String
     public let image: TasteMapHybridImageDescriptor
 }
 

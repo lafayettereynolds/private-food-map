@@ -40,6 +40,86 @@ enum FoodCategoryVisualResolver {
     }
 }
 
+/// Native Apple Color Emoji fallback for Restaurant avatars and Map markers.
+/// Explicit non-generic user choices remain authoritative; otherwise the
+/// closest name/tag theme wins before the broad category fallback.
+enum FoodCategoryEmojiResolver {
+    private static let matchers: [(String, [String])] = [
+        ("☕️", ["咖啡", "coffee", "cafe", "咖啡馆", "咖啡店"]),
+        ("🥩", ["牛排", "steak", "扒房", "烤牛肉"]),
+        ("🍕", ["披萨", "pizza", "披萨店"]),
+        ("🍝", ["意大利面", "意面", "pasta", "意大利餐"]),
+        ("🍣", ["寿司", "刺身", "日料", "日本料理", "sushi", "japanese"]),
+        ("🫕", ["火锅", "锅物", "涮锅", "hotpot"]),
+        ("🍢", ["烧烤", "烤串", "串烧", "烧鸟", "barbecue", "bbq", "yakitori"]),
+        ("🥟", ["饺子", "馄饨", "包子", "小笼", "点心", "早茶", "粤菜", "dim sum", "dumpling"]),
+        ("🍜", ["面馆", "面食", "拉面", "拌面", "米线", "米粉", "河粉", "粉店", "ramen", "noodle", "越南菜", "越南粉", "pho"]),
+        ("🍛", ["泰国菜", "泰餐", "泰味", "东南亚", "咖喱", "curry", "thai"]),
+        ("🦞", ["龙虾", "lobster"]),
+        ("🦀", ["螃蟹", "蟹宴", "crab"]),
+        ("🦐", ["海鲜", "生蚝", "水产", "seafood", "oyster"]),
+        ("🍰", ["甜品", "甜点", "蛋糕", "糖水", "dessert", "cake"]),
+        ("🍨", ["冰淇淋", "冰激凌", "gelato", "ice cream"]),
+        ("🧋", ["奶茶", "茶饮", "珍珠", "boba", "bubble tea"]),
+        ("🥐", ["烘焙", "面包", "bakery", "可颂", "brunch", "早午餐"]),
+        ("🍔", ["汉堡", "burger", "快餐"]),
+        ("🍗", ["炸鸡", "烤鸡", "鸡排", "fried chicken"]),
+        ("🥗", ["素食", "轻食", "沙拉", "健康餐", "低卡", "vegetarian", "vegan", "salad", "healthy"]),
+        ("🍳", ["早餐", "早饭", "breakfast"]),
+        ("🍵", ["茶馆", "茶室", "茶楼", "抹茶", "tea house", "matcha"]),
+        ("🍷", ["酒吧", "红酒", "葡萄酒", "wine", "bistro"]),
+        ("🍺", ["啤酒", "精酿", "beer", "taproom"]),
+        ("🌶️", ["川菜", "湘菜", "麻辣", "香辣", "川味", "辣子"]),
+        ("🍲", ["韩餐", "韩国料理", "韩式", "石锅", "中餐", "中国菜", "杭帮菜", "江浙菜", "本帮菜", "鲁菜", "徽菜", "闽菜", "京菜", "东北菜", "云南菜", "贵州菜", "新疆菜"]),
+    ]
+    private static let generic: Set<String> = ["🍽️", "🍴"]
+    private static let supported = Set(matchers.map(\.0) + ["🌮", "🥘", "🍤", "☕"])
+
+    static func resolve(
+        name: String,
+        tags: [String] = [],
+        providerCategory: String? = nil,
+        preferredEmoji: String? = nil,
+        fallbackCategory: FoodCategoryVisualID? = nil
+    ) -> String {
+        let preferred = preferredEmoji?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let preferred, !generic.contains(preferred), supported.contains(preferred) { return preferred }
+        let value = ([name] + tags + [providerCategory ?? ""])
+            .joined(separator: "|")
+            .precomposedStringWithCompatibilityMapping
+            .lowercased()
+        if let matched = matchers.first(where: { _, needles in needles.contains { value.contains($0) } })?.0 {
+            return matched
+        }
+        return defaultEmoji(for: fallbackCategory ?? FoodCategoryVisualResolver.resolve(
+            name: name,
+            tags: tags,
+            providerCategory: providerCategory
+        ))
+    }
+
+    static func sanitized(_ value: String, restaurantName: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return supported.contains(trimmed) ? trimmed : resolve(name: restaurantName)
+    }
+
+    private static func defaultEmoji(for category: FoodCategoryVisualID) -> String {
+        switch category {
+        case .chinese: "🍲"
+        case .japaneseKorean: "🍣"
+        case .western: "🥩"
+        case .hotpotBBQ: "🫕"
+        case .noodles: "🍜"
+        case .cafeBakery: "☕️"
+        case .drinksDessert: "🍰"
+        case .seafood: "🦐"
+        case .fastFood: "🍔"
+        case .vegetarianLight: "🥗"
+        case .other: "🍽️"
+        }
+    }
+}
+
 struct FoodCategoryVisual: View {
     let id: FoodCategoryVisualID
     var accessibilityLabel: String = "餐饮分类图示"

@@ -18,6 +18,7 @@ enum RestaurantMapMarkerStatus: String, Equatable {
 enum RestaurantMapMarkerVisual: Equatable {
     case photo(UUID)
     case category(FoodCategoryVisualID)
+    case emoji(String)
 }
 
 struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
@@ -63,7 +64,7 @@ struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
         switch visual {
         case .photo(let id):
             RestaurantImageResolution(sources: [.localUserPhoto(id)])
-        case .category:
+        case .category, .emoji:
             RestaurantImageResolution(sources: [])
         }
     }
@@ -159,9 +160,10 @@ enum RestaurantMapMarkerBuilder {
             if let photoID = localPhoto?.id {
                 visual = .photo(photoID)
             } else {
-                visual = .category(FoodCategoryVisualResolver.resolve(
+                visual = .emoji(FoodCategoryEmojiResolver.resolve(
                     name: restaurant.name,
-                    tags: record?.tags ?? []
+                    tags: record?.tags ?? [],
+                    preferredEmoji: record?.markerEmoji
                 ))
             }
 

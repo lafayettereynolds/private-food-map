@@ -9,8 +9,8 @@ import { avatarPresetPosition } from '../utils/avatarPresets'
 import { wantedMarkerScale } from '../utils/mapMarkers'
 import { markerLayerPriority } from './mapMarkerPriority'
 import { recordMapInstanceCreation, recordMarkerReconciliation } from './mapScopePerformance'
-import { FoodCategoryVisual } from '../visuals/FoodCategoryVisual'
-import { foodCategoryVisualMarkup, resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
+import { resolveRestaurantFoodEmoji } from '../visuals/FoodCategoryVisualContract'
+import { RestaurantFoodEmoji } from '../visuals/RestaurantFoodEmoji'
 
 export { markerLayerPriority } from './mapMarkerPriority'
 
@@ -354,14 +354,18 @@ export function restaurantMarkerSignature(restaurant: RestaurantSummary, current
     status: restaurant.status,
     score: restaurant.scoreOutOfTen,
     visits: restaurant.visitCount,
-    image: restaurant.markerImageData || restaurant.merchantImageUrl || null,
+    image: restaurant.markerImageData || null,
     photo: restaurant.markerPhotoId || null,
     location: currentCoordinates ? [currentCoordinates.latitude, currentCoordinates.longitude] : null,
   })
 }
 
 function renderFoodCategoryFallback(target: HTMLElement, restaurant: RestaurantSummary) {
-  target.innerHTML = foodCategoryVisualMarkup(resolveFoodCategoryVisualID(restaurant))
+  const emoji = document.createElement('span')
+  emoji.className = 'tm-restaurant-food-emoji__glyph'
+  emoji.setAttribute('aria-hidden', 'true')
+  emoji.textContent = resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji)
+  target.replaceChildren(emoji)
 }
 
 function createUserLocationContent(currentUser: UserProfile) {
@@ -468,9 +472,8 @@ function OfflineMarkerVisual({ restaurant }: { restaurant: RestaurantSummary }) 
   const [failed, setFailed] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const source = restaurant.markerImageData
-  const category = resolveFoodCategoryVisualID(restaurant)
   return <span className="private-image-marker__visual">
-    {!loaded || failed || !source ? <FoodCategoryVisual id={category} label={`${restaurant.name} 餐饮分类图示`} /> : null}
+    {!loaded || failed || !source ? <RestaurantFoodEmoji label={`${restaurant.name} 食物表情`} name={restaurant.name} preferredEmoji={restaurant.markerEmoji} tags={restaurant.tags} /> : null}
     {source && !failed
       ? <img alt="" data-restaurant-image="true" hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={source} />
       : null}

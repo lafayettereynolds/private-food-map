@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FOOD_CATEGORY_VISUAL_IDS, resolveFoodCategoryVisualID } from './FoodCategoryVisualContract'
+import { FOOD_CATEGORY_VISUAL_IDS, resolveFoodCategoryVisualID, resolveRestaurantFoodEmoji } from './FoodCategoryVisualContract'
 
 describe('FoodCategoryVisual contract', () => {
   it('keeps a bounded stable taxonomy', () => {
@@ -24,5 +24,23 @@ describe('FoodCategoryVisual contract', () => {
     ['无分类餐厅', [], 'other'],
   ] as const)('maps %s to %s', (name, tags, expected) => {
     expect(resolveFoodCategoryVisualID({ name, tags })).toBe(expected)
+  })
+
+  it.each([
+    ['街角咖啡', [], '☕️'],
+    ['经典牛排馆', [], '🥩'],
+    ['青岚寿司', [], '🍣'],
+    ['春日泰味', [], '🍛'],
+    ['湖滨粤菜', [], '🥟'],
+    ['木屋烧烤', [], '🍢'],
+    ['无分类餐厅', [], '🍽️'],
+  ] as const)('uses a matching food emoji for %s', (name, tags, expected) => {
+    expect(resolveRestaurantFoodEmoji({ name, tags })).toBe(expected)
+  })
+
+  it('preserves an explicit non-generic Restaurant emoji but replaces generic tableware when evidence is specific', () => {
+    expect(resolveRestaurantFoodEmoji({ name: '山岚小馆' }, '🌮')).toBe('🌮')
+    expect(resolveRestaurantFoodEmoji({ name: '山岚咖啡' }, '🍽️')).toBe('☕️')
+    expect(resolveRestaurantFoodEmoji({ name: '山岚咖啡' }, '🍴')).toBe('☕️')
   })
 })

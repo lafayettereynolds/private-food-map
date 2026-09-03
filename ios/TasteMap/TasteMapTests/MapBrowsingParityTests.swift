@@ -63,7 +63,7 @@ struct MapBrowsingParityTests {
         #expect(markers(snapshot.visited, segment: .forYou).first?.status == .recommended)
     }
 
-    @Test("Marker visuals use only current-owner photos or category visuals")
+    @Test("Marker visuals use only current-owner photos or food emoji fallbacks")
     func visualPriority() throws {
         let markerRestaurant = makeRestaurant(1, name: "正式标记照片", status: .visited)
         let markerPhoto = photo(301, restaurant: markerRestaurant, kind: .restaurantMarker, remoteID: "marker-photo")
@@ -106,11 +106,11 @@ struct MapBrowsingParityTests {
         ).map { ($0.id, $0.visual) })
 
         #expect(result[markerRestaurant.id] == .photo(markerPhoto.id))
-        #expect(result[merchantRestaurant.id] == .category(.other))
+        #expect(result[merchantRestaurant.id] == .emoji("🍲"))
         #expect(result[localRestaurant.id] == .photo(localOnlyPhoto.id))
         #expect(snapshot.visited.first(where: { $0.id == localRestaurant.id })?.merchantImageURL?.host == "images.example.com")
-        #expect(result[emojiRestaurant.id] == .category(.other))
-        #expect(result[fallbackRestaurant.id] == .category(.other))
+        #expect(result[emojiRestaurant.id] == .emoji("🍜"))
+        #expect(result[fallbackRestaurant.id] == .emoji("🍽️"))
     }
 
     @Test("Deleted, cross-restaurant and unsafe image references safely degrade")
@@ -131,10 +131,10 @@ struct MapBrowsingParityTests {
         )
         let visual = markers(snapshot.visited, photos: [deleted, crossRestaurant])
             .first(where: { $0.id == restaurant.id })?.visual
-        #expect(visual == .category(.other))
+        #expect(visual == .emoji("🍛"))
     }
 
-    @Test("Hybrid MapKit accepts owner photos and collapses public or provider descriptors to category visuals")
+    @Test("Hybrid MapKit accepts owner photos and collapses public or provider descriptors to food emoji")
     func hybridMapVisualBoundary() {
         let restaurant = makeRestaurant(99, name: "日式食堂", status: .visited)
         let ownerPhoto = photo(399, restaurant: restaurant, kind: .restaurantMarker, remoteID: "owner-marker")
@@ -146,6 +146,8 @@ struct MapBrowsingParityTests {
         )
         #expect(TasteMapHybridMapMarkerVisualPolicy.resolve(
             ownerDescriptor,
+            fallbackEmoji: "🍣",
+            restaurantName: restaurant.name,
             photosByID: [ownerPhoto.id: ownerPhoto]
         ) == .photo(ownerPhoto.id))
 
@@ -159,8 +161,10 @@ struct MapBrowsingParityTests {
             )
             #expect(TasteMapHybridMapMarkerVisualPolicy.resolve(
                 descriptor,
+                fallbackEmoji: "🍣",
+                restaurantName: restaurant.name,
                 photosByID: [ownerPhoto.id: ownerPhoto]
-            ) == .category(.japaneseKorean))
+            ) == .emoji("🍣"))
         }
     }
 

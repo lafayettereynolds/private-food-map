@@ -212,6 +212,7 @@ final class TasteMapHybridBridgeTests: XCTestCase {
             status: .visited,
             visitCount: 4,
             averageRating: 4.5,
+            fallbackEmoji: "🍣",
             image: TasteMapHybridImageDescriptor(
                 kind: .foodDiningFallback,
                 stableSeed: "11111111-1111-4111-8111-111111111111",

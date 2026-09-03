@@ -466,9 +466,9 @@ private final class TasteMapUserLocationAnnotationView: MKAnnotationView {
 private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     private let visualContainer = UIView()
     private let imageView = UIImageView()
-    private let fallbackImageView = UIImageView()
+    private let emojiLabel = UILabel()
     private var representedRestaurantID: UUID?
-    private var categoryVisualID: FoodCategoryVisualID = .other
+    private var fallbackEmoji = "🍽️"
     private var markerStatus: RestaurantMapMarkerStatus = .visited
     private var distanceKilometers: Double?
 
@@ -485,12 +485,14 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         visualContainer.backgroundColor = .secondarySystemBackground
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
-        fallbackImageView.contentMode = .scaleAspectFit
-        fallbackImageView.tintColor = UIColor(red: 0.30, green: 0.42, blue: 0.53, alpha: 1)
+        emojiLabel.adjustsFontSizeToFitWidth = true
+        emojiLabel.font = .systemFont(ofSize: 25)
+        emojiLabel.minimumScaleFactor = 0.75
+        emojiLabel.textAlignment = .center
 
         addSubview(visualContainer)
         visualContainer.addSubview(imageView)
-        visualContainer.addSubview(fallbackImageView)
+        visualContainer.addSubview(emojiLabel)
         isAccessibilityElement = true
     }
 
@@ -500,7 +502,7 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         super.prepareForReuse()
         representedRestaurantID = nil
         imageView.image = nil
-        fallbackImageView.image = nil
+        emojiLabel.text = nil
         layer.zPosition = 0
     }
 
@@ -526,15 +528,21 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
         visualContainer.layer.borderWidth = isSelected ? 4 : 3
         imageView.frame = visualContainer.bounds.insetBy(dx: 3, dy: 3)
         imageView.layer.cornerRadius = max(0, (diameter - 6) / 2)
-        fallbackImageView.frame = visualContainer.bounds.insetBy(dx: 10, dy: 10)
+        emojiLabel.frame = visualContainer.bounds.insetBy(dx: 6, dy: 6)
     }
 
     func configure(_ marker: RestaurantMapMarkerPresentation) {
         representedRestaurantID = marker.id
         markerStatus = marker.status
         distanceKilometers = marker.distanceKilometers
-        if case let .category(value) = marker.visual { categoryVisualID = value }
-        fallbackImageView.tintColor = nil
+        switch marker.visual {
+        case .emoji(let value): fallbackEmoji = value
+        case .category(let value): fallbackEmoji = FoodCategoryEmojiResolver.resolve(
+            name: marker.name,
+            fallbackCategory: value
+        )
+        case .photo: fallbackEmoji = FoodCategoryEmojiResolver.resolve(name: marker.name)
+        }
         visualContainer.layer.borderColor = ratingColor(marker.averageRating).cgColor
         imageView.image = nil
         showFallback()
@@ -547,16 +555,13 @@ private final class RestaurantMarkerAnnotationView: MKAnnotationView {
     func show(image: UIImage, for restaurantID: UUID) {
         guard representedRestaurantID == restaurantID else { return }
         imageView.image = image
-        fallbackImageView.isHidden = true
+        emojiLabel.isHidden = true
     }
 
     func showFallback() {
         imageView.image = nil
-        fallbackImageView.isHidden = false
-        fallbackImageView.image = FoodCategoryVisualRenderer.image(
-            id: categoryVisualID,
-            size: CGSize(width: 48, height: 48)
-        )
+        emojiLabel.isHidden = false
+        emojiLabel.text = fallbackEmoji
     }
 
     private func ratingColor(_ rating: Double?) -> UIColor {

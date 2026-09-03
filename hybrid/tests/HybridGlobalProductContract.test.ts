@@ -400,14 +400,16 @@ describe('Hybrid global Product Contract', () => {
 })
 
 describe('Hybrid forbidden Product patterns', () => {
-  it('forbids clusters, default separation and raw emoji in formal Map marker sources', () => {
+  it('forbids clusters and default separation while requiring food emoji fallback markers', () => {
     const map = source('../../src/components/MapView.tsx')
     const mapService = source('../../src/services/amap.ts')
     const nativeMap = source('../../ios/TasteMap/TasteMap/Features/Map/ClusteredRestaurantMapView.swift')
     const nativePresentation = source('../../ios/TasteMap/TasteMap/Features/Map/RestaurantMapPresentation.swift')
     const combined = `${map}\n${mapService}\n${nativeMap}\n${nativePresentation}`
     expect(combined).not.toMatch(/MarkerCluster|createClusterData|spiderfy|collision dispersion|coordinateOffset|adjustedCoordinate|spreadCoordinate/i)
-    expect(combined).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u)
+    expect(map).toContain('resolveRestaurantFoodEmoji')
+    expect(nativeMap).toContain('emojiLabel')
+    expect(nativePresentation).toContain('FoodCategoryEmojiResolver.resolve')
   })
 
   it('uses Activity/Visit rating and never substitutes Restaurant aggregate rating', () => {

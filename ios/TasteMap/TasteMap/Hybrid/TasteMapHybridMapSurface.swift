@@ -178,6 +178,8 @@ private final class TasteMapHybridMapSurfaceModel: ObservableObject {
             nextNativeIDByOriginalID[value.id] = nativeID
             let markerVisual = TasteMapHybridMapMarkerVisualPolicy.resolve(
                 value.image,
+                fallbackEmoji: value.fallbackEmoji,
+                restaurantName: value.name,
                 photosByID: resources.photosByID
             )
             return RestaurantMapMarkerPresentation(
@@ -288,6 +290,8 @@ private final class TasteMapHybridMapSurfaceModel: ObservableObject {
 enum TasteMapHybridMapMarkerVisualPolicy {
     static func resolve(
         _ image: TasteMapHybridImageDescriptor,
+        fallbackEmoji: String,
+        restaurantName: String,
         photosByID: [UUID: PhotoAsset]
     ) -> RestaurantMapMarkerVisual {
         let matchingPhoto = image.photoID.flatMap { reference in
@@ -296,19 +300,19 @@ enum TasteMapHybridMapMarkerVisualPolicy {
                     || $0.remoteID?.caseInsensitiveCompare(reference) == .orderedSame
             }
         }
-        let category = RestaurantMapMarkerVisual.category(
-            image.categoryVisualID.flatMap(FoodCategoryVisualID.init(rawValue:)) ?? .other
+        let emoji = RestaurantMapMarkerVisual.emoji(
+            FoodCategoryEmojiResolver.sanitized(fallbackEmoji, restaurantName: restaurantName)
         )
         switch image.kind {
         case .ownerPhoto, .nativeResource:
-            return matchingPhoto.map { .photo($0.id) } ?? category
+            return matchingPhoto.map { .photo($0.id) } ?? emoji
         case .foodCategoryVisual:
-            return category
+            return emoji
         case .activityPhoto, .publicUGC, .publicOrCached, .providerMerchant, .foodDiningFallback:
             // Personal Map never renders another user's UGC or provider imagery.
             // Legacy descriptor kinds remain decodable, but safely collapse to
-            // the deterministic Food Category visual on this surface.
-            return category
+            // the deterministic food emoji on this surface.
+            return emoji
         }
     }
 }

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, ChevronRight, LoaderCircle, ReceiptText, Search, SlidersHorizontal, Utensils } from 'lucide-react'
 import type { TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
-import { FoodCategoryVisual } from '../visuals/FoodCategoryVisual'
 import { resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
+import { RestaurantFoodEmoji } from '../visuals/RestaurantFoodEmoji'
 import { resolvedImageDescriptor } from './TasteMapImageResolution'
 
 export function HybridPageHeader({ eyebrow, title, description, trailing }: { eyebrow?: string; title: string; description?: string; trailing?: ReactNode }) {
@@ -19,11 +19,10 @@ export function HybridRestaurantImage({ image, resolution, name, className = '' 
   useEffect(() => setSourceIndex(0), [identity])
   const selected = resolvedImageDescriptor(plan, sourceIndex)
   if (selected.kind === 'foodCategoryVisual') {
-    return <FoodCategoryVisual className={className} id={selected.categoryVisualID} label={selected.accessibilityLabel || `${name} 餐饮分类图示`} />
+    return <RestaurantFoodEmoji categoryVisualID={selected.categoryVisualID} className={className} label={selected.accessibilityLabel || `${name} 食物表情`} name={name} />
   }
   if (selected.kind === 'foodDiningFallback') {
-    const categoryVisualID = resolveFoodCategoryVisualID({ name })
-    return <FoodCategoryVisual className={className} id={categoryVisualID} label={selected.accessibilityLabel || `${name} 餐饮分类图示`} />
+    return <RestaurantFoodEmoji className={className} label={selected.accessibilityLabel || `${name} 食物表情`} name={name} />
   }
   return <img alt={selected.accessibilityLabel || `${name} 餐厅图片`} className={className} decoding="async" loading="lazy" onError={() => setSourceIndex((value) => value + 1)} src={selected.resourceURL} />
 }
