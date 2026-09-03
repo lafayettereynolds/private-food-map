@@ -21,6 +21,31 @@ describe('predictPersonalTasteScore', () => {
     expect(result.score).toBeNull()
     expect(result.description).toBe('记录更多评分后生成')
   })
+
+  it('treats a missing runtime score as no data instead of producing NaN', () => {
+    const missingScore = restaurant({ id: 'missing-score' })
+    delete (missingScore as Partial<RestaurantSummary>).scoreOutOfTen
+
+    const result = predictPersonalTasteScore(restaurant({ id: 'target' }), [missingScore])
+
+    expect(result.score).toBeNull()
+    expect(result.ratedRestaurantCount).toBe(0)
+  })
+
+  it('keeps prediction finite when optional runtime price and count fields are absent', () => {
+    const target = restaurant({ id: 'target', tags: ['日料'] })
+    const history = restaurant({ id: 'history', tags: ['日料'], scoreOutOfTen: 9 })
+    delete (target as Partial<RestaurantSummary>).averagePricePerPerson
+    delete (target as Partial<RestaurantSummary>).pricePerPerson
+    delete (history as Partial<RestaurantSummary>).averagePricePerPerson
+    delete (history as Partial<RestaurantSummary>).pricePerPerson
+    delete (history as Partial<RestaurantSummary>).visitCount
+
+    const result = predictPersonalTasteScore(target, [history])
+
+    expect(result.score).toBe(9)
+    expect(Number.isFinite(result.score)).toBe(true)
+  })
 })
 
 function restaurant(overrides: Partial<RestaurantSummary>): RestaurantSummary {

@@ -369,7 +369,7 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 
 Canonical order: hero; city/status; name; address; compact actions; reference spend; phone; hours; directions; rating reference; my/all/friend/similar-taste ratings; user photos; my visit overview; visit history; dishes and detailed ratings.
 
-Rating circles mean: large circle = score, small circle = sample count. Nil never renders as zero.
+Rating circles mean: large circle = score, small circle = sample count. Nil never renders as zero. In the four-item rating-reference strip, every no-data dimension uses the same empty-state composition inside its circle: the shared empty graphic plus `暂无数据`, with only the dimension name below. `我的评分` must not diverge into a dash plus a separate `未评分` caption.
 
 ## Visit Editor
 

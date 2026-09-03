@@ -54,7 +54,8 @@ export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyResta
 }
 
 function PersonalStat({ value, count, label, description }: { value: number | null; count: number; label: string; description?: string }) {
-  return <Stat confidence={value === null ? 'NO_DATA' : 'NORMAL'} count={count} label={label} loading={false} sampleLabel={value === null ? (label === '历史预测' ? '记录更多评分后生成' : '未评分') : description ?? null} value={value} />
+  const displayValue = typeof value === 'number' && Number.isFinite(value) ? value : null
+  return <Stat confidence={displayValue === null ? 'NO_DATA' : 'NORMAL'} count={count} label={label} loading={false} sampleLabel={displayValue === null ? null : description ?? null} value={displayValue} />
 }
 
 function GroupStat({ label, value, count, loading }: { label: string; value: number | null; count: number; loading: boolean }) {
@@ -67,5 +68,5 @@ function Stat({ label, value, count, loading, confidence, sampleLabel }: { label
   const showInsufficient = confidence === 'INSUFFICIENT' && !loading
   const showScore = value !== null && !loading
   const color = showScore ? scoreColor(value) : undefined
-  return <article className={`score-reference-item${label === '我的评分' || label === '历史预测' ? ' is-personal' : ''}${showEmptyGraphic || showInsufficient ? ' is-empty' : ''}${confidence === 'LOW' ? ' is-low-confidence' : ''}`}><span className="score-reference-orb" style={color ? { borderColor: color, color } : undefined}>{loading ? <strong>—</strong> : showScore ? <strong>{value.toFixed(1)}</strong> : showInsufficient ? <span className="score-reference-empty is-insufficient"><Ghost size={16} strokeWidth={1.35} /><em>样本不足</em></span> : showEmptyGraphic && label !== '我的评分' && label !== '历史预测' ? <span className="score-reference-empty"><Ghost size={18} strokeWidth={1.4} /><em>暂无数据</em></span> : <strong>—</strong>}<i aria-label={`${count} 个有效样本`}>{loading ? '…' : count}</i></span><span><b>{label}</b>{loading || (sampleLabel && !showInsufficient) ? <small className={confidence === 'LOW' ? 'is-low-confidence' : ''}>{loading ? '正在读取评分' : sampleLabel}</small> : null}</span></article>
+  return <article className={`score-reference-item${label === '我的评分' || label === '历史预测' ? ' is-personal' : ''}${showEmptyGraphic || showInsufficient ? ' is-empty' : ''}${confidence === 'LOW' ? ' is-low-confidence' : ''}`}><span className="score-reference-orb" style={color ? { borderColor: color, color } : undefined}>{loading ? <strong>—</strong> : showScore ? <strong>{value.toFixed(1)}</strong> : showInsufficient ? <span className="score-reference-empty is-insufficient"><Ghost aria-hidden="true" size={16} strokeWidth={1.35} /><em>样本不足</em></span> : showEmptyGraphic ? <span aria-label={`${label}暂无数据`} className="score-reference-empty"><Ghost aria-hidden="true" size={18} strokeWidth={1.4} /><em>暂无数据</em></span> : <strong>—</strong>}<i aria-label={`${count} 个有效样本`}>{loading ? '…' : count}</i></span><span><b>{label}</b>{loading || (sampleLabel && !showInsufficient) ? <small className={confidence === 'LOW' ? 'is-low-confidence' : ''}>{loading ? '正在读取评分' : sampleLabel}</small> : null}</span></article>
 }

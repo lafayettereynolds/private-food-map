@@ -12,7 +12,8 @@ export function predictPersonalTasteScore(target: RestaurantSummary, history: Re
   const targetKey = restaurantKey(target)
   const ratedHistory = history.filter((restaurant) => (
     !restaurant.deletedAt
-    && restaurant.scoreOutOfTen !== null
+    && typeof restaurant.scoreOutOfTen === 'number'
+    && Number.isFinite(restaurant.scoreOutOfTen)
     && restaurantKey(restaurant) !== targetKey
   ))
   if (!ratedHistory.length) {
@@ -20,16 +21,17 @@ export function predictPersonalTasteScore(target: RestaurantSummary, history: Re
   }
 
   const targetTags = normalizedTags(target.tags)
-  const targetPrice = target.averagePricePerPerson ?? target.pricePerPerson
+  const targetPrice = finiteNumber(target.averagePricePerPerson) ?? finiteNumber(target.pricePerPerson)
   const weighted = ratedHistory.map((restaurant) => {
     const tagSimilarity = jaccard(targetTags, normalizedTags(restaurant.tags))
-    const historyPrice = restaurant.averagePricePerPerson ?? restaurant.pricePerPerson
+    const historyPrice = finiteNumber(restaurant.averagePricePerPerson) ?? finiteNumber(restaurant.pricePerPerson)
     const priceSimilarity = targetPrice !== null && historyPrice !== null
       ? Math.max(0, 1 - Math.abs(targetPrice - historyPrice) / Math.max(160, targetPrice, historyPrice))
       : 0
     const sameCity = Boolean(target.city && target.city === restaurant.city)
     const isMatch = tagSimilarity > 0 || priceSimilarity >= 0.65 || sameCity
-    const weight = 0.35 + tagSimilarity * 1.2 + priceSimilarity * 0.3 + (sameCity ? 0.15 : 0) + Math.min(restaurant.visitCount, 4) * 0.04
+    const visitCount = finiteNumber(restaurant.visitCount) ?? restaurant.visits.length
+    const weight = 0.35 + tagSimilarity * 1.2 + priceSimilarity * 0.3 + (sameCity ? 0.15 : 0) + Math.min(visitCount, 4) * 0.04
     const ratedVisits = restaurant.visits.filter((visit) => !visit.deletedAt && visit.rating !== null).length
     return { score: restaurant.scoreOutOfTen as number, weight, isMatch, ratedVisits }
   })
@@ -68,4 +70,8 @@ function jaccard(left: Set<string>, right: Set<string>) {
 
 function round1(value: number) {
   return Math.round(value * 10) / 10
+}
+
+function finiteNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }

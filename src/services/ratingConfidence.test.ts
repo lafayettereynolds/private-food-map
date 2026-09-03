@@ -14,6 +14,10 @@ describe('rating confidence', () => {
     expect(groupRatingDisplay(8.3, 9)).toEqual({ confidence: 'LOW', displayScore: 8.3, sampleLabel: '样本较少' })
   })
 
+  it('treats a missing score as no data even if a stale sample count is present', () => {
+    expect(groupRatingDisplay(null, 10)).toEqual({ confidence: 'NO_DATA', displayScore: null, sampleLabel: null })
+  })
+
   it('averages only valid rated visits for the current user', () => {
     const visits = [visit('a', 4), visit('b', 5), visit('c', null), { ...visit('d', 1), deletedAt: '2026-08-24' }]
     expect(personalRestaurantRating(visits)).toEqual({ score: 9, ratedVisitCount: 2 })

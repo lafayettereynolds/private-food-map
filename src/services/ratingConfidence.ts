@@ -16,7 +16,8 @@ export function ratingConfidence(sampleCount: number): RatingConfidence {
 }
 
 export function groupRatingDisplay(score: number | null, sampleCount: number): RatingDisplay {
-  const confidence = ratingConfidence(sampleCount)
+  const hasScore = typeof score === 'number' && Number.isFinite(score)
+  const confidence = hasScore ? ratingConfidence(sampleCount) : 'NO_DATA'
   return {
     confidence,
     displayScore: confidence === 'INSUFFICIENT' || confidence === 'NO_DATA' ? null : score,
