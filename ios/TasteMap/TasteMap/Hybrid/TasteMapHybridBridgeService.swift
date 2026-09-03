@@ -76,6 +76,14 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     private var projectedRestaurantSnapshot: [TasteMapHybridRestaurantDTO]?
 #if DEBUG
     var projectedRestaurantSnapshotBuildCount = 0
+
+    private var usesDeterministicVisualFixture: Bool {
+#if TASTEMAP_HYBRID_BRIDGE_CORE
+        ownerUserID == TasteMapHybridDebugFixture.ownerUserID
+#else
+        ownerUserID == TasteMapHybridDebugFixture.ownerUserID || TasteMapUITestFixtures.usesVisualQA
+#endif
+    }
 #endif
 
     public init(
@@ -237,7 +245,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         for restaurant: TasteMapHybridRestaurantDTO
     ) throws -> TasteMapHybridRestaurantSocialStatsDTO? {
 #if DEBUG
-        if ownerUserID == TasteMapHybridDebugFixture.ownerUserID || TasteMapUITestFixtures.usesVisualQA {
+        if usesDeterministicVisualFixture {
             return Self.debugSocialStats(restaurantID: restaurant.id)
         }
 #endif
@@ -319,7 +327,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         // The isolated Hybrid Visual QA owner carries deterministic
         // recommendation fixtures so performance is measured against a real
         // content state. Shipping owners never synthesize personal results.
-        if ownerUserID == TasteMapHybridDebugFixture.ownerUserID || TasteMapUITestFixtures.usesVisualQA {
+        if usesDeterministicVisualFixture {
             recommendationSource = Array(all.filter { $0.status == "visited" }.sorted {
                 if $0.scoreOutOfTen != $1.scoreOutOfTen {
                     return ($0.scoreOutOfTen ?? -1) > ($1.scoreOutOfTen ?? -1)
