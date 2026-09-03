@@ -4143,6 +4143,32 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridAddFriendOpensPeopleSearchInsteadOfRestaurantDiscovery() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        let addFriend = webView.buttons["添加好友"]
+        XCTAssertTrue(addFriend.waitForExistence(timeout: 8))
+        addFriend.tap()
+
+        XCTAssertTrue(app.navigationBars["添加好友"].waitForExistence(timeout: 8))
+        XCTAssertTrue(segmentedOption("找人", in: app).exists)
+        XCTAssertTrue(app.textFields["social-search-field"].exists)
+        XCTAssertTrue(app.staticTexts["可能认识的人"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["TestUser08"].exists)
+        let requestFriend = app.buttons["添加好友 TestUser08"]
+        XCTAssertTrue(requestFriend.exists)
+        XCTAssertFalse(webView.buttons["为你推荐"].isHittable)
+        keepScreenshot(named: "Hybrid Add Friend Native People Search", of: app)
+    }
+
+    @MainActor
     func testHybridVisitRatingSetsEveryTargetInOneInteraction() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]

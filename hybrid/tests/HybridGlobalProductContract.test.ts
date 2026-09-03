@@ -300,6 +300,17 @@ describe('Hybrid global Product Contract', () => {
     expect(shell).not.toMatch(/onSave=\{async \(\) => undefined\}|onEdit=\{\(\) => undefined\}|onDelete=\{\(\) => undefined\}|onEditVisit=\{\(\) => undefined\}/)
   })
 
+  it('routes Profile people actions to the Native social hub instead of Restaurant discovery', () => {
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const root = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRootView.swift')
+    expect(shell).toContain("route: 'socialNative', identifier: section")
+    expect(root).toContain('case .socialNative:')
+    expect(root).toContain('TasteMapHybridNativeSocialRoute(identifier: route.identifier)')
+    expect(root).toContain('SocialHubView(')
+    expect(root).toContain('collaborationAPI: authServices.socialCollaborationAPI')
+    expect(root).not.toContain('case .socialNative:\n            DiscoverHubView()')
+  })
+
   it('keeps an owner-scoped, exactly-one Visit edit entry routed to the official Native editor', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const detail = source('../../src/components/RestaurantPreviewCard.tsx')

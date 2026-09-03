@@ -292,7 +292,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
         onOpenRoulette={() => void navigate({ surface: 'roulette' })}
         onOpenSettings={() => void navigate({ surface: 'settings' })}
         onEditProfile={() => void platform.navigation.openNative({ route: 'profileEdit' })}
-        onOpenConnections={() => void platform.navigation.openNative({ route: 'socialNative' })}
+        onOpenConnections={(section) => void platform.navigation.openNative({ route: 'socialNative', identifier: section })}
         onSelectRestaurant={(selected) => {
           void platform.haptics.selection()
           void navigate({ surface: 'restaurant', id: selected.id })

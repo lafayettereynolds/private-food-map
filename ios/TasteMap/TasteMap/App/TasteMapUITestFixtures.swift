@@ -54,6 +54,34 @@ enum TasteMapUITestFixtures {
 
     static var usesVisualQA: Bool { visualQAMode != nil }
 
+    static var socialSuggestions: [SocialSuggestionV1] {
+        guard usesVisualQA else { return [] }
+        let people: [(String, String, String, ProfileAvatarPreset, [String])] = [
+            ("tm_visual_friend_08", "TestUser08", "杭州", .otter, ["2 位共同好友", "口味相似 91%"]),
+            ("tm_visual_friend_11", "TestUser11", "杭州", .rabbit, ["1 位共同好友", "都喜欢面食"]),
+            ("tm_visual_friend_04", "TestUser04", "杭州", .panda, ["3 家共同到访餐厅", "口味相似 86%"]),
+            ("tm_visual_friend_16", "TestUser16", "上海", .fox, ["常去相似餐厅"]),
+        ]
+        return people.map { userID, name, city, avatar, reasons in
+            SocialSuggestionV1(
+                user: SocialUserResultV1(
+                    profile: SocialUserSummaryV1(
+                        userId: userID,
+                        displayName: name,
+                        bio: "分享真实到访与餐厅口味",
+                        city: city,
+                        avatarPhotoId: nil,
+                        avatarPresetId: avatar
+                    ),
+                    friendshipId: nil,
+                    friendshipState: .none,
+                    isFollowing: false
+                ),
+                reasons: reasons
+            )
+        }
+    }
+
     static var coreParityInitialTab: AppTab? {
         guard let value = ProcessInfo.processInfo.environment[coreParityInitialTabEnvironmentKey]
         else { return nil }

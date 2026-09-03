@@ -19,6 +19,8 @@ struct SocialHubView: View {
     let safetyAPI: (any ReleaseSafetyAPI)?
     let photoAPI: (any PhotoBinaryAPI)?
     let restaurantListAPI: (any RestaurantListAPI)?
+    let navigationTitle: String
+    let onClose: (() -> Void)?
     @State private var section: SocialHubSection
     @State private var query = ""
     @State private var items: [SocialUserResultV1] = []
@@ -28,7 +30,8 @@ struct SocialHubView: View {
     @State private var selectedUser: SocialUserResultV1?
     @State private var loading = false
     @State private var message: String?
-    @State private var suggestions: [SocialSuggestionV1] = []
+    @State private var suggestions: [SocialSuggestionV1]
+    @State private var pendingFriendUserIDs: Set<String> = []
     @State private var isShowingCollaborationInbox = false
 
     var body: some View {
@@ -47,7 +50,7 @@ struct SocialHubView: View {
                     else { relationshipContent }
                 }
             }
-            .navigationTitle("好友与关注")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .task(id: section) { await loadSection() }
             .sheet(item: $selectedUser) { user in
@@ -72,6 +75,11 @@ struct SocialHubView: View {
                 }
             }
             .toolbar {
+                if let onClose {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("返回", action: onClose)
+                    }
+                }
                 if collaborationAPI != nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -95,7 +103,10 @@ struct SocialHubView: View {
         safetyAPI: (any ReleaseSafetyAPI)? = nil,
         photoAPI: (any PhotoBinaryAPI)? = nil,
         restaurantListAPI: (any RestaurantListAPI)? = nil,
-        initialSection: SocialHubSection = .search
+        initialSection: SocialHubSection = .search,
+        initialSuggestions: [SocialSuggestionV1] = [],
+        navigationTitle: String = "好友与关注",
+        onClose: (() -> Void)? = nil
     ) {
         self.currentUserID = currentUserID
         self.api = api
@@ -105,7 +116,10 @@ struct SocialHubView: View {
         self.safetyAPI = safetyAPI
         self.photoAPI = photoAPI
         self.restaurantListAPI = restaurantListAPI
+        self.navigationTitle = navigationTitle
+        self.onClose = onClose
         _section = State(initialValue: initialSection)
+        _suggestions = State(initialValue: initialSuggestions)
     }
 
     private var searchContent: some View {
@@ -142,7 +156,7 @@ struct SocialHubView: View {
                         Section("可能认识的人") {
                             ForEach(suggestions) { suggestion in
                                 VStack(alignment: .leading, spacing: 4) {
-                                    row(suggestion.user)
+                                    row(suggestion.user, allowsFriendRequest: true)
                                     if !suggestion.reasons.isEmpty {
                                         Text(suggestion.reasons.joined(separator: " · "))
                                             .font(.caption).foregroundStyle(.secondary)
@@ -202,7 +216,7 @@ struct SocialHubView: View {
             )
         } else {
             List {
-                ForEach(items) { item in row(item) }
+                ForEach(items) { item in row(item, allowsFriendRequest: section == .search) }
                 if nextCursor != nil {
                     Button("加载更多") { Task { await loadMore() } }
                         .frame(maxWidth: .infinity)
@@ -231,17 +245,37 @@ struct SocialHubView: View {
         }
     }
 
-    private func row(_ item: SocialUserResultV1) -> some View {
-        Button { selectedUser = item } label: {
-            HStack(spacing: 12) {
-                PresetProfileAvatarView(preset: item.profile.avatarPresetId)
-                    .frame(width: 48, height: 48).clipShape(Circle())
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.profile.displayName).font(.headline).foregroundStyle(.primary)
-                    Text([item.profile.city, item.profile.bio].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+    private func row(_ item: SocialUserResultV1, allowsFriendRequest: Bool = false) -> some View {
+        HStack(spacing: 12) {
+            Button { selectedUser = item } label: {
+                HStack(spacing: 12) {
+                    PresetProfileAvatarView(preset: item.profile.avatarPresetId)
+                        .frame(width: 48, height: 48).clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.profile.displayName).font(.headline).foregroundStyle(.primary)
+                        Text([item.profile.city, item.profile.bio].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
                 }
-                Spacer()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("social-user-\(item.profile.userId)")
+            if allowsFriendRequest && canRequestFriend(item) {
+                Button {
+                    Task { await requestFriend(item) }
+                } label: {
+                    if pendingFriendUserIDs.contains(item.id) {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("加好友", systemImage: "person.badge.plus")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(pendingFriendUserIDs.contains(item.id))
+                .accessibilityLabel("添加好友 \(item.profile.displayName)")
+            } else {
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(item.friendshipState.title).font(.caption).foregroundStyle(.secondary)
                     if item.isFollowing { Text("已关注").font(.caption2).foregroundStyle(Color.accentColor) }
@@ -249,8 +283,53 @@ struct SocialHubView: View {
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("social-user-\(item.profile.userId)")
+    }
+
+    private func canRequestFriend(_ item: SocialUserResultV1) -> Bool {
+        item.friendshipState == .none
+            || item.friendshipState == .rejected
+            || item.friendshipState == .removed
+    }
+
+    @MainActor
+    private func requestFriend(_ item: SocialUserResultV1) async {
+        guard canRequestFriend(item), !pendingFriendUserIDs.contains(item.id) else { return }
+        pendingFriendUserIDs.insert(item.id)
+        defer { pendingFriendUserIDs.remove(item.id) }
+
+        let store = LocalSocialStore(context: modelContext)
+        let updated: SocialUserResultV1
+        do {
+            let response = try await api.requestFriend(userID: item.id)
+            try store.upsertFriendship(response.friendship, currentUserID: currentUserID)
+            updated = SocialUserResultV1(
+                profile: item.profile,
+                friendshipId: response.friendship.id,
+                friendshipState: response.friendship.state,
+                isFollowing: item.isFollowing
+            )
+        } catch where error is URLError {
+            _ = try? store.enqueueOptimisticFriendRequest(
+                currentUserID: currentUserID,
+                targetUserID: item.id
+            )
+            updated = SocialUserResultV1(
+                profile: item.profile,
+                friendshipId: nil,
+                friendshipState: .outgoingRequest,
+                isFollowing: item.isFollowing
+            )
+            message = "好友请求已保存在本机，联网后会自动重试。"
+        } catch {
+            message = "好友请求未发送，请稍后重试。"
+            return
+        }
+        replace(updated)
+        suggestions = suggestions.map { suggestion in
+            suggestion.id == updated.id
+                ? SocialSuggestionV1(user: updated, reasons: suggestion.reasons)
+                : suggestion
+        }
     }
 
     @MainActor
@@ -262,7 +341,9 @@ struct SocialHubView: View {
         message = nil
         guard section != .search else {
             if let collaborationAPI {
-                suggestions = (try? await collaborationAPI.suggestions(cursor: nil, limit: 12))?.items ?? []
+                if let page = try? await collaborationAPI.suggestions(cursor: nil, limit: 12) {
+                    suggestions = page.items
+                }
             }
             return
         }

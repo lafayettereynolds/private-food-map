@@ -80,19 +80,28 @@ private struct TasteMapHybridNativeRouteHost: View {
     @Environment(TasteMapHybridRuntime.self) private var runtime
     let route: TasteMapHybridRouteDTO
 
+    @ViewBuilder
     var body: some View {
-        NavigationStack {
-            destination
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("返回") {
-                            runtime.navigation.dismissNativePresentation()
-                            dismiss()
+        if route.surface == .socialNative {
+            TasteMapHybridNativeSocialRoute(
+                identifier: route.identifier,
+                onClose: dismissNativePresentation
+            )
+            .interactiveDismissDisabled(false)
+        } else {
+            NavigationStack {
+                destination
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("返回") {
+                                runtime.navigation.dismissNativePresentation()
+                                dismiss()
+                            }
                         }
                     }
-                }
+            }
+            .interactiveDismissDisabled(false)
         }
-        .interactiveDismissDisabled(false)
     }
 
     @ViewBuilder
@@ -138,7 +147,10 @@ private struct TasteMapHybridNativeRouteHost: View {
         case .accountDelete:
             TasteMapHybridNativeAccountDeleteRoute()
         case .socialNative:
-            DiscoverHubView()
+            TasteMapHybridNativeSocialRoute(
+                identifier: route.identifier,
+                onClose: dismissNativePresentation
+            )
         case .profileEdit:
             TasteMapHybridNativeProfileEditRoute()
         case .restaurantEdit:
@@ -306,6 +318,52 @@ private struct TasteMapHybridNativeVisitRoute: View {
             ownerUserID: ownerUserID,
             context: modelContext
         )
+    }
+}
+
+private struct TasteMapHybridNativeSocialRoute: View {
+    @Environment(\.localAccountScope) private var accountScope
+    @Environment(NativeAuthServices.self) private var authServices
+    let identifier: String?
+    let onClose: () -> Void
+
+    var body: some View {
+        if let userID = accountScope.authenticatedUserID {
+            SocialHubView(
+                currentUserID: userID,
+                api: authServices.socialAPI,
+                communityAPI: authServices.communityAPI,
+                collaborationAPI: authServices.socialCollaborationAPI,
+                interactionAPI: authServices.socialCollaborationAPI,
+                safetyAPI: authServices.releaseSafetyAPI,
+                photoAPI: authServices.photoAPI,
+                restaurantListAPI: authServices.restaurantListAPI,
+                initialSection: initialSection,
+                initialSuggestions: initialSuggestions,
+                navigationTitle: identifier == "discover" ? "添加好友" : "好友与关注",
+                onClose: onClose
+            )
+        } else {
+            TasteMapEmptyState(
+                title: "需要登录",
+                message: "请先完成 Taste Map 登录，再搜索和添加好友。",
+                systemImage: "person.2.badge.plus",
+                presentation: .embedded,
+                accessibilityIdentifier: "hybrid-social-auth-required"
+            )
+        }
+    }
+
+    private var initialSection: SocialHubSection {
+        identifier == "following" || identifier == "followers" ? .follows : .search
+    }
+
+    private var initialSuggestions: [SocialSuggestionV1] {
+#if DEBUG
+        TasteMapUITestFixtures.socialSuggestions
+#else
+        []
+#endif
     }
 }
 
