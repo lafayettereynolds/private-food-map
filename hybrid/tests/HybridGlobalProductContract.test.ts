@@ -257,6 +257,13 @@ describe('Hybrid global Product Contract', () => {
     expect(service).toContain('photosByVisitID')
   })
 
+  it('does not repeat the current similar-taste category on every Restaurant card', () => {
+    const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
+    expect(discovery).toContain("item.mode === 'trending' ? '近期趋势' : null")
+    expect(discovery).not.toContain("item.mode === 'similar_taste' ? '同味推荐'")
+    expect(discovery).toContain("item.mode === 'similar_taste' ? '同味推荐依据'")
+  })
+
   it('locks current-only Profile, Lists, Analytics, Posters and Settings topology', () => {
     expect(HYBRID_PROFILE_OWNER_MODULES).toEqual([
       '身份与 Premium', '关注 / 被关注', '去过 / 想去 / 总消费',

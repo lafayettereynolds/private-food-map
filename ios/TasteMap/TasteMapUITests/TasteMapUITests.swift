@@ -4046,6 +4046,27 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridSimilarTasteDoesNotRepeatItsCategoryOnEveryCard() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        let discovery = webView.buttons["发现"]
+        XCTAssertTrue(discovery.waitForExistence(timeout: 8))
+        discovery.tap()
+        let similarTaste = webView.buttons["同味之选"]
+        XCTAssertTrue(similarTaste.waitForExistence(timeout: 8))
+        similarTaste.tap()
+
+        XCTAssertTrue(webView.staticTexts["同味推荐依据"].waitForExistence(timeout: 8))
+        XCTAssertFalse(webView.staticTexts["同味推荐"].exists)
+        keepScreenshot(named: "Hybrid Similar Taste Without Repeated Tag", of: app)
+    }
+
+    @MainActor
     func testHybridVisitHistoryEditUsesOwnedHybridEditorAndRefreshesDetail() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]

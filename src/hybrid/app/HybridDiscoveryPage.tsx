@@ -336,7 +336,11 @@ function CommunityRatingSummary({ item }: { item: TasteMapHybridDiscoveryItemDTO
 
 function RestaurantIdentity({ item, onOpenRestaurant }: { item: TasteMapHybridDiscoveryItemDTO | TasteMapHybridActivityItemDTO; onOpenRestaurant: (id: string) => void }) {
   const restaurant = item.restaurant
-  const tag = 'mode' in item ? item.mode === 'for_you' ? item.rank === 1 ? '优先推荐' : '推荐给你' : item.mode === 'similar_taste' ? '同味推荐' : '近期趋势' : null
+  const tag = 'mode' in item
+    ? item.mode === 'for_you'
+      ? item.rank === 1 ? '优先推荐' : '推荐给你'
+      : item.mode === 'trending' ? '近期趋势' : null
+    : null
   const metadata = [restaurant.tags.slice(0, 2).join(' · '), restaurant.referencePrice != null ? `约 ¥${Math.round(restaurant.referencePrice)}/人` : ''].filter(Boolean).join(' · ')
   return <button aria-label={`查看餐厅 ${restaurant.name}`} className="tm-activity-card__restaurant-identity" onClick={() => onOpenRestaurant(restaurant.id)} type="button"><span className="tm-activity-card__restaurant-avatar"><HybridRestaurantImage image={restaurant.image} name={restaurant.name} /></span><span className="tm-activity-card__restaurant-copy"><strong>{restaurant.name}</strong>{metadata ? <em>{metadata}</em> : null}<small><MapPin aria-hidden="true" size={12} />{restaurant.city} · {restaurant.address}</small></span>{tag ? <span className="tm-activity-card__recommendation-tag">{tag}</span> : null}</button>
 }
