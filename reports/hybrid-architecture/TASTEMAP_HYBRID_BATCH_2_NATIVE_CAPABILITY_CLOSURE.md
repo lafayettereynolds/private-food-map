@@ -1,5 +1,11 @@
 # Taste Map｜Hybrid Batch 2 Native Capability Closure
 
+> **SUPERSEDED iOS MAP GATE (2026-09-03):** The Development AMap credential
+> blocker recorded below resulted from treating One React UI as One Map Engine.
+> iOS now uses the persistent reused Native MapKit surface; Browser keeps its Web
+> provider. AMap Web credentials are not an iOS or Release gate. See
+> `mapkit-surface/TASTEMAP_HYBRID_MAPKIT_INTEGRATION.md` for the active result.
+
 Date: 2026-09-03
 Branch: `feature/hybrid-remaining-ui-batch`
 Production owner: SwiftUI (`NATIVE_PRIMARY`)

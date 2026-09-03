@@ -164,6 +164,52 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(service.projectedRestaurantSnapshotBuildCount, 1)
     }
 
+    func testNativeMapSurfaceUpdateIsTypedAndCarriesNoCredentialOrPersistenceAuthority() throws {
+        let marker = TasteMapHybridMapSurfaceMarkerDTO(
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "湖滨二十八号 · 江南味道",
+            latitude: 30.2741,
+            longitude: 120.1551,
+            status: .visited,
+            visitCount: 4,
+            averageRating: 4.5,
+            image: TasteMapHybridImageDescriptor(
+                kind: .foodDiningFallback,
+                stableSeed: "11111111-1111-4111-8111-111111111111",
+                accessibilityLabel: "湖滨二十八号 · 江南味道 餐饮图示"
+            )
+        )
+        let request = TasteMapHybridMapSurfaceUpdateRequest(
+            requestID: "surface-request-1234",
+            visible: true,
+            viewportWidth: 402,
+            viewportHeight: 874,
+            frame: TasteMapHybridMapSurfaceRect(x: 0, y: 168, width: 402, height: 646),
+            reactControlExclusions: [TasteMapHybridMapSurfaceRect(x: 135, y: 744, width: 132, height: 44)],
+            scope: .visited,
+            filters: TasteMapHybridMapFilters(
+                city: "杭州", minimumScoreOutOfTen: nil, maximumSpend: nil,
+                minimumVisitCount: nil, companion: nil, cuisine: nil, recommendationSource: nil
+            ),
+            sort: .rating,
+            search: "",
+            cameraFitKey: "city=杭州",
+            selectedRestaurantID: marker.id,
+            userAvatarPresetID: "otter",
+            userAvatarPhotoID: nil,
+            markers: [marker]
+        )
+        let encoded = try JSONEncoder().encode(request)
+        let decoded = try JSONDecoder().decode(TasteMapHybridMapSurfaceUpdateRequest.self, from: encoded)
+        XCTAssertEqual(decoded.requestID, request.requestID)
+        XCTAssertEqual(decoded.markers.map(\.id), [marker.id])
+        XCTAssertEqual(decoded.reactControlExclusions.count, 1)
+        XCTAssertEqual(TasteMapHybridBridgeMethod.mapSurfaceUpdate.rawValue, "map.surface.update")
+        for forbidden in ["AMap", "securityJsCode", "token", "SwiftData", "mutation"] {
+            XCTAssertNil(encoded.range(of: Data(forbidden.utf8)))
+        }
+    }
+
     func testContentSnapshotUsesTypedRichDebugContentWithoutSensitiveFields() throws {
         let snapshot = try makeService().contentSnapshot()
         XCTAssertEqual(snapshot.discovery.forYou.count, 12)

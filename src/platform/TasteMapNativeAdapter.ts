@@ -14,6 +14,8 @@ import {
   type TasteMapHybridContentSnapshotDTO,
   type TasteMapMapBrowseRequest,
   type TasteMapMapBrowseResponse,
+  type TasteMapNativeMapSurfaceUpdateRequest,
+  type TasteMapNativeMapSurfaceUpdateResponse,
   type TasteMapNativeRouteRequest,
   type TasteMapHybridRoute,
   type TasteMapHybridEvent,
@@ -79,7 +81,10 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
     manual: (draft: TasteMapManualRestaurantDraftDTO) => this.call<TasteMapAcquisitionResultsDTO>('acquisition.manual', draft),
     select: (candidateID: string, confirmProbableMatch = false) => this.call<TasteMapAcquisitionSelectionDTO>('acquisition.select', { candidateID, confirmProbableMatch }),
   }
-  map = { viewport: (request: TasteMapMapBrowseRequest) => this.call<TasteMapMapBrowseResponse>('map.viewport', request) }
+  map = {
+    viewport: (request: TasteMapMapBrowseRequest) => this.call<TasteMapMapBrowseResponse>('map.viewport', request),
+    updateNativeSurface: (request: TasteMapNativeMapSurfaceUpdateRequest) => this.call<TasteMapNativeMapSurfaceUpdateResponse>('map.surface.update', request),
+  }
   content = { snapshot: () => this.call<TasteMapHybridContentSnapshotDTO>('content.snapshot') }
   visit = {
     contract: () => this.call<{ version: 1; writeUIReady: true }>('visit.contract'),

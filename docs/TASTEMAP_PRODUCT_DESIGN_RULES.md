@@ -164,6 +164,11 @@ Templates define information architecture, section order, control and image plac
 
 #### 1. My Map / My List Template
 
+- One React UI governs the shared product chrome, not the map engine: Browser uses its formal Web provider; iOS Hybrid embeds the established Native MapKit / `MKMapView` surface in the persistent shell.
+- React owns Header, title switch, scopes, FilterBar, Add Restaurant CTA, selected-card/detail navigation, and bottom navigation. Native MapKit owns tiles, pan/pinch, viewport, Restaurant annotations, selection, CLLocation/user-avatar annotation, and map performance.
+- The React ↔ MapKit contract is minimal and typed: filtered presentation markers/state flow Native; viewport and selected Restaurant flow back. JavaScript receives neither credentials nor SwiftData/write authority.
+- AMap Web key or `securityJsCode` availability is never an iOS Map or Release blocker. A static Web fallback is never accepted as the iOS map.
+
 - top breathing space;
 - centered `我的地图` / `我的列表` plus the adjacent clickable view-switch icon as one group;
 - `去过 / 想吃 / 推荐` using the shared primary tab bar;
@@ -278,6 +283,8 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 `RestaurantDetailView` and `RestaurantDetailStandardBody` are the only Restaurant Detail body. Entry source may change dismissal, analytics, and permissions, never the core information architecture.
 
 ## My Map
+
+- Browser and iOS share the same product UI but deliberately use different map engines: Browser Web map provider; iOS Native MapKit. This is the only correct interpretation of One React UI for the map surface.
 
 - The root App Shell contains exactly `地图 / 发现 / 我的`; `添加` is forbidden as a fourth bottom tab.
 - `添加餐厅` appears exactly once as the Map-owned floating primary CTA and routes to the formal Add Restaurant flow.

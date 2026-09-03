@@ -121,6 +121,8 @@ public enum TasteMapHybridEventName: String, Codable, Sendable {
     case shareExtensionReceived = "shareExtension.received"
     case appLifecycle = "app.lifecycle"
     case locationChanged = "location.changed"
+    case mapViewportChanged = "map.viewport.changed"
+    case mapRestaurantSelected = "map.restaurant.selected"
 }
 
 public struct TasteMapHybridEventEnvelope: Codable, Sendable {
@@ -420,7 +422,7 @@ public enum TasteMapHybridMapSort: String, Codable, Sendable {
     case recent, rating, visits, distance
 }
 
-public struct TasteMapHybridMapBounds: Codable, Sendable {
+public struct TasteMapHybridMapBounds: Codable, Equatable, Sendable {
     public let north: Double
     public let south: Double
     public let east: Double
@@ -437,7 +439,7 @@ public struct TasteMapHybridMapFilters: Codable, Sendable {
     public let recommendationSource: String?
 }
 
-public struct TasteMapHybridMapCoordinate: Codable, Sendable {
+public struct TasteMapHybridMapCoordinate: Codable, Equatable, Sendable {
     public let latitude: Double
     public let longitude: Double
 }
@@ -465,6 +467,67 @@ public struct TasteMapHybridMapBrowseResponse: Codable, Sendable {
     public let items: [TasteMapHybridRestaurantDTO]
     public let totalCount: Int
     public let options: TasteMapHybridMapBrowseOptions
+}
+
+/// WebView viewport geometry in CSS points. The Native host converts this into
+/// the persistent CAPBridgeViewController coordinate space before positioning
+/// the reused MapKit surface.
+public struct TasteMapHybridMapSurfaceRect: Codable, Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+}
+
+public struct TasteMapHybridMapSurfaceMarkerDTO: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let latitude: Double
+    public let longitude: Double
+    public let status: TasteMapHybridMapScope
+    public let visitCount: Int
+    public let averageRating: Double?
+    public let image: TasteMapHybridImageDescriptor
+}
+
+public struct TasteMapHybridMapSurfaceUpdateRequest: Codable, Sendable {
+    public let requestID: String
+    public let visible: Bool
+    public let viewportWidth: Double
+    public let viewportHeight: Double
+    public let frame: TasteMapHybridMapSurfaceRect
+    public let reactControlExclusions: [TasteMapHybridMapSurfaceRect]
+    public let scope: TasteMapHybridMapScope
+    public let filters: TasteMapHybridMapFilters
+    public let sort: TasteMapHybridMapSort
+    public let search: String
+    public let cameraFitKey: String
+    public let selectedRestaurantID: String?
+    public let userAvatarPresetID: String
+    public let userAvatarPhotoID: String?
+    public let markers: [TasteMapHybridMapSurfaceMarkerDTO]
+}
+
+public struct TasteMapHybridMapSurfaceUpdateResponse: Codable, Sendable {
+    public let requestID: String
+    public let surface: String
+    public let persistent: Bool
+
+    public init(requestID: String) {
+        self.requestID = requestID
+        surface = "mapkit"
+        persistent = true
+    }
+}
+
+public struct TasteMapHybridMapViewportDTO: Codable, Equatable, Sendable {
+    public let bounds: TasteMapHybridMapBounds
+    public let center: TasteMapHybridMapCoordinate
+    public let zoom: Double
+}
+
+public struct TasteMapHybridMapSelectionEventDTO: Codable, Equatable, Sendable {
+    public let restaurantID: String?
 }
 
 public struct TasteMapHybridPersonDTO: Codable, Sendable {
@@ -651,6 +714,7 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case acquisitionManual = "acquisition.manual"
     case acquisitionSelect = "acquisition.select"
     case mapViewport = "map.viewport"
+    case mapSurfaceUpdate = "map.surface.update"
     case contentSnapshot = "content.snapshot"
     case visitContract = "visit.contract"
     case visitSave = "visit.save"

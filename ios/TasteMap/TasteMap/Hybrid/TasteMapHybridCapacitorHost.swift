@@ -79,6 +79,7 @@ private enum TasteMapHybridPluginError: Error { case responseEncodingFailed }
 final class TasteMapHybridBridgeViewController: CAPBridgeViewController {
     private let runtime: TasteMapHybridRuntime
     private lazy var resourceHandler = TasteMapHybridResourceSchemeHandler(runtime: runtime)
+    private var mapSurfaceHost: TasteMapHybridMapSurfaceHost?
 
     init(runtime: TasteMapHybridRuntime) {
         self.runtime = runtime
@@ -97,6 +98,11 @@ final class TasteMapHybridBridgeViewController: CAPBridgeViewController {
         let plugin = TasteMapProductionNativePlugin(runtime: runtime)
         bridge?.registerPluginInstance(plugin)
         runtime.attach(plugin: plugin)
+        if let webView = bridge?.webView {
+            let host = TasteMapHybridMapSurfaceHost(parent: self, webView: webView, runtime: runtime)
+            mapSurfaceHost = host
+            runtime.attach(mapSurfaceHost: host)
+        }
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }

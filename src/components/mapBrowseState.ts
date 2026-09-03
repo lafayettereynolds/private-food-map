@@ -1,5 +1,4 @@
-import type { TasteMapMapFilters, TasteMapMapScope, TasteMapMapSort } from '../platform/TasteMapPlatform'
-import type { TasteMapMapViewport } from './MapView'
+import type { TasteMapMapFilters, TasteMapMapScope, TasteMapMapSort, TasteMapNativeMapViewport } from '../platform/TasteMapPlatform'
 
 export type MapBrowseMode = 'map' | 'list'
 
@@ -10,7 +9,7 @@ export interface MapBrowseState {
   sort: TasteMapMapSort
   city?: string
   search: string
-  viewport: TasteMapMapViewport | null
+  viewport: TasteMapNativeMapViewport | null
   selectedRestaurantID: string | null
   revision: number
 }
@@ -21,7 +20,7 @@ export type MapBrowseAction =
   | { type: 'filters'; value: TasteMapMapFilters }
   | { type: 'sort'; value: TasteMapMapSort }
   | { type: 'search'; value: string }
-  | { type: 'viewport'; value: TasteMapMapViewport }
+  | { type: 'viewport'; value: TasteMapNativeMapViewport }
   | { type: 'selection'; value: string | null }
   | { type: 'retry' }
 

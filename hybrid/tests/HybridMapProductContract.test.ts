@@ -13,12 +13,24 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(page).not.toMatch(/segmented/i)
   })
 
-  it('renders independent markers at their real coordinates without cluster or default separation', () => {
-    const map = source('../../src/components/MapView.tsx')
-    const mapService = source('../../src/services/amap.ts')
-    expect(map).toContain('position: [restaurant.longitude, restaurant.latitude]')
-    expect(`${map}\n${mapService}`).not.toMatch(/MarkerCluster|createClusterData|spiderfy|collision dispersion/i)
-    expect(map).not.toMatch(/coordinateOffset|adjustedCoordinate|spreadCoordinate/i)
+  it('uses the Web provider only in Browser and the established Native MapKit surface on iOS', () => {
+    const page = source('../../src/components/MyMapBrowsePage.tsx')
+    const browserSurface = source('../../src/components/BrowserMapSurface.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    const browserApp = source('../../src/App.tsx')
+    const hybridShell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const mapKitHost = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift')
+    expect(page).toContain('MapSurface: ComponentType<MyMapSurfaceProps>')
+    expect(page).toContain('<MapSurface')
+    expect(page).not.toContain("from './MapView'")
+    expect(page).not.toContain("from './NativeMapSurface'")
+    expect(browserSurface).toContain("import { MapView } from './MapView'")
+    expect(browserApp).toContain('MapSurface={BrowserMapSurface}')
+    expect(hybridShell).toContain('MapSurface={NativeMapSurface}')
+    expect(hybridShell).not.toContain('BrowserMapSurface')
+    expect(nativeSurface).toContain("data-map-engine=\"native-mapkit\"")
+    expect(mapKitHost).toContain('RestaurantMapView(')
+    expect(mapKitHost).not.toContain('MKMapView(')
   })
 
   it('keeps Map mounted while Hybrid Restaurant Detail owns the visible route', () => {
@@ -28,8 +40,10 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(shell).toContain("navigate({ surface: 'restaurant', id: restaurantID })")
   })
 
-  it('distinguishes a real AMap runtime from the non-interactive fallback', () => {
+  it('keeps real AMap interaction evidence for Browser without making it an iOS credential gate', () => {
     const map = source('../../src/components/MapView.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    const contracts = source('../../src/platform/TasteMapPlatform.ts')
     expect(map).toContain("data-map-runtime={mapReady ? 'amap-ready' : 'amap-loading'}")
     expect(map).toContain('data-map-runtime="fallback-static"')
     expect(map).toContain('静态餐厅位置预览，不支持地图平移或缩放')
@@ -38,5 +52,25 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(map).toContain('bounds = map.getBounds()')
     expect(map).toContain('center = map.getCenter()')
     expect(map).toContain('zoom: map.getZoom()')
+    expect(nativeSurface).toContain('platform.map.updateNativeSurface')
+    expect(contracts).toContain("'map.surface.update'")
+  })
+
+  it('preserves Native gesture/viewport/selection and React control ownership contracts', () => {
+    const mapKit = source('../../ios/TasteMap/TasteMap/Features/Map/ClusteredRestaurantMapView.swift')
+    const host = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift')
+    const page = source('../../src/components/MyMapBrowsePage.tsx')
+    const pageCSS = source('../../src/components/myMapBrowsePage.css')
+    expect(mapKit).toContain('mapView.isZoomEnabled = true')
+    expect(mapKit).toContain('mapView.isScrollEnabled = true')
+    expect(mapKit).toContain('mapView.isRotateEnabled = true')
+    expect(mapKit).toContain('regionDidChangeAnimated')
+    expect(mapKit).toContain('didSelect view: MKAnnotationView')
+    expect(host).toContain('reactControlExclusions')
+    expect(host).toContain('point(inside point: CGPoint')
+    expect(page).toContain("event.name === 'map.viewport.changed'")
+    expect(page).toContain("event.name === 'map.restaurant.selected'")
+    expect(pageCSS).toContain('--tm-map-header-safe-top')
+    expect(pageCSS).toContain('inset: calc(151px + var(--tm-map-header-safe-top))')
   })
 })

@@ -178,6 +178,10 @@ describe('TasteMapNativeAdapter', () => {
           options: { cities: ['杭州'], companions: [], cuisines: [], recommendationSources: [] },
         }
       }
+      else if (request.method === 'map.surface.update') {
+        const payload = request.payload as import('./TasteMapPlatform').TasteMapNativeMapSurfaceUpdateRequest
+        result = { requestID: payload.requestID, surface: 'mapkit', persistent: true }
+      }
       else if (request.method === 'restaurant.get') {
         const id = (request.payload as { id: string }).id
         const restaurant = fixture.restaurants.find((item) => item.id === id)!
@@ -284,6 +288,22 @@ describe('TasteMapNativeAdapter', () => {
     expect(response.requestID).toBe('latest-viewport')
     expect(response.items.every((item) => item.status === 'visited')).toBe(true)
     expect(invoke.mock.calls.some((call) => call[0].request.method === 'map.viewport')).toBe(true)
+  })
+
+  it('updates the persistent Native MapKit surface through a typed presentation-only request', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    const response = await adapter.map.updateNativeSurface({
+      requestID: 'mapkit-surface-1', visible: true, viewportWidth: 402, viewportHeight: 874,
+      frame: { x: 0, y: 168, width: 402, height: 646 }, reactControlExclusions: [],
+      scope: 'visited', filters: {}, sort: 'recent', search: '', cameraFitKey: 'initial',
+      selectedRestaurantID: null, userAvatarPresetID: 'otter', userAvatarPhotoID: null,
+      markers: [],
+    })
+    expect(response).toEqual({ requestID: 'mapkit-surface-1', surface: 'mapkit', persistent: true })
+    const request = invoke.mock.calls.find((call) => call[0].request.method === 'map.surface.update')?.[0].request
+    expect(request?.payload).not.toHaveProperty('token')
+    expect(request?.payload).not.toHaveProperty('credential')
   })
 
   it('rejects incompatible envelopes and structured native errors', async () => {

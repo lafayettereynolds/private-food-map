@@ -16,6 +16,7 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'acquisition.manual',
   'acquisition.select',
   'map.viewport',
+  'map.surface.update',
   'content.snapshot',
   'visit.contract',
   'visit.save',
@@ -254,6 +255,60 @@ export interface TasteMapMapBrowseResponse {
   items: TasteMapRestaurantDTO[]
   totalCount: number
   options: TasteMapMapBrowseOptions
+}
+
+/**
+ * Geometry is expressed in WebView CSS viewport points. Native converts it
+ * into the persistent CAPBridgeViewController coordinate space. The exclusion
+ * rectangles are React-owned controls that must remain visible and tappable
+ * above the native MapKit surface.
+ */
+export interface TasteMapNativeMapSurfaceRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface TasteMapNativeMapViewport {
+  bounds: TasteMapMapBounds
+  center: { latitude: number; longitude: number }
+  zoom: number
+}
+
+export interface TasteMapNativeMapSurfaceMarkerDTO {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  status: TasteMapMapScope
+  visitCount: number
+  averageRating: number | null
+  image: TasteMapImageDescriptor
+}
+
+export interface TasteMapNativeMapSurfaceUpdateRequest {
+  requestID: string
+  visible: boolean
+  viewportWidth: number
+  viewportHeight: number
+  frame: TasteMapNativeMapSurfaceRect
+  reactControlExclusions: TasteMapNativeMapSurfaceRect[]
+  scope: TasteMapMapScope
+  filters: TasteMapMapFilters
+  sort: TasteMapMapSort
+  search: string
+  cameraFitKey: string
+  selectedRestaurantID: string | null
+  userAvatarPresetID: UserProfile['avatarPresetId']
+  userAvatarPhotoID: string | null
+  markers: TasteMapNativeMapSurfaceMarkerDTO[]
+}
+
+export interface TasteMapNativeMapSurfaceUpdateResponse {
+  requestID: string
+  surface: 'mapkit'
+  persistent: true
 }
 
 export interface TasteMapHybridListRestaurantDTO {
@@ -546,6 +601,8 @@ export type TasteMapHybridEvent =
   | { version: 1; sequence: number; name: 'shareExtension.received'; payload: { fingerprint: string; target: TasteMapNavigationStateDTO } }
   | { version: 1; sequence: number; name: 'app.lifecycle'; payload: { state: TasteMapLifecycleState } }
   | { version: 1; sequence: number; name: 'location.changed'; payload: TasteMapLocationDTO }
+  | { version: 1; sequence: number; name: 'map.viewport.changed'; payload: TasteMapNativeMapViewport }
+  | { version: 1; sequence: number; name: 'map.restaurant.selected'; payload: { restaurantID: string | null } }
 
 export interface TasteMapEventSubscription { remove(): Promise<void> }
 
@@ -590,7 +647,10 @@ export interface TasteMapPlatform {
     manual(draft: TasteMapManualRestaurantDraftDTO): Promise<TasteMapAcquisitionResultsDTO>
     select(candidateID: string, confirmProbableMatch?: boolean): Promise<TasteMapAcquisitionSelectionDTO>
   }
-  map: { viewport(request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> }
+  map: {
+    viewport(request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse>
+    updateNativeSurface(request: TasteMapNativeMapSurfaceUpdateRequest): Promise<TasteMapNativeMapSurfaceUpdateResponse>
+  }
   content: { snapshot(): Promise<TasteMapHybridContentSnapshotDTO> }
   visit: {
     contract(): Promise<{ version: 1; writeUIReady: true }>

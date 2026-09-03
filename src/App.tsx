@@ -21,6 +21,7 @@ import { AddVisitModal } from './components/AddVisitModal'
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal'
 import { MapView } from './components/MapView'
 import { MyMapBrowsePage } from './components/MyMapBrowsePage'
+import { BrowserMapSurface } from './components/BrowserMapSurface'
 import { RestaurantEditorModal } from './components/RestaurantEditorModal'
 import {
   RestaurantFilters,
@@ -969,6 +970,7 @@ export default function App() {
       </header>
 
       {activeView === 'map' && currentUser ? <MyMapBrowsePage
+        MapSurface={BrowserMapSurface}
         active
         onAddRestaurant={() => setShowAddModal(true)}
         onOpenRestaurant={(restaurantID) => {

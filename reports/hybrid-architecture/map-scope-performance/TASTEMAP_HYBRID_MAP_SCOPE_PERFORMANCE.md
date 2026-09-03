@@ -1,5 +1,7 @@
 # Taste Map — Hybrid Map Scope Interaction Performance + Icon Closure
 
+> **SUPERSEDED iOS MAP GATE (2026-09-03):** This historical performance report measured the then-current AMap/static-fallback implementation. The later architecture correction restores the required Native MapKit surface for iOS. Every statement below that treats a Development AMap Web key/security code as an iOS or Batch 3 gate is no longer active. AMap configuration is Browser-only; current iOS evidence is recorded in `../mapkit-surface/TASTEMAP_HYBRID_MAPKIT_INTEGRATION.md`.
+
 Date: 2026-09-03
 
 Branch: `feature/hybrid-remaining-ui-batch`

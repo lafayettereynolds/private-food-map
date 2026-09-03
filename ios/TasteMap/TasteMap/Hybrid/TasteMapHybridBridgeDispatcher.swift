@@ -79,7 +79,7 @@ public final class TasteMapHybridBridgeDispatcher {
 
     public func dispatchAsync(_ request: TasteMapHybridBridgeRequest) async -> TasteMapHybridBridgeResponse {
         switch request.method {
-        case .authSignInWithApple, .authLogout, .syncStatus, .syncRun, .shareOpen, .locationCurrent,
+        case .authSignInWithApple, .authLogout, .syncStatus, .syncRun, .shareOpen, .locationCurrent, .mapSurfaceUpdate,
                 .acquisitionSearch, .acquisitionNearby, .acquisitionShared, .acquisitionManual, .acquisitionSelect,
                 .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumStatus, .premiumProducts, .premiumPurchase,
                 .premiumRestore, .premiumManage, .permissionsStatus, .permissionsOpenSettings,
@@ -146,7 +146,7 @@ public final class TasteMapHybridBridgeDispatcher {
             case .hapticsSelection:
                 try nativeAction(.hapticsSelection)
                 result = .object([:])
-            case .authSignInWithApple, .authLogout, .syncStatus, .syncRun, .shareOpen, .locationCurrent,
+            case .authSignInWithApple, .authLogout, .syncStatus, .syncRun, .shareOpen, .locationCurrent, .mapSurfaceUpdate,
                     .acquisitionSearch, .acquisitionNearby, .acquisitionShared, .acquisitionManual, .acquisitionSelect,
                     .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumStatus, .premiumProducts, .premiumPurchase,
                     .premiumRestore, .premiumManage, .permissionsStatus, .permissionsOpenSettings,

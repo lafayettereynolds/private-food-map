@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { KeyRound, LoaderCircle, MapPin } from 'lucide-react'
-import type { TasteMapMapBounds } from '../platform/TasteMapPlatform'
+import type { TasteMapMapBounds, TasteMapNativeMapViewport } from '../platform/TasteMapPlatform'
 import { type AMapInstance, type AMapMarkerInstance, type AMapNamespace } from '../services/amap'
 import { mapService } from '../services/mapService'
 import { resolvePhotoSource } from '../services/photoAssets'
@@ -12,11 +12,7 @@ import { recordMapInstanceCreation, recordMarkerReconciliation } from './mapScop
 
 export { markerLayerPriority } from './mapMarkerPriority'
 
-export interface TasteMapMapViewport {
-  bounds: TasteMapMapBounds
-  center: Coordinates
-  zoom: number
-}
+export type TasteMapMapViewport = TasteMapNativeMapViewport
 
 interface RestaurantMarkerRecord {
   element: HTMLElement
@@ -46,7 +42,7 @@ interface MapViewProps {
   cameraFitKey?: string
 }
 
-/** Canonical Web/Hybrid renderer: independent markers at real coordinates. */
+/** Canonical Browser map renderer. iOS Hybrid uses the Native MapKit surface. */
 export function MapView({
   restaurants, selectedRestaurant, onSelect, onClearSelection, currentUser,
   currentCoordinates: injectedCoordinates, initialViewport, onViewportChange, cameraFitKey,

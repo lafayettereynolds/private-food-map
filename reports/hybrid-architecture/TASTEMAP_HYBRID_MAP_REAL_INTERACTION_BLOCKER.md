@@ -1,5 +1,15 @@
 # Taste Map Hybrid Map — Real Interaction Blocker
 
+> **SUPERSEDED — historical diagnosis only (2026-09-03).** This report
+> diagnosed the former AMap-JS-based iOS Hybrid implementation. Commit
+> `a76e2da` incorrectly reused the Browser renderer inside Capacitor. The
+> formal iOS Hybrid architecture now embeds the established Native MapKit
+> `RestaurantMapView`; Development AMap Web credentials are Browser-only and
+> are **not** an iOS Map or Release gate. Do not execute the configuration or
+> acceptance instructions below for iOS. See
+> `docs/TASTEMAP_HYBRID_ARCHITECTURE.md` and the current MapKit integration
+> report instead.
+
 Date: 2026-09-03
 
 Branch: `feature/hybrid-remaining-ui-batch`

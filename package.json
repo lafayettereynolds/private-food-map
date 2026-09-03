@@ -61,7 +61,7 @@
     "hybrid:ios:release:device": "pnpm run hybrid:sync:release && node hybrid/scripts/build-ios.mjs --configuration Release --generic-device",
     "hybrid:scan:release": "node hybrid/scripts/scan-release-binary.mjs",
     "hybrid:scan:formal-release": "node hybrid/scripts/scan-formal-release-app.mjs",
-    "hybrid:check:amap-development": "node hybrid/scripts/check-amap-development-config.mjs",
+    "browser:check:amap-development": "node hybrid/scripts/check-amap-development-config.mjs",
     "preview": "vite preview --config vite.config.ts",
     "cloudflare:dev": "pnpm run build && wrangler dev --local",
     "d1:migrate:local": "wrangler d1 migrations apply food-map-db --local",

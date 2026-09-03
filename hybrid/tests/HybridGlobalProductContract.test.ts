@@ -96,6 +96,25 @@ describe('Hybrid global Product Contract', () => {
     expect(map).not.toMatch(/地图\s*\/\s*列表|map-list-mode-picker|地图.*segmented|列表.*segmented/i)
   })
 
+  it('locks one React product UI while allowing platform-native map engines', () => {
+    const page = source('../../src/components/MyMapBrowsePage.tsx')
+    const browserSurface = source('../../src/components/BrowserMapSurface.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    const browserApp = source('../../src/App.tsx')
+    const hybridShell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const nativeHost = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift')
+    expect(page).toContain('MapSurface: ComponentType<MyMapSurfaceProps>')
+    expect(page).not.toContain("from './MapView'")
+    expect(page).not.toContain("from './NativeMapSurface'")
+    expect(browserSurface).toContain("import { MapView } from './MapView'")
+    expect(browserApp).toContain('MapSurface={BrowserMapSurface}')
+    expect(hybridShell).toContain('MapSurface={NativeMapSurface}')
+    expect(hybridShell).not.toContain('BrowserMapSurface')
+    expect(nativeSurface).toContain('reactControlExclusions')
+    expect(nativeHost).toContain('RestaurantMapView(')
+    expect(nativeHost).not.toContain('MKMapView(')
+  })
+
   it('locks the exact five first-level Discovery tabs', () => {
     expect(HYBRID_DISCOVERY_PRIMARY_TABS.map((item) => item[1])).toEqual([
       '关注', '为你推荐', '同味之选', '最新', '趋势',
@@ -263,7 +282,9 @@ describe('Hybrid forbidden Product patterns', () => {
   it('forbids clusters, default separation and raw emoji in formal Map marker sources', () => {
     const map = source('../../src/components/MapView.tsx')
     const mapService = source('../../src/services/amap.ts')
-    const combined = `${map}\n${mapService}`
+    const nativeMap = source('../../ios/TasteMap/TasteMap/Features/Map/ClusteredRestaurantMapView.swift')
+    const nativePresentation = source('../../ios/TasteMap/TasteMap/Features/Map/RestaurantMapPresentation.swift')
+    const combined = `${map}\n${mapService}\n${nativeMap}\n${nativePresentation}`
     expect(combined).not.toMatch(/MarkerCluster|createClusterData|spiderfy|collision dispersion|coordinateOffset|adjustedCoordinate|spreadCoordinate/i)
     expect(combined).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u)
   })

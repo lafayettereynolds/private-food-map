@@ -24,6 +24,7 @@ final class TasteMapHybridRuntime {
     private let locationPermissionManager = LocationPermissionManager()
     private let restaurantSearchService: any RestaurantSearching = MapKitRestaurantSearchService()
     private weak var plugin: TasteMapProductionNativePlugin?
+    private weak var mapSurfaceHost: TasteMapHybridMapSurfaceHost?
     private var pendingEvents: [TasteMapHybridEventEnvelope] = []
     private var sequence = 0
     private var lastLifecycleState: TasteMapHybridLifecycleState?
@@ -68,6 +69,18 @@ final class TasteMapHybridRuntime {
         self.plugin = plugin
         for event in pendingEvents { plugin.publish(event) }
         pendingEvents.removeAll(keepingCapacity: true)
+    }
+
+    func attach(mapSurfaceHost: TasteMapHybridMapSurfaceHost) {
+        self.mapSurfaceHost = mapSurfaceHost
+    }
+
+    func mapSurfaceDidChangeViewport(_ viewport: TasteMapHybridMapViewportDTO) {
+        emit(.mapViewportChanged, payload: viewport)
+    }
+
+    func mapSurfaceDidSelect(restaurantID: String?) {
+        emit(.mapRestaurantSelected, payload: TasteMapHybridMapSelectionEventDTO(restaurantID: restaurantID))
     }
 
     func ensureSessionRestored() async -> TasteMapHybridAuthStateDTO {
@@ -317,6 +330,8 @@ final class TasteMapHybridRuntime {
             return try encode(navigation.current)
         case .locationCurrent:
             return try await currentLocation()
+        case .mapSurfaceUpdate:
+            return try updateMapSurface(payload)
         case .acquisitionSearch:
             return try await searchRestaurants(payload)
         case .acquisitionNearby:
@@ -363,6 +378,40 @@ final class TasteMapHybridRuntime {
         default:
             throw Self.bridgeError("capability_unavailable", method: method)
         }
+    }
+
+    private func updateMapSurface(_ payload: TasteMapHybridJSONValue) throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridMapSurfaceUpdateRequest = try decode(payload)
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
+            throw Self.bridgeError("auth_required", method: .mapSurfaceUpdate, recoverable: true)
+        }
+        guard let mapSurfaceHost else {
+            throw Self.bridgeError("native_map_surface_unavailable", method: .mapSurfaceUpdate, recoverable: true)
+        }
+        let photos = ((try? container.mainContext.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
+        }
+        let photosByID = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) })
+        let profile = ((try? container.mainContext.fetch(FetchDescriptor<UserProfile>())) ?? []).first {
+            $0.tasteMapUserID == ownerUserID && $0.deletedAt == nil
+        }
+        let avatarReference = request.userAvatarPhotoID ?? profile?.avatarPhotoID
+        let avatarPhoto = avatarReference.flatMap { reference in
+            photos.first {
+                $0.id.uuidString.caseInsensitiveCompare(reference) == .orderedSame
+                    || $0.remoteID?.caseInsensitiveCompare(reference) == .orderedSame
+            }
+        }
+        try mapSurfaceHost.apply(
+            request,
+            resources: TasteMapHybridMapSurfaceResources(
+                photosByID: photosByID,
+                userAvatarPhoto: avatarPhoto,
+                photoCoordinator: photoTransferCoordinator,
+                photoAPI: authServices.photoAPI
+            )
+        )
+        return try encode(TasteMapHybridMapSurfaceUpdateResponse(requestID: request.requestID))
     }
 
     private func searchRestaurants(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {

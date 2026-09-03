@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, BookOpen, CloudOff, Globe2, Map as MapIcon, RotateCcw, Sparkles, UserRound } from 'lucide-react'
 import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
+import { NativeMapSurface } from '../../components/NativeMapSurface'
 import { ProfilePage } from '../../components/ProfilePage'
 import { RestaurantPreviewCard } from '../../components/RestaurantPreviewCard'
 import { RestaurantRoulette, type RouletteTemporaryCandidate } from '../../components/RestaurantRoulette'
@@ -172,6 +173,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   return <div className="tm-hybrid-shell" data-adapter={platform.kind} data-bridge-version={runtime.bridgeVersion} data-route={route.surface}>
     {!online ? <div className="tm-hybrid-shell__offline" role="status"><CloudOff aria-hidden="true" size={15} />离线模式 · 正在使用本地数据</div> : null}
     {mapWasActivated ? <MyMapBrowsePage
+      MapSurface={NativeMapSurface}
       active={route.surface === 'map'}
       onAddRestaurant={() => void navigate({ surface: 'add' })}
       onOpenRestaurant={(restaurantID) => void navigate({ surface: 'restaurant', id: restaurantID })}

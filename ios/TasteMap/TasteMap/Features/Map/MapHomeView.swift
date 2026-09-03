@@ -416,12 +416,14 @@ struct MapHomeView: View {
                 markers: markers,
                 photosByID: photosByID,
                 photoCoordinator: photoCoordinator,
+                photoAPI: nil,
                 userAvatarPreset: activeProfile?.avatarPreset ?? .polarBear,
                 userAvatarPhoto: avatarPhoto,
                 selectedRestaurantID: $selectedRestaurantID,
                 fitRequestID: cameraFitRequestID,
                 locationRequestID: locationRequestID,
-                onRenderStateChange: { mapRenderState = $0 }
+                onRenderStateChange: { mapRenderState = $0 },
+                onViewportChange: { _ in }
             )
             .id(mapReloadID)
             .ignoresSafeArea(edges: [.top, .bottom])

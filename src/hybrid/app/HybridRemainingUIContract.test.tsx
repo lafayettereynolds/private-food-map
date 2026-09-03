@@ -14,6 +14,7 @@ import { TasteMapListsPage } from '../../components/TasteMapListsPage'
 import { TasteMapPremiumPage, TasteMapSettingsPage } from '../../components/TasteMapPremiumSettingsPages'
 import { RestaurantRoulette } from '../../components/RestaurantRoulette'
 import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
+import type { MyMapSurfaceProps } from '../../components/MyMapBrowsePage'
 
 vi.mock('@amap/amap-jsapi-loader', () => ({ default: { load: vi.fn() } }))
 
@@ -55,7 +56,8 @@ const platform = {
 
 describe('Hybrid remaining product UI contract', () => {
   it('uses one shared semantic icon-and-text primary scope component for Browser and Capacitor', () => {
-    const html = renderToStaticMarkup(<MyMapBrowsePage active onAddRestaurant={() => undefined} onOpenRestaurant={() => undefined} platform={platform} profile={profile} />)
+    const TestMapSurface = (_props: MyMapSurfaceProps) => <div data-map-engine="test" />
+    const html = renderToStaticMarkup(<MyMapBrowsePage MapSurface={TestMapSurface} active onAddRestaurant={() => undefined} onOpenRestaurant={() => undefined} platform={platform} profile={profile} />)
     expect(html).toContain('aria-label="地图范围"')
     expect(html.match(/class="tm-primary-tab-bar__icon"/g)).toHaveLength(3)
     for (const label of ['去过', '想吃', '推荐']) {

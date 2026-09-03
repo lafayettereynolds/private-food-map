@@ -1,5 +1,13 @@
 # Taste Map Hybrid Migration Phase 2B — My Map / My List
 
+> **SUPERSEDED iOS MAP ARCHITECTURE (2026-09-03):** Phase 2B's historical
+> AMap-JS/fallback acceptance and every Development AMap credential gate below
+> are no longer active for iOS. The corrected architecture is Browser → Web map
+> provider and iOS → the reused Native MapKit `RestaurantMapView`. Current
+> gesture/state evidence is recorded in
+> `mapkit-surface/TASTEMAP_HYBRID_MAPKIT_INTEGRATION.md`. This report remains only
+> as historical Phase 2B evidence.
+
 Date: 2026-09-02
 
 Branch: `feature/hybrid-phase-2b-map-list`

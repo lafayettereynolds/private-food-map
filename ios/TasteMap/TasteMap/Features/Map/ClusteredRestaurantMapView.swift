@@ -6,12 +6,14 @@ struct RestaurantMapView: UIViewRepresentable {
     let markers: [RestaurantMapMarkerPresentation]
     let photosByID: [UUID: PhotoAsset]
     let photoCoordinator: PhotoTransferCoordinator?
+    let photoAPI: (any PhotoBinaryAPI)?
     let userAvatarPreset: ProfileAvatarPreset
     let userAvatarPhoto: PhotoAsset?
     @Binding var selectedRestaurantID: UUID?
     let fitRequestID: UUID
     let locationRequestID: UUID?
     let onRenderStateChange: (RestaurantMapRenderState) -> Void
+    let onViewportChange: (RestaurantMapViewport) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -22,6 +24,9 @@ struct RestaurantMapView: UIViewRepresentable {
         mapView.showsCompass = true
         mapView.showsScale = true
         mapView.pointOfInterestFilter = .includingAll
+        mapView.isScrollEnabled = true
+        mapView.isZoomEnabled = true
+        mapView.isRotateEnabled = true
         mapView.isPitchEnabled = false
         mapView.accessibilityIdentifier = "restaurant-map"
         context.coordinator.setRenderState(.loading)
@@ -185,6 +190,14 @@ struct RestaurantMapView: UIViewRepresentable {
             applyMarkerLayerOrder(on: mapView)
         }
 
+        func mapView(_ mapView: MKMapView, didDeselect view: MKAnnotationView) {
+            guard let annotation = view.annotation as? RestaurantMapAnnotation,
+                  parent.selectedRestaurantID == annotation.presentation.id else { return }
+            parent.selectedRestaurantID = nil
+            lastSelectedRestaurantID = nil
+            applyMarkerLayerOrder(on: mapView)
+        }
+
         func mapViewWillStartLoadingMap(_ mapView: MKMapView) {
             setRenderState(.loading)
         }
@@ -210,6 +223,21 @@ struct RestaurantMapView: UIViewRepresentable {
             // annotations and their image tasks are removed, while every
             // Restaurant in the padded viewport stays an independent marker.
             updateAnnotations(on: mapView)
+            let region = mapView.region
+            let viewport = RestaurantMapViewport(
+                centerLatitude: region.center.latitude,
+                centerLongitude: region.center.longitude,
+                latitudeDelta: region.span.latitudeDelta,
+                longitudeDelta: region.span.longitudeDelta
+            )
+            mapView.accessibilityValue = String(
+                format: "center %.6f,%.6f; span %.6f,%.6f",
+                viewport.centerLatitude,
+                viewport.centerLongitude,
+                viewport.latitudeDelta,
+                viewport.longitudeDelta
+            )
+            parent.onViewportChange(viewport)
             guard isUserInteracting else { return }
             let stillInteracting = mapView.gestureRecognizers?.contains(where: {
                 $0.state == .began || $0.state == .changed
@@ -250,7 +278,7 @@ struct RestaurantMapView: UIViewRepresentable {
                     resolution: marker.imageResolution,
                     photosByID: parent.photosByID,
                     coordinator: parent.photoCoordinator,
-                    photoAPI: nil,
+                    photoAPI: parent.photoAPI,
                     variant: .thumbnail,
                     semanticID: marker.id.uuidString
                 )

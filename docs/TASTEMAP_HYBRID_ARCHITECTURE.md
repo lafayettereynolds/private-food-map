@@ -2,14 +2,14 @@
 
 Status: Batch 1 shared Product UI and Batch 2 typed Native capability closure complete; production route switch not approved.
 Contract: `TasteMapNative.v1`
-Updated: 2026-09-02
+Updated: 2026-09-03
 
 ## 1. Architectural decision
 
-Taste Map will converge on one React product UI that runs in two hosts:
+Taste Map will converge on one React product UI that runs in two hosts. “One React UI” governs product structure and page chrome; it does **not** require one cross-platform map engine:
 
-- Browser: React → `TasteMapBrowserAdapter` → IndexedDB / existing Web services.
-- iOS: the same React pages in a Capacitor `WKWebView` → `TasteMapNativeAdapter` → `TasteMapNative.v1` → native services and current-user SwiftData.
+- Browser: React → `TasteMapBrowserAdapter` → IndexedDB / existing Web services, with the existing Web map provider.
+- iOS: the same React page chrome in a Capacitor `WKWebView` → `TasteMapNativeAdapter` → `TasteMapNative.v1` → native services and current-user SwiftData, with the established Native MapKit / `MKMapView` surface.
 
 SwiftUI remains the production default and rollback implementation during incremental migration. Phase 2A embeds the signed local Hybrid runtime in the existing Taste Map target and promotes Profile and Restaurant Detail to `HYBRID_INTEGRATED`. Phase 2B adds My Map / My List. Batch 1 integrates the remaining Product UI through the same React/CSS and Batch 2 connects its writes and system actions to existing Native services. None of these statuses switches the Release root.
 
@@ -39,8 +39,10 @@ The UI layer never imports Capacitor or native implementation details. Platform 
 | `src/platform/TasteMapBridgeProjection.ts` | Explicit DTO → shared Web presentation-model projection |
 | `src/hybrid/app/HybridAppShell.tsx` | Shared app shell, auth bootstrap, event subscription and persistent Hybrid/native route rendering |
 | `src/components/MyMapBrowsePage.tsx` | Canonical My Map / My List React page and shared `MapBrowseState` |
-| `src/components/MapView.tsx` | Shared Browser/Capacitor map renderer, natural overlap and deterministic marker layering |
+| `src/components/MapView.tsx` | Browser-only Web map renderer, natural overlap and deterministic marker layering |
+| `src/components/NativeMapSurface.tsx` | Thin React declaration of the iOS map rectangle, filtered marker presentation and React-control exclusions |
 | `src/hybrid/routes/HybridRouteRegistry.ts` | Route readiness, hashes, deep-link parser and ownership declaration |
+| `ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift` | Persistent MapKit adapter that reuses `RestaurantMapView`; it does not create a second `MKMapView` implementation |
 | `ios/TasteMap/TasteMap/Hybrid/` | Native DTOs, current-user data service, dispatcher, navigation coordinator and persistent production host |
 | `ios/TasteMap/HybridRuntimeResources/` | Signed local React bundle and Capacitor configuration embedded in the formal Taste Map target |
 | `hybrid/capacitor-shell/` | Internal Capacitor host that consumes signed local `dist/` assets |
@@ -68,7 +70,7 @@ The v1 contract defines:
 - runtime and capability negotiation;
 - auth status/sign-in/logout shapes (no token fields);
 - current Profile;
-- Restaurant get/list and owner-scoped batched map viewport queries;
+- Restaurant get/list, owner-scoped batched map viewport queries, and a presentation-only `map.surface.update` contract;
 - Visit contract readiness;
 - Sync status/run;
 - haptics, system share, fresh location, photo-library pick and camera capture;
@@ -76,7 +78,7 @@ The v1 contract defines:
 - permissions status/System Settings, Backup/Import and Account Delete route handoff;
 - navigation back to native-owned routes.
 
-Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `location.current`, and throttled `location.changed` delivery. Batch 2 adds typed owner-scoped Visit/Dish/photo writes, Restaurant acquisition, camera/photo-library input, StoreKit, Sync, permissions and data/account route actions without moving persistence, ownership, provider, entitlement or security policy into JavaScript. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Native-owned high-risk workflows keep their established Native screens/services behind specific typed methods; unsupported operations return `capability_unavailable` rather than pretending to succeed.
+Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `map.surface.update`, `map.viewport.changed`, `map.restaurant.selected`, `location.current`, and throttled `location.changed` delivery. `map.viewport` remains the owner-scoped data projection. `map.surface.update` is presentation-only: React sends the filtered marker DTOs, product-state descriptors, its viewport rectangle and small React-control exclusion rectangles; Native places the persistent MapKit surface and reports actual viewport/selection changes. It carries no credentials, persistence objects or write authority. Batch 2 adds typed owner-scoped Visit/Dish/photo writes, Restaurant acquisition, camera/photo-library input, StoreKit, Sync, permissions and data/account route actions without moving persistence, ownership, provider, entitlement or security policy into JavaScript. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Native-owned high-risk workflows keep their established Native screens/services behind specific typed methods; unsupported operations return `capability_unavailable` rather than pretending to succeed.
 
 ## 4. Security and ownership boundary
 
@@ -147,6 +149,8 @@ Safe-area CSS uses `env(safe-area-inset-*)`; the host disables remote UI loading
 - `shareExtension.received` for a normalized share fingerprint and target route;
 - `app.lifecycle` for foreground, background, resume and memory warning.
 - `location.changed` after a meaningful fresh Native location update.
+- `map.viewport.changed` after MapKit settles a real pan/zoom or camera update.
+- `map.restaurant.selected` after the user selects/deselects a Native Restaurant annotation.
 
 Events queued before the Capacitor plugin attaches are delivered after attachment. Lifecycle resume never reloads React. Share Extension ingestion remains native: the existing normalized payload store is retained, the handoff opens the persistent Hybrid Add Restaurant route because that surface is `HYBRID_INTEGRATED`, and only a non-sensitive fingerprint/route state crosses the bridge. React requests normalized candidates through the typed acquisition service; it never receives an App Group path or unrestricted shared payload.
 
@@ -154,11 +158,13 @@ Events queued before the Capacitor plugin attaches are delivered after attachmen
 
 `TasteMapHybridRuntime` owns one lazily created `TasteMapHybridBridgeViewController` for the lifetime of the app runtime. Native presentations do not recreate it, and returning to Hybrid restores the same controller and React state. Route changes and lifecycle events are messages, not WebView reloads. The controller identity is exposed internally for regression verification only.
 
+The bridge controller also owns one persistent `TasteMapHybridMapSurfaceHost`. That host embeds the already-established SwiftUI `RestaurantMapView` / `MKMapView` presentation inside the persistent shell; it is not a second SwiftUI Map page and it never owns the page header, scopes, FilterBar, Add CTA, selection card, or bottom navigation. The host maps the React placeholder rectangle into controller coordinates, masks only the small React control rectangles and passes their hit tests back to the WebView. Hiding the Map for List or Restaurant Detail keeps the same MapKit instance alive, so center, zoom, bounds and annotation state survive the return path.
+
 ## 9. Browser parity
 
-Browser and Capacitor reuse `ProfilePage`, `RestaurantPreviewCard`, `MyMapBrowsePage`, `MapView`, the canonical Restaurant Detail body, shared CSS/tokens, image policy and Web presentation models. The adapters are allowed to differ only in how DTOs, location and image resources are obtained. They are not allowed to fork content order, user-visible labels, rating semantics, image priority or layout.
+Browser and Capacitor reuse `ProfilePage`, `RestaurantPreviewCard`, `MyMapBrowsePage`, the canonical Restaurant Detail body, shared CSS/tokens, image policy and Web presentation models. Browser renders the map slot through `MapView.tsx` and its Web provider; iOS renders the same slot through the typed Native MapKit surface. This explicit engine exception does not permit the page chrome, content order, labels, filters, rating semantics, image priority or layout to fork.
 
-The map product contract forbids numeric or food-count clusters at every zoom level. Every Restaurant remains an independent marker. Normal layout uses natural overlap without default offset, dispersion or spiderfy. Layer priority is deterministic: selected Restaurant → rating → visit count → stable Restaurant ID. The current-user avatar location marker is a separate layer and never participates in the Restaurant comparator. A missing/unavailable map SDK degrades to the local neutral map shell with independent markers and working list/detail navigation rather than a blank page.
+The map product contract forbids numeric or food-count clusters at every zoom level. Every Restaurant remains an independent marker. Normal layout uses natural overlap without default offset, dispersion or spiderfy. Layer priority is deterministic: selected Restaurant → rating → visit count → stable Restaurant ID. The current-user avatar location marker is a separate layer and never participates in the Restaurant comparator. On Browser, a missing Web map SDK may degrade to the honest local neutral map shell. On iOS, a missing AMap Web credential is irrelevant: MapKit is the required formal engine, and a static Web fallback can never satisfy iOS pan/pinch acceptance.
 
 `TasteMapBridgeProjection` is an anti-corruption layer for legacy Web presentation sentinels. It does not rewrite real user IDs in DTOs or native storage.
 
@@ -212,6 +218,9 @@ See `TASTEMAP_HYBRID_MIGRATION_STATUS.md` for the current route matrix.
 - Do not expose a general JavaScript-to-Swift selector.
 - Do not make a remote Web URL the App Store UI runtime.
 - Do not duplicate Browser and iOS React pages.
+- Do not interpret One React UI as One Map Engine; Browser keeps its Web provider and iOS keeps Native MapKit.
+- Do not make an AMap Web key/security code an iOS Hybrid or Release gate.
+- Do not recreate MapKit inside Hybrid; reuse the canonical Native `RestaurantMapView` surface.
 - Do not label an unavailable native capability as complete.
 - Do not infer current-user ownership from an unscoped local query.
 - Do not let Debug Visual QA, fixtures, routes, identities or Premium states enter Release.

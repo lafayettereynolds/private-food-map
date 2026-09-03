@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import {
   ArrowDownUp, Bookmark, Building2, Footprints, List, Map as MapIcon, MapPin, Plus,
   ReceiptText, RotateCcw, Search, SlidersHorizontal, Star, Users, Utensils,
@@ -6,12 +6,11 @@ import {
 import type {
   TasteMapImageDescriptor, TasteMapMapBrowseOptions, TasteMapMapBrowseRequest,
   TasteMapMapFilters, TasteMapMapScope, TasteMapMapSort, TasteMapPlatform,
-  TasteMapProfileDashboardViewModel,
+  TasteMapProfileDashboardViewModel, TasteMapNativeMapViewport,
 } from '../platform/TasteMapPlatform'
 import { projectBridgeRestaurant } from '../platform/TasteMapBridgeProjection'
 import { HYBRID_MAP_PRIMARY_SCOPES } from '../hybrid/app/HybridProductContracts'
-import type { Coordinates, RestaurantSummary } from '../types/domain'
-import { MapView } from './MapView'
+import type { Coordinates, RestaurantSummary, UserProfile } from '../types/domain'
 import { initialMapBrowseState, mapBrowseReducer } from './mapBrowseState'
 import {
   MapBrowseSnapshotCache,
@@ -31,12 +30,35 @@ import {
 import { TasteMapPrimaryTabBar, type TasteMapPrimaryTab } from './TasteMapDiscoveryShared'
 import './myMapBrowsePage.css'
 
+export interface MyMapSurfaceProps {
+  active: boolean
+  platform: TasteMapPlatform
+  restaurants: RestaurantSummary[]
+  images: Record<string, TasteMapImageDescriptor>
+  selectedRestaurantID: string | null
+  selectedRestaurant?: RestaurantSummary
+  scope: TasteMapMapScope
+  filters: TasteMapMapFilters
+  sort: TasteMapMapSort
+  search: string
+  cameraFitKey: string
+  currentUser: UserProfile
+  currentCoordinates: Coordinates | null
+  initialViewport: TasteMapNativeMapViewport | null
+  overlayRevision: string
+  onClearSelection: () => void
+  onSelect: (restaurant: RestaurantSummary) => void
+  onViewportChange: (viewport: TasteMapNativeMapViewport) => void
+  onError: (message: string | null) => void
+}
+
 interface MyMapBrowsePageProps {
   platform: TasteMapPlatform
   profile: TasteMapProfileDashboardViewModel
   active: boolean
   onOpenRestaurant: (restaurantID: string) => void
   onAddRestaurant: () => void
+  MapSurface: ComponentType<MyMapSurfaceProps>
 }
 
 const emptyOptions: TasteMapMapBrowseOptions = { cities: [], companions: [], cuisines: [], recommendationSources: [] }
@@ -51,7 +73,7 @@ const mapScopeTabs: ReadonlyArray<TasteMapPrimaryTab<TasteMapMapScope>> = HYBRID
       : <Star />,
 }))
 
-export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, onAddRestaurant }: MyMapBrowsePageProps) {
+export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, onAddRestaurant, MapSurface }: MyMapBrowsePageProps) {
   const [browseState, dispatch] = useReducer(mapBrowseReducer, initialMapBrowseState)
   const { mode, scope, filters, sort, search, viewport, selectedRestaurantID, revision } = browseState
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null)
@@ -61,6 +83,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
   const [options, setOptions] = useState<TasteMapMapBrowseOptions>(emptyOptions)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [nativeMapError, setNativeMapError] = useState<string | null>(null)
   const [fullFilterOpen, setFullFilterOpen] = useState(false)
   const requestGate = useRef(new LatestMapRequestGate())
   const rootRef = useRef<HTMLElement>(null)
@@ -218,13 +241,21 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       if (event.name === 'location.changed') {
         snapshotCache.current.clear()
         setCoordinates({ latitude: event.payload.latitude, longitude: event.payload.longitude })
+      } else if (event.name === 'map.viewport.changed') {
+        dispatch({ type: 'viewport', value: event.payload })
+      } else if (event.name === 'map.restaurant.selected') {
+        if (!event.payload.restaurantID) dispatch({ type: 'selection', value: null })
+        else if (items.some((item) => item.id === event.payload.restaurantID)) {
+          dispatch({ type: 'selection', value: event.payload.restaurantID })
+          void platform.haptics.selection()
+        }
       } else if (event.name === 'auth.changed' || (event.name === 'app.lifecycle' && ['foreground', 'resume'].includes(event.payload.state))) {
         snapshotCache.current.clear()
         dispatch({ type: 'retry' })
       }
     }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
     return () => { void remove?.() }
-  }, [platform])
+  }, [items, platform])
 
   const selected = useMemo(() => items.find((item) => item.id === selectedRestaurantID), [items, selectedRestaurantID])
   const activeFilterCount = Object.values(filters).filter((value) => value !== undefined && value !== '').length
@@ -275,16 +306,26 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
 
     <section className="tm-my-map__stage">
       <div className="tm-my-map__map-layer">
-        <MapView
+        <MapSurface
+          active={active && mode === 'map'}
           cameraFitKey={cameraFitKey}
           currentCoordinates={coordinates}
           currentUser={profile.user}
+          filters={filters}
+          images={images}
           initialViewport={viewport}
           onClearSelection={() => dispatch({ type: 'selection', value: null })}
+          onError={setNativeMapError}
           onSelect={selectMapMarker}
           onViewportChange={(value) => dispatch({ type: 'viewport', value })}
+          overlayRevision={`${selectedRestaurantID ?? ''}|${error ?? ''}|${locationMessage ?? ''}`}
+          platform={platform}
           restaurants={items}
+          scope={scope}
+          search={search}
           selectedRestaurant={selected}
+          selectedRestaurantID={selectedRestaurantID}
+          sort={sort}
         />
       </div>
       <div className="tm-my-map__list-layer">
@@ -297,6 +338,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
         />
       </div>
       {error ? <MapState title="餐厅数据暂时不可用" message={error} action={() => dispatch({ type: 'retry' })} /> : null}
+      {!error && nativeMapError ? <MapState title="原生地图暂时不可用" message={nativeMapError} action={() => dispatch({ type: 'retry' })} /> : null}
       {locationMessage ? <p className="tm-my-map__location-note" role="status">{locationMessage}</p> : null}
       {mode === 'map' && selected ? <aside className="tm-map-selection" aria-label="已选餐厅">
         <RestaurantImage descriptor={images[selected.id]} restaurantName={selected.name} />

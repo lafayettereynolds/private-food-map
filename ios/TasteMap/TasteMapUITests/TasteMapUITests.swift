@@ -3580,13 +3580,13 @@ final class TasteMapUITests: XCTestCase {
 
         mapSwitch.tap()
         XCTAssertTrue(webView.buttons["切换到我的列表"].waitForExistence(timeout: 8))
-        XCTAssertTrue(webView.buttons.matching(
+        XCTAssertTrue(app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@", "青岚寿司 6")
         ).firstMatch.waitForExistence(timeout: 8))
 
         let visitedScope = webView.buttons["去过"]
         visitedScope.tap()
-        let marker = webView.buttons.matching(
+        let marker = app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
         ).firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 10))
@@ -3600,6 +3600,117 @@ final class TasteMapUITests: XCTestCase {
         hybridBack.tap()
         XCTAssertTrue(webView.buttons["查看详情"].waitForExistence(timeout: 8))
         XCTAssertTrue(visitedScope.exists)
+    }
+
+    @MainActor
+    func testHybridNativeMapKitPanZoomSelectionAndViewportRestoration() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        XCTAssertTrue(webView.buttons["切换到我的列表"].waitForExistence(timeout: 15))
+        let filterBar = webView.descendants(matching: .any)["地图筛选"]
+        XCTAssertTrue(filterBar.waitForExistence(timeout: 8), "React FilterBar must remain visible above the Native MapKit surface")
+        XCTAssertTrue(filterBar.isHittable, "Native MapKit must not cover the React FilterBar hit area")
+
+        // A reused MKMapView embedded through UIHostingController can be exposed
+        // by XCTest as either Map or Other depending on the current iOS runtime.
+        // Querying the identifier across all element types keeps the assertion
+        // about the real native view, not about XCTest's presentation category.
+        let map = app.descendants(matching: .any)["restaurant-map"]
+        XCTAssertTrue(map.waitForExistence(timeout: 15), "Hybrid iOS must expose the reused Native MKMapView")
+        XCTAssertTrue(map.isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["restaurant-map-user-avatar-marker"].waitForExistence(timeout: 15))
+
+        let marker = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
+        ).firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 12))
+        marker.tap()
+        let details = webView.buttons["查看详情"]
+        XCTAssertTrue(details.waitForExistence(timeout: 8))
+
+        let viewportReady = expectation(
+            for: NSPredicate(format: "value CONTAINS %@", "center"),
+            evaluatedWith: map
+        )
+        wait(for: [viewportReady], timeout: 8)
+        let initialViewport = map.value as? String ?? ""
+        print("TASTEMAP_MAPKIT_VIEWPORT_INITIAL=\(initialViewport)")
+        XCTAssertTrue(initialViewport.contains("center"), "MapKit must publish its real center/span")
+
+        details.tap()
+        let back = webView.buttons["返回上一页"]
+        XCTAssertTrue(back.waitForExistence(timeout: 12))
+        back.tap()
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertEqual(map.value as? String, initialViewport, "Restaurant Detail return must preserve the Native viewport")
+
+        // Move enough to prove the center changes; marker selection and the
+        // Restaurant Detail return path were already verified above.
+        let panStart = map.coordinate(withNormalizedOffset: CGVector(dx: 0.68, dy: 0.56))
+        let panEnd = map.coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.56))
+        panStart.press(forDuration: 0.12, thenDragTo: panEnd)
+        let changedAfterPan = expectation(
+            for: NSPredicate(format: "value != %@", initialViewport),
+            evaluatedWith: map
+        )
+        wait(for: [changedAfterPan], timeout: 8)
+        let pannedViewport = map.value as? String ?? ""
+        print("TASTEMAP_MAPKIT_VIEWPORT_AFTER_PAN=\(pannedViewport)")
+        XCTAssertNotEqual(pannedViewport, initialViewport)
+
+        map.pinch(withScale: 1.7, velocity: 1.0)
+        let changedAfterZoom = expectation(
+            for: NSPredicate(format: "value != %@", pannedViewport),
+            evaluatedWith: map
+        )
+        wait(for: [changedAfterZoom], timeout: 8)
+        let zoomedViewport = map.value as? String ?? ""
+        print("TASTEMAP_MAPKIT_VIEWPORT_AFTER_ZOOM=\(zoomedViewport)")
+        XCTAssertNotEqual(zoomedViewport, pannedViewport)
+
+        webView.buttons["切换到我的列表"].tap()
+        XCTAssertTrue(webView.buttons["切换到我的地图"].waitForExistence(timeout: 8))
+        webView.buttons["切换到我的地图"].tap()
+        XCTAssertTrue(map.waitForExistence(timeout: 8))
+        XCTAssertEqual(map.value as? String, zoomedViewport, "Map/List must reuse the same persistent MapKit viewport")
+        keepScreenshot(named: "Hybrid Native MapKit Interaction", of: app)
+    }
+
+    @MainActor
+    func testHybridNativeMapKitSustainedGesturePerformance() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let map = app.descendants(matching: .any)["restaurant-map"]
+        XCTAssertTrue(map.waitForExistence(timeout: 20))
+        let options = XCTMeasureOptions()
+        options.iterationCount = 1
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
+            for index in 0 ..< 6 {
+                let movingRight = index.isMultiple(of: 2)
+                let start = map.coordinate(withNormalizedOffset: CGVector(
+                    dx: movingRight ? 0.54 : 0.46,
+                    dy: 0.52
+                ))
+                let end = map.coordinate(withNormalizedOffset: CGVector(
+                    dx: movingRight ? 0.46 : 0.54,
+                    dy: 0.48
+                ))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            }
+            map.pinch(withScale: 1.2, velocity: 1)
+            map.pinch(withScale: 0.84, velocity: -1)
+        }
+        XCTAssertTrue(map.exists)
+        XCTAssertTrue(map.isHittable)
+        XCTAssertEqual(app.state, .runningForeground)
     }
 
     @MainActor

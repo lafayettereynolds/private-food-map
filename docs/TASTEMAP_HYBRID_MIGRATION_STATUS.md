@@ -20,7 +20,7 @@ Production default: `NATIVE_PRIMARY` (current SwiftUI application)
 
 | Surface | Status | Phase 1 evidence | Production owner | Next gate |
 | --- | --- | --- | --- | --- |
-| My Map / My List | `HYBRID_INTEGRATED` — **REAL MAP INTERACTION BLOCKED** | Shared `MyMapBrowsePage`/`MapView`, owner-scoped `map.viewport`, Native location/avatar, canonical image descriptors and shared state are integrated. The current fixed-Simulator surface is the non-interactive static fallback, not `AMap.Map`. | SwiftUI | **Blocking before Batch 3:** Development Web（JS API）key/security code, live tile SDK load, pan/pinch/center/zoom/bounds acceptance, Lafayette Product Acceptance, real-device smoke and explicit `HYBRID_PRIMARY` approval |
+| My Map / My List | `HYBRID_INTEGRATED` — Native MapKit surface | Shared `MyMapBrowsePage` owns the page chrome/state; Browser keeps the Web provider while iOS uses the persistent established `RestaurantMapView`/`MKMapView` through typed `map.surface.update`, viewport and selection events. Owner-scoped `map.viewport`, Native location/avatar, canonical images and deterministic markers remain authoritative. Fixed-Simulator pan, pinch, selection, detail/back, Map/List restoration and sustained-gesture performance acceptance passed on 2026-09-03. | SwiftUI | Lafayette Product Acceptance, real-iPhone smoke and explicit `HYBRID_PRIMARY` approval. AMap Web credentials are Browser-only and are not an iOS gate. |
 | Discovery / Community | `HYBRID_INTEGRATED` | One shared five-tab React UI, shared Activity Card/FilterBar, Visit-rating semantics, owner-safe action adapters and exact/negative Product contracts | SwiftUI | Lafayette visual review, real-device interaction smoke and explicit `HYBRID_PRIMARY` approval |
 | Add Restaurant / Nearby | `HYBRID_INTEGRATED` | One shared React Search/Nearby/Share/Manual UI; typed native provider, fresh GPS, distance, dedupe and Share Extension bridge; canonical Hybrid Restaurant Detail transition; fixed-Simulator evidence | SwiftUI | Real-iPhone Location/provider/Share smoke, Lafayette Product Acceptance and explicit `HYBRID_PRIMARY` approval |
 | Profile / My | `HYBRID_INTEGRATED` | Shared `ProfilePage`, real AuthSessionManager/current-user DTO, formal signed local bundle, native/Hybrid handoff and Debug fixed-Simulator evidence | SwiftUI | Lafayette Product Acceptance, real-device smoke, performance acceptance and explicit `HYBRID_PRIMARY` approval |
@@ -38,11 +38,12 @@ Phase 2A embeds the signed local Capacitor/React runtime in the formal Taste Map
 
 Every integrated route still has production owner SwiftUI. Debug internal acceptance can opt into `HYBRID_DEVELOPMENT`; Release contains no such runtime mode or launch switch and continues to open the current SwiftUI application. Existing SwiftData, mutation queue, SyncEngine, Auth/Keychain, PhotoTransferCoordinator, StoreKit entitlement, Backup/Import and Account Delete services remain authoritative. Current SwiftUI surfaces remain intact as rollback. No Bundle ID, Team, SwiftData schema, Worker, D1, R2, real StoreKit product configuration or Production state changed.
 
-The My Map route's integrated shell/DTO status does not constitute real-map
-interaction acceptance. An offline/fallback screenshot cannot satisfy pan, pinch,
-center, zoom or bounds gates. Batch 3 remains blocked until the Development AMap
-credential is supplied outside Git and the fixed-Simulator live gesture protocol
-passes.
+The My Map route's integrated shell/DTO status does not by itself constitute
+real-map interaction acceptance. An offline/fallback screenshot cannot satisfy
+pan, pinch, center, zoom or bounds gates. The persistent Native MapKit surface
+has passed those interaction gates on the fixed Simulator; the remaining map
+interaction gate is a real-iPhone smoke before any primary-route switch.
+Development AMap Web credentials are not part of the iOS gate.
 
 ## Required update rule
 
