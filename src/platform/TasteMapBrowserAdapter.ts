@@ -235,7 +235,7 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       const profile = debugFixture?.profile ?? await this.loadProfile()
       return projectBrowserMapViewport(profile, request, Boolean(debugFixture))
     },
-    updateNativeSurface: async (_request: import('./TasteMapPlatform').TasteMapNativeMapSurfaceUpdateRequest) => capabilityUnavailable('mapBrowse'),
+    updateNativeSurface: async () => capabilityUnavailable('mapBrowse'),
   }
 
   content = {

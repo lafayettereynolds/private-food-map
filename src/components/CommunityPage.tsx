@@ -389,7 +389,6 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
   const publicRating = publicRatingPresentation(item.publicRating)
   const selected = candidateRestaurantIds.includes(item.restaurant.id)
   const media = recommendationMedia(item)
-  const fitLabel = recommendationFitLabel(item.recommendationFitLevel)
   const reasonFallback = item.recommendationReasons?.map((text) => ({ text })) ?? (item.recommendationReason ? [{ text: item.recommendationReason }] : [])
   const allReasons = dedupeRecommendationReasons([...(item.primaryReasons?.length ? item.primaryReasons : reasonFallback), ...(item.secondaryReasons ?? [])])
   const highValueReasons = allReasons.filter(isHighValueRecommendationReason)
@@ -443,14 +442,6 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
 
 function feedScore(item: FeedItem) {
   return item.publicRating?.value ?? item.restaurant.scoreOutOfTen ?? 0
-}
-
-function recommendationFitLabel(level: CommunityVisit['recommendationFitLevel']) {
-  if (level === 'STRONG_MATCH') return '优先推荐'
-  if (level === 'GOOD_MATCH') return '推荐给你'
-  if (level === 'MODERATE_MATCH') return '可以试试'
-  if (level === 'EXPLORATION') return '换个口味'
-  return '推荐给你'
 }
 
 function dedupeRecommendationReasons<T extends { text: string }>(reasons: T[]) {

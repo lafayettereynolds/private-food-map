@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { KeyRound, LoaderCircle, MapPin } from 'lucide-react'
-import type { TasteMapMapBounds, TasteMapNativeMapViewport } from '../platform/TasteMapPlatform'
+import type { TasteMapNativeMapViewport } from '../platform/TasteMapPlatform'
 import { type AMapInstance, type AMapMarkerInstance, type AMapNamespace } from '../services/amap'
 import { mapService } from '../services/mapService'
 import { resolvePhotoSource } from '../services/photoAssets'

@@ -18,8 +18,6 @@ import {
   hybridMapReactControlSelector,
   isRenderedHybridMapReactControl,
 } from '../../components/NativeMapSurface'
-import type { MyMapSurfaceProps } from '../../components/MyMapBrowsePage'
-
 vi.mock('@amap/amap-jsapi-loader', () => ({ default: { load: vi.fn() } }))
 
 const profile: TasteMapProfileDashboardViewModel = {
@@ -66,7 +64,7 @@ describe('Hybrid remaining product UI contract', () => {
   })
 
   it('uses one shared semantic icon-and-text primary scope component for Browser and Capacitor', () => {
-    const TestMapSurface = (_props: MyMapSurfaceProps) => <div data-map-engine="test" />
+    const TestMapSurface = () => <div data-map-engine="test" />
     const html = renderToStaticMarkup(<MyMapBrowsePage MapSurface={TestMapSurface} active onAddRestaurant={() => undefined} onOpenRestaurant={() => undefined} platform={platform} profile={profile} />)
     expect(html).toContain('aria-label="地图范围"')
     expect(html.match(/class="tm-primary-tab-bar__icon"/g)).toHaveLength(3)
