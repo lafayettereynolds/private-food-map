@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, ChevronRight, LoaderCircle, ReceiptText, Search, SlidersHorizontal, Utensils } from 'lucide-react'
-import type { TasteMapImageDescriptor } from '../platform/TasteMapPlatform'
+import type { TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
+import { resolvedImageDescriptor } from './TasteMapImageResolution'
 
 export function HybridPageHeader({ eyebrow, title, description, trailing }: { eyebrow?: string; title: string; description?: string; trailing?: ReactNode }) {
   return <header className="tm-hybrid-page-header">
@@ -9,15 +10,25 @@ export function HybridPageHeader({ eyebrow, title, description, trailing }: { ey
   </header>
 }
 
-export function HybridRestaurantImage({ image, name, className = '' }: { image: TasteMapImageDescriptor; name: string; className?: string }) {
-  const [failed, setFailed] = useState(false)
-  const source = 'resourceURL' in image ? image.resourceURL : null
-  if (!source || failed) {
-    return <div aria-label={`${name} 暂无真实餐厅图片`} className={`tm-hybrid-image-fallback ${className}`} role="img">
+export function HybridRestaurantImage({ image, resolution, name, className = '' }: { image?: TasteMapImageDescriptor; resolution?: TasteMapImageResolutionDTO; name: string; className?: string }) {
+  const plan = useMemo(() => resolution ?? compatibilityResolution(image, name), [image, name, resolution])
+  const identity = useMemo(() => JSON.stringify(plan), [plan])
+  const [sourceIndex, setSourceIndex] = useState(0)
+  useEffect(() => setSourceIndex(0), [identity])
+  const selected = resolvedImageDescriptor(plan, sourceIndex)
+  if (selected.kind === 'foodDiningFallback') {
+    return <div aria-label={selected.accessibilityLabel || `${name} 暂无真实餐厅图片`} className={`tm-hybrid-image-fallback ${className}`} role="img">
       <Utensils aria-hidden="true" size={28} /><span>Taste Map</span>
     </div>
   }
-  return <img alt={image.accessibilityLabel || `${name} 餐厅图片`} className={className} decoding="async" loading="lazy" onError={() => setFailed(true)} src={source} />
+  return <img alt={selected.accessibilityLabel || `${name} 餐厅图片`} className={className} decoding="async" loading="lazy" onError={() => setSourceIndex((value) => value + 1)} src={selected.resourceURL} />
+}
+
+function compatibilityResolution(image: TasteMapImageDescriptor | undefined, name: string): TasteMapImageResolutionDTO {
+  const fallback = image?.kind === 'foodDiningFallback'
+    ? image
+    : { kind: 'foodDiningFallback' as const, stableSeed: name, accessibilityLabel: `${name} 暂无真实餐厅图片` }
+  return { sources: image && image.kind !== 'foodDiningFallback' ? [image] : [], fallback }
 }
 
 export function HybridFilterBar({ city, cities, onCity, search, onSearch, extra }: { city: string; cities: string[]; onCity: (value: string) => void; search?: string; onSearch?: (value: string) => void; extra?: ReactNode }) {

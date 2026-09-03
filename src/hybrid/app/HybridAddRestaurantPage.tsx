@@ -143,7 +143,7 @@ function CandidateResults({ result, onOpen }: { result: TasteMapAcquisitionResul
     meta: `${item.city}${item.city && item.address ? ' · ' : ''}${item.address}`,
     supportingText: item.distanceMeters != null ? distanceText(item.distanceMeters) : null,
     badge: item.duplicateKind === 'none' ? null : item.duplicateKind === 'exactProvider' ? '已在地图' : '可能重复',
-    image: <HybridRestaurantImage image={item.image} name={item.name} />,
+    image: <HybridRestaurantImage image={item.image} name={item.name} resolution={item.imageResolution} />,
     onOpen: () => void onOpen(item),
   }))} /> : result.message ? <InlineState>{result.message}</InlineState> : null}</>
 }

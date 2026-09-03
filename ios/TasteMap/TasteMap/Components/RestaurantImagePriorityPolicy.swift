@@ -106,6 +106,55 @@ nonisolated enum RestaurantImagePriorityPolicy {
 }
 
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
+extension RestaurantImagePriorityPolicy {
+    /// Builds the canonical loading plan for a Restaurant acquisition candidate.
+    ///
+    /// Identity matching and owner filtering happen before image projection. A
+    /// candidate may contribute a second provider image, but it can never move
+    /// ahead of an owned photo, an owner-visible public/cached photo, or the
+    /// matched Restaurant's persisted merchant image.
+    static func acquisitionResolution(
+        matchedRestaurant: Restaurant?,
+        authenticatedOwnerUserID: String,
+        ownerPhotos: [PhotoAsset],
+        candidateProviderMerchantImageURL: URL?
+    ) -> RestaurantImageResolution {
+        let ownedRestaurant = matchedRestaurant.flatMap { restaurant in
+            restaurant.ownerUserID == authenticatedOwnerUserID && restaurant.deletedAt == nil
+                ? restaurant
+                : nil
+        }
+        let contract = ownedRestaurant?.remoteRecordData.flatMap {
+            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+        }.flatMap { value in
+            value.userId == authenticatedOwnerUserID ? value : nil
+        }
+        let ownedPhotos = ownerPhotos.filter {
+            $0.ownerUserID == authenticatedOwnerUserID
+                && $0.deletedAt == nil
+                && $0.binaryDeletedAt == nil
+        }
+        let localPhoto = ownedRestaurant.flatMap { restaurant in
+            RestaurantImagePhotoSelectionPolicy.preferredPhoto(
+                restaurantID: restaurant.id,
+                photos: ownedPhotos,
+                referencedPhotoID: contract?.markerPhotoId
+            )
+        }
+        let persisted = resolution(
+            localUserPhotoID: localPhoto?.id,
+            publicOrCachedPhotoID: contract?.markerPhotoId,
+            providerMerchantImageURL: contract?.merchantImageUrl
+        )
+        guard let candidateSource = safeHTTPSURL(candidateProviderMerchantImageURL?.absoluteString)
+            .map(RestaurantImageSourceReference.providerMerchantImage),
+              !persisted.sources.contains(candidateSource) else {
+            return persisted
+        }
+        return RestaurantImageResolution(sources: persisted.sources + [candidateSource])
+    }
+}
+
 /// One deterministic local-photo selector. A referenced marker photo is
 /// preferred, followed by a Restaurant marker photo and then the newest valid
 /// user photo. Page-specific renderers must not invent another ordering.

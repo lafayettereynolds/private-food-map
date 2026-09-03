@@ -147,6 +147,50 @@ describe('TasteMapBrowserAdapter', () => {
     expect(recommended.items).toEqual([])
     expect(recommended.totalCount).toBe(0)
   })
+
+  it('reuses the Browser canonical Restaurant image plan for an existing acquisition match', async () => {
+    const existing = {
+      ...browserProfile.restaurants[0],
+      amapPoiId: 'manual-验收餐厅-杭州-西湖边',
+      markerImageData: 'blob:https://example.test/owner-marker',
+      markerPhotoId: 'owner-marker-photo',
+      merchantImageUrl: 'https://images.example.test/existing-merchant.jpg',
+    }
+    const existingImage = {
+      kind: 'publicOrCached' as const,
+      resourceURL: 'blob:https://example.test/owner-visit',
+      photoID: 'owner-visit-photo',
+      accessibilityLabel: '已有用户到访照片',
+    }
+    const profile = {
+      ...browserProfile,
+      restaurants: [existing],
+      restaurantImages: { [existing.id]: existingImage },
+    }
+    const adapter = new TasteMapBrowserAdapter({ profile: async () => profile })
+    const cacheCandidate = Reflect.get(adapter, 'cacheBrowserCandidate') as (
+      value: import('../types/domain').PoiSearchResult,
+      distance: number | null,
+      sourceProfile: TasteMapProfileDashboardViewModel,
+    ) => import('./TasteMapPlatform').TasteMapAcquisitionCandidateDTO
+    const candidate = cacheCandidate.call(adapter, {
+      amapPoiId: existing.amapPoiId,
+      name: '验收餐厅',
+      address: '西湖边',
+      city: '杭州',
+      district: '西湖区',
+      latitude: 30.25,
+      longitude: 120.16,
+      merchantImageUrl: null,
+    }, null, profile)
+
+    expect(candidate.existingRestaurantID).toBe(existing.id)
+    expect(candidate.duplicateKind).toBe('exactProvider')
+    expect(candidate.imageResolution.sources.map((source) => source.kind)).toEqual([
+      'publicOrCached', 'publicOrCached', 'providerMerchant',
+    ])
+    expect((await adapter.acquisition.select(candidate.id)).restaurantID).toBe(existing.id)
+  })
 })
 
 describe('TasteMapNativeAdapter', () => {
@@ -224,6 +268,10 @@ describe('TasteMapNativeAdapter', () => {
             latitude: 30.25, longitude: 120.16, distanceMeters: request.method === 'acquisition.nearby' ? 42 : null,
             phone: null, openingHours: null,
             image: { kind: 'providerMerchant', resourceURL: 'https://images.example.test/candidate.jpg', accessibilityLabel: '湖滨候选餐厅餐厅图片' },
+            imageResolution: {
+              sources: [{ kind: 'providerMerchant', resourceURL: 'https://images.example.test/candidate.jpg', accessibilityLabel: '湖滨候选餐厅餐厅图片' }],
+              fallback: { kind: 'foodDiningFallback', stableSeed: 'candidate-1', accessibilityLabel: '湖滨候选餐厅餐厅图片占位' },
+            },
             duplicateKind: 'none', existingRestaurantID: null,
           }],
           location: request.method === 'acquisition.nearby'
@@ -390,7 +438,9 @@ describe('TasteMapNativeAdapter', () => {
   it('uses typed Restaurant acquisition envelopes and never passes an owner or credential', async () => {
     const { invoke, target } = nativeTarget()
     const adapter = new TasteMapNativeAdapter(target as never)
-    expect((await adapter.acquisition.search('湖滨', '杭州')).candidates[0].name).toBe('湖滨候选餐厅')
+    const search = await adapter.acquisition.search('湖滨', '杭州')
+    expect(search.candidates[0].name).toBe('湖滨候选餐厅')
+    expect(JSON.stringify(search.candidates[0].imageResolution)).not.toMatch(/file:\/\/|\/Users\/|base64|imageData|credential/i)
     expect((await adapter.acquisition.nearby()).candidates[0].distanceMeters).toBe(42)
     expect((await adapter.acquisition.shared()).sharedImportFingerprint).toBe('share-fingerprint')
     expect((await adapter.acquisition.manual({ name: '手动餐厅', city: '杭州', address: '西湖边' })).candidates).toHaveLength(1)
