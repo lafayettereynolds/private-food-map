@@ -262,6 +262,10 @@ describe('Hybrid global Product Contract', () => {
     expect(discovery).toContain("item.mode === 'trending' ? '近期趋势' : null")
     expect(discovery).not.toContain("item.mode === 'similar_taste' ? '同味推荐'")
     expect(discovery).toContain("item.mode === 'similar_taste' ? '同味推荐依据'")
+    expect(discovery).toContain('const similarTasteSource')
+    expect(discovery).toContain('口味相似 {item.similarityPercent}%')
+    expect(discovery).toContain('rating={item.activityRating}')
+    expect(discovery).not.toContain('identifiesSourceActivity')
   })
 
   it('locks current-only Profile, Lists, Analytics, Posters and Settings topology', () => {

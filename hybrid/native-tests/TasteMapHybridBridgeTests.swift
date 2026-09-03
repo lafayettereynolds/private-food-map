@@ -284,6 +284,8 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(snapshot.discovery.forYou.count, 12)
         XCTAssertEqual(snapshot.discovery.similarTaste.count, 12)
         XCTAssertEqual(snapshot.discovery.trending.count, 12)
+        XCTAssertTrue(snapshot.discovery.similarTaste.allSatisfy { $0.sourceUser != nil })
+        XCTAssertTrue(snapshot.discovery.similarTaste.allSatisfy { $0.activityRating != nil })
         XCTAssertEqual(snapshot.community.latest.count, 12)
         XCTAssertEqual(snapshot.lists.count, 5)
         XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { !$0.restaurant.name.isEmpty })

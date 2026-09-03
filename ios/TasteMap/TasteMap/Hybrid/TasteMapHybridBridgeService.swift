@@ -728,6 +728,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         generatedAt: String
     ) -> TasteMapHybridContentSnapshotDTO {
         let names = ["林夏", "周舟", "陈一碗", "江南胃", "阿岚", "西湖小柚", "陆小满", "一只饭团"]
+        let similarTasteRatings = [4.5, 4.0, 5.0, 4.5, 4.0, 4.5, 5.0, 4.0]
         func person(_ index: Int, city: String) -> TasteMapHybridPersonDTO {
             TasteMapHybridPersonDTO(
                 id: "tm_demo_\(index)", name: names[index % names.count], city: city,
@@ -772,7 +773,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             return TasteMapHybridDiscoveryItemDTO(
                 id: "similar-\(item.id)", mode: "similar_taste", restaurant: replacingImage(item.restaurant, with: visual),
                 viewerState: item.viewerState, sourceUser: user,
-                activityRating: restaurants[index].averageRating,
+                activityRating: similarTasteRatings[index % similarTasteRatings.count],
                 activityVisitedAt: restaurants[index].latestVisitDate ?? generatedAt,
                 interaction: item.interaction, likedByViewer: item.likedByViewer,
                 likeCount: item.likeCount, commentCount: item.commentCount,

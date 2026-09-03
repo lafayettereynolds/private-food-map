@@ -177,7 +177,7 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
         : categoryDescriptor(profile.restaurants[index]),
     },
     sourceUser: sourceUsers[index],
-    activityRating: profile.restaurants[index]?.averageRating ?? null,
+    activityRating: [4.5, 4, 5, 4.5][index % 4] ?? 4.5,
     activityVisitedAt: profile.restaurants[index]?.latestVisitDate ?? generatedAt,
     reason: `与这位用户有 ${item.sharedRestaurantCount ?? 0} 家共同到访`,
     uniqueVisitorCount: null,

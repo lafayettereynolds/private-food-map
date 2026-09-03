@@ -10,6 +10,7 @@ describe('Restaurant visual product fixture', () => {
     expect(content.discovery.forYou.every((item) => item.sourceUser == null && item.activityRating == null)).toBe(true)
     expect(content.discovery.similarTaste[0].restaurant.image.kind).toBe('activityPhoto')
     expect(content.discovery.similarTaste[0].sourceUser).not.toBeNull()
+    expect(content.discovery.similarTaste.every((item) => item.activityRating != null)).toBe(true)
     expect(content.discovery.trending.slice(0, 2).map((item) => item.restaurant.image.kind)).toEqual([
       'publicUGC', 'foodCategoryVisual',
     ])

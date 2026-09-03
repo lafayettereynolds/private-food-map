@@ -61,6 +61,8 @@
 .tm-activity-card__rating-summary { min-height: 26px; padding: 3px 0; border-radius: 0; display: inline-flex; align-items: baseline; gap: 5px; color: var(--color-text-secondary, #74838e); background: transparent; white-space: nowrap; }
 .tm-activity-card__rating-summary strong { color: #416f9b; font-size: 12px; }
 .tm-activity-card__rating-summary small { font-size: 9px; }
+.tm-activity-card__similar-rating { margin-left: auto; display: inline-flex; align-items: center; gap: 9px; }
+.tm-activity-card__similar-rating > small { color: var(--color-text-secondary, #74838e); font-size: 10px; font-weight: 720; white-space: nowrap; }
 .tm-activity-card__visit-rating { display: inline-flex; align-items: center; gap: 4px; color: #be7153; font-size: 10px; font-weight: 790; white-space: nowrap; }
 .tm-activity-rating-badge { width: 46px; height: 46px; flex: 0 0 46px; border: 1.5px solid var(--tm-activity-rating-color); border-radius: 50%; display: inline-grid; place-items: center; color: var(--tm-activity-rating-color); background: color-mix(in srgb, var(--tm-activity-rating-color) 4%, white); font-variant-numeric: tabular-nums; }
 .tm-activity-rating-badge strong { font-size: 14px; font-weight: 820; line-height: 1; letter-spacing: -.02em; }
@@ -98,6 +100,7 @@
   .tm-activity-card { padding-inline: 8px; }
   .tm-activity-card__media { width: min(48%, 168px); min-width: 142px; }
   .tm-activity-card__rating { align-items: flex-start; flex-direction: column; }
+  .tm-activity-card__similar-rating { align-self: flex-end; }
   .tm-activity-card__restaurant-row > .tm-activity-card__rating { align-items: center; flex-direction: row; }
   .tm-activity-card__source-inline { justify-content: flex-start; }
   .tm-activity-card > footer { gap: 6px; }

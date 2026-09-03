@@ -276,14 +276,14 @@ function RecommendationCard({ item, platform, onOpenRestaurant, engagement, view
     item.uniqueVisitorCount != null ? `近期有 ${item.uniqueVisitorCount} 位用户到访` : null,
     item.wantToGoCount != null ? `${item.wantToGoCount} 人想吃` : null,
   ].filter((value): value is string => Boolean(value))
-  const identifiesSourceActivity = item.mode === 'similar_taste' && Boolean(item.sourceUser && item.activityVisitedAt)
+  const similarTasteSource = item.mode === 'similar_taste' ? item.sourceUser : null
   const target = item.interaction
   return <TasteMapActivityCardFrame
-    activityRating={<>
-      <CommunityRatingSummary item={item} />
-      {identifiesSourceActivity && item.sourceUser ? <button aria-label={`查看同味来源用户 ${item.sourceUser.name}`} className="tm-activity-card__source-inline" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.sourceUser!.id })} type="button"><span className="tm-hybrid-avatar-seed">{item.sourceUser.name.slice(0, 1)}</span><strong>{item.sourceUser.name}</strong>{item.activityRating == null ? <span className="tm-activity-card__visit-rating">本次未评分</span> : <span className="tm-activity-card__visit-rating"><Star aria-hidden="true" fill="currentColor" size={11} />{item.activityRating.toFixed(1)}</span>}{item.activityVisitedAt ? <time>{formatEventTime(item.activityVisitedAt)}</time> : null}</button> : null}
-    </>}
+    activityRating={similarTasteSource
+      ? <span className="tm-activity-card__similar-rating"><small>{similarTasteSource.name}的评分</small><TasteMapActivityRatingBadge prefix={`${similarTasteSource.name}本次到访`} rating={item.activityRating} /></span>
+      : <CommunityRatingSummary item={item} />}
     body={<section className="tm-activity-card__recommendation-reason"><strong>{item.mode === 'for_you' ? '为什么适合你' : item.mode === 'similar_taste' ? '同味推荐依据' : '近期趋势依据'}</strong><p>{item.reason}</p>{facts.length ? <ul>{facts.map((fact) => <li key={fact}>{fact}</li>)}</ul> : null}</section>}
+    header={similarTasteSource ? <><button aria-label={`查看同味来源用户 ${similarTasteSource.name}`} className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: similarTasteSource.id })} type="button"><span className="tm-hybrid-avatar-seed">{similarTasteSource.name.slice(0, 1)}</span><span><strong>{similarTasteSource.name}</strong><small>{item.activityVisitedAt ? `${formatEventTime(item.activityVisitedAt)} · 公开到访` : '与你口味相近'}</small></span></button>{item.similarityPercent != null ? <span className="similarity-pill">口味相似 {item.similarityPercent}%</span> : null}</> : undefined}
     media={<button aria-label={`${item.restaurant.name} 餐厅图片`} onClick={() => onOpenRestaurant(item.restaurant.id)} type="button"><HybridRestaurantImage image={item.restaurant.image} name={item.restaurant.name} /></button>}
     onOpen={() => onOpenRestaurant(item.restaurant.id)}
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
