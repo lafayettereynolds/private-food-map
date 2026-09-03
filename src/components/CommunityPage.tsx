@@ -1,6 +1,6 @@
 import { ArrowDownUp, Building2, ChevronDown, Globe2, Heart, LocateFixed, MapPin, MessageCircle, Send, Share2, SlidersHorizontal, Star, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { type CommunityVisit, type Coordinates, type RestaurantSummary, type UserProfile, type Visit } from '../types/domain'
+import { scoreColor, type CommunityVisit, type Coordinates, type RestaurantSummary, type UserProfile, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { fetchCommunityFeed, type CommunityFeedAccess, type DiscoveryMode } from '../services/socialApi'
 import { trackDiscoveryRecommendationEvent } from '../services/recommendationAnalytics'
@@ -386,6 +386,7 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
   const [showFullAnalysis, setShowFullAnalysis] = useState(false)
   const wanted = item.viewerRestaurantStatus === 'wantToGo'
   const activityRating = item.visit.rating
+  const publicRating = publicRatingPresentation(item.publicRating)
   const selected = candidateRestaurantIds.includes(item.restaurant.id)
   const media = recommendationMedia(item)
   const fitLabel = recommendationFitLabel(item.recommendationFitLevel)
@@ -410,12 +411,12 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
   }
 
   return <TasteMapActivityCardFrame
-    activityRating={<span aria-label={activityRating == null ? '本次到访未评分' : `本次到访评分 ${activityRating.toFixed(1)}`} role="img">{activityRating == null ? '本次未评分' : <><Star aria-hidden="true" fill="currentColor" size={14} />本次到访 {activityRating.toFixed(1)}</>}</span>}
+    activityRating={<>{mode === 'for_you' ? <span aria-label={publicRating.value === null ? `大家评分${publicRating.note}` : `大家评分 ${publicRating.value.toFixed(1)}，${publicRating.note}`} className="tm-activity-card__rating-summary" role="img"><span>大家评分</span><strong style={publicRating.value !== null ? { color: scoreColor(publicRating.value) } : undefined}>{publicRating.value === null ? '—' : publicRating.value.toFixed(1)}</strong><small>{publicRating.note}</small></span> : null}<span aria-label={activityRating == null ? '本次到访未评分' : `本次到访评分 ${activityRating.toFixed(1)}`} className="tm-activity-card__visit-rating" role="img">{activityRating == null ? '本次未评分' : <><Star aria-hidden="true" fill="currentColor" size={12} />本次到访 {activityRating.toFixed(1)}</>}</span></>}
     body={<>
       {mode !== 'for_you' && item.visit.note ? <p className="community-note"><strong>笔记</strong>{item.visit.note}</p> : null}
       {mode === 'for_you' && primaryReasons.length ? <section className="recommendation-evidence"><strong>{evidenceTitle}</strong><ul>{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul>{cautionReason ? <div className="recommendation-evidence__caution"><strong>需要注意</strong><span>{cautionReason.text}</span></div> : null}<small>{recommendationEvidenceHint(item.recommendationConfidence)}</small>{canShowFullAnalysis ? <><button aria-expanded={showFullAnalysis} onClick={(event) => stopAndRun(event, () => setShowFullAnalysis((current) => !current))} type="button">查看完整分析 <ChevronDown className={showFullAnalysis ? 'is-open' : ''} size={15} /></button>{showFullAnalysis ? <ul className="recommendation-evidence__more">{secondaryReasons.map((reason, index) => <li key={`${reason.text}-detail-${index}`}>{reason.text}</li>)}</ul> : null}</> : null}</section> : primaryReasons.length ? <ul className="discovery-reasons">{primaryReasons.map((reason, index) => <li key={`${reason.text}-${index}`}>{reason.text}</li>)}</ul> : null}
     </>}
-    header={<><button className="tm-activity-card__user" onClick={(event) => stopAndRun(event, () => onViewProfile(item.user))} type="button"><UserAvatar alt="" avatarImageData={item.user.avatarImageData} avatarPhotoId={item.user.avatarPhotoId} avatarPresetId={item.user.avatarPresetId} membershipTier={item.user.membershipTier} /><span><strong>{item.user.nickname}{item.user.membershipTier === 'member' ? <PremiumBurgerBadge /> : null}</strong><small>{formatVisitDateTime(item.visit.visitedAt)} · 公开到访</small></span></button>{mode === 'similar' && item.similarity != null ? <span className="similarity-pill">口味相似 {item.similarity}%</span> : mode === 'for_you' ? <span className={`recommendation-fit-badge is-${item.recommendationFitLevel?.toLowerCase() ?? 'good_match'}`}>{fitLabel}</span> : null}</>}
+    header={mode !== 'for_you' ? <><button className="tm-activity-card__user" onClick={(event) => stopAndRun(event, () => onViewProfile(item.user))} type="button"><UserAvatar alt="" avatarImageData={item.user.avatarImageData} avatarPhotoId={item.user.avatarPhotoId} avatarPresetId={item.user.avatarPresetId} membershipTier={item.user.membershipTier} /><span><strong>{item.user.nickname}{item.user.membershipTier === 'member' ? <PremiumBurgerBadge /> : null}</strong><small>{formatVisitDateTime(item.visit.visitedAt)} · 公开到访</small></span></button>{mode === 'similar' && item.similarity != null ? <span className="similarity-pill">口味相似 {item.similarity}%</span> : null}</> : undefined}
     media={media.length ? <button className={`community-media count-${media.length}`} aria-label={`查看 ${item.restaurant.name} 详情`} onClick={(event) => stopAndRun(event, onOpen)} type="button">{media.map((photo, index) => <SyncedImage alt={`${item.restaurant.name} 图片 ${index + 1}`} key={`${item.visit.id}-media-${index}`} loading="lazy" photoId={photo.photoId} source={photo.source} />)}</button> : undefined}
     onOpen={onOpen}
     restaurant={<div className="community-restaurant"><RestaurantAvatar restaurant={item.restaurant} /><div className="community-restaurant__body"><strong>{item.restaurant.name}</strong>{mode === 'for_you' && metadata.length ? <small>{metadata.join(' · ')}</small> : null}<span><MapPin size={12} /> {item.restaurant.city} · {item.restaurant.address}</span></div><button aria-label="查看餐厅" className="tm-activity-card__open" onClick={(event) => stopAndRun(event, onOpen)} type="button">查看</button></div>}
@@ -476,6 +477,14 @@ function recommendationEvidenceHint(confidence: CommunityVisit['recommendationCo
   if (confidence === 'high') return '基于较充分的历史记录与相关到访'
   if (confidence === 'medium') return '基于现有历史记录，证据仍在积累'
   return '当前相关记录较少，推荐仅供探索参考'
+}
+
+function publicRatingPresentation(rating: CommunityVisit['publicRating']) {
+  const sampleCount = rating?.sampleCount ?? 0
+  if (!sampleCount) return { value: null, note: '暂无评分' }
+  if (sampleCount < 5) return { value: null, note: `${sampleCount} 人 · 样本不足` }
+  if (sampleCount < 10) return { value: rating?.value ?? null, note: `${sampleCount} 人 · 样本较少` }
+  return { value: rating?.value ?? null, note: `${sampleCount} 人` }
 }
 
 function recommendationMedia(item: FeedItem) {

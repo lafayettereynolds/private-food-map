@@ -107,10 +107,10 @@ export function TasteMapActivityCardFrame({
     onClick={open}
   >
     {header ? <header data-activity-region="author-time-visibility">{header}</header> : null}
-    {media ? <div className="tm-activity-card__media" data-activity-region="restaurant-image">{media}</div> : null}
     <div className="tm-activity-card__restaurant" data-activity-region="restaurant-name-address-context">{restaurant}</div>
     {activityRating ? <div className="tm-activity-card__rating" data-activity-region="visit-rating">{activityRating}</div> : null}
-    {body ? <div className="tm-activity-card__body">{body}</div> : null}
+    {media ? <div className="tm-activity-card__media" data-activity-region="restaurant-image">{media}</div> : null}
+    {body ? <div className="tm-activity-card__body" data-activity-region={variant === 'recommendation' ? 'recommendation-reason' : 'activity-context'}>{body}</div> : null}
     <footer>
       {socialActions ? <div className="tm-activity-card__social" data-activity-region="like-comment-more-share">{socialActions}</div> : null}
       <div className="tm-activity-card__restaurant-actions" data-activity-region="restaurant-actions">{restaurantActions}</div>

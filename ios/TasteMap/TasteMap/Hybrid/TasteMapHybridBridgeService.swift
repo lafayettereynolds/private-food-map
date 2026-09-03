@@ -605,6 +605,10 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     ) -> TasteMapHybridContentSnapshotDTO {
         let names = ["林夏", "周舟", "陈一碗", "江南胃", "阿岚", "西湖小柚", "陆小满", "一只饭团"]
         let discovery = Array(restaurants.prefix(12).enumerated()).map { index, value in
+            let fixtureRating = index == 3 ? nil : max(3.5, 4.5 - Double(index) * 0.1)
+            let activityRating = value.averageRating ?? fixtureRating
+            let communityRating = activityRating.map { max(0, $0 - 0.05) }
+            let ratingSampleCount = communityRating == nil ? 0 : max(10, value.visitCount)
             let user = TasteMapHybridPersonDTO(
                 id: "tm_demo_\(index)", name: names[index % names.count], city: value.city,
                 avatarPhotoID: nil, avatarPresetID: ["otter", "polar-bear", "fox", "capybara"][index % 4],
@@ -614,7 +618,8 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             return TasteMapHybridDiscoveryItemDTO(
                 id: "hybrid-discovery-\(index)", mode: "for_you", restaurant: content,
                 viewerState: value.status == "visited" ? "visited" : "want_to_go", sourceUser: user,
-                activityRating: value.averageRating, activityVisitedAt: value.latestVisitDate,
+                activityRating: activityRating, activityVisitedAt: value.latestVisitDate ?? generatedAt,
+                communityRating: .init(valueOutOfFive: communityRating, sampleCount: ratingSampleCount),
                 reason: index.isMultiple(of: 2) ? "与你常吃的菜系很接近" : "同城高质量真实记录",
                 similarityPercent: 82 - index * 3, sharedRestaurantCount: 6 + index,
                 uniqueVisitorCount: 18 + index * 4, wantToGoCount: 9 + index,
@@ -626,6 +631,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 id: "similar-\(item.id)", mode: "similar_taste", restaurant: item.restaurant,
                 viewerState: item.viewerState, sourceUser: item.sourceUser,
                 activityRating: item.activityRating, activityVisitedAt: item.activityVisitedAt,
+                communityRating: item.communityRating,
                 reason: "与这位用户有 \(item.sharedRestaurantCount ?? 0) 家共同到访",
                 similarityPercent: item.similarityPercent, sharedRestaurantCount: item.sharedRestaurantCount,
                 uniqueVisitorCount: nil, wantToGoCount: nil, rank: item.rank
@@ -636,6 +642,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 id: "trending-\(item.id)", mode: "trending", restaurant: item.restaurant,
                 viewerState: item.viewerState, sourceUser: item.sourceUser,
                 activityRating: item.activityRating, activityVisitedAt: item.activityVisitedAt,
+                communityRating: item.communityRating,
                 reason: "最近 7 天有 \(item.uniqueVisitorCount ?? 0) 位用户到访",
                 similarityPercent: nil, sharedRestaurantCount: nil,
                 uniqueVisitorCount: item.uniqueVisitorCount, wantToGoCount: item.wantToGoCount, rank: item.rank
@@ -707,6 +714,10 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             sourceUser: value.sourceUser.map(personDTO),
             activityRating: value.activity?.rating,
             activityVisitedAt: value.activity?.visitedAt,
+            communityRating: .init(
+                valueOutOfFive: value.ratings.community.value,
+                sampleCount: value.ratings.community.sampleCount
+            ),
             reason: value.reasons.first?.text ?? "来自 Taste Map 的真实记录",
             similarityPercent: value.similarity?.percent,
             sharedRestaurantCount: value.similarity?.sharedRestaurantCount,

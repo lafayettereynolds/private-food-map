@@ -219,6 +219,8 @@ Templates define information architecture, section order, control and image plac
 
 Discovery, Community, Latest, Trending, and similar activity surfaces share author/avatar/time/visibility, Restaurant image/name/address/context, the author's Activity rating, social actions, Restaurant actions, and separate sharing. These actions retain the approved grouping and visual weights instead of becoming one wall of identical pills.
 
+The frozen Legacy-base card topology is semantic, not merely stylistic. Recommendation cards are ordered `Restaurant identity + recommendation tag → public Restaurant rating/sample + compact recommender/Visit context → horizontal Restaurant image → independent recommendation-reason/evidence block → social actions on the left + circular Restaurant actions on the right`. Ordinary Activity variants prepend the author/time/visibility row, keep the Restaurant identity before the image, and replace the recommendation block with the activity note when present. `关注 / 为你推荐 / 同味之选 / 最新 / 趋势` use this one shared card frame and only show or hide modules when the content semantics require it. Public Restaurant rating/sample and the author's specific Visit rating remain separate values; neither may substitute for the other.
+
 #### 6. Add Restaurant Template
 
 Formal flow: Search, Nearby, external Share ingestion, and one Manual Add card for places absent from map providers. A selected result first shows the standard Restaurant Detail foundation, then offers Want to Go or Record Visit. Manual link paste is not promoted to a primary in-app section; parsing remains available to the Share Extension.
@@ -311,6 +313,7 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - Equal primary tabs: `关注 / 为你推荐 / 同味之选 / 最新 / 趋势`.
 - Uses the same FilterBar, FilterChip, and icon semantics as My Map.
 - Activity rating is the author's specific Visit rating. Nil is `未评分`.
+- Recommendation cards keep the high-density Legacy-base order: Restaurant identity and tag, public rating/sample plus compact source context, image, independent evidence block, then two deliberately separated action groups. Do not promote the image above identity, flatten evidence into an ordinary sentence, move Share to its own text row, or turn all Restaurant actions into equal pills.
 - Similar Taste explicitly represents loading, content, empty/insufficient sample, authentication, and error states.
 
 ## Add Restaurant and Nearby
@@ -391,6 +394,7 @@ Candidate code, screenshots, recommendations, and approval-tool selections do no
 - Do not let Map and Discovery create separate filter systems.
 - Do not use a GPS icon for a static city filter.
 - Do not use Restaurant aggregate rating as Activity rating.
+- Do not regress Discovery recommendations into a generic `large image → text → equal pill actions` Restaurant card; the frozen Activity Card topology and rating semantics apply to all five Discovery tabs.
 - Do not aggregate Restaurants into numeric or Food/Dining count clusters at any zoom.
 - Do not force ordinary Marker offset, spiderfy, collision dispersion, or zoom separation merely to reveal every Restaurant.
 - Do not let Marker overlap order drift from `selected → rating → visit count → stable Restaurant ID`.

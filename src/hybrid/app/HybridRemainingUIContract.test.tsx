@@ -34,7 +34,7 @@ const image = profile.restaurantImages[fixture.restaurants[0].id]
 const content: TasteMapHybridContentSnapshotDTO = {
   generatedAt: '2026-09-02T00:00:00Z',
   discovery: {
-    forYou: [{ id: 'for-you', mode: 'for_you', restaurant: { ...fixture.restaurants[0], referencePrice: 229, image }, viewerState: 'visited', sourceUser: null, activityRating: null, activityVisitedAt: null, reason: '与你常吃的菜系接近', similarityPercent: null, sharedRestaurantCount: null, uniqueVisitorCount: null, wantToGoCount: null, rank: 1 }],
+    forYou: [{ id: 'for-you', mode: 'for_you', restaurant: { ...fixture.restaurants[0], referencePrice: 229, image }, viewerState: 'visited', sourceUser: { id: 'source-user', name: '林夏', city: '杭州', avatarPhotoID: null, avatarPresetID: 'otter', isFollowing: true }, activityRating: 4.5, activityVisitedAt: '2026-08-24T12:00:00Z', communityRating: { valueOutOfFive: 4.45, sampleCount: 10 }, reason: '与你常吃的菜系接近', similarityPercent: 96, sharedRestaurantCount: 3, uniqueVisitorCount: null, wantToGoCount: null, rank: 1 }],
     similarTaste: [],
     trending: [],
   },
@@ -70,7 +70,7 @@ describe('Hybrid remaining product UI contract', () => {
   it('keeps Discovery at one five-tab product level and labels missing Visit ratings honestly', () => {
     const html = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
     for (const label of ['关注', '为你推荐', '同味之选', '最新', '趋势']) expect(html).toContain(label)
-    expect(html).toContain('未评分')
+    expect(html).toContain('4.5')
     expect(html).not.toContain('发现餐厅')
     expect(html).not.toContain('DISCOVER')
     expect(html).toContain('data-product-contract="discovery-page"')
@@ -78,6 +78,27 @@ describe('Hybrid remaining product UI contract', () => {
     for (const region of ['restaurant-image', 'restaurant-name-address-context', 'visit-rating', 'like-comment-more-share', 'restaurant-actions']) {
       expect(html).toContain(`data-activity-region="${region}"`)
     }
+  })
+
+  it('locks the approved high-density feed-card topology and separates rating semantics', () => {
+    const html = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
+    const regions = [
+      'restaurant-name-address-context',
+      'visit-rating',
+      'restaurant-image',
+      'recommendation-reason',
+      'like-comment-more-share',
+      'restaurant-actions',
+    ].map((region) => html.indexOf(`data-activity-region="${region}"`))
+    expect(regions.every((index) => index >= 0)).toBe(true)
+    expect(regions).toEqual([...regions].sort((left, right) => left - right))
+    expect(html).toContain('为什么适合你')
+    expect(html).toContain('大家评分')
+    expect(html).toContain('8.9')
+    expect(html).toContain('10 人')
+    expect(html).toContain('查看推荐来源用户 林夏')
+    expect(html).not.toContain('class="tm-activity-card__source"')
+    expect(html).not.toContain('分享动态</button>')
   })
 
   it('treats Swift JSONEncoder omitted optionals as honest missing values instead of crashing', () => {
