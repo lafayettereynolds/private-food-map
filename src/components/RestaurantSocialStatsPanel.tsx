@@ -14,15 +14,21 @@ export interface PersonalRatingOverride {
   description?: string
 }
 
-export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyRestaurants = [], personalRatingOverride, remoteStatsEnabled = true }: { amapPoiId: string; restaurant: RestaurantSummary; historyRestaurants?: RestaurantSummary[]; personalRatingOverride?: PersonalRatingOverride; remoteStatsEnabled?: boolean }) {
-  const [stats, setStats] = useState<RestaurantSocialStats | null>(null)
-  const [loading, setLoading] = useState(remoteStatsEnabled)
+export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyRestaurants = [], personalRatingOverride, remoteStatsEnabled = true, socialStats }: { amapPoiId: string; restaurant: RestaurantSummary; historyRestaurants?: RestaurantSummary[]; personalRatingOverride?: PersonalRatingOverride; remoteStatsEnabled?: boolean; socialStats?: RestaurantSocialStats | null }) {
+  const hasAdapterStats = socialStats !== undefined
+  const [stats, setStats] = useState<RestaurantSocialStats | null>(socialStats ?? null)
+  const [loading, setLoading] = useState(remoteStatsEnabled && !hasAdapterStats)
   const personalVisits = restaurant.visits.filter((visit) => visit.userId === CURRENT_USER_ID)
   const personalRating = personalRestaurantRating(personalVisits, CURRENT_USER_ID)
   const isCurrentUsersVisitedRestaurant = !restaurant.isRecommendation && restaurant.userId === CURRENT_USER_ID && restaurant.status === 'visited'
   const prediction = isCurrentUsersVisitedRestaurant ? null : predictPersonalTasteScore(restaurant, historyRestaurants)
 
   useEffect(() => {
+    if (hasAdapterStats) {
+      setStats(socialStats ?? null)
+      setLoading(false)
+      return
+    }
     if (!remoteStatsEnabled) {
       setStats(null)
       setLoading(false)
@@ -35,7 +41,7 @@ export function RestaurantSocialStatsPanel({ amapPoiId, restaurant, historyResta
       .catch(() => setStats(null))
       .finally(() => setLoading(false))
     return () => controller.abort()
-  }, [amapPoiId, remoteStatsEnabled])
+  }, [amapPoiId, hasAdapterStats, remoteStatsEnabled, socialStats])
 
   return <section className="restaurant-social-stats" aria-label="评分参考" data-summary-module="rating-reference">
     <header><span><UsersRound size={13} />评分参考</span>{loading ? <RefreshCw className="is-spinning" size={12} /> : null}</header>

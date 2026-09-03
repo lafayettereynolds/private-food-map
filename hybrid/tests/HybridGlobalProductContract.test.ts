@@ -209,12 +209,19 @@ describe('Hybrid global Product Contract', () => {
 
   it('keeps one canonical Restaurant Detail body and its required section order', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const platform = source('../../src/platform/TasteMapPlatform.ts')
+    const nativeContracts = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridContracts.swift')
+    const nativeService = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridBridgeService.swift')
     expect(shell.match(/<RestaurantPreviewCard/g)).toHaveLength(1)
     expect(shell).not.toMatch(/<DiscoverRestaurantDetail|<MapRestaurantDetail|<FriendRestaurantDetail|<RecommendationRestaurantDetail/)
     expect(HYBRID_RESTAURANT_DETAIL_SECTION_ORDER).toEqual([
       'Cover', 'CityAndState', 'NameAndActions', 'Address', 'CompactBasics',
       'RatingReference', 'UserPhotos', 'MyVisitOverview', 'DownstreamContent',
     ])
+    expect(platform).toContain('socialStats?: RestaurantSocialStats | null')
+    expect(nativeContracts).toContain('TasteMapHybridRestaurantSocialStatsDTO')
+    expect(nativeService).toContain('$0.currentUserID == ownerUserID && globalIdentityKeys.contains($0.globalKey)')
+    expect(shell).toContain('socialStats={restaurant.socialStats}')
   })
 
   it('locks current-only Profile, Lists, Analytics, Posters and Settings topology', () => {

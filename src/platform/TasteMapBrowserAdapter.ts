@@ -5,6 +5,8 @@ import { addVisit, deleteRestaurant, deleteVisit, updateRestaurantBasics, update
 import type { RestaurantListCollection, RestaurantListItem } from '../types/domain'
 import type { RestaurantSummary } from '../types/domain'
 import { resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
+import { fetchRestaurantSocialStats } from '../services/restaurantStats'
+import type { RestaurantSocialStats } from '../types/restaurantStats'
 import {
   TASTE_MAP_NATIVE_BRIDGE_VERSION,
   capabilityUnavailable,
@@ -116,9 +118,16 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
         if (candidate) return browserCandidateDetail(candidate)
         throw new TasteMapPlatformError(`Restaurant ${id} was not found.`, 'restaurant_not_found')
       }
+      const debugFixture = await this.loadDebugFixture()
+      const socialStats = debugFixture
+        ? debugRestaurantSocialStats(restaurant)
+        : restaurant.amapPoiId
+          ? await fetchRestaurantSocialStats(restaurant.amapPoiId).catch(() => null)
+          : null
       return {
         restaurant,
         image: profile.restaurantImages[id] ?? browserImageDescriptor(restaurant),
+        socialStats,
         viewerState: restaurant.status === 'visited' ? 'visited' as const : 'want_to_go' as const,
         editableVisitIDs: restaurant.visits.map((visit) => visit.id),
         capabilities: ownedRestaurantCapabilities(),
@@ -463,9 +472,26 @@ function browserCandidateDetail(candidate: TasteMapAcquisitionCandidateDTO): Tas
   return {
     restaurant,
     image: candidate.image,
+    socialStats: null,
     viewerState: 'none' as const,
     editableVisitIDs: [],
     capabilities: candidateRestaurantCapabilities(),
+  }
+}
+
+/** Rich Demo proof data only. Production Browser values come from the official stats API. */
+export function debugRestaurantSocialStats(restaurant: RestaurantSummary): RestaurantSocialStats {
+  const seed = [...restaurant.id].reduce((value, character) => value + character.charCodeAt(0), 0)
+  return {
+    overallUserRating: 8.3 + (seed % 5) * 0.1,
+    overallUserCount: 24 + seed % 17,
+    friendAverageRating: 9.1 + (seed % 4) * 0.1,
+    friendUserCount: 7 + seed % 6,
+    similarTasteAverageRating: 8.8 + (seed % 3) * 0.1,
+    similarTasteUserCount: 11 + seed % 8,
+    repeatVisitRate: 32 + seed % 29,
+    repeatVisitorCount: 6 + seed % 7,
+    uniqueVisitorCount: 24 + seed % 17,
   }
 }
 

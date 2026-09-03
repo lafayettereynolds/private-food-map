@@ -272,6 +272,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
                 readOnly={!restaurant.capabilities.canEditRestaurant && !restaurant.capabilities.canDeleteRestaurant}
                 remoteStatsEnabled={false}
                 restaurant={restaurant.restaurant}
+                socialStats={restaurant.socialStats}
                 viewerStatus={restaurant.viewerState === 'none' ? null : restaurant.viewerState === 'visited' ? 'visited' : 'wantToGo'}
               />
             </main>

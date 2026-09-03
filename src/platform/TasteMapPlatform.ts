@@ -1,4 +1,5 @@
 import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import type { RestaurantSocialStats } from '../types/restaurantStats'
 import type { FoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
 
 export const TASTE_MAP_NATIVE_BRIDGE_VERSION = 1 as const
@@ -200,6 +201,8 @@ export interface TasteMapProfileDashboardDTO {
 
 export interface TasteMapRestaurantDetailDTO {
   restaurant: TasteMapRestaurantDTO
+  /** Native/Browser-owned aggregate ratings for this exact Restaurant identity. */
+  socialStats?: RestaurantSocialStats | null
   /** Adapter-owned viewer state. Public records must never infer this from IDs. */
   viewerState: 'none' | 'want_to_go' | 'visited'
   /** Owner-scoped Native decision. JavaScript must not infer edit rights from user IDs. */
@@ -230,6 +233,7 @@ export interface TasteMapProfileDashboardViewModel {
 export interface TasteMapRestaurantDetailViewModel {
   restaurant: RestaurantSummary
   image: TasteMapImageDescriptor
+  socialStats?: RestaurantSocialStats | null
   viewerState: 'none' | 'want_to_go' | 'visited'
   editableVisitIDs: string[]
   capabilities: TasteMapRestaurantCapabilitiesDTO

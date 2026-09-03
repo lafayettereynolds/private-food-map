@@ -3,6 +3,7 @@ import { DINING_OCCASION_OPTIONS, diningModeLabel, formatAverageQueueDuration, q
 import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
 import { RestaurantSummarySection } from './RestaurantRecordSummary'
+import type { RestaurantSocialStats } from '../types/restaurantStats'
 
 interface RestaurantPreviewCardProps {
   restaurant: RestaurantSummary
@@ -27,6 +28,8 @@ interface RestaurantPreviewCardProps {
   readOnly?: boolean
   /** Allows an isolated/local renderer to keep the shared detail body offline. */
   remoteStatsEnabled?: boolean
+  /** Adapter-owned aggregate ratings; null is an explicit no-data state. */
+  socialStats?: RestaurantSocialStats | null
 }
 
 export function RestaurantPreviewCard({
@@ -48,6 +51,7 @@ export function RestaurantPreviewCard({
   viewerStatus,
   readOnly = false,
   remoteStatsEnabled = true,
+  socialStats,
 }: RestaurantPreviewCardProps) {
   const recordedSpend = restaurant.visits.map((visit) => visit.myActualSpend ?? visit.pricePerPerson).filter((value): value is number => value !== null)
   const averageActualSpend = recordedSpend.length ? Math.round(recordedSpend.reduce((sum, value) => sum + value, 0) / recordedSpend.length) : null
@@ -71,6 +75,7 @@ export function RestaurantPreviewCard({
         historyRestaurants={historyRestaurants}
         remoteStatsEnabled={remoteStatsEnabled}
         restaurant={restaurant}
+        socialStats={socialStats}
       />
       {showPersonalHistory ? <section className="restaurant-visit-overview" aria-label="我的到访概览">
         <header><strong>我的到访概览</strong></header>

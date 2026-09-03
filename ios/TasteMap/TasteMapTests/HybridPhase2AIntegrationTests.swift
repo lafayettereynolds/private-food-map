@@ -168,6 +168,32 @@ struct HybridPhase2AIntegrationTests {
             projection: projection,
             fetchedAt: .now
         ))
+        context.insert(try CachedDiscoveryPlacement(
+            currentUserID: owner,
+            city: "杭州",
+            trendWindowDays: 7,
+            card: DiscoveryCardV1(
+                id: "for_you:\(projection.globalKey)",
+                mode: .forYou,
+                restaurant: projection,
+                viewerState: .none,
+                ratings: .init(
+                    mine: .init(value: nil, sampleCount: 0),
+                    community: .init(value: 4.4, sampleCount: 36),
+                    friends: .init(value: 4.6, sampleCount: 8),
+                    similarTaste: .init(value: 4.5, sampleCount: 12)
+                ),
+                reasons: [],
+                sourceUser: nil,
+                activity: nil,
+                similarity: nil,
+                trend: nil,
+                cacheScope: .public,
+                rank: 1,
+                score: 88
+            ),
+            generatedAt: .now
+        ))
         try context.save()
 
         let service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner)
@@ -181,6 +207,12 @@ struct HybridPhase2AIntegrationTests {
         #expect(publicDetail.capabilities.canRecordVisit)
         #expect(publicDetail.capabilities.canAddToWantToGo)
         #expect(publicDetail.capabilities.canAddToList)
+        #expect(publicDetail.socialStats?.overallUserRating == 8.8)
+        #expect(publicDetail.socialStats?.overallUserCount == 36)
+        #expect(publicDetail.socialStats?.friendAverageRating == 9.2)
+        #expect(publicDetail.socialStats?.friendUserCount == 8)
+        #expect(publicDetail.socialStats?.similarTasteAverageRating == 9.0)
+        #expect(publicDetail.socialStats?.similarTasteUserCount == 12)
 
         _ = try LocalDiscoveryStore(context: context).addToWantToGo(
             projection: projection,
@@ -191,6 +223,7 @@ struct HybridPhase2AIntegrationTests {
         #expect(ownedDetail.viewerState == "want_to_go")
         #expect(ownedDetail.capabilities.canEditRestaurant)
         #expect(ownedDetail.capabilities.canDeleteRestaurant)
+        #expect(ownedDetail.socialStats == publicDetail.socialStats)
     }
 
     @Test func nativeAcquisitionCandidateCachesOnlyAReadProjectionForCanonicalHybridDetail() throws {

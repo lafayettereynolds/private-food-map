@@ -6,6 +6,7 @@ import { RestaurantAvatar } from './RestaurantAvatar'
 import { RestaurantSocialStatsPanel, type PersonalRatingOverride } from './RestaurantSocialStatsPanel'
 import { SyncedImage } from './SyncedImage'
 import { RestaurantQuickActions } from './RestaurantQuickActions'
+import type { RestaurantSocialStats } from '../types/restaurantStats'
 
 export interface RestaurantSummaryActionSet {
   onMarkVisited?: () => void
@@ -28,6 +29,7 @@ export interface RestaurantSummarySectionProps {
   }
   personalRatingOverride?: PersonalRatingOverride
   remoteStatsEnabled?: boolean
+  socialStats?: RestaurantSocialStats | null
   referencePrice?: number | null
   className?: string
 }
@@ -44,6 +46,7 @@ export function RestaurantSummarySection({
   addressEditor,
   personalRatingOverride,
   remoteStatsEnabled = true,
+  socialStats,
   referencePrice,
   className = '',
 }: RestaurantSummarySectionProps) {
@@ -111,6 +114,7 @@ export function RestaurantSummarySection({
       personalRatingOverride={personalRatingOverride}
       remoteStatsEnabled={remoteStatsEnabled}
       restaurant={restaurant}
+      socialStats={socialStats}
     />
 
     <section className="restaurant-user-photos" aria-label="用户实拍" data-summary-module="user-photos">

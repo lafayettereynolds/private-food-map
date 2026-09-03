@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import fixture from '../../hybrid/fixtures/profile-restaurant-rich.json'
-import { TasteMapBrowserAdapter } from './TasteMapBrowserAdapter'
+import { debugRestaurantSocialStats, TasteMapBrowserAdapter } from './TasteMapBrowserAdapter'
 import { expandRichMapRestaurants } from './TasteMapBrowserDebugFixture'
 import { hasNativeTasteMapRuntime, TasteMapNativeAdapter } from './TasteMapNativeAdapter'
 import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
@@ -112,6 +112,14 @@ describe('TasteMapBrowserAdapter', () => {
     expect(restaurants.filter((value) => value.status === 'visited')).toHaveLength(90)
     expect(restaurants.filter((value) => value.status === 'wantToGo')).toHaveLength(25)
     expect(restaurants.flatMap((value) => value.visits)).toHaveLength(275)
+  })
+
+  it('gives the Rich Demo enough distinct social samples to prove every rating reference', () => {
+    const stats = debugRestaurantSocialStats(browserProfile.restaurants[0])
+    expect(stats.overallUserCount).toBeGreaterThanOrEqual(10)
+    expect(stats.friendUserCount).toBeGreaterThanOrEqual(5)
+    expect(stats.similarTasteUserCount).toBeGreaterThanOrEqual(5)
+    expect(new Set([stats.overallUserRating, stats.friendAverageRating, stats.similarTasteAverageRating]).size).toBeGreaterThan(1)
   })
 
   it('uses an injected Browser data source without a backend dependency', async () => {
@@ -242,6 +250,12 @@ describe('TasteMapNativeAdapter', () => {
         const restaurant = fixture.restaurants.find((item) => item.id === id)!
         result = {
           restaurant: bridgeProfile.restaurants.find((item) => item.id === id)!,
+          socialStats: {
+            overallUserRating: 8.8, overallUserCount: 36,
+            friendAverageRating: 9.2, friendUserCount: 8,
+            similarTasteAverageRating: 9, similarTasteUserCount: 12,
+            repeatVisitRate: 42, repeatVisitorCount: 9, uniqueVisitorCount: 36,
+          },
           viewerState: restaurant.status === 'visited' ? 'visited' : 'want_to_go',
           editableVisitIDs: restaurant.visits.map((visit) => visit.id),
           capabilities: {
@@ -337,6 +351,11 @@ describe('TasteMapNativeAdapter', () => {
     const detail = await adapter.restaurant.get(fixture.restaurants[0].id)
     expect(detail.restaurant.id).toBe(fixture.restaurants[0].id)
     expect(detail.restaurant.userId).toBe(CURRENT_USER_ID)
+    expect(detail.socialStats).toEqual(expect.objectContaining({
+      overallUserRating: 8.8,
+      friendAverageRating: 9.2,
+      similarTasteAverageRating: 9,
+    }))
     expect(detail.editableVisitIDs).toEqual(fixture.restaurants[0].visits.map((visit) => visit.id))
     expect(detail.capabilities).toEqual(expect.objectContaining({
       canEditRestaurant: true,

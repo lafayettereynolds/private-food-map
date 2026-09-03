@@ -406,11 +406,26 @@ public struct TasteMapHybridProfileDTO: Codable, Sendable {
 
 public struct TasteMapHybridRestaurantDetailDTO: Codable, Sendable {
     public let restaurant: TasteMapHybridRestaurantDTO
+    /// Owner-scoped aggregate ratings for the exact Restaurant identity.
+    /// Values use the public 10-point presentation scale.
+    public let socialStats: TasteMapHybridRestaurantSocialStatsDTO?
     /// Native/Browser-owned viewer state. React must not infer this from a
     /// restaurant ID, user ID, or the existence of a public activity.
     public let viewerState: String
     public let editableVisitIDs: [String]
     public let capabilities: TasteMapHybridRestaurantCapabilitiesDTO
+}
+
+public struct TasteMapHybridRestaurantSocialStatsDTO: Codable, Equatable, Sendable {
+    public let overallUserRating: Double?
+    public let overallUserCount: Int
+    public let friendAverageRating: Double?
+    public let friendUserCount: Int
+    public let similarTasteAverageRating: Double?
+    public let similarTasteUserCount: Int
+    public let repeatVisitRate: Double?
+    public let repeatVisitorCount: Int
+    public let uniqueVisitorCount: Int
 }
 
 public struct TasteMapHybridRestaurantCapabilitiesDTO: Codable, Equatable, Sendable {

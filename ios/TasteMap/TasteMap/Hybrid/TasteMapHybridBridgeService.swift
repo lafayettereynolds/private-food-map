@@ -138,7 +138,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         projectedRestaurantSnapshot = nil
         let scoped = try scopedRestaurants()
         if let restaurant = scoped.first(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) {
-            return ownedDetail(restaurant)
+            return try ownedDetail(restaurant)
         }
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
         if let reference = try TasteMapHybridRestaurantReferenceResolver.resolve(
@@ -156,10 +156,10 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 let local = match.restaurant
                 let localID = local.remoteID ?? local.id.uuidString.lowercased()
                 if let restaurant = scoped.first(where: { $0.id.caseInsensitiveCompare(localID) == .orderedSame }) {
-                    return ownedDetail(restaurant)
+                    return try ownedDetail(restaurant)
                 }
             }
-            return publicDetail(reference)
+            return try publicDetail(reference)
         }
 #endif
         throw TasteMapHybridServiceError.restaurantMissing
@@ -177,6 +177,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             .map { restaurant in
                 TasteMapHybridRestaurantDetailDTO(
                     restaurant: restaurant,
+                    socialStats: nil,
                     viewerState: restaurant.status == "visited" ? "visited" : "want_to_go",
                     editableVisitIDs: restaurant.visits.map(\.id),
                     capabilities: .owned
@@ -184,9 +185,10 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             }
     }
 
-    private func ownedDetail(_ restaurant: TasteMapHybridRestaurantDTO) -> TasteMapHybridRestaurantDetailDTO {
+    private func ownedDetail(_ restaurant: TasteMapHybridRestaurantDTO) throws -> TasteMapHybridRestaurantDetailDTO {
         TasteMapHybridRestaurantDetailDTO(
             restaurant: restaurant,
+            socialStats: try socialStats(for: restaurant),
             viewerState: restaurant.status == "visited" ? "visited" : "want_to_go",
             editableVisitIDs: restaurant.visits.map(\.id),
             capabilities: .owned
@@ -196,7 +198,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
     private func publicDetail(
         _ reference: TasteMapHybridResolvedRestaurantReference
-    ) -> TasteMapHybridRestaurantDetailDTO {
+    ) throws -> TasteMapHybridRestaurantDetailDTO {
         let value = reference.projection
         let timestamp = Self.dateFormatter.string(from: reference.updatedAt)
         let status = reference.viewerState == .visited ? "visited" : "wantToGo"
@@ -223,9 +225,76 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         )
         return TasteMapHybridRestaurantDetailDTO(
             restaurant: restaurant,
+            socialStats: try socialStats(globalIdentityKeys: [value.globalKey]),
             viewerState: reference.viewerState.rawValue,
             editableVisitIDs: [],
             capabilities: .publicReadable
+        )
+    }
+#endif
+
+    private func socialStats(
+        for restaurant: TasteMapHybridRestaurantDTO
+    ) throws -> TasteMapHybridRestaurantSocialStatsDTO? {
+#if DEBUG
+        if ownerUserID == TasteMapHybridDebugFixture.ownerUserID || TasteMapUITestFixtures.usesVisualQA {
+            return Self.debugSocialStats(restaurantID: restaurant.id)
+        }
+#endif
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+        guard let model = try ownedRestaurantIfPresent(identifier: restaurant.id) else { return nil }
+        return try socialStats(globalIdentityKeys: RestaurantDetailMetadata(restaurant: model).globalIdentityKeys)
+#else
+        return nil
+#endif
+    }
+
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+    private func socialStats(
+        globalIdentityKeys: Set<String>
+    ) throws -> TasteMapHybridRestaurantSocialStatsDTO? {
+        guard !globalIdentityKeys.isEmpty else { return nil }
+        let ratings = try context.fetch(FetchDescriptor<CachedDiscoveryPlacement>())
+            .filter {
+                $0.currentUserID == ownerUserID && globalIdentityKeys.contains($0.globalKey)
+            }
+            .sorted { $0.generatedAt > $1.generatedAt }
+            .compactMap(\.context)
+            .first?
+            .ratings
+        guard let ratings else { return nil }
+        let result = TasteMapHybridRestaurantSocialStatsDTO(
+            overallUserRating: ratings.community.value.map { $0 * 2 },
+            overallUserCount: ratings.community.sampleCount,
+            friendAverageRating: ratings.friends.value.map { $0 * 2 },
+            friendUserCount: ratings.friends.sampleCount,
+            similarTasteAverageRating: ratings.similarTaste.value.map { $0 * 2 },
+            similarTasteUserCount: ratings.similarTaste.sampleCount,
+            repeatVisitRate: nil,
+            repeatVisitorCount: 0,
+            uniqueVisitorCount: ratings.community.sampleCount
+        )
+        guard result.overallUserRating != nil || result.friendAverageRating != nil
+                || result.similarTasteAverageRating != nil else { return nil }
+        return result
+    }
+#endif
+
+#if DEBUG
+    private static func debugSocialStats(
+        restaurantID: String
+    ) -> TasteMapHybridRestaurantSocialStatsDTO {
+        let seed = restaurantID.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return TasteMapHybridRestaurantSocialStatsDTO(
+            overallUserRating: 8.3 + Double(seed % 5) * 0.1,
+            overallUserCount: 24 + seed % 17,
+            friendAverageRating: 9.1 + Double(seed % 4) * 0.1,
+            friendUserCount: 7 + seed % 6,
+            similarTasteAverageRating: 8.8 + Double(seed % 3) * 0.1,
+            similarTasteUserCount: 11 + seed % 8,
+            repeatVisitRate: Double(32 + seed % 29),
+            repeatVisitorCount: 6 + seed % 7,
+            uniqueVisitorCount: 24 + seed % 17
         )
     }
 #endif

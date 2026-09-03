@@ -42,6 +42,32 @@ describe('RestaurantSocialStatsPanel', () => {
     expect(personal).not.toContain('暂无数据')
   })
 
+  it('renders adapter-owned community, friend and similar-taste scores together', () => {
+    const markup = renderToStaticMarkup(
+      <RestaurantSocialStatsPanel
+        amapPoiId={restaurantWithoutRating.amapPoiId}
+        personalRatingOverride={{ score: 9, count: 2, label: '我的评分' }}
+        remoteStatsEnabled={false}
+        restaurant={restaurantWithoutRating}
+        socialStats={{
+          overallUserRating: 8.8, overallUserCount: 36,
+          friendAverageRating: 9.2, friendUserCount: 8,
+          similarTasteAverageRating: 9.0, similarTasteUserCount: 12,
+          repeatVisitRate: 42, repeatVisitorCount: 9, uniqueVisitorCount: 36,
+        }}
+      />,
+    )
+
+    for (const [label, score, count] of [
+      ['全部用户', '8.8', '36'], ['好友评分', '9.2', '8'], ['同味评分', '9.0', '12'],
+    ]) {
+      expect(markup).toContain(`<strong>${score}</strong>`)
+      expect(markup).toContain(`<b>${label}</b>`)
+      expect(markup).toContain(`aria-label="${count} 个有效样本"`)
+    }
+    expect(markup).not.toContain('暂无数据')
+  })
+
   it('normalizes an invalid prediction into the same visual no-data state', () => {
     const markup = renderToStaticMarkup(
       <RestaurantSocialStatsPanel

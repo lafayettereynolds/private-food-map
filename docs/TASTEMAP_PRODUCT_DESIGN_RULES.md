@@ -325,6 +325,8 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 
 `RestaurantDetailView` and `RestaurantDetailStandardBody` are the only Restaurant Detail body. Entry source may change dismissal, analytics, and permissions, never the core information architecture.
 
+The four rating references are `我的评分 / 全部用户 / 好友评分 / 同味评分`. Group values come from the exact Restaurant identity and the current account's authorized social/discovery projection; React must not infer relationships or query a second data architecture. Hybrid Restaurant Detail receives these values through its typed Browser/Native adapter contract. `暂无数据` remains honest when no qualifying samples exist, while the isolated Rich Demo must include populated, distinct, above-threshold samples so all four states can be visibly verified together.
+
 ## My Map
 
 - Browser and iOS share the same product UI but deliberately use different map engines: Browser Web map provider; iOS Native MapKit. This is the only correct interpretation of One React UI for the map surface.

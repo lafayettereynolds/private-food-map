@@ -29,6 +29,7 @@ export function projectBridgeRestaurant(dto: TasteMapRestaurantDetailDTO): Taste
   return {
     restaurant,
     image: dto.restaurant.image,
+    socialStats: dto.socialStats ?? null,
     viewerState: dto.viewerState,
     editableVisitIDs: dto.editableVisitIDs,
     capabilities: dto.capabilities,
