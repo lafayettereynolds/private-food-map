@@ -3903,14 +3903,7 @@ final class TasteMapUITests: XCTestCase {
 
     @MainActor
     func testHybridDiscoverySharedProductAndVisualContract() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
-        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
-        app.launch()
-
-        let webView = app.webViews.firstMatch
-        XCTAssertTrue(webView.waitForExistence(timeout: 20))
-        webView.buttons["发现"].tap()
+        let (app, webView) = launchHybridDiscoveryFooter()
         XCTAssertTrue(webView.staticTexts["发现"].waitForExistence(timeout: 12))
         XCTAssertTrue(webView.staticTexts["按照你的口味，找到更值得参考的人和下一家餐厅。"].waitForExistence(timeout: 12))
         XCTAssertFalse(webView.staticTexts["DISCOVER"].exists)
@@ -3930,14 +3923,16 @@ final class TasteMapUITests: XCTestCase {
             NSPredicate(format: "label BEGINSWITH %@", "查看推荐来源用户 ")
         ).firstMatch.waitForExistence(timeout: 8))
         let recommendationReason = webView.staticTexts["为什么适合你"]
-        scrollDiscoveryCardIntoView(in: app)
         XCTAssertTrue(recommendationReason.waitForExistence(timeout: 8))
-        for label in ["记录", "食单", "轮盘"] {
+        for label in ["记录", "轮盘"] {
             XCTAssertTrue(webView.buttons.matching(
                 NSPredicate(format: "label BEGINSWITH %@", "\(label) ")
             ).firstMatch.waitForExistence(timeout: 8), "Missing Restaurant action: \(label)")
         }
-        XCTAssertTrue(webView.buttons.matching(
+        XCTAssertFalse(webView.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH %@", "食单 ")
+        ).firstMatch.exists, "Discovery Card must not expose a List shortcut")
+        XCTAssertTrue(webView.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@", "想吃 ", "移出想吃 ", "已去过 ")
         ).firstMatch.waitForExistence(timeout: 8), "Missing WantToGo state action")
 
@@ -4028,20 +4023,6 @@ final class TasteMapUITests: XCTestCase {
         waitUntilEnabled(restoredWant)
         XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
         print("DISCOVERY_INTERACTION_EVIDENCE want-to-go=authoritative-add-remove-pass")
-    }
-
-    @MainActor
-    func testHybridDiscoveryListInteractionEvidence() throws {
-        let (app, webView) = launchHybridDiscoveryFooter()
-        let list = visibleDiscoveryAction("食单", in: webView, app: app)
-        tapVisibleFrame(of: list, in: app)
-        XCTAssertTrue(app.navigationBars["加入榜单"].waitForExistence(timeout: 8))
-        keepScreenScreenshot(named: "Batch 01 Discovery List Handoff")
-        app.buttons["完成"].tap()
-        XCTAssertTrue(webView.buttons["为你推荐"].waitForExistence(timeout: 8))
-        XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
-        _ = visibleDiscoveryAction("食单", in: webView, app: app)
-        print("DISCOVERY_INTERACTION_EVIDENCE list=native-list-sheet-correct-restaurant-return-pass")
     }
 
     @MainActor

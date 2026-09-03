@@ -228,6 +228,19 @@ describe('Hybrid global Product Contract', () => {
     expect(runtime).toContain('hybrid_route_requires_openHybrid')
   })
 
+  it('keeps exactly three Discovery Restaurant actions without removing List elsewhere', () => {
+    const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const platform = source('../../src/platform/TasteMapPlatform.ts')
+    for (const icon of ['NotebookPen', 'Bookmark', 'Dices']) expect(discovery).toContain(icon)
+    for (const removed of ['ListPlus', 'CirclePlus', 'BookmarkPlus', '食单 ', "route: 'restaurantAddToList'"]) {
+      expect(discovery).not.toContain(removed)
+    }
+    expect(shell).toContain("openNativeRoute(platform, 'restaurantAddToList'")
+    expect(platform).toContain("'restaurantAddToList'")
+    expect(HYBRID_NATIVE_CAPABILITY_HANDOFFS).toContain('restaurantAddToList')
+  })
+
   it('owns all thirteen Batch 1 surfaces through formal shared React renderers or thin capability adapters', () => {
     const browser = source('../../src/App.tsx')
     const hybrid = source('../../src/hybrid/app/HybridAppShell.tsx')
