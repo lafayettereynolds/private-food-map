@@ -19,7 +19,7 @@ No Restaurant/Visit schema, random weighting, sync, authentication, Worker, D1, 
 - Immediate re-roll avoids only the immediately previous result when more than one candidate exists.
 - A one-Restaurant pool returns that Restaurant directly instead of displaying a fake spin.
 - Candidate pools are deduplicated by stable global Restaurant identity and retain current-user ownership filtering from the existing Profile scope.
-- A custom Restaurant is not inserted as a visual-only placeholder. The manager opens the existing official manual-add flow; only a saved Restaurant can later become a candidate.
+- **SUPERSEDED by the current Roulette contract in `docs/TASTEMAP_PRODUCT_DESIGN_RULES.md`:** a user-entered name is now an honest local temporary Roulette candidate. It does not create or impersonate a saved Restaurant, fabricate an image, or expose a fake detail page. Formal Restaurant creation remains a separate action.
 - Candidate/result data remain local-first and usable offline.
 
 ## Main-page structure restored
@@ -39,7 +39,7 @@ The former duplicated candidate-count/filter cards were consolidated. The separa
 - Real Restaurant avatar/name/status/city rows.
 - Select/deselect with an enforced maximum of 10.
 - `应用当前结果` explicitly commits the draft selection.
-- `添加自定义餐厅` opens the existing `手动添加餐厅` product flow.
+- **SUPERSEDED:** `添加自定义餐厅` adds a local temporary candidate to the same pool/chips/wheel/result. `创建正式餐厅记录` is the separately named route into the existing manual-add product flow.
 - Cancel does not partially apply a draft selection.
 
 ## Wheel and result contract

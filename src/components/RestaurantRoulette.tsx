@@ -44,10 +44,13 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
   const [winnerId, setWinnerId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [soundEnabled, setSoundEnabled] = useState(true)
+  const [managerFocused, setManagerFocused] = useState(false)
   const audioContextRef = useRef<AudioContext | null>(null)
   const tickTimeoutRef = useRef<number | null>(null)
   const spinTimeoutRef = useRef<number | null>(null)
+  const managerHighlightTimeoutRef = useRef<number | null>(null)
   const pickerRef = useRef<HTMLElement | null>(null)
+  const pickerToolsRef = useRef<HTMLDivElement | null>(null)
 
   const filteredRestaurants = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase('zh-CN')
@@ -74,6 +77,7 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
   useEffect(() => () => {
     if (tickTimeoutRef.current !== null) window.clearTimeout(tickTimeoutRef.current)
     if (spinTimeoutRef.current !== null) window.clearTimeout(spinTimeoutRef.current)
+    if (managerHighlightTimeoutRef.current !== null) window.clearTimeout(managerHighlightTimeoutRef.current)
     if (audioContextRef.current) void audioContextRef.current.close().catch(() => undefined)
   }, [])
 
@@ -96,7 +100,7 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
     onTemporaryItemsChange([...temporaryItems, { id: `temporary-${Date.now()}-${temporaryItems.length}`, name }])
     setTemporaryName('')
     setWinnerId(null)
-    setMessage('')
+    setMessage(`已将“${name}”加入候选餐厅。`)
   }
 
   function removeItem(item: RouletteItem) {
@@ -227,7 +231,13 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
   } as CSSProperties
 
   function scrollToPicker() {
-    pickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setManagerFocused(true)
+    if (managerHighlightTimeoutRef.current !== null) window.clearTimeout(managerHighlightTimeoutRef.current)
+    window.requestAnimationFrame(() => {
+      pickerToolsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      pickerRef.current?.focus({ preventScroll: true })
+    })
+    managerHighlightTimeoutRef.current = window.setTimeout(() => setManagerFocused(false), 1_600)
   }
 
   return <ModalShell description="从我的餐厅中随机挑选一家，帮你决定！" onClose={onClose} size="large" title="今天吃什么">
@@ -273,14 +283,14 @@ export function RestaurantRoulette({ restaurants, selectedRestaurantIds, tempora
           <div><small>今天吃</small><strong>{winner.name}</strong></div>
           <div className="roulette-winner__actions"><button disabled={spinning} onClick={spin} type="button"><RotateCw size={14} /> 再抽一次</button>{winner.restaurant ? <button className="is-primary" onClick={() => { onClose(); onSelectRestaurant(winner.restaurant!) }} type="button"><MapPin size={14} /> 查看详情</button> : null}</div>
         </div> : null}
-        <button className="roulette-manage-button" onClick={scrollToPicker} type="button"><span><Plus size={20} /></span><div><strong>管理候选餐厅</strong><small>添加、查看或调整候选餐厅</small></div><ChevronRight size={22} /></button>
+        <button aria-controls="roulette-candidate-manager" className="roulette-manage-button" onClick={scrollToPicker} type="button"><span><Plus size={20} /></span><div><strong>管理候选餐厅</strong><small>搜索已有餐厅，或输入自定义餐厅名称</small></div><ChevronRight size={22} /></button>
       </section>
 
-      <section className="roulette-picker" ref={pickerRef}>
+      <section className={`roulette-picker${managerFocused ? ' is-targeted' : ''}`} id="roulette-candidate-manager" ref={pickerRef} tabIndex={-1}>
         <header><div><strong>选择餐厅</strong><span>点击餐厅即可加入，再点一次取消</span></div><b>{filteredRestaurants.length} 家</b></header>
-        <div className="roulette-picker-tools">
-          <label className="roulette-search"><Search size={15} /><input onChange={(event) => setSearch(event.target.value)} placeholder="搜索我的餐厅" value={search} /></label>
-          <form className="roulette-add-form" onSubmit={addTemporary}><label><Plus size={15} /><input maxLength={40} onChange={(event) => setTemporaryName(event.target.value)} placeholder="添加自定义餐厅" value={temporaryName} /></label><button disabled={!temporaryName.trim() || selectedItems.length >= MAX_RESTAURANTS || spinning} type="submit">添加</button></form>
+        <div className="roulette-picker-tools" data-roulette-candidate-tools="shared" ref={pickerToolsRef}>
+          <label className="roulette-search"><Search size={15} /><input aria-label="搜索我的餐厅" onChange={(event) => setSearch(event.target.value)} placeholder="搜索我的餐厅" value={search} /></label>
+          <form className="roulette-add-form" data-roulette-custom-candidate="temporary-only" onSubmit={addTemporary}><label><Plus size={15} /><input aria-label="自定义餐厅名称" maxLength={40} onChange={(event) => setTemporaryName(event.target.value)} placeholder="添加自定义餐厅" value={temporaryName} /></label><button aria-label="添加自定义餐厅到候选" disabled={!temporaryName.trim() || selectedItems.length >= MAX_RESTAURANTS || spinning} type="submit">添加</button></form>
         </div>
         <div className="roulette-filter-row">
           <div className="roulette-filter-group"><span>餐厅状态</span><div>{([['all', '全部'], ['visited', '去过'], ['wantToGo', '想吃']] as [StatusFilter, string][]).map(([value, label]) => <button className={statusFilter === value ? 'is-active' : ''} key={value} onClick={() => setStatusFilter(value)} type="button">{label}</button>)}</div></div>

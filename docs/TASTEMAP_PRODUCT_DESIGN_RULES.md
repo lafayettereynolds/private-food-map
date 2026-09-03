@@ -263,6 +263,8 @@ The Search/City form uses one compact trailing search action beside the city fie
 
 The selected unique candidate pool, image/name chips, wheel segments, and result are the same data. Unfilled segments say `+ 添加更多餐厅`; do not duplicate Restaurants or present placeholders as real candidates. Random selection is uniform unless Lafayette explicitly approves weighting.
 
+Candidate management always exposes both `搜索我的餐厅` and `添加自定义餐厅` with one explicit `添加` action. A custom name becomes a clearly identified local temporary candidate in the same unique pool, chip list, wheel, and result; it does not create or impersonate a saved Restaurant, does not acquire a fabricated image or detail page, and remains subject to the same duplicate-name and ten-candidate limits. Browser and Capacitor use this one shared React implementation. A control that creates a formal Restaurant record is a different action and must not be mislabeled as this temporary Roulette candidate input.
+
 #### 8. Analytics / Poster Template
 
 Taste Profile, Best Companion, Recommendation Source, Monthly, and Annual belong to one Analysis design family: warm/off-white paper, central Food Hero, infographic composition, connecting callouts, Restaurant imagery, food/dining storytelling, receipt/tape restraint, branded poster footer, and QR. Their layouts may vary with data semantics, but must not regress to ordinary card dashboards. Analysis pages provide one `生成分享海报` action; share/save belong in Poster Preview.

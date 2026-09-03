@@ -23,7 +23,7 @@ nonisolated struct RouletteFilter: Equatable, Sendable {
 }
 
 nonisolated struct RouletteCandidate: Identifiable, Equatable, Hashable, Sendable {
-    let restaurantID: UUID
+    let restaurantID: UUID?
     let globalKey: String
     let displayName: String
     let address: String
@@ -40,7 +40,7 @@ nonisolated struct RouletteCandidate: Identifiable, Equatable, Hashable, Sendabl
     let updatedAt: Date
 
     init(
-        restaurantID: UUID,
+        restaurantID: UUID?,
         globalKey: String,
         displayName: String,
         address: String,
@@ -75,12 +75,17 @@ nonisolated struct RouletteCandidate: Identifiable, Equatable, Hashable, Sendabl
 
     var id: String { globalKey }
 
+    var isTemporary: Bool {
+        restaurantID == nil && globalKey.hasPrefix("roulette_temporary:")
+    }
+
     var statusDetail: String {
+        if isTemporary { return "本次轮盘的自定义候选" }
         switch status {
         case .wantToGo:
-            "还在你的想吃清单里"
+            return "还在你的想吃清单里"
         case .visited:
-            visitCount > 0 ? "你已经去过 \(visitCount) 次" : "你记录为去过"
+            return visitCount > 0 ? "你已经去过 \(visitCount) 次" : "你记录为去过"
         }
     }
 }
@@ -148,6 +153,31 @@ nonisolated struct RouletteRestaurantRecord: Equatable, Sendable {
 
 nonisolated enum RestaurantRouletteEngine {
     static let maximumActiveCandidateCount = 10
+
+    static func temporaryCandidate(
+        name rawName: String,
+        id: UUID = UUID(),
+        createdAt: Date = .now
+    ) -> RouletteCandidate? {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        return RouletteCandidate(
+            restaurantID: nil,
+            globalKey: "roulette_temporary:\(id.uuidString.lowercased())",
+            displayName: name,
+            address: "",
+            city: "",
+            status: .wantToGo,
+            averageRating: nil,
+            visitCount: 0,
+            latestVisitAt: nil,
+            photoID: nil,
+            merchantImageURL: nil,
+            categories: [],
+            markerEmoji: "🍽️",
+            updatedAt: createdAt
+        )
+    }
 
     static func candidates(from records: [RouletteRestaurantRecord]) -> [RouletteCandidate] {
         let valid = records.filter { record in

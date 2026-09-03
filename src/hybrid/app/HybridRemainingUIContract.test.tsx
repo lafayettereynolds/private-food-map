@@ -196,6 +196,13 @@ describe('Hybrid remaining product UI contract', () => {
     const roulette = renderToStaticMarkup(<RestaurantRoulette onClose={() => undefined} onSelectRestaurant={() => undefined} onSelectedRestaurantIdsChange={() => undefined} onTemporaryItemsChange={() => undefined} restaurants={profile.restaurants} selectedRestaurantIds={profile.restaurants.slice(0, 5).map((item) => item.id)} temporaryItems={[]} />)
     expect(roulette).toContain('最多选择 10 家')
     expect(roulette).toContain('管理候选餐厅')
+    expect(roulette).toContain('搜索已有餐厅，或输入自定义餐厅名称')
+    expect(roulette).toContain('placeholder="搜索我的餐厅"')
+    expect(roulette).toContain('placeholder="添加自定义餐厅"')
+    expect(roulette).toContain('aria-label="添加自定义餐厅到候选"')
+    expect(roulette).toContain('data-roulette-candidate-tools="shared"')
+    expect(roulette).toContain('data-roulette-custom-candidate="temporary-only"')
+    expect(roulette).toContain('maxLength="40"')
   })
 
   it('uses the five approved Analytics names and infographic anatomy', () => {

@@ -118,6 +118,7 @@ struct RestaurantRouletteExperienceView: View {
     @State private var isSpinning = false
     @State private var isShowingFilters = false
     @State private var isShowingCandidateManager = false
+    @State private var temporaryCandidates: [RouletteCandidate] = []
     @State private var cityWasInitialized: Bool
     @State private var spinToken = UUID()
     @State private var presentsManualAddAfterManager = false
@@ -181,7 +182,7 @@ struct RestaurantRouletteExperienceView: View {
         RestaurantRouletteEngine.filtered(
             candidates,
             by: RouletteFilter(source: source, city: selectedCity)
-        )
+        ) + temporaryCandidates
     }
 
     private var cities: [String] {
@@ -255,12 +256,14 @@ struct RestaurantRouletteExperienceView: View {
         }) {
             RouletteCandidateManager(
                 candidates: candidatesForManager,
+                temporaryCandidates: temporaryCandidates,
                 photos: photos,
                 initialSource: source,
                 initialSelectedGlobalKeys: selectedGlobalKeys,
-                onApply: { keys, selectedSource in
+                onApply: { keys, selectedSource, temporaryItems in
                     selectedGlobalKeys = keys
                     source = selectedSource
+                    temporaryCandidates = temporaryItems
                     result = nil
                 },
                 onAddCustom: {
@@ -553,7 +556,8 @@ struct RestaurantRouletteExperienceView: View {
                 .disabled(isSpinning || filteredCandidates.count < 2)
                 .accessibilityIdentifier("roulette-reroll")
 
-                if let restaurant = restaurants.first(where: { $0.id == candidate.restaurantID }) {
+                if let restaurantID = candidate.restaurantID,
+                   let restaurant = restaurants.first(where: { $0.id == restaurantID }) {
                     NavigationLink {
                         RestaurantDetailView(restaurant: restaurant, entrySource: .roulette)
                     } label: {
@@ -576,13 +580,16 @@ struct RestaurantRouletteExperienceView: View {
     }
 
     private func statusPill(_ candidate: RouletteCandidate) -> some View {
-        Label(candidate.status.title, systemImage: candidate.status.systemImage)
+        Label(
+            candidate.isTemporary ? "临时候选" : candidate.status.title,
+            systemImage: candidate.isTemporary ? "fork.knife" : candidate.status.systemImage
+        )
             .font(.caption.weight(.semibold))
-            .foregroundStyle(candidate.status == .wantToGo ? RouletteTheme.brand : RouletteTheme.leaf)
+            .foregroundStyle(candidate.isTemporary || candidate.status == .wantToGo ? RouletteTheme.brand : RouletteTheme.leaf)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(
-                candidate.status == .wantToGo ? RouletteTheme.brandSoft : RouletteTheme.leafSoft,
+                candidate.isTemporary || candidate.status == .wantToGo ? RouletteTheme.brandSoft : RouletteTheme.leafSoft,
                 in: Capsule()
             )
     }
@@ -658,10 +665,11 @@ struct RestaurantRouletteExperienceView: View {
         } else {
             initializeCityIfNeeded()
         }
-        selectedGlobalKeys.formIntersection(Set(candidates.map(\.globalKey)))
+        let availableCandidates = candidates + temporaryCandidates
+        selectedGlobalKeys.formIntersection(Set(availableCandidates.map(\.globalKey)))
         initializeSelectionIfNeeded()
         if let result,
-           !candidates.contains(where: { $0.globalKey == result.globalKey }) {
+           !availableCandidates.contains(where: { $0.globalKey == result.globalKey }) {
             self.result = nil
         }
     }
@@ -686,6 +694,7 @@ struct RestaurantRouletteExperienceView: View {
 
     private func clearCandidatePool() {
         selectedGlobalKeys.removeAll()
+        temporaryCandidates.removeAll()
         result = nil
         lastResultGlobalKey = nil
     }
@@ -1009,26 +1018,35 @@ private struct RouletteCandidateManager: View {
     @Environment(\.dismiss) private var dismiss
     let candidates: [RouletteCandidate]
     let photos: [PhotoAsset]
-    let onApply: (Set<String>, RouletteCandidateSource) -> Void
+    let onApply: (Set<String>, RouletteCandidateSource, [RouletteCandidate]) -> Void
     let onAddCustom: () -> Void
     @State private var query = ""
+    @State private var temporaryName = ""
+    @State private var temporaryMessage = ""
+    @State private var temporaryCandidates: [RouletteCandidate]
     @State private var source: RouletteCandidateSource
     @State private var selectedGlobalKeys: Set<String>
 
     init(
         candidates: [RouletteCandidate],
+        temporaryCandidates: [RouletteCandidate],
         photos: [PhotoAsset],
         initialSource: RouletteCandidateSource,
         initialSelectedGlobalKeys: Set<String>,
-        onApply: @escaping (Set<String>, RouletteCandidateSource) -> Void,
+        onApply: @escaping (Set<String>, RouletteCandidateSource, [RouletteCandidate]) -> Void,
         onAddCustom: @escaping () -> Void
     ) {
         self.candidates = candidates
         self.photos = photos
         self.onApply = onApply
         self.onAddCustom = onAddCustom
+        _temporaryCandidates = State(initialValue: temporaryCandidates)
         _source = State(initialValue: initialSource)
         _selectedGlobalKeys = State(initialValue: initialSelectedGlobalKeys)
+    }
+
+    private var allCandidates: [RouletteCandidate] {
+        candidates + temporaryCandidates
     }
 
     private var visible: [RouletteCandidate] {
@@ -1038,7 +1056,7 @@ private struct RouletteCandidateManager: View {
             case .wantToGo: $0.status == .wantToGo
             case .visited: $0.status == .visited
             }
-        }
+        } + temporaryCandidates
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return sourceFiltered
         }
@@ -1060,6 +1078,29 @@ private struct RouletteCandidateManager: View {
                         accessibilityIdentifier: "roulette-manager-source"
                     )
                 }
+                Section("添加自定义餐厅") {
+                    HStack(spacing: 10) {
+                        TextField("输入自定义餐厅名称", text: $temporaryName)
+                            .textInputAutocapitalization(.never)
+                            .submitLabel(.done)
+                            .onSubmit(addTemporaryCandidate)
+                            .accessibilityIdentifier("roulette-custom-candidate-name")
+                        Button("添加", action: addTemporaryCandidate)
+                            .font(.subheadline.weight(.semibold))
+                            .disabled(
+                                temporaryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || selectedCount >= RestaurantRouletteEngine.maximumActiveCandidateCount
+                            )
+                            .accessibilityLabel("添加自定义餐厅到候选")
+                            .accessibilityIdentifier("roulette-add-temporary-candidate")
+                    }
+                    if !temporaryMessage.isEmpty {
+                        Text(temporaryMessage)
+                            .font(.caption)
+                            .foregroundStyle(RouletteTheme.muted)
+                            .accessibilityIdentifier("roulette-custom-candidate-message")
+                    }
+                }
                 Section {
                     ForEach(visible) { candidate in
                         Toggle(isOn: includedBinding(candidate)) {
@@ -1071,7 +1112,9 @@ private struct RouletteCandidateManager: View {
                                 )
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(candidate.displayName).font(.headline)
-                                    Text([candidate.status.title, candidate.city].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    Text(candidate.isTemporary
+                                        ? "临时候选 · 不会创建餐厅记录"
+                                        : [candidate.status.title, candidate.city].filter { !$0.isEmpty }.joined(separator: " · "))
                                         .font(.caption).foregroundStyle(RouletteTheme.muted)
                                 }
                             }
@@ -1092,13 +1135,13 @@ private struct RouletteCandidateManager: View {
                     Text("已选 \(selectedCount) / \(RestaurantRouletteEngine.maximumActiveCandidateCount) · 每家对应一个轮盘扇区")
                 }
                 Section {
-                    Button("添加自定义餐厅", systemImage: "plus") {
+                    Button("创建正式餐厅记录", systemImage: "plus") {
                         dismiss()
                         onAddCustom()
                     }
-                    .accessibilityIdentifier("roulette-add-custom-restaurant")
+                    .accessibilityIdentifier("roulette-create-restaurant")
                 } footer: {
-                    Text("会进入正式的手动添加流程；保存后才能成为真实候选。")
+                    Text("只有需要地址、地图身份和餐厅详情时，才进入正式手动添加流程。")
                 }
             }
             .searchable(text: $query, prompt: "搜索我的餐厅")
@@ -1110,7 +1153,7 @@ private struct RouletteCandidateManager: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("应用当前结果") {
-                        onApply(selectedGlobalKeys, source)
+                        onApply(selectedGlobalKeys, source, temporaryCandidates)
                         dismiss()
                     }
                     .accessibilityIdentifier("roulette-apply-candidates")
@@ -1160,9 +1203,30 @@ private struct RouletteCandidateManager: View {
     }
 
     private var selectedCount: Int {
-        candidates.reduce(into: 0) { count, candidate in
+        allCandidates.reduce(into: 0) { count, candidate in
             if selectedGlobalKeys.contains(candidate.globalKey) { count += 1 }
         }
+    }
+
+    private func addTemporaryCandidate() {
+        let name = temporaryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        guard selectedCount < RestaurantRouletteEngine.maximumActiveCandidateCount else {
+            temporaryMessage = "最多选择 10 家餐厅。"
+            return
+        }
+        guard !allCandidates.contains(where: {
+            $0.displayName.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }) else {
+            temporaryMessage = "这家餐厅已经在候选池里了。"
+            return
+        }
+        guard let candidate = RestaurantRouletteEngine.temporaryCandidate(name: name) else { return }
+        temporaryCandidates.append(candidate)
+        selectedGlobalKeys.insert(candidate.globalKey)
+        query = ""
+        temporaryName = ""
+        temporaryMessage = "已将“\(name)”加入候选餐厅。"
     }
 }
 

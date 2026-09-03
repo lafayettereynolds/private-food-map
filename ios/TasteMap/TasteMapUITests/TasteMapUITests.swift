@@ -2853,7 +2853,7 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
-    func testP4GRouletteCandidateManagerAndOfficialCustomRestaurantFlow() throws {
+    func testP4GRouletteCandidateManagerSupportsTemporaryNameAndOfficialRestaurantFlow() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-p1d-persistent-offline-fixture", "-p1d-reset-persistent-offline-fixture"]
         app.launchEnvironment = [
@@ -2880,10 +2880,22 @@ final class TasteMapUITests: XCTestCase {
         )
         dismissSearchKeyboard(in: app)
 
-        let addCustomRestaurant = app.buttons["roulette-add-custom-restaurant"]
-        scrollUntilVisible(addCustomRestaurant, in: app)
-        XCTAssertTrue(addCustomRestaurant.exists)
-        addCustomRestaurant.tap()
+        let customName = "Lafayette 夜宵自选"
+        let temporaryName = app.textFields["roulette-custom-candidate-name"]
+        scrollUntilVisible(temporaryName, in: app)
+        XCTAssertTrue(temporaryName.isHittable)
+        temporaryName.tap()
+        temporaryName.typeText(customName)
+        let addTemporary = app.buttons["roulette-add-temporary-candidate"]
+        XCTAssertTrue(addTemporary.isEnabled)
+        addTemporary.tap()
+        XCTAssertTrue(app.staticTexts[customName].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["roulette-custom-candidate-message"].label.contains("已将"))
+        dismissSearchKeyboard(in: app)
+        let createRestaurant = app.buttons["roulette-create-restaurant"]
+        scrollUntilVisible(createRestaurant, in: app)
+        XCTAssertTrue(createRestaurant.exists)
+        createRestaurant.tap()
         XCTAssertTrue(app.navigationBars["手动添加餐厅"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["manual-restaurant-name"].exists)
         XCTAssertTrue(app.textFields["manual-restaurant-city"].exists)
@@ -3061,7 +3073,14 @@ final class TasteMapUITests: XCTestCase {
     @MainActor
     private func dismissSearchKeyboard(in app: XCUIApplication) {
         let searchKey = app.keyboards.buttons["Search"]
-        if searchKey.exists { searchKey.tap() }
+        if searchKey.exists {
+            searchKey.tap()
+            return
+        }
+        let doneKey = app.keyboards.buttons["Done"]
+        if doneKey.exists {
+            doneKey.tap()
+        }
     }
 
     @MainActor
@@ -4272,6 +4291,46 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(webView.buttons["为你推荐"].isSelected)
         _ = visibleDiscoveryAction("轮盘", in: webView, app: app)
         print("DISCOVERY_INTERACTION_EVIDENCE roulette=hybrid-route-candidate-return-pass")
+    }
+
+    @MainActor
+    func testHybridRouletteCustomCandidateInteractionEvidence() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        let roulette = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "今天吃什么")
+        ).firstMatch
+        XCTAssertTrue(roulette.waitForExistence(timeout: 8))
+        roulette.tap()
+
+        let manage = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "管理候选餐厅")
+        ).firstMatch
+        XCTAssertTrue(manage.waitForExistence(timeout: 8))
+        manage.tap()
+        let customNameField = webView.textFields["自定义餐厅名称"]
+        XCTAssertTrue(customNameField.waitForExistence(timeout: 8))
+        XCTAssertTrue(customNameField.isHittable, "管理入口应把自定义名称输入框带入当前可操作区域")
+        customNameField.tap()
+        customNameField.typeText("Lafayette 夜宵自选")
+        let add = webView.buttons["添加自定义餐厅到候选"]
+        XCTAssertTrue(add.isEnabled)
+        add.tap()
+
+        XCTAssertTrue(webView.buttons["移除 Lafayette 夜宵自选"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts["已将“Lafayette 夜宵自选”加入候选餐厅。"].exists)
+        let candidateCount = webView.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "6 / 10")
+        ).firstMatch
+        XCTAssertTrue(candidateCount.waitForExistence(timeout: 4))
+        keepScreenshot(named: "Hybrid Roulette Custom Candidate", of: app)
     }
 
     @MainActor

@@ -155,6 +155,25 @@ struct P4GRestaurantRouletteTests {
         }
     }
 
+    @Test("A named custom choice is a temporary Roulette candidate, not a saved Restaurant")
+    func temporaryCandidate() throws {
+        let id = uuid(9_901)
+        let candidate = try #require(RestaurantRouletteEngine.temporaryCandidate(
+            name: "  Lafayette 夜宵自选  ",
+            id: id,
+            createdAt: date(900)
+        ))
+
+        #expect(candidate.restaurantID == nil)
+        #expect(candidate.globalKey == "roulette_temporary:\(id.uuidString.lowercased())")
+        #expect(candidate.displayName == "Lafayette 夜宵自选")
+        #expect(candidate.isTemporary)
+        #expect(candidate.statusDetail == "本次轮盘的自定义候选")
+        #expect(candidate.photoID == nil)
+        #expect(candidate.merchantImageURL == nil)
+        #expect(RestaurantRouletteEngine.temporaryCandidate(name: "   ") == nil)
+    }
+
     @Test("Restaurant imagery is local, then public/cache, then provider, then honest fallback")
     func restaurantImagePriority() throws {
         let localID = uuid(777)

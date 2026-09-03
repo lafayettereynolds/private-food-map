@@ -743,7 +743,8 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .roulette-candidate-chip > button { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto; color: #677784; background: transparent; }
 .roulette-candidate-chip > button:hover { color: var(--color-primary-dark); background: var(--color-primary-light); }
 .roulette-candidate-empty { color: var(--color-text-secondary); font-size: 11px; }
-.roulette-picker { padding-top: 16px; border-top: 1px solid #e4eaee; display: grid; gap: 11px; }
+.roulette-picker { padding-top: 16px; border-top: 1px solid #e4eaee; display: grid; gap: 11px; scroll-margin-block: 18px; outline: 0; transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease; }
+.roulette-picker.is-targeted { border-top-color: color-mix(in srgb, var(--color-primary) 42%, #e4eaee); background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary-light) 44%, transparent), transparent 88px); box-shadow: 0 -7px 14px -14px rgba(52,79,105,.42); }
 .roulette-picker > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 .roulette-picker > header > div { display: grid; gap: 4px; }
 .roulette-picker > header strong { color: #1f3342; font-size: 15px; }
@@ -867,7 +868,12 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
   .roulette-wheel-center span { font-size: 17px; }
   .roulette-wheel-center small { font-size: 8px; }
   .roulette-sound-toggle { right: 0; top: -42px; width: 36px; height: 36px; }
-  .roulette-picker-tools, .roulette-filter-row { grid-template-columns: 1fr; }
+  .roulette-picker-tools { grid-template-columns: minmax(0, 42fr) minmax(0, 58fr); gap: 8px; }
+  .roulette-search, .roulette-add-form > label { min-height: 44px; padding-inline: 8px; }
+  .roulette-search input, .roulette-add-form input { min-width: 0; font-size: 16px; }
+  .roulette-add-form { gap: 5px; }
+  .roulette-add-form > button { min-width: 48px; min-height: 44px; }
+  .roulette-filter-row { grid-template-columns: 1fr; }
   .roulette-filter-row { gap: 11px; }
   .roulette-winner { align-items: flex-start; flex-wrap: wrap; }
   .roulette-winner__actions { width: 100%; justify-content: flex-end; }
