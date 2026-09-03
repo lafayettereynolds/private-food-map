@@ -42,6 +42,16 @@ public enum TasteMapHybridServiceError: Error, Sendable {
     case invalidRequest
 }
 
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+private struct TasteMapHybridVisitProjectionResources {
+    let dishesByID: [UUID: Dish]
+    let dishesByVisitID: [UUID: [Dish]]
+    let associationsByVisitID: [UUID: [VisitDish]]
+    let photosByVisitID: [UUID: [PhotoAsset]]
+    let photosByRestaurantID: [UUID: [PhotoAsset]]
+}
+#endif
+
 @MainActor
 public protocol TasteMapHybridServiceProviding: AnyObject {
     var ownerUserID: String { get }
@@ -75,11 +85,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     /// every write invalidates this cache before another read can observe it.
     private var projectedRestaurantSnapshot: [TasteMapHybridRestaurantDTO]?
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
-    private var visitProjectionResources: (
-        dishes: [Dish],
-        associations: [VisitDish],
-        photos: [PhotoAsset]
-    )?
+    private var visitProjectionResources: TasteMapHybridVisitProjectionResources?
 #endif
 #if DEBUG
     var projectedRestaurantSnapshotBuildCount = 0
@@ -146,13 +152,14 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     }
 
     public func restaurantDetail(id: String) throws -> TasteMapHybridRestaurantDetailDTO {
-        // Detail navigation is a refresh boundary, but it must not rebuild the
-        // entire owner map. Resolve ownership from SwiftData, then project only
-        // the selected Restaurant and its relationships.
-        projectedRestaurantSnapshot = nil
-#if !TASTEMAP_HYBRID_BRIDGE_CORE
-        visitProjectionResources = nil
-#endif
+        // Reads are not invalidation boundaries. Reuse an already projected
+        // owner snapshot so opening a Detail does not rescan every Visit, Dish
+        // and Photo, while retaining the selected-only path for a cold deep link.
+        if let cached = projectedRestaurantSnapshot?.first(where: {
+            $0.id.caseInsensitiveCompare(id) == .orderedSame
+        }) {
+            return try ownedDetail(cached)
+        }
         if let restaurant = try ownedRestaurantIfPresent(identifier: id) {
             return try ownedDetail(try ownedRestaurantDTO(restaurant))
         }
@@ -1128,7 +1135,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         let contract = restaurant.remoteRecordData.flatMap {
             try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
         }
-        let photos = ownedVisitProjectionResources().photos.filter { $0.restaurantId == restaurant.id }
+        let photos = ownedVisitProjectionResources().photosByRestaurantID[restaurant.id] ?? []
         let preferredPhoto = RestaurantImagePhotoSelectionPolicy.preferredPhoto(
             restaurantID: restaurant.id,
             photos: photos,
@@ -1223,16 +1230,18 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         )
 #else
         let resources = ownedVisitProjectionResources()
-        let associations = resources.associations.filter {
-            $0.ownerUserID == ownerUserID && $0.visitId == visit.id && $0.deletedAt == nil
-        }.sorted { $0.sortOrder < $1.sortOrder }
-        let associatedIDs = Set(associations.map(\.dishId))
-        let dishes = resources.dishes.filter { associatedIDs.contains($0.id) || (associations.isEmpty && $0.visitId == visit.id) }
-            .sorted { $0.sortOrder < $1.sortOrder }
-        let photos = resources.photos.filter {
-            $0.ownerUserID == ownerUserID && $0.visitId == visit.id && $0.deletedAt == nil
-                && $0.binaryDeletedAt == nil
-        }.sorted { $0.sortOrder < $1.sortOrder }
+        let associations = resources.associationsByVisitID[visit.id] ?? []
+        let dishes: [Dish]
+        if associations.isEmpty {
+            dishes = resources.dishesByVisitID[visit.id] ?? []
+        } else {
+            var seen = Set<UUID>()
+            dishes = associations.compactMap { association in
+                guard seen.insert(association.dishId).inserted else { return nil }
+                return resources.dishesByID[association.dishId]
+            }
+        }
+        let photos = resources.photosByVisitID[visit.id] ?? []
         return TasteMapHybridVisitDTO(
             id: visit.remoteID ?? visit.id.uuidString.lowercased(),
             restaurantId: visit.restaurantId.uuidString.lowercased(),
@@ -1286,22 +1295,28 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     }
 
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
-    private func ownedVisitProjectionResources() -> (
-        dishes: [Dish],
-        associations: [VisitDish],
-        photos: [PhotoAsset]
-    ) {
+    private func ownedVisitProjectionResources() -> TasteMapHybridVisitProjectionResources {
         if let visitProjectionResources { return visitProjectionResources }
-        let resources = (
-            dishes: ((try? context.fetch(FetchDescriptor<Dish>())) ?? []).filter {
+        let dishes = ((try? context.fetch(FetchDescriptor<Dish>())) ?? []).filter {
                 $0.ownerUserID == ownerUserID && $0.deletedAt == nil
-            },
-            associations: ((try? context.fetch(FetchDescriptor<VisitDish>())) ?? []).filter {
+            }.sorted { $0.sortOrder < $1.sortOrder }
+        let associations = ((try? context.fetch(FetchDescriptor<VisitDish>())) ?? []).filter {
                 $0.ownerUserID == ownerUserID && $0.deletedAt == nil
-            },
-            photos: ((try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
+            }.sorted { $0.sortOrder < $1.sortOrder }
+        let photos = ((try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
                 $0.ownerUserID == ownerUserID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
-            }
+            }.sorted { $0.sortOrder < $1.sortOrder }
+        let photosByRestaurantID = Dictionary(grouping: photos.compactMap { photo in
+            photo.restaurantId.map { ($0, photo) }
+        }, by: \.0).mapValues { $0.map(\.1) }
+        let resources = TasteMapHybridVisitProjectionResources(
+            dishesByID: Dictionary(uniqueKeysWithValues: dishes.map { ($0.id, $0) }),
+            dishesByVisitID: Dictionary(grouping: dishes, by: \.visitId),
+            associationsByVisitID: Dictionary(grouping: associations, by: \.visitId),
+            photosByVisitID: Dictionary(grouping: photos.compactMap { photo in
+                photo.visitId.map { ($0, photo) }
+            }, by: \.0).mapValues { $0.map(\.1) },
+            photosByRestaurantID: photosByRestaurantID
         )
         visitProjectionResources = resources
         return resources

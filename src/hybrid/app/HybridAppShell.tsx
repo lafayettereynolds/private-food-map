@@ -21,7 +21,7 @@ import type { RestaurantSummary } from '../../types/domain'
 
 type BootstrapState =
   | { state: 'loading' }
-  | { state: 'ready'; runtime: TasteMapRuntimeInfo; profile: TasteMapProfileDashboardViewModel; content: TasteMapHybridContentSnapshotDTO }
+  | { state: 'ready'; runtime: TasteMapRuntimeInfo; profile: TasteMapProfileDashboardViewModel; content: TasteMapHybridContentSnapshotDTO; contentReady: boolean }
   | { state: 'authRequired'; message: string }
   | { state: 'fatal'; message: string; code: string }
 
@@ -35,6 +35,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const [generation, setGeneration] = useState(0)
   const [mapWasActivated, setMapWasActivated] = useState(() => initialRoute().surface === 'map')
   const [discoveryWasActivated, setDiscoveryWasActivated] = useState(() => ['discovery', 'activity'].includes(initialRoute().surface))
+  const [profileWasActivated, setProfileWasActivated] = useState(() => initialRoute().surface === 'profile')
   const [rouletteRestaurantIDs, setRouletteRestaurantIDs] = useState<string[]>([])
   const [rouletteExternalRestaurants, setRouletteExternalRestaurants] = useState<RestaurantSummary[]>([])
   const [rouletteTemporaryItems, setRouletteTemporaryItems] = useState<RouletteTemporaryCandidate[]>([])
@@ -43,6 +44,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const didSynchronizeInitialRoute = useRef(false)
   const didInitializeRoulette = useRef(false)
   const pendingHybridNavigation = useRef<{ hash: string; expiresAt: number } | null>(null)
+  const restaurantDetailCache = useRef(new Map<string, TasteMapRestaurantDetailViewModel>())
 
   useEffect(() => {
     let active = true
@@ -51,6 +53,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       if (!active) return
       if (event.name === 'auth.changed') {
         setRestaurant(null)
+        restaurantDetailCache.current.clear()
         setGeneration((value) => value + 1)
       }
       if (event.name === 'navigation.route' || event.name === 'deepLink.received') {
@@ -65,7 +68,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
             pendingHybridNavigation.current = null
           }
           const routeWasAlreadyVisible = window.location.hash === nextHash
-          if (!routeWasAlreadyVisible) updateLocation(next)
+          if (!routeWasAlreadyVisible) commitLocalRoute(next, setRoute)
           if (next.surface === 'restaurant' && routeWasAlreadyVisible && !isLocalNavigationEcho) {
             setDetailRevision((value) => value + 1)
           }
@@ -81,8 +84,10 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   useEffect(() => {
     const openPremium = () => {
       const next: HybridRoute = { surface: 'premium' }
-      updateLocation(next)
-      if (platform.kind === 'native') void platform.navigation.openHybrid(hybridRouteToPlatform(next))
+      commitLocalRoute(next, setRoute)
+      if (platform.kind === 'native') {
+        window.requestAnimationFrame(() => void platform.navigation.openHybrid(hybridRouteToPlatform(next)))
+      }
     }
     window.addEventListener(PREMIUM_PAYWALL_OPEN_EVENT, openPremium)
     return () => window.removeEventListener(PREMIUM_PAYWALL_OPEN_EVENT, openPremium)
@@ -93,10 +98,12 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     const updateRoute = () => setRoute(routeFromLocation(window.location))
     const updateOnline = () => setOnline(navigator.onLine)
     window.addEventListener('hashchange', updateRoute)
+    window.addEventListener('popstate', updateRoute)
     window.addEventListener('online', updateOnline)
     window.addEventListener('offline', updateOnline)
     return () => {
       window.removeEventListener('hashchange', updateRoute)
+      window.removeEventListener('popstate', updateRoute)
       window.removeEventListener('online', updateOnline)
       window.removeEventListener('offline', updateOnline)
     }
@@ -118,12 +125,16 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
           setBootstrap({ state: 'authRequired', message: '请先在 Taste Map 完成登录。' })
           return
         }
-        const [profile, content] = await Promise.all([
-          platform.profile.getCurrent(),
-          platform.content.snapshot().catch(() => emptyContentSnapshot()),
-        ])
+        const profileRequest = platform.profile.getCurrent()
+        const contentRequest = platform.content.snapshot().catch(() => emptyContentSnapshot())
+        const profile = await profileRequest
         if (!active) return
-        setBootstrap({ state: 'ready', runtime, profile, content })
+        setBootstrap({ state: 'ready', runtime, profile, content: emptyContentSnapshot(), contentReady: false })
+        const content = await contentRequest
+        if (!active) return
+        setBootstrap((current) => current.state === 'ready'
+          ? { ...current, content, contentReady: true }
+          : current)
       })
       .catch((reason: unknown) => {
         if (!active) return
@@ -138,12 +149,17 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   useEffect(() => {
     setRouteError(null)
     if (route.surface !== 'restaurant') {
-      setRestaurant(null)
       return
     }
+    const cached = restaurantDetailCache.current.get(route.id.toLowerCase())
+    setRestaurant((current) => cached ?? (current && sameRestaurantID(current.restaurant.id, route.id) ? current : null))
     let active = true
     platform.restaurant.get(route.id)
-      .then((value) => { if (active) setRestaurant(value) })
+      .then((value) => {
+        restaurantDetailCache.current.set(route.id.toLowerCase(), value)
+        restaurantDetailCache.current.set(value.restaurant.id.toLowerCase(), value)
+        if (active) setRestaurant(value)
+      })
       .catch((reason: unknown) => { if (active) setRouteError(normalizeError(reason).message) })
     return () => { active = false }
   }, [detailRevision, platform, route])
@@ -151,6 +167,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   useEffect(() => {
     if (route.surface === 'map') setMapWasActivated(true)
     if (route.surface === 'discovery' || route.surface === 'activity') setDiscoveryWasActivated(true)
+    if (route.surface === 'profile') setProfileWasActivated(true)
   }, [route.surface])
 
   useEffect(() => {
@@ -162,25 +179,32 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       .map((item) => item.id))
   }, [bootstrap])
 
-  const navigate = async (nextRoute: HybridRoute) => {
+  const navigate = (nextRoute: HybridRoute) => {
+    commitLocalRoute(nextRoute, setRoute)
     if (platform.kind === 'native') {
       const nextHash = routeHash(nextRoute)
       // Native publishes the accepted route back as an event. Keep a short
       // acknowledgement window so an asynchronously delivered echo cannot
-      // trigger a second Restaurant read after this Promise resolves.
+      // trigger a second Restaurant read after the visible route changes.
       pendingHybridNavigation.current = { hash: nextHash, expiresAt: Date.now() + 2_000 }
-      updateLocation(nextRoute)
-      await platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute))
-      return
+      // Let React commit the next screen before synchronizing Native history;
+      // the bookkeeping bridge must never sit in the user's tap-to-paint path.
+      window.requestAnimationFrame(() => {
+        void platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute))
+      })
     }
-    updateLocation(nextRoute)
   }
 
   const navigateBack = async () => {
     if (platform.kind === 'native') {
+      // Browser history owns the immediately visible Hybrid transition. Native
+      // history reconciles afterward for deep links and Native-owned sheets.
+      window.history.back()
       const state = await platform.navigation.back()
       const next = platformRouteToHybrid(state.route)
-      if (next) updateLocation(next)
+      if (next && window.location.hash !== routeHash(next)) {
+        replaceLocalRoute(next, setRoute)
+      }
       return
     }
     window.history.back()
@@ -189,7 +213,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const refreshReadyData = async () => {
     const [nextProfile, nextContent] = await Promise.all([platform.profile.getCurrent(), platform.content.snapshot()])
     setBootstrap((current) => current.state === 'ready'
-      ? { ...current, profile: nextProfile, content: nextContent }
+      ? { ...current, profile: nextProfile, content: nextContent, contentReady: true }
       : current)
   }
 
@@ -198,24 +222,23 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     void navigate({ surface: 'visit', id: restaurantID })
   }
 
-  const openDiscoveryRoulette = async (restaurantID: string) => {
-    try {
-      const detail = await platform.restaurant.get(restaurantID)
+  const openDiscoveryRoulette = (restaurantID: string) => {
+    navigate({ surface: 'roulette' })
+    void platform.restaurant.get(restaurantID).then((detail) => {
+      restaurantDetailCache.current.set(detail.restaurant.id.toLowerCase(), detail)
       setRouletteExternalRestaurants((current) => current.some((item) => item.id === detail.restaurant.id) ? current : [...current, detail.restaurant])
       setRouletteRestaurantIDs((current) => current.includes(detail.restaurant.id) ? current : [...current, detail.restaurant.id].slice(0, 10))
-      await navigate({ surface: 'roulette' })
-    } catch (reason) {
-      setRouteError(normalizeError(reason).message)
-    }
+    }).catch((reason: unknown) => setRouteError(normalizeError(reason).message))
   }
 
-  const toggleDetailCollection = async () => {
-    if (!restaurant || !restaurant.capabilities.canAddToWantToGo || restaurant.viewerState === 'visited') return
+  const toggleDetailCollection = async (detail: TasteMapRestaurantDetailViewModel) => {
+    if (!detail.capabilities.canAddToWantToGo || detail.viewerState === 'visited') return
     const result = await platform.restaurant.setWantToGo(
-      restaurant.restaurant.id,
-      restaurant.viewerState !== 'want_to_go',
+      detail.restaurant.id,
+      detail.viewerState !== 'want_to_go',
     )
-    await refreshReadyData().catch(() => undefined)
+    restaurantDetailCache.current.delete(detail.restaurant.id.toLowerCase())
+    void refreshReadyData().catch(() => undefined)
     if (result.viewerState === 'none') {
       await navigateBack()
       return
@@ -232,7 +255,12 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     return <ShellState action={() => setGeneration((value) => value + 1)} code={bootstrap.code} kind="fatal" message={bootstrap.message} />
   }
 
-  const { profile, runtime, content } = bootstrap
+  const { profile, runtime, content, contentReady } = bootstrap
+  const detailRestaurant = route.surface === 'restaurant'
+    ? restaurant && sameRestaurantID(restaurant.restaurant.id, route.id)
+      ? restaurant
+      : ownedRestaurantPreview(profile, route.id)
+    : null
   return <div className="tm-hybrid-shell" data-adapter={platform.kind} data-bridge-version={runtime.bridgeVersion} data-route={route.surface}>
     {!online ? <div className="tm-hybrid-shell__offline" role="status"><CloudOff aria-hidden="true" size={15} />离线模式 · 正在使用本地数据</div> : null}
     {mapWasActivated ? <MyMapBrowsePage
@@ -250,51 +278,55 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       onOpenRoulette={(id) => void openDiscoveryRoulette(id)}
       onRecordVisit={openDiscoveryVisit}
       platform={platform}
+      loading={!contentReady}
     /> : null}
+    {profileWasActivated ? <div className="tm-hybrid-persistent-route" hidden={route.surface !== 'profile'}>
+      <ProfilePage
+        connections={<p>用户搜索仍由原生主路径承载。</p>}
+        followerConnections={<p>关注者列表仍由原生主路径承载。</p>}
+        followerCount={profile.followerCount}
+        followingConnections={<p>关注列表仍由原生主路径承载。</p>}
+        followingCount={profile.followingCount}
+        onOpenAnalytics={(section) => void navigate({ surface: 'analytics', id: section })}
+        onOpenLists={() => void navigate({ surface: 'lists' })}
+        onOpenRoulette={() => void navigate({ surface: 'roulette' })}
+        onOpenSettings={() => void navigate({ surface: 'settings' })}
+        onEditProfile={() => void platform.navigation.openNative({ route: 'profileEdit' })}
+        onOpenConnections={() => void platform.navigation.openNative({ route: 'socialNative' })}
+        onSelectRestaurant={(selected) => {
+          void platform.haptics.selection()
+          void navigate({ surface: 'restaurant', id: selected.id })
+        }}
+        restaurants={profile.restaurants}
+        user={profile.user}
+        visits={profile.visits}
+      />
+    </div> : null}
     {route.surface === 'map' || route.surface === 'discovery' || route.surface === 'activity' ? null : route.surface === 'profile'
-      ? <ProfilePage
-          connections={<p>用户搜索仍由原生主路径承载。</p>}
-          followerConnections={<p>关注者列表仍由原生主路径承载。</p>}
-          followerCount={profile.followerCount}
-          followingConnections={<p>关注列表仍由原生主路径承载。</p>}
-          followingCount={profile.followingCount}
-          onOpenAnalytics={(section) => void navigate({ surface: 'analytics', id: section })}
-          onOpenLists={() => void navigate({ surface: 'lists' })}
-          onOpenRoulette={() => void navigate({ surface: 'roulette' })}
-          onOpenSettings={() => void navigate({ surface: 'settings' })}
-          onEditProfile={() => void platform.navigation.openNative({ route: 'profileEdit' })}
-          onOpenConnections={() => void platform.navigation.openNative({ route: 'socialNative' })}
-          onSelectRestaurant={(selected) => {
-            void platform.haptics.selection()
-            void navigate({ surface: 'restaurant', id: selected.id })
-          }}
-          restaurants={profile.restaurants}
-          user={profile.user}
-          visits={profile.visits}
-        />
+      ? null
         : route.surface === 'restaurant'
-        ? restaurant
+        ? detailRestaurant
           ? <main className="tm-hybrid-detail">
               <button aria-label="返回上一页" className="tm-hybrid-detail__back" onClick={() => void navigateBack()} type="button"><ArrowLeft aria-hidden="true" size={18} />返回</button>
               <RestaurantPreviewCard
-                additionalUserPhotos={restaurant.restaurant.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] })))}
+                additionalUserPhotos={detailRestaurant.restaurant.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] })))}
                 historyRestaurants={profile.restaurants}
-                isInRoulette={rouletteRestaurantIDs.includes(restaurant.restaurant.id)}
-                onAddToRoulette={restaurant.capabilities.canAddToRoulette ? () => setRouletteRestaurantIDs((ids) => ids.includes(restaurant.restaurant.id) ? ids.filter((id) => id !== restaurant.restaurant.id) : [...ids, restaurant.restaurant.id]) : undefined}
-                onAddToList={restaurant.capabilities.canAddToList ? () => void openNativeRoute(platform, 'restaurantAddToList', restaurant.restaurant.id) : undefined}
-                onAddToWant={restaurant.capabilities.canAddToWantToGo && restaurant.viewerState !== 'visited' ? () => void toggleDetailCollection() : undefined}
-                onAddVisit={restaurant.capabilities.canRecordVisit ? () => void navigate({ surface: 'visit', id: restaurant.restaurant.id }) : undefined}
+                isInRoulette={rouletteRestaurantIDs.includes(detailRestaurant.restaurant.id)}
+                onAddToRoulette={detailRestaurant.capabilities.canAddToRoulette ? () => setRouletteRestaurantIDs((ids) => ids.includes(detailRestaurant.restaurant.id) ? ids.filter((id) => id !== detailRestaurant.restaurant.id) : [...ids, detailRestaurant.restaurant.id]) : undefined}
+                onAddToList={detailRestaurant.capabilities.canAddToList ? () => void openNativeRoute(platform, 'restaurantAddToList', detailRestaurant.restaurant.id) : undefined}
+                onAddToWant={detailRestaurant.capabilities.canAddToWantToGo && detailRestaurant.viewerState !== 'visited' ? () => void toggleDetailCollection(detailRestaurant) : undefined}
+                onAddVisit={detailRestaurant.capabilities.canRecordVisit ? () => void navigate({ surface: 'visit', id: detailRestaurant.restaurant.id }) : undefined}
                 onClose={() => void navigateBack()}
-                onDelete={restaurant.capabilities.canDeleteRestaurant ? () => void openNativeRoute(platform, 'restaurantDelete', restaurant.restaurant.id) : undefined}
-                onEdit={restaurant.capabilities.canEditRestaurant ? () => void openNativeRoute(platform, 'restaurantEdit', restaurant.restaurant.id) : undefined}
+                onDelete={detailRestaurant.capabilities.canDeleteRestaurant ? () => void openNativeRoute(platform, 'restaurantDelete', detailRestaurant.restaurant.id) : undefined}
+                onEdit={detailRestaurant.capabilities.canEditRestaurant ? () => void openNativeRoute(platform, 'restaurantEdit', detailRestaurant.restaurant.id) : undefined}
                 onEditVisit={(visit) => void navigate({ surface: 'visitEdit', id: visit.id })}
-                onShare={restaurant.capabilities.canShare ? () => void platform.share.open({ title: restaurant.restaurant.name, text: `${restaurant.restaurant.name} · ${restaurant.restaurant.address}` }) : undefined}
-                canEditVisit={(visit) => restaurant.editableVisitIDs.includes(visit.id)}
-                readOnly={!restaurant.capabilities.canEditRestaurant && !restaurant.capabilities.canDeleteRestaurant}
+                onShare={detailRestaurant.capabilities.canShare ? () => void platform.share.open({ title: detailRestaurant.restaurant.name, text: `${detailRestaurant.restaurant.name} · ${detailRestaurant.restaurant.address}` }) : undefined}
+                canEditVisit={(visit) => detailRestaurant.editableVisitIDs.includes(visit.id)}
+                readOnly={!detailRestaurant.capabilities.canEditRestaurant && !detailRestaurant.capabilities.canDeleteRestaurant}
                 remoteStatsEnabled={false}
-                restaurant={restaurant.restaurant}
-                socialStats={restaurant.socialStats}
-                viewerStatus={restaurant.viewerState === 'none' ? null : restaurant.viewerState === 'visited' ? 'visited' : 'wantToGo'}
+                restaurant={detailRestaurant.restaurant}
+                socialStats={detailRestaurant.socialStats}
+                viewerStatus={detailRestaurant.viewerState === 'none' ? null : detailRestaurant.viewerState === 'visited' ? 'visited' : 'wantToGo'}
               />
             </main>
           : <ShellState kind="loading" message={routeError ?? '正在读取餐厅详情…'} />
@@ -391,6 +423,37 @@ function emptyContentSnapshot(): TasteMapHybridContentSnapshotDTO {
   }
 }
 
+function sameRestaurantID(left: string, right: string) {
+  return left.toLowerCase() === right.toLowerCase()
+}
+
+function ownedRestaurantPreview(
+  profile: TasteMapProfileDashboardViewModel,
+  restaurantID: string,
+): TasteMapRestaurantDetailViewModel | null {
+  const restaurant = profile.restaurants.find((item) => sameRestaurantID(item.id, restaurantID))
+  if (!restaurant) return null
+  const imageEntry = Object.entries(profile.restaurantImages)
+    .find(([id]) => sameRestaurantID(id, restaurantID))
+  if (!imageEntry) return null
+  return {
+    restaurant,
+    image: imageEntry[1],
+    socialStats: null,
+    viewerState: restaurant.status === 'visited' ? 'visited' : 'want_to_go',
+    editableVisitIDs: restaurant.visits.map((visit) => visit.id),
+    capabilities: {
+      canEditRestaurant: true,
+      canDeleteRestaurant: true,
+      canRecordVisit: true,
+      canAddToWantToGo: true,
+      canAddToList: true,
+      canAddToRoulette: true,
+      canShare: true,
+    },
+  }
+}
+
 function analyticsMode(value?: string): AnalyticsMode {
   return value === 'companion' || value === 'source' || value === 'monthly' || value === 'annual' ? value : 'taste'
 }
@@ -408,10 +471,15 @@ function initialRoute(): HybridRoute {
   return routeFromStartupLocation(window.location, debugRoute)
 }
 
-function updateLocation(nextRoute: HybridRoute) {
+function commitLocalRoute(nextRoute: HybridRoute, setRoute: (route: HybridRoute) => void) {
   const hash = routeHash(nextRoute)
-  if (window.location.hash === hash) window.dispatchEvent(new HashChangeEvent('hashchange'))
-  else window.location.hash = hash
+  if (window.location.hash !== hash) window.history.pushState(null, '', hash)
+  setRoute(nextRoute)
+}
+
+function replaceLocalRoute(nextRoute: HybridRoute, setRoute: (route: HybridRoute) => void) {
+  window.history.replaceState(null, '', routeHash(nextRoute))
+  setRoute(nextRoute)
 }
 
 function hybridRouteToPlatform(route: HybridRoute): PlatformRoute {

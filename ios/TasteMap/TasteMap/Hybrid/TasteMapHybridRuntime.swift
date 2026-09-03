@@ -9,6 +9,13 @@ import SwiftData
 import UIKit
 import UniformTypeIdentifiers
 
+private struct TasteMapHybridCachedMapSurfaceResources {
+    let ownerUserID: String
+    let photosByID: [UUID: PhotoAsset]
+    let photosByReference: [String: PhotoAsset]
+    let profileAvatarReference: String?
+}
+
 @Observable
 @MainActor
 final class TasteMapHybridRuntime {
@@ -29,6 +36,10 @@ final class TasteMapHybridRuntime {
     private var sequence = 0
     private var lastLifecycleState: TasteMapHybridLifecycleState?
     private var bridgeControllerStorage: TasteMapHybridBridgeViewController?
+    private var cachedBridgeService: TasteMapHybridBridgeService?
+    private var cachedBridgeServiceOwnerUserID: String?
+    private var cachedBridgeServiceMembershipTier: String?
+    private var cachedMapSurfaceResources: TasteMapHybridCachedMapSurfaceResources?
     private(set) var pendingSharedImport: PendingRestaurantImport?
     private var pendingPhotoSelections: [String: PendingHybridPhotoSelection] = [:]
     private var pendingAcquisitionCandidates: [String: PendingHybridAcquisitionCandidate] = [:]
@@ -110,34 +121,9 @@ final class TasteMapHybridRuntime {
     }
 
     func responseData(for requestData: Data) async throws -> Data {
+        let requestMethod = (try? JSONDecoder().decode(TasteMapHybridBridgeRequest.self, from: requestData))?.method
         let authState = await ensureSessionRestored()
-        let service: (any TasteMapHybridServiceProviding)?
-        if authState.state == "authenticated", let userID = authState.userID {
-            service = try TasteMapHybridBridgeService(
-                container: container,
-                ownerUserID: userID,
-                membershipTier: [.premium, .gracePeriod].contains(premiumEntitlementService.membershipStatus) ? "member" : "free",
-                enqueueSharedMealInvitations: { [authServices = self.authServices] sourceVisitID, participantUserIDs in
-                    try authServices.socialCollaborationOutbox.enqueue(
-                        ownerUserID: userID,
-                        sourceVisitID: sourceVisitID,
-                        participantUserIDs: participantUserIDs
-                    )
-                },
-                attachPendingPhotos: { [weak self] attachments, restaurantID, visitID, dishIDsByDraftID, visibility in
-                    self?.attachPendingPhotos(
-                        attachments,
-                        restaurantID: restaurantID,
-                        visitID: visitID,
-                        dishIDsByDraftID: dishIDsByDraftID,
-                        visibility: PhotoVisibility(rawValue: visibility) ?? .private,
-                        ownerUserID: userID
-                    ) ?? attachments.count
-                }
-            )
-        } else {
-            service = nil
-        }
+        let service = try bridgeService(for: authState)
         let bundle = Bundle.main
         let dispatcher = TasteMapHybridBridgeDispatcher(
             service: service,
@@ -172,7 +158,64 @@ final class TasteMapHybridRuntime {
                 return try await self.perform(method: method, payload: payload)
             }
         )
-        return try await dispatcher.responseDataAsync(for: requestData)
+        let response = try await dispatcher.responseDataAsync(for: requestData)
+        if requestMethod == .visitSave || requestMethod == .visitDelete {
+            // These writes can replace the photo set used by native map markers.
+            // Keep the bridge service (it invalidates its own projections), but
+            // rebuild only the map's small resource index on its next update.
+            cachedMapSurfaceResources = nil
+        }
+        return response
+    }
+
+    private func bridgeService(
+        for authState: TasteMapHybridAuthStateDTO
+    ) throws -> TasteMapHybridBridgeService? {
+        guard authState.state == "authenticated", let userID = authState.userID else {
+            invalidateBridgeReadCaches()
+            return nil
+        }
+        let membershipTier = [.premium, .gracePeriod].contains(premiumEntitlementService.membershipStatus)
+            ? "member"
+            : "free"
+        if cachedBridgeServiceOwnerUserID == userID,
+           cachedBridgeServiceMembershipTier == membershipTier,
+           let cachedBridgeService {
+            return cachedBridgeService
+        }
+        let service = try TasteMapHybridBridgeService(
+            container: container,
+            ownerUserID: userID,
+            membershipTier: membershipTier,
+            enqueueSharedMealInvitations: { [authServices = self.authServices] sourceVisitID, participantUserIDs in
+                try authServices.socialCollaborationOutbox.enqueue(
+                    ownerUserID: userID,
+                    sourceVisitID: sourceVisitID,
+                    participantUserIDs: participantUserIDs
+                )
+            },
+            attachPendingPhotos: { [weak self] attachments, restaurantID, visitID, dishIDsByDraftID, visibility in
+                self?.attachPendingPhotos(
+                    attachments,
+                    restaurantID: restaurantID,
+                    visitID: visitID,
+                    dishIDsByDraftID: dishIDsByDraftID,
+                    visibility: PhotoVisibility(rawValue: visibility) ?? .private,
+                    ownerUserID: userID
+                ) ?? attachments.count
+            }
+        )
+        cachedBridgeService = service
+        cachedBridgeServiceOwnerUserID = userID
+        cachedBridgeServiceMembershipTier = membershipTier
+        return service
+    }
+
+    private func invalidateBridgeReadCaches() {
+        cachedBridgeService = nil
+        cachedBridgeServiceOwnerUserID = nil
+        cachedBridgeServiceMembershipTier = nil
+        cachedMapSurfaceResources = nil
     }
 
     func receive(url: URL) {
@@ -323,6 +366,9 @@ final class TasteMapHybridRuntime {
         if state == .foreground, lastLifecycleState == .background { eventState = .resume }
         else { eventState = state }
         lastLifecycleState = state
+        if eventState == .resume || eventState == .memoryWarning {
+            invalidateBridgeReadCaches()
+        }
         emit(.appLifecycle, payload: TasteMapHybridLifecycleEventPayload(state: eventState))
     }
 
@@ -370,7 +416,9 @@ final class TasteMapHybridRuntime {
         case .acquisitionManual:
             return try await manualRestaurantCandidate(payload)
         case .acquisitionSelect:
-            return try selectRestaurantCandidate(payload)
+            let result = try selectRestaurantCandidate(payload)
+            invalidateBridgeReadCaches()
+            return result
         case .premiumStatus:
             return premiumStatus()
         case .premiumProducts:
@@ -385,6 +433,7 @@ final class TasteMapHybridRuntime {
             return try encode(syncStatus())
         case .syncRun:
             await syncCoordinator.synchronizeNow()
+            invalidateBridgeReadCaches()
             return try encode(syncStatus())
         case .permissionsStatus:
             return try encode(permissionsStatus())
@@ -401,9 +450,13 @@ final class TasteMapHybridRuntime {
         case .photoCapture:
             return try await capturePhoto()
         case .photoDiscard:
-            return try await discardPhoto(payload)
+            let result = try await discardPhoto(payload)
+            invalidateBridgeReadCaches()
+            return result
         case .photoRetry:
-            return try retryPhoto(payload)
+            let result = try retryPhoto(payload)
+            invalidateBridgeReadCaches()
+            return result
         default:
             throw Self.bridgeError("capability_unavailable", method: method)
         }
@@ -429,30 +482,46 @@ final class TasteMapHybridRuntime {
             )
             return try encode(TasteMapHybridMapSurfaceUpdateResponse(requestID: request.requestID))
         }
-        let photos = ((try? container.mainContext.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
-            $0.ownerUserID == ownerUserID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
-        }
-        let photosByID = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) })
-        let profile = ((try? container.mainContext.fetch(FetchDescriptor<UserProfile>())) ?? []).first {
-            $0.tasteMapUserID == ownerUserID && $0.deletedAt == nil
-        }
-        let avatarReference = request.userAvatarPhotoID ?? profile?.avatarPhotoID
-        let avatarPhoto = avatarReference.flatMap { reference in
-            photos.first {
-                $0.id.uuidString.caseInsensitiveCompare(reference) == .orderedSame
-                    || $0.remoteID?.caseInsensitiveCompare(reference) == .orderedSame
-            }
+        let cachedResources = mapSurfaceResources(ownerUserID: ownerUserID)
+        let avatarReference = request.userAvatarPhotoID ?? cachedResources.profileAvatarReference
+        let avatarPhoto = avatarReference.flatMap {
+            cachedResources.photosByReference[$0.lowercased()]
         }
         try mapSurfaceHost.apply(
             request,
             resources: TasteMapHybridMapSurfaceResources(
-                photosByID: photosByID,
+                photosByID: cachedResources.photosByID,
                 userAvatarPhoto: avatarPhoto,
                 photoCoordinator: photoTransferCoordinator,
                 photoAPI: authServices.photoAPI
             )
         )
         return try encode(TasteMapHybridMapSurfaceUpdateResponse(requestID: request.requestID))
+    }
+
+    private func mapSurfaceResources(ownerUserID: String) -> TasteMapHybridCachedMapSurfaceResources {
+        if let cachedMapSurfaceResources, cachedMapSurfaceResources.ownerUserID == ownerUserID {
+            return cachedMapSurfaceResources
+        }
+        let photos = ((try? container.mainContext.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
+        }
+        var photosByReference: [String: PhotoAsset] = [:]
+        for photo in photos {
+            photosByReference[photo.id.uuidString.lowercased()] = photo
+            if let remoteID = photo.remoteID?.lowercased() { photosByReference[remoteID] = photo }
+        }
+        let profile = ((try? container.mainContext.fetch(FetchDescriptor<UserProfile>())) ?? []).first {
+            $0.tasteMapUserID == ownerUserID && $0.deletedAt == nil
+        }
+        let resources = TasteMapHybridCachedMapSurfaceResources(
+            ownerUserID: ownerUserID,
+            photosByID: Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) }),
+            photosByReference: photosByReference,
+            profileAvatarReference: profile?.avatarPhotoID
+        )
+        cachedMapSurfaceResources = resources
+        return resources
     }
 
     private func setCommunityLike(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
@@ -561,6 +630,7 @@ final class TasteMapHybridRuntime {
         if TasteMapUITestFixtures.usesVisualQA {
             let state = request.wanted ? "want_to_go" : "none"
             debugViewerStateByRestaurant[request.restaurantID] = state
+            invalidateBridgeReadCaches()
             return try encode(TasteMapHybridRestaurantViewerStateMutationDTO(
                 restaurantID: request.restaurantID, viewerState: state,
                 updatedAt: ISO8601DateFormatter().string(from: .now)
@@ -598,6 +668,7 @@ final class TasteMapHybridRuntime {
         try LocalCommunityStore(context: context).updateViewerState(
             globalKey: reference.projection.globalKey, currentUserID: ownerUserID, state: state
         )
+        invalidateBridgeReadCaches()
         Task { await syncCoordinator.synchronizeNow() }
         return try encode(TasteMapHybridRestaurantViewerStateMutationDTO(
             restaurantID: request.restaurantID, viewerState: state.rawValue,
@@ -1508,6 +1579,7 @@ final class TasteMapHybridRuntime {
             try LocalAccountOwnershipMigrator(context: container.mainContext).activate(userID: user.id)
             await premiumEntitlementService.activate(userID: user.id)
             await syncCoordinator.sessionDidBecomeAvailable(userID: user.id)
+            invalidateBridgeReadCaches()
             let session = TasteMapHybridAuthStateDTO(state: "authenticated", userID: user.id, displayName: nil)
             resetToCurrentProfileIfNeeded()
             emit(.authChanged, payload: session)
@@ -1526,6 +1598,7 @@ final class TasteMapHybridRuntime {
         pendingPhotoSelections.removeAll(keepingCapacity: false)
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
+        invalidateBridgeReadCaches()
         resetToCurrentProfileIfNeeded()
         let session = TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil)
         emit(.authChanged, payload: session)
@@ -1538,6 +1611,7 @@ final class TasteMapHybridRuntime {
         pendingPhotoSelections.removeAll(keepingCapacity: false)
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
+        invalidateBridgeReadCaches()
         resetToCurrentProfileIfNeeded()
         let session = TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil)
         emit(.authChanged, payload: session)

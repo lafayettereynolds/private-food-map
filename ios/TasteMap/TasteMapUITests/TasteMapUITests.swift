@@ -4008,6 +4008,44 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridOwnedRestaurantDetailPaintsWithoutAColdLoadingScreen() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        let profileTab = webView.buttons["我的"]
+        XCTAssertTrue(profileTab.waitForExistence(timeout: 8))
+        profileTab.tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+        let visited = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "去过")
+        ).firstMatch
+        XCTAssertTrue(visited.waitForExistence(timeout: 5))
+        visited.tap()
+        let restaurant = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
+        ).firstMatch
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 8))
+
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        restaurant.tap()
+        let detailBack = webView.buttons["返回上一页"]
+        let deadline = startedAt + 1.5
+        while !detailBack.exists && ProcessInfo.processInfo.systemUptime < deadline {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        let paintDuration = ProcessInfo.processInfo.systemUptime - startedAt
+
+        XCTAssertTrue(detailBack.exists)
+        XCTAssertLessThan(paintDuration, 1.5, "An owned Restaurant should paint from the warm Profile snapshot")
+        XCTAssertFalse(webView.staticTexts["正在读取餐厅详情…"].exists)
+        keepScreenshot(named: "Hybrid Warm Restaurant Detail", of: app)
+    }
+
+    @MainActor
     func testHybridVisitHistoryEditUsesOwnedHybridEditorAndRefreshesDetail() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]

@@ -32,13 +32,14 @@ interface CommentContext {
   restaurantName: string
 }
 
-export function HybridDiscoveryPage({ content, platform, onOpenRestaurant, onRecordVisit, onOpenRoulette, active = true }: {
+export function HybridDiscoveryPage({ content, platform, onOpenRestaurant, onRecordVisit, onOpenRoulette, active = true, loading = false }: {
   content: TasteMapHybridContentSnapshotDTO
   platform: TasteMapPlatform
   onOpenRestaurant: (id: string) => void
   onRecordVisit?: (restaurantID: string) => void
   onOpenRoulette?: (restaurantID: string) => void
   active?: boolean
+  loading?: boolean
 }) {
   const [tab, setTab] = useState<DiscoveryTab>('forYou')
   const [city, setCity] = useState('all')
@@ -199,7 +200,9 @@ export function HybridDiscoveryPage({ content, platform, onOpenRestaurant, onRec
       tab={tab}
       tabs={tabs}
     >
-      {tab === 'following' || tab === 'latest'
+      {loading
+        ? <HybridState kind="loading" message="推荐与动态会在读取完成后自动出现。" title="正在整理发现内容" />
+        : tab === 'following' || tab === 'latest'
         ? visibleActivity.length
           ? <section aria-label={`${tabs.find((item) => item.value === tab)?.label}动态`} className="tm-hybrid-activity-feed">{visibleActivity.map((item) => <ActivityCard
               engagement={item.interaction ? engagementFor(item.interaction, item) : item}

@@ -53,6 +53,21 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         )
     }
 
+    func testWarmRestaurantDetailReusesTheOwnerProjectionWithoutInvalidatingOtherScreens() throws {
+        let service = try makeService()
+        let profile = try service.profileDashboard()
+        XCTAssertEqual(service.projectedRestaurantSnapshotBuildCount, 1)
+
+        _ = try service.restaurantDetail(id: profile.restaurants[0].id)
+        _ = try service.profileDashboard()
+
+        XCTAssertEqual(
+            service.projectedRestaurantSnapshotBuildCount,
+            1,
+            "Opening and leaving a Restaurant must not force the whole Profile and Map to rebuild"
+        )
+    }
+
     func testOwnerIsolationExcludesForeignRowsAndRelationships() throws {
         let owner = "tm_owner_a"
         let foreignOwner = "tm_owner_b"

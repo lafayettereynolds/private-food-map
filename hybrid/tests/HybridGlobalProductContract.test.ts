@@ -237,7 +237,24 @@ describe('Hybrid global Product Contract', () => {
     expect(platform).toContain('socialStats?: RestaurantSocialStats | null')
     expect(nativeContracts).toContain('TasteMapHybridRestaurantSocialStatsDTO')
     expect(nativeService).toContain('$0.currentUserID == ownerUserID && globalIdentityKeys.contains($0.globalKey)')
-    expect(shell).toContain('socialStats={restaurant.socialStats}')
+    expect(shell).toContain('socialStats={detailRestaurant.socialStats}')
+  })
+
+  it('keeps shared Hybrid navigation and reads off the repeated cold path', () => {
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const runtime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
+    const service = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridBridgeService.swift')
+    expect(shell).toContain('commitLocalRoute(nextRoute, setRoute)')
+    expect(shell).toContain('window.requestAnimationFrame(() => {')
+    expect(shell).toContain('ownedRestaurantPreview(profile, route.id)')
+    expect(shell).toContain('contentReady: false')
+    expect(shell.indexOf("setBootstrap({ state: 'ready', runtime, profile")).toBeLessThan(shell.indexOf('const content = await contentRequest'))
+    expect(shell).toContain('profileWasActivated ? <div className="tm-hybrid-persistent-route"')
+    expect(runtime).toContain('private var cachedBridgeService: TasteMapHybridBridgeService?')
+    expect(runtime).toContain('private var cachedMapSurfaceResources: TasteMapHybridCachedMapSurfaceResources?')
+    expect(service).toContain('if let cached = projectedRestaurantSnapshot?.first')
+    expect(service).toContain('associationsByVisitID')
+    expect(service).toContain('photosByVisitID')
   })
 
   it('locks current-only Profile, Lists, Analytics, Posters and Settings topology', () => {
@@ -282,7 +299,7 @@ describe('Hybrid global Product Contract', () => {
     expect(detail).toContain('canEditVisit ? canEditVisit(visit) : !readOnly')
     expect(shell).toContain("navigate({ surface: 'visitEdit', id: visit.id })")
     expect(shell).not.toContain("openNativeRoute(platform, 'visitEdit', visit.id)")
-    expect(shell).toContain('restaurant.editableVisitIDs.includes(visit.id)')
+    expect(shell).toContain('detailRestaurant.editableVisitIDs.includes(visit.id)')
     expect(shell).not.toMatch(/visit\.userId\s*===|CURRENT_USER_ID.*visit/)
   })
 
