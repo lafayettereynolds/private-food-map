@@ -254,6 +254,8 @@ Formal flow: Search, Nearby, external Share ingestion, and one Manual Add card f
 
 Browser and Capacitor consume one shared Restaurant-acquisition presentation system for the header, capability rows, Search/City fields, Nearby states, candidates, and Manual Add expansion. Search, Nearby, Share, and Manual Add are four expressions of one acquisition hierarchy—not four unrelated form/card dialects. On iOS/WKWebView every editable text control keeps a computed font size of at least `16px`; do not disable user zoom to conceal WebKit focus auto-zoom. A static city scope uses a city/building semantic icon, never a GPS/target icon. Loading, available, unavailable, denied, reduced-accuracy, and error states preserve the compact Nearby geometry and do not turn the section into a page-sized empty panel.
 
+The Search/City form uses one compact trailing search action beside the city field. Because search is a familiar system action, its visible control is an icon-only rounded button with a real `44 × 44pt` hit target and the accessible name `搜索餐厅`; it is not a wide filled text CTA competing with the fields. Browser, Capacitor, and the Native rollback surface follow this same hierarchy and state styling.
+
 #### 7. Roulette Template
 
 The selected unique candidate pool, image/name chips, wheel segments, and result are the same data. Unfilled segments say `+ 添加更多餐厅`; do not duplicate Restaurants or present placeholders as real candidates. Random selection is uniform unless Lafayette explicitly approves weighting.

@@ -4111,7 +4111,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertEqual(city.frame.width, cityFrameBeforeFocus.width, accuracy: 1)
         XCTAssertTrue(webView.buttons["搜索餐厅"].isHittable)
 
-        webView.staticTexts["搜索餐厅"].firstMatch.tap()
+        webView.buttons["搜索餐厅"].tap()
         XCTAssertFalse(app.keyboards.firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(webView.buttons["从外部分享添加"].isHittable)
         XCTAssertTrue(webView.buttons["手动添加餐厅"].isHittable)

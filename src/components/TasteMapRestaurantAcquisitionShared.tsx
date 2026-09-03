@@ -127,9 +127,15 @@ export function TasteMapRestaurantAcquisitionSearch({
           value={city}
         /></span>
       </label>
-      <button aria-label="搜索餐厅" className="tm-acquisition-search__submit" disabled={disabled || loading || !query.trim()} type="submit">
+      <button
+        aria-label="搜索餐厅"
+        className="tm-acquisition-search__submit"
+        data-search-action="compact-icon"
+        disabled={disabled || loading || !query.trim()}
+        title="搜索餐厅"
+        type="submit"
+      >
         {loading ? <LoaderCircle aria-hidden="true" className="spin" size={17} /> : <Search aria-hidden="true" size={17} />}
-        <span>搜索</span>
       </button>
     </div>
     {locationDetail ? <div className="tm-acquisition-search__location-detail">{locationDetail}</div> : null}

@@ -43,6 +43,10 @@ struct AddRestaurantView: View {
         restaurants.filter { accountScope.contains(ownerUserID: $0.ownerUserID) }
     }
 
+    private var hasSearchQuery: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     init(
         dependencies: RestaurantAcquisitionDependencies,
         initialSharedText: String? = nil,
@@ -246,40 +250,55 @@ struct AddRestaurantView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text("搜索城市")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AcquisitionPalette.muted)
-                HStack(spacing: 10) {
-                    Image(systemName: "building.2")
-                        .foregroundStyle(AcquisitionPalette.brand)
-                    TextField("例如：杭州、上海、东京、纽约", text: Binding(
-                        get: { city },
-                        set: { value in
-                            cityEdited = true
-                            city = value
-                        }
-                    ))
-                        .textInputAutocapitalization(.words)
-                        .accessibilityIdentifier("restaurant-city-field")
+            HStack(alignment: .bottom, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("搜索城市")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AcquisitionPalette.muted)
+                    HStack(spacing: 10) {
+                        Image(systemName: "building.2")
+                            .foregroundStyle(AcquisitionPalette.brand)
+                        TextField("例如：杭州、上海、东京、纽约", text: Binding(
+                            get: { city },
+                            set: { value in
+                                cityEdited = true
+                                city = value
+                            }
+                        ))
+                            .textInputAutocapitalization(.words)
+                            .accessibilityIdentifier("restaurant-city-field")
+                    }
+                    .acquisitionInput()
                 }
-                .acquisitionInput()
-            }
+                .frame(maxWidth: .infinity)
 
-            Button {
-                Task { await viewModel.search(query: query, city: city) }
-            } label: {
-                HStack {
-                    if viewModel.isSearching { ProgressView().tint(.white) }
-                    else { Image(systemName: "magnifyingglass") }
-                    Text(viewModel.isSearching ? "正在搜索" : "搜索餐厅")
+                Button {
+                    Task { await viewModel.search(query: query, city: city) }
+                } label: {
+                    Group {
+                        if viewModel.isSearching { ProgressView().tint(hasSearchQuery ? .white : AcquisitionPalette.muted) }
+                        else { Image(systemName: "magnifyingglass") }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(hasSearchQuery ? Color.white : AcquisitionPalette.muted)
+                    .frame(
+                        width: TasteMapDesignTokens.Control.minimumHitTarget,
+                        height: TasteMapDesignTokens.Control.minimumHitTarget
+                    )
+                    .background(
+                        hasSearchQuery ? AcquisitionPalette.brand : AcquisitionPalette.surfaceSubtle,
+                        in: RoundedRectangle(cornerRadius: TasteMapDesignTokens.Radius.compact, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: TasteMapDesignTokens.Radius.compact, style: .continuous)
+                            .stroke(hasSearchQuery ? AcquisitionPalette.brand : AcquisitionPalette.border)
+                    }
                 }
-                .frame(maxWidth: .infinity, minHeight: 42)
+                .buttonStyle(.plain)
+                .disabled(viewModel.isSearching || !hasSearchQuery)
+                .accessibilityLabel(viewModel.isSearching ? "正在搜索餐厅" : "搜索餐厅")
+                .accessibilityIdentifier("restaurant-search-submit")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(AcquisitionPalette.brand)
-            .disabled(viewModel.isSearching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .accessibilityIdentifier("restaurant-search-submit")
 
             if let message = viewModel.searchMessage {
                 AcquisitionMessage(icon: "magnifyingglass", title: "搜索结果", message: message, retryTitle: nil, retry: nil)

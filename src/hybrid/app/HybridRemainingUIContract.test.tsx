@@ -180,6 +180,8 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).toContain('data-location-semantic="city-not-gps"')
     expect(html.match(/data-acquisition-input=/g)).toHaveLength(2)
     expect(html).toContain('aria-label="城市"')
+    expect(html).toContain('data-search-action="compact-icon"')
+    expect(html).not.toContain('<span>搜索</span>')
     expect(html).not.toContain('tm-hybrid-add-city')
   })
 

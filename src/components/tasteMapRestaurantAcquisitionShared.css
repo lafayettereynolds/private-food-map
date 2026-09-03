@@ -30,16 +30,17 @@
 .tm-acquisition__secondary-actions small { color: var(--tm-acquisition-muted); font-size: 11px; line-height: 1.35; }
 
 .tm-acquisition-search { display: grid; gap: 8px; }
-.tm-acquisition-search__secondary-row { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; }
+.tm-acquisition-search__secondary-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; gap: 8px; }
 .tm-acquisition-field { box-sizing: border-box; min-width: 0; min-height: 48px; padding: 4px 10px; border: 1px solid #d7e1e6; border-radius: 12px; display: flex; align-items: center; gap: 9px; color: var(--tm-acquisition-accent); background: #f8fafb; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
 .tm-acquisition-field:focus-within { border-color: #8ba5b5; background: var(--tm-acquisition-surface); box-shadow: 0 0 0 3px rgba(80,108,140,.09); }
 .tm-acquisition-field__body { min-width: 0; flex: 1; display: grid; gap: 0; }
 .tm-acquisition-field__body small { color: var(--tm-acquisition-muted); font-size: 10px; font-weight: 700; line-height: 1.2; }
 .tm-acquisition-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 26px; padding: 0; border: 0; outline: 0; color: var(--tm-acquisition-ink); background: transparent; font-family: inherit; font-size: 16px; line-height: 1.25; }
 .tm-acquisition-field input::placeholder { color: #9ba7ae; opacity: 1; }
-.tm-acquisition-search__submit { min-width: 82px; min-height: 48px; padding: 0 12px; border: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #fff; background: var(--tm-acquisition-accent); font-family: inherit; font-size: 14px; font-weight: 760; box-shadow: 0 5px 14px rgba(52,79,105,.12); -webkit-tap-highlight-color: transparent; }
-.tm-acquisition-search__submit:not(:disabled):active { background: var(--tm-acquisition-accent-dark); transform: translateY(1px); }
-.tm-acquisition-search__submit:disabled { opacity: .45; box-shadow: none; }
+.tm-acquisition-search__submit { box-sizing: border-box; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 1px solid var(--tm-acquisition-accent); border-radius: 12px; display: inline-grid; place-items: center; color: #fff; background: var(--tm-acquisition-accent); box-shadow: 0 2px 7px rgba(52,79,105,.1); -webkit-tap-highlight-color: transparent; transition: color .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .1s ease; }
+.tm-acquisition-search__submit:not(:disabled):active { background: var(--tm-acquisition-accent-dark); box-shadow: none; transform: scale(.96); }
+.tm-acquisition-search__submit:focus-visible { outline: 3px solid rgba(80,108,140,.2); outline-offset: 2px; }
+.tm-acquisition-search__submit:disabled { border-color: #d7e1e6; color: #8fa2ae; background: #f3f6f8; box-shadow: none; opacity: 1; }
 .tm-acquisition-search__location-detail { min-height: 24px; padding-inline: 3px; display: flex; align-items: center; gap: 5px; color: #5e7481; font-size: 11px; line-height: 1.35; }
 
 .tm-acquisition-status { box-sizing: border-box; min-height: 54px; padding: 7px 8px; border: 1px solid transparent; border-radius: 12px; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; background: #f8fafb; }
@@ -78,13 +79,12 @@
   .tm-acquisition-field:focus-within { border-color: #7899ad; background: #1e303a; }
   .tm-acquisition-field input { color: #edf3f5; }
   .tm-acquisition-field input::placeholder { color: #81919b; }
-  .tm-acquisition-search__submit { background: #567d95; }
+  .tm-acquisition-search__submit { border-color: #6e93a9; background: #567d95; }
+  .tm-acquisition-search__submit:disabled { border-color: #3b4d57; color: #8196a2; background: #243640; }
   .tm-acquisition-status.is-error { border-color: #6b5048; background: #372e2b; }
   .tm-acquisition-result__image { background: #2a3f4a; }
 }
 
 @media (max-width: 359px) {
-  .tm-acquisition-search__secondary-row { grid-template-columns: minmax(0, 1fr) 72px; }
-  .tm-acquisition-search__submit { min-width: 72px; padding-inline: 8px; }
   .tm-acquisition-result__action { font-size: 0; }
 }
