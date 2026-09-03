@@ -223,6 +223,8 @@ Discovery, Community, Latest, Trending, and similar activity surfaces share auth
 
 Formal flow: Search, Nearby, external Share ingestion, and one Manual Add card for places absent from map providers. A selected result first shows the standard Restaurant Detail foundation, then offers Want to Go or Record Visit. Manual link paste is not promoted to a primary in-app section; parsing remains available to the Share Extension.
 
+Browser and Capacitor consume one shared Restaurant-acquisition presentation system for the header, capability rows, Search/City fields, Nearby states, candidates, and Manual Add expansion. Search, Nearby, Share, and Manual Add are four expressions of one acquisition hierarchy—not four unrelated form/card dialects. On iOS/WKWebView every editable text control keeps a computed font size of at least `16px`; do not disable user zoom to conceal WebKit focus auto-zoom. A static city scope uses a city/building semantic icon, never a GPS/target icon. Loading, available, unavailable, denied, reduced-accuracy, and error states preserve the compact Nearby geometry and do not turn the section into a page-sized empty panel.
+
 #### 7. Roulette Template
 
 The selected unique candidate pool, image/name chips, wheel segments, and result are the same data. Unfilled segments say `+ 添加更多餐厅`; do not duplicate Restaurants or present placeholders as real candidates. Random selection is uniform unless Lafayette explicitly approves weighting.
@@ -314,6 +316,10 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 ## Add Restaurant and Nearby
 
 - Formal order: Search, Nearby, external Share ingestion, and one Manual Add card.
+- Browser and Capacitor reuse the same acquisition scaffold, input, state, and result components; platform adapters supply provider/location behavior without forking the visual page.
+- Restaurant-name, city, and Manual Add text fields render at `16px` or larger in WKWebView so focus never triggers automatic viewport zoom. Never solve this by disabling pinch/user scaling in the viewport meta tag.
+- City scope uses a building/city/map-region icon. GPS/target icons are reserved for live current-location and Nearby status.
+- Search, Nearby, Share, and Manual Add share icon-container, row-height, divider, focus, pressed, disabled, loading, empty, and error grammar while retaining their approved primary/secondary weights.
 - Manual paste is not a primary in-app section; parsers remain available to the Share Extension.
 - Nearby uses a fresh CLLocation after checking authorization, accuracy, timestamp, and horizontal accuracy. City center or map camera center can never impersonate GPS.
 - Selection shows the standard Restaurant Detail foundation before Want to Go or Record Visit.

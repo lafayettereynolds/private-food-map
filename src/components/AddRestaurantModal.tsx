@@ -16,7 +16,6 @@ import {
 import { CompanionPicker } from './CompanionPicker'
 import { ModalShell } from './ModalShell'
 import { StickyFormActionBar } from './StickyFormActionBar'
-import { PlusAction } from './PlusAction'
 import { DishEditor } from './DishEditor'
 import { MarkerStyleField } from './MarkerStyleField'
 import { QueueDurationPicker } from './QueueDurationPicker'
@@ -41,7 +40,12 @@ import type {
 import { currentDateAndTime, localDateTimeToIso } from '../utils/date'
 import { CURRENT_USER_ID } from '../db/social'
 import { resolveExternalRestaurantLink, type ExternalLinkResolveResult } from '../services/externalRestaurantLink'
-import { TasteMapRestaurantAcquisitionScaffold } from './TasteMapRestaurantAcquisitionShared'
+import {
+  TasteMapRestaurantAcquisitionResults,
+  TasteMapRestaurantAcquisitionScaffold,
+  TasteMapRestaurantAcquisitionSearch,
+  TasteMapRestaurantAcquisitionStatus,
+} from './TasteMapRestaurantAcquisitionShared'
 
 interface AddRestaurantModalProps {
   companionOptions: string[]
@@ -588,19 +592,35 @@ function SearchStep({
       ) : null}
       <TasteMapRestaurantAcquisitionScaffold
         nearby={<>
-          <div className="tm-acquisition__nearby-meta"><span>{locationLabel ? 'GPS 3 公里内' : '仅使用精确 GPS'}</span></div>
-          {nearbyLoading ? <div className="nearby-loading"><LoaderCircle className="spin" size={17} /> 正在寻找附近餐厅</div> : null}
+          <TasteMapRestaurantAcquisitionStatus
+            detail={nearbyLoading
+              ? '只接受足够新鲜、精度合理的当前位置'
+              : nearbyMessage || (locationLabel ? `${locationLabel} · 3 公里内按实际距离排序` : '附近搜索已完成')}
+            onRetry={onRetryLocation}
+            retryLabel="重新定位"
+            state={nearbyLoading ? 'loading' : nearbyMessage ? 'error' : 'ready'}
+            title={nearbyLoading ? '正在取得新鲜位置' : nearbyMessage ? '暂时无法取得精确位置' : '当前位置已更新'}
+          />
           {!nearbyLoading ? <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={nearbyResults} /> : null}
-          {!nearbyLoading && nearbyMessage ? <div className="nearby-status-message"><MapPin size={16} /><span>{nearbyMessage}</span><button onClick={onRetryLocation} type="button">重新定位</button></div> : null}
         </>}
         onOpenManual={onManualAdd}
         onOpenShare={() => setShareIngestionOpen((value) => !value)}
         search={<>
-          <form className="poi-search-form" onSubmit={onSearch}>
-            <label className="field field--grow"><span>餐厅名称</span><div className="input-with-icon"><Search size={17} /><input autoFocus onChange={(event) => onKeywordChange(event.target.value)} placeholder="例如：寿喜烧" value={keyword} /></div></label>
-            <label className="field field--city"><span>搜索城市 {locatingCity ? '· 正在精确定位' : ''}</span><input onChange={(event) => onCityChange(event.target.value)} placeholder="杭州" value={city} />{locationLabel ? <small className="gps-location-detail"><LocateFixed size={12} /> 已定位：{locationLabel}</small> : null}</label>
-            <button className="primary-button search-submit" disabled={!mapService.isConfigured || loading || !keyword.trim()} type="submit">{loading ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}搜索</button>
-          </form>
+          <TasteMapRestaurantAcquisitionSearch
+            autoFocus
+            city={city}
+            cityPlaceholder="杭州"
+            disabled={!mapService.isConfigured}
+            loading={loading}
+            locationDetail={locatingCity
+              ? <><LocateFixed aria-hidden="true" size={13} />正在取得精确位置</>
+              : locationLabel ? <><LocateFixed aria-hidden="true" size={13} />已定位：{locationLabel}</> : null}
+            onCityChange={onCityChange}
+            onQueryChange={onKeywordChange}
+            onSubmit={onSearch}
+            query={keyword}
+            queryPlaceholder="例如：寿喜烧、南京西路"
+          />
           {error ? <p className="form-error">{error}</p> : null}
           <div className="poi-results" aria-live="polite">
             <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={results} />
@@ -629,24 +649,19 @@ function PoiResultList({
   onChoose,
   onRecordExisting,
 }: Pick<SearchStepProps, 'existingRestaurantsByPoiId' | 'results' | 'onChoose' | 'onRecordExisting'>) {
-  return results.map((poi) => {
+  return <TasteMapRestaurantAcquisitionResults items={results.map((poi) => {
     const existingRestaurant = existingRestaurantsByPoiId.get(poi.amapPoiId)
-    return (
-      <article className="poi-result" key={poi.amapPoiId}>
-        {poi.merchantImageUrl ? <img className="poi-result__image" alt="" src={poi.merchantImageUrl} /> : <span className="poi-result__pin"><MapPin size={17} /></span>}
-        <div className="poi-result__body"><strong>{poi.name}</strong><p>{poi.address}</p><span>{poi.city}{poi.district ? ` · ${poi.district}` : ''}</span></div>
-        {existingRestaurant ? <PlusAction
-          actionType="ADD_VISIT"
-          aria-label={`再次记录到访 ${existingRestaurant.name}`}
-          className="repeat-visit-button"
-          context="restaurant"
-          label="再次记录到访"
-          onAction={() => onRecordExisting(existingRestaurant)}
-          showLabel
-        /> : <button className="secondary-button" onClick={() => onChoose(poi)} type="button">选择</button>}
-      </article>
-    )
-  })
+    return {
+      id: poi.amapPoiId,
+      name: poi.name,
+      meta: `${poi.city}${poi.district ? ` · ${poi.district}` : ''}${poi.address ? ` · ${poi.address}` : ''}`,
+      image: poi.merchantImageUrl
+        ? <img alt="" src={poi.merchantImageUrl} />
+        : <span className="tm-acquisition-result__fallback"><MapPin aria-hidden="true" size={18} /></span>,
+      actionLabel: existingRestaurant ? '再次记录' : '查看',
+      onOpen: existingRestaurant ? () => onRecordExisting(existingRestaurant) : () => onChoose(poi),
+    }
+  })} />
 }
 
 function ManualRestaurantStep({

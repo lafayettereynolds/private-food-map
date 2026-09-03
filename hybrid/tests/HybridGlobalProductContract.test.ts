@@ -46,6 +46,7 @@ describe('Hybrid global Product Contract', () => {
     const hybrid = source('../../src/hybrid/app/HybridAddRestaurantPage.tsx')
     const formalWeb = source('../../src/components/AddRestaurantModal.tsx')
     const shared = source('../../src/components/TasteMapRestaurantAcquisitionShared.tsx')
+    const sharedCSS = source('../../src/components/tasteMapRestaurantAcquisitionShared.css')
     const hybridCSS = source('../../src/hybrid/app/hybridShell.css')
     expect(HYBRID_RESTAURANT_ACQUISITION_CONTRACT).toEqual({
       capabilities: ['search', 'nearby', 'share', 'manual'],
@@ -56,13 +57,24 @@ describe('Hybrid global Product Contract', () => {
     })
     for (const consumer of [hybrid, formalWeb]) {
       expect(consumer).toContain('TasteMapRestaurantAcquisitionScaffold')
+      expect(consumer).toContain('TasteMapRestaurantAcquisitionSearch')
+      expect(consumer).toContain('TasteMapRestaurantAcquisitionStatus')
+      expect(consumer).toContain('TasteMapRestaurantAcquisitionResults')
     }
     for (const capability of HYBRID_RESTAURANT_ACQUISITION_CONTRACT.capabilities) {
       expect(shared).toContain(`data-acquisition-capability="${capability}"`)
     }
     expect(shared.match(/data-acquisition-capability="manual"/g)).toHaveLength(1)
+    expect(shared).toContain('data-location-semantic="city-not-gps"')
+    expect(shared).toContain('data-shared-acquisition-component="search-city"')
+    expect(shared).toContain('data-shared-acquisition-component="nearby-status"')
+    expect(shared).toContain('data-shared-acquisition-component="candidate-results"')
+    expect(sharedCSS).toMatch(/\.tm-acquisition-field input[\s\S]*?font-size:\s*16px/)
+    expect(sharedCSS).toMatch(/\.tm-acquisition-status > button[\s\S]*?min-height:\s*44px/)
+    expect(sharedCSS).toContain('.tm-acquisition__section-icon')
     expect(hybrid).not.toContain('ADD RESTAURANT')
-    expect(hybridCSS).not.toMatch(/tm-hybrid-add-panel|tm-hybrid-add-entry-row|tm-hybrid-add-legacy-stack/)
+    expect(hybridCSS).not.toMatch(/tm-hybrid-add-panel|tm-hybrid-add-entry-row|tm-hybrid-add-legacy-stack|tm-hybrid-add-search|tm-hybrid-location-status|tm-hybrid-search-results/)
+    expect(shared).not.toMatch(/user-scalable\s*=\s*no|maximum-scale\s*=\s*1/)
   })
 
   it('hands Native provider candidates back to the canonical Hybrid Restaurant Detail', () => {
@@ -305,7 +317,8 @@ describe('Hybrid forbidden Product patterns', () => {
     const shared = source('../../src/components/TasteMapRestaurantAcquisitionShared.tsx')
     expect(add).not.toMatch(/placeholder="[^"]*(粘贴|链接)/)
     expect(add).not.toMatch(/<input[^>]+(?:paste|url|link)/i)
-    expect(shared).not.toMatch(/<input|粘贴餐厅链接/)
+    expect(shared).not.toMatch(/粘贴餐厅链接/)
+    expect(shared).not.toMatch(/<input[^>]+(?:paste|url|link)/i)
     expect(formal).toContain('data-secondary-share-ingestion="true"')
   })
 

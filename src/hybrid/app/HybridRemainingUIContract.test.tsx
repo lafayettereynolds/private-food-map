@@ -100,6 +100,12 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).not.toContain('role="tablist"')
     expect(html).not.toContain('ADD RESTAURANT')
     expect(html.match(/data-acquisition-capability="manual"/g)).toHaveLength(1)
+    expect(html).toContain('data-shared-acquisition-component="search-city"')
+    expect(html).toContain('data-shared-acquisition-component="nearby-status"')
+    expect(html).toContain('data-location-semantic="city-not-gps"')
+    expect(html.match(/data-acquisition-input=/g)).toHaveLength(2)
+    expect(html).toContain('aria-label="城市"')
+    expect(html).not.toContain('tm-hybrid-add-city')
   })
 
   it('renders compact ranked/public Lists and the approved max-10 Roulette contract', () => {

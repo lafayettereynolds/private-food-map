@@ -1,8 +1,13 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
-import { ChevronRight, LoaderCircle, MapPin, Search, X } from 'lucide-react'
+import { Building2, MapPin, Store, X } from 'lucide-react'
 import type { TasteMapAcquisitionCandidateDTO, TasteMapAcquisitionResultsDTO, TasteMapPlatform } from '../../platform/TasteMapPlatform'
 import { HybridRestaurantImage } from '../../components/TasteMapHybridShared'
-import { TasteMapRestaurantAcquisitionScaffold } from '../../components/TasteMapRestaurantAcquisitionShared'
+import {
+  TasteMapRestaurantAcquisitionResults,
+  TasteMapRestaurantAcquisitionScaffold,
+  TasteMapRestaurantAcquisitionSearch,
+  TasteMapRestaurantAcquisitionStatus,
+} from '../../components/TasteMapRestaurantAcquisitionShared'
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -94,13 +99,14 @@ export function HybridAddRestaurantPage({ platform, onOpenRestaurant }: { platfo
       onOpenManual={() => setManualOpen((value) => !value)}
       onOpenShare={() => { setShareOpen((value) => !value); if (!shareResult) loadShared(true) }}
       search={<>
-        <form className="tm-hybrid-add-search-form" onSubmit={(event) => void submitSearch(event)}>
-          <div className="tm-hybrid-add-search-row">
-            <label className="tm-hybrid-add-search"><Search aria-hidden="true" size={17} /><input autoComplete="off" onChange={(event) => setQuery(event.target.value)} placeholder="例如：寿喜烧、南京西路" value={query} /></label>
-            <button disabled={searchState === 'loading' || !query.trim()} type="submit">{searchState === 'loading' ? <LoaderCircle className="spin" size={16} /> : '搜索'}</button>
-          </div>
-          <label className="tm-hybrid-add-city"><span>城市</span><input onChange={(event) => setCity(event.target.value)} placeholder="例如：杭州" value={city} /></label>
-        </form>
+        <TasteMapRestaurantAcquisitionSearch
+          city={city}
+          loading={searchState === 'loading'}
+          onCityChange={setCity}
+          onQueryChange={setQuery}
+          onSubmit={(event) => void submitSearch(event)}
+          query={query}
+        />
         {searchState === 'error' ? <InlineState>搜索失败，请检查网络后重试；附近和手动添加仍可使用。</InlineState> : null}
         {searchResult ? <CandidateResults result={searchResult} onOpen={openCandidate} /> : null}
       </>}
@@ -108,34 +114,48 @@ export function HybridAddRestaurantPage({ platform, onOpenRestaurant }: { platfo
         <LocationState result={nearbyResult} state={nearbyState} onRetry={loadNearby} />
         {nearbyResult ? <CandidateResults result={nearbyResult} onOpen={openCandidate} /> : null}
       </>}
-      sharePanel={shareOpen ? <section className="tm-hybrid-acquisition-panel is-share">
-        <button aria-label="关闭外部分享结果" className="tm-hybrid-acquisition-panel__close" onClick={() => setShareOpen(false)} type="button"><X size={16} /></button>
+      sharePanel={shareOpen ? <section className="tm-acquisition__expansion is-share">
+        <button aria-label="关闭外部分享结果" className="tm-acquisition__expansion-close" onClick={() => setShareOpen(false)} type="button"><X size={16} /></button>
         <h3>外部分享识别结果</h3>
         {shareState === 'loading' ? <InlineState>正在读取 Apple 地图、高德地图、URL 或分享文字…</InlineState> : null}
         {shareState === 'error' ? <InlineState>分享内容暂时无法识别；仍可按名称搜索或手动添加。</InlineState> : null}
         {shareResult ? <CandidateResults result={shareResult} onOpen={openCandidate} /> : null}
       </section> : null}
+      manualPanel={manualOpen ? <section className="tm-acquisition__expansion is-manual" aria-label="手动添加餐厅表单">
+        <button aria-label="关闭手动添加" className="tm-acquisition__expansion-close" onClick={() => setManualOpen(false)} type="button"><X size={17} /></button>
+        <h3>补充地图上没有的餐厅</h3>
+        <form className="tm-acquisition__manual-form" onSubmit={(event) => void submitManual(event)}>
+          <label className="tm-acquisition-field"><span className="tm-acquisition-field__icon"><Store aria-hidden="true" size={17} /></span><span className="tm-acquisition-field__body"><small>餐厅名称</small><input aria-label="手动添加餐厅名称" name="name" placeholder="例如：巷口小摊" required /></span></label>
+          <label className="tm-acquisition-field" data-location-semantic="city-not-gps"><span className="tm-acquisition-field__icon"><Building2 aria-hidden="true" size={17} /></span><span className="tm-acquisition-field__body"><small>城市</small><input aria-label="手动添加城市" name="city" placeholder="例如：杭州" required /></span></label>
+          <label className="tm-acquisition-field"><span className="tm-acquisition-field__icon"><MapPin aria-hidden="true" size={17} /></span><span className="tm-acquisition-field__body"><small>地址或附近地标</small><input aria-label="手动添加地址" name="address" placeholder="例如：武林路 32 号门口" required /></span></label>
+          {manualError ? <p role="alert">{manualError}</p> : null}
+          <button className="tm-acquisition__manual-submit" disabled={manualState === 'loading'} type="submit">{manualState === 'loading' ? '正在定位地址…' : '确认餐厅位置'}</button>
+        </form>
+      </section> : null}
     />
-    {manualOpen ? <section className="tm-hybrid-manual-panel" aria-label="手动添加餐厅">
-      <header><div><strong>手动添加餐厅</strong><small>适用于地图上搜不到的餐厅；地址将由正式地图服务定位。</small></div><button aria-label="关闭手动添加" onClick={() => setManualOpen(false)} type="button"><X size={17} /></button></header>
-      <form onSubmit={(event) => void submitManual(event)}>
-        <label><span>餐厅名称</span><input name="name" required /></label>
-        <label><span>城市</span><input name="city" required /></label>
-        <label><span>地址</span><input name="address" required /></label>
-        {manualError ? <p role="alert">{manualError}</p> : null}
-        <button disabled={manualState === 'loading'} type="submit">{manualState === 'loading' ? '正在定位地址…' : '确认餐厅位置'}</button>
-      </form>
-    </section> : null}
   </main>
 }
 
 function CandidateResults({ result, onOpen }: { result: TasteMapAcquisitionResultsDTO; onOpen: (candidate: TasteMapAcquisitionCandidateDTO) => Promise<void> }) {
-  return <>{result.candidates.length ? <div className="tm-hybrid-search-results">{result.candidates.map((item) => <button key={item.id} onClick={() => void onOpen(item)} type="button"><HybridRestaurantImage image={item.image} name={item.name} /><span><strong>{item.name}{item.duplicateKind !== 'none' ? <b>{item.duplicateKind === 'exactProvider' ? '已在地图' : '可能重复'}</b> : null}</strong><small>{item.city}{item.city && item.address ? ' · ' : ''}{item.address}</small>{item.distanceMeters != null ? <em>{distanceText(item.distanceMeters)}</em> : null}</span><ChevronRight aria-hidden="true" size={17} /></button>)}</div> : result.message ? <InlineState>{result.message}</InlineState> : null}</>
+  return <>{result.candidates.length ? <TasteMapRestaurantAcquisitionResults items={result.candidates.map((item) => ({
+    id: item.id,
+    name: item.name,
+    meta: `${item.city}${item.city && item.address ? ' · ' : ''}${item.address}`,
+    supportingText: item.distanceMeters != null ? distanceText(item.distanceMeters) : null,
+    badge: item.duplicateKind === 'none' ? null : item.duplicateKind === 'exactProvider' ? '已在地图' : '可能重复',
+    image: <HybridRestaurantImage image={item.image} name={item.name} />,
+    onOpen: () => void onOpen(item),
+  }))} /> : result.message ? <InlineState>{result.message}</InlineState> : null}</>
 }
 
 function LocationState({ result, state, onRetry }: { result: TasteMapAcquisitionResultsDTO | null; state: LoadState; onRetry: () => void }) {
   const location = result?.location
-  return <div className={`tm-hybrid-location-status is-${state}`}><MapPin aria-hidden="true" size={16} /><span><strong>{state === 'ready' ? location ? '当前位置已更新' : '附近搜索已完成' : state === 'loading' ? '正在取得新鲜位置' : '暂时无法取得精确位置'}</strong><small>{location ? `精度约 ${Math.round(location.horizontalAccuracy)} 米 · ${location.accuracyMode === 'reduced' ? '约略位置' : '精确位置'}` : state === 'error' ? '搜索和手动添加仍可使用，不采用城市中心兜底' : '只接受足够新鲜、精度合理的 CLLocation'}</small></span>{state === 'error' ? <button onClick={onRetry} type="button">重试</button> : null}</div>
+  return <TasteMapRestaurantAcquisitionStatus
+    detail={location ? `精度约 ${Math.round(location.horizontalAccuracy)} 米 · ${location.accuracyMode === 'reduced' ? '约略位置' : '精确位置'}` : state === 'error' ? '搜索和手动添加仍可使用，不采用城市中心兜底' : '只接受足够新鲜、精度合理的当前位置'}
+    onRetry={onRetry}
+    state={state}
+    title={state === 'ready' ? location ? '当前位置已更新' : '附近搜索已完成' : state === 'loading' ? '正在取得新鲜位置' : '暂时无法取得精确位置'}
+  />
 }
 
 function InlineState({ children }: { children: string }) { return <p className="tm-acquisition__inline-state">{children}</p> }

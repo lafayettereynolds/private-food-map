@@ -3904,6 +3904,47 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridAddRestaurantVisualAndInputFocusContract() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["地图"].tap()
+        let add = webView.buttons["添加餐厅"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 12))
+        add.tap()
+
+        let query = webView.textFields["餐厅名称或地址"]
+        let city = webView.textFields["城市"]
+        XCTAssertTrue(query.waitForExistence(timeout: 10))
+        XCTAssertTrue(city.waitForExistence(timeout: 10))
+        XCTAssertTrue(webView.staticTexts["附近餐厅"].exists)
+        XCTAssertTrue(webView.buttons["从外部分享添加"].exists)
+        XCTAssertTrue(webView.buttons["手动添加餐厅"].exists)
+
+        let queryFrameBeforeFocus = query.frame
+        query.tap()
+        query.typeText("青岚寿司")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(query.frame.width, queryFrameBeforeFocus.width, accuracy: 1)
+
+        let cityFrameBeforeFocus = city.frame
+        city.tap()
+        city.typeText("杭州市上城区")
+        XCTAssertEqual(city.frame.width, cityFrameBeforeFocus.width, accuracy: 1)
+        XCTAssertTrue(webView.buttons["搜索餐厅"].isHittable)
+
+        webView.staticTexts["搜索餐厅"].firstMatch.tap()
+        XCTAssertFalse(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(webView.buttons["从外部分享添加"].isHittable)
+        XCTAssertTrue(webView.buttons["手动添加餐厅"].isHittable)
+        keepScreenshot(named: "Hybrid Add Restaurant Final", of: app)
+    }
+
+    @MainActor
     func testHybridDiscoverySharedProductAndVisualContract() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
@@ -3974,7 +4015,7 @@ final class TasteMapUITests: XCTestCase {
         webView.buttons["地图"].tap()
         webView.buttons["添加餐厅"].firstMatch.tap()
         keepScreenshot(named: "Batch 01 Add Search", of: app)
-        let search = webView.textFields["餐厅名称、地址或城市"]
+        let search = webView.textFields["餐厅名称或地址"]
         XCTAssertTrue(search.waitForExistence(timeout: 8))
         search.tap()
         search.typeText("青岚")
