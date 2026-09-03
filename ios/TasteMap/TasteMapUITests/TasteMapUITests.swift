@@ -4132,6 +4132,18 @@ final class TasteMapUITests: XCTestCase {
         let note = webView.textViews["到访笔记"]
         scrollUntilVisible(note, in: app)
         XCTAssertTrue(note.waitForExistence(timeout: 5))
+        let noteX = note.frame.minX
+        let horizontalDragStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.78, dy: 0.56))
+        let horizontalDragEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.56))
+        horizontalDragStart.press(forDuration: 0.05, thenDragTo: horizontalDragEnd)
+        XCTAssertEqual(
+            note.frame.minX,
+            noteX,
+            accuracy: 1,
+            "The visit editor must remain horizontally fixed while its contents scroll vertically."
+        )
+        keepScreenshot(named: "Hybrid Visit Editor Fixed Horizontal Frame", of: app)
+
         note.tap()
         note.typeText(" Batch 2 Hybrid 编辑后刷新")
         webView.buttons["保存修改"].tap()

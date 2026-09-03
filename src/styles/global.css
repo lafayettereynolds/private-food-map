@@ -223,11 +223,12 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .modal-header { flex: 0 0 auto; display: flex; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
 .modal-header h2 { margin: 5px 0 0; font: 600 23px Georgia, "Songti SC", serif; }
 .modal-header p { max-width: 580px; margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.modal-content { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+.modal-content { min-width: 0; min-height: 0; max-width: 100%; flex: 1 1 auto; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .modal-content:has(.sticky-action-form) { display: flex; overflow: hidden; }
 .modal:has(.sticky-action-form) { padding-bottom: 0; }
 .sticky-action-form { min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
-.sticky-action-form__content { min-height: 0; flex: 1 1 auto; padding: 0 7px calc(76px + env(safe-area-inset-bottom)) 0; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: calc(76px + env(safe-area-inset-bottom)); scrollbar-gutter: stable; }
+.sticky-action-form__content { width: 100%; min-width: 0; min-height: 0; max-width: 100%; flex: 1 1 auto; padding: 0 7px calc(76px + env(safe-area-inset-bottom)) 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: calc(76px + env(safe-area-inset-bottom)); scrollbar-gutter: stable; touch-action: pan-y; }
+.sticky-action-form__content > * { min-width: 0; max-width: 100%; }
 .sticky-form-action-bar { position: sticky; z-index: 4; bottom: 0; flex: 0 0 auto; margin: 0 -24px; padding: 12px 24px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--color-divider); background: rgba(255,255,255,.98); box-shadow: 0 -8px 22px rgba(23,42,58,.055); backdrop-filter: blur(12px); }
 .sticky-form-action-bar__buttons { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .sticky-form-action-bar__buttons button { min-width: 104px; }
