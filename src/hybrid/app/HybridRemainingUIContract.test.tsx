@@ -128,7 +128,7 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).not.toContain('分享动态</button>')
     expect(html).toContain('aria-label="记录 ')
     expect(html).toContain('aria-label="已去过 ')
-    expect(html).toContain('aria-label="轮盘 ')
+    expect(html).toContain('aria-label="加入转盘 ')
     expect(html).toContain('lucide-notebook-pen')
     const restaurantActions = html.match(/data-activity-region="restaurant-actions">([\s\S]*?)<\/div><\/footer>/)?.[1] ?? ''
     expect(restaurantActions).toContain('data-tastemap-semantic-icon="visited"')

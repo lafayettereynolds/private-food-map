@@ -187,15 +187,17 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .map-card { position: absolute; z-index: 12; left: 22px; bottom: 22px; width: 330px; padding: 19px; border: 1px solid rgba(255,255,255,.9); border-radius: 15px; background: rgba(251,251,248,.96); box-shadow: 0 18px 45px rgba(44,54,42,.18); backdrop-filter: blur(14px); animation: card-in .2s ease-out; }
 .map-card__close { position: absolute; right: 10px; top: 10px; width: 30px; height: 30px; border: 0; border-radius: 8px; display: grid; place-items: center; color: #858981; background: transparent; }
 .map-card__close:hover { background: #eff0ec; }
-.map-card__title-row { display: flex; align-items: center; justify-content: space-between; gap: 11px; padding-right: 32px; }
+.map-card__title-row { display: flex; align-items: center; justify-content: space-between; gap: 11px; }
 .map-card__title-row > i { width: 10px; height: 10px; margin-top: 23px; flex: 0 0 auto; border-radius: 50%; box-shadow: 0 0 0 3px white; }
 .map-card__title-row div { min-width: 0; }
 .map-card__title-row span { color: #8a8f87; font-size: 10px; }
 .map-card__title-row h2 { margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 19px Georgia, "Songti SC", serif; }
-.restaurant-quick-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
+.restaurant-quick-actions { margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
 .restaurant-quick-actions button { width: 40px; height: 40px; padding: 0; border: 1px solid #cbd6df; border-radius: 50%; display: grid; place-items: center; color: var(--color-primary-dark); background: var(--color-surface); cursor: pointer; transition: border-color .16s ease, color .16s ease, background .16s ease, transform .16s ease; }
 .restaurant-quick-actions button:hover { border-color: var(--color-primary); background: var(--color-primary-light); transform: translateY(-1px); }
 .restaurant-quick-actions button.is-selected { border-color: var(--color-primary); color: #fff; background: var(--color-primary); }
+.restaurant-quick-actions button:disabled { cursor: default; opacity: .78; }
+.restaurant-quick-actions button:disabled:hover { border-color: var(--color-primary); color: #fff; background: var(--color-primary); transform: none; }
 .restaurant-title-actions button { width: 40px; height: 40px; }
 .map-card__address { margin: 13px 0 15px; display: flex; align-items: flex-start; gap: 6px; color: #72776f; font-size: 11px; line-height: 1.5; }
 .map-card__address svg { margin-top: 1px; flex: 0 0 auto; }

@@ -33,28 +33,34 @@ export function RestaurantQuickActions({
     action?.()
   }
 
+  const recordLabel = visitedActive ? '再次添加' : '加入餐厅'
+  const savedActive = visitedActive || wantActive
+  const saveLabel = visitedActive ? '已收藏餐厅' : wantActive ? '取消收藏餐厅' : '收藏餐厅'
+  const wheelLabel = wheelActive ? '移出转盘' : '加入转盘'
+
   return <div className={`restaurant-quick-actions${className ? ` ${className}` : ''}`} aria-label={`${restaurantName} 快捷操作`}>
     {onRecordVisit ? <PlusAction
       actionType="ADD_VISIT"
-      aria-label={`${visitedActive ? '再次记录到访' : '记录这家餐厅'} ${restaurantName}`}
+      aria-label={`${recordLabel} ${restaurantName}`}
       context="restaurant"
-      label={visitedActive ? '再次记录到访' : '记录这家餐厅'}
+      label={recordLabel}
       onAction={onRecordVisit}
     /> : null}
-    {onToggleWant ? <button
-      aria-label={`${wantActive ? '移出想吃' : '加入想吃'} ${restaurantName}`}
-      aria-pressed={wantActive}
-      className={wantActive ? 'is-selected' : ''}
+    {onToggleWant || visitedActive ? <button
+      aria-label={`${saveLabel} ${restaurantName}`}
+      aria-pressed={savedActive}
+      className={savedActive ? 'is-selected' : ''}
+      disabled={visitedActive}
       onClick={(event) => handleAction(event, onToggleWant)}
-      title={wantActive ? '移出想吃' : '加入想吃'}
+      title={saveLabel}
       type="button"
-    ><Bookmark fill={wantActive ? 'currentColor' : 'none'} size={18} /></button> : null}
+    ><Bookmark fill={savedActive ? 'currentColor' : 'none'} size={18} /></button> : null}
     {onToggleWheel ? <button
-      aria-label={`${wheelActive ? '移出抽签' : '加入抽签'} ${restaurantName}`}
+      aria-label={`${wheelLabel} ${restaurantName}`}
       aria-pressed={wheelActive}
       className={wheelActive ? 'is-selected' : ''}
       onClick={(event) => handleAction(event, onToggleWheel)}
-      title={wheelActive ? '移出抽签' : '加入抽签'}
+      title={wheelLabel}
       type="button"
     ><Dices size={18} /></button> : null}
   </div>

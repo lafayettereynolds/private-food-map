@@ -78,6 +78,19 @@ For formal Hybrid Taste Map builds:
 
 Hashed asset-name changes are expected and must be staged in the formal resources. Never leave the repository with a new source implementation while the tracked formal bundle still points to an older asset hash.
 
+### Preview renderer identity gate (iron rule)
+
+Before showing Lafayette any Simulator screenshot or leaving a UI build open for manual review, prove that the installed app is rendering the intended product surface and runtime mode. A Hybrid review must launch the Hybrid root with the intended fixture/session; a Native rollback, fallback, UI-test fixture, or candidate renderer must never be presented as the current Hybrid result.
+
+For every visual checkpoint:
+
+1. Record the source branch/commit, built `.app`, launch arguments, environment, runtime mode, route, and renderer (`React Hybrid`, `Native MapKit surface`, or `Native rollback`).
+2. Verify the page identity and the continued presence of unaffected contract-critical regions before asking Lafayette to review. For Restaurant Detail this includes, when data is present, ratings, photos, visit overview/history, business information, and downstream content—not only the modified action.
+3. A narrowly scoped UI request may not change the page renderer, route ownership, runtime mode, canonical template, or unrelated regions unless Lafayette explicitly authorizes that expansion.
+4. If the wrong renderer or fixture is installed, immediately classify the screenshot as invalid, restore the intended runtime, and do not use the mistaken screenshot as acceptance evidence.
+
+This gate exists because changing only a launch mode can make correct data and sections appear to have been removed even when source data is intact. Build success and visual resemblance do not waive renderer-identity verification.
+
 ## Long-term design decisions
 
 When Lafayette confirms a new durable product or visual rule, update `docs/TASTEMAP_PRODUCT_DESIGN_RULES.md` in the same task after the implementation is validated. Include the decision, shared-component/template impact, and a Do Not Regress note when appropriate.
@@ -87,6 +100,8 @@ Do not leave a lasting design decision only in chat, a temporary report, a scree
 ## Acceptance requirements
 
 UI acceptance must verify information architecture, section order, control placement and weight, image placement, horizontal/vertical relationships, spacing, density, shared-component reuse, accessibility, state coverage, and the applicable Web/approved reference—not only titles, buttons, build success, or test success.
+
+Visual quality is a product requirement, not optional polish. A functionally correct control still fails acceptance when its alignment, proportion, whitespace, grouping, hierarchy, or relationship to surrounding content visibly degrades the approved composition. For a narrow visual correction, preserve every unaffected region, compare before/after at the real target viewport, and verify both the local geometry and the full-page balance before presenting the result.
 
 Final UI/UX reports must include a Design System Compliance section covering Core UI, Food & Dining visuals, Canonical Page Templates, remaining duplicate components, default-SwiftUI visual regressions, and remaining design-system gaps.
 

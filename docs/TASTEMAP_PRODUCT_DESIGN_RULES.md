@@ -310,6 +310,8 @@ One card language must preserve: author/avatar/time, Restaurant image/name/addre
 
 Restaurant action rows are compact and semantic. Record, Want to Go, add to list, roulette, directions, phone, and share do not become a wall of equal-weight pills or large cards.
 
+The canonical Restaurant Detail title row keeps exactly three primary icon actions in this order: `加入餐厅 / 再次添加`, `收藏餐厅`, `加入转盘`. Their precise alignment is a page-composition decision: choose the placement that gives the current title, card width, spacing, and surrounding content the best visual balance rather than turning one screenshot's alignment into a global positioning formula. The `+` remains an action that opens a new Visit for an already-visited Restaurant; it is never disabled merely because the Restaurant is already `visited`. The bookmark represents whether the Restaurant is already in the current user's personal collection: a WantToGo Restaurant may be removed, while a visited Restaurant remains visibly saved and must never be downgraded to WantToGo or lose Visit history. Current viewer state may change selected/disabled presentation, but must never remove one of the three primary action slots.
+
 ### Empty States
 
 Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decorative artwork; its message and action still describe the actual state. Loading, empty, insufficient sample, authentication, permission, and network failure are distinct states.

@@ -188,6 +188,20 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     }
   }
 
+  const toggleDetailCollection = async () => {
+    if (!restaurant || !restaurant.capabilities.canAddToWantToGo || restaurant.viewerState === 'visited') return
+    const result = await platform.restaurant.setWantToGo(
+      restaurant.restaurant.id,
+      restaurant.viewerState !== 'want_to_go',
+    )
+    await refreshReadyData().catch(() => undefined)
+    if (result.viewerState === 'none') {
+      await navigateBack()
+      return
+    }
+    setDetailRevision((value) => value + 1)
+  }
+
   if (bootstrap.state === 'loading') return <ShellState kind="loading" message="正在读取 Taste Map 本地数据…" />
   if (bootstrap.state === 'authRequired') return <ShellState action={async () => {
     const result = await platform.auth.signInWithApple()
@@ -247,7 +261,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
                 isInRoulette={rouletteRestaurantIDs.includes(restaurant.restaurant.id)}
                 onAddToRoulette={restaurant.capabilities.canAddToRoulette ? () => setRouletteRestaurantIDs((ids) => ids.includes(restaurant.restaurant.id) ? ids.filter((id) => id !== restaurant.restaurant.id) : [...ids, restaurant.restaurant.id]) : undefined}
                 onAddToList={restaurant.capabilities.canAddToList ? () => void openNativeRoute(platform, 'restaurantAddToList', restaurant.restaurant.id) : undefined}
-                onAddToWant={restaurant.capabilities.canAddToWantToGo && restaurant.viewerState === 'none' ? () => void platform.restaurant.setWantToGo(restaurant.restaurant.id, true).then(() => setDetailRevision((value) => value + 1)) : undefined}
+                onAddToWant={restaurant.capabilities.canAddToWantToGo && restaurant.viewerState !== 'visited' ? () => void toggleDetailCollection() : undefined}
                 onAddVisit={restaurant.capabilities.canRecordVisit ? () => void navigate({ surface: 'visit', id: restaurant.restaurant.id }) : undefined}
                 onClose={() => void navigateBack()}
                 onDelete={restaurant.capabilities.canDeleteRestaurant ? () => void openNativeRoute(platform, 'restaurantDelete', restaurant.restaurant.id) : undefined}
