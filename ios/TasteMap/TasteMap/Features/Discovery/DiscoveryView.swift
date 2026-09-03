@@ -886,8 +886,6 @@ private struct DiscoveryRestaurantCard: View {
             VStack(alignment: .leading, spacing: 13) {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 10) {
-                    DiscoveryRestaurantImage(restaurant: card.restaurant, photoAPI: photoAPI)
-                        .frame(height: 142).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(card.restaurant.name).font(.headline).foregroundStyle(.primary)
@@ -907,6 +905,13 @@ private struct DiscoveryRestaurantCard: View {
                             size: 34
                         )
                     }
+                    DiscoveryRestaurantImage(restaurant: card.restaurant, photoAPI: photoAPI)
+                        .frame(
+                            width: TasteMapDesignTokens.Layout.socialFeedMediaWidth,
+                            height: TasteMapDesignTokens.Layout.socialFeedMediaWidth
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .buttonStyle(.plain)

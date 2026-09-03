@@ -161,6 +161,7 @@ body { margin: 0; background: var(--tm-shell-background); overscroll-behavior-y:
 /* Discovery + Community: page chrome, filters and cards live in
    TasteMapDiscoveryShared. Hybrid owns only feed layout. */
 .tm-hybrid-activity-feed { display: grid; gap: 14px; }
+.tm-hybrid-discovery .tm-hybrid-activity-feed { gap: 0; }
 
 /* Acquisition */
 .tm-hybrid-add { padding: 0 0 92px; background: #fff; }

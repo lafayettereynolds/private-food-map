@@ -363,9 +363,6 @@ struct PublicContentCard: View {
 
             Button(action: onOpenRestaurant) {
                 VStack(alignment: .leading, spacing: 10) {
-                    PublicContentMedia(item: item, photoAPI: photoAPI)
-                        .frame(height: (item.visit?.photos.count ?? 0) > 1 ? 176 : 148)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.restaurant.name).font(.title3.bold()).foregroundStyle(.primary)
@@ -380,6 +377,13 @@ struct PublicContentCard: View {
                             )
                         }
                     }
+                    PublicContentMedia(item: item, photoAPI: photoAPI)
+                        .frame(
+                            width: TasteMapDesignTokens.Layout.socialFeedMediaWidth,
+                            height: TasteMapDesignTokens.Layout.socialFeedMediaWidth
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     if let note = item.visit?.note {
                         Text("“\(note)”").font(.body).foregroundStyle(.primary).lineLimit(5)
                     }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowDownUp, Bookmark, Building2, Dices, Ellipsis, Heart, MapPin,
-  MessageCircle, NotebookPen, Send as SendIcon, Share2, SlidersHorizontal, Star, UserPlus,
+  MessageCircle, NotebookPen, Send as SendIcon, Share2, SlidersHorizontal, Star,
 } from 'lucide-react'
 import {
   TasteMapActivityCardFrame,
@@ -319,7 +319,6 @@ function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerStat
       {target ? <button aria-busy={likePending} aria-label={`${engagement.likedByViewer ? '取消点赞' : '点赞'} ${item.restaurant.name}`} aria-pressed={engagement.likedByViewer} disabled={likePending} onClick={() => onLike(target)} type="button"><Heart fill={engagement.likedByViewer ? 'currentColor' : 'none'} size={18} />{engagement.likeCount}</button> : null}
       {target ? <button aria-label={`评论 ${item.restaurant.name}`} onClick={() => onComment(target)} type="button"><MessageCircle size={18} />{engagement.commentCount}</button> : null}
       <button aria-label={`分享动态 ${item.restaurant.name}`} onClick={() => void platform.share.open({ title: item.restaurant.name, text: `${item.user.name} 在 Taste Map 记录了 ${item.restaurant.name}` })} title="分享" type="button"><Share2 aria-hidden="true" size={19} /></button>
-      {!item.user.isFollowing ? <button aria-label="关注用户" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.user.id })} type="button"><UserPlus size={18} />关注</button> : null}
     </>}
     variant="activity"
   />

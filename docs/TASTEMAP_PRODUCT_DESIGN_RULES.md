@@ -309,6 +309,8 @@ My Map's three scopes and Discovery's five scopes use `TasteMapPrimaryTabBar`: e
 
 One card language must preserve: author/avatar/time, Restaurant image/name/address, the author's Visit/Activity rating, social actions, Restaurant actions, and separate sharing. Restaurant aggregate rating must never substitute for a missing Activity rating.
 
+The visual composition is an open social feed, not a shadowed rectangular card enclosing every element. Author/Restaurant identity leads, a single Restaurant image uses a compact left-aligned square composition with deliberate surrounding whitespace instead of a mandatory full-width banner, and the social/Restaurant action groups remain visually separate. Recommendation evidence remains independent but uses open hierarchy or a light divider rather than another rounded card inside the feed item. Follow/unfollow is a Profile relationship action and does not appear in the Activity-card footer beside Like, Comment, and Share.
+
 ### Restaurant Actions
 
 Restaurant action rows are compact and semantic. Record, Want to Go, add to list, roulette, directions, phone, and share do not become a wall of equal-weight pills or large cards.
@@ -388,7 +390,9 @@ Rating circles mean: large circle = score, small circle = sample count. Nil neve
 ## Profile and Lists
 
 - Compact identity header with avatar, name, joined date, edit, Premium, following and followers.
+- Following and follower counts sit immediately below the person's name as compact identity metadata; they do not float above the name or become a second detached statistics block.
 - Top statistics are unique visited Restaurants, Want to Go Restaurants, and valid actual spend.
+- The three top statistics remain one coherent group. Each uses an icon-and-value line with the label below; the longer currency value receives sufficient width and a restrained fitting size so it does not overpower or collide with the two Restaurant counts.
 - Roulette and Taste Profile are paired; Monthly, Annual, and On This Day share one Memories section; Lists and Insights retain their own sections.
 - Lists support real create/add/reorder/edit/remove/visibility/persistence behavior; decorative empty art never masquerades as list data.
 

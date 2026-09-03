@@ -98,6 +98,22 @@ describe('Hybrid remaining product UI contract', () => {
     expect(visitedEntry).toContain('lucide-check')
   })
 
+  it('keeps Profile relationship counts with identity and balances the currency statistic', () => {
+    const owner = renderToStaticMarkup(<ProfilePage followerCount={9} followingCount={14} restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
+    const nameIndex = owner.indexOf(profile.user.nickname)
+    const socialIndex = owner.indexOf('class="profile-dashboard__social-counts"')
+    const actionsIndex = owner.indexOf('class="profile-dashboard__identity-actions"')
+    const primaryStatsIndex = owner.indexOf('profile-dashboard__counts profile-dashboard__counts--primary')
+    expect(owner.match(/profile-dashboard__social-counts/g)).toHaveLength(1)
+    expect([nameIndex, socialIndex, actionsIndex, primaryStatsIndex].every((index) => index >= 0)).toBe(true)
+    expect(nameIndex).toBeLessThan(socialIndex)
+    expect(socialIndex).toBeLessThan(actionsIndex)
+    expect(actionsIndex).toBeLessThan(primaryStatsIndex)
+    expect(owner).toContain('class="is-currency"')
+    expect(owner).toContain('aria-label="关注 14"')
+    expect(owner).toContain('aria-label="被关注 9"')
+  })
+
   it('keeps Discovery at one five-tab product level and labels missing Visit ratings honestly', () => {
     const html = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
     for (const label of ['关注', '为你推荐', '同味之选', '最新', '趋势']) expect(html).toContain(label)
@@ -129,6 +145,7 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).toContain('10 人')
     expect(html).not.toContain('查看推荐来源用户')
     expect(html).not.toContain('class="tm-activity-card__source"')
+    expect(html).not.toContain('aria-label="关注用户"')
     expect(html).not.toContain('分享动态</button>')
     expect(html).toContain('aria-label="记录 ')
     expect(html).toContain('aria-label="已去过 ')

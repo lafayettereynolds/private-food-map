@@ -418,9 +418,9 @@ struct TasteMapActivityRatingBadge: View {
     }
 }
 
-/// Canonical surface shared by recommendation Activity cards and Community
-/// Activity cards. Features supply their authorized content and actions while
-/// padding, radius, border and elevation remain one product component.
+/// Canonical open feed surface shared by recommendation Activity cards and
+/// Community Activity cards. Features supply their authorized content and
+/// actions while the feed rhythm and separation remain one product component.
 struct TasteMapActivityCard<Content: View>: View {
     private let content: Content
 
@@ -430,8 +430,9 @@ struct TasteMapActivityCard<Content: View>: View {
 
     var body: some View {
         content
-            .padding(TasteMapDesignTokens.Spacing.content)
-            .tasteMapCoreCard(radius: TasteMapDesignTokens.Radius.activityCard, showsShadow: true)
+            .padding(.horizontal, TasteMapDesignTokens.Spacing.xxxSmall)
+            .padding(.vertical, TasteMapDesignTokens.Spacing.regular)
+            .overlay(alignment: .bottom) { Divider() }
             .accessibilityElement(children: .contain)
     }
 }

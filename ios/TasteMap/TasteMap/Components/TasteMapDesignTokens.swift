@@ -97,5 +97,7 @@ enum TasteMapDesignTokens {
     enum Layout {
         static let pageInset: CGFloat = 16
         static let standardSectionSpacing: CGFloat = 16
+        /// Compact, left-aligned media used by the open Activity feed composition.
+        static let socialFeedMediaWidth: CGFloat = 168
     }
 }
