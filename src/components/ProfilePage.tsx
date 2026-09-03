@@ -313,7 +313,7 @@ function formatJoinedMonth(value?: string) { const date = value ? new Date(value
 
 function ProfileSection({ title, action, onAction, children }: { title: string; action?: string; onAction?: () => void; children: ReactNode }) { return <section className="profile-dashboard__section"><header><h2>{title}</h2>{action ? <button disabled={!onAction} onClick={onAction} type="button">{action}</button> : null}</header>{children}</section> }
 
-function MemoryCard({ title, subtitle, values, icon, onClick }: { title: string; subtitle: string; values: string[]; icon: ReactNode; onClick: () => void }) { return <button onClick={onClick} type="button"><span className="profile-memory-card__icon">{icon}</span><span className="profile-memory-card__copy"><strong>{title}</strong><small>{subtitle}</small><em>{values.join(' · ')}</em></span><ChevronRight size={15} /></button> }
+function MemoryCard({ title, subtitle, values, icon, onClick }: { title: string; subtitle: string; values: string[]; icon: ReactNode; onClick: () => void }) { return <button onClick={onClick} type="button"><span className="profile-memory-card__icon">{icon}</span><span className="profile-memory-card__copy"><strong>{title}</strong><small>{subtitle}</small><em>{values.join(' · ')}</em></span></button> }
 
 type TasteProfile = ReturnType<typeof buildProfileInsights>['tasteProfile']
 

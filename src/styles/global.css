@@ -977,9 +977,9 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .companion-history-picker label span { display: grid; gap: 3px; }
 .companion-history-picker label small { color: #77838b; font-size: 9px; }
 .profile-dashboard { position: relative; max-width: 900px; padding-top: 24px; }
-.profile-dashboard--owner { max-width: 820px; padding: 20px 22px 118px; border-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-divider)); background: color-mix(in srgb, var(--color-surface) 97%, var(--color-primary-light)); }
+.profile-dashboard--owner { max-width: 820px; padding: 20px 22px 118px; border: 0; border-radius: 0; background: var(--color-surface); box-shadow: none; }
 .profile-dashboard__hero { position: relative; padding: 16px 20px 0; border-radius: 20px; isolation: isolate; }
-.profile-dashboard--owner .profile-dashboard__hero { border: 1px solid color-mix(in srgb, var(--color-primary) 9%, var(--color-divider)); background: color-mix(in srgb, var(--color-surface) 98%, var(--color-primary-light)); }
+.profile-dashboard--owner .profile-dashboard__hero { padding-bottom: 8px; border: 0; border-bottom: 1px solid var(--color-divider); border-radius: 0; background: transparent; }
 .profile-dashboard__top { display: flex; align-items: center; justify-content: space-between; }
 .profile-dashboard__top button { min-height: 34px; padding: 0 4px; border: 0; display: inline-flex; align-items: center; gap: 7px; color: var(--color-text-primary); background: transparent; font-size: 11px; font-weight: 740; cursor: pointer; }
 .profile-dashboard__top > span { color: var(--color-text-secondary); font-size: 10px; font-weight: 700; }
@@ -1074,7 +1074,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .profile-dashboard__section > header button { padding: 4px 0; border: 0; color: #587086; background: transparent; font-size: 9px; cursor: pointer; }
 .profile-dashboard__section > header button:disabled { cursor: default; }
 .profile-memory-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.profile-memory-grid > button { min-width: 0; min-height: 88px; padding: 13px; border: 1px solid #dce7ef; border-radius: 14px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; color: inherit; text-align: left; background: linear-gradient(145deg, #edf5fb, #fff); cursor: pointer; }
+.profile-memory-grid > button { min-width: 0; min-height: 88px; padding: 13px; border: 1px solid #dce7ef; border-radius: 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; color: inherit; text-align: left; background: linear-gradient(145deg, #edf5fb, #fff); cursor: pointer; }
 .profile-memory-grid > button:nth-child(2) { border-color: #eadfc9; background: linear-gradient(145deg, #fbf4e8, #fff); }
 .profile-memory-grid > button:nth-child(3) { border-color: #e3dcf0; background: linear-gradient(145deg, #f4f0fa, #fff); }
 .profile-memory-card__icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--color-primary); background: rgba(255,255,255,.72); }
@@ -1529,7 +1529,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .profile-settings-links > button small { color: #79868f; font-size: 9px; }
 .profile-sync-line { padding: 8px 14px; border-top: 1px solid var(--color-divider); color: #647682; background: var(--color-primary-light); font-size: 9px; text-align: right; }
 @media (max-width: 760px) {
-  .profile-dashboard--owner { width: calc(100% - 16px); margin: 8px auto; padding: 10px 12px calc(106px + env(safe-area-inset-bottom)); border-radius: 18px; }
+  .profile-dashboard--owner { width: 100%; margin: 0 auto; padding: 10px 12px calc(106px + env(safe-area-inset-bottom)); border-radius: 0; }
   .profile-dashboard__hero { padding: 12px 12px 0; }
   .profile-dashboard__header { gap: 11px; padding-bottom: 17px; }
   .profile-dashboard__avatar.profile-avatar { width: 88px; height: 88px; }
@@ -1559,11 +1559,10 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
   .taste-profile-card { margin-top: 14px; padding: 15px; }
   .taste-profile-card dl { gap: 9px; }
   .profile-memory-grid { gap: 7px; }
-  .profile-memory-grid > button { min-height: 102px; padding: 10px; grid-template-columns: 1fr auto; grid-template-rows: auto 1fr; gap: 5px; }
+  .profile-memory-grid > button { min-height: 102px; padding: 10px; grid-template-columns: 1fr; grid-template-rows: auto 1fr; gap: 5px; }
   .profile-memory-card__icon { width: 31px; height: 31px; }
   .profile-memory-card__copy { grid-column: 1 / -1; }
   .profile-memory-card__copy em { display: none; }
-  .profile-memory-grid > button > svg { position: absolute; right: 9px; top: 14px; }
   .profile-analytics-links { grid-template-columns: 1fr; }
   .profile-analytics-links > button { min-height: 68px; }
   .restaurant-list-collection-grid { gap: 8px; }

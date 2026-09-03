@@ -30,6 +30,13 @@ describe('Hybrid global Product Contract', () => {
     expect(HYBRID_BOTTOM_NAVIGATION.map((item) => item.label)).not.toContain('添加')
   })
 
+  it('keeps the owner Profile header open with one separator instead of nested card frames', () => {
+    const css = source('../../src/styles/global.css')
+    expect(css).toMatch(/\.profile-dashboard--owner \{[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/)
+    expect(css).toMatch(/\.profile-dashboard--owner \.profile-dashboard__hero \{[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--color-divider\);[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/)
+    expect(css).not.toMatch(/\.profile-dashboard--owner \.profile-dashboard__hero \{[^}]*border:\s*1px/)
+  })
+
   it('keeps exactly one Add Restaurant primary entry as the Map floating CTA', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const map = source('../../src/components/MyMapBrowsePage.tsx')

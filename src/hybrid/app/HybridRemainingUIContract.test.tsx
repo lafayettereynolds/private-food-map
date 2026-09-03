@@ -115,6 +115,15 @@ describe('Hybrid remaining product UI contract', () => {
     expect(owner).toContain('aria-label="被关注 9"')
   })
 
+  it('keeps every owner memory action free of the stray top-right chevron', () => {
+    const owner = renderToStaticMarkup(<ProfilePage restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
+    const memoryActions = owner.match(/class="profile-memory-grid"([\s\S]*?)<\/div>/)?.[0] ?? ''
+    expect(memoryActions).toContain('本月回顾')
+    expect(memoryActions).toContain('年度回顾')
+    expect(memoryActions).toContain('那年今日')
+    expect(memoryActions).not.toContain('lucide-chevron-right')
+  })
+
   it('keeps Discovery at one five-tab product level and labels missing Visit ratings honestly', () => {
     const html = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
     for (const label of ['关注', '为你推荐', '同味之选', '最新', '趋势']) expect(html).toContain(label)
