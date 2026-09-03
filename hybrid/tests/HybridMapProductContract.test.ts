@@ -81,6 +81,15 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(pageCSS).toContain('inset: calc(151px + var(--tm-map-header-safe-top))')
   })
 
+  it('keeps missing GPS quiet on the shared Map surface', () => {
+    const page = source('../../src/components/MyMapBrowsePage.tsx')
+    expect(page).toContain('Missing or denied GPS is a quiet capability state')
+    expect(page).toMatch(/\.catch\(\(\) => \{[\s\S]*?setLocationMessage\(null\)/)
+    expect(page).not.toContain('定位权限未开启；餐厅数据仍可浏览')
+    expect(page).not.toContain('暂时无法取得新鲜位置；未使用城市中心或地图中心代替')
+    expect(page).toContain("location.accuracyMode === 'reduced'")
+  })
+
   it('opens full Restaurant Detail from one marker tap without an intermediate preview card', () => {
     const page = source('../../src/components/MyMapBrowsePage.tsx')
     const nativeSurface = source('../../src/components/NativeMapSurface.tsx')

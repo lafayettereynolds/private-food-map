@@ -162,12 +162,12 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       if (!alive || !location) return
       setCoordinates({ latitude: location.latitude, longitude: location.longitude })
       setLocationMessage(location.accuracyMode === 'reduced' ? '当前为大致位置，地图不会冒充精确定位。' : null)
-    }).catch((reason: unknown) => {
+    }).catch(() => {
       if (!alive) return
-      const code = typeof reason === 'object' && reason && 'code' in reason ? String(reason.code) : ''
-      setLocationMessage(code === 'location_permission_denied'
-        ? '定位权限未开启；餐厅数据仍可浏览，距离排序暂不可用。'
-        : '暂时无法取得新鲜位置；未使用城市中心或地图中心代替。')
+      // Missing or denied GPS is a quiet capability state on the Map surface.
+      // The map remains browsable and location-dependent actions can explain
+      // the requirement when the user explicitly invokes them.
+      setLocationMessage(null)
     })
     return () => { alive = false }
   }, [active, platform])
