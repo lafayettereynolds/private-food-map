@@ -73,7 +73,7 @@ export const HYBRID_PROFILE_OWNER_MODULES = [
   '回味',
   '我的食单',
   '发现与洞察',
-  '数据与设置 / 账号与隐私',
+  '右上角设置入口',
 ] as const
 
 export const HYBRID_LIST_SCOPES = ['我的食单', '公开食单'] as const

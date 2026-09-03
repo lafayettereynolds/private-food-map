@@ -289,7 +289,7 @@ describe('Hybrid global Product Contract', () => {
     expect(HYBRID_PROFILE_OWNER_MODULES).toEqual([
       '身份与 Premium', '关注 / 被关注', '去过 / 想去 / 总消费',
       '今天吃什么 / 我的口味档案', '回味', '我的食单', '发现与洞察',
-      '数据与设置 / 账号与隐私',
+      '右上角设置入口',
     ])
     expect(HYBRID_LIST_SCOPES).toEqual(['我的食单', '公开食单'])
     expect(HYBRID_ANALYTICS_MODES.map((item) => item[1])).toEqual([

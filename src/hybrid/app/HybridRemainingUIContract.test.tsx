@@ -118,6 +118,14 @@ describe('Hybrid remaining product UI contract', () => {
     expect(owner).not.toContain(profile.user.bio)
   })
 
+  it('keeps account, privacy and data controls behind the single top-right Settings entry', () => {
+    const owner = renderToStaticMarkup(<ProfilePage onOpenSettings={() => undefined} restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
+    expect(owner.match(/aria-label="设置"/g)).toHaveLength(1)
+    expect(owner).not.toContain('profile-settings-links')
+    expect(owner).not.toContain('>数据与设置<')
+    expect(owner).not.toContain('>账号与隐私<')
+  })
+
   it('keeps every owner memory action free of the stray top-right chevron', () => {
     const owner = renderToStaticMarkup(<ProfilePage restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
     const memoryActions = owner.match(/class="profile-memory-grid"([\s\S]*?)<\/div>/)?.[0] ?? ''

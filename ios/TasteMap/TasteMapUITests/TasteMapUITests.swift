@@ -4017,13 +4017,14 @@ final class TasteMapUITests: XCTestCase {
         webView.buttons["我的"].tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
         scrollToTop(in: app)
-        let settings = webView.buttons.matching(
-            NSPredicate(format: "label CONTAINS %@", "数据与设置")
-        ).firstMatch
-        scrollUntilVisible(settings, in: app)
+        let settings = webView.buttons["设置"]
         XCTAssertTrue(settings.waitForExistence(timeout: 8))
+        XCTAssertFalse(webView.staticTexts["数据与设置"].exists)
+        XCTAssertFalse(webView.staticTexts["账号与隐私"].exists)
         settings.tap()
         XCTAssertTrue(webView.staticTexts["设置"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts["账户与资料"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts["隐私"].waitForExistence(timeout: 8))
         XCTAssertTrue(webView.buttons.matching(
             NSPredicate(format: "label CONTAINS %@", "Backup v1 不包含照片原图")
         ).firstMatch.waitForExistence(timeout: 8))
@@ -4171,10 +4172,24 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertFalse(webView.descendants(matching: .any)["Hybrid 主要功能快捷入口"].exists)
         XCTAssertFalse(webView.buttons["我的食单"].exists)
         XCTAssertFalse(webView.buttons["数据分析"].exists)
+        XCTAssertTrue(webView.buttons["设置"].exists)
+        XCTAssertFalse(webView.staticTexts["数据与设置"].exists)
+        XCTAssertFalse(webView.staticTexts["账号与隐私"].exists)
         let listsEntry = webView.buttons["查看全部食单"].firstMatch
         scrollUntilVisible(listsEntry, in: app)
         XCTAssertTrue(listsEntry.waitForExistence(timeout: 8))
         keepScreenshot(named: "Hybrid Profile Without Floating Shortcuts", of: app)
+
+        scrollToTop(in: app)
+        webView.buttons["设置"].tap()
+        XCTAssertTrue(webView.staticTexts["设置"].waitForExistence(timeout: 8))
+        for label in ["账户与资料", "导出备份", "隐私"] {
+            let entry = webView.buttons.matching(
+                NSPredicate(format: "label CONTAINS %@", label)
+            ).firstMatch
+            XCTAssertTrue(entry.waitForExistence(timeout: 8), "Missing unified Settings entry: \(label)")
+        }
+        keepScreenshot(named: "Hybrid Profile Unified Settings Entry", of: app)
     }
 
     @MainActor
@@ -4706,10 +4721,8 @@ final class TasteMapUITests: XCTestCase {
         webView.buttons["我的"].tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
         scrollToTop(in: app)
-        let settings = webView.buttons.matching(
-            NSPredicate(format: "label CONTAINS %@", "数据与设置")
-        ).firstMatch
-        scrollUntilVisible(settings, in: app)
+        let settings = webView.buttons["设置"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 8))
         settings.tap()
         keepScreenshot(named: "Batch 01 Settings Main", of: app)
         let premium = webView.buttons.matching(
@@ -4781,10 +4794,7 @@ final class TasteMapUITests: XCTestCase {
 
         webView.buttons["我的"].tap()
         scrollToTop(in: app)
-        let settings = webView.buttons.matching(
-            NSPredicate(format: "label CONTAINS %@", "数据与设置")
-        ).firstMatch
-        scrollUntilVisible(settings, in: app)
+        let settings = webView.buttons["设置"]
         XCTAssertTrue(settings.waitForExistence(timeout: 8))
         settings.tap()
         XCTAssertTrue(webView.staticTexts["设置"].waitForExistence(timeout: 8))

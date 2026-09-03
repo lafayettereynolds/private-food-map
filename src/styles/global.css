@@ -1524,12 +1524,6 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
   .taste-profile-report__column:last-child { grid-template-columns: 1fr; }
   .taste-profile-report__column:last-child { grid-column: auto; }
 }
-.profile-settings-links { margin-top: 24px; border: 1px solid var(--color-divider); border-radius: 15px; display: grid; overflow: hidden; background: var(--color-surface); }
-.profile-settings-links > button { min-height: 58px; padding: 0 15px; border: 0; border-bottom: 1px solid var(--color-divider); display: flex; align-items: center; gap: 11px; color: var(--color-primary-dark); background: transparent; text-align: left; cursor: pointer; }
-.profile-settings-links > button:nth-of-type(2) { border-bottom: 0; }
-.profile-settings-links > button span { flex: 1; display: grid; gap: 4px; }
-.profile-settings-links > button small { color: #79868f; font-size: 9px; }
-.profile-sync-line { padding: 8px 14px; border-top: 1px solid var(--color-divider); color: #647682; background: var(--color-primary-light); font-size: 9px; text-align: right; }
 @media (max-width: 760px) {
   .profile-dashboard--owner { width: 100%; margin: 0 auto; padding: 10px 12px calc(106px + env(safe-area-inset-bottom)); border-radius: 0; }
   .profile-dashboard__hero { padding: 12px 12px 0; }
