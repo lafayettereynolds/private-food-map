@@ -14,10 +14,8 @@
     .grid { max-width: 1540px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
     .panel { overflow: hidden; border: 1px solid #d6e0e5; border-radius: 18px; background: #fff; box-shadow: 0 10px 28px rgba(38, 57, 70, .08); }
     .panel h2 { margin: 0; padding: 14px 16px 12px; border-bottom: 1px solid #e5eaed; color: #274b68; font-size: 16px; letter-spacing: .08em; }
-    .capture { height: 610px; overflow: hidden; background: #f8f9f7; }
-    .capture img { width: 100%; height: auto; display: block; }
-    .capture.reference img { margin-top: 6px; }
-    .capture.capacitor img { margin-top: -142px; }
+    .capture { height: 700px; padding: 10px; overflow: hidden; background: #f8f9f7; display: flex; align-items: flex-start; justify-content: center; }
+    .capture img { width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
     .notes { min-height: 132px; padding: 12px 16px 15px; border-top: 1px solid #e6ebee; display: grid; align-content: start; gap: 7px; }
     .notes span { display: flex; gap: 8px; color: #526976; font-size: 12px; line-height: 1.4; }
     .notes b { flex: 0 0 76px; color: #19374d; }
@@ -28,37 +26,47 @@
     .row > div + div { border-left: 1px solid #e4eaed; }
     .row .label { color: #173247; font-weight: 760; background: #f3f6f7; }
     .pass { color: #2e6d57; font-weight: 700; }
+    .fail { color: #a33d37; font-weight: 700; }
+    .interaction { max-width: 1540px; margin: 16px auto 0; padding: 18px 20px; border: 1px solid #d6e0e5; border-radius: 16px; background: #fff; }
+    .interaction h2 { margin: 0 0 6px; color: #173247; font-size: 18px; }
+    .interaction p { margin: 0 0 12px; color: #5b6f7d; font-size: 13px; }
+    .interaction table { width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.45; }
+    .interaction th, .interaction td { padding: 9px 10px; border: 1px solid #e1e8eb; text-align: left; vertical-align: top; }
+    .interaction th { color: #173247; background: #f3f6f7; }
   </style>
 </head>
 <body>
   <header>
-    <h1>Discovery Feed Card Composition</h1>
-    <p>REFERENCE vs BROWSER vs CAPACITOR · 2026-09-03 · topology gate</p>
+    <h1>Discovery Feed Card — Full-Card Evidence</h1>
+    <p>REFERENCE vs BROWSER vs CAPACITOR · 2026-09-03 · complete footer included</p>
   </header>
   <main class="grid">
     <section class="panel">
       <h2>REFERENCE</h2>
-      <div class="capture reference"><img src="reference.png" alt="Approved reference"></div>
+      <div class="capture reference"><img src="reference-full-card.png" alt="Approved reference full card"></div>
       <div class="notes">
         <span><b>骨架</b>餐厅身份 → 评分 → 横图 → 推荐依据 → 双 action group</span>
+        <span><b>底部</b>Like / Comment / Share ｜ Record Visit / WantToGo / Roulette</span>
         <span><b>视觉重点</b>高信息密度；图片服务于信息，不支配卡片</span>
         <span><b>状态</b><span class="pass">SOURCE OF TRUTH</span></span>
       </div>
     </section>
     <section class="panel">
       <h2>BROWSER</h2>
-      <div class="capture browser"><img src="browser-after.png" alt="Browser implementation"></div>
+      <div class="capture browser"><img src="browser-full-card.png" alt="Browser implementation full card"></div>
       <div class="notes">
         <span><b>骨架</b>DOM 顺序与 Reference 对齐</span>
-        <span><b>新增能力</b>来源用户、本次评分、食单嵌入原骨架</span>
+        <span><b>底部</b>Like / Comment / Share ｜ Record Visit / WantToGo / List / Roulette</span>
+        <span><b>新增能力</b>来源用户、本次评分、List 嵌入原骨架</span>
         <span><b>状态</b><span class="pass">TOPOLOGY PASS</span></span>
       </div>
     </section>
     <section class="panel">
       <h2>CAPACITOR</h2>
-      <div class="capture capacitor"><img src="capacitor-after.png" alt="Capacitor implementation"></div>
+      <div class="capture capacitor"><img src="capacitor-full-card.png" alt="Capacitor implementation full card"></div>
       <div class="notes">
         <span><b>骨架</b>同一 Web bundle / 同一共享 Card frame</span>
+        <span><b>底部</b>Like / Comment / Share ｜ Record Visit / WantToGo / List / Roulette</span>
         <span><b>语义数据</b>公共评分样本与 Visit 评分独立传输</span>
         <span><b>状态</b><span class="pass">TOPOLOGY PASS</span></span>
       </div>
@@ -69,10 +77,26 @@
     <div class="row"><div class="label">Structure</div><div>身份、评分、图、依据、footer</div><div><span class="pass">PASS</span> · 相同纵向层级</div><div><span class="pass">PASS</span> · 相同共享 DOM</div></div>
     <div class="row"><div class="label">Image position</div><div>身份与评分之后的横向图</div><div><span class="pass">PASS</span> · 非顶部巨幅 hero</div><div><span class="pass">PASS</span> · 比例与位置一致</div></div>
     <div class="row"><div class="label">Rating position</div><div>餐厅身份下方、图片上方</div><div><span class="pass">PASS</span> · 公共 8.9/10 人；Visit 4.5</div><div><span class="pass">PASS</span> · DTO 保持两种语义</div></div>
-    <div class="row"><div class="label">Action grouping</div><div>社交左；餐厅操作右</div><div><span class="pass">PASS</span> · icon group + circular group</div><div><span class="pass">PASS</span> · 不再是等权 pill row</div></div>
+    <div class="row"><div class="label">Action grouping</div><div>社交左；餐厅操作右</div><div><span class="pass">PASS</span> · Like/Comment/Share + Record/WantToGo/List/Roulette</div><div><span class="pass">PASS</span> · 两组完整可见，不是等权 pill row</div></div>
     <div class="row"><div class="label">Recommendation reason</div><div>独立「为什么适合你」区块</div><div><span class="pass">PASS</span> · 原因与证据分层</div><div><span class="pass">PASS</span> · 完整保留</div></div>
     <div class="row"><div class="label">User identity</div><div>不占据卡片末端</div><div><span class="pass">PASS</span> · 新增来源用户紧凑并入评分上下文</div><div><span class="pass">PASS</span> · Native bridge 同义呈现</div></div>
     <div class="row"><div class="label">Density</div><div>首屏完成一张完整卡片</div><div><span class="pass">PASS</span> · 信息密度恢复</div><div><span class="pass">PASS</span> · 设备安全区内保持骨架</div></div>
+  </section>
+  <section class="interaction" aria-label="Capacitor interaction evidence">
+    <h2>Capacitor Interaction Probe — <span class="fail">FAIL</span></h2>
+    <p>每个 control 均在独立 Hybrid 启动中实际点击；此表记录观察结果，不以 DOM existence 代替行为验证。</p>
+    <table>
+      <thead><tr><th>Group</th><th>Control</th><th>Observed result</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>Social</td><td>Like</td><td>可点击，但进入通用 native social hub；卡内点赞状态没有变化。</td><td class="fail">FAIL</td></tr>
+        <tr><td>Social</td><td>Comment</td><td>可点击，但进入通用 native social hub；没有定位到该卡片的评论入口。</td><td class="fail">FAIL</td></tr>
+        <tr><td>Social</td><td>Share</td><td>可点击并发起 system share handoff；应用保持前台。</td><td class="pass">PASS</td></tr>
+        <tr><td>Restaurant</td><td>Record Visit</td><td>可点击，但未观察到 visit editor / 保存入口。</td><td class="fail">FAIL</td></tr>
+        <tr><td>Restaurant</td><td>WantToGo</td><td>当前 visual-QA fixture 为已想吃/已去过的禁用态，无法验证状态切换。</td><td class="fail">FAIL</td></tr>
+        <tr><td>Restaurant</td><td>List</td><td>可点击并打开 native“加入榜单”sheet。</td><td class="pass">PASS</td></tr>
+        <tr><td>Restaurant</td><td>Roulette</td><td>可点击，且没有错误出现 native 返回壳；但未观察到预期 Hybrid Roulette 页面。</td><td class="fail">FAIL</td></tr>
+      </tbody>
+    </table>
   </section>
 </body>
 </html>

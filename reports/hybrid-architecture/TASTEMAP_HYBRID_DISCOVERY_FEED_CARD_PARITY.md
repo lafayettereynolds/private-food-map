@@ -8,7 +8,13 @@ Branch: `fix/hybrid-discovery-feed-card-parity`
 
 The Hybrid Discovery card no longer uses the generic `large image → restaurant text → flat reason → equal pill actions` topology. Browser and Capacitor now use the same shared Activity Card frame and match the approved Legacy/Web composition at the structural level.
 
-This report approves the **Card topology gate only**. It does not by itself declare every Discovery region or the whole Batch 1 visually approved.
+The supplemental evidence now shows one complete card in all three columns, including both footer action groups. The Capacitor interaction probe also found behavior gaps that are not hidden by the structural result.
+
+- **PRODUCT STRUCTURE: PASS**
+- **INTERACTION: FAIL**
+- **VISUAL EVIDENCE: PASS**
+
+This report approves the **Card topology and full-card visual-evidence gates only**. Interaction remains failed, and this report does not declare every Discovery region or the whole Batch 1 approved.
 
 ## Root Cause
 
@@ -59,13 +65,34 @@ Current-only capabilities were retained inside the approved skeleton:
 
 ## Visual Evidence
 
-- Annotated three-way comparison: `screenshots/discovery-feed-card-parity/reference-vs-browser-vs-capacitor.png`
+- Full-card three-way comparison: `screenshots/discovery-feed-card-parity/reference-vs-browser-vs-capacitor.png`
+- Approved reference full-card crop: `screenshots/discovery-feed-card-parity/reference-full-card.png`
+- Browser full card: `screenshots/discovery-feed-card-parity/browser-full-card.png`
+- Capacitor full card: `screenshots/discovery-feed-card-parity/capacitor-full-card.png`
+- Capacitor uncropped device capture: `screenshots/discovery-feed-card-parity/capacitor-full-page.png`
+- Capacitor system Share handoff: `screenshots/discovery-feed-card-parity/capacitor-share-handoff.png`
 - Approved reference supplied by Lafayette: `screenshots/discovery-feed-card-parity/reference.png`
-- Browser after: `screenshots/discovery-feed-card-parity/browser-after.png`
-- Capacitor after: `screenshots/discovery-feed-card-parity/capacitor-after.png`
 - Browser before: `screenshots/discovery-feed-card-parity/browser-before.png`
 
-The comparison annotates structure, image position, rating position, action grouping, recommendation reason, user identity, and first-screen density.
+The comparison annotates structure, image position, rating position, action grouping, recommendation reason, user identity, and first-screen density. Browser and Capacitor both show the complete footer: `Like / Comment / Share` on the left and `Record Visit / WantToGo / List / Roulette` on the right. The two groups remain visually distinct and are not flattened into equal pill buttons.
+
+## Capacitor Interaction Evidence
+
+`TasteMapUITests.testHybridDiscoveryCardInteractionEvidence` launched the Hybrid app independently for each control and actually tapped all seven footer actions. The test is an evidence probe: its passing XCTest result means all observations were collected, not that all product behaviors passed.
+
+| Group | Control | Observed behavior | Result |
+| --- | --- | --- | --- |
+| Social | Like | Clickable; opened the generic native social hub, but did not change the card's inline Like state. | **FAIL** |
+| Social | Comment | Clickable; opened the generic native social hub, but no card-targeted comment composer was presented. | **FAIL** |
+| Social | Share | Clickable; initiated the system share handoff and the app remained foreground-active. | PASS |
+| Restaurant | Record Visit | Clickable; the expected Visit editor/save route was not observable. | **FAIL** |
+| Restaurant | WantToGo | The visual-QA fixture renders an already-state (`已想吃` / `已去过`) as disabled, so no state-changing WantToGo interaction could be verified. | **FAIL** |
+| Restaurant | List | Clickable; opened the native `加入榜单` sheet. | PASS |
+| Restaurant | Roulette | Clickable and not incorrectly sent to a native back-stack screen, but the expected Hybrid Roulette route was not observable. | **FAIL** |
+
+The machine-readable console markers and test summary are preserved in `screenshots/discovery-feed-card-parity/interaction-evidence.txt`.
+
+No product/card implementation was changed during this supplemental evidence pass. The interaction defects above are intentionally reported rather than repaired because this request explicitly scoped the work to proof collection and prohibited refactoring the completed Card topology.
 
 ## Verification
 
@@ -76,6 +103,7 @@ The comparison annotates structure, image position, rating position, action grou
 - `pnpm run hybrid:build:debug`: passed; Debug fixture and local-bundle verification passed.
 - `pnpm run hybrid:stage:formal`: passed; Release Hybrid bundle verification and formal staging passed.
 - `TasteMapUITests.testHybridDiscoverySharedProductAndVisualContract`: passed on the isolated `TasteMap Independent Audit` iPhone 17 Pro simulator. The test checks the five tabs, rating/source semantics, independent evidence block, Restaurant actions, WantToGo state, and social actions, then captures the Capacitor screenshot.
+- `TasteMapUITests.testHybridDiscoveryCardInteractionEvidence`: passed as an observation probe after seven independent app launches and seven real taps. The resulting product-level interaction verdict is **FAIL**, as detailed above.
 - Xcode Debug app/test build: passed as part of the focused UI test run.
 - Xcode Release generic iOS Simulator build: passed.
 

@@ -1,0 +1,22 @@
+Taste Map Hybrid Discovery Card interaction evidence
+Date: 2026-09-03
+Test: TasteMapUITests.testHybridDiscoveryCardInteractionEvidence
+
+Each control was tapped during an independent Hybrid app launch.
+
+DISCOVERY_INTERACTION_EVIDENCE like=native-social-hub-no-inline-state-change
+DISCOVERY_INTERACTION_EVIDENCE comment=native-social-hub-no-comment-target
+DISCOVERY_INTERACTION_EVIDENCE record-visit=native-route-not-observable state=4
+DISCOVERY_INTERACTION_EVIDENCE want-to-go=disabled-control-no-route
+DISCOVERY_INTERACTION_EVIDENCE list=native-list-sheet state=4
+DISCOVERY_INTERACTION_EVIDENCE roulette=hybrid-route-not-observable
+DISCOVERY_INTERACTION_EVIDENCE share=system-share-handoff state=4
+
+XCTest collection result:
+Executed 1 test, with 0 failures (0 unexpected) in 113.568 seconds.
+TEST SUCCEEDED
+
+Product interaction verdict: FAIL
+
+The XCTest result confirms that the probe completed and collected every observation.
+It does not convert the failed product behaviors into passing interactions.
