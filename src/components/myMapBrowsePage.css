@@ -28,13 +28,6 @@
 .tm-my-map__list-layer { overflow-y: auto; background: #f8fafb; }
 .tm-my-map__add { position: absolute; z-index: 25; left: 50%; bottom: max(15px, env(safe-area-inset-bottom)); min-height: 43px; padding: 0 17px; transform: translateX(-50%); border: 1px solid rgba(255,255,255,.82); border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; color: #fff; background: #255f88; box-shadow: 0 7px 22px rgba(29,66,94,.24); font-size: 11px; font-weight: 800; white-space: nowrap; }
 .tm-my-map__location-note { position: absolute; z-index: 18; left: 12px; right: 12px; bottom: 66px; margin: 0 auto; max-width: 420px; padding: 8px 11px; border: 1px solid #d9e2e9; border-radius: 11px; color: #5f6f7a; background: rgba(255,255,255,.94); box-shadow: 0 4px 14px rgba(43,64,81,.08); font-size: 9px; text-align: center; }
-.tm-map-selection { position: absolute; z-index: 26; right: 12px; bottom: 70px; width: min(310px, calc(100% - 24px)); min-height: 68px; padding: 8px; border: 1px solid rgba(203,215,223,.92); border-radius: 16px; display: grid; grid-template-columns: 50px minmax(0,1fr) auto; align-items: center; gap: 9px; color: #273d4c; background: rgba(255,255,255,.97); box-shadow: 0 10px 28px rgba(30,52,68,.18); }
-.tm-map-selection .tm-restaurant-image { width: 50px; height: 50px; }
-.tm-map-selection > span { min-width: 0; display: grid; gap: 4px; }
-.tm-map-selection strong, .tm-map-selection small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tm-map-selection strong { font-size: 11px; }
-.tm-map-selection small { color: #6c7b86; font-size: 8px; }
-.tm-map-selection button { min-height: 44px; padding: 0 10px; border: 0; border-radius: 11px; color: #fff; background: #285f86; font-size: 9px; font-weight: 760; }
 .tm-my-restaurant-list { width: min(100%, 720px); margin: 0 auto; padding: 8px 13px 88px; display: grid; }
 .tm-my-restaurant-list > button { min-height: 76px; padding: 10px 4px; border: 0; border-bottom: 1px solid #e3e9ed; display: flex; align-items: center; gap: 11px; color: inherit; background: transparent; text-align: left; }
 .tm-my-restaurant-list > button > span:last-child { min-width: 0; display: grid; flex: 1; gap: 4px; }
@@ -77,8 +70,6 @@
   .tm-my-restaurant-list > button { border-color: #2d3942; }
   .tm-my-restaurant-list small { color: #8db4cf; }
   .tm-map-filter-sheet > section { color: #e9eef1; background: #1b2329; }
-  .tm-map-selection { color: #e9eef1; border-color: #3b4a55; background: rgba(29,39,46,.97); }
-  .tm-map-selection small { color: #aebbc4; }
   .tm-offline-map { background: #182229; }
   .tm-offline-map__notice { color: #c3cdd4; border-color: #3b4a55; background: rgba(29,39,46,.94); }
 }

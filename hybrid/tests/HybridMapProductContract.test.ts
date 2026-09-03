@@ -73,4 +73,15 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(pageCSS).toContain('--tm-map-header-safe-top')
     expect(pageCSS).toContain('inset: calc(151px + var(--tm-map-header-safe-top))')
   })
+
+  it('opens full Restaurant Detail from one marker tap without an intermediate preview card', () => {
+    const page = source('../../src/components/MyMapBrowsePage.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    expect(page).toContain('onSelect={openRestaurant}')
+    expect(page).toContain('if (restaurant) openRestaurant(restaurant)')
+    expect(page).toContain('onOpenRestaurant(restaurant.id)')
+    expect(page).not.toContain('className="tm-map-selection"')
+    expect(page).not.toContain('>查看详情</button>')
+    expect(nativeSurface).not.toContain("'.tm-map-selection'")
+  })
 })

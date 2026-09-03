@@ -237,6 +237,12 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       })
   }, [active, applySnapshot, coordinates, filters, mode, platform, revision, scope, search, snapshotKeyFor, sort, viewport])
 
+  const openRestaurant = useCallback((restaurant: RestaurantSummary) => {
+    dispatch({ type: 'selection', value: restaurant.id })
+    void platform.haptics.selection()
+    onOpenRestaurant(restaurant.id)
+  }, [onOpenRestaurant, platform])
+
   useEffect(() => {
     let remove: (() => Promise<void>) | undefined
     void platform.events.subscribe((event) => {
@@ -247,9 +253,9 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
         dispatch({ type: 'viewport', value: event.payload })
       } else if (event.name === 'map.restaurant.selected') {
         if (!event.payload.restaurantID) dispatch({ type: 'selection', value: null })
-        else if (items.some((item) => item.id === event.payload.restaurantID)) {
-          dispatch({ type: 'selection', value: event.payload.restaurantID })
-          void platform.haptics.selection()
+        else {
+          const restaurant = items.find((item) => item.id === event.payload.restaurantID)
+          if (restaurant) openRestaurant(restaurant)
         }
       } else if (event.name === 'auth.changed' || (event.name === 'app.lifecycle' && ['foreground', 'resume'].includes(event.payload.state))) {
         snapshotCache.current.clear()
@@ -257,9 +263,8 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       }
     }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
     return () => { void remove?.() }
-  }, [items, platform])
+  }, [items, openRestaurant, platform])
 
-  const selected = useMemo(() => items.find((item) => item.id === selectedRestaurantID), [items, selectedRestaurantID])
   const mapScopeTabs = useMemo<ReadonlyArray<TasteMapPrimaryTab<TasteMapMapScope>>>(() => HYBRID_MAP_PRIMARY_SCOPES.map(([value, label]) => ({
     value,
     label,
@@ -271,19 +276,6 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
         : <Star />,
   })), [scopeCounts])
   const activeFilterCount = Object.values(filters).filter((value) => value !== undefined && value !== '').length
-  const openRestaurant = (restaurant: RestaurantSummary) => {
-    dispatch({ type: 'selection', value: restaurant.id })
-    void platform.haptics.selection()
-    onOpenRestaurant(restaurant.id)
-  }
-  const selectMapMarker = (restaurant: RestaurantSummary) => {
-    if (selectedRestaurantID === restaurant.id) {
-      openRestaurant(restaurant)
-      return
-    }
-    void platform.haptics.selection()
-    dispatch({ type: 'selection', value: restaurant.id })
-  }
 
   return <main
     aria-hidden={!active}
@@ -328,14 +320,13 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
           initialViewport={viewport}
           onClearSelection={() => dispatch({ type: 'selection', value: null })}
           onError={setNativeMapError}
-          onSelect={selectMapMarker}
+          onSelect={openRestaurant}
           onViewportChange={(value) => dispatch({ type: 'viewport', value })}
           overlayRevision={`${selectedRestaurantID ?? ''}|${error ?? ''}|${locationMessage ?? ''}`}
           platform={platform}
           restaurants={items}
           scope={scope}
           search={search}
-          selectedRestaurant={selected}
           selectedRestaurantID={selectedRestaurantID}
           sort={sort}
         />
@@ -352,11 +343,6 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       {error ? <MapState title="餐厅数据暂时不可用" message={error} action={() => dispatch({ type: 'retry' })} /> : null}
       {!error && nativeMapError ? <MapState title="原生地图暂时不可用" message={nativeMapError} action={() => dispatch({ type: 'retry' })} /> : null}
       {locationMessage ? <p className="tm-my-map__location-note" role="status">{locationMessage}</p> : null}
-      {mode === 'map' && selected ? <aside className="tm-map-selection" aria-label="已选餐厅">
-        <RestaurantImage descriptor={images[selected.id]} restaurantName={selected.name} />
-        <span><strong>{selected.name}</strong><small>{selected.scoreOutOfTen?.toFixed(1) ?? '尚未评分'} · {selected.visitCount} 次到访</small></span>
-        <button onClick={() => openRestaurant(selected)} type="button">查看详情</button>
-      </aside> : null}
       <button aria-label="添加餐厅" className="tm-my-map__add" data-product-contract="add-restaurant-primary-entry" onClick={onAddRestaurant} type="button"><Plus aria-hidden="true" size={17} />添加餐厅</button>
     </section>
 

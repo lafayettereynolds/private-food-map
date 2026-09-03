@@ -8,7 +8,6 @@ type NativeMapSurfaceProps = MyMapSurfaceProps
 
 export const hybridMapReactControlSelector = [
   '.tm-my-map__add',
-  '.tm-map-selection',
   '.tm-my-map__location-note',
   '.tm-map-error',
   '.tm-hybrid-bottom-nav',
