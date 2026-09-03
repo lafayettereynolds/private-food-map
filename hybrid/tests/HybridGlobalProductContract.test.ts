@@ -269,6 +269,8 @@ describe('Hybrid global Product Contract', () => {
   })
 
   it('locks current-only Profile, Lists, Analytics, Posters and Settings topology', () => {
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const shellStyles = source('../../src/hybrid/app/hybridShell.css')
     expect(HYBRID_PROFILE_OWNER_MODULES).toEqual([
       '身份与 Premium', '关注 / 被关注', '去过 / 想去 / 总消费',
       '今天吃什么 / 我的口味档案', '回味', '我的食单', '发现与洞察',
@@ -283,6 +285,9 @@ describe('Hybrid global Product Contract', () => {
     ])
     expect(source('../../src/components/TasteMapAnalyticsPage.tsx')).toContain('renderAnalysisPosterBlob')
     expect(source('../../src/components/TasteMapPremiumSettingsPages.tsx')).toContain('PremiumBurgerBadge')
+    expect(shell).not.toContain('Hybrid 主要功能快捷入口')
+    expect(shell).not.toContain('tm-hybrid-profile-shortcuts')
+    expect(shellStyles).not.toContain('tm-hybrid-profile-shortcuts')
   })
 
   it('keeps every migration-pending formal capability visible through an allowlisted Native handoff', () => {

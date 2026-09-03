@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, BookOpen, CloudOff, Globe2, Map as MapIcon, RotateCcw, Sparkles, UserRound } from 'lucide-react'
+import { ArrowLeft, CloudOff, Globe2, Map as MapIcon, RotateCcw, UserRound } from 'lucide-react'
 import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
 import { NativeMapSurface } from '../../components/NativeMapSurface'
 import { ProfilePage } from '../../components/ProfilePage'
@@ -379,7 +379,6 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
         type="button"
       >{item.surface === 'map' ? <MapIcon size={19} /> : item.surface === 'discovery' ? <Globe2 size={19} /> : <UserRound size={19} />}<span>{item.label}</span></button>)}
     </nav>
-    {route.surface === 'profile' ? <div aria-label="Hybrid 主要功能快捷入口" className="tm-hybrid-profile-shortcuts"><button onClick={() => void navigate({ surface: 'lists' })} type="button"><BookOpen size={16} />我的食单</button><button onClick={() => void navigate({ surface: 'analytics' })} type="button"><Sparkles size={16} />数据分析</button></div> : null}
     {import.meta.env.DEV && import.meta.env.VITE_HYBRID_DIAGNOSTICS === 'true'
       ? <output className="tm-hybrid-shell__diagnostics" aria-label="Hybrid 开发诊断">{platform.kind} · bridge v{runtime.bridgeVersion} · {runtime.dataSource}</output>
       : null}

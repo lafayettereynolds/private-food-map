@@ -4122,6 +4122,27 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridProfileDoesNotRenderDuplicateFloatingShortcuts() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+
+        XCTAssertFalse(webView.descendants(matching: .any)["Hybrid 主要功能快捷入口"].exists)
+        XCTAssertFalse(webView.buttons["我的食单"].exists)
+        XCTAssertFalse(webView.buttons["数据分析"].exists)
+        let listsEntry = webView.buttons["查看全部食单"].firstMatch
+        scrollUntilVisible(listsEntry, in: app)
+        XCTAssertTrue(listsEntry.waitForExistence(timeout: 8))
+        keepScreenshot(named: "Hybrid Profile Without Floating Shortcuts", of: app)
+    }
+
+    @MainActor
     func testHybridVisitRatingSetsEveryTargetInOneInteraction() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
@@ -4644,14 +4665,18 @@ final class TasteMapUITests: XCTestCase {
         webView.buttons["返回上一页"].tap()
 
         webView.buttons["我的"].tap()
-        let listShortcut = webView.buttons["我的食单"].firstMatch
-        XCTAssertTrue(listShortcut.waitForExistence(timeout: 8))
-        listShortcut.tap()
+        let listsEntry = webView.buttons["查看全部食单"].firstMatch
+        scrollUntilVisible(listsEntry, in: app)
+        XCTAssertTrue(listsEntry.waitForExistence(timeout: 8))
+        listsEntry.tap()
         XCTAssertTrue(webView.descendants(matching: .any)["公开食单"].waitForExistence(timeout: 8))
         webView.buttons["我的"].tap()
-        let analyticsShortcut = webView.buttons["数据分析"].firstMatch
-        XCTAssertTrue(analyticsShortcut.waitForExistence(timeout: 8))
-        analyticsShortcut.tap()
+        let analyticsEntry = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "最佳饭搭子")
+        ).firstMatch
+        scrollUntilVisible(analyticsEntry, in: app)
+        XCTAssertTrue(analyticsEntry.waitForExistence(timeout: 8))
+        analyticsEntry.tap()
         XCTAssertTrue(webView.buttons["年度回顾"].waitForExistence(timeout: 8))
 
         webView.buttons["我的"].tap()
