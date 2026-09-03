@@ -8,6 +8,7 @@ import { scoreColor, type Coordinates, type RestaurantSummary, type UserProfile 
 import { avatarPresetPosition } from '../utils/avatarPresets'
 import { wantedMarkerScale } from '../utils/mapMarkers'
 import { markerLayerPriority } from './mapMarkerPriority'
+import { recordMapInstanceCreation, recordMarkerReconciliation } from './mapScopePerformance'
 
 export { markerLayerPriority } from './mapMarkerPriority'
 
@@ -16,6 +17,22 @@ export interface TasteMapMapViewport {
   center: Coordinates
   zoom: number
 }
+
+interface RestaurantMarkerRecord {
+  element: HTMLElement
+  marker: AMapMarkerInstance
+  signature: string
+}
+
+export interface RestaurantMarkerReconciliationPlan {
+  added: RestaurantSummary[]
+  changed: RestaurantSummary[]
+  removed: string[]
+  reused: RestaurantSummary[]
+}
+
+const markerImageSourceCache = new Map<string, Promise<string | null>>()
+const maximumRetainedRestaurantMarkers = 500
 
 interface MapViewProps {
   restaurants: RestaurantSummary[]
@@ -37,8 +54,8 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<AMapInstance | null>(null)
   const amapRef = useRef<AMapNamespace | null>(null)
-  const restaurantElementsRef = useRef(new Map<string, HTMLElement>())
-  const restaurantMarkersRef = useRef(new Map<string, AMapMarkerInstance>())
+  const restaurantMarkerRecordsRef = useRef(new Map<string, RestaurantMarkerRecord>())
+  const activeRestaurantIDsRef = useRef(new Set<string>())
   const locationMarkerRef = useRef<AMapMarkerInstance | null>(null)
   const selectedIdRef = useRef(selectedRestaurant?.id)
   const suppressMapClearUntilRef = useRef(0)
@@ -60,8 +77,8 @@ export function MapView({
 
   useEffect(() => {
     if (!mapService.isConfigured || !containerRef.current) return
-    const restaurantElements = restaurantElementsRef.current
-    const restaurantMarkers = restaurantMarkersRef.current
+    const restaurantRecords = restaurantMarkerRecordsRef.current
+    const activeRestaurantIDs = activeRestaurantIDsRef.current
     let disposed = false
     const detach: Array<() => void> = []
     mapService.loadWebMapSdk().then((AMap) => {
@@ -73,6 +90,7 @@ export function MapView({
         viewMode: '2D', mapStyle: 'amap://styles/normal', showLabel: true,
         features: ['bg', 'road', 'building'],
       })
+      recordMapInstanceCreation()
       map.addControl(new AMap.ToolBar({ position: 'RT' }))
       map.addControl(new AMap.Scale())
       const handleMapClick = () => {
@@ -99,9 +117,9 @@ export function MapView({
     return () => {
       disposed = true
       detach.forEach((value) => value())
-      restaurantMarkers.forEach((marker) => marker.setMap(null))
-      restaurantElements.clear()
-      restaurantMarkers.clear()
+      restaurantRecords.forEach((record) => record.marker.setMap(null))
+      restaurantRecords.clear()
+      activeRestaurantIDs.clear()
       locationMarkerRef.current?.setMap(null)
       locationMarkerRef.current = null
       mapRef.current?.destroy()
@@ -140,12 +158,35 @@ export function MapView({
     const map = mapRef.current
     const AMap = amapRef.current
     if (!map || !AMap) return
-    const elements = restaurantElementsRef.current
-    const markers = restaurantMarkersRef.current
-    markers.forEach((marker) => marker.setMap(null))
-    elements.clear()
-    markers.clear()
+    const records = restaurantMarkerRecordsRef.current
+    const activeIDs = activeRestaurantIDsRef.current
+    const plan = restaurantMarkerReconciliationPlan(activeIDs, records, restaurants, currentCoordinates)
+    let added = 0
+    const removed = plan.removed.length
+    const changed = plan.changed.length
+    const reused = plan.reused.length
+
+    plan.removed.forEach((restaurantID) => {
+      records.get(restaurantID)?.marker.setMap(null)
+      activeIDs.delete(restaurantID)
+    })
+
     restaurants.forEach((restaurant) => {
+      const signature = restaurantMarkerSignature(restaurant, currentCoordinates)
+      const existing = records.get(restaurant.id)
+      if (existing?.signature === signature) {
+        if (!activeIDs.has(restaurant.id)) {
+          existing.marker.setMap(map)
+          activeIDs.add(restaurant.id)
+          added += 1
+        }
+        return
+      }
+      if (existing) {
+        existing.marker.setMap(null)
+        records.delete(restaurant.id)
+        activeIDs.delete(restaurant.id)
+      }
       const content = createRestaurantImageMarkerContent(restaurant, currentCoordinates)
       const isSelected = restaurant.id === selectedIdRef.current
       content.classList.toggle('is-selected', isSelected)
@@ -161,30 +202,28 @@ export function MapView({
       }
       content.addEventListener('click', select)
       marker.on('click', () => select())
-      elements.set(restaurant.id, content)
-      markers.set(restaurant.id, marker)
+      records.set(restaurant.id, { element: content, marker, signature })
+      activeIDs.add(restaurant.id)
+      added += 1
     })
+    trimInactiveRestaurantMarkerPool(records, activeIDs)
+    recordMarkerReconciliation({ added, removed, changed, reused, active: activeIDs.size })
     const cameraRequested = !didFitRef.current || cameraFitKey !== lastCameraFitKeyRef.current
     if (cameraRequested && restaurants.length) {
       didFitRef.current = true
       lastCameraFitKeyRef.current = cameraFitKey
       fitRestaurantsOnMap(map, restaurants, containerRef.current)
     }
-    return () => {
-      markers.forEach((marker) => marker.setMap(null))
-      elements.clear()
-      markers.clear()
-    }
   }, [cameraFitKey, currentCoordinates, mapReady, restaurants])
 
   useEffect(() => {
-    restaurantElementsRef.current.forEach((element, restaurantId) => {
-      const marker = restaurantMarkersRef.current.get(restaurantId)
+    restaurantMarkerRecordsRef.current.forEach((record, restaurantId) => {
+      if (!activeRestaurantIDsRef.current.has(restaurantId)) return
       const restaurant = restaurants.find((value) => value.id === restaurantId)
       const isSelected = restaurantId === selectedRestaurant?.id
-      element.classList.toggle('is-selected', isSelected)
-      if (marker && restaurant) marker.setzIndex(markerLayerPriority(restaurant, isSelected))
-      marker?.setTop(isSelected)
+      record.element.classList.toggle('is-selected', isSelected)
+      if (restaurant) record.marker.setzIndex(markerLayerPriority(restaurant, isSelected))
+      record.marker.setTop(isSelected)
     })
   }, [restaurants, selectedRestaurant?.id])
 
@@ -219,6 +258,39 @@ export function MapView({
   </>
 }
 
+function trimInactiveRestaurantMarkerPool(
+  records: Map<string, RestaurantMarkerRecord>,
+  activeIDs: ReadonlySet<string>,
+) {
+  if (records.size <= maximumRetainedRestaurantMarkers) return
+  for (const [restaurantID, record] of records) {
+    if (records.size <= maximumRetainedRestaurantMarkers) break
+    if (activeIDs.has(restaurantID)) continue
+    record.marker.setMap(null)
+    records.delete(restaurantID)
+  }
+}
+
+export function restaurantMarkerReconciliationPlan(
+  activeIDs: ReadonlySet<string>,
+  records: ReadonlyMap<string, Pick<RestaurantMarkerRecord, 'signature'>>,
+  restaurants: RestaurantSummary[],
+  currentCoordinates: Coordinates | null,
+): RestaurantMarkerReconciliationPlan {
+  const nextIDs = new Set(restaurants.map((restaurant) => restaurant.id))
+  const removed = [...activeIDs].filter((restaurantID) => !nextIDs.has(restaurantID))
+  const added: RestaurantSummary[] = []
+  const changed: RestaurantSummary[] = []
+  const reused: RestaurantSummary[] = []
+  restaurants.forEach((restaurant) => {
+    const existing = records.get(restaurant.id)
+    if (!existing) added.push(restaurant)
+    else if (existing.signature !== restaurantMarkerSignature(restaurant, currentCoordinates)) changed.push(restaurant)
+    else reused.push(restaurant)
+  })
+  return { added, changed, removed, reused }
+}
+
 function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, currentCoordinates: Coordinates | null) {
   const imageSource = restaurant.markerImageData || restaurant.merchantImageUrl
   const scoreText = restaurant.scoreOutOfTen !== null ? `${restaurant.scoreOutOfTen.toFixed(1)} 分` : '想去'
@@ -238,10 +310,10 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, curre
   if (imageSource) {
     const image = document.createElement('img')
     image.alt = ''
+    image.dataset.restaurantImage = 'true'
     image.addEventListener('load', () => visual.replaceChildren(image), { once: true })
     image.addEventListener('error', () => image.remove(), { once: true })
-    const directNativeResource = imageSource.startsWith('tastemap-resource://')
-    const resolved = directNativeResource ? Promise.resolve(imageSource) : resolvePhotoSource(imageSource, restaurant.markerPhotoId)
+    const resolved = cachedMarkerImageSource(imageSource, restaurant.markerPhotoId)
     void resolved.then((source) => {
       if (!source) return
       image.src = source
@@ -258,6 +330,36 @@ function createRestaurantImageMarkerContent(restaurant: RestaurantSummary, curre
   tooltip.append(name, meta)
   marker.append(visual, tooltip)
   return marker
+}
+
+function cachedMarkerImageSource(source: string, photoID?: string | null) {
+  const key = `${photoID ?? ''}|${source}`
+  const cached = markerImageSourceCache.get(key)
+  if (cached) return cached
+  const directNativeResource = source.startsWith('tastemap-resource://')
+  const value = directNativeResource ? Promise.resolve(source) : resolvePhotoSource(source, photoID)
+  markerImageSourceCache.set(key, value)
+  while (markerImageSourceCache.size > 500) {
+    const oldest = markerImageSourceCache.keys().next().value
+    if (oldest === undefined) break
+    markerImageSourceCache.delete(oldest)
+  }
+  return value
+}
+
+export function restaurantMarkerSignature(restaurant: RestaurantSummary, currentCoordinates: Coordinates | null) {
+  return JSON.stringify({
+    id: restaurant.id,
+    name: restaurant.name,
+    latitude: restaurant.latitude,
+    longitude: restaurant.longitude,
+    status: restaurant.status,
+    score: restaurant.scoreOutOfTen,
+    visits: restaurant.visitCount,
+    image: restaurant.markerImageData || restaurant.merchantImageUrl || null,
+    photo: restaurant.markerPhotoId || null,
+    location: currentCoordinates ? [currentCoordinates.latitude, currentCoordinates.longitude] : null,
+  })
 }
 
 function renderFoodDiningFallback(target: HTMLElement) {
@@ -371,7 +473,7 @@ function OfflineMarkerVisual({ restaurant }: { restaurant: RestaurantSummary }) 
   return <span className="private-image-marker__visual">
     {!loaded || failed || !source ? <FoodDiningFallbackIcon /> : null}
     {source && !failed
-      ? <img alt="" hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={source} />
+      ? <img alt="" data-restaurant-image="true" hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={source} />
       : null}
   </span>
 }

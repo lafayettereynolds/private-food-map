@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import fixture from '../../hybrid/fixtures/profile-restaurant-rich.json'
 import { TasteMapBrowserAdapter } from './TasteMapBrowserAdapter'
+import { expandRichMapRestaurants } from './TasteMapBrowserDebugFixture'
 import { hasNativeTasteMapRuntime, TasteMapNativeAdapter } from './TasteMapNativeAdapter'
 import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { CURRENT_USER_ID } from '../db/social'
@@ -104,6 +105,13 @@ const bridgeProfile: TasteMapProfileDashboardDTO = {
 }
 
 describe('TasteMapBrowserAdapter', () => {
+  it('keeps the deterministic Hybrid Rich Demo at the real 90/25/275 performance scale', () => {
+    const restaurants = expandRichMapRestaurants(fixture.restaurants as unknown as RestaurantSummary[])
+    expect(restaurants.filter((value) => value.status === 'visited')).toHaveLength(90)
+    expect(restaurants.filter((value) => value.status === 'wantToGo')).toHaveLength(25)
+    expect(restaurants.flatMap((value) => value.visits)).toHaveLength(275)
+  })
+
   it('uses an injected Browser data source without a backend dependency', async () => {
     const dataSource = { profile: vi.fn(async () => browserProfile) }
     const adapter = new TasteMapBrowserAdapter(dataSource)

@@ -112,10 +112,95 @@ final class TasteMapNativePlugin: CAPPlugin, CAPBridgedPlugin {
 private enum BridgeHostError: Error { case responseEncodingFailed }
 
 final class TasteMapBridgeViewController: CAPBridgeViewController {
+#if DEBUG
+    private var mapDiagnosticsTimer: Timer?
+    private var pendingMapDiagnosticsRoot: [String: Any]?
+    private var pendingMapDiagnosticsRecordCount = 0
+    private var publishedMapDiagnosticsRecordCount = 0
+    private var mapDiagnosticsStableTicks = 0
+#endif
+
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(TasteMapNativePlugin())
+#if DEBUG
+        startMapScopeDiagnosticsCapture()
+#endif
     }
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
+
+#if DEBUG
+    private func startMapScopeDiagnosticsCapture() {
+        mapDiagnosticsTimer?.invalidate()
+        mapDiagnosticsTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self, let webView = self.bridge?.webView else { return }
+            webView.evaluateJavaScript("document.getElementById('tm-map-scope-performance')?.textContent || ''") { [weak self] value, _ in
+                guard let self, let payload = value as? String, !payload.isEmpty,
+                      let data = payload.data(using: .utf8),
+                      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let records = root["records"] as? [[String: Any]] else { return }
+                if records.count != self.pendingMapDiagnosticsRecordCount {
+                    self.pendingMapDiagnosticsRecordCount = records.count
+                    self.pendingMapDiagnosticsRoot = root
+                    self.mapDiagnosticsStableTicks = 0
+                    return
+                }
+                self.mapDiagnosticsStableTicks += 1
+                if self.mapDiagnosticsStableTicks >= 3,
+                   records.count > self.publishedMapDiagnosticsRecordCount,
+                   let pending = self.pendingMapDiagnosticsRoot,
+                   let summaryData = try? JSONSerialization.data(withJSONObject: self.mapDiagnosticsSummary(pending)),
+                   let summary = String(data: summaryData, encoding: .utf8) {
+                    self.publishedMapDiagnosticsRecordCount = records.count
+                    NSLog("TasteMapMapScopeDiagnostics %@", summary)
+                }
+            }
+        }
+    }
+
+    private func mapDiagnosticsSummary(_ root: [String: Any]) -> [String: Any] {
+        let records = root["records"] as? [[String: Any]] ?? []
+        func duration(_ record: [String: Any], end: String, start: String = "tapAt") -> Double? {
+            guard let startValue = (record[start] as? NSNumber)?.doubleValue,
+                  let endValue = (record[end] as? NSNumber)?.doubleValue else { return nil }
+            return endValue - startValue
+        }
+        func statistics(_ values: [Double]) -> [String: Any] {
+            let sorted = values.sorted()
+            guard !sorted.isEmpty else { return ["count": 0] }
+            func percentile(_ value: Double) -> Double {
+                let index = min(sorted.count - 1, max(0, Int(ceil(Double(sorted.count) * value)) - 1))
+                return (sorted[index] * 100).rounded() / 100
+            }
+            return [
+                "count": sorted.count,
+                "medianMs": percentile(0.5),
+                "p95Ms": percentile(0.95),
+                "worstMs": (sorted.last! * 100).rounded() / 100,
+            ]
+        }
+        let perScope = Dictionary(grouping: records, by: { $0["to"] as? String ?? "unknown" })
+            .mapValues { values in
+                [
+                    "itemCount": (values.last?["itemCount"] as? NSNumber)?.intValue ?? 0,
+                    "selected": statistics(values.compactMap { duration($0, end: "selectedVisualAt") }),
+                    "content": statistics(values.compactMap { duration($0, end: "contentCommittedAt") }),
+                ] as [String: Any]
+            }
+        return [
+            "recordCount": records.count,
+            "selected": statistics(records.compactMap { duration($0, end: "selectedVisualAt") }),
+            "dataReady": statistics(records.compactMap { duration($0, end: "dataReadyAt") }),
+            "content": statistics(records.compactMap { duration($0, end: "contentCommittedAt") }),
+            "imagesStable": statistics(records.compactMap { duration($0, end: "imagesStableAt") }),
+            "bridge": statistics(records.compactMap { ($0["bridgeDurationMs"] as? NSNumber)?.doubleValue }),
+            "cacheHits": records.filter { ($0["cacheHit"] as? Bool) == true }.count,
+            "staleResponsesRejected": records.reduce(0) { $0 + (($1["staleResponsesRejected"] as? NSNumber)?.intValue ?? 0) },
+            "mapInstanceCreations": (root["mapInstanceCreations"] as? NSNumber)?.intValue ?? 0,
+            "markerReconciliations": (root["markerReconciliations"] as? [[String: Any]])?.count ?? 0,
+            "perScope": perScope,
+        ]
+    }
+#endif
 }
 
 @UIApplicationMain

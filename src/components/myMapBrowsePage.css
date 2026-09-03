@@ -4,8 +4,10 @@
 .tm-my-map__title-switch { min-width: 44px; min-height: 44px; margin: 0 auto; padding: 0 9px; border: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: #162f43; background: transparent; font-size: 20px; font-weight: 800; letter-spacing: -.03em; }
 .tm-my-map__title-switch:active { background: #e8eef3; transform: scale(.98); }
 .tm-my-map__title-switch svg { color: #2e648b; }
-.tm-my-map__scopes { height: 44px; display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid #dfe7ed; }
-.tm-my-map__scopes button { position: relative; border: 0; color: #71808b; background: transparent; font-size: 12px; font-weight: 680; }
+.tm-my-map__scopes { height: 44px; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid #dfe7ed; }
+.tm-my-map__scopes button { position: relative; border: 0; gap: 6px; color: #71808b; background: transparent; font-size: 12px; font-weight: 680; }
+.tm-my-map__scopes .tm-primary-tab-bar__icon,
+.tm-my-map__scopes .tm-primary-tab-bar__icon svg { width: 16px; height: 16px; }
 .tm-my-map__scopes button.is-active { color: #164f79; font-weight: 800; }
 .tm-my-map__scopes button.is-active::after { content: ''; position: absolute; left: 28%; right: 28%; bottom: -1px; height: 2px; border-radius: 999px; background: #2c6d9d; }
 .tm-map-filter-bar { min-width: 0; display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }

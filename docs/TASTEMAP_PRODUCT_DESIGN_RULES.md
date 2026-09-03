@@ -167,8 +167,13 @@ Templates define information architecture, section order, control and image plac
 - top breathing space;
 - centered `我的地图` / `我的列表` plus the adjacent clickable view-switch icon as one group;
 - `去过 / 想吃 / 推荐` using the shared primary tab bar;
+- each scope uses one semantic line icon plus its text (`去过` = footprints/check, `想吃` = bookmark, `推荐` = star); the three items share icon size, baseline, spacing, selected treatment, and a minimum 44-point hit target;
+- scope selection feedback is committed immediately and never waits for data, images, a Native bridge response, or map work;
 - shared compact horizontal FilterBar;
 - Map or List content backed by the same query/filter/sort state;
+- switching scope preserves the mounted map identity, center, zoom, bounds, selected viewport and Map/List state; it must not recreate the map or trigger camera fitting merely because the scope changed;
+- content may update asynchronously from an owner-scoped, versioned, bounded presentation snapshot; Native/SwiftData remains the source of truth, stale responses are rejected, and the cache is invalidated by owner/data changes;
+- markers reconcile by stable Restaurant ID and reuse unchanged marker/image identity rather than performing a full teardown; image loading never blocks selected-state feedback and cached Restaurant images do not reload solely because the scope changed;
 - independent Restaurant markers at every zoom, with natural overlap and deterministic layer order rather than numeric clusters;
 - no default forced offset, spiderfy, collision dispersion, zoom-driven separation, or “coin wall” whose purpose is to expose every marker;
 - marker layer order is `selected → rating → visit count → stable Restaurant ID`; pan and zoom must not randomize it;
@@ -254,7 +259,7 @@ All compact product filters use `TasteMapFilterBar`, `TasteMapFilterChip`, and `
 
 ### Primary Tabs
 
-My Map's three scopes and Discovery's five scopes use `TasteMapPrimaryTabBar`: equal distribution, the same typography, a two-point selected indicator, and a 44-point hit target.
+My Map's three scopes and Discovery's five scopes use `TasteMapPrimaryTabBar`: equal distribution, the same typography, a two-point selected indicator, and a 44-point hit target. My Map supplies semantic icon-plus-text items for every scope—never one isolated icon, raw emoji, or a FilterChip/pill treatment. Accessibility exposes each control's text and selected state; the decorative glyph itself stays hidden from assistive technology.
 
 ### Activity and Discovery Cards
 
@@ -280,6 +285,9 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - Primary scopes are `去过 / 想吃 / 推荐`.
 - No separate Map/List segmented row.
 - Map/List switching preserves scope, filters, sort, city, and search.
+- Scope switching preserves map instance identity, center, zoom, bounds, filters, sort, search, and Map/List state. A scope value must not participate in the camera-fit identity.
+- The selected scope updates on the next visual frame without waiting for projection, bridge, marker or image work. Scope data arrives asynchronously through a bounded, owner/version-keyed presentation snapshot; out-of-order responses cannot overwrite the newest selection.
+- Marker updates use a stable-ID diff and retain unchanged marker/image identity. A scope change must not destroy/recreate every marker, reload cached Restaurant images, or rebuild the map.
 - Filters use the shared components.
 - Every Restaurant remains an independent marker at every zoom; no numeric or Food/Dining count clusters.
 - Markers may overlap naturally. Ordinary rendering does not force offset, spiderfy, collision dispersion, zoom separation, or full visibility.

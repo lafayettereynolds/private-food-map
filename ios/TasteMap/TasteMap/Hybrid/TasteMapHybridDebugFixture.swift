@@ -34,21 +34,43 @@ public enum TasteMapHybridDebugFixture {
         )
         context.insert(profile)
 
+        guard !fixture.restaurants.isEmpty,
+              let seedVisit = fixture.restaurants.flatMap(\.visits).first else {
+            throw TasteMapHybridServiceError.invalidRequest
+        }
+        let visitedRestaurantCount = 90
+        let wantToGoRestaurantCount = 25
+        let restaurantCount = visitedRestaurantCount + wantToGoRestaurantCount
+        let anchors: [(Double, Double)] = [
+            (30.2741, 120.1551), (30.2676, 120.1474), (30.2819, 120.1628),
+            (30.2558, 120.1692), (30.2912, 120.1398), (30.2449, 120.1825),
+        ]
         var metadata: [UUID: TasteMapHybridRestaurantMetadata] = [:]
-        for item in fixture.restaurants {
-            guard let restaurantID = UUID(uuidString: item.id) else { continue }
+        for index in 0..<restaurantCount {
+            let item = fixture.restaurants[index % fixture.restaurants.count]
+            let restaurantID = index < fixture.restaurants.count
+                ? (UUID(uuidString: item.id) ?? fixtureUUID(10_000 + index))
+                : fixtureUUID(10_000 + index)
+            let isVisited = index < visitedRestaurantCount
+            let anchor = anchors[index % anchors.count]
+            let ring = Double((index / anchors.count) % 7)
+            let angle = Double(index * 137) * .pi / 180
+            let latitude = anchor.0 + sin(angle) * (0.00018 + ring * 0.00008)
+            let longitude = anchor.1 + cos(angle) * (0.00018 + ring * 0.00009)
+            let restaurantCreatedAt = item.createdAt.addingTimeInterval(Double(-index) * 43_200)
+            let restaurantUpdatedAt = item.updatedAt.addingTimeInterval(Double(index % 9) * -3_600)
             let restaurant = Restaurant(
                 id: restaurantID,
                 ownerUserID: ownerUserID,
-                name: item.name,
+                name: index < fixture.restaurants.count ? item.name : "\(item.name) · \(index + 1)",
                 address: item.address,
-                latitude: item.latitude,
-                longitude: item.longitude,
+                latitude: latitude,
+                longitude: longitude,
                 city: item.city,
-                status: RestaurantStatus(rawValue: item.status) ?? .visited,
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                remoteID: item.id,
+                status: isVisited ? .visited : .wantToGo,
+                createdAt: restaurantCreatedAt,
+                updatedAt: restaurantUpdatedAt,
+                remoteID: restaurantID.uuidString.lowercased(),
                 serverVersion: 1,
                 lastSyncedAt: .now,
                 syncStatus: .synced
@@ -62,17 +84,21 @@ public enum TasteMapHybridDebugFixture {
                 providerMerchantImageURL: item.merchantImageUrl
             )
 
-            for itemVisit in item.visits {
-                guard let visitID = UUID(uuidString: itemVisit.id) else { continue }
+            let visitCount = isVisited ? (index < 5 ? 4 : 3) : 0
+            for visitIndex in 0..<visitCount {
+                let itemVisit = item.visits.first ?? seedVisit
+                let visitID = fixtureUUID(100_000 + index * 10 + visitIndex)
+                let visitedAt = itemVisit.visitedAt.addingTimeInterval(Double(-(index * 4 + visitIndex)) * 86_400)
+                let rating = ((index + visitIndex) % 7 == 0) ? nil : 3.4 + Double((index + visitIndex) % 8) * 0.2
                 context.insert(Visit(
                     id: visitID,
                     ownerUserID: ownerUserID,
                     restaurantId: restaurantID,
-                    visitedAt: itemVisit.visitedAt,
-                    rating: itemVisit.rating,
-                    valueRating: itemVisit.valueRating,
-                    environmentRating: itemVisit.environmentRating,
-                    serviceRating: itemVisit.serviceRating,
+                    visitedAt: visitedAt,
+                    rating: rating,
+                    valueRating: rating.map { max(1, min(5, $0 - 0.1)) },
+                    environmentRating: rating.map { max(1, min(5, $0 + 0.1)) },
+                    serviceRating: rating,
                     note: itemVisit.note,
                     myActualSpend: itemVisit.myActualSpend.map { Decimal($0) },
                     totalPrice: itemVisit.totalPrice.map { Decimal($0) },
@@ -90,9 +116,9 @@ public enum TasteMapHybridDebugFixture {
                     companionNames: itemVisit.companions,
                     recommendationSourceText: itemVisit.recommendationSourceText,
                     partySize: itemVisit.partySize,
-                    createdAt: itemVisit.createdAt,
-                    updatedAt: itemVisit.updatedAt,
-                    remoteID: itemVisit.id,
+                    createdAt: visitedAt,
+                    updatedAt: visitedAt,
+                    remoteID: visitID.uuidString.lowercased(),
                     serverVersion: 1,
                     lastSyncedAt: .now,
                     syncStatus: .synced
@@ -201,5 +227,9 @@ public enum TasteMapHybridDebugFixture {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+
+    private static func fixtureUUID(_ value: Int) -> UUID {
+        UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", value))!
+    }
 }
 #endif

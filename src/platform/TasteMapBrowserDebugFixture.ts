@@ -1,4 +1,4 @@
-import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import type { RestaurantSummary, StarRating, UserProfile, Visit } from '../types/domain'
 import fixtureSource from '../../hybrid/fixtures/profile-restaurant-rich.json'
 import type {
   TasteMapHybridActivityItemDTO,
@@ -32,7 +32,7 @@ export function loadTasteMapBrowserDebugFixture() {
 }
 
 function buildSnapshot(fixture: DebugFixtureRoot): TasteMapBrowserDebugFixtureSnapshot {
-  const restaurants = fixture.restaurants
+  const restaurants = expandRichMapRestaurants(fixture.restaurants)
   const visits = restaurants.flatMap((restaurant) => restaurant.visits) as Visit[]
   const restaurantImages = Object.fromEntries(restaurants.map((restaurant) => [restaurant.id, imageDescriptor(restaurant)]))
   const profile: TasteMapProfileDashboardViewModel = {
@@ -44,6 +44,73 @@ function buildSnapshot(fixture: DebugFixtureRoot): TasteMapBrowserDebugFixtureSn
     restaurantImages,
   }
   return { profile, content: buildContent(profile) }
+}
+
+/** Mirrors the Native Debug fixture scale without adding any Release data. */
+export function expandRichMapRestaurants(source: RestaurantSummary[]) {
+  if (!source.length) return []
+  const seedVisit = source.flatMap((restaurant) => restaurant.visits)[0]
+  if (!seedVisit) return source
+  const visitedCount = 90
+  const totalCount = visitedCount + 25
+  const anchors = [
+    [30.2741, 120.1551], [30.2676, 120.1474], [30.2819, 120.1628],
+    [30.2558, 120.1692], [30.2912, 120.1398], [30.2449, 120.1825],
+  ] as const
+  return Array.from({ length: totalCount }, (_, index): RestaurantSummary => {
+    const template = source[index % source.length]
+    const id = index < source.length ? template.id : fixtureUUID(10_000 + index)
+    const visited = index < visitedCount
+    const anchor = anchors[index % anchors.length]
+    const ring = (Math.floor(index / anchors.length) % 7)
+    const angle = index * 137 * Math.PI / 180
+    const latitude = anchor[0] + Math.sin(angle) * (0.00018 + ring * 0.00008)
+    const longitude = anchor[1] + Math.cos(angle) * (0.00018 + ring * 0.00009)
+    const visitCount = visited ? (index < 5 ? 4 : 3) : 0
+    const visits = Array.from({ length: visitCount }, (_, visitIndex): Visit => {
+      const templateVisit = template.visits[0] ?? seedVisit
+      const visitedAt = new Date(new Date(templateVisit.visitedAt).getTime() - (index * 4 + visitIndex) * 86_400_000).toISOString()
+      const rating = (index + visitIndex) % 7 === 0 ? null : fixtureRating(index + visitIndex)
+      return {
+        ...templateVisit,
+        id: fixtureUUID(100_000 + index * 10 + visitIndex),
+        restaurantId: id,
+        visitedAt,
+        rating,
+        valueRating: rating == null ? null : fixtureRating(index + visitIndex + 2),
+        environmentRating: rating == null ? null : fixtureRating(index + visitIndex + 1),
+        serviceRating: rating,
+        createdAt: visitedAt,
+        updatedAt: visitedAt,
+      }
+    })
+    const ratings = visits.flatMap((visit) => visit.rating == null ? [] : [visit.rating])
+    const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null
+    return {
+      ...template,
+      id,
+      name: index < source.length ? template.name : `${template.name} · ${index + 1}`,
+      latitude,
+      longitude,
+      status: visited ? 'visited' : 'wantToGo',
+      visits,
+      visitCount,
+      averageRating,
+      scoreOutOfTen: averageRating == null ? null : averageRating * 2,
+      latestVisitDate: visits[0]?.visitedAt ?? null,
+      createdAt: new Date(new Date(template.createdAt).getTime() - index * 43_200_000).toISOString(),
+      updatedAt: new Date(new Date(template.updatedAt).getTime() - (index % 9) * 3_600_000).toISOString(),
+    }
+  })
+}
+
+function fixtureRating(seed: number): StarRating {
+  const ratings: StarRating[] = [3.5, 4, 4.5, 5, 4.5, 4, 3.5, 4]
+  return ratings[Math.abs(seed) % ratings.length]
+}
+
+function fixtureUUID(value: number) {
+  return `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
 }
 
 function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybridContentSnapshotDTO {

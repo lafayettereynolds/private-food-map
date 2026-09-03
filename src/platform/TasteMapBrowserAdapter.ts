@@ -179,8 +179,9 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
 
   map = {
     viewport: async (request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> => {
-      const profile = await this.loadProfile()
-      return projectBrowserMapViewport(profile, request)
+      const debugFixture = await this.loadDebugFixture()
+      const profile = debugFixture?.profile ?? await this.loadProfile()
+      return projectBrowserMapViewport(profile, request, Boolean(debugFixture))
     },
   }
 
@@ -469,6 +470,7 @@ function browserContentSnapshot(
 function projectBrowserMapViewport(
   profile: TasteMapProfileDashboardViewModel,
   request: TasteMapMapBrowseRequest,
+  includeDebugRecommendations = false,
 ): TasteMapMapBrowseResponse {
   const all = profile.restaurants
   const options = {
@@ -477,12 +479,16 @@ function projectBrowserMapViewport(
     cuisines: stableValues(all.flatMap((item) => item.tags)),
     recommendationSources: stableValues(profile.visits.map((visit) => visit.recommendationSourceText ?? '')),
   }
-  // Personal Map does not invent recommendation records. Discovery remains the
-  // authoritative recommendation source until its formal migration.
-  if (request.scope === 'recommended') return { requestID: request.requestID, items: [], totalCount: 0, options }
+  // Shipping Browser data never invents recommendations. The isolated Hybrid
+  // Debug fixture alone exposes a deterministic rich recommendation state for
+  // visual/performance QA.
+  if (request.scope === 'recommended' && !includeDebugRecommendations) return { requestID: request.requestID, items: [], totalCount: 0, options }
   const normalizedSearch = request.search.trim().toLocaleLowerCase()
-  const requestedStatus = request.scope === 'visited' ? 'visited' : 'wantToGo'
-  const matches = all.filter((item) => {
+  const requestedStatus = request.scope === 'wantToGo' ? 'wantToGo' : 'visited'
+  const source = request.scope === 'recommended'
+    ? [...all].filter((item) => item.status === 'visited').sort((left, right) => (right.scoreOutOfTen ?? -1) - (left.scoreOutOfTen ?? -1) || left.id.localeCompare(right.id)).slice(0, 18)
+    : all
+  const matches = source.filter((item) => {
     if (item.status !== requestedStatus) return false
     if (request.bounds && !coordinateIsInBounds(item, request.bounds)) return false
     if (request.filters.city && item.city !== request.filters.city) return false

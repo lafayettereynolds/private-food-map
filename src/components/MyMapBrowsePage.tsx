@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowDownUp, Building2, Footprints, List, Map as MapIcon, MapPin, Plus,
+  ArrowDownUp, Bookmark, Building2, Footprints, List, Map as MapIcon, MapPin, Plus,
   ReceiptText, RotateCcw, Search, SlidersHorizontal, Star, Users, Utensils,
 } from 'lucide-react'
 import type {
@@ -13,6 +13,22 @@ import { HYBRID_MAP_PRIMARY_SCOPES } from '../hybrid/app/HybridProductContracts'
 import type { Coordinates, RestaurantSummary } from '../types/domain'
 import { MapView } from './MapView'
 import { initialMapBrowseState, mapBrowseReducer } from './mapBrowseState'
+import {
+  MapBrowseSnapshotCache,
+  LatestMapRequestGate,
+  mapBrowseCameraFitKey,
+  mapBrowseDataVersion,
+  mapBrowseSnapshotKey,
+  type MapBrowsePresentationSnapshot,
+} from './mapBrowseSnapshot'
+import {
+  beginMapScopeMeasurement,
+  markMapScopeContentCommitted,
+  markMapScopeDataReady,
+  markMapScopeSelected,
+  markMapScopeStaleResponse,
+} from './mapScopePerformance'
+import { TasteMapPrimaryTabBar, type TasteMapPrimaryTab } from './TasteMapDiscoveryShared'
 import './myMapBrowsePage.css'
 
 interface MyMapBrowsePageProps {
@@ -24,6 +40,16 @@ interface MyMapBrowsePageProps {
 }
 
 const emptyOptions: TasteMapMapBrowseOptions = { cities: [], companions: [], cuisines: [], recommendationSources: [] }
+const snapshotFreshnessMilliseconds = 30_000
+const mapScopeTabs: ReadonlyArray<TasteMapPrimaryTab<TasteMapMapScope>> = HYBRID_MAP_PRIMARY_SCOPES.map(([value, label]) => ({
+  value,
+  label,
+  icon: value === 'visited'
+    ? <Footprints />
+    : value === 'wantToGo'
+      ? <Bookmark />
+      : <Star />,
+}))
 
 export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, onAddRestaurant }: MyMapBrowsePageProps) {
   const [browseState, dispatch] = useReducer(mapBrowseReducer, initialMapBrowseState)
@@ -36,8 +62,71 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fullFilterOpen, setFullFilterOpen] = useState(false)
-  const latestRequestID = useRef('')
-  const cameraFitKey = `${scope}:${JSON.stringify(filters)}:${search}`
+  const requestGate = useRef(new LatestMapRequestGate())
+  const rootRef = useRef<HTMLElement>(null)
+  const snapshotCache = useRef(new MapBrowseSnapshotCache())
+  const activeMeasurement = useRef<{ id: string | null; scope: TasteMapMapScope } | null>(null)
+  const dataVersion = useMemo(() => mapBrowseDataVersion(profile.restaurants), [profile.restaurants])
+  const cameraFitKey = mapBrowseCameraFitKey(filters, search)
+  const snapshotKeyFor = useCallback((nextScope: TasteMapMapScope) => mapBrowseSnapshotKey({
+    ownerUserID: profile.user.id,
+    dataVersion,
+    mode,
+    scope: nextScope,
+    filters,
+    sort,
+    search,
+    viewport,
+    currentLocation: coordinates,
+  }), [coordinates, dataVersion, filters, mode, profile.user.id, search, sort, viewport])
+
+  const applySnapshot = useCallback((snapshot: MapBrowsePresentationSnapshot, urgent = false) => {
+    const update = () => {
+      setItems(snapshot.items)
+      setImages(snapshot.images)
+      setOptions(snapshot.options)
+      setLoading(false)
+      setError(null)
+    }
+    if (urgent) update()
+    else startTransition(update)
+  }, [])
+
+  const selectScope = (nextScope: TasteMapMapScope) => {
+    if (nextScope === scope) return
+    const measurementID = beginMapScopeMeasurement(platform.kind, scope, nextScope)
+    activeMeasurement.current = { id: measurementID, scope: nextScope }
+    // Invalidate any older request before React runs the next effect. A slow
+    // Native response can therefore never flash the previous scope back in.
+    requestGate.current.invalidate('scope-invalidated')
+    const cached = snapshotCache.current.get(snapshotKeyFor(nextScope))
+    dispatch({ type: 'scope', value: nextScope })
+    if (cached) {
+      applySnapshot(cached, true)
+      markMapScopeDataReady(measurementID, { itemCount: cached.items.length, cacheHit: true, bridgeDurationMs: 0 })
+    } else {
+      setItems([])
+      setImages({})
+      setLoading(true)
+    }
+    void platform.haptics.selection()
+  }
+
+  useEffect(() => {
+    const measurement = activeMeasurement.current
+    if (!measurement || measurement.scope !== scope) return
+    requestAnimationFrame(() => markMapScopeSelected(measurement.id))
+  }, [scope])
+
+  useEffect(() => {
+    const measurement = activeMeasurement.current
+    if (!measurement || measurement.scope !== scope) return
+    markMapScopeContentCommitted(measurement.id, rootRef.current)
+  }, [images, items, scope])
+
+  useEffect(() => {
+    snapshotCache.current.clear()
+  }, [dataVersion, profile.user.id])
 
   useEffect(() => {
     if (!active || !platform.runtime) return
@@ -61,18 +150,33 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
 
   useEffect(() => {
     if (!active) return
+    const snapshotKey = snapshotKeyFor(scope)
+    const cached = snapshotCache.current.get(snapshotKey)
+    if (cached) {
+      applySnapshot(cached)
+      const measurement = activeMeasurement.current?.scope === scope ? activeMeasurement.current.id : null
+      markMapScopeDataReady(measurement, { itemCount: cached.items.length, cacheHit: true, bridgeDurationMs: 0 })
+      if (Date.now() - cached.capturedAt < snapshotFreshnessMilliseconds) {
+        requestGate.current.invalidate('cache-served')
+        return
+      }
+    }
     const requestID = globalThis.crypto?.randomUUID?.() ?? `map-${Date.now()}-${Math.random()}`
-    latestRequestID.current = requestID
+    requestGate.current.activate(requestID)
     const request: TasteMapMapBrowseRequest = {
       requestID, scope, filters, sort, search, limit: 300,
       bounds: mode === 'map' ? viewport?.bounds : undefined,
       currentLocation: coordinates ?? undefined,
     }
-    const timer = window.setTimeout(() => {
-      setLoading(true)
-      setError(null)
-      platform.map.viewport(request).then((response) => {
-        if (latestRequestID.current !== requestID || response.requestID !== requestID) return
+    const measurement = activeMeasurement.current?.scope === scope ? activeMeasurement.current.id : null
+    const bridgeStartedAt = performance.now()
+    if (!cached) setLoading(true)
+    setError(null)
+    platform.map.viewport(request).then((response) => {
+        if (!requestGate.current.accepts(requestID, response.requestID)) {
+          markMapScopeStaleResponse(measurement)
+          return
+        }
         const projected = response.items.map((restaurant) => projectBridgeRestaurant({
           restaurant,
           viewerState: restaurant.status === 'visited' ? 'visited' : 'want_to_go',
@@ -87,24 +191,37 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
             canShare: true,
           },
         }))
-        setItems(projected.map((value) => value.restaurant))
-        setImages(Object.fromEntries(projected.map((value) => [value.restaurant.id, value.image])))
-        setOptions(response.options)
-        setLoading(false)
+        const snapshot: MapBrowsePresentationSnapshot = {
+          scope,
+          items: projected.map((value) => value.restaurant),
+          images: Object.fromEntries(projected.map((value) => [value.restaurant.id, value.image])),
+          options: response.options,
+          capturedAt: Date.now(),
+        }
+        snapshotCache.current.set(snapshotKey, snapshot)
+        markMapScopeDataReady(measurement, {
+          itemCount: snapshot.items.length,
+          cacheHit: false,
+          bridgeDurationMs: performance.now() - bridgeStartedAt,
+        })
+        applySnapshot(snapshot)
       }).catch((reason: unknown) => {
-        if (latestRequestID.current !== requestID) return
+        if (!requestGate.current.accepts(requestID)) return
         setError(reason instanceof Error ? reason.message : '无法读取地图餐厅。')
         setLoading(false)
       })
-    }, viewport ? 180 : 0)
-    return () => window.clearTimeout(timer)
-  }, [active, coordinates, filters, mode, platform, revision, scope, search, sort, viewport])
+  }, [active, applySnapshot, coordinates, filters, mode, platform, revision, scope, search, snapshotKeyFor, sort, viewport])
 
   useEffect(() => {
     let remove: (() => Promise<void>) | undefined
     void platform.events.subscribe((event) => {
-      if (event.name !== 'location.changed') return
-      setCoordinates({ latitude: event.payload.latitude, longitude: event.payload.longitude })
+      if (event.name === 'location.changed') {
+        snapshotCache.current.clear()
+        setCoordinates({ latitude: event.payload.latitude, longitude: event.payload.longitude })
+      } else if (event.name === 'auth.changed' || (event.name === 'app.lifecycle' && ['foreground', 'resume'].includes(event.payload.state))) {
+        snapshotCache.current.clear()
+        dispatch({ type: 'retry' })
+      }
     }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
     return () => { void remove?.() }
   }, [platform])
@@ -125,7 +242,13 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
     dispatch({ type: 'selection', value: restaurant.id })
   }
 
-  return <main aria-hidden={!active} className={`tm-my-map ${active ? 'is-active' : 'is-inactive'} is-${mode}`}>
+  return <main
+    aria-hidden={!active}
+    className={`tm-my-map ${active ? 'is-active' : 'is-inactive'} is-${mode}`}
+    data-map-scope={scope}
+    data-scope-item-count={items.length}
+    ref={rootRef}
+  >
     <header className="tm-my-map__controls">
       <button
         aria-label={mode === 'map' ? '切换到我的列表' : '切换到我的地图'}
@@ -136,11 +259,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
         <span>{mode === 'map' ? '我的地图' : '我的列表'}</span>
         {mode === 'map' ? <MapIcon aria-hidden="true" size={19} /> : <List aria-hidden="true" size={19} />}
       </button>
-      <nav aria-label="地图范围" className="tm-my-map__scopes">
-        {HYBRID_MAP_PRIMARY_SCOPES.map(([value, label]) => (
-          <button aria-current={scope === value ? 'page' : undefined} className={scope === value ? 'is-active' : ''} key={value} onClick={() => dispatch({ type: 'scope', value })} type="button">{label}</button>
-        ))}
-      </nav>
+      <TasteMapPrimaryTabBar ariaLabel="地图范围" className="tm-my-map__scopes" items={mapScopeTabs} onChange={selectScope} value={scope} />
       <MapFilterBar
         activeCount={activeFilterCount}
         filters={filters}
@@ -236,7 +355,7 @@ function RestaurantImage({ descriptor, restaurantName }: { descriptor?: TasteMap
   const usesImage = descriptor && descriptor.kind !== 'foodDiningFallback' && !failed
   return <span className={`tm-restaurant-image${loaded && usesImage ? '' : ' is-fallback'}`}>
     {!loaded || !usesImage ? <Utensils aria-label={`${restaurantName} 餐饮图示`} size={23} /> : null}
-    {usesImage ? <img alt={descriptor.accessibilityLabel} hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={descriptor.resourceURL} /> : null}
+    {usesImage ? <img alt={descriptor.accessibilityLabel} data-restaurant-image="true" hidden={!loaded} onError={() => setFailed(true)} onLoad={() => setLoaded(true)} src={descriptor.resourceURL} /> : null}
   </span>
 }
 

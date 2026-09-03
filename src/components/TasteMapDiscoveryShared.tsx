@@ -1,31 +1,40 @@
-import type { MouseEvent, ReactNode } from 'react'
+import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import './tasteMapDiscoveryShared.css'
 
 export interface TasteMapPrimaryTab<Value extends string> {
   value: Value
   label: string
+  icon?: ReactNode
 }
 
 export function TasteMapPrimaryTabBar<Value extends string>({
   ariaLabel,
+  className,
   items,
   onChange,
   value,
 }: {
   ariaLabel: string
+  className?: string
   items: ReadonlyArray<TasteMapPrimaryTab<Value>>
   onChange: (value: Value) => void
   value: Value
 }) {
-  return <nav aria-label={ariaLabel} className="tm-primary-tab-bar" role="tablist">
+  return <nav
+    aria-label={ariaLabel}
+    className={`tm-primary-tab-bar${className ? ` ${className}` : ''}`}
+    role="tablist"
+    style={{ '--tm-tab-count': items.length } as CSSProperties}
+  >
     {items.map((item) => <button
+      aria-label={item.label}
       aria-selected={item.value === value}
       className={item.value === value ? 'is-active' : ''}
       key={item.value}
       onClick={() => onChange(item.value)}
       role="tab"
       type="button"
-    >{item.label}</button>)}
+    >{item.icon ? <span aria-hidden="true" className="tm-primary-tab-bar__icon">{item.icon}</span> : null}<span>{item.label}</span></button>)}
   </nav>
 }
 

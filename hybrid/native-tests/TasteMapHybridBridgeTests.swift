@@ -22,8 +22,9 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         let profile = try service.profileDashboard()
         XCTAssertEqual(profile.followingCount, 76)
         XCTAssertEqual(profile.followerCount, 128)
-        XCTAssertEqual(profile.restaurants.count, 5)
-        XCTAssertEqual(profile.restaurants.flatMap(\.visits).count, 2)
+        XCTAssertEqual(profile.restaurants.filter { $0.status == "visited" }.count, 90)
+        XCTAssertEqual(profile.restaurants.filter { $0.status == "wantToGo" }.count, 25)
+        XCTAssertEqual(profile.restaurants.flatMap(\.visits).count, 275)
         XCTAssertEqual(profile.user.id, TasteMapHybridDebugFixture.ownerUserID)
         XCTAssertEqual(profile.user.membershipTier, "member")
 
@@ -31,7 +32,7 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(detail.restaurant.name, "湖滨二十八号 · 江南味道")
         XCTAssertEqual(detail.restaurant.image.kind, .providerMerchant)
         XCTAssertTrue(detail.restaurant.image.resourceURL?.hasPrefix("https://") == true)
-        XCTAssertEqual(detail.restaurant.visits.count, 2)
+        XCTAssertEqual(detail.restaurant.visits.count, 4)
         XCTAssertEqual(detail.editableVisitIDs, detail.restaurant.visits.map(\.id))
         XCTAssertEqual(detail.viewerState, "visited")
         XCTAssertEqual(detail.capabilities, .owned)
@@ -158,16 +159,17 @@ final class TasteMapHybridBridgeTests: XCTestCase {
             limit: 300,
             currentLocation: nil
         ))
-        XCTAssertTrue(recommended.items.isEmpty)
-        XCTAssertEqual(recommended.totalCount, 0)
+        XCTAssertEqual(recommended.items.count, 18)
+        XCTAssertEqual(recommended.totalCount, 18)
+        XCTAssertEqual(service.projectedRestaurantSnapshotBuildCount, 1)
     }
 
     func testContentSnapshotUsesTypedRichDebugContentWithoutSensitiveFields() throws {
         let snapshot = try makeService().contentSnapshot()
-        XCTAssertEqual(snapshot.discovery.forYou.count, 5)
-        XCTAssertEqual(snapshot.discovery.similarTaste.count, 5)
-        XCTAssertEqual(snapshot.discovery.trending.count, 5)
-        XCTAssertEqual(snapshot.community.latest.count, 5)
+        XCTAssertEqual(snapshot.discovery.forYou.count, 12)
+        XCTAssertEqual(snapshot.discovery.similarTaste.count, 12)
+        XCTAssertEqual(snapshot.discovery.trending.count, 12)
+        XCTAssertEqual(snapshot.community.latest.count, 12)
         XCTAssertEqual(snapshot.lists.count, 5)
         XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { !$0.restaurant.name.isEmpty })
         XCTAssertTrue(snapshot.community.latest.contains { $0.visitRating == nil })
