@@ -40,6 +40,8 @@ public final class TasteMapHybridBridgeDispatcher {
             .restaurantAcquisition: false,
             .mapBrowse: dataReady,
             .contentRead: dataReady,
+            .communityInteraction: false,
+            .restaurantViewerState: false,
             .visitContract: true,
             .sync: false,
             .haptics: true,
@@ -84,6 +86,7 @@ public final class TasteMapHybridBridgeDispatcher {
                 .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumStatus, .premiumProducts, .premiumPurchase,
                 .premiumRestore, .premiumManage, .permissionsStatus, .permissionsOpenSettings,
                 .backupOpenExport, .backupOpenImport, .accountOpenDelete,
+                .communitySetLike, .communityComments, .communityAddComment, .restaurantSetWantToGo,
                 .navigationOpenNative, .navigationOpenHybrid,
                 .navigationBack, .navigationCurrent:
             guard request.version == Self.bridgeVersion else {
@@ -151,6 +154,7 @@ public final class TasteMapHybridBridgeDispatcher {
                     .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumStatus, .premiumProducts, .premiumPurchase,
                     .premiumRestore, .premiumManage, .permissionsStatus, .permissionsOpenSettings,
                     .backupOpenExport, .backupOpenImport, .accountOpenDelete,
+                    .communitySetLike, .communityComments, .communityAddComment, .restaurantSetWantToGo,
                     .navigationOpenNative, .navigationOpenHybrid,
                     .navigationBack, .navigationCurrent:
                 throw TasteMapHybridBridgeErrorDTO(

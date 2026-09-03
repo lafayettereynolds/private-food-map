@@ -2,7 +2,7 @@
 
 Status: Batch 1 shared Product UI and Batch 2 typed Native capability closure complete; production route switch not approved.
 Contract: `TasteMapNative.v1`
-Updated: 2026-09-02
+Updated: 2026-09-03
 
 ## 1. Architectural decision
 
@@ -76,6 +76,8 @@ The v1 contract defines:
 - permissions status/System Settings, Backup/Import and Account Delete route handoff;
 - navigation back to native-owned routes.
 
+Discovery engagement uses explicit interaction identity rather than a generic social destination. A visible Activity action carries the applicable `activityID`, authoritative `visitID`, `authorID`, and `restaurantID`; Like and Comment mutate/query the existing community interaction service by `visitID`, while WantToGo mutates the current user's Restaurant viewer state by `restaurantID`. Recommendation rows without an authoritative Activity/Visit target do not expose fake Like or Comment controls. Mutation responses return authoritative counts/state so optimistic UI can reconcile or roll back.
+
 Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `location.current`, and throttled `location.changed` delivery. Batch 2 adds typed owner-scoped Visit/Dish/photo writes, Restaurant acquisition, camera/photo-library input, StoreKit, Sync, permissions and data/account route actions without moving persistence, ownership, provider, entitlement or security policy into JavaScript. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs and never serializes SwiftData entities. Native-owned high-risk workflows keep their established Native screens/services behind specific typed methods; unsupported operations return `capability_unavailable` rather than pretending to succeed.
 
 ## 4. Security and ownership boundary
@@ -109,9 +111,9 @@ The Hybrid shell supports canonical local routes including:
 - `#/lists`, `#/publicList/:id`, `#/activity/:id`, `#/roulette`
 - `#/analytics/:mode`, `#/premium`, `#/settings`
 
-React is the navigation truth while a Hybrid-owned page is visible. `TasteMapHybridNavigationCoordinator` is the transition boundary, not a second business stack: it keeps one Hybrid history plus at most one native presentation. The contract exposes `navigation.openHybrid`, `navigation.openNative`, `navigation.back`, and `navigation.current`, all with validation and structured errors.
+React is the navigation truth while a Hybrid-owned page is visible. `TasteMapHybridNavigationCoordinator` is the transition boundary, not a second business stack: it keeps one Hybrid history plus at most one native presentation. The contract exposes `navigation.openHybrid`, `navigation.openNative`, `navigation.back`, and `navigation.current`, all with validation and structured errors. `navigation.openNative` rejects Hybrid-owned surfaces even if a stale caller constructs such a payload; Visit editor and Roulette always use the Hybrid navigation path. Native handoff remains reserved for native-owned capabilities such as List management and system Share.
 
-Profile → Restaurant and Map → Restaurant append one Hybrid history entry. Hybrid → Native presents an existing SwiftUI route without destroying the persistent WebView. Back dismisses that native presentation first; otherwise it pops Hybrid history. Native → Hybrid delivers the canonical route to the same long-lived shell. My Map / My List keeps one `MapBrowseState` containing mode, scope, filters, sort, city, search, viewport and selection; changing mode or returning from Restaurant Detail does not construct a second query state. This prevents double back buttons, duplicate route state and reload-driven session loss.
+Profile → Restaurant and Map → Restaurant append one Hybrid history entry. Hybrid → Native presents an existing SwiftUI route without destroying the persistent WebView. Back dismisses that native presentation first; otherwise it pops Hybrid history. Native → Hybrid delivers the canonical route to the same long-lived shell. My Map / My List keeps one `MapBrowseState` containing mode, scope, filters, sort, city, search, viewport and selection; changing mode or returning from Restaurant Detail does not construct a second query state. Discovery remains mounted after first activation so its selected feed tab/filter, scroll position and optimistic state survive Visit, Roulette, List and system-share round trips. This prevents double back buttons, duplicate route state and reload-driven session loss.
 
 Deep links are parsed only for allowlisted `restaurant`, `profile`, `list`, and `activity` shapes, reject credentials/malformed identifiers, resolve to a typed route, and are handed to the declared owner. Production AASA/domain validation and public-link privacy remain separate native/backend release gates.
 

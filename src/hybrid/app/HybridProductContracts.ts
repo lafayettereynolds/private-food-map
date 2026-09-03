@@ -98,12 +98,9 @@ export const HYBRID_SETTINGS_SECTIONS = [
 export const HYBRID_NATIVE_CAPABILITY_HANDOFFS = [
   'profileEdit',
   'socialNative',
-  'visit',
-  'visitEdit',
   'restaurantEdit',
   'restaurantDelete',
   'restaurantAddToList',
-  'restaurantWantToGo',
   'acquisitionNative',
   'listManage',
   'premiumStore',

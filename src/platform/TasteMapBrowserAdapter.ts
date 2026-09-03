@@ -1,13 +1,16 @@
 import { db } from '../db/appDb'
 import { CURRENT_USER_ID, ensureCurrentUser } from '../db/social'
 import { buildRestaurantSummaries } from '../services/restaurantSummaryProjection'
-import { addVisit, deleteVisit, updateVisit, type AddVisitInput } from '../db/restaurants'
+import { addVisit, deleteRestaurant, deleteVisit, updateRestaurantBasics, updateVisit, type AddVisitInput } from '../db/restaurants'
 import type { RestaurantListCollection, RestaurantListItem } from '../types/domain'
 import type { RestaurantSummary } from '../types/domain'
 import {
   TASTE_MAP_NATIVE_BRIDGE_VERSION,
   capabilityUnavailable,
   type TasteMapCapabilityRegistry,
+  type TasteMapCommunityCommentDTO,
+  type TasteMapCommunityEngagementDTO,
+  type TasteMapHybridActivityInteractionDTO,
   type TasteMapAcquisitionCandidateDTO,
   type TasteMapAcquisitionResultsDTO,
   type TasteMapImageDescriptor,
@@ -55,6 +58,8 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
   restaurantAcquisition: true,
   mapBrowse: true,
   contentRead: true,
+  communityInteraction: true,
+  restaurantViewerState: true,
   visitContract: true,
   sync: false,
   haptics: false,
@@ -72,6 +77,8 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
   readonly kind = 'browser' as const
   private profilePromise: Promise<TasteMapProfileDashboardViewModel> | null = null
   private readonly acquisitionCandidates = new Map<string, TasteMapAcquisitionCandidateDTO>()
+  private readonly engagement = new Map<string, TasteMapCommunityEngagementDTO>()
+  private readonly commentsByVisit = new Map<string, TasteMapCommunityCommentDTO[]>()
 
   constructor(private readonly dataSource: TasteMapBrowserDataSource = new IndexedDBTasteMapDataSource()) {}
 
@@ -130,6 +137,31 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
           capabilities: ownedRestaurantCapabilities(),
         }))
     },
+    setWantToGo: async (restaurantID: string, wanted: boolean) => {
+      const debugFixture = await this.loadDebugFixture()
+      if (debugFixture) {
+        const current = debugViewerState(restaurantID) ?? debugContentViewerState(debugFixture.content, restaurantID)
+        const viewerState = current === 'visited' ? 'visited' as const : wanted ? 'want_to_go' as const : 'none' as const
+        writeDebugViewerState(restaurantID, viewerState)
+        return { restaurantID, viewerState, updatedAt: new Date().toISOString() }
+      }
+      const value = await db.restaurants.get(restaurantID)
+      if (!value || value.deletedAt) throw new TasteMapPlatformError('这家餐厅不在当前账户中。', 'restaurant_not_found', true)
+      if (value.status === 'visited') return { restaurantID, viewerState: 'visited' as const, updatedAt: value.updatedAt }
+      if (!wanted) {
+        await deleteRestaurant(restaurantID)
+        this.profilePromise = null
+        return { restaurantID, viewerState: 'none' as const, updatedAt: new Date().toISOString() }
+      }
+      await updateRestaurantBasics(restaurantID, {
+        name: value.name, address: value.address, city: value.city, status: 'wantToGo', tags: value.tags,
+        pricePerPerson: value.pricePerPerson, phone: value.phone ?? null, openingHours: value.openingHours ?? null,
+        markerType: value.markerType, markerImageData: value.markerImageData, markerPhotoId: value.markerPhotoId,
+        markerEmoji: value.markerEmoji, latitude: value.latitude, longitude: value.longitude,
+      })
+      this.profilePromise = null
+      return { restaurantID, viewerState: 'want_to_go' as const, updatedAt: new Date().toISOString() }
+    },
   }
 
   acquisition = {
@@ -187,13 +219,50 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
   content = {
     snapshot: async () => {
       const debugFixture = await this.loadDebugFixture()
-      if (debugFixture) return debugFixture.content
+      if (debugFixture) return applyDebugViewerStates(debugFixture.content)
       const [profile, lists, listItems] = await Promise.all([
         this.loadProfile(),
         db.restaurantLists.filter((value) => !value.deletedAt && value.userId === CURRENT_USER_ID).toArray(),
         db.restaurantListItems.filter((value) => !value.deletedAt).toArray(),
       ])
       return browserContentSnapshot(profile, lists, listItems)
+    },
+  }
+
+  community = {
+    setLike: async (target: TasteMapHybridActivityInteractionDTO, liked: boolean) => {
+      const current = await this.engagementFor(target.visitID)
+      const next = {
+        likedByViewer: liked,
+        likeCount: Math.max(0, current.likeCount + (liked === current.likedByViewer ? 0 : liked ? 1 : -1)),
+        commentCount: current.commentCount,
+      }
+      this.engagement.set(target.visitID, next)
+      return next
+    },
+    comments: async (target: TasteMapHybridActivityInteractionDTO) => ({
+      items: this.commentsByVisit.get(target.visitID) ?? [],
+      nextCursor: null,
+    }),
+    addComment: async (target: TasteMapHybridActivityInteractionDTO, body: string) => {
+      const trimmed = body.trim()
+      if (!trimmed || trimmed.length > 280) throw new TasteMapPlatformError('评论内容无效。', 'invalid_comment', true)
+      const profile = await this.loadProfile()
+      const comment: TasteMapCommunityCommentDTO = {
+        id: crypto.randomUUID(), visitID: target.visitID, body: trimmed,
+        author: {
+          id: profile.user.id, name: profile.user.nickname, city: profile.user.city,
+          avatarPhotoID: profile.user.avatarPhotoId, avatarPresetID: profile.user.avatarPresetId,
+          isFollowing: false,
+        },
+        createdAt: new Date().toISOString(),
+      }
+      const values = [...(this.commentsByVisit.get(target.visitID) ?? []), comment]
+      this.commentsByVisit.set(target.visitID, values)
+      const current = await this.engagementFor(target.visitID)
+      const next = { ...current, commentCount: current.commentCount + 1 }
+      this.engagement.set(target.visitID, next)
+      return { ...next, comment }
     },
   }
 
@@ -270,6 +339,27 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     return loadTasteMapBrowserDebugFixture()
   }
 
+  private async engagementFor(visitID: string) {
+    const stored = this.engagement.get(visitID)
+    if (stored) return stored
+    const fixture = await this.loadDebugFixture()
+    const values = fixture ? [
+      ...fixture.content.discovery.forYou,
+      ...fixture.content.discovery.similarTaste,
+      ...fixture.content.discovery.trending,
+      ...fixture.content.community.following,
+      ...fixture.content.community.latest,
+    ] : []
+    const item = values.find((value) => value.interaction?.visitID === visitID)
+    const initial = item ? {
+      likedByViewer: item.likedByViewer,
+      likeCount: item.likeCount,
+      commentCount: item.commentCount,
+    } : { likedByViewer: false, likeCount: 0, commentCount: 0 }
+    this.engagement.set(visitID, initial)
+    return initial
+  }
+
   private cacheBrowserCandidate(value: import('../types/domain').PoiSearchResult, distanceMeters: number | null = null) {
     const id = `browser-candidate-${value.amapPoiId}`
     const candidate: TasteMapAcquisitionCandidateDTO = {
@@ -339,6 +429,44 @@ function browserCandidateDetail(candidate: TasteMapAcquisitionCandidateDTO): Tas
     editableVisitIDs: [],
     capabilities: candidateRestaurantCapabilities(),
   }
+}
+
+const debugViewerStateKey = 'tastemap.hybrid.debug.viewer-state.v1'
+
+function readDebugViewerStates(): Record<string, 'none' | 'want_to_go' | 'visited'> {
+  if (typeof localStorage === 'undefined') return {}
+  try { return JSON.parse(localStorage.getItem(debugViewerStateKey) ?? '{}') as Record<string, 'none' | 'want_to_go' | 'visited'> }
+  catch { return {} }
+}
+
+function debugViewerState(restaurantID: string) {
+  return readDebugViewerStates()[restaurantID]
+}
+
+function writeDebugViewerState(restaurantID: string, state: 'none' | 'want_to_go' | 'visited') {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(debugViewerStateKey, JSON.stringify({ ...readDebugViewerStates(), [restaurantID]: state }))
+}
+
+function debugContentViewerState(content: import('./TasteMapPlatform').TasteMapHybridContentSnapshotDTO, restaurantID: string) {
+  const items = [
+    ...content.discovery.forYou, ...content.discovery.similarTaste, ...content.discovery.trending,
+    ...content.community.following, ...content.community.latest,
+  ]
+  return items.find((item) => item.restaurant.id === restaurantID)?.viewerState ?? 'none'
+}
+
+function applyDebugViewerStates(content: import('./TasteMapPlatform').TasteMapHybridContentSnapshotDTO) {
+  const states = readDebugViewerStates()
+  const copy = structuredClone(content)
+  const groups = [
+    copy.discovery.forYou, copy.discovery.similarTaste, copy.discovery.trending,
+    copy.community.following, copy.community.latest,
+  ]
+  for (const group of groups) {
+    for (const item of group) item.viewerState = states[item.restaurant.id] ?? item.viewerState
+  }
+  return copy
 }
 
 function distanceBetween(origin: { latitude: number; longitude: number }, target: { latitude: number; longitude: number }) {

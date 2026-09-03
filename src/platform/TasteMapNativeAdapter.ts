@@ -12,6 +12,11 @@ import {
   type TasteMapAcquisitionSelectionDTO,
   type TasteMapManualRestaurantDraftDTO,
   type TasteMapHybridContentSnapshotDTO,
+  type TasteMapHybridActivityInteractionDTO,
+  type TasteMapCommunityEngagementDTO,
+  type TasteMapCommunityCommentPageDTO,
+  type TasteMapCommunityCommentMutationDTO,
+  type TasteMapRestaurantViewerStateMutationDTO,
   type TasteMapMapBrowseRequest,
   type TasteMapMapBrowseResponse,
   type TasteMapNativeRouteRequest,
@@ -71,6 +76,7 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
   restaurant = {
     get: async (id: string): Promise<TasteMapRestaurantDetailViewModel> => projectBridgeRestaurant(await this.call<TasteMapRestaurantDetailDTO>('restaurant.get', { id })),
     list: async (request: TasteMapRestaurantListRequest = {}) => (await this.call<TasteMapRestaurantDetailDTO[]>('restaurant.list', request)).map(projectBridgeRestaurant),
+    setWantToGo: (restaurantID: string, wanted: boolean) => this.call<TasteMapRestaurantViewerStateMutationDTO>('restaurant.setWantToGo', { restaurantID, wanted }),
   }
   acquisition = {
     search: (query: string, city: string) => this.call<TasteMapAcquisitionResultsDTO>('acquisition.search', { query, city }),
@@ -81,6 +87,11 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
   }
   map = { viewport: (request: TasteMapMapBrowseRequest) => this.call<TasteMapMapBrowseResponse>('map.viewport', request) }
   content = { snapshot: () => this.call<TasteMapHybridContentSnapshotDTO>('content.snapshot') }
+  community = {
+    setLike: (target: TasteMapHybridActivityInteractionDTO, liked: boolean) => this.call<TasteMapCommunityEngagementDTO>('community.setLike', { target, liked }),
+    comments: (target: TasteMapHybridActivityInteractionDTO) => this.call<TasteMapCommunityCommentPageDTO>('community.comments', { target }),
+    addComment: (target: TasteMapHybridActivityInteractionDTO, body: string) => this.call<TasteMapCommunityCommentMutationDTO>('community.addComment', { target, body }),
+  }
   visit = {
     contract: () => this.call<{ version: 1; writeUIReady: true }>('visit.contract'),
     save: (request: TasteMapVisitWriteRequest) => this.call<TasteMapVisitMutationResultDTO>('visit.save', request),

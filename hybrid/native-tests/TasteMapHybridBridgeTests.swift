@@ -102,6 +102,44 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         }
     }
 
+    func testDiscoveryMutationsAreForwardedThroughAsyncRuntimeBoundary() async throws {
+        let service = try makeService()
+        var forwarded: [TasteMapHybridBridgeMethod] = []
+        let dispatcher = TasteMapHybridBridgeDispatcher(
+            service: service,
+            appVersion: "1.0",
+            build: "1",
+            dataSource: "native-swiftdata-test",
+            authState: { TasteMapHybridAuthStateDTO(state: "authenticated", userID: service.ownerUserID, displayName: "Test") },
+            asynchronousAction: { method, _ in
+                forwarded.append(method)
+                return .object(["forwarded": .bool(true)])
+            }
+        )
+
+        for method in [
+            TasteMapHybridBridgeMethod.communitySetLike,
+            .communityComments,
+            .communityAddComment,
+            .restaurantSetWantToGo,
+        ] {
+            let result = await dispatcher.dispatchAsync(TasteMapHybridBridgeRequest(
+                version: TasteMapHybridBridgeContract.version,
+                requestId: "request-\(method.rawValue)",
+                method: method,
+                payload: .object([:])
+            ))
+            XCTAssertNil(result.error, "\(method.rawValue) did not reach the asynchronous runtime")
+            guard let value = result.result,
+                  case .object(let object) = value,
+                  case .bool(true) = object["forwarded"] else {
+                XCTFail("\(method.rawValue) returned an unexpected async result")
+                continue
+            }
+        }
+        XCTAssertEqual(forwarded, [.communitySetLike, .communityComments, .communityAddComment, .restaurantSetWantToGo])
+    }
+
     func testImageDescriptorNeverExposesAnAbsoluteLocalPath() throws {
         let profile = try makeService().profileDashboard()
         for image in profile.restaurants.map(\.image) {
@@ -171,6 +209,13 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(snapshot.lists.count, 5)
         XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { !$0.restaurant.name.isEmpty })
         XCTAssertTrue(snapshot.community.latest.contains { $0.visitRating == nil })
+        XCTAssertEqual(snapshot.discovery.forYou.first?.viewerState, "none")
+        XCTAssertEqual(snapshot.discovery.forYou.dropFirst().first?.viewerState, "want_to_go")
+        XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { $0.interaction?.visitID.hasPrefix("demo-visit-") == true })
+        XCTAssertTrue(snapshot.community.latest.filter { $0.visitID != nil }.allSatisfy {
+            $0.interaction?.activityID == $0.id && $0.interaction?.restaurantID == $0.restaurant.id
+        })
+        XCTAssertNil(snapshot.community.latest.first { $0.visitID == nil }?.interaction)
 
         let encoded = try JSONEncoder().encode(snapshot)
         for forbidden in ["accessToken", "refreshToken", "identityToken", "authorizationCode", "file://", "/Users/"] {

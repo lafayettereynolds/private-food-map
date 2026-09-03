@@ -33,6 +33,9 @@ final class TasteMapHybridRuntime {
     private var pendingAcquisitionCandidates: [String: PendingHybridAcquisitionCandidate] = [:]
     private var photoPickerSession: HybridPhotoPickerSession?
     private var cameraCaptureSession: HybridCameraCaptureSession?
+    private var debugEngagementByVisit: [String: TasteMapHybridCommunityEngagementDTO] = [:]
+    private var debugCommentsByVisit: [String: [TasteMapHybridCommunityCommentDTO]] = [:]
+    private var debugViewerStateByRestaurant: [String: String] = [:]
 
     init(
         mode: TasteMapHybridRuntimeMode,
@@ -146,6 +149,8 @@ final class TasteMapHybridRuntime {
                 .accountDelete: true,
                 .share: true,
                 .photoPicker: true,
+                .communityInteraction: true,
+                .restaurantViewerState: true,
             ],
             asynchronousAction: { [weak self] method, payload in
                 guard let self else { throw Self.bridgeError("hybrid_runtime_unavailable", recoverable: true) }
@@ -304,9 +309,20 @@ final class TasteMapHybridRuntime {
             return try await signInWithApple()
         case .authLogout:
             return await logout()
+        case .communitySetLike:
+            return try await setCommunityLike(payload)
+        case .communityComments:
+            return try await communityComments(payload)
+        case .communityAddComment:
+            return try await addCommunityComment(payload)
+        case .restaurantSetWantToGo:
+            return try setRestaurantWantToGo(payload)
         case .navigationOpenNative:
             let request: TasteMapHybridNativeRouteRequest = try decode(payload)
             let route = try TasteMapHybridRouteDTO(surface: request.route, identifier: request.identifier)
+            guard route.owner == .native else {
+                throw Self.bridgeError("hybrid_route_requires_openHybrid", method: .navigationOpenNative)
+            }
             return try encode(navigation.openNative(route))
         case .navigationOpenHybrid:
             let route: TasteMapHybridRouteDTO = try decode(payload)
@@ -364,6 +380,232 @@ final class TasteMapHybridRuntime {
             throw Self.bridgeError("capability_unavailable", method: method)
         }
     }
+
+    private func setCommunityLike(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridLikeRequest = try decode(payload)
+#if DEBUG
+        if TasteMapUITestFixtures.usesVisualQA {
+            try validateDebugInteractionTarget(request.target)
+            let current = debugEngagement(request.target.visitID)
+            let count = max(0, current.likeCount + (request.liked == current.likedByViewer ? 0 : request.liked ? 1 : -1))
+            let result = TasteMapHybridCommunityEngagementDTO(
+                likedByViewer: request.liked, likeCount: count, commentCount: current.commentCount
+            )
+            debugEngagementByVisit[request.target.visitID] = result
+            return try encode(result)
+        }
+#endif
+        try validateInteractionTarget(request.target)
+        let result = try await authServices.socialCollaborationAPI.setLike(
+            request.liked, visitID: request.target.visitID
+        )
+        try cacheEngagement(
+            visitID: request.target.visitID, likedByViewer: result.likedByViewer,
+            likeCount: result.likeCount, commentCount: result.commentCount
+        )
+        return try encode(TasteMapHybridCommunityEngagementDTO(
+            likedByViewer: result.likedByViewer,
+            likeCount: result.likeCount,
+            commentCount: result.commentCount
+        ))
+    }
+
+    private func communityComments(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridInteractionRequest = try decode(payload)
+#if DEBUG
+        if TasteMapUITestFixtures.usesVisualQA {
+            try validateDebugInteractionTarget(request.target)
+            return try encode(TasteMapHybridCommunityCommentPageDTO(
+                items: debugCommentsByVisit[request.target.visitID] ?? [], nextCursor: nil
+            ))
+        }
+#endif
+        try validateInteractionTarget(request.target)
+        let page = try await authServices.socialCollaborationAPI.comments(
+            visitID: request.target.visitID, cursor: nil, limit: 20
+        )
+        return try encode(TasteMapHybridCommunityCommentPageDTO(
+            items: page.items.map(communityCommentDTO), nextCursor: page.nextCursor
+        ))
+    }
+
+    private func addCommunityComment(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridAddCommentRequest = try decode(payload)
+        let body = request.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, body.count <= 280 else {
+            throw Self.bridgeError("invalid_comment", method: .communityAddComment, recoverable: true)
+        }
+#if DEBUG
+        if TasteMapUITestFixtures.usesVisualQA {
+            try validateDebugInteractionTarget(request.target)
+            let profile = ((try? container.mainContext.fetch(FetchDescriptor<UserProfile>())) ?? []).first {
+                authServices.localAccountScope.contains(ownerUserID: $0.tasteMapUserID) && $0.deletedAt == nil
+            }
+            let comment = TasteMapHybridCommunityCommentDTO(
+                id: UUID().uuidString.lowercased(), visitID: request.target.visitID, body: body,
+                author: .init(
+                    id: profile?.tasteMapUserID ?? "tm_hybrid_debug",
+                    name: profile?.displayName ?? "Lafayette", city: profile?.city,
+                    avatarPhotoID: profile?.avatarPhotoID,
+                    avatarPresetID: profile?.avatarPreset.rawValue ?? "otter", isFollowing: false
+                ),
+                createdAt: ISO8601DateFormatter().string(from: .now)
+            )
+            debugCommentsByVisit[request.target.visitID, default: []].append(comment)
+            let current = debugEngagement(request.target.visitID)
+            let engagement = TasteMapHybridCommunityEngagementDTO(
+                likedByViewer: current.likedByViewer, likeCount: current.likeCount,
+                commentCount: current.commentCount + 1
+            )
+            debugEngagementByVisit[request.target.visitID] = engagement
+            return try encode(TasteMapHybridCommunityCommentMutationDTO(
+                likedByViewer: engagement.likedByViewer, likeCount: engagement.likeCount,
+                commentCount: engagement.commentCount, comment: comment
+            ))
+        }
+#endif
+        try validateInteractionTarget(request.target)
+        let result = try await authServices.socialCollaborationAPI.addComment(
+            visitID: request.target.visitID, body: body
+        )
+        let likedByViewer = cachedEngagement(visitID: request.target.visitID)?.likedByViewer ?? false
+        try cacheEngagement(
+            visitID: request.target.visitID, likedByViewer: likedByViewer,
+            likeCount: result.likeCount, commentCount: result.commentCount
+        )
+        return try encode(TasteMapHybridCommunityCommentMutationDTO(
+            likedByViewer: likedByViewer, likeCount: result.likeCount, commentCount: result.commentCount,
+            comment: communityCommentDTO(result.comment)
+        ))
+    }
+
+    private func setRestaurantWantToGo(_ payload: TasteMapHybridJSONValue) throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridRestaurantViewerStateRequest = try decode(payload)
+#if DEBUG
+        if TasteMapUITestFixtures.usesVisualQA {
+            let state = request.wanted ? "want_to_go" : "none"
+            debugViewerStateByRestaurant[request.restaurantID] = state
+            return try encode(TasteMapHybridRestaurantViewerStateMutationDTO(
+                restaurantID: request.restaurantID, viewerState: state,
+                updatedAt: ISO8601DateFormatter().string(from: .now)
+            ))
+        }
+#endif
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope,
+              let reference = try TasteMapHybridRestaurantReferenceResolver.resolve(
+                identifier: request.restaurantID, ownerUserID: ownerUserID, context: container.mainContext
+              ) else {
+            throw Self.bridgeError("restaurant_not_found", method: .restaurantSetWantToGo, recoverable: true)
+        }
+        let context = container.mainContext
+        let store = LocalDiscoveryStore(context: context)
+        let restaurants = try context.fetch(FetchDescriptor<Restaurant>()).filter {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+        }
+        let state: DiscoveryViewerRestaurantStateV1
+        if reference.viewerState == .visited {
+            state = .visited
+        } else if request.wanted {
+            _ = try store.addToWantToGo(
+                projection: reference.projection, among: restaurants, currentUserID: ownerUserID
+            )
+            state = .wantToGo
+        } else {
+            if let local = store.localRestaurant(for: reference.projection, among: restaurants), local.status != .visited {
+                try LocalTasteMapStore(context: context).delete(local, actorUserID: ownerUserID)
+            }
+            state = .none
+        }
+        try store.updateViewerState(
+            globalKey: reference.projection.globalKey, currentUserID: ownerUserID, state: state
+        )
+        try LocalCommunityStore(context: context).updateViewerState(
+            globalKey: reference.projection.globalKey, currentUserID: ownerUserID, state: state
+        )
+        Task { await syncCoordinator.synchronizeNow() }
+        return try encode(TasteMapHybridRestaurantViewerStateMutationDTO(
+            restaurantID: request.restaurantID, viewerState: state.rawValue,
+            updatedAt: ISO8601DateFormatter().string(from: .now)
+        ))
+    }
+
+    private func validateInteractionTarget(_ target: TasteMapHybridActivityInteractionDTO) throws {
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope,
+              !target.visitID.isEmpty, !target.authorID.isEmpty, !target.restaurantID.isEmpty else {
+            throw Self.bridgeError("invalid_interaction_target", recoverable: false)
+        }
+#if DEBUG
+        if TasteMapUITestFixtures.usesVisualQA, target.visitID.hasPrefix("demo-visit-") { return }
+#endif
+        let context = container.mainContext
+        let community = ((try? context.fetch(FetchDescriptor<CachedCommunityContent>())) ?? [])
+            .filter { $0.currentUserID == ownerUserID }
+        if community.contains(where: { cached in
+            guard let item = cached.item else { return false }
+            return item.visit?.id == target.visitID
+                && item.user.userId == target.authorID
+                && item.restaurant.globalKey == target.restaurantID
+                && (target.activityID == nil || item.id == target.activityID)
+        }) { return }
+        let discovery = ((try? context.fetch(FetchDescriptor<CachedDiscoveryPlacement>())) ?? [])
+            .filter { $0.currentUserID == ownerUserID }
+        if discovery.contains(where: { placement in
+            guard let value = placement.context else { return false }
+            return value.activity?.visitId == target.visitID
+                && value.sourceUser?.userId == target.authorID
+                && placement.globalKey == target.restaurantID
+                && target.activityID == nil
+        }) { return }
+        throw Self.bridgeError("interaction_target_mismatch", recoverable: false)
+    }
+
+    private func cacheEngagement(
+        visitID: String, likedByViewer: Bool, likeCount: Int, commentCount: Int
+    ) throws {
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else { return }
+        try LocalCommunityStore(context: container.mainContext).updateEngagement(
+            visitID: visitID, currentUserID: ownerUserID,
+            engagement: .init(
+                likedByViewer: likedByViewer, likeCount: likeCount, commentCount: commentCount
+            )
+        )
+    }
+
+    private func cachedEngagement(visitID: String) -> CommunityEngagementSummaryV1? {
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else { return nil }
+        return ((try? container.mainContext.fetch(FetchDescriptor<CachedCommunityContent>())) ?? [])
+            .first { $0.currentUserID == ownerUserID && $0.item?.visit?.id == visitID }?
+            .item?.engagement
+    }
+
+    private func communityCommentDTO(_ value: CommunityCommentV1) -> TasteMapHybridCommunityCommentDTO {
+        .init(
+            id: value.id, visitID: value.contentId, body: value.body,
+            author: .init(
+                id: value.author.userId, name: value.author.displayName, city: value.author.city,
+                avatarPhotoID: value.author.avatarPhotoId,
+                avatarPresetID: value.author.avatarPresetId.rawValue,
+                isFollowing: value.author.isFollowing
+            ),
+            createdAt: value.createdAt
+        )
+    }
+
+#if DEBUG
+    private func validateDebugInteractionTarget(_ target: TasteMapHybridActivityInteractionDTO) throws {
+        guard target.visitID.hasPrefix("demo-visit-"),
+              !target.authorID.isEmpty,
+              !target.restaurantID.isEmpty else {
+            throw Self.bridgeError("invalid_interaction_target", recoverable: false)
+        }
+    }
+
+    private func debugEngagement(_ visitID: String) -> TasteMapHybridCommunityEngagementDTO {
+        if let value = debugEngagementByVisit[visitID] { return value }
+        let index = Int(visitID.split(separator: "-").last ?? "0") ?? 0
+        return .init(likedByViewer: index == 1, likeCount: 12 + index * 5, commentCount: 2 + index)
+    }
+#endif
 
     private func searchRestaurants(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
         let request: TasteMapHybridAcquisitionSearchRequest = try decode(payload)

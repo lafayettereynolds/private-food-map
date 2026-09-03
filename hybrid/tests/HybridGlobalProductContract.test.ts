@@ -201,11 +201,31 @@ describe('Hybrid global Product Contract', () => {
     expect(contracts).toContain('public static let publicReadable')
     expect(contracts).toContain('canAddToWantToGo')
     expect(bridge).toContain('TasteMapHybridRestaurantReferenceResolver.resolve')
-    expect(shell).toContain("openNativeRoute(platform, 'restaurantWantToGo'")
-    expect(discovery).toContain("route: 'restaurantWantToGo'")
+    expect(shell).toContain('platform.restaurant.setWantToGo')
+    expect(discovery).toContain('platform.restaurant.setWantToGo')
+    expect(discovery).not.toContain("route: 'restaurantWantToGo'")
     expect(discovery).not.toContain("route: 'socialNative', identifier: item.restaurant.id")
-    expect(shell).toContain('restaurant.viewerState === \'none\'')
+    expect(discovery).toContain("previous === 'visited'")
     expect(shell).not.toMatch(/restaurant\.restaurant\.userId\s*===|CURRENT_USER_ID.*canEdit/)
+  })
+
+  it('routes Discovery interactions through typed owners without generic social or Native Hybrid-page handoffs', () => {
+    const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const platform = source('../../src/platform/TasteMapPlatform.ts')
+    const runtime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
+    for (const method of ['community.setLike', 'community.comments', 'community.addComment', 'restaurant.setWantToGo']) {
+      expect(platform).toContain(`'${method}'`)
+    }
+    expect(discovery).toContain('platform.community.setLike')
+    expect(discovery).toContain('platform.community.comments')
+    expect(discovery).toContain('platform.community.addComment')
+    expect(discovery).not.toMatch(/openNative\(\{ route: 'visit'/)
+    expect(discovery).not.toMatch(/aria-label=\{[^\n]*点赞[^\n]*openNative/)
+    expect(discovery).not.toMatch(/aria-label="评论"[^\n]*openNative/)
+    expect(shell).toContain("navigate({ surface: 'visit', id: restaurantID })")
+    expect(shell).toContain("navigate({ surface: 'roulette' })")
+    expect(runtime).toContain('hybrid_route_requires_openHybrid')
   })
 
   it('owns all thirteen Batch 1 surfaces through formal shared React renderers or thin capability adapters', () => {
