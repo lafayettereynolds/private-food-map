@@ -99,6 +99,20 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).not.toContain('查看推荐来源用户')
     expect(html).not.toContain('class="tm-activity-card__source"')
     expect(html).not.toContain('分享动态</button>')
+    expect(html).toContain('aria-label="记录 ')
+    expect(html).toContain('aria-label="已去过 ')
+    expect(html).toContain('aria-label="轮盘 ')
+    expect(html).toContain('lucide-notebook-pen')
+    expect(html).toContain('lucide-bookmark')
+    expect(html).not.toContain('aria-label="食单 ')
+    expect(html).not.toContain('title="加入食单"')
+    expect(html).not.toContain('lucide-circle-plus')
+    expect(html).not.toContain('lucide-list-plus')
+    expect(html).not.toContain('lucide-bookmark-plus')
+    const socialActions = html.match(/data-activity-region="like-comment-more-share">([\s\S]*?)<\/div><div class="tm-activity-card__restaurant-actions"/)?.[1] ?? ''
+    const restaurantActions = html.match(/data-activity-region="restaurant-actions">([\s\S]*?)<\/div><\/footer>/)?.[1] ?? ''
+    expect(socialActions.match(/<button/g)).toHaveLength(3)
+    expect(restaurantActions.match(/<button/g)).toHaveLength(3)
   })
 
   it('treats Swift JSONEncoder omitted optionals as honest missing values instead of crashing', () => {

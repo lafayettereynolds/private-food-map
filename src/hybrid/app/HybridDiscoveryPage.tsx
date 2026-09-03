@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
-  ArrowDownUp, BookmarkPlus, Building2, CirclePlus, Dices, Ellipsis, Heart,
-  ListPlus, MapPin, MessageCircle, Send as SendIcon, Share2, SlidersHorizontal, Star, UserPlus,
+  ArrowDownUp, Bookmark, Building2, Dices, Ellipsis, Heart, MapPin,
+  MessageCircle, NotebookPen, Send as SendIcon, Share2, SlidersHorizontal, Star, UserPlus,
 } from 'lucide-react'
 import {
   TasteMapActivityCardFrame,
@@ -283,9 +283,8 @@ function RecommendationCard({ item, platform, onOpenRestaurant, engagement, view
     onOpen={() => onOpenRestaurant(item.restaurant.id)}
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
     restaurantActions={<>
-      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><CirclePlus aria-hidden="true" size={19} /></button>
-      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button"><BookmarkPlus aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} /></button>
-      <button aria-label={`食单 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => void platform.navigation.openNative({ route: 'restaurantAddToList', identifier: item.restaurant.id })} title="加入食单" type="button"><ListPlus aria-hidden="true" size={18} /></button>
+      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><NotebookPen aria-hidden="true" size={18} /></button>
+      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button"><Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} /></button>
       <button aria-label={`轮盘 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => onOpenRoulette(item.restaurant.id)} title="加入抽签" type="button"><Dices aria-hidden="true" size={18} /></button>
     </>}
     socialActions={<>
@@ -311,9 +310,8 @@ function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerStat
     onOpen={() => onOpenRestaurant(item.restaurant.id)}
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
     restaurantActions={<>
-      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><CirclePlus aria-hidden="true" size={19} /></button>
-      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button"><BookmarkPlus aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} /></button>
-      <button aria-label={`食单 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => void platform.navigation.openNative({ route: 'restaurantAddToList', identifier: item.restaurant.id })} title="加入食单" type="button"><ListPlus aria-hidden="true" size={18} /></button>
+      <button aria-label={`记录 ${item.restaurant.name}`} className="tm-activity-action is-primary" onClick={() => onRecordVisit(item.restaurant.id)} title="记录到访" type="button"><NotebookPen aria-hidden="true" size={18} /></button>
+      <button aria-busy={wantPending} aria-label={`${viewerState === 'visited' ? '已去过' : viewerState === 'want_to_go' ? '移出想吃' : '想吃'} ${item.restaurant.name}`} aria-pressed={viewerState === 'want_to_go'} className="tm-activity-action" disabled={viewerState === 'visited' || wantPending} onClick={() => onToggleWant(item.restaurant.id)} title={viewerState === 'want_to_go' ? '移出想吃' : '想吃'} type="button"><Bookmark aria-hidden="true" fill={viewerState === 'want_to_go' ? 'currentColor' : 'none'} size={18} /></button>
       <button aria-label={`轮盘 ${item.restaurant.name}`} className="tm-activity-action" onClick={() => onOpenRoulette(item.restaurant.id)} title="加入抽签" type="button"><Dices aria-hidden="true" size={18} /></button>
     </>}
     socialActions={<>
