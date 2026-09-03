@@ -30,6 +30,15 @@ describe('Hybrid global Product Contract', () => {
     expect(HYBRID_BOTTOM_NAVIGATION.map((item) => item.label)).not.toContain('添加')
   })
 
+  it('fills the mobile bottom edge and keeps the safe area inside the navigation surface', () => {
+    const hybridCSS = source('../../src/hybrid/app/hybridShell.css')
+    const browserCSS = source('../../src/styles/global.css')
+    expect(hybridCSS).toMatch(/\.tm-hybrid-bottom-nav \{[^}]*left:\s*0;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*height:\s*calc\(56px \+ var\(--tm-safe-bottom\)\);/)
+    expect(hybridCSS).toMatch(/\.tm-hybrid-bottom-nav \{[^}]*border:\s*0;[^}]*border-top:[^}]*border-radius:\s*0;/)
+    expect(hybridCSS).not.toMatch(/\.tm-hybrid-bottom-nav \{[^}]*bottom:\s*max\(/)
+    expect(browserCSS).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.bottom-navigation \{[^}]*left:\s*0;[^}]*bottom:\s*0;[^}]*width:\s*100vw;[^}]*border-radius:\s*0;/)
+  })
+
   it('keeps the owner Profile header open with one separator instead of nested card frames', () => {
     const css = source('../../src/styles/global.css')
     expect(css).toMatch(/\.profile-dashboard--owner \{[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/)

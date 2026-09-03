@@ -20,7 +20,7 @@ body { margin: 0; background: var(--tm-shell-background); overscroll-behavior-y:
   background: var(--tm-shell-background);
 }
 
-.tm-hybrid-bottom-nav { position: fixed; z-index: 90; left: 9px; right: 9px; bottom: max(7px, env(safe-area-inset-bottom)); height: 56px; padding: 4px 8px; border: 1px solid rgba(211,222,230,.9); border-radius: 18px; display: grid; grid-template-columns: repeat(3, 1fr); background: rgba(252,253,254,.96); box-shadow: 0 8px 28px rgba(35,56,71,.14); backdrop-filter: blur(18px); }
+.tm-hybrid-bottom-nav { position: fixed; z-index: 90; left: 0; right: 0; bottom: 0; height: calc(56px + var(--tm-safe-bottom)); padding: 4px calc(8px + var(--tm-safe-right)) calc(4px + var(--tm-safe-bottom)) calc(8px + var(--tm-safe-left)); border: 0; border-top: 1px solid rgba(211,222,230,.9); border-radius: 0; display: grid; grid-template-columns: repeat(3, 1fr); background: rgba(252,253,254,.98); box-shadow: 0 -8px 28px rgba(35,56,71,.12); backdrop-filter: blur(18px); }
 .tm-hybrid-bottom-nav button { min-width: 44px; border: 0; border-radius: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #71808b; background: transparent; }
 .tm-hybrid-bottom-nav button span { font-size: 8px; font-weight: 700; }
 .tm-hybrid-bottom-nav button.is-active { color: #225f89; background: #edf5fa; }

@@ -606,7 +606,7 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 @media (max-width: 760px) {
   .app-shell { padding-bottom: 74px; }
   .workspace { height: calc(100dvh - 136px); }
-  .bottom-navigation { bottom: max(7px, env(safe-area-inset-bottom)); width: calc(100vw - 18px); height: 57px; border-radius: 17px; }
+  .bottom-navigation { left: 0; bottom: 0; width: 100vw; height: calc(57px + env(safe-area-inset-bottom)); padding: 5px calc(8px + env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); border: 0; border-top: 1px solid rgba(221,224,219,.95); border-radius: 0; box-shadow: 0 -8px 28px rgba(40,47,39,.12); transform: none; }
   .bottom-navigation .bottom-navigation__add { height: 36px; }
   .social-page { width: calc(100% - 18px); min-height: calc(100dvh - 145px); margin: 9px auto; padding: 18px 15px; border-radius: 18px; }
   .social-map-toggle { right: 62px; top: 12px; padding: 0 9px; }
