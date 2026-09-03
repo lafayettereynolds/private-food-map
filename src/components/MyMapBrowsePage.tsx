@@ -237,9 +237,8 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
       })
   }, [active, applySnapshot, coordinates, filters, mode, platform, revision, scope, search, snapshotKeyFor, sort, viewport])
 
-  const openRestaurant = useCallback((restaurant: RestaurantSummary) => {
-    dispatch({ type: 'selection', value: restaurant.id })
-    void platform.haptics.selection()
+  const openRestaurant = useCallback((restaurant: RestaurantSummary, requestHaptic = true) => {
+    if (requestHaptic) void platform.haptics.selection()
     onOpenRestaurant(restaurant.id)
   }, [onOpenRestaurant, platform])
 
@@ -255,7 +254,7 @@ export function MyMapBrowsePage({ platform, profile, active, onOpenRestaurant, o
         if (!event.payload.restaurantID) dispatch({ type: 'selection', value: null })
         else {
           const restaurant = items.find((item) => item.id === event.payload.restaurantID)
-          if (restaurant) openRestaurant(restaurant)
+          if (restaurant) openRestaurant(restaurant, false)
         }
       } else if (event.name === 'auth.changed' || (event.name === 'app.lifecycle' && ['foreground', 'resume'].includes(event.payload.state))) {
         snapshotCache.current.clear()

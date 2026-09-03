@@ -417,6 +417,18 @@ final class TasteMapHybridRuntime {
         guard let mapSurfaceHost else {
             throw Self.bridgeError("native_map_surface_unavailable", method: .mapSurfaceUpdate, recoverable: true)
         }
+        if !request.visible {
+            try mapSurfaceHost.apply(
+                request,
+                resources: TasteMapHybridMapSurfaceResources(
+                    photosByID: [:],
+                    userAvatarPhoto: nil,
+                    photoCoordinator: photoTransferCoordinator,
+                    photoAPI: authServices.photoAPI
+                )
+            )
+            return try encode(TasteMapHybridMapSurfaceUpdateResponse(requestID: request.requestID))
+        }
         let photos = ((try? container.mainContext.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
             $0.ownerUserID == ownerUserID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
         }

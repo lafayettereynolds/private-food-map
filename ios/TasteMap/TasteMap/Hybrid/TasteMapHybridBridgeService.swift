@@ -74,6 +74,13 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     /// Owner-scoped DTO projection cache. SwiftData remains authoritative and
     /// every write invalidates this cache before another read can observe it.
     private var projectedRestaurantSnapshot: [TasteMapHybridRestaurantDTO]?
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+    private var visitProjectionResources: (
+        dishes: [Dish],
+        associations: [VisitDish],
+        photos: [PhotoAsset]
+    )?
+#endif
 #if DEBUG
     var projectedRestaurantSnapshotBuildCount = 0
 
@@ -139,14 +146,15 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     }
 
     public func restaurantDetail(id: String) throws -> TasteMapHybridRestaurantDetailDTO {
-        // A Restaurant may have become owner-scoped through another existing
-        // Native service (for example Add to Want-to-Go) since this detail was
-        // last projected. Detail navigation is a refresh boundary; rebuild the
-        // owner snapshot so a public read cannot retain stale capabilities.
+        // Detail navigation is a refresh boundary, but it must not rebuild the
+        // entire owner map. Resolve ownership from SwiftData, then project only
+        // the selected Restaurant and its relationships.
         projectedRestaurantSnapshot = nil
-        let scoped = try scopedRestaurants()
-        if let restaurant = scoped.first(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) {
-            return try ownedDetail(restaurant)
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+        visitProjectionResources = nil
+#endif
+        if let restaurant = try ownedRestaurantIfPresent(identifier: id) {
+            return try ownedDetail(try ownedRestaurantDTO(restaurant))
         }
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
         if let reference = try TasteMapHybridRestaurantReferenceResolver.resolve(
@@ -162,10 +170,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 in: ownedModels
             ), match.kind == .exactProviderIdentity {
                 let local = match.restaurant
-                let localID = local.remoteID ?? local.id.uuidString.lowercased()
-                if let restaurant = scoped.first(where: { $0.id.caseInsensitiveCompare(localID) == .orderedSame }) {
-                    return try ownedDetail(restaurant)
-                }
+                return try ownedDetail(try ownedRestaurantDTO(local))
             }
             return try publicDetail(reference)
         }
@@ -594,6 +599,9 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             request.draft.visibility
         ) ?? 0
         projectedRestaurantSnapshot = nil
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+        visitProjectionResources = nil
+#endif
         return TasteMapHybridVisitMutationResultDTO(
             restaurantID: result.restaurant.remoteID ?? result.restaurant.id.uuidString.lowercased(),
             visitID: result.visit.remoteID ?? result.visit.id.uuidString.lowercased(),
@@ -613,6 +621,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         let restaurant = try ownedRestaurant(localID: visit.restaurantId)
         try LocalTasteMapStore(context: context).delete(visit, actorUserID: ownerUserID)
         projectedRestaurantSnapshot = nil
+        visitProjectionResources = nil
         return TasteMapHybridVisitMutationResultDTO(
             restaurantID: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
             visitID: visit.remoteID ?? visit.id.uuidString.lowercased(),
@@ -694,6 +703,16 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                     || $0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame)
         }) else { throw TasteMapHybridServiceError.invalidRequest }
         return value
+    }
+#endif
+
+#if TASTEMAP_HYBRID_BRIDGE_CORE
+    private func ownedRestaurantIfPresent(identifier: String) throws -> Restaurant? {
+        try context.fetch(FetchDescriptor<Restaurant>()).first(where: {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+                && ($0.remoteID?.caseInsensitiveCompare(identifier) == .orderedSame
+                    || $0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame)
+        })
     }
 #endif
 
@@ -1062,8 +1081,6 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 if $0.visitedAt != $1.visitedAt { return $0.visitedAt > $1.visitedAt }
                 return $0.id.uuidString < $1.id.uuidString
             }
-            let rated = restaurantVisits.compactMap(\.rating)
-            let averageRating = rated.isEmpty ? nil : rounded(rated.reduce(0, +) / Double(rated.count), places: 1)
 #if TASTEMAP_HYBRID_BRIDGE_CORE
             // The standalone Bridge package intentionally excludes the App's
             // full photo/storage contracts. Its deterministic fixture injects
@@ -1092,31 +1109,76 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             )
 #endif
             let metadata = metadataByRestaurantID[restaurant.id] ?? persistedMetadata
-            let referencePrice = metadata.referencePrice ?? median(restaurantVisits.compactMap(decimalDouble))
-            return TasteMapHybridRestaurantDTO(
-                id: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
-                name: restaurant.name,
-                address: restaurant.address,
-                city: restaurant.city,
-                latitude: restaurant.latitude,
-                longitude: restaurant.longitude,
-                status: restaurant.status.rawValue,
-                tags: metadata.tags,
-                phone: metadata.phone,
-                openingHours: metadata.openingHours,
-                referencePrice: referencePrice,
-                visitCount: restaurantVisits.count,
-                averageRating: averageRating,
-                scoreOutOfTen: averageRating.map { rounded($0 * 2, places: 1) },
-                latestVisitDate: restaurantVisits.first.map { Self.dateFormatter.string(from: $0.visitedAt) },
-                createdAt: Self.dateFormatter.string(from: restaurant.createdAt),
-                updatedAt: Self.dateFormatter.string(from: restaurant.updatedAt),
-                visits: restaurantVisits.map(visitDTO),
-                image: imageDescriptor(restaurant: restaurant, metadata: metadata)
-            )
+            return restaurantDTO(restaurant, visits: restaurantVisits, metadata: metadata)
         }
         projectedRestaurantSnapshot = snapshot
         return snapshot
+    }
+
+    private func ownedRestaurantDTO(_ restaurant: Restaurant) throws -> TasteMapHybridRestaurantDTO {
+        let visits = try context.fetch(FetchDescriptor<Visit>()).filter {
+            $0.ownerUserID == ownerUserID && $0.restaurantId == restaurant.id && $0.deletedAt == nil
+        }.sorted {
+            if $0.visitedAt != $1.visitedAt { return $0.visitedAt > $1.visitedAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+#if TASTEMAP_HYBRID_BRIDGE_CORE
+        let persistedMetadata = TasteMapHybridRestaurantMetadata()
+#else
+        let contract = restaurant.remoteRecordData.flatMap {
+            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+        }
+        let photos = ownedVisitProjectionResources().photos.filter { $0.restaurantId == restaurant.id }
+        let preferredPhoto = RestaurantImagePhotoSelectionPolicy.preferredPhoto(
+            restaurantID: restaurant.id,
+            photos: photos,
+            referencedPhotoID: contract?.markerPhotoId
+        )
+        let persistedMetadata = TasteMapHybridRestaurantMetadata(
+            tags: contract?.tags ?? [],
+            phone: contract?.phone,
+            openingHours: contract?.openingHours,
+            referencePrice: contract?.pricePerPerson,
+            localUserPhotoID: preferredPhoto?.id,
+            publicOrCachedPhotoID: contract?.markerPhotoId,
+            providerMerchantImageURL: contract?.merchantImageUrl,
+            localUserPhotoVisitID: preferredPhoto?.visitId.map { $0.uuidString.lowercased() },
+            localUserPhotoVisibility: preferredPhoto?.visibility.rawValue
+        )
+#endif
+        let metadata = metadataByRestaurantID[restaurant.id] ?? persistedMetadata
+        return restaurantDTO(restaurant, visits: visits, metadata: metadata)
+    }
+
+    private func restaurantDTO(
+        _ restaurant: Restaurant,
+        visits: [Visit],
+        metadata: TasteMapHybridRestaurantMetadata
+    ) -> TasteMapHybridRestaurantDTO {
+        let rated = visits.compactMap(\.rating)
+        let averageRating = rated.isEmpty ? nil : rounded(rated.reduce(0, +) / Double(rated.count), places: 1)
+        let referencePrice = metadata.referencePrice ?? median(visits.compactMap(decimalDouble))
+        return TasteMapHybridRestaurantDTO(
+            id: restaurant.remoteID ?? restaurant.id.uuidString.lowercased(),
+            name: restaurant.name,
+            address: restaurant.address,
+            city: restaurant.city,
+            latitude: restaurant.latitude,
+            longitude: restaurant.longitude,
+            status: restaurant.status.rawValue,
+            tags: metadata.tags,
+            phone: metadata.phone,
+            openingHours: metadata.openingHours,
+            referencePrice: referencePrice,
+            visitCount: visits.count,
+            averageRating: averageRating,
+            scoreOutOfTen: averageRating.map { rounded($0 * 2, places: 1) },
+            latestVisitDate: visits.first.map { Self.dateFormatter.string(from: $0.visitedAt) },
+            createdAt: Self.dateFormatter.string(from: restaurant.createdAt),
+            updatedAt: Self.dateFormatter.string(from: restaurant.updatedAt),
+            visits: visits.map(visitDTO),
+            image: imageDescriptor(restaurant: restaurant, metadata: metadata)
+        )
     }
 
     private func visitDTO(_ visit: Visit) -> TasteMapHybridVisitDTO {
@@ -1160,16 +1222,14 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             updatedAt: Self.dateFormatter.string(from: visit.updatedAt)
         )
 #else
-        let allDishes = ((try? context.fetch(FetchDescriptor<Dish>())) ?? []).filter {
-            $0.ownerUserID == ownerUserID && $0.deletedAt == nil
-        }
-        let associations = ((try? context.fetch(FetchDescriptor<VisitDish>())) ?? []).filter {
+        let resources = ownedVisitProjectionResources()
+        let associations = resources.associations.filter {
             $0.ownerUserID == ownerUserID && $0.visitId == visit.id && $0.deletedAt == nil
         }.sorted { $0.sortOrder < $1.sortOrder }
         let associatedIDs = Set(associations.map(\.dishId))
-        let dishes = allDishes.filter { associatedIDs.contains($0.id) || (associations.isEmpty && $0.visitId == visit.id) }
+        let dishes = resources.dishes.filter { associatedIDs.contains($0.id) || (associations.isEmpty && $0.visitId == visit.id) }
             .sorted { $0.sortOrder < $1.sortOrder }
-        let photos = ((try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
+        let photos = resources.photos.filter {
             $0.ownerUserID == ownerUserID && $0.visitId == visit.id && $0.deletedAt == nil
                 && $0.binaryDeletedAt == nil
         }.sorted { $0.sortOrder < $1.sortOrder }
@@ -1226,6 +1286,27 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     }
 
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
+    private func ownedVisitProjectionResources() -> (
+        dishes: [Dish],
+        associations: [VisitDish],
+        photos: [PhotoAsset]
+    ) {
+        if let visitProjectionResources { return visitProjectionResources }
+        let resources = (
+            dishes: ((try? context.fetch(FetchDescriptor<Dish>())) ?? []).filter {
+                $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+            },
+            associations: ((try? context.fetch(FetchDescriptor<VisitDish>())) ?? []).filter {
+                $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+            },
+            photos: ((try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []).filter {
+                $0.ownerUserID == ownerUserID && $0.deletedAt == nil && $0.binaryDeletedAt == nil
+            }
+        )
+        visitProjectionResources = resources
+        return resources
+    }
+
     private func photoDescriptor(_ photo: PhotoAsset) -> TasteMapHybridImageDescriptor {
         let id = photo.remoteID ?? photo.id.uuidString.lowercased()
         return TasteMapHybridImageDescriptor(

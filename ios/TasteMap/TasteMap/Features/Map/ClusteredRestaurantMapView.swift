@@ -185,6 +185,9 @@ struct RestaurantMapView: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let annotation = view.annotation as? RestaurantMapAnnotation else { return }
+            let feedback = UISelectionFeedbackGenerator()
+            feedback.prepare()
+            feedback.selectionChanged()
             parent.selectedRestaurantID = annotation.presentation.id
             lastSelectedRestaurantID = annotation.presentation.id
             applyMarkerLayerOrder(on: mapView)

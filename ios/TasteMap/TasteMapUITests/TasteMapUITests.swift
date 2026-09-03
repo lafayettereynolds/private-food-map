@@ -3690,12 +3690,20 @@ final class TasteMapUITests: XCTestCase {
     func testHybridPhase2BMapListScopeAndDetailState() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
-        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launchEnvironment = [
+            "TASTEMAP_VISUAL_QA_MODE": "rich",
+            "TASTEMAP_CORE_PARITY_INITIAL_TAB": "map",
+        ]
         app.launch()
 
         let webView = app.webViews.firstMatch
         XCTAssertTrue(webView.waitForExistence(timeout: 20))
         let listSwitch = webView.buttons["切换到我的列表"]
+        if !listSwitch.waitForExistence(timeout: 2) {
+            let mapTab = webView.buttons["地图"]
+            XCTAssertTrue(mapTab.waitForExistence(timeout: 5))
+            mapTab.tap()
+        }
         XCTAssertTrue(listSwitch.waitForExistence(timeout: 15))
         XCTAssertTrue(webView.buttons["去过，90 家餐厅"].waitForExistence(timeout: 12))
         XCTAssertTrue(webView.buttons["想吃，25 家餐厅"].waitForExistence(timeout: 12))
@@ -3729,14 +3737,11 @@ final class TasteMapUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 10))
         marker.tap()
-        let details = webView.buttons["查看详情"]
-        XCTAssertTrue(details.waitForExistence(timeout: 8))
-        details.tap()
 
         let hybridBack = webView.buttons["返回上一页"]
         XCTAssertTrue(hybridBack.waitForExistence(timeout: 12))
         hybridBack.tap()
-        XCTAssertTrue(webView.buttons["查看详情"].waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons["切换到我的列表"].waitForExistence(timeout: 8))
         XCTAssertTrue(visitedScope.exists)
     }
 
@@ -3744,12 +3749,21 @@ final class TasteMapUITests: XCTestCase {
     func testHybridNativeMapKitPanZoomSelectionAndViewportRestoration() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
-        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launchEnvironment = [
+            "TASTEMAP_VISUAL_QA_MODE": "rich",
+            "TASTEMAP_CORE_PARITY_INITIAL_TAB": "map",
+        ]
         app.launch()
 
         let webView = app.webViews.firstMatch
         XCTAssertTrue(webView.waitForExistence(timeout: 20))
-        XCTAssertTrue(webView.buttons["切换到我的列表"].waitForExistence(timeout: 15))
+        let listSwitch = webView.buttons["切换到我的列表"]
+        if !listSwitch.waitForExistence(timeout: 2) {
+            let mapTab = webView.buttons["地图"]
+            XCTAssertTrue(mapTab.waitForExistence(timeout: 5))
+            mapTab.tap()
+        }
+        XCTAssertTrue(listSwitch.waitForExistence(timeout: 15))
         let filterBar = webView.descendants(matching: .any)["地图筛选"]
         XCTAssertTrue(filterBar.waitForExistence(timeout: 8), "React FilterBar must remain visible above the Native MapKit surface")
         XCTAssertTrue(filterBar.isHittable, "Native MapKit must not cover the React FilterBar hit area")
@@ -3767,9 +3781,6 @@ final class TasteMapUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
         ).firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 12))
-        marker.tap()
-        let details = webView.buttons["查看详情"]
-        XCTAssertTrue(details.waitForExistence(timeout: 8))
 
         let viewportReady = expectation(
             for: NSPredicate(format: "value CONTAINS %@", "center"),
@@ -3780,9 +3791,13 @@ final class TasteMapUITests: XCTestCase {
         print("TASTEMAP_MAPKIT_VIEWPORT_INITIAL=\(initialViewport)")
         XCTAssertTrue(initialViewport.contains("center"), "MapKit must publish its real center/span")
 
-        details.tap()
+        let tapStartedAt = Date()
+        marker.tap()
         let back = webView.buttons["返回上一页"]
         XCTAssertTrue(back.waitForExistence(timeout: 12))
+        let tapToDetailSeconds = Date().timeIntervalSince(tapStartedAt)
+        print("TASTEMAP_MAP_TAP_TO_DETAIL_SECONDS=\(tapToDetailSeconds)")
+        XCTAssertLessThan(tapToDetailSeconds, 2.0, "Marker tap should present full Restaurant Detail without visible lag")
         back.tap()
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertEqual(map.value as? String, initialViewport, "Restaurant Detail return must preserve the Native viewport")

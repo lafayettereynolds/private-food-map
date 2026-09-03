@@ -75,7 +75,9 @@ final class TasteMapHybridMapSurfaceHost {
         }
         guard request.visible else {
             overlay.isHidden = true
-            model.update(request, resources: resources)
+            // Keep the persistent MapKit model, annotations, decoded images and
+            // viewport intact while React shows another route. Re-projecting a
+            // hidden map made every Restaurant tap compete with navigation.
             return
         }
         guard let parent, let webView else { throw TasteMapHybridMapSurfaceError.hostUnavailable }

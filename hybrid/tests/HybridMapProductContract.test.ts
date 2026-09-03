@@ -35,9 +35,16 @@ describe('Phase 2B Hybrid Map product contract', () => {
 
   it('keeps Map mounted while Hybrid Restaurant Detail owns the visible route', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    const nativeHost = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift')
+    const nativeRuntime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
     expect(shell).toContain('mapWasActivated ? <MyMapBrowsePage')
     expect(shell).toContain("active={route.surface === 'map'}")
     expect(shell).toContain("navigate({ surface: 'restaurant', id: restaurantID })")
+    expect(nativeSurface).toContain('markers: active ? restaurants.map')
+    expect(nativeHost).toContain('guard request.visible else')
+    expect(nativeHost).not.toContain('model.update(request, resources: resources)\n            return')
+    expect(nativeRuntime).toContain('if !request.visible')
   })
 
   it('keeps real AMap interaction evidence for Browser without making it an iOS credential gate', () => {
@@ -77,12 +84,17 @@ describe('Phase 2B Hybrid Map product contract', () => {
   it('opens full Restaurant Detail from one marker tap without an intermediate preview card', () => {
     const page = source('../../src/components/MyMapBrowsePage.tsx')
     const nativeSurface = source('../../src/components/NativeMapSurface.tsx')
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const bridge = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridBridgeService.swift')
     expect(page).toContain('onSelect={openRestaurant}')
-    expect(page).toContain('if (restaurant) openRestaurant(restaurant)')
+    expect(page).toContain('if (restaurant) openRestaurant(restaurant, false)')
     expect(page).toContain('onOpenRestaurant(restaurant.id)')
     expect(page).not.toContain('className="tm-map-selection"')
     expect(page).not.toContain('>查看详情</button>')
     expect(nativeSurface).not.toContain("'.tm-map-selection'")
+    expect(shell).toContain('isLocalNavigationEcho')
+    expect(bridge).toContain('ownedDetail(try ownedRestaurantDTO(restaurant))')
+    expect(bridge).not.toContain('let scoped = try scopedRestaurants()')
   })
 
   it('uses the same evidence-based food emoji fallback in Browser and Native MapKit markers', () => {

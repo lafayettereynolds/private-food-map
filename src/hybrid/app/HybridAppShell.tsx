@@ -42,6 +42,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const [detailRevision, setDetailRevision] = useState(0)
   const didSynchronizeInitialRoute = useRef(false)
   const didInitializeRoulette = useRef(false)
+  const pendingHybridNavigation = useRef<{ hash: string; expiresAt: number } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -55,8 +56,19 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       if (event.name === 'navigation.route' || event.name === 'deepLink.received') {
         const next = platformRouteToHybrid(event.payload.route)
         if (next) {
-          updateLocation(next)
-          if (next.surface === 'restaurant') setDetailRevision((value) => value + 1)
+          const nextHash = routeHash(next)
+          const pending = pendingHybridNavigation.current
+          const isLocalNavigationEcho = event.name === 'navigation.route'
+            && pending?.hash === nextHash
+            && pending.expiresAt >= Date.now()
+          if (isLocalNavigationEcho || (pending && pending.expiresAt < Date.now())) {
+            pendingHybridNavigation.current = null
+          }
+          const routeWasAlreadyVisible = window.location.hash === nextHash
+          if (!routeWasAlreadyVisible) updateLocation(next)
+          if (next.surface === 'restaurant' && routeWasAlreadyVisible && !isLocalNavigationEcho) {
+            setDetailRevision((value) => value + 1)
+          }
         }
       }
     }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
@@ -151,8 +163,17 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   }, [bootstrap])
 
   const navigate = async (nextRoute: HybridRoute) => {
+    if (platform.kind === 'native') {
+      const nextHash = routeHash(nextRoute)
+      // Native publishes the accepted route back as an event. Keep a short
+      // acknowledgement window so an asynchronously delivered echo cannot
+      // trigger a second Restaurant read after this Promise resolves.
+      pendingHybridNavigation.current = { hash: nextHash, expiresAt: Date.now() + 2_000 }
+      updateLocation(nextRoute)
+      await platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute))
+      return
+    }
     updateLocation(nextRoute)
-    if (platform.kind === 'native') await platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute))
   }
 
   const navigateBack = async () => {

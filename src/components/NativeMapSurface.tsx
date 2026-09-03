@@ -62,7 +62,7 @@ export function NativeMapSurface({
         selectedRestaurantID,
         userAvatarPresetID: currentUser.avatarPresetId,
         userAvatarPhotoID: currentUser.avatarPhotoId ?? null,
-        markers: restaurants.map((restaurant) => ({
+        markers: active ? restaurants.map((restaurant) => ({
           id: restaurant.id,
           name: restaurant.name,
           latitude: restaurant.latitude,
@@ -76,7 +76,7 @@ export function NativeMapSurface({
             stableSeed: restaurant.id,
             accessibilityLabel: `${restaurant.name} 餐饮图示`,
           },
-        })),
+        })) : [],
       }
       void platform.map.updateNativeSurface(request).then((response) => {
         if (latestRequestID.current !== response.requestID) return

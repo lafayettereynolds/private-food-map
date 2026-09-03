@@ -39,6 +39,20 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(detail.capabilities, .owned)
     }
 
+    func testRestaurantDetailProjectsOnlyTheSelectedRestaurant() throws {
+        let service = try makeService()
+
+        let detail = try service.restaurantDetail(id: "11111111-1111-4111-8111-111111111111")
+
+        XCTAssertEqual(detail.restaurant.name, "湖滨二十八号 · 江南味道")
+        XCTAssertEqual(detail.restaurant.visits.count, 4)
+        XCTAssertEqual(
+            service.projectedRestaurantSnapshotBuildCount,
+            0,
+            "Opening one marker must not rebuild the complete map/profile Restaurant snapshot"
+        )
+    }
+
     func testOwnerIsolationExcludesForeignRowsAndRelationships() throws {
         let owner = "tm_owner_a"
         let foreignOwner = "tm_owner_b"
