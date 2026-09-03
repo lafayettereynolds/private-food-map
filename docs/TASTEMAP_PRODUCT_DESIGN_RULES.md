@@ -60,6 +60,22 @@ Every UI/UX task follows this order:
 
 A reported defect is evidence of a possible design-system defect, not permission to patch only the visible page. Filter, tab, top-bar, image, action-row, activity-card, rating, empty-state, and Restaurant Detail changes always require a global usage audit.
 
+### Global semantic correction and runtime-proof iron rule
+
+Every correction starts with a repository-wide inventory of the same semantic pattern. The visible screenshot is evidence of one affected surface, never the authorized limit of the correction. Browser React, Capacitor, Native/SwiftUI rollback UI, extensions, previews, accessibility text, and other shipping consumers must either use the same canonical semantic/shared component or be explicitly documented as a different meaning. A remaining matching surface with the old behavior means the correction is not complete.
+
+Acceptance also follows the actual shipping path. Source code, snapshots, tests, generated `dist`, and build success are intermediate evidence only. For the formal iOS Hybrid app, the required chain is:
+
+```text
+shared React source
+    → dist
+    → ios/TasteMap/HybridRuntimeResources/public
+    → built TasteMap.app/public
+    → installed Simulator / real-device runtime
+```
+
+Each arrow must be verified. Use `pnpm run hybrid:stage:formal`, require the byte-for-byte formal-stage verifier to pass, verify the built `.app` resources, then visually inspect the affected installed surfaces. `hybrid:sync:*` targets the internal Capacitor shell and cannot stand in for formal Xcode-resource staging. A mismatch at any layer is `FAIL / STALE ARTIFACT`, even when source tests pass. This rule prevents a source-level correction from being reported while Lafayette is still running an older bundled UI.
+
 ## Taste Map Design System Architecture
 
 Every page is built in this direction:
@@ -426,6 +442,8 @@ Candidate code, screenshots, recommendations, and approval-tool selections do no
 - Do not reintroduce stable Core UI measurements as page-local magic numbers when `TasteMapDesignTokens` owns the same concept.
 - Do not use Core UI components as permission to freely rearrange a Canonical Page Template.
 - Do not leave a newly confirmed long-term design decision only in chat or a temporary acceptance report; update this document.
+- Do not declare a global correction complete after fixing only the screenshot that exposed it; inventory and verify every same-semantic shipping consumer.
+- Do not treat React source, `dist`, or the internal Capacitor shell as proof of what the formal Taste Map Xcode target ships. Stage, compare, build, install, launch, and inspect the actual formal app artifact.
 
 ## Design System Acceptance
 

@@ -62,6 +62,22 @@ Before implementing the fix:
 
 Examples include filters, tabs, top bars, icon action rows, Restaurant images, activity cards, rating references, empty states, and Restaurant Detail. A fix to one of these requires a global usage audit.
 
+This is an iron rule, not a best-effort suggestion. The screenshot that exposed a defect is only the first known consumer. Maintain an explicit inventory of every same-semantic consumer in React Browser UI, Capacitor UI, Native/SwiftUI rollback UI, extensions, previews, and accessibility labels that are inside the authorized scope. A task is incomplete if even one matching shipping surface still uses the superseded behavior. Fix the owning shared component or semantic primitive first, update every remaining legitimate consumer, and add both positive and forbidden-pattern coverage so the old variant cannot silently return.
+
+## Runtime artifact truth gate (iron rule)
+
+Never report a UI correction as complete from source diffs, unit tests, `dist`, or a successful compile alone. The artifact installed for Lafayette must be proven to contain the same implementation that was reviewed.
+
+For formal Hybrid Taste Map builds:
+
+1. Build and stage the formal bundle with `pnpm run hybrid:stage:formal`; `hybrid:sync:*` updates the internal Capacitor shell and is not a substitute for staging the formal `TasteMap.xcodeproj` resources.
+2. Verify that `dist` and `ios/TasteMap/HybridRuntimeResources/public` are byte-for-byte current by running `pnpm run hybrid:verify:formal-stage` (the formal stage command must run this automatically).
+3. After Xcode builds, verify the built `TasteMap.app/public` against the staged formal resources with `pnpm run hybrid:verify:formal-stage -- /absolute/path/to/TasteMap.app`.
+4. Install that exact `.app` on the fixed Simulator or requested real device, launch it, and inspect the affected runtime surfaces. For a global semantic correction, inspect every representative surface named in the consumer inventory—not only the original screenshot.
+5. If source, staged resources, built artifact, or installed runtime disagree, the task is `FAIL / STALE ARTIFACT`; do not claim that the user-visible issue is fixed.
+
+Hashed asset-name changes are expected and must be staged in the formal resources. Never leave the repository with a new source implementation while the tracked formal bundle still points to an older asset hash.
+
 ## Long-term design decisions
 
 When Lafayette confirms a new durable product or visual rule, update `docs/TASTEMAP_PRODUCT_DESIGN_RULES.md` in the same task after the implementation is validated. Include the decision, shared-component/template impact, and a Do Not Regress note when appropriate.

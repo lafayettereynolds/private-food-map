@@ -12,6 +12,7 @@ import { TasteMapAnalyticsPage } from '../../components/TasteMapAnalyticsPage'
 import { HybridDiscoveryPage } from './HybridDiscoveryPage'
 import { TasteMapListsPage } from '../../components/TasteMapListsPage'
 import { TasteMapPremiumPage, TasteMapSettingsPage } from '../../components/TasteMapPremiumSettingsPages'
+import { ProfilePage } from '../../components/ProfilePage'
 import { RestaurantRoulette } from '../../components/RestaurantRoulette'
 import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
 import {
@@ -77,6 +78,20 @@ describe('Hybrid remaining product UI contract', () => {
     expect(scopeTabs).not.toContain('lucide-footprints')
     expect(html).toContain('role="tab"')
     expect(html).not.toContain('适合你')
+  })
+
+  it('keeps the canonical visited checkmark on owner and public Profile surfaces', () => {
+    const owner = renderToStaticMarkup(<ProfilePage restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
+    const ownerStatistics = owner.match(/profile-dashboard__counts--primary">([\s\S]*?)<\/div>/)?.[1] ?? ''
+    expect(ownerStatistics).toContain('data-tastemap-semantic-icon="visited"')
+    expect(ownerStatistics).toContain('lucide-check')
+    expect(ownerStatistics).not.toContain('lucide-map-pin')
+    expect(ownerStatistics).not.toContain('lucide-footprints')
+
+    const publicProfile = renderToStaticMarkup(<ProfilePage editable={false} restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
+    const visitedEntry = publicProfile.match(/class="public-profile-footprint"[\s\S]*?<\/button>/)?.[0] ?? ''
+    expect(visitedEntry).toContain('data-tastemap-semantic-icon="visited"')
+    expect(visitedEntry).toContain('lucide-check')
   })
 
   it('keeps Discovery at one five-tab product level and labels missing Visit ratings honestly', () => {
