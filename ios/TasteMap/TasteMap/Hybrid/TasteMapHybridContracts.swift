@@ -488,6 +488,11 @@ public struct TasteMapHybridContentRestaurantDTO: Codable, Sendable {
     public let image: TasteMapHybridImageDescriptor
 }
 
+public struct TasteMapHybridRatingSummaryDTO: Codable, Sendable {
+    public let valueOutOfFive: Double?
+    public let sampleCount: Int
+}
+
 public struct TasteMapHybridDiscoveryItemDTO: Codable, Sendable {
     public let id: String
     public let mode: String
@@ -496,6 +501,7 @@ public struct TasteMapHybridDiscoveryItemDTO: Codable, Sendable {
     public let sourceUser: TasteMapHybridPersonDTO?
     public let activityRating: Double?
     public let activityVisitedAt: String?
+    public let communityRating: TasteMapHybridRatingSummaryDTO
     public let reason: String
     public let similarityPercent: Int?
     public let sharedRestaurantCount: Int?

@@ -295,6 +295,10 @@ export interface TasteMapHybridDiscoveryItemDTO {
   sourceUser: TasteMapHybridPersonDTO | null
   activityRating: number | null
   activityVisitedAt: string | null
+  communityRating: {
+    valueOutOfFive: number | null
+    sampleCount: number
+  }
   reason: string
   similarityPercent: number | null
   sharedRestaurantCount: number | null

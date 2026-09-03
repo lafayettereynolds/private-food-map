@@ -3811,15 +3811,21 @@ final class TasteMapUITests: XCTestCase {
             XCTAssertTrue(webView.buttons[label].waitForExistence(timeout: 8), "Missing Discovery tab: \(label)")
         }
         XCTAssertTrue(webView.buttons["筛选"].waitForExistence(timeout: 8))
-        XCTAssertTrue(webView.buttons["查看餐厅"].firstMatch.waitForExistence(timeout: 8))
-        XCTAssertTrue(webView.images.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "本次到访")
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "查看餐厅 ")
         ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.images.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "大家评分")
+        ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "查看推荐来源用户 ")
+        ).firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(webView.staticTexts["为什么适合你"].waitForExistence(timeout: 8))
         for label in ["记录", "食单", "轮盘"] {
             XCTAssertTrue(webView.buttons[label].firstMatch.waitForExistence(timeout: 8), "Missing Restaurant action: \(label)")
         }
         XCTAssertTrue(webView.buttons.matching(
-            NSPredicate(format: "label IN %@", ["想吃", "已想吃"])
+            NSPredicate(format: "label IN %@", ["想吃", "已想吃", "已去过"])
         ).firstMatch.waitForExistence(timeout: 8), "Missing WantToGo state action")
 
         webView.buttons["关注"].tap()

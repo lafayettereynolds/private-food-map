@@ -66,6 +66,10 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
       sourceUser,
       activityRating: restaurant.averageRating,
       activityVisitedAt: restaurant.latestVisitDate,
+      communityRating: {
+        valueOutOfFive: restaurant.averageRating == null ? null : Math.max(0, restaurant.averageRating - 0.05),
+        sampleCount: restaurant.averageRating == null ? 0 : 10 + index,
+      },
       reason: index % 2 === 0 ? '与你常吃的菜系很接近' : '同城高质量真实记录',
       similarityPercent: 82 - index * 3,
       sharedRestaurantCount: 6 + index,

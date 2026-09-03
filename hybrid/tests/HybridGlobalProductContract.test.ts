@@ -120,6 +120,19 @@ describe('Hybrid global Product Contract', () => {
       'author-time-visibility', 'restaurant-image', 'restaurant-name-address-context',
       'visit-rating', 'like-comment-more-share', 'restaurant-actions',
     ]) expect(shared).toContain(`data-activity-region="${region}"`)
+    expect(shared).toContain("variant === 'recommendation' ? 'recommendation-reason'")
+    const cardOrder = [
+      'restaurant-name-address-context', 'visit-rating', 'restaurant-image',
+      'recommendation-reason', 'like-comment-more-share', 'restaurant-actions',
+    ].map((region) => shared.indexOf(`data-activity-region={variant === 'recommendation' ? 'recommendation-reason'`) >= 0 && region === 'recommendation-reason'
+      ? shared.indexOf(`data-activity-region={variant === 'recommendation' ? 'recommendation-reason'`)
+      : shared.indexOf(`data-activity-region="${region}"`))
+    expect(cardOrder.every((index) => index >= 0)).toBe(true)
+    expect(cardOrder).toEqual([...cardOrder].sort((left, right) => left - right))
+    expect(hybrid).toContain('tm-activity-card__recommendation-reason')
+    expect(hybrid).toContain('CommunityRatingSummary')
+    expect(hybrid).not.toContain('tm-activity-card__source"><')
+    expect(hybrid).not.toMatch(/<Send\b/)
     expect(hybridCSS).not.toMatch(/tm-hybrid-discovery-card|tm-hybrid-activity-card|tm-hybrid-discovery-grid/)
     expect(hybridCSS).not.toContain('grid-template-columns: 122px minmax(0,1fr)')
   })
