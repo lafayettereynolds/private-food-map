@@ -3838,10 +3838,20 @@ final class TasteMapUITests: XCTestCase {
     func testHybridNativeMapKitSustainedGesturePerformance() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
-        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launchEnvironment = [
+            "TASTEMAP_VISUAL_QA_MODE": "rich",
+            "TASTEMAP_CORE_PARITY_INITIAL_TAB": "map",
+        ]
         app.launch()
 
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
         let map = app.descendants(matching: .any)["restaurant-map"]
+        if !map.waitForExistence(timeout: 2) {
+            let mapTab = webView.buttons["地图"]
+            XCTAssertTrue(mapTab.waitForExistence(timeout: 5))
+            mapTab.tap()
+        }
         XCTAssertTrue(map.waitForExistence(timeout: 20))
         let options = XCTMeasureOptions()
         options.iterationCount = 1
