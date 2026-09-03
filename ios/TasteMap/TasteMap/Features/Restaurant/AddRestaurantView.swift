@@ -199,11 +199,6 @@ struct AddRestaurantView: View {
                             onSelect: select
                         )
                     }
-                    Text(viewModel.locationAccuracy == .reduced
-                         ? "以上餐厅按当前大致位置计算距离。"
-                         : "以上餐厅按当前 GPS 坐标计算，并由近到远排序。")
-                        .font(.caption)
-                        .foregroundStyle(AcquisitionPalette.muted)
                 }
             }
         }

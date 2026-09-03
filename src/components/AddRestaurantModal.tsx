@@ -89,6 +89,7 @@ export function AddRestaurantModal({
   const [nearbyResults, setNearbyResults] = useState<PoiSearchResult[]>([])
   const [nearbyLoading, setNearbyLoading] = useState(mapService.isConfigured)
   const [nearbyMessage, setNearbyMessage] = useState('')
+  const [nearbyError, setNearbyError] = useState('')
   const [locationLabel, setLocationLabel] = useState('')
   const [locationAttempt, setLocationAttempt] = useState(0)
   const [results, setResults] = useState<PoiSearchResult[]>([])
@@ -141,12 +142,13 @@ export function AddRestaurantModal({
     setNearbyLoading(true)
     setNearbyResults([])
     setNearbyMessage('')
+    setNearbyError('')
     setLocationLabel('')
     const watchdog = window.setTimeout(() => {
       if (!active) return
       setLocatingCity(false)
       setNearbyLoading(false)
-      if (!completed) setNearbyMessage('高精度定位超时，没有展示城市兜底结果。请开启精确定位后重试。')
+      if (!completed) setNearbyError('高精度定位超时，没有展示城市兜底结果。请开启精确定位后重试。')
     }, 12_000)
     void (async () => {
       try {
@@ -164,9 +166,13 @@ export function AddRestaurantModal({
         }
         if (!active) return
         setNearbyResults(nearby.slice(0, 8))
-        setNearbyMessage(nearby.length ? '以下餐厅按 GPS 坐标 3 公里内检索。' : '已获得精确位置，但 3 公里内没有找到餐厅。')
+        setNearbyError('')
+        setNearbyMessage(nearby.length ? '' : '当前位置 3 公里内没有找到餐厅。')
       } catch (locationError) {
-        if (active) setNearbyMessage(locationError instanceof Error ? locationError.message : '高精度定位失败，请重新尝试。')
+        if (active) {
+          setNearbyMessage('')
+          setNearbyError(locationError instanceof Error ? locationError.message : '高精度定位失败，请重新尝试。')
+        }
       } finally {
         completed = true
         window.clearTimeout(watchdog)
@@ -369,6 +375,7 @@ export function AddRestaurantModal({
           keyword={keyword}
           locatingCity={locatingCity}
           loading={loading}
+          nearbyError={nearbyError}
           nearbyLoading={nearbyLoading}
           locationLabel={locationLabel}
           nearbyMessage={nearbyMessage}
@@ -537,6 +544,7 @@ interface SearchStepProps {
   keyword: string
   locatingCity: boolean
   loading: boolean
+  nearbyError: string
   nearbyLoading: boolean
   locationLabel: string
   nearbyMessage: string
@@ -564,6 +572,7 @@ function SearchStep({
   keyword,
   locatingCity,
   loading,
+  nearbyError,
   nearbyLoading,
   locationLabel,
   nearbyMessage,
@@ -590,15 +599,14 @@ function SearchStep({
       ) : null}
       <TasteMapRestaurantAcquisitionScaffold
         nearby={<>
-          <TasteMapRestaurantAcquisitionStatus
-            detail={nearbyLoading
-              ? '只接受足够新鲜、精度合理的当前位置'
-              : nearbyMessage || (locationLabel ? `${locationLabel} · 3 公里内按实际距离排序` : '附近搜索已完成')}
+          {nearbyLoading || nearbyError ? <TasteMapRestaurantAcquisitionStatus
+            detail={nearbyLoading ? '只接受足够新鲜、精度合理的当前位置' : nearbyError}
             onRetry={onRetryLocation}
             retryLabel="重新定位"
-            state={nearbyLoading ? 'loading' : nearbyMessage ? 'error' : 'ready'}
-            title={nearbyLoading ? '正在取得新鲜位置' : nearbyMessage ? '暂时无法取得精确位置' : '当前位置已更新'}
-          />
+            state={nearbyLoading ? 'loading' : 'error'}
+            title={nearbyLoading ? '正在取得新鲜位置' : '暂时无法取得精确位置'}
+          /> : null}
+          {!nearbyLoading && !nearbyError && nearbyMessage ? <p className="tm-acquisition__inline-state">{nearbyMessage}</p> : null}
           {!nearbyLoading ? <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={nearbyResults} /> : null}
         </>}
         onOpenManual={onManualAdd}

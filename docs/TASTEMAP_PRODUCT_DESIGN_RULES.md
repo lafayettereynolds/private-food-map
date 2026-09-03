@@ -254,6 +254,8 @@ Formal flow: Search, Nearby, external Share ingestion, and one Manual Add card f
 
 Browser and Capacitor consume one shared Restaurant-acquisition presentation system for the header, capability rows, Search/City fields, Nearby states, candidates, and Manual Add expansion. Search, Nearby, Share, and Manual Add are four expressions of one acquisition hierarchy—not four unrelated form/card dialects. On iOS/WKWebView every editable text control keeps a computed font size of at least `16px`; do not disable user zoom to conceal WebKit focus auto-zoom. A static city scope uses a city/building semantic icon, never a GPS/target icon. Loading, available, unavailable, denied, reduced-accuracy, and error states preserve the compact Nearby geometry and do not turn the section into a page-sized empty panel.
 
+Successful precise-location acquisition does not render a separate `当前位置已更新`, precision, or GPS-sorting confirmation strip. The nearby candidates and their distances are the success feedback. Loading, permission denial, reduced accuracy, unavailable/error, retry, and honest no-result states remain visible because they require user understanding or action.
+
 The Search/City form uses one compact trailing search action beside the city field. Because search is a familiar system action, its visible control is an icon-only rounded button with a real `44 × 44pt` hit target and the accessible name `搜索餐厅`; it is not a wide filled text CTA competing with the fields. Browser, Capacitor, and the Native rollback surface follow this same hierarchy and state styling.
 
 #### 7. Roulette Template
@@ -357,6 +359,7 @@ Use `TasteMapEmptyState`. A relevant Food/Dining visual may be supplied as decor
 - Search, Nearby, Share, and Manual Add share icon-container, row-height, divider, focus, pressed, disabled, loading, empty, and error grammar while retaining their approved primary/secondary weights.
 - Manual paste is not a primary in-app section; parsers remain available to the Share Extension.
 - Nearby uses a fresh CLLocation after checking authorization, accuracy, timestamp, and horizontal accuracy. City center or map camera center can never impersonate GPS.
+- A successful precise Nearby result proceeds directly to candidates; do not add a redundant location-success banner or GPS-sorting footer. Keep compact loading, reduced-accuracy, permission, error/retry, and no-result feedback.
 - Selection shows the standard Restaurant Detail foundation before Want to Go or Record Visit.
 - Provider identity aids dedupe but is never the Taste Map primary key.
 
@@ -432,6 +435,7 @@ Candidate code, screenshots, recommendations, and approval-tool selections do no
 - Do not let Marker overlap order drift from `selected → rating → visit count → stable Restaurant ID`.
 - Do not maintain multiple Restaurant Detail bodies.
 - Do not promote manual link pasting as Add Restaurant's main entry.
+- Do not use a successful fresh location as a reason to add a redundant `当前位置已更新`/precision/GPS-sorting notice above or below Nearby results.
 - Do not use city center, map camera center, or stale coordinates as Nearby GPS.
 - Do not render system emoji as formal Food/Dining artwork.
 - Do not let Food/Dining fallback cover an available lawful real Restaurant image.

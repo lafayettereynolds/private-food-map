@@ -111,7 +111,7 @@ export function HybridAddRestaurantPage({ platform, onOpenRestaurant }: { platfo
         {searchResult ? <CandidateResults result={searchResult} onOpen={openCandidate} /> : null}
       </>}
       nearby={<>
-        <LocationState result={nearbyResult} state={nearbyState} onRetry={loadNearby} />
+        <LocationState state={nearbyState} onRetry={loadNearby} />
         {nearbyResult ? <CandidateResults result={nearbyResult} onOpen={openCandidate} /> : null}
       </>}
       sharePanel={shareOpen ? <section className="tm-acquisition__expansion is-share">
@@ -148,13 +148,13 @@ function CandidateResults({ result, onOpen }: { result: TasteMapAcquisitionResul
   }))} /> : result.message ? <InlineState>{result.message}</InlineState> : null}</>
 }
 
-function LocationState({ result, state, onRetry }: { result: TasteMapAcquisitionResultsDTO | null; state: LoadState; onRetry: () => void }) {
-  const location = result?.location
+function LocationState({ state, onRetry }: { state: LoadState; onRetry: () => void }) {
+  if (state === 'ready') return null
   return <TasteMapRestaurantAcquisitionStatus
-    detail={location ? `精度约 ${Math.round(location.horizontalAccuracy)} 米 · ${location.accuracyMode === 'reduced' ? '约略位置' : '精确位置'}` : state === 'error' ? '搜索和手动添加仍可使用，不采用城市中心兜底' : '只接受足够新鲜、精度合理的当前位置'}
+    detail={state === 'error' ? '搜索和手动添加仍可使用，不采用城市中心兜底' : '只接受足够新鲜、精度合理的当前位置'}
     onRetry={onRetry}
     state={state}
-    title={state === 'ready' ? location ? '当前位置已更新' : '附近搜索已完成' : state === 'loading' ? '正在取得新鲜位置' : '暂时无法取得精确位置'}
+    title={state === 'loading' ? '正在取得新鲜位置' : '暂时无法取得精确位置'}
   />
 }
 

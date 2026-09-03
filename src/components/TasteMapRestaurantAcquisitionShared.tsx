@@ -27,7 +27,7 @@ interface TasteMapRestaurantAcquisitionSearchProps {
 }
 
 interface TasteMapRestaurantAcquisitionStatusProps {
-  state: 'idle' | 'loading' | 'ready' | 'error'
+  state: 'idle' | 'loading' | 'error'
   title: string
   detail: string
   onRetry?: () => void
