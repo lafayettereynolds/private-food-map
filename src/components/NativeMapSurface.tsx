@@ -6,12 +6,20 @@ import type { MyMapSurfaceProps } from './MyMapBrowsePage'
 
 type NativeMapSurfaceProps = MyMapSurfaceProps
 
-const reactControlSelector = [
+export const hybridMapReactControlSelector = [
   '.tm-my-map__add',
   '.tm-map-selection',
   '.tm-my-map__location-note',
   '.tm-map-error',
+  '.tm-hybrid-bottom-nav',
 ].join(',')
+
+export function isRenderedHybridMapReactControl(value: Pick<HTMLElement, 'getClientRects'>) {
+  // Fixed-position controls (notably the persistent bottom navigation) have a
+  // null offsetParent even while visible. Geometry is the reliable visibility
+  // signal for the Native surface's hit-test cut-outs.
+  return value.getClientRects().length > 0
+}
 
 /**
  * React owns this placeholder and every control around it. On iOS, the typed
@@ -43,8 +51,8 @@ export function NativeMapSurface({
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
         frame: rect(frame),
-        reactControlExclusions: Array.from(document.querySelectorAll<HTMLElement>(reactControlSelector))
-          .filter((value) => value.offsetParent !== null)
+        reactControlExclusions: Array.from(document.querySelectorAll<HTMLElement>(hybridMapReactControlSelector))
+          .filter(isRenderedHybridMapReactControl)
           .map((value) => rect(value.getBoundingClientRect())),
         scope,
         filters,

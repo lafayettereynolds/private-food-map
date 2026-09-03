@@ -2202,14 +2202,17 @@ kbd { padding: 3px 5px; border: 1px solid #e6e8e2; border-radius: 5px; color: #a
 .visit-photo-picker__add span { font-size: 8px; }
 .visit-photo-picker__add.is-premium-limit { width: 100%; color: var(--color-primary-dark); background: var(--color-primary-light); }
 .star-rating { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.star-rating__stars { display: flex; gap: 2px; border-radius: 12px; outline: 0; }
-.star-rating__stars:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 24%, transparent); }
+.star-rating__stars { position: relative; display: flex; gap: 2px; border-radius: 12px; outline: 0; }
+.star-rating__targets { position: absolute; z-index: 2; inset: 0; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); }
+.star-rating__targets button { min-width: 0; min-height: 100%; padding: 0; border: 0; border-radius: 5px; background: transparent; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.star-rating__targets button:hover { background: color-mix(in srgb, var(--color-rating-selected) 8%, transparent); }
+.star-rating__targets button:active { background: color-mix(in srgb, var(--color-rating-selected) 15%, transparent); }
+.star-rating__targets button:focus-visible { outline: 2px solid var(--color-rating-selected); outline-offset: -2px; }
+.star-rating__target-label { color: transparent; font-size: 1px; line-height: 1; pointer-events: none; user-select: none; }
 .rating-field { min-width: 0; margin: 0; padding: 0; border: 0; }
 .rating-field > legend { margin: 0 0 6px; padding: 0; color: #344552; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
 .rating-field > legend small { margin-left: 5px; color: var(--color-text-secondary); font-size: 8px; font-weight: 500; }
-.star-rating__star { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; color: var(--color-rating-selected); cursor: pointer; touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
-.star-rating__star:hover { background: color-mix(in srgb, var(--color-rating-selected) 9%, transparent); }
-.star-rating__star:active { background: color-mix(in srgb, var(--color-rating-selected) 15%, transparent); transform: scale(.96); }
+.star-rating__star { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; color: var(--color-rating-selected); pointer-events: none; }
 .star-rating__visual { position: relative; width: 29px; height: 29px; display: block; pointer-events: none; }
 .star-rating__base { position: absolute; inset: 1px; color: #d7dce0; }
 .star-rating__fill { position: absolute; inset: 1px auto 0 1px; height: 27px; overflow: hidden; color: var(--color-rating-selected); pointer-events: none; }

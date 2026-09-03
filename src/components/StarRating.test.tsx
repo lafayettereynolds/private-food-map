@@ -59,14 +59,17 @@ describe('StarRating pointer interaction', () => {
     expect(starToTenScore(3.5)).toBe(7)
   })
 
-  it('exposes one slider and five independent star targets', () => {
+  it('exposes ten direct half-star targets over five visual stars', () => {
     const markup = renderToStaticMarkup(<StarRating onChange={vi.fn()} value={3.5} />)
-    expect(markup).toContain('role="slider"')
-    expect(markup).toContain('aria-valuenow="3.5"')
+    expect(markup).toContain('role="group"')
     expect(markup).toContain('aria-label="个人评价，3.5 星，共 5 星"')
+    expect(markup).toContain('aria-label="设置个人评价为 3.5 星"')
+    expect(markup).toContain('data-rating-target="3.5"')
+    expect(markup).toContain('aria-pressed="true"')
     expect(markup).toContain('3.5 星 · 喜欢 · 7.0 分')
     expect(markup).toContain('aria-label="清除评分"')
     expect((markup.match(/data-star=/g) ?? []).length).toBe(5)
+    expect((markup.match(/data-rating-target=/g) ?? []).length).toBe(10)
     expect(markup).not.toContain('star-rating__hit--left')
     expect(markup).not.toContain('star-rating__hit--right')
   })

@@ -103,7 +103,7 @@ enum TasteMapUITestFixtures {
     }
 
     static var hybridRestaurantSearchService: any RestaurantSearching {
-        if usesAddImageReuseFixture { return AddImageReuseFixtureSearch() }
+        if usesAddImageReuseFixture || usesVisualQA { return AddImageReuseFixtureSearch() }
         if usesRestaurantAcquisitionFixture { return RestaurantAcquisitionFixtureSearch() }
         return MapKitRestaurantSearchService()
     }

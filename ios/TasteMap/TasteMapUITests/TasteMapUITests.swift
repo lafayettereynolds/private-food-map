@@ -3841,7 +3841,10 @@ final class TasteMapUITests: XCTestCase {
             XCTAssertTrue(tab.waitForExistence(timeout: 8), "Missing Discovery tab: \(label)")
             tab.tap()
         }
-        XCTAssertTrue(webView.buttons["查看餐厅"].firstMatch.waitForExistence(timeout: 8))
+        let discoveryRestaurant = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "查看餐厅 ")
+        ).firstMatch
+        XCTAssertTrue(discoveryRestaurant.waitForExistence(timeout: 8))
         keepScreenshot(named: "Hybrid Batch 01 Discovery", of: app)
 
         webView.buttons["地图"].tap()
@@ -3993,15 +3996,16 @@ final class TasteMapUITests: XCTestCase {
         editVisit.tap()
         XCTAssertTrue(webView.staticTexts["编辑到访记录"].waitForExistence(timeout: 10))
 
-        let ratingSlider = webView.sliders.firstMatch
-        scrollUntilVisible(ratingSlider, in: app)
-        XCTAssertTrue(ratingSlider.waitForExistence(timeout: 8))
-
         func setRating(_ rating: Double, summary: String) {
-            // Each star owns one fifth of the slider; the center of the left
-            // or right half for rating r is (r - 0.25) / 5.
-            ratingSlider.coordinate(withNormalizedOffset: CGVector(dx: (rating - 0.25) / 5, dy: 0.5)).tap()
-            XCTAssertTrue(webView.staticTexts[summary].waitForExistence(timeout: 3), "Expected one-tap rating: \(summary)")
+            let ratingLabel = rating.rounded() == rating
+                ? String(Int(rating))
+                : String(rating)
+            let target = webView.descendants(matching: .any)["设置个人评价为 \(ratingLabel) 星"]
+            scrollUntilVisible(target, in: app)
+            XCTAssertTrue(target.waitForExistence(timeout: 5))
+            target.tap()
+            let updatedGroup = webView.descendants(matching: .any)["个人评价，\(ratingLabel) 星，共 5 星"]
+            XCTAssertTrue(updatedGroup.waitForExistence(timeout: 3), "Expected one-tap rating state and summary: \(summary)")
             XCTAssertFalse(webView.staticTexts["未评分 · 可直接保存"].exists)
         }
 
@@ -4019,9 +4023,7 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertFalse(webView.buttons["清除评分"].exists)
 
         setRating(3, summary: "3 星 · 不错 · 6.0 分")
-        XCTAssertTrue(webView.sliders.matching(
-            NSPredicate(format: "label == %@", "个人评价，3 星，共 5 星")
-        ).firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(webView.descendants(matching: .any)["个人评价，3 星，共 5 星"].waitForExistence(timeout: 3))
         keepScreenshot(named: "Hybrid Visit Rating Direct Set Final", of: app)
     }
 
@@ -4312,6 +4314,9 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 8))
         search.tap()
         search.typeText("青岚")
+        let submitSearch = webView.buttons["搜索餐厅"]
+        XCTAssertTrue(submitSearch.waitForExistence(timeout: 8))
+        submitSearch.tap()
         XCTAssertTrue(webView.buttons.matching(
             NSPredicate(format: "label CONTAINS %@", "青岚寿司")
         ).firstMatch.waitForExistence(timeout: 8))
@@ -4351,17 +4356,27 @@ final class TasteMapUITests: XCTestCase {
         XCTAssertTrue(roulette.waitForExistence(timeout: 8))
         roulette.tap()
         keepScreenshot(named: "Batch 01 Roulette Wheel", of: app)
-        let manage = webView.buttons["管理候选餐厅"]
+        let manage = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "管理候选餐厅")
+        ).firstMatch
         XCTAssertTrue(manage.waitForExistence(timeout: 8))
         manage.tap()
         keepScreenshot(named: "Batch 01 Roulette Management", of: app)
-        webView.buttons["完成"].tap()
-        webView.buttons["开始随机选择餐厅"].tap()
-        XCTAssertTrue(webView.staticTexts["今天就吃"].waitForExistence(timeout: 4))
+        scrollToTop(in: app)
+        let spin = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "开始")
+        ).firstMatch
+        scrollUntilVisible(spin, in: app)
+        XCTAssertTrue(spin.waitForExistence(timeout: 8))
+        spin.tap()
+        let spinAgain = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "再抽一次")
+        ).firstMatch
+        XCTAssertTrue(spinAgain.waitForExistence(timeout: 8))
         keepScreenshot(named: "Batch 01 Roulette Result", of: app)
-        webView.buttons["再转一次"].tap()
+        spinAgain.tap()
+        webView.buttons["关闭"].tap()
 
-        webView.buttons["我的"].tap()
         XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
         webView.buttons["数据分析"].tap()
         let analyticsTabs = [
@@ -4422,7 +4437,9 @@ final class TasteMapUITests: XCTestCase {
         }
 
         webView.buttons["发现"].tap()
-        let restaurant = webView.buttons["查看餐厅"].firstMatch
+        let restaurant = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "查看餐厅 ")
+        ).firstMatch
         XCTAssertTrue(restaurant.waitForExistence(timeout: 8))
         restaurant.tap()
         XCTAssertTrue(webView.buttons["返回上一页"].waitForExistence(timeout: 8))

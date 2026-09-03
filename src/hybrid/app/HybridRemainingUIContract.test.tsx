@@ -14,6 +14,10 @@ import { TasteMapListsPage } from '../../components/TasteMapListsPage'
 import { TasteMapPremiumPage, TasteMapSettingsPage } from '../../components/TasteMapPremiumSettingsPages'
 import { RestaurantRoulette } from '../../components/RestaurantRoulette'
 import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
+import {
+  hybridMapReactControlSelector,
+  isRenderedHybridMapReactControl,
+} from '../../components/NativeMapSurface'
 import type { MyMapSurfaceProps } from '../../components/MyMapBrowsePage'
 
 vi.mock('@amap/amap-jsapi-loader', () => ({ default: { load: vi.fn() } }))
@@ -55,6 +59,12 @@ const platform = {
 } as unknown as TasteMapPlatform
 
 describe('Hybrid remaining product UI contract', () => {
+  it('keeps the fixed Hybrid bottom navigation outside the Native MapKit hit surface', () => {
+    expect(hybridMapReactControlSelector.split(',')).toContain('.tm-hybrid-bottom-nav')
+    expect(isRenderedHybridMapReactControl({ getClientRects: () => [{ width: 384, height: 56 }] as unknown as DOMRectList })).toBe(true)
+    expect(isRenderedHybridMapReactControl({ getClientRects: () => [] as unknown as DOMRectList })).toBe(false)
+  })
+
   it('uses one shared semantic icon-and-text primary scope component for Browser and Capacitor', () => {
     const TestMapSurface = (_props: MyMapSurfaceProps) => <div data-map-engine="test" />
     const html = renderToStaticMarkup(<MyMapBrowsePage MapSurface={TestMapSurface} active onAddRestaurant={() => undefined} onOpenRestaurant={() => undefined} platform={platform} profile={profile} />)
