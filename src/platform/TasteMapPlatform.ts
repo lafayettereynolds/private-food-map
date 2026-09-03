@@ -86,6 +86,12 @@ export type TasteMapImageDescriptor =
   | { kind: 'providerMerchant'; resourceURL: string; accessibilityLabel: string }
   | { kind: 'foodDiningFallback'; stableSeed: string; accessibilityLabel: string }
 
+export interface TasteMapImageResolutionDTO {
+  /** Ordered by the platform's canonical Restaurant image policy. */
+  sources: TasteMapImageDescriptor[]
+  fallback: Extract<TasteMapImageDescriptor, { kind: 'foodDiningFallback' }>
+}
+
 export interface TasteMapUserDTO {
   id: string
   nickname: string
@@ -386,7 +392,9 @@ export interface TasteMapAcquisitionCandidateDTO {
   distanceMeters: number | null
   phone: string | null
   openingHours: string | null
+  /** Kept for Native.v1 compatibility; presentation uses imageResolution. */
   image: TasteMapImageDescriptor
+  imageResolution: TasteMapImageResolutionDTO
   duplicateKind: 'none' | 'exactProvider' | 'probableCrossProvider'
   existingRestaurantID: string | null
 }

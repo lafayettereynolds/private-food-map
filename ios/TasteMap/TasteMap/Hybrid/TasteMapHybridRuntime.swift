@@ -22,7 +22,7 @@ final class TasteMapHybridRuntime {
     private let photoFiles: any LocalPhotoFileStoring
     private let photoTransferCoordinator: PhotoTransferCoordinator
     private let locationPermissionManager = LocationPermissionManager()
-    private let restaurantSearchService: any RestaurantSearching = MapKitRestaurantSearchService()
+    private let restaurantSearchService: any RestaurantSearching
     private weak var plugin: TasteMapProductionNativePlugin?
     private var pendingEvents: [TasteMapHybridEventEnvelope] = []
     private var sequence = 0
@@ -41,7 +41,8 @@ final class TasteMapHybridRuntime {
         premiumEntitlementService: PremiumEntitlementService,
         syncCoordinator: SyncCoordinator,
         photoFiles: any LocalPhotoFileStoring,
-        photoTransferCoordinator: PhotoTransferCoordinator
+        photoTransferCoordinator: PhotoTransferCoordinator,
+        restaurantSearchService: any RestaurantSearching = MapKitRestaurantSearchService()
     ) {
         self.mode = mode
         self.container = container
@@ -50,6 +51,7 @@ final class TasteMapHybridRuntime {
         self.syncCoordinator = syncCoordinator
         self.photoFiles = photoFiles
         self.photoTransferCoordinator = photoTransferCoordinator
+        self.restaurantSearchService = restaurantSearchService
         navigation.didChange = { [weak self] state in
             self?.emit(.navigationRoute, payload: state)
         }
@@ -222,15 +224,26 @@ final class TasteMapHybridRuntime {
         return (data, Self.imageMimeType(data))
     }
 
-    /// Public photo access is deliberately derived from the signed-in user's
-    /// local projections. A guessed UUID that is absent from Discovery,
-    /// Community, or Public Lists remains inaccessible.
+    /// Public/cached photo access is deliberately derived from the signed-in
+    /// user's own Restaurants or owner-visible public projections. A guessed
+    /// UUID that is absent from those scopes remains inaccessible.
     private static func isOwnerVisibleCachedPhoto(
         _ identifier: String,
         ownerUserID: String,
         context: ModelContext
     ) -> Bool {
         let normalized = identifier.lowercased()
+        let ownerRestaurantContainsPhoto = ((try? context.fetch(FetchDescriptor<Restaurant>())) ?? [])
+            .contains { restaurant in
+                guard restaurant.ownerUserID == ownerUserID,
+                      restaurant.deletedAt == nil,
+                      let data = restaurant.remoteRecordData,
+                      let contract = try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: data),
+                      contract.userId == ownerUserID else { return false }
+                return contract.markerPhotoId?.lowercased() == normalized
+            }
+        if ownerRestaurantContainsPhoto { return true }
+
         let discoveryContainsPhoto = ((try? context.fetch(FetchDescriptor<CachedDiscoveryRestaurant>())) ?? [])
             .contains { cached in
                 cached.currentUserID == ownerUserID
@@ -516,6 +529,13 @@ final class TasteMapHybridRuntime {
         }
         let restaurants = ((try? container.mainContext.fetch(FetchDescriptor<Restaurant>())) ?? [])
             .filter { $0.ownerUserID == ownerUserID && $0.deletedAt == nil }
+        let photos = ((try? container.mainContext.fetch(FetchDescriptor<PhotoAsset>())) ?? [])
+            .filter {
+                $0.ownerUserID == ownerUserID
+                    && $0.deletedAt == nil
+                    && $0.binaryDeletedAt == nil
+                    && $0.uploadState != .deleted
+            }
         let values = candidates.map { candidate -> TasteMapHybridAcquisitionCandidateDTO in
             let match = RestaurantDeduplicator.classifiedMatch(for: candidate, in: restaurants)
             let duplicateKind: String
@@ -533,24 +553,19 @@ final class TasteMapHybridRuntime {
                 existingRestaurantID: existingID,
                 sharedImportFingerprint: sharedImportFingerprint
             )
-            let image: TasteMapHybridImageDescriptor
-            if let url = candidate.photoURL, url.scheme?.lowercased() == "https" {
-                image = TasteMapHybridImageDescriptor(
-                    kind: .providerMerchant,
-                    resourceURL: url.absoluteString,
-                    photoID: nil,
-                    stableSeed: nil,
-                    accessibilityLabel: "\(candidate.name)餐厅图片"
-                )
-            } else {
-                image = TasteMapHybridImageDescriptor(
-                    kind: .foodDiningFallback,
-                    resourceURL: nil,
-                    photoID: nil,
-                    stableSeed: token,
-                    accessibilityLabel: "\(candidate.name)餐厅图片占位"
-                )
-            }
+            let canonicalResolution = RestaurantImagePriorityPolicy.acquisitionResolution(
+                matchedRestaurant: match?.restaurant,
+                authenticatedOwnerUserID: ownerUserID,
+                ownerPhotos: photos,
+                candidateProviderMerchantImageURL: candidate.photoURL
+            )
+            let imageResolution = acquisitionImageResolutionDescriptor(
+                canonicalResolution,
+                restaurantName: candidate.name,
+                fallbackSeed: match?.restaurant.id.uuidString.lowercased() ?? token,
+                ownerPhotos: photos
+            )
+            let image = imageResolution.sources.first ?? imageResolution.fallback
             return TasteMapHybridAcquisitionCandidateDTO(
                 id: token,
                 name: candidate.name,
@@ -563,6 +578,7 @@ final class TasteMapHybridRuntime {
                 phone: candidate.phone,
                 openingHours: candidate.openingHours,
                 image: image,
+                imageResolution: imageResolution,
                 duplicateKind: duplicateKind,
                 existingRestaurantID: existingID
             )
@@ -572,6 +588,56 @@ final class TasteMapHybridRuntime {
             location: location,
             message: message,
             sharedImportFingerprint: sharedImportFingerprint
+        )
+    }
+
+    private func acquisitionImageResolutionDescriptor(
+        _ resolution: RestaurantImageResolution,
+        restaurantName: String,
+        fallbackSeed: String,
+        ownerPhotos: [PhotoAsset]
+    ) -> TasteMapHybridImageResolutionDTO {
+        let label = "\(restaurantName)餐厅图片"
+        let sources = resolution.sources.compactMap { source -> TasteMapHybridImageDescriptor? in
+            switch source {
+            case .localUserPhoto(let id):
+                let value = id.uuidString.lowercased()
+                return TasteMapHybridImageDescriptor(
+                    kind: .nativeResource,
+                    resourceURL: "tastemap-resource://photo/\(value)/display",
+                    photoID: value,
+                    accessibilityLabel: "\(label) · 用户实拍"
+                )
+            case .publicOrCachedPhoto(let id):
+                let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+                let encoded = id.addingPercentEncoding(withAllowedCharacters: allowed) ?? id
+                let isOwnerCached = ownerPhotos.contains {
+                    $0.id.uuidString.caseInsensitiveCompare(id) == .orderedSame
+                        || $0.remoteID?.caseInsensitiveCompare(id) == .orderedSame
+                }
+                return TasteMapHybridImageDescriptor(
+                    kind: .publicOrCached,
+                    resourceURL: "tastemap-resource://\(isOwnerCached ? "photo" : "public-photo")/\(encoded)/display",
+                    photoID: id,
+                    accessibilityLabel: "\(label) · 公开图片"
+                )
+            case .providerMerchantImage(let url):
+                return TasteMapHybridImageDescriptor(
+                    kind: .providerMerchant,
+                    resourceURL: url.absoluteString,
+                    accessibilityLabel: "\(label) · 商户图片"
+                )
+            case .foodDiningFallback:
+                return nil
+            }
+        }
+        return TasteMapHybridImageResolutionDTO(
+            sources: sources,
+            fallback: TasteMapHybridImageDescriptor(
+                kind: .foodDiningFallback,
+                stableSeed: fallbackSeed,
+                accessibilityLabel: "\(restaurantName)餐厅图片占位"
+            )
         )
     }
 

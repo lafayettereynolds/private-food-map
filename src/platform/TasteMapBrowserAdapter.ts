@@ -136,15 +136,17 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     search: async (query: string, city: string): Promise<TasteMapAcquisitionResultsDTO> => {
       const { mapService } = await import('../services/mapService')
       if (!mapService.isConfigured) return { candidates: [], location: null, message: '地图服务尚未配置，仍可手动添加。', sharedImportFingerprint: null }
-      const candidates = (await mapService.searchRestaurantPois(query, city)).map((value) => this.cacheBrowserCandidate(value))
+      const profile = await this.loadProfile()
+      const candidates = (await mapService.searchRestaurantPois(query, city)).map((value) => this.cacheBrowserCandidate(value, null, profile))
       return { candidates, location: null, message: candidates.length ? null : '没有找到匹配的餐厅。', sharedImportFingerprint: null }
     },
     nearby: async (): Promise<TasteMapAcquisitionResultsDTO> => {
       const { mapService } = await import('../services/mapService')
       if (!mapService.isConfigured) return { candidates: [], location: null, message: '地图服务尚未配置，搜索和手动添加仍可使用。', sharedImportFingerprint: null }
+      const profile = await this.loadProfile()
       const coordinates = await mapService.detectCurrentCoordinates()
       const values = await mapService.searchNearbyRestaurantPois(coordinates, undefined, { radiusMeters: 3_000 })
-      const candidates = values.map((value) => this.cacheBrowserCandidate(value, distanceBetween(coordinates, value)))
+      const candidates = values.map((value) => this.cacheBrowserCandidate(value, distanceBetween(coordinates, value), profile))
         .filter((value) => (value.distanceMeters ?? Number.POSITIVE_INFINITY) <= 3_000)
         .sort((left, right) => (left.distanceMeters ?? Number.POSITIVE_INFINITY) - (right.distanceMeters ?? Number.POSITIVE_INFINITY))
       return { candidates, location: null, message: candidates.length ? null : '3 公里内没有找到餐厅。', sharedImportFingerprint: null }
@@ -166,14 +168,14 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
         merchantImageUrl: null,
         phone: null,
         openingHours: null,
-      })
+      }, null, await this.loadProfile())
       return { candidates: [candidate], location: null, message: '请确认餐厅信息。', sharedImportFingerprint: null }
     },
     select: async (candidateID: string, confirmProbableMatch = false) => {
       const candidate = this.acquisitionCandidates.get(candidateID)
       if (!candidate) throw new TasteMapPlatformError('餐厅候选已失效，请重新搜索。', 'candidate_not_found', true)
       if (candidate.duplicateKind === 'probableCrossProvider' && !confirmProbableMatch) throw new TasteMapPlatformError('请先确认可能重复的餐厅。', 'probable_match_confirmation_required', true)
-      return { restaurantID: candidateID, duplicateKind: candidate.duplicateKind, existingRestaurantID: candidate.existingRestaurantID }
+      return { restaurantID: candidate.existingRestaurantID ?? candidateID, duplicateKind: candidate.duplicateKind, existingRestaurantID: candidate.existingRestaurantID }
     },
   }
 
@@ -270,8 +272,27 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     return loadTasteMapBrowserDebugFixture()
   }
 
-  private cacheBrowserCandidate(value: import('../types/domain').PoiSearchResult, distanceMeters: number | null = null) {
+  private cacheBrowserCandidate(
+    value: import('../types/domain').PoiSearchResult,
+    distanceMeters: number | null = null,
+    profile?: TasteMapProfileDashboardViewModel,
+  ) {
     const id = `browser-candidate-${value.amapPoiId}`
+    const existing = profile?.restaurants.find((restaurant) => restaurant.amapPoiId === value.amapPoiId)
+    const existingImage = existing ? profile?.restaurantImages[existing.id] ?? browserImageDescriptor(existing) : null
+    const existingMarkerImage: TasteMapImageDescriptor | null = existing?.markerImageData
+      ? { kind: 'publicOrCached', resourceURL: existing.markerImageData, photoID: existing.markerPhotoId ?? '', accessibilityLabel: `${value.name}餐厅图片 · 已有餐厅照片` }
+      : null
+    const existingProviderImage: TasteMapImageDescriptor | null = existing?.merchantImageUrl
+      ? { kind: 'providerMerchant', resourceURL: existing.merchantImageUrl, accessibilityLabel: `${value.name}餐厅图片 · 已有商户图片` }
+      : null
+    const providerImage: TasteMapImageDescriptor | null = value.merchantImageUrl
+      ? { kind: 'providerMerchant', resourceURL: value.merchantImageUrl, accessibilityLabel: `${value.name}餐厅图片 · 商户图片` }
+      : null
+    const sources = [existingImage, existingMarkerImage, existingProviderImage, providerImage]
+      .filter((image): image is TasteMapImageDescriptor => image != null && image.kind !== 'foodDiningFallback')
+      .filter((image, index, values) => values.findIndex((candidate) => descriptorIdentity(candidate) === descriptorIdentity(image)) === index)
+    const fallback = { kind: 'foodDiningFallback' as const, stableSeed: existing?.id ?? id, accessibilityLabel: `${value.name}餐厅图片占位` }
     const candidate: TasteMapAcquisitionCandidateDTO = {
       id,
       name: value.name,
@@ -283,13 +304,19 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       distanceMeters,
       phone: value.phone ?? null,
       openingHours: value.openingHours ?? null,
-      image: value.merchantImageUrl ? { kind: 'providerMerchant', resourceURL: value.merchantImageUrl, accessibilityLabel: `${value.name}餐厅图片` } : { kind: 'foodDiningFallback', stableSeed: id, accessibilityLabel: `${value.name}餐厅图片占位` },
-      duplicateKind: 'none',
-      existingRestaurantID: null,
+      image: sources[0] ?? fallback,
+      imageResolution: { sources, fallback },
+      duplicateKind: existing ? 'exactProvider' : 'none',
+      existingRestaurantID: existing?.id ?? null,
     }
     this.acquisitionCandidates.set(id, candidate)
     return candidate
   }
+}
+
+function descriptorIdentity(image: TasteMapImageDescriptor) {
+  if ('resourceURL' in image) return image.resourceURL
+  return `${image.kind}:${image.stableSeed}`
 }
 
 function browserCandidateDetail(candidate: TasteMapAcquisitionCandidateDTO): TasteMapRestaurantDetailViewModel {

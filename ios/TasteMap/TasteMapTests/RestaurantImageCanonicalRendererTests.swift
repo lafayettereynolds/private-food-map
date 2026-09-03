@@ -5,6 +5,8 @@ import Testing
 
 @Suite("Canonical Restaurant image renderer")
 struct RestaurantImageCanonicalRendererTests {
+    private let ownerID = "tm_acquisition_owner"
+
     @Test("The canonical plan preserves user, public, provider, fallback priority")
     func canonicalPriority() throws {
         let localID = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000111"))
@@ -41,6 +43,119 @@ struct RestaurantImageCanonicalRendererTests {
             .providerMerchantImage(provider),
         ])
         #expect(resolution.sources(afterFailureOf: .providerMerchantImage(provider)).isEmpty)
+    }
+
+    @Test("Add Restaurant reuses the matched owner's complete canonical image plan")
+    @MainActor
+    func acquisitionExistingRestaurantSources() throws {
+        let localID = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000311"))
+        let publicID = "00000000-0000-4000-8000-000000000322"
+        let restaurant = try acquisitionRestaurant(
+            markerPhotoID: publicID,
+            merchantImageURL: "https://images.example.com/persisted.jpg"
+        )
+        let local = PhotoAsset(
+            id: localID,
+            ownerUserID: ownerID,
+            restaurantId: restaurant.id,
+            kind: .visit,
+            mimeType: "image/jpeg",
+            byteSize: 128,
+            localFileRelativePath: "owned/display.jpg"
+        )
+        let candidateURL = try #require(URL(string: "https://images.example.com/candidate.jpg"))
+
+        let resolution = RestaurantImagePriorityPolicy.acquisitionResolution(
+            matchedRestaurant: restaurant,
+            authenticatedOwnerUserID: ownerID,
+            ownerPhotos: [local],
+            candidateProviderMerchantImageURL: candidateURL
+        )
+
+        #expect(resolution.sources == [
+            .localUserPhoto(localID),
+            .publicOrCachedPhoto(publicID),
+            .providerMerchantImage(try #require(URL(string: "https://images.example.com/persisted.jpg"))),
+            .providerMerchantImage(candidateURL),
+        ])
+    }
+
+    @Test("Add Restaurant resolves public, provider and honest fallback without inventing photos")
+    @MainActor
+    func acquisitionRemainingSourceCases() throws {
+        let publicID = "00000000-0000-4000-8000-000000000422"
+        let publicRestaurant = try acquisitionRestaurant(markerPhotoID: publicID)
+        let providerRestaurant = try acquisitionRestaurant(
+            id: UUID(uuidString: "00000000-0000-4000-8000-000000000403")!,
+            merchantImageURL: "https://images.example.com/provider-only.jpg"
+        )
+        let emptyRestaurant = try acquisitionRestaurant(
+            id: UUID(uuidString: "00000000-0000-4000-8000-000000000404")!
+        )
+
+        #expect(RestaurantImagePriorityPolicy.acquisitionResolution(
+            matchedRestaurant: publicRestaurant,
+            authenticatedOwnerUserID: ownerID,
+            ownerPhotos: [],
+            candidateProviderMerchantImageURL: nil
+        ).preferredSource == .publicOrCachedPhoto(publicID))
+        #expect(RestaurantImagePriorityPolicy.acquisitionResolution(
+            matchedRestaurant: providerRestaurant,
+            authenticatedOwnerUserID: ownerID,
+            ownerPhotos: [],
+            candidateProviderMerchantImageURL: nil
+        ).preferredSource == .providerMerchantImage(
+            try #require(URL(string: "https://images.example.com/provider-only.jpg"))
+        ))
+        #expect(RestaurantImagePriorityPolicy.acquisitionResolution(
+            matchedRestaurant: emptyRestaurant,
+            authenticatedOwnerUserID: ownerID,
+            ownerPhotos: [],
+            candidateProviderMerchantImageURL: nil
+        ).isFallbackOnly)
+        #expect(RestaurantImagePriorityPolicy.acquisitionResolution(
+            matchedRestaurant: nil,
+            authenticatedOwnerUserID: ownerID,
+            ownerPhotos: [],
+            candidateProviderMerchantImageURL: nil
+        ).isFallbackOnly)
+    }
+
+    @Test("Add Restaurant cannot read another owner's private photo and is surface-stable")
+    @MainActor
+    func acquisitionOwnerIsolationAndSurfaceIdentity() throws {
+        let restaurant = try acquisitionRestaurant(
+            merchantImageURL: "https://images.example.com/safe-provider.jpg"
+        )
+        let foreign = PhotoAsset(
+            id: UUID(uuidString: "00000000-0000-4000-8000-000000000511")!,
+            ownerUserID: "tm_foreign_owner",
+            restaurantId: restaurant.id,
+            kind: .visit,
+            mimeType: "image/jpeg",
+            byteSize: 128,
+            visibility: .private,
+            localFileRelativePath: "foreign/private.jpg"
+        )
+        let search = RestaurantImagePriorityPolicy.acquisitionResolution(
+            matchedRestaurant: restaurant,
+            authenticatedOwnerUserID: ownerID,
+            ownerPhotos: [foreign],
+            candidateProviderMerchantImageURL: nil
+        )
+        let nearby = RestaurantImagePriorityPolicy.acquisitionResolution(
+            matchedRestaurant: restaurant,
+            authenticatedOwnerUserID: ownerID,
+            ownerPhotos: [foreign],
+            candidateProviderMerchantImageURL: nil
+        )
+
+        #expect(search == nearby)
+        #expect(search.sources.count == 1)
+        #expect(search.sources.first == .providerMerchantImage(
+            try #require(URL(string: "https://images.example.com/safe-provider.jpg"))
+        ))
+        #expect(!search.sources.contains(.localUserPhoto(foreign.id)))
     }
 
     @Test("Invalid provider URLs never become a source and no source is an honest fallback")
@@ -131,4 +246,61 @@ struct RestaurantImageCanonicalRendererTests {
         #expect(RestaurantImageLoader.visualQAFixtureSource(in: providerOnly) == nil)
     }
 #endif
+
+    @MainActor
+    private func acquisitionRestaurant(
+        id: UUID = UUID(uuidString: "00000000-0000-4000-8000-000000000401")!,
+        markerPhotoID: String? = nil,
+        merchantImageURL: String? = nil
+    ) throws -> Restaurant {
+        let timestamp = "2026-09-03T00:00:00.000Z"
+        let identity = try RestaurantPlaceIdentityContract(
+            provider: .appleMaps,
+            externalId: "apple-acquisition-\(id.uuidString.lowercased())",
+            isPrimary: true,
+            createdAt: timestamp,
+            updatedAt: timestamp
+        )
+        let contract = try RestaurantJSONContractV1(
+            id: id.uuidString.lowercased(),
+            userId: ownerID,
+            placeIdentities: [identity],
+            name: "Canonical Fixture",
+            address: "杭州测试路 1 号",
+            city: "杭州",
+            latitude: 30.25,
+            longitude: 120.16,
+            status: .visited,
+            preferenceLevel: .like,
+            overallRating: nil,
+            foodRating: nil,
+            environmentRating: nil,
+            serviceRating: nil,
+            valueRating: nil,
+            tags: [],
+            longTermNote: "",
+            pricePerPerson: nil,
+            phone: nil,
+            openingHours: nil,
+            markerType: markerPhotoID == nil ? .emoji : .image,
+            markerPhotoId: markerPhotoID,
+            merchantImageUrl: merchantImageURL,
+            markerEmoji: "🍽️",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            deletedAt: nil,
+            isTestData: true
+        )
+        return Restaurant(
+            id: id,
+            ownerUserID: ownerID,
+            name: contract.name,
+            address: contract.address,
+            latitude: contract.latitude,
+            longitude: contract.longitude,
+            appleMapItemIdentifier: identity.externalId,
+            city: contract.city,
+            remoteRecordData: try JSONEncoder().encode(contract)
+        )
+    }
 }

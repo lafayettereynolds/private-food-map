@@ -334,6 +334,22 @@ public struct TasteMapHybridImageDescriptor: Codable, Sendable {
     }
 }
 
+/// An ordered, Native-owned image loading plan. React may advance through the
+/// supplied sources after a load failure, but it must not reorder or infer the
+/// user/public/provider priority itself.
+public struct TasteMapHybridImageResolutionDTO: Codable, Sendable {
+    public let sources: [TasteMapHybridImageDescriptor]
+    public let fallback: TasteMapHybridImageDescriptor
+
+    public init(
+        sources: [TasteMapHybridImageDescriptor],
+        fallback: TasteMapHybridImageDescriptor
+    ) {
+        self.sources = sources
+        self.fallback = fallback
+    }
+}
+
 public struct TasteMapHybridRestaurantDTO: Codable, Sendable {
     public let id: String
     public let name: String
@@ -585,7 +601,10 @@ public struct TasteMapHybridAcquisitionCandidateDTO: Codable, Sendable {
     public let distanceMeters: Double?
     public let phone: String?
     public let openingHours: String?
+    /// V1 compatibility descriptor for older Hybrid bundles. New bundles use
+    /// `imageResolution`, whose ordering is owned by the canonical Native policy.
     public let image: TasteMapHybridImageDescriptor
+    public let imageResolution: TasteMapHybridImageResolutionDTO
     public let duplicateKind: String
     public let existingRestaurantID: String?
 }

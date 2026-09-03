@@ -38,6 +38,7 @@ enum TasteMapUITestFixtures {
     static let restaurantAcquisitionEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST"
     static let restaurantAcquisitionDeniedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_DENIED_UI_TEST"
     static let restaurantAcquisitionSharedEnvironmentKey = "TASTEMAP_RESTAURANT_ACQUISITION_SHARED_UI_TEST"
+    static let addImageReuseEnvironmentKey = "TASTEMAP_ADD_IMAGE_REUSE_UI_TEST"
     static let f2ABrowsingEnvironmentKey = "TASTEMAP_F2A_BROWSING_UI_TEST"
     static let f2BFiltersEnvironmentKey = "TASTEMAP_F2B_FILTERS_UI_TEST"
     static let module8MapClusterEnvironmentKey = "TASTEMAP_MODULE8_MAP_CLUSTER_UI_TEST"
@@ -48,6 +49,7 @@ enum TasteMapUITestFixtures {
     static var visualQAMode: TasteMapVisualQAMode? {
         ProcessInfo.processInfo.environment[visualQAEnvironmentKey]
             .flatMap(TasteMapVisualQAMode.init(rawValue:))
+            ?? (usesAddImageReuseFixture ? .rich : nil)
     }
 
     static var usesVisualQA: Bool { visualQAMode != nil }
@@ -93,6 +95,40 @@ enum TasteMapUITestFixtures {
         ProcessInfo.processInfo.environment[restaurantAcquisitionEnvironmentKey] == "1"
             || ProcessInfo.processInfo.environment[restaurantAcquisitionDeniedEnvironmentKey] == "1"
             || ProcessInfo.processInfo.environment[restaurantAcquisitionSharedEnvironmentKey] == "1"
+            || usesAddImageReuseFixture
+    }
+
+    static var usesAddImageReuseFixture: Bool {
+        ProcessInfo.processInfo.environment[addImageReuseEnvironmentKey] == "1"
+    }
+
+    static var hybridRestaurantSearchService: any RestaurantSearching {
+        if usesAddImageReuseFixture { return AddImageReuseFixtureSearch() }
+        if usesRestaurantAcquisitionFixture { return RestaurantAcquisitionFixtureSearch() }
+        return MapKitRestaurantSearchService()
+    }
+
+    static func insertAddImageReuseCachedPhotoFixture(into container: ModelContainer) throws {
+        let cachedID = UUID(uuidString: "00000000-0000-4000-8000-000000045060")!
+        let publicRemoteID = cachedID.uuidString.lowercased()
+        let sourcePhotoID = "00000000-0000-4000-8000-000000035000"
+        let context = container.mainContext
+        guard try context.fetch(FetchDescriptor<PhotoAsset>()).allSatisfy({ $0.id != cachedID }) else { return }
+        context.insert(PhotoAsset(
+            id: cachedID,
+            ownerUserID: profileUserID,
+            kind: .restaurantMarker,
+            mimeType: "image/jpeg",
+            byteSize: 180_000,
+            visibility: .public,
+            localFileRelativePath: "display/\(sourcePhotoID).jpg",
+            displayFileRelativePath: "display/\(sourcePhotoID).jpg",
+            thumbnailFileRelativePath: "thumbnails/\(sourcePhotoID).jpg",
+            uploadState: .uploaded,
+            remoteID: publicRemoteID,
+            syncStatus: .synced
+        ))
+        try context.save()
     }
 
     static var restaurantAcquisitionInitialSharedText: String? {
@@ -1521,6 +1557,86 @@ private struct RestaurantAcquisitionFixtureSearch: RestaurantSearching {
 
     func coordinate(for address: String, city: String) async throws -> RestaurantCoordinate {
         RestaurantCoordinate(latitude: 30.281, longitude: 120.139)
+    }
+}
+
+/// Isolated acceptance data for the Hybrid acquisition image contract. The
+/// first three candidates exactly match Rich Visual QA Restaurants with user,
+/// public/cached and persisted-provider sources; the final Apple candidate is
+/// deliberately new and has no merchant photo.
+private struct AddImageReuseFixtureSearch: RestaurantSearching {
+    func search(query: String) async throws -> [RestaurantCandidate] {
+        candidates(includeDistance: false)
+    }
+
+    func search(query: String, scope: RestaurantSearchScope) async throws -> [RestaurantCandidate] {
+        candidates(includeDistance: false)
+    }
+
+    func nearby(center: RestaurantCoordinate, radiusMeters: Double) async throws -> [RestaurantCandidate] {
+        candidates(includeDistance: true)
+    }
+
+    func locationContext(for coordinate: RestaurantCoordinate) async throws -> RestaurantLocationContext {
+        RestaurantLocationContext(city: "杭州", district: "上城区", address: "杭州 · 上城区 · 图片验收位置")
+    }
+
+    func coordinate(for address: String, city: String) async throws -> RestaurantCoordinate {
+        RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)
+    }
+
+    private func candidates(includeDistance: Bool) -> [RestaurantCandidate] {
+        [
+            candidate(
+                id: "ac100001-0000-4000-8000-000000000001",
+                name: "青岚寿司 1 · 已有用户照片",
+                address: "杭州市美食街 1 号",
+                identity: .init(provider: .appleMaps, externalID: "apple_maps-visual-qa-0", isPrimary: true),
+                distance: includeDistance ? 80 : nil
+            ),
+            candidate(
+                id: "ac100002-0000-4000-8000-000000000002",
+                name: "春日泰味 4 · 已有公开缓存",
+                address: "杭州市美食街 61 号",
+                identity: .init(provider: .appleMaps, externalID: "apple_maps-visual-qa-60", isPrimary: true),
+                distance: includeDistance ? 160 : nil
+            ),
+            candidate(
+                id: "ac100003-0000-4000-8000-000000000003",
+                name: "山茶烘焙 5 · 已有商户图片",
+                address: "杭州市美食街 81 号",
+                identity: .init(provider: .amap, externalID: "amap-visual-qa-80", isPrimary: true),
+                distance: includeDistance ? 260 : nil
+            ),
+            candidate(
+                id: "ac100004-0000-4000-8000-000000000004",
+                name: "牛New寿喜烧 · 全新 Apple 候选",
+                address: "杭州市延安路 88 号",
+                identity: .init(provider: .appleMaps, externalID: "apple-image-acceptance-new", isPrimary: true),
+                distance: includeDistance ? 420 : nil
+            ),
+        ]
+    }
+
+    private func candidate(
+        id: String,
+        name: String,
+        address: String,
+        identity: RestaurantCandidatePlaceIdentity,
+        distance: Double?
+    ) -> RestaurantCandidate {
+        RestaurantCandidate(
+            id: UUID(uuidString: id)!,
+            name: name,
+            address: address,
+            city: "杭州",
+            district: "上城区",
+            latitude: 30.2741,
+            longitude: 120.1551,
+            placeIdentities: [identity],
+            distanceMeters: distance,
+            photoURL: nil
+        )
     }
 }
 

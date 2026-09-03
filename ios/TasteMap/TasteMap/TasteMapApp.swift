@@ -103,6 +103,9 @@ struct TasteMapApp: App {
             if let visualQAMode = TasteMapUITestFixtures.visualQAMode {
                 try TasteMapUITestFixtures.insertProfileFixture(into: container)
                 try TasteMapVisualQAFixtures.insert(mode: visualQAMode, into: container)
+                if TasteMapUITestFixtures.usesAddImageReuseFixture {
+                    try TasteMapUITestFixtures.insertAddImageReuseCachedPhotoFixture(into: container)
+                }
                 authServices.activateVisualQAFixture(userID: TasteMapVisualQAFixtures.userID)
             }
             if useRestaurantDetailFixture {
@@ -208,6 +211,11 @@ struct TasteMapApp: App {
             networkObserver: NetworkPathObserver()
         )
         photoTransferCoordinator = transferCoordinator
+#if DEBUG
+        let hybridSearchService: any RestaurantSearching = TasteMapUITestFixtures.hybridRestaurantSearchService
+#else
+        let hybridSearchService: any RestaurantSearching = MapKitRestaurantSearchService()
+#endif
         hybridRuntime = TasteMapHybridRuntime(
             mode: TasteMapHybridRuntimeConfiguration.current,
             container: container,
@@ -215,7 +223,8 @@ struct TasteMapApp: App {
             premiumEntitlementService: premiumService,
             syncCoordinator: coordinator,
             photoFiles: photoFiles,
-            photoTransferCoordinator: transferCoordinator
+            photoTransferCoordinator: transferCoordinator,
+            restaurantSearchService: hybridSearchService
         )
     }
 
