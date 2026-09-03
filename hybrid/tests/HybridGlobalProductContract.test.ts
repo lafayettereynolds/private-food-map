@@ -211,6 +211,23 @@ describe('Hybrid global Product Contract', () => {
     expect(shell).not.toMatch(/visit\.userId\s*===|CURRENT_USER_ID.*visit/)
   })
 
+  it('keeps Browser and Capacitor on one direct-set editable rating component', () => {
+    const browser = source('../../src/App.tsx')
+    const hybrid = source('../../src/hybrid/app/HybridVisitEditorPage.tsx')
+    const editor = source('../../src/components/AddVisitModal.tsx')
+    const acquisition = source('../../src/components/AddRestaurantModal.tsx')
+    const rating = source('../../src/components/StarRating.tsx')
+    const interaction = source('../../src/utils/starRatingInteraction.ts')
+    for (const consumer of [browser, hybrid]) expect(consumer).toContain('<AddVisitModal')
+    for (const consumer of [editor, acquisition]) {
+      expect(consumer).toContain('<StarRatingField')
+      expect(consumer).not.toMatch(/<label[^>]*>[\s\S]{0,160}<StarRating/)
+    }
+    expect(rating).toContain("reduceEditableStarRating(value, { type: 'set'")
+    expect(rating).toContain("reduceEditableStarRating(value, { type: 'clear' })")
+    expect(interaction).not.toMatch(/current\s*===\s*action\.value|action\.value\s*===\s*current/)
+  })
+
   it('keeps public/cached Restaurant capabilities explicit and never substitutes the social route for WantToGo', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')

@@ -5,7 +5,7 @@ import { DishEditor } from './DishEditor'
 import { ModalShell } from './ModalShell'
 import { StickyFormActionBar } from './StickyFormActionBar'
 import { QueueDurationPicker } from './QueueDurationPicker'
-import { StarRating } from './StarRating'
+import { StarRatingField } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
 import { VisitExtraFields } from './VisitExtraFields'
 import { RestaurantSummarySection } from './RestaurantRecordSummary'
@@ -196,7 +196,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         />
         <div className="restaurant-record-form-divider"><span>{initialVisit ? '修改这次到访' : '这次到访'}</span></div>
         <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea aria-label="到访笔记" maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
-        <label className="field"><span>个人评价 <small>可选</small></span><StarRating onChange={(value) => { setRating(value); setDirty(true) }} value={rating} /></label>
+        <StarRatingField onChange={(value) => { setRating(value); setDirty(true) }} value={rating} />
         <VisitExtraFields friendOptions={friendOptions} onChange={(value) => { setExtraFields(value); setDirty(true) }} section="primary" value={extraFields} />
         <div className="field-grid visit-time-grid">
           <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input onChange={(event) => setDate(event.target.value)} required type="date" value={date} /></div></label>

@@ -335,6 +335,8 @@ Rating circles mean: large circle = score, small circle = sample count. Nil neve
 
 - The approved editor is one continuous, compact dining diary. Restaurant context, core experience, ratings, dishes/photos, dining context, notes, and the final save action remain in one readable flow.
 - Optional choice dimensions are visible and directly tappable. They must not be hidden behind default disclosure/expand controls merely to shorten the page.
+- Every editable star control uses explicit `SET` and `CLEAR` semantics. A star or half-star tap directly sets the target 0.5-step value in one state transition, including when tapping the current value; it never toggles to nil. Only the separate `清除` action may remove a rating. The shared field uses semantic `fieldset` markup so an ancestor label cannot forward the same gesture to the clear button.
+- Selected stars use the shared warm-amber `--color-rating-selected` token, promoted from the historical approved dish-rating gold; unselected stars retain a quiet gray/blue-gray outline. Browser and Capacitor consume the same shared editable rating component and synchronized star/label/ten-point projection.
 - The visual restoration does not change field optionality, nil semantics, persistence, offline mutation behavior, photo lifecycle, or save validation.
 - The primary save action remains the current canonical save implementation; the Legacy reference governs layout density and information order, not data architecture.
 

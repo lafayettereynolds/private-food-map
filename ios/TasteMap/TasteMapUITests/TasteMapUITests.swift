@@ -3854,6 +3854,69 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridVisitRatingSetsEveryTargetInOneInteraction() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich"]
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20))
+        webView.buttons["我的"].tap()
+        XCTAssertTrue(webView.staticTexts["Lafayette · 丰富美食档案"].waitForExistence(timeout: 12))
+
+        let visited = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "去过")
+        ).firstMatch
+        XCTAssertTrue(visited.waitForExistence(timeout: 8))
+        visited.tap()
+        let restaurant = webView.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "青岚寿司 1")
+        ).firstMatch
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 8))
+        restaurant.tap()
+
+        let editVisit = webView.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "编辑第")
+        ).firstMatch
+        scrollUntilVisible(editVisit, in: app)
+        XCTAssertTrue(editVisit.waitForExistence(timeout: 8))
+        editVisit.tap()
+        XCTAssertTrue(webView.staticTexts["编辑到访记录"].waitForExistence(timeout: 10))
+
+        let ratingSlider = webView.sliders.firstMatch
+        scrollUntilVisible(ratingSlider, in: app)
+        XCTAssertTrue(ratingSlider.waitForExistence(timeout: 8))
+
+        func setRating(_ rating: Double, summary: String) {
+            // Each star owns one fifth of the slider; the center of the left
+            // or right half for rating r is (r - 0.25) / 5.
+            ratingSlider.coordinate(withNormalizedOffset: CGVector(dx: (rating - 0.25) / 5, dy: 0.5)).tap()
+            XCTAssertTrue(webView.staticTexts[summary].waitForExistence(timeout: 3), "Expected one-tap rating: \(summary)")
+            XCTAssertFalse(webView.staticTexts["未评分 · 可直接保存"].exists)
+        }
+
+        setRating(4, summary: "4 星 · 喜欢 · 8.0 分")
+        setRating(3.5, summary: "3.5 星 · 喜欢 · 7.0 分")
+        setRating(5, summary: "5 星 · 挚爱 · 10.0 分")
+        setRating(2.5, summary: "2.5 星 · 不错 · 5.0 分")
+        setRating(4.5, summary: "4.5 星 · 挚爱 · 9.0 分")
+        keepScreenshot(named: "Hybrid Visit Rating Warm Amber", of: app)
+
+        let clear = webView.buttons["清除评分"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        clear.tap()
+        XCTAssertTrue(webView.staticTexts["未评分 · 可直接保存"].waitForExistence(timeout: 3))
+        XCTAssertFalse(webView.buttons["清除评分"].exists)
+
+        setRating(3, summary: "3 星 · 不错 · 6.0 分")
+        XCTAssertTrue(webView.sliders.matching(
+            NSPredicate(format: "label == %@", "个人评价，3 星，共 5 星")
+        ).firstMatch.waitForExistence(timeout: 3))
+        keepScreenshot(named: "Hybrid Visit Rating Direct Set Final", of: app)
+    }
+
+    @MainActor
     func testNativeGlobalProductNavigationContract() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleInterfaceStyle", "Light"]

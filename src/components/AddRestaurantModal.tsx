@@ -19,7 +19,7 @@ import { StickyFormActionBar } from './StickyFormActionBar'
 import { DishEditor } from './DishEditor'
 import { MarkerStyleField } from './MarkerStyleField'
 import { QueueDurationPicker } from './QueueDurationPicker'
-import { StarRating } from './StarRating'
+import { StarRatingField } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
 import { VisitExtraFields } from './VisitExtraFields'
 import { RestaurantSummarySection } from './RestaurantRecordSummary'
@@ -433,10 +433,7 @@ export function AddRestaurantModal({
           {status === 'visited' ? (
             <div className="form-section" data-record-section="visited-form">
               <h3>这次体验</h3>
-              <label className="field">
-                <span>个人评价 <small>可选</small></span>
-                <StarRating onChange={setRating} value={rating} />
-              </label>
+              <StarRatingField onChange={setRating} value={rating} />
               <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
               <label className="field field-with-leading-icon">
                 <span>{extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）'}</span>
