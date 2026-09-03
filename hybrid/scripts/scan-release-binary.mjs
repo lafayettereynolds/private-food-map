@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -49,11 +49,18 @@ for (const marker of forbiddenMarkers) {
 const publicRoot = resolve(appPath, 'public')
 const webEntries = await filesIn(publicRoot)
 const webText = []
-for (const path of [
-  ...webEntries,
-  resolve(appPath, 'capacitor.config.json'),
-  resolve(appPath, 'hybrid-bundle-manifest.json'),
-]) {
+const signedWebPaths = [...webEntries, resolve(appPath, 'capacitor.config.json')]
+const optionalFormalManifest = resolve(appPath, 'hybrid-bundle-manifest.json')
+try {
+  await access(optionalFormalManifest)
+  signedWebPaths.push(optionalFormalManifest)
+} catch {
+  // The internal Capacitor validation shell does not embed the formal-app
+  // resource manifest. The shipping TasteMap target does, and is scanned by
+  // scan-formal-release-app.mjs. Both targets still scan their complete signed
+  // local Web payload and fail closed on Debug/development/credential markers.
+}
+for (const path of signedWebPaths) {
   webText.push(await readFile(path, 'utf8'))
 }
 const signedWebText = webText.join('\n')
