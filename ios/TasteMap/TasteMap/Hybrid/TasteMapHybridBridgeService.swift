@@ -131,6 +131,11 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     }
 
     public func restaurantDetail(id: String) throws -> TasteMapHybridRestaurantDetailDTO {
+        // A Restaurant may have become owner-scoped through another existing
+        // Native service (for example Add to Want-to-Go) since this detail was
+        // last projected. Detail navigation is a refresh boundary; rebuild the
+        // owner snapshot so a public read cannot retain stale capabilities.
+        projectedRestaurantSnapshot = nil
         let scoped = try scopedRestaurants()
         if let restaurant = scoped.first(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) {
             return ownedDetail(restaurant)

@@ -176,16 +176,19 @@ private final class TasteMapHybridMapSurfaceModel: ObservableObject {
             let nativeID = Self.stableNativeID(value.id)
             nextOriginalIDByNativeID[nativeID] = value.id
             nextNativeIDByOriginalID[value.id] = nativeID
-            let resolution = Self.imageResolution(value.image, photosByID: resources.photosByID)
+            let markerVisual = TasteMapHybridMapMarkerVisualPolicy.resolve(
+                value.image,
+                photosByID: resources.photosByID
+            )
             return RestaurantMapMarkerPresentation(
                 id: nativeID,
                 name: value.name,
                 latitude: value.latitude,
                 longitude: value.longitude,
                 status: Self.markerStatus(value.status),
-                visual: resolution.visual,
-                publicPhotoID: resolution.publicPhotoID,
-                fallbackMerchantImageURL: resolution.merchantURL,
+                visual: markerVisual,
+                publicPhotoID: nil,
+                fallbackMerchantImageURL: nil,
                 visitCount: max(0, value.visitCount),
                 averageRating: value.averageRating,
                 distanceKilometers: nil
@@ -256,30 +259,6 @@ private final class TasteMapHybridMapSurfaceModel: ObservableObject {
         }
     }
 
-    private static func imageResolution(
-        _ image: TasteMapHybridImageDescriptor,
-        photosByID: [UUID: PhotoAsset]
-    ) -> (visual: RestaurantMapMarkerVisual, publicPhotoID: String?, merchantURL: URL?) {
-        let matchingPhoto = image.photoID.flatMap { reference in
-            photosByID.values.first {
-                $0.id.uuidString.caseInsensitiveCompare(reference) == .orderedSame
-                    || $0.remoteID?.caseInsensitiveCompare(reference) == .orderedSame
-            }
-        }
-        switch image.kind {
-        case .nativeResource:
-            return (matchingPhoto.map { .photo($0.id) } ?? .fallback, nil, nil)
-        case .publicOrCached:
-            if let matchingPhoto { return (.photo(matchingPhoto.id), image.photoID, nil) }
-            return (.fallback, image.photoID, nil)
-        case .providerMerchant:
-            let url = RestaurantImagePriorityPolicy.safeHTTPSURL(image.resourceURL)
-            return (url.map(RestaurantMapMarkerVisual.merchantImage) ?? .fallback, nil, url)
-        case .foodDiningFallback:
-            return (.fallback, nil, nil)
-        }
-    }
-
     private static func stableNativeID(_ semanticID: String) -> UUID {
         if let value = UUID(uuidString: semanticID) { return value }
         // Deterministic FNV-derived bytes keep a non-UUID provider identifier
@@ -300,6 +279,37 @@ private final class TasteMapHybridMapSurfaceModel: ObservableObject {
         if normalized > 180 { normalized -= 360 }
         if normalized < -180 { normalized += 360 }
         return normalized
+    }
+}
+
+/// Converts a typed Hybrid image descriptor into the deliberately narrower
+/// Personal Map visual contract. Legacy descriptor kinds remain decodable for
+/// compatibility, but they can never re-enable public/merchant Map imagery.
+enum TasteMapHybridMapMarkerVisualPolicy {
+    static func resolve(
+        _ image: TasteMapHybridImageDescriptor,
+        photosByID: [UUID: PhotoAsset]
+    ) -> RestaurantMapMarkerVisual {
+        let matchingPhoto = image.photoID.flatMap { reference in
+            photosByID.values.first {
+                $0.id.uuidString.caseInsensitiveCompare(reference) == .orderedSame
+                    || $0.remoteID?.caseInsensitiveCompare(reference) == .orderedSame
+            }
+        }
+        let category = RestaurantMapMarkerVisual.category(
+            image.categoryVisualID.flatMap(FoodCategoryVisualID.init(rawValue:)) ?? .other
+        )
+        switch image.kind {
+        case .ownerPhoto, .nativeResource:
+            return matchingPhoto.map { .photo($0.id) } ?? category
+        case .foodCategoryVisual:
+            return category
+        case .activityPhoto, .publicUGC, .publicOrCached, .providerMerchant, .foodDiningFallback:
+            // Personal Map never renders another user's UGC or provider imagery.
+            // Legacy descriptor kinds remain decodable, but safely collapse to
+            // the deterministic Food Category visual on this surface.
+            return category
+        }
     }
 }
 

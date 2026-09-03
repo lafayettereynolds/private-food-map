@@ -137,6 +137,11 @@ enum TasteMapVisualQAFixtures {
         let photoSlotByRestaurant = Dictionary(uniqueKeysWithValues:
             photoRestaurantIndexes.enumerated().map { ($0.element, $0.offset) }
         )
+        let nonPhotoRestaurantIndexes = (0..<restaurantCount).filter {
+            photoSlotByRestaurant[$0] == nil
+        }
+        let publicPhotoRestaurantIndexes = Set(nonPhotoRestaurantIndexes.prefix(20))
+        let providerImageRestaurantIndexes = Set(nonPhotoRestaurantIndexes.dropFirst(20).prefix(20))
         var restaurants: [Restaurant] = []
         restaurants.reserveCapacity(restaurantCount)
         for index in 0..<restaurantCount {
@@ -151,13 +156,11 @@ enum TasteMapVisualQAFixtures {
                 ? photoSlotByRestaurant[index].map { uuid(35_000 + $0) }
                 : nil
             let publicPhotoID = hasImageFixture
-                && index >= counts.photos
-                && index < min(restaurantCount, counts.photos + 20)
+                && publicPhotoRestaurantIndexes.contains(index)
                 ? uuid(45_000 + index).uuidString.lowercased()
                 : nil
             let providerImageURL = hasImageFixture
-                && index >= counts.photos + 20
-                && index < min(restaurantCount, counts.photos + 40)
+                && providerImageRestaurantIndexes.contains(index)
                 ? "https://visual-qa.invalid/restaurants/\(index).jpg"
                 : nil
             let tags = cuisines[index % cuisines.count]

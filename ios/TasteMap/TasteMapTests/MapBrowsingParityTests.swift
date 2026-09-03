@@ -134,6 +134,36 @@ struct MapBrowsingParityTests {
         #expect(visual == .category(.other))
     }
 
+    @Test("Hybrid MapKit accepts owner photos and collapses public or provider descriptors to category visuals")
+    func hybridMapVisualBoundary() {
+        let restaurant = makeRestaurant(99, name: "日式食堂", status: .visited)
+        let ownerPhoto = photo(399, restaurant: restaurant, kind: .restaurantMarker, remoteID: "owner-marker")
+        let ownerDescriptor = TasteMapHybridImageDescriptor(
+            kind: .ownerPhoto,
+            photoID: ownerPhoto.remoteID,
+            categoryVisualID: FoodCategoryVisualID.japaneseKorean.rawValue,
+            accessibilityLabel: "本人实拍"
+        )
+        #expect(TasteMapHybridMapMarkerVisualPolicy.resolve(
+            ownerDescriptor,
+            photosByID: [ownerPhoto.id: ownerPhoto]
+        ) == .photo(ownerPhoto.id))
+
+        for kind in [TasteMapHybridImageKind.publicUGC, .providerMerchant, .foodDiningFallback] {
+            let descriptor = TasteMapHybridImageDescriptor(
+                kind: kind,
+                resourceURL: "https://images.example.test/must-not-render-on-personal-map.jpg",
+                photoID: ownerPhoto.remoteID,
+                categoryVisualID: FoodCategoryVisualID.japaneseKorean.rawValue,
+                accessibilityLabel: "非个人地图图片"
+            )
+            #expect(TasteMapHybridMapMarkerVisualPolicy.resolve(
+                descriptor,
+                photosByID: [ownerPhoto.id: ownerPhoto]
+            ) == .category(.japaneseKorean))
+        }
+    }
+
     @Test("Invalid coordinates and deleted Restaurants never become markers")
     func invalidAndDeletedCoordinates() {
         let valid = makeRestaurant(1, name: "合法", status: .visited)

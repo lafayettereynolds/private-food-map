@@ -174,7 +174,7 @@ struct RestaurantImageCanonicalRendererTests {
         #expect(empty.isFallbackOnly)
     }
 
-    @Test("Map, List, Detail, Roulette and Analytics share the same source identity")
+    @Test("Personal Map enforces its owner-only visual boundary without weakening the canonical renderer")
     func crossSurfaceConsistency() throws {
         let localID = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000111"))
         let provider = try #require(URL(string: "https://images.example.com/restaurant.jpg"))
@@ -190,7 +190,9 @@ struct RestaurantImageCanonicalRendererTests {
         )
         let analysis = AnalysisImageReference.photo(localID, providerFallback: provider)
 
-        #expect(map.imageResolution == expected)
+        #expect(map.imageResolution == RestaurantImagePriorityPolicy.resolution(
+            localUserPhotoID: localID
+        ))
         #expect(analysis.restaurantResolution == expected)
         #expect(RestaurantImagePriorityPolicy.resolution(
             localUserPhotoID: localID,
