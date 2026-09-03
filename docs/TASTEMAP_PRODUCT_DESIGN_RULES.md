@@ -350,7 +350,7 @@ The four rating references are `我的评分 / 全部用户 / 好友评分 / 同
 - Layering is deterministic: `selected → rating → visit count → stable Restaurant ID`.
 - Selected is always topmost; higher-rated Restaurants cover lower-rated Restaurants; visit count breaks equal-rating ties; stable ID is the final tie-break.
 - Pan/zoom cannot randomly change layer order. Expand/spiderfy may exist only as an explicit user action for inspecting a highly overlapped area.
-- Current user location uses the user's circular avatar and a subtle halo, not Restaurant tableware.
+- Current user location uses the user's circular avatar, the shared brand-color outer ring, a subtle halo, and a small downward pointer whose tip anchors the precise coordinate. It is a location bubble, not a plain Restaurant circle or Restaurant tableware. Browser, static fallback, Native SwiftUI, and the persistent Hybrid MapKit surface preserve this same semantic silhouette.
 
 ## Discovery
 

@@ -66,6 +66,22 @@ enum TasteMapDesignTokens {
         static let profile: CGFloat = 72
     }
 
+    /// One canonical geometry for the live-location avatar bubble used by
+    /// both the Native SwiftUI map and the persistent Hybrid MapKit surface.
+    enum MapLocationMarker {
+        static let width: CGFloat = 58
+        static let height: CGFloat = 60
+        static let haloDiameter: CGFloat = 54
+        static let bubbleDiameter: CGFloat = 48
+        static let avatarBorderDiameter: CGFloat = 44
+        static let avatarDiameter: CGFloat = 40
+        static let pointerOuterSide: CGFloat = 16
+        static let pointerInnerSide: CGFloat = 12
+        static let bubbleTop: CGFloat = 3
+        static let pointerCenterY: CGFloat = 48
+        static let centerOffsetY: CGFloat = -30
+    }
+
     enum ImageRatio {
         static let square: CGFloat = 1
         static let restaurantLandscape: CGFloat = 16 / 9

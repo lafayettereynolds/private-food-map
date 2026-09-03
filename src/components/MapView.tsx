@@ -381,7 +381,9 @@ function createUserLocationContent(currentUser: UserProfile) {
   bubble.appendChild(preset)
   const halo = document.createElement('span')
   halo.className = 'current-user-marker__halo'
-  content.append(halo, bubble)
+  const tail = document.createElement('span')
+  tail.className = 'current-user-marker__tail'
+  content.append(halo, bubble, tail)
   return content
 }
 
@@ -485,6 +487,7 @@ function OfflineUserMarker({ point, user }: { point: { x: number; y: number }; u
   return <div aria-label="我的当前位置" className="current-user-marker tm-offline-map__user" role="img" style={{ left: `${point.x}%`, top: `${point.y}%` }}>
     <span className="current-user-marker__halo" />
     <span className="current-user-marker__bubble"><span className="avatar-preset-sprite" style={{ '--avatar-x': `${position.x}%`, '--avatar-y': `${position.y}%` } as CSSProperties} /></span>
+    <span className="current-user-marker__tail" />
   </div>
 }
 

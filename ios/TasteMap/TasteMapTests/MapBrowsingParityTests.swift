@@ -336,6 +336,16 @@ struct MapBrowsingParityTests {
         #expect(Set(markers.map { "\($0.latitude):\($0.longitude)" }).count == 1)
     }
 
+    @Test("Current user marker anchors its distinct avatar bubble through a pointer tip")
+    func currentUserMarkerGeometry() {
+        let metrics = TasteMapDesignTokens.MapLocationMarker.self
+        #expect(metrics.height > metrics.bubbleDiameter)
+        #expect(metrics.haloDiameter > metrics.bubbleDiameter)
+        #expect(metrics.pointerOuterSide > metrics.pointerInnerSide)
+        #expect(metrics.pointerCenterY > metrics.bubbleDiameter / 2)
+        #expect(metrics.centerOffsetY == -(metrics.height / 2))
+    }
+
     @Test("One thousand marker presentations build without repeated global scans")
     func markerPerformance() {
         let restaurants = (0 ..< 1_000).map { index in

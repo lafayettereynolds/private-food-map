@@ -6,7 +6,8 @@ import UIKit
 /// The values mirror the established Web product palette. Analysis pages and
 /// exported posters intentionally continue to use `TasteMapAnalysisTheme`.
 enum TasteMapCoreTheme {
-    static let brand = Color(uiColor: dynamicColor(light: .init(80, 108, 140), dark: .init(142, 167, 192)))
+    static let brandUIColor = dynamicColor(light: .init(80, 108, 140), dark: .init(142, 167, 192))
+    static let brand = Color(uiColor: brandUIColor)
     static let brandDeep = Color(uiColor: dynamicColor(light: .init(52, 79, 105), dark: .init(183, 202, 220)))
     static let brandSoft = Color(uiColor: dynamicColor(light: .init(237, 242, 246), dark: .init(34, 47, 59)))
 

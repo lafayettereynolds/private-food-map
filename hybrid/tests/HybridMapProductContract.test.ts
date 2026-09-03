@@ -132,6 +132,22 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(nativeMap).toContain('RestaurantMapMarkerVisual.emoji')
   })
 
+  it('keeps live location as the historical avatar pin instead of a Restaurant circle', () => {
+    const browserMap = source('../../src/components/MapView.tsx')
+    const browserCSS = source('../../src/styles/global.css')
+    const offlineCSS = source('../../src/components/myMapBrowsePage.css')
+    const nativeMap = source('../../ios/TasteMap/TasteMap/Features/Map/ClusteredRestaurantMapView.swift')
+    expect(browserMap.match(/current-user-marker__tail/g)).toHaveLength(2)
+    expect(browserCSS).toMatch(/\.current-user-marker__tail\s*\{[^}]*background:\s*var\(--color-primary\)/)
+    expect(offlineCSS).toMatch(/\.tm-offline-map__user\s*\{[^}]*translate\(-50%,-100%\)/)
+    expect(nativeMap).toContain('pointerOuterView')
+    expect(nativeMap).toContain('pointerInnerView')
+    expect(nativeMap).toContain('TasteMapDesignTokens.MapLocationMarker')
+    expect(nativeMap).toContain('centerOffset = CGPoint(x: 0, y: metrics.centerOffsetY)')
+    expect(nativeMap).toContain('TasteMapCoreTheme.brandUIColor')
+    expect(nativeMap).not.toContain('UIColor.systemBlue.withAlphaComponent')
+  })
+
   it('restores the historical dashed wanted ring in Browser and Native MapKit', () => {
     const browserMap = source('../../src/components/MapView.tsx')
     const browserCSS = source('../../src/styles/global.css')

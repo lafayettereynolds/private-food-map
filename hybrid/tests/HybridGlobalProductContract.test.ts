@@ -305,7 +305,7 @@ describe('Hybrid global Product Contract', () => {
     const root = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRootView.swift')
     expect(shell).toContain("route: 'socialNative', identifier: section")
     expect(root).toContain('case .socialNative:')
-    expect(root).toContain('TasteMapHybridNativeSocialRoute(identifier: route.identifier)')
+    expect(root).toMatch(/TasteMapHybridNativeSocialRoute\(\s*identifier: route\.identifier,\s*onClose: dismissNativePresentation\s*\)/)
     expect(root).toContain('SocialHubView(')
     expect(root).toContain('collaborationAPI: authServices.socialCollaborationAPI')
     expect(root).not.toContain('case .socialNative:\n            DiscoverHubView()')

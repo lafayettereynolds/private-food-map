@@ -398,34 +398,99 @@ private extension RestaurantMapMarkerPresentation {
 @MainActor
 private final class TasteMapUserLocationAnnotationView: MKAnnotationView {
     private let haloView = UIView()
+    private let pointerOuterView = UIView()
+    private let pointerInnerView = UIView()
+    private let bubbleView = UIView()
+    private let avatarBorderView = UIView()
     private let avatarView = UIImageView()
     private(set) var representedPhotoReference: UUID?
     private var presetImage: UIImage?
 
     override init(annotation: (any MKAnnotation)?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 54, height: 54)
+        let metrics = TasteMapDesignTokens.MapLocationMarker.self
+        frame = CGRect(x: 0, y: 0, width: metrics.width, height: metrics.height)
         backgroundColor = .clear
+        clipsToBounds = false
+        centerOffset = CGPoint(x: 0, y: metrics.centerOffsetY)
         collisionMode = .circle
         displayPriority = .required
         canShowCallout = false
 
-        haloView.frame = CGRect(x: 2, y: 2, width: 50, height: 50)
-        haloView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.18)
-        haloView.layer.cornerRadius = 25
+        haloView.frame = CGRect(
+            x: (metrics.width - metrics.haloDiameter) / 2,
+            y: 0,
+            width: metrics.haloDiameter,
+            height: metrics.haloDiameter
+        )
+        haloView.backgroundColor = TasteMapCoreTheme.brandUIColor.withAlphaComponent(0.15)
+        haloView.layer.cornerRadius = metrics.haloDiameter / 2
         haloView.layer.shadowColor = UIColor.black.cgColor
-        haloView.layer.shadowOpacity = 0.14
-        haloView.layer.shadowRadius = 5
+        haloView.layer.shadowOpacity = 0.12
+        haloView.layer.shadowRadius = 4
         haloView.layer.shadowOffset = CGSize(width: 0, height: 2)
         addSubview(haloView)
 
-        avatarView.frame = CGRect(x: 7, y: 7, width: 40, height: 40)
+        pointerOuterView.bounds = CGRect(
+            x: 0,
+            y: 0,
+            width: metrics.pointerOuterSide,
+            height: metrics.pointerOuterSide
+        )
+        pointerOuterView.center = CGPoint(x: metrics.width / 2, y: metrics.pointerCenterY)
+        pointerOuterView.backgroundColor = .systemBackground
+        pointerOuterView.layer.cornerRadius = 3
+        pointerOuterView.transform = CGAffineTransform(rotationAngle: .pi / 4)
+        pointerOuterView.layer.shadowColor = UIColor.black.cgColor
+        pointerOuterView.layer.shadowOpacity = 0.12
+        pointerOuterView.layer.shadowRadius = 3
+        pointerOuterView.layer.shadowOffset = CGSize(width: 1, height: 1)
+        addSubview(pointerOuterView)
+
+        pointerInnerView.frame = CGRect(
+            x: (metrics.pointerOuterSide - metrics.pointerInnerSide) / 2,
+            y: (metrics.pointerOuterSide - metrics.pointerInnerSide) / 2,
+            width: metrics.pointerInnerSide,
+            height: metrics.pointerInnerSide
+        )
+        pointerInnerView.backgroundColor = TasteMapCoreTheme.brandUIColor
+        pointerInnerView.layer.cornerRadius = 1.5
+        pointerOuterView.addSubview(pointerInnerView)
+
+        bubbleView.frame = CGRect(
+            x: (metrics.width - metrics.bubbleDiameter) / 2,
+            y: metrics.bubbleTop,
+            width: metrics.bubbleDiameter,
+            height: metrics.bubbleDiameter
+        )
+        bubbleView.backgroundColor = TasteMapCoreTheme.brandUIColor
+        bubbleView.layer.cornerRadius = metrics.bubbleDiameter / 2
+        bubbleView.layer.shadowColor = UIColor.black.cgColor
+        bubbleView.layer.shadowOpacity = 0.16
+        bubbleView.layer.shadowRadius = 4
+        bubbleView.layer.shadowOffset = CGSize(width: 0, height: 2)
+        addSubview(bubbleView)
+
+        avatarBorderView.frame = CGRect(
+            x: (metrics.bubbleDiameter - metrics.avatarBorderDiameter) / 2,
+            y: (metrics.bubbleDiameter - metrics.avatarBorderDiameter) / 2,
+            width: metrics.avatarBorderDiameter,
+            height: metrics.avatarBorderDiameter
+        )
+        avatarBorderView.backgroundColor = .systemBackground
+        avatarBorderView.layer.cornerRadius = metrics.avatarBorderDiameter / 2
+        bubbleView.addSubview(avatarBorderView)
+
+        avatarView.frame = CGRect(
+            x: (metrics.avatarBorderDiameter - metrics.avatarDiameter) / 2,
+            y: (metrics.avatarBorderDiameter - metrics.avatarDiameter) / 2,
+            width: metrics.avatarDiameter,
+            height: metrics.avatarDiameter
+        )
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
-        avatarView.layer.cornerRadius = 20
-        avatarView.layer.borderWidth = 3
-        avatarView.layer.borderColor = UIColor.white.cgColor
-        addSubview(avatarView)
+        avatarView.layer.cornerRadius = metrics.avatarDiameter / 2
+        avatarBorderView.addSubview(avatarView)
         isAccessibilityElement = true
         accessibilityLabel = "我的当前位置"
         accessibilityIdentifier = "restaurant-map-user-avatar-marker"

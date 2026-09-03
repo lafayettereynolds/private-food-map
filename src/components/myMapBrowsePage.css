@@ -58,7 +58,7 @@
 .tm-offline-map__notice { position: absolute; z-index: 3; top: 9px; left: 50%; max-width: calc(100% - 24px); margin: 0; padding: 7px 10px; transform: translateX(-50%); border: 1px solid rgba(198,211,219,.9); border-radius: 999px; display: flex; align-items: center; gap: 5px; color: #5e6f7a; background: rgba(255,255,255,.9); font-size: 8px; white-space: nowrap; }
 .tm-offline-map__marker { position: absolute; transform: translate(-50%,-50%); }
 .tm-offline-map__marker.is-selected { transform: translate(-50%,calc(-50% - 1px)); }
-.tm-offline-map__user { position: absolute; z-index: 2000000000; transform: translate(-50%,-50%); }
+.tm-offline-map__user { position: absolute; z-index: 2000000000; transform: translate(-50%,-100%); }
 .current-user-marker__halo { position: absolute; inset: 0 auto auto 50%; width: 50px; height: 50px; transform: translateX(-50%); border: 1px solid rgba(45,109,155,.45); border-radius: 50%; background: rgba(45,109,155,.13); animation: tm-location-halo 2.1s ease-out infinite; }
 @keyframes tm-location-halo { 0% { transform: translateX(-50%) scale(.72); opacity: .85; } 100% { transform: translateX(-50%) scale(1.55); opacity: 0; } }
 @media (prefers-color-scheme: dark) {
