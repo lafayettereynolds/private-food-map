@@ -20,9 +20,9 @@ Production default: `NATIVE_PRIMARY` (current SwiftUI application)
 
 | Surface | Status | Phase 1 evidence | Production owner | Next gate |
 | --- | --- | --- | --- | --- |
-| My Map / My List | `HYBRID_INTEGRATED` — Native MapKit surface | Shared `MyMapBrowsePage` owns the page chrome/state; Browser keeps the Web provider while iOS uses the persistent established `RestaurantMapView`/`MKMapView` through typed `map.surface.update`, viewport and selection events. Owner-scoped `map.viewport`, Native location/avatar, canonical images and deterministic markers remain authoritative. Fixed-Simulator pan, pinch, selection, detail/back, Map/List restoration and sustained-gesture performance acceptance passed on 2026-09-03. | SwiftUI | Lafayette Product Acceptance, real-iPhone smoke and explicit `HYBRID_PRIMARY` approval. AMap Web credentials are Browser-only and are not an iOS gate. |
-| Discovery / Community | `HYBRID_INTEGRATED` | One shared five-tab React UI, shared Activity Card/FilterBar, Visit-rating semantics, owner-safe action adapters and exact/negative Product contracts | SwiftUI | Lafayette visual review, real-device interaction smoke and explicit `HYBRID_PRIMARY` approval |
-| Add Restaurant / Nearby | `HYBRID_INTEGRATED` | Browser and Capacitor compose one shared acquisition scaffold, Search/City input, Nearby state and candidate renderer for Search/Nearby/Share/one Manual Add; typed native provider, fresh GPS, distance, dedupe and Share Extension bridge; canonical Hybrid Restaurant Detail transition. Fixed iPhone 17 Pro Simulator input-focus regression proves `16px` controls, keyboard operation, unchanged viewport width/scale, and four reachable capabilities. | SwiftUI | Real-iPhone Location/provider/Share smoke, Lafayette Product Acceptance and explicit `HYBRID_PRIMARY` approval |
+| My Map / My List | `HYBRID_INTEGRATED` — Native MapKit surface | Shared `MyMapBrowsePage` owns the page chrome/state; Browser keeps the Web provider while iOS uses the persistent established `RestaurantMapView`/`MKMapView` through typed `map.surface.update`, viewport and selection events. Owner-scoped `map.viewport`, Native location/avatar, owner-photo/category visual policy and deterministic markers remain authoritative. Fixed-Simulator pan, pinch, selection, detail/back and Map/List restoration have functional evidence; no separately verified Map Gesture Smoothness commit exists in the integration inventory. | SwiftUI / Native MapKit | **Map Gesture Smoothness Gate OPEN**, then Lafayette Product Acceptance, real-iPhone smoke and explicit `HYBRID_PRIMARY` approval. AMap Web credentials and merchant-photo credentials are not iOS gates. |
+| Discovery / Community | `HYBRID_INTEGRATED` | One shared five-tab React UI, shared Activity Card/FilterBar, Visit-rating semantics, owner-safe action adapters, exact/negative Product contracts, batched permission-safe `RestaurantUGCImagePool`, activity/public/category visual matrix and uploader ≠ recommender/trend-source contracts | SwiftUI | Lafayette visual review, real-device interaction smoke and explicit `HYBRID_PRIMARY` approval |
+| Add Restaurant / Nearby | `HYBRID_INTEGRATED` | Browser and Capacitor compose one shared React Search/City/Nearby/Share/Manual acquisition UI; typed MKLocalSearch provider, fresh GPS, distance, dedupe, owner/public/category resolution, shared Search/Nearby resolver and Share Extension bridge; candidate selection enters canonical Restaurant Detail and has no merchant-photo dependency. Fixed iPhone 17 Pro Simulator input-focus evidence covers `16px` controls, keyboard operation, unchanged viewport scale and four reachable capabilities. | SwiftUI | Real-iPhone Location/provider/Share smoke, Lafayette Product Acceptance and explicit `HYBRID_PRIMARY` approval |
 | Profile / My | `HYBRID_INTEGRATED` | Shared `ProfilePage`, real AuthSessionManager/current-user DTO, formal signed local bundle, native/Hybrid handoff and Debug fixed-Simulator evidence | SwiftUI | Lafayette Product Acceptance, real-device smoke, performance acceptance and explicit `HYBRID_PRIMARY` approval |
 | Restaurant Detail | `HYBRID_INTEGRATED` | Canonical React detail, stable Restaurant ID/DTO/image descriptor, formal route ownership, Native → Hybrid and Hybrid back regression | SwiftUI | Cross-entry Product Acceptance, real-device smoke and explicit `HYBRID_PRIMARY` approval |
 | Visit editor | `HYBRID_INTEGRATED` | One shared React editor; typed Visit/Dish/photo draft DTOs; owner-scoped `LocalVisitRecordingStore`; existing mutation queue; native PhotosUI picker and `PhotoTransferCoordinator`; edit/create/delete handoff and automatic detail refresh; formal Release purity scan | SwiftUI | Lafayette Product Acceptance, real-device photo/camera-library smoke and explicit `HYBRID_PRIMARY` approval |
@@ -41,9 +41,21 @@ Every integrated route still has production owner SwiftUI. Debug internal accept
 The My Map route's integrated shell/DTO status does not by itself constitute
 real-map interaction acceptance. An offline/fallback screenshot cannot satisfy
 pan, pinch, center, zoom or bounds gates. The persistent Native MapKit surface
-has passed those interaction gates on the fixed Simulator; the remaining map
-interaction gate is a real-iPhone smoke before any primary-route switch.
-Development AMap Web credentials are not part of the iOS gate.
+has functional fixed-Simulator evidence, but Map Gesture Smoothness remains OPEN
+until a separately verified smoothness fix and sustained-gesture acceptance exist.
+Real-iPhone pan, pinch, viewport and performance smoke also remains required before
+any primary-route switch. No AMap map, AMap merchant-photo API, AMap credential,
+or external merchant-photo gate is part of this closure.
+
+## Restaurant Visual Closure
+
+The current visual contract is integrated for Map, Add Search/Nearby, Restaurant
+Detail and all five Discovery tabs. Browser and Capacitor consume the same React
+descriptor renderer; Native MapKit consumes the same category IDs and owner-only
+Map policy. Worker social feeds batch-load eligible UGC and preserve Photo/Visit/
+Profile visibility, block, deletion and moderation boundaries. Other-user public
+UGC is not exportable by default. This is Final Visual Closure work only and does
+not start Hybrid Primary or Batch 3.
 
 ## Required update rule
 

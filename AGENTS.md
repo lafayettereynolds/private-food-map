@@ -36,7 +36,16 @@ Use the complete Source of Truth order in `docs/TASTEMAP_PRODUCT_DESIGN_RULES.md
 
 For any Legacy/Web comparison or restoration task, also read `docs/TASTEMAP_LEGACY_FUSION_DECISIONS.md` in full. Classify each proposal as `RESTORE`, `KEEP CURRENT`, `FUSE`, `RETIRE`, or `NEEDS LAFAYETTE APPROVAL`. Legacy evidence cannot by itself authorize deleting or downgrading a current feature, data field, interaction, Premium capability, Social capability, sharing capability, Analytics capability, or current architecture. Any such removal requires `NEEDS LAFAYETTE APPROVAL` before implementation.
 
-The current Map Marker and Restaurant-image contracts are not discretionary page details. Marker presentation must follow the deterministic overlap/layer rule recorded in the canonical design document; Restaurant-facing images must use the shared priority policy and converge on its canonical renderer. A page-local offset, spiderfy, image resolver, or fallback variant is not an acceptable substitute.
+The current Map Marker and Restaurant-visual contracts are not discretionary page details. Marker presentation must follow the deterministic overlap/layer rule recorded in the canonical design document; Restaurant-facing visuals must use the shared, surface-aware `RestaurantUGCImagePool` / `RestaurantVisualResolution` policy and converge on the canonical renderer. A page-local offset, spiderfy, image resolver, provider-photo dependency, or fallback variant is not an acceptable substitute.
+
+The formal Restaurant Visual Strategy is:
+
+- Personal Map: current-owner marker/Restaurant/Visit photo, otherwise deterministic `FoodCategoryVisualID`; never another user's UGC.
+- Add Search / Nearby / Restaurant Detail: current-owner photo, eligible public Taste Map UGC, otherwise the category visual.
+- Following / Same Taste / Latest: the viewer-visible activity photo, then eligible public Restaurant UGC, then the category visual.
+- For You / Trending: current-owner photo when present, then eligible public Restaurant UGC as visual material, then the category visual. The uploader is neither the recommendation author nor the trend source.
+
+Other-user public UGC is in-app display material only unless a separate explicit export grant exists. It must not silently enter posters, downloads, backups, or external shares. Private/friends-only content never enters the public pool; deletion, visibility downgrade, account deletion, moderation disablement, unreadable resources, and viewer blocks must remove eligibility. Browser and Capacitor use the same React renderer and typed descriptor semantics; the iOS map remains a Native MapKit surface using the same source semantics.
 
 ## Global correction and shared-component rule
 

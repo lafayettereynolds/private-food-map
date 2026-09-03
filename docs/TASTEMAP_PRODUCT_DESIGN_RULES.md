@@ -133,20 +133,30 @@ Never invent data meaning to justify attractive artwork. Formal product art does
 
 The approved historical Premium hamburger is a separately locked asset and is not replaced by the Food & Dining library.
 
-#### Restaurant image priority
+#### Restaurant Visual Source System
 
-Every Restaurant-facing surface—Nearby, Search, Map, List, Discovery, Community, Restaurant Detail, Lists, Roulette, Analytics, and share posters—uses this priority:
+Taste Map owns a two-layer Restaurant visual language: eligible Taste Map UGC and a deterministic local Food Category Visual. Merchant-photo availability is not a prerequisite for Search, Nearby, Map, Detail, or Discovery, and these surfaces must not turn a provider's missing photo into a gray placeholder.
 
-1. the user's real uploaded/recorded Restaurant photo;
-2. a lawful public or cached Restaurant photo;
-3. a lawful provider Merchant image;
-4. `FoodDiningVisualLibrary` only when no real Restaurant image is available.
+The normalized `FoodCategoryVisualID` vocabulary is intentionally small and stable: `chinese`, `japaneseKorean`, `western`, `hotpotBBQ`, `noodles`, `cafeBakery`, `drinksDessert`, `seafood`, `fastFood`, `vegetarianLight`, and `other`. Resolution uses existing Restaurant cuisine/category, provider POI category, tags, name, and address hints in that order of available evidence. The mapping is deterministic; it never uses random/system emoji or a network-downloaded icon. React and Native may render platform-appropriate local vectors, but the ID, palette family, food meaning, and fallback decision are shared.
 
-Food/Dining art must never cover a real image that the product can legitimately render. If a provider has no lawful image, fall back honestly rather than fabricating merchant imagery.
+Image source priority is surface-aware:
 
-`RestaurantImagePriorityPolicy` is the canonical **data-selection policy**. All Restaurant-facing presentation must progressively converge on one canonical renderer/presentation layer—`TasteMapRestaurantImage` or its formal successor—that consumes the policy result. Map, List, Nearby, Search, Discovery, Community, Restaurant Detail, Lists, Roulette, Analytics, and Posters may choose different approved aspect ratios or compositions, but they may not implement separate source-priority or fallback logic.
+| Surface semantics | Formal priority |
+| --- | --- |
+| Personal Map | current-owner marker / Restaurant / Visit photo → Food Category Visual |
+| Search / Nearby | matched current-owner photo → eligible public Taste Map UGC → Food Category Visual |
+| Restaurant Detail | current-owner photo → eligible public Taste Map UGC → Food Category Visual, without changing the canonical Detail IA |
+| Following / Same Taste / Latest | viewer-visible activity/Visit photo → eligible public Restaurant UGC → Food Category Visual |
+| For You | current-owner photo → eligible public Restaurant UGC as Restaurant visual material → Food Category Visual |
+| Trending | current-owner photo → eligible public Restaurant UGC as Restaurant visual material → Food Category Visual |
 
-A page-local URL resolver, photo lookup, provider branch, or fallback is temporary migration debt, not a new standard. Changing the policy or renderer requires a global consumer audit and contract coverage for local photo, public/cache photo, lawful provider image, revoked/deleted image, and honest fallback states.
+For You remains a Taste Map algorithmic recommendation and Trending remains a system trend. Selecting a public photo never promotes its uploader into a recommender, trend source, avatar, byline, or explanation. Following, Same Taste, and Latest may associate the photo with a person only when the card is backed by that real, viewer-visible Visit/activity.
+
+`RestaurantUGCImagePool` is the canonical eligibility pool and `RestaurantVisualResolution`/the typed image descriptor is the canonical surface decision. A public-pool record must be public at Photo, attached Visit (when present), and Profile boundaries; must match the Restaurant identity; must be readable; and must not be deleted, binary-deleted, actioned by moderation, account-deleted, or blocked relative to the viewer. Friends/limited photos may be used only by an authorized viewer on their corresponding activity surface. Current owners may see their own private photo on owner-scoped surfaces. Marker preference, explicit order, recency, and stable photo ID provide deterministic selection.
+
+The renderer consumes one typed descriptor—`ownerPhoto`, `activityPhoto`, `publicUGC`, or `foodCategoryVisual`—and may own crop, ratio, radius, loading, and transition presentation only. It must not re-run source priority. A page-local URL resolver, provider branch, random fallback, or `if photoURL else placeholder` is migration debt, not a new standard.
+
+Public UGC permission here authorizes in-app display only. Other-user UGC has `exportAllowed = false` unless a separate explicit grant exists and must not silently enter share posters, Analytics posters, downloads, Backup export, or external-share assets. Current-owner export continues under the established owner export policy. Provider identities may remain in Restaurant identity data, but these surfaces have no external merchant-photo dependency.
 
 ### Layer 3 — Canonical Page Templates
 

@@ -86,8 +86,10 @@ Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Pr
 - Keychain remains native-only.
 - SwiftData model instances never cross the bridge; the service creates lean, Codable DTOs.
 - Native queries are scoped by the current Taste Map user ID through existing ownership predicates.
-- Images cross as allowlisted descriptors (`nativeResource`, `publicOrCached`, `providerMerchant`, `foodDiningFallback`), not arbitrary filesystem paths. Local resources are read through the allowlisted `tastemap-resource://` scheme handler.
-- The selection policy remains: current user's real photo → legal public/cached photo → legal provider merchant photo → Food & Dining fallback.
+- Restaurant visuals cross as allowlisted typed descriptors (`ownerPhoto`, `activityPhoto`, `publicUGC`, `foodCategoryVisual`, with legacy descriptor cases retained only for compatible decoding), never as arbitrary filesystem paths or binaries. Local resources are read through the allowlisted `tastemap-resource://` scheme handler.
+- A descriptor preserves photo, Restaurant, Visit, source-owner, visibility, attribution, and export metadata as applicable. React owns presentation only; Native/Worker authority owns eligibility and source priority.
+- The surface matrix is canonical: Personal Map uses owner photo → category; Search/Nearby/Detail/For You/Trending use owner → eligible public UGC → category; Following/Same Taste/Latest use viewer-visible activity photo → eligible public UGC → category. Photo uploader identity never becomes a system recommendation or trend source.
+- Public other-user UGC is in-app-only with export disabled by default. It cannot enter posters, downloads, Backup, or external sharing without a separate explicit grant.
 - Error logs contain method, opaque request ID and duration only. They do not log payloads, tokens or user content.
 - The `HYBRID_DEVELOPMENT` runtime case and launch argument are compiled under `#if DEBUG`; Release has only `NATIVE_PRIMARY`.
 - The formal Hybrid React entry is independent of the full Browser entry and does not link Browser cloud credential/photo-provider implementations.
@@ -110,6 +112,12 @@ The Hybrid shell supports canonical local routes including:
 - `#/discovery`, `#/add`, `#/visit/:id`, `#/visitEdit/:id`
 - `#/lists`, `#/publicList/:id`, `#/activity/:id`, `#/roulette`
 - `#/analytics/:mode`, `#/premium`, `#/settings`
+
+### Restaurant visual authority and performance
+
+Worker social projections batch-load eligible Photo/Visit/Profile/Restaurant rows for the current result set and build a grouped `RestaurantUGCImagePool`; cards do not perform per-Restaurant photo queries. The pool applies existing visibility and block relationships plus deletion/moderation state, then returns a stable selection. Candidate identity matching preserves provider identity and may connect equivalent Restaurant records without exposing provider credentials.
+
+Native owner surfaces query only the authenticated owner's Restaurant/Visit/PhotoAsset rows. Search and Nearby share the same resolution plan. The iOS map remains `MKMapView`/MapKit and renders either an owner photo or the same `FoodCategoryVisualID` meaning locally; it does not request public or merchant photos during marker rendering. Browser and Capacitor product routes use the same React components and descriptor renderer, while Native MapKit remains the platform-owned map engine.
 
 React is the navigation truth while a Hybrid-owned page is visible. `TasteMapHybridNavigationCoordinator` is the transition boundary, not a second business stack: it keeps one Hybrid history plus at most one native presentation. The contract exposes `navigation.openHybrid`, `navigation.openNative`, `navigation.back`, and `navigation.current`, all with validation and structured errors.
 
