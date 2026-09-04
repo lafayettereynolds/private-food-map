@@ -2,11 +2,15 @@ import Foundation
 
 enum TasteMapHybridRuntimeConfiguration {
     static var current: TasteMapHybridRuntimeMode {
-#if DEBUG
+#if DEBUG && TASTEMAP_QA
+        return .hybridDevelopment
+#elseif DEBUG
         if ProcessInfo.processInfo.arguments.contains("--tastemap-hybrid-development") {
             return .hybridDevelopment
         }
-#endif
         return .nativePrimary
+#else
+        return .nativePrimary
+#endif
     }
 }

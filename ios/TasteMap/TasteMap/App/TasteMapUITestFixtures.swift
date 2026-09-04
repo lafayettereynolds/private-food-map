@@ -47,9 +47,15 @@ enum TasteMapUITestFixtures {
     static let coreParityInitialTabEnvironmentKey = "TASTEMAP_CORE_PARITY_INITIAL_TAB"
 
     static var visualQAMode: TasteMapVisualQAMode? {
+        #if TASTEMAP_QA
+        ProcessInfo.processInfo.environment[visualQAEnvironmentKey]
+            .flatMap(TasteMapVisualQAMode.init(rawValue:))
+            ?? .rich
+        #else
         ProcessInfo.processInfo.environment[visualQAEnvironmentKey]
             .flatMap(TasteMapVisualQAMode.init(rawValue:))
             ?? (usesAddImageReuseFixture ? .rich : nil)
+        #endif
     }
 
     static var usesVisualQA: Bool { visualQAMode != nil }

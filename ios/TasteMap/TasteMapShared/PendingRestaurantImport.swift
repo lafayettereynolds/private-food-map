@@ -23,7 +23,21 @@ nonisolated struct PendingRestaurantImport: Codable, Identifiable, Equatable, Se
 }
 
 nonisolated struct PendingRestaurantImportStore {
-    static let appGroupIdentifier = "group.com.lafayette.tastemap"
+    #if TASTEMAP_QA
+    private static let fallbackAppGroupIdentifier = "group.com.lafayette.tastemap.qa"
+    #else
+    private static let fallbackAppGroupIdentifier = "group.com.lafayette.tastemap"
+    #endif
+
+    static var appGroupIdentifier: String {
+        let configured = Bundle.main.object(
+            forInfoDictionaryKey: "TasteMapAppGroupIdentifier"
+        ) as? String
+        let normalized = configured?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized?.isEmpty == false
+            ? normalized!
+            : fallbackAppGroupIdentifier
+    }
     static let maximumPayloadBytes = 32 * 1_024
 
     private let directoryURL: URL

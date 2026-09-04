@@ -15,7 +15,9 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Taste Map</string>
+	<string>$(TASTEMAP_APP_DISPLAY_NAME)</string>
+	<key>TasteMapAppGroupIdentifier</key>
+	<string>$(TASTEMAP_APP_GROUP_IDENTIFIER)</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

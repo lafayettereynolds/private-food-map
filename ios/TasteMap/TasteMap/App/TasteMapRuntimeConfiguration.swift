@@ -40,10 +40,14 @@ struct TasteMapRuntimeConfiguration: Equatable, Sendable {
 
     static var current: TasteMapRuntimeConfiguration {
         #if DEBUG
+        #if TASTEMAP_QA
+        TasteMapRuntimeConfiguration(tier: .visualQA)
+        #else
         resolve(
             environment: ProcessInfo.processInfo.environment,
             arguments: ProcessInfo.processInfo.arguments
         )
+        #endif
         #else
         // Release artifacts cannot be switched into a fixture or isolated-test
         // tier through process environment or launch arguments.

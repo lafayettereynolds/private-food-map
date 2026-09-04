@@ -58,6 +58,7 @@
 - 会员能力以服务端有效 Entitlement 为准；前端开关和本地字段不能直接授予会员权限，管理员变更必须留下审计记录。
 - Development 的当前测试账号固定授予终身会员能力，用于完整功能验收；另设本地身份 `free-tester` 对应的非会员测试账号。测试身份通过本地启动参数和仅限 localhost 的请求头传递，Worker 仍是会员真值来源；线上环境忽略这套本地测试身份。
 - 会员与非会员测试数据必须双重隔离：会员测试版继续使用 `food-map-dev`，非会员测试版使用 `food-map-dev-free`，Production 始终使用稳定的 `food-map-prod`。不得为了切换会员状态复制、清空或重命名正式数据库。
+- iOS 真机进度验收固定使用并存的 `味图测试`（`DebugQA` / `com.lafayette.tastemap.qa`），不得再用测试构建覆盖私人版 `Taste Map`（`com.lafayette.tastemap`）。两者的应用沙箱、默认 Keychain 访问组和 App Group 必须保持隔离；测试版 Share Extension 只写入 `group.com.lafayette.tastemap.qa`。测试版使用带烧瓶角标的独立 App Icon，并默认加载隔离的丰富验收数据。
 - 非会员测试数据使用版本化固定种子 `TASTE_MAP_TEST_SEED`，仅在非会员 Development 数据库内按种子版本重建；测试内容必须丰富到可验证免费推荐、到访、想吃、饭搭子、推荐来源和食单，但不得为了测试向 Production 写入或从会员测试库复制真实数据。
 - Premium Badge 是会员身份提示，不代表评分、权威或管理权限；使用统一汉堡矢量图标和品牌蓝，只在有效 Entitlement 为会员时显示。所有头像位置复用 `UserAvatar`，会员授予/撤销通过统一事件刷新，页面不得根据用户名、邮箱或本地开关猜测会员状态。
 - 免费推荐只提供基础个性化结果；会员深度推荐才开放多条完整解释、高级推荐筛选和同味之选。照片上限、完整口味档案、饭搭子分析、推荐来源分析和自定义头像统一调用同一会员策略，不允许各页面自行写一套会员判断。

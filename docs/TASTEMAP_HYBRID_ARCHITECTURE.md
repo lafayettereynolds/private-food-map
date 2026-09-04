@@ -212,6 +212,10 @@ Mandatory Release properties:
 
 The Phase 1 internal shell remains a diagnostic host. Phase 2A adds Capacitor 8.5.1 and the signed local bundle to the existing `com.lafayette.tastemap` target without changing Team, signing, Bundle ID, App Group, Sign in with Apple, Share Extension or other capabilities. Phase 2B adds a reproducible Debug-only staging command for fixed-Simulator evidence; the fixture and Debug default route are rejected by Release verification and restored out of the formal Release resources before commit/build. Debug can opt into `HYBRID_DEVELOPMENT` with `--tastemap-hybrid-development`; that mode and switch do not compile into Release. Release remains `NATIVE_PRIMARY` until Lafayette separately approves `HYBRID_PRIMARY`.
 
+### Development companion app isolation
+
+The shared Xcode scheme `TasteMap QA` builds configuration `DebugQA` as the independently installable companion app `味图测试`. Its bundle identifier is `com.lafayette.tastemap.qa`; its Share Extension uses `com.lafayette.tastemap.qa.ShareExtension`; and both targets use `group.com.lafayette.tastemap.qa`. The private app keeps `com.lafayette.tastemap` and `group.com.lafayette.tastemap`. Never reuse the private identifiers for QA installation: the separate application sandbox, default Keychain access group and App Group are what prevent test login, local data and pending share imports from overwriting or leaking into Lafayette's private app. `DebugQA` is development-only, starts with the isolated rich product fixture, uses the badged `AppIconQA` asset, and is not a Release/App Store configuration.
+
 ## 11. Migration lifecycle
 
 Each route advances independently:
