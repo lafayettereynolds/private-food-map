@@ -1,11 +1,17 @@
 import type { ProfileAvatarPresetContract } from './profileContract'
 import type { RestaurantPlaceProvider } from '../types/restaurantIdentity'
+import { RECOMMENDATION_EVIDENCE_POLICY } from './recommendationEvidencePolicy'
 
 export const DISCOVERY_API_VERSION = 1 as const
 export const DISCOVERY_DEFAULT_LIMIT = 20
 export const DISCOVERY_MAX_LIMIT = 50
-export const DISCOVERY_SIMILAR_TASTE_MINIMUM_SHARED_RESTAURANTS = 3
+export const DISCOVERY_SIMILAR_TASTE_MINIMUM_SHARED_RESTAURANTS = RECOMMENDATION_EVIDENCE_POLICY.forming.minimumSharedRestaurants
 export const DISCOVERY_TREND_WINDOWS = [7, 30] as const
+/** User-facing Discovery qualification is defined on the 10-point scale. */
+export const DISCOVERY_MINIMUM_QUALIFIED_SCORE_OUT_OF_TEN = 7.5
+/** Legacy Visit.rating storage remains 5-point for API compatibility only. */
+export const DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE =
+  DISCOVERY_MINIMUM_QUALIFIED_SCORE_OUT_OF_TEN / 2
 
 export type DiscoveryModeV1 = 'for_you' | 'similar_taste' | 'trending'
 export type DiscoveryViewerRestaurantStateV1 = 'none' | 'want_to_go' | 'visited'
@@ -14,12 +20,19 @@ export type DiscoveryConfidenceV1 = 'insufficient' | 'low' | 'medium' | 'high'
 export type DiscoveryReasonCodeV1 =
   | 'COLD_START_TRENDING'
   | 'TASTE_TAG_MATCH'
+  | 'HIGH_CUISINE_MATCH'
+  | 'REPEAT_VISIT_PATTERN'
+  | 'PRICE_RANGE_MATCH'
+  | 'SHORT_TERM_DIVERSITY'
+  | 'SOURCE_VISIT_RATING'
   | 'SIMILAR_USERS'
   | 'FRIEND_HIGH_RATING'
   | 'FOLLOWING_HIGH_RATING'
   | 'COMMUNITY_QUALITY'
   | 'TRENDING_UNIQUE_USERS'
   | 'RECENT_WANT_TO_GO'
+  | 'INITIAL_HISTORY_MATCH'
+  | 'WANT_TO_GO_MATCH'
 
 export interface DiscoveryPlaceIdentityV1 {
   provider: RestaurantPlaceProvider
@@ -28,6 +41,7 @@ export interface DiscoveryPlaceIdentityV1 {
 }
 
 export interface DiscoveryPhotoProjectionV1 {
+  photoKind?: string
   photoId: string
   variant: 'thumbnail'
   sourceType?: 'currentOwnerPhoto' | 'activityAuthorPhoto' | 'publicUGC'
@@ -76,6 +90,8 @@ export interface DiscoveryActivityProjectionV1 {
   visitId: string
   visitedAt: string
   rating: number | null
+  /** Complete eligible album for this Visit, never photos from another Visit. */
+  photos?: DiscoveryPhotoProjectionV1[]
 }
 
 export interface DiscoveryRatingProjectionV1 {
@@ -93,6 +109,7 @@ export interface DiscoveryRatingsV1 {
 export interface DiscoveryReasonV1 {
   code: DiscoveryReasonCodeV1
   text: string
+  evidence?: import('../services/recommendationHistoryReasons').RecommendationReasonEvidence
 }
 
 export interface DiscoveryTrendContextV1 {
@@ -104,6 +121,9 @@ export interface DiscoveryTrendContextV1 {
 export interface DiscoverySimilarityContextV1 {
   percent: number
   sharedRestaurantCount: number
+  evidenceState?: import('./recommendationEvidencePolicy').TasteEvidenceState
+  weightedSimilarity?: number
+  userMeanOutOfTen?: number
 }
 
 export interface DiscoveryCardV1 {
@@ -116,13 +136,27 @@ export interface DiscoveryCardV1 {
   sourceUser: DiscoveryPublicUserProjectionV1 | null
   activity: DiscoveryActivityProjectionV1 | null
   similarity: DiscoverySimilarityContextV1 | null
+  tasteEvidence?: {
+    evidenceState: import('./recommendationEvidencePolicy').TasteEvidenceState
+    sharedRestaurantCount: number
+    supporterCount: number
+    aggregation: 'equal_user_mean'
+    latestVisibleVisitAt: string
+    records: Array<{ user: DiscoveryPublicUserProjectionV1; visitId: string; visitedAt: string; rating: number | null }>
+  }
   trend: DiscoveryTrendContextV1 | null
   cacheScope: DiscoveryCacheScopeV1
   rank: number
   score: number
+  /** History-derived matching index, never a calibrated probability. */
+  personalTastePercent?: number | null
+  calibratedLikeProbability?: import('./recommendationSignal').CalibratedLikeProbability | null
 }
 
 export interface DiscoveryPageV1 {
+  filterCapabilities?: import('./discoveryFilters').DiscoveryFilterCapabilities
+  filterTaxonomy?: import('./discoveryFilters').DiscoveryFilterTaxonomy
+  appliedQuery?: import('./discoveryFilters').DiscoveryAppliedQuery
   apiVersion: typeof DISCOVERY_API_VERSION
   mode: DiscoveryModeV1
   city: string
@@ -130,4 +164,10 @@ export interface DiscoveryPageV1 {
   generatedAt: string
   items: DiscoveryCardV1[]
   nextCursor: string | null
+  evidenceAvailability?: {
+    personalRatedRestaurantCount: number
+    personalScoreStandardDeviationOutOfTen: number
+    personalEvidence: 'insufficient' | 'eligible'
+    localDirectRestaurantCount: number
+  }
 }

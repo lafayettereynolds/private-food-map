@@ -4,6 +4,19 @@ import SwiftUI
 import UIKit
 #endif
 
+/// Explicit owner artwork is not a cuisine suggestion. Preserve one complete
+/// Unicode emoji (including flags/ZWJ/skin tone) instead of food-allowlisting it.
+nonisolated enum RestaurantOwnerAvatarEmojiPolicy {
+    static func normalized(_ input: String?) -> String? {
+        guard let value = input?.trimmingCharacters(in: .whitespacesAndNewlines),
+              value.count == 1, value.unicodeScalars.count <= 16 else { return nil }
+        return value.unicodeScalars.contains {
+            $0.properties.isEmojiPresentation || $0.value == 0xFE0F || $0.value == 0x20E3 ||
+                (0x1F1E6...0x1F1FF).contains($0.value)
+        } ? value : nil
+    }
+}
+
 /// One cross-surface contract for Restaurant-facing imagery.
 ///
 /// A Food & Dining visual is an honest final fallback. It must never mask a
@@ -159,6 +172,19 @@ extension RestaurantImagePriorityPolicy {
 /// preferred, followed by a Restaurant marker photo and then the newest valid
 /// user photo. Page-specific renderers must not invent another ordering.
 nonisolated enum RestaurantImagePhotoSelectionPolicy {
+    /// Content imagery is not a customizable Restaurant avatar. Only actual
+    /// Visit/dish photographs may enter heroes, albums or automatic selection.
+    static func actualPhotos(restaurantID: UUID, photos: [PhotoAsset]) -> [PhotoAsset] {
+        photos.filter {
+            $0.restaurantId == restaurantID && [.visit, .dish].contains($0.kind)
+                && $0.deletedAt == nil && $0.binaryDeletedAt == nil && $0.uploadState != .deleted
+        }.sorted(by: photoSort)
+    }
+
+    static func preferredContentPhoto(restaurantID: UUID, photos: [PhotoAsset]) -> PhotoAsset? {
+        actualPhotos(restaurantID: restaurantID, photos: photos).first
+    }
+
     static func preferredPhoto(
         restaurantID: UUID,
         photos: [PhotoAsset],
@@ -178,7 +204,9 @@ nonisolated enum RestaurantImagePhotoSelectionPolicy {
            }) {
             return matched
         }
-        return active.sorted(by: photoSort).first
+        // An unreferenced custom avatar is never an automatic candidate for a
+        // different avatar selection. Explicit references above still win.
+        return actualPhotos(restaurantID: restaurantID, photos: active).first
     }
 
     private static func photoSort(_ lhs: PhotoAsset, _ rhs: PhotoAsset) -> Bool {
@@ -354,6 +382,8 @@ struct TasteMapRestaurantImage: View {
     var fallbackBackgroundColor: Color = TasteMapCoreTheme.surfaceSubtle
     var fallbackIconSize: CGFloat = 44
     var categoryVisualID: FoodCategoryVisualID = .other
+    var foodLibraryArtwork: FoodLibraryArtworkDescriptor?
+    var missingImageLabel: String?
     var accessibilityLabel: String = "餐厅图片"
 
     @Environment(\.photoTransferCoordinator) private var coordinator
@@ -369,8 +399,20 @@ struct TasteMapRestaurantImage: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
             } else if finished || resolution.isFallbackOnly {
-                FoodCategoryVisual(id: categoryVisualID, accessibilityLabel: accessibilityLabel)
-                    .frame(width: fallbackIconSize, height: fallbackIconSize)
+                if let foodLibraryArtwork {
+                    FoodLibraryArtwork(descriptor: foodLibraryArtwork)
+                } else if let missingImageLabel {
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo")
+                            .font(.system(size: min(fallbackIconSize, 34), weight: .regular))
+                        Text(missingImageLabel)
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(fallbackForegroundColor.opacity(0.72))
+                } else {
+                    FoodCategoryVisual(id: categoryVisualID, accessibilityLabel: accessibilityLabel)
+                        .frame(width: fallbackIconSize, height: fallbackIconSize)
+                }
             } else {
                 ProgressView()
                     .tint(fallbackForegroundColor)
@@ -402,7 +444,9 @@ struct TasteMapRestaurantImage: View {
         case .localUserPhoto: "用户真实照片"
         case .publicOrCachedPhoto: "公开餐厅照片"
         case .providerMerchantImage: "商户餐厅照片"
-        case .foodDiningFallback, .none: finished || resolution.isFallbackOnly ? "暂无真实图片" : "正在加载"
+        case .foodDiningFallback, .none:
+            finished || resolution.isFallbackOnly
+                ? (foodLibraryArtwork == nil ? "暂无真实图片" : "食物素材插画，非餐厅实拍") : "正在加载"
         }
     }
 

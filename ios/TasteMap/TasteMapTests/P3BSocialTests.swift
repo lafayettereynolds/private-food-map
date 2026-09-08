@@ -100,6 +100,17 @@ struct P3BSocialTests {
         #expect(try store.cachedFriendships(currentUserID: "tm_a").isEmpty)
     }
 
+    @Test("Visible friends contain only people with reciprocal follows")
+    func visibleFriendsRequireMutualFollow() {
+        let followers = [
+            socialResult(userID: "tm_b", isFollowing: true),
+            socialResult(userID: "tm_c", isFollowing: false),
+            socialResult(userID: "tm_d", isFollowing: true),
+        ]
+        #expect(SocialHubSection.allCases == [.friends, .following, .followers, .recommendations])
+        #expect(SocialRelationshipSectionPolicy.mutualFriends(fromFollowers: followers).map(\.id) == ["tm_b", "tm_d"])
+    }
+
     @Test("Companion linking is explicit, survives rename/unfriend, and can be unlinked")
     func companionLinking() throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -127,6 +138,17 @@ struct P3BSocialTests {
             ),
             friendshipId: state == .none ? nil : "friendship:tm_a:tm_b",
             friendshipState: state, isFollowing: false
+        )
+    }
+
+
+    private func socialResult(userID: String, isFollowing: Bool) -> SocialUserResultV1 {
+        .init(
+            profile: .init(
+                userId: userID, displayName: userID, bio: nil, city: "杭州",
+                avatarPhotoId: nil, avatarPresetId: .otter
+            ),
+            friendshipId: nil, friendshipState: .none, isFollowing: isFollowing
         )
     }
 }

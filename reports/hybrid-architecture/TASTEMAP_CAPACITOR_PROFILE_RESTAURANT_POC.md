@@ -57,7 +57,7 @@ TasteMapBrowserAdapter       TasteMapNativeAdapter
 
 - Browser adapter 使用与 Native seed 相同的确定性 dataset。
 - Browser Profile → 去过 → Restaurant Detail → 返回 Profile 实际点击通过。
-- Profile 显示 `76` 关注、`128` 被关注、`3` 去过、`2` 想去、`¥458` 总消费。
+- Profile 显示 `76` 关注、`128` 粉丝、`3` 去过、`2` 想去、`¥458` 总消费。
 - 正式命名为“最佳饭搭子”“谁最会种草”。
 - 正常 Web build 通过；受影响的 Profile/Restaurant 现有 Web 回归一并通过。
 

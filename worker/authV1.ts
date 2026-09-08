@@ -90,6 +90,8 @@ export class AuthV1RequestError extends Error {
   }
 }
 
+import { registrationReferral } from './referralsV1'
+
 export async function handleAuthV1Request(
   request: Request,
   env: AuthV1Env,
@@ -210,6 +212,8 @@ async function createTasteMapUser(
   const identityID = randomToken('tm_identity_', 18)
   const email = normalizedEmail(claims.email)
   const displayName = [cleanName(payload.givenName), cleanName(payload.familyName)].filter(Boolean).join(' ') || 'Taste Map 用户'
+  const attribution = await registrationReferral(database, payload.referralCode, userID, now)
+    .catch(() => { throw badRequest('邀请码无效，请检查后重试。', 'invalid_referral_code') })
   await database.batch([
     database.prepare(`INSERT INTO users (
       id, auth_provider, auth_subject, email, nickname, bio, city, created_at, updated_at
@@ -219,6 +223,7 @@ async function createTasteMapUser(
       id, user_id, provider, provider_subject, email, created_at, updated_at, last_authenticated_at
     ) VALUES (?, ?, 'apple', ?, ?, ?, ?, ?)`)
       .bind(identityID, userID, claims.sub, email, now.toISOString(), now.toISOString(), now.toISOString()),
+    ...attribution,
   ])
   return { id: identityID, user_id: userID, email }
 }

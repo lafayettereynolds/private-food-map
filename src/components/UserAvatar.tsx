@@ -27,7 +27,9 @@ export function UserAvatar({
   return <span className="user-avatar-content">
     <span className="user-avatar-clip">
       {avatarImageData || avatarPhotoId
-        ? <SyncedImage alt={alt} photoId={avatarPhotoId} source={avatarImageData} />
+        ? <SyncedImage alt={alt} photoId={avatarPhotoId} source={avatarImageData}
+            fallback={<PresetAvatar id={avatarPresetId} />}
+            failureFallback={<PresetAvatar id={avatarPresetId} />} />
         : <PresetAvatar id={avatarPresetId} />}
     </span>
   </span>

@@ -2,6 +2,9 @@ import type { Coordinates, PoiSearchResult } from '../types/domain'
 import { loadAmap, type AMapNamespace } from './amap'
 import { AmapProvider } from './maps/amapProvider'
 import type { MapProvider, NavigationTarget, PlaceResult, PlaceSearchOptions } from './maps/types'
+import { rankRestaurantSearchMatches } from './restaurantSearchRelevance'
+
+export { rankRestaurantSearchMatches } from './restaurantSearchRelevance'
 
 function toLegacyPoi(place: PlaceResult): PoiSearchResult {
   return {
@@ -12,6 +15,7 @@ function toLegacyPoi(place: PlaceResult): PoiSearchResult {
     district: place.district,
     longitude: place.longitude,
     latitude: place.latitude,
+    categoryHints: place.categoryHints,
     merchantImageUrl: place.merchantImageUrl,
     phone: place.phone,
     openingHours: place.openingHours,
@@ -70,7 +74,17 @@ export class MapService {
   // Transitional adapter for the existing Web forms. The external provider ID
   // stays outside Taste Map's stable Restaurant.id.
   async searchRestaurantPois(keyword: string, city?: string, options: PlaceSearchOptions = {}) {
-    return (await this.searchPlaces(keyword, city, options)).map(toLegacyPoi)
+    const variants = keyword.trim() === '兰州拉面' ? [keyword, '兰州牛肉拉面'] : [keyword]
+    const batches = await Promise.all(variants.map((variant, index) =>
+      this.searchPlaces(variant, city, options).catch((error: unknown) => {
+        if (index === 0) throw error
+        return []
+      })))
+    const values = batches.flat().filter((item, index, all) => all.findIndex((other) => other.externalId === item.externalId) === index)
+    return rankRestaurantSearchMatches(
+      values.map(toLegacyPoi),
+      keyword,
+    )
   }
 
   async searchNearbyRestaurantPois(

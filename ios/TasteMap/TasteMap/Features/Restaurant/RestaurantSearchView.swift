@@ -10,7 +10,7 @@ struct RestaurantSearchView: View {
     private let selectionTitle: String?
 
     init(
-        searchService: any RestaurantSearching = MapKitRestaurantSearchService(),
+        searchService: any RestaurantSearching = WorldwideRestaurantSearchService(),
         initialQuery: String = "",
         onAction: @escaping (RestaurantCandidate, RestaurantSearchAction) throws -> Void
     ) {
@@ -23,7 +23,7 @@ struct RestaurantSearchView: View {
     }
 
     init(
-        searchService: any RestaurantSearching = MapKitRestaurantSearchService(),
+        searchService: any RestaurantSearching = WorldwideRestaurantSearchService(),
         initialQuery: String = "",
         selectionTitle: String,
         onSelect: @escaping (RestaurantCandidate) throws -> Void

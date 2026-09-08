@@ -21,6 +21,7 @@ function toPlaceResult(poi: Awaited<ReturnType<typeof searchRestaurantPois>>[num
     district: poi.district,
     longitude: poi.longitude,
     latitude: poi.latitude,
+    categoryHints: poi.categoryHints,
     merchantImageUrl: poi.merchantImageUrl,
     phone: poi.phone ?? null,
     openingHours: poi.openingHours ?? null,

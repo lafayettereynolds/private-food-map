@@ -161,6 +161,7 @@ enum SyncRecordMapper {
             longTermNote: previous?.longTermNote ?? "",
             pricePerPerson: previous?.pricePerPerson,
             phone: previous?.phone,
+            websiteUrl: previous?.websiteUrl,
             openingHours: previous?.openingHours,
             markerType: previous?.markerType ?? .emoji,
             markerPhotoId: previous?.markerPhotoId,

@@ -1,5 +1,12 @@
 export type MembershipEntitlementSource =
   | 'app_store_monthly'
+  | 'app_store_annual'
+  | 'gift_annual'
+  | 'gift_lifetime'
+  | 'app_store_subscription'
+  | 'promotion'
+  | 'signup_trial'
+  | 'referral_reward'
   | 'app_store_yearly'
   | 'app_store_lifetime'
   | 'admin_grant'
@@ -11,6 +18,9 @@ export interface MembershipEntitlement {
   userId: string
   source: MembershipEntitlementSource
   startsAt: string
+  startedAt?: string
+  grantedAt?: string
+  grantedBy?: string | null
   expiresAt: string | null
   isLifetime: boolean
   status: 'active' | 'revoked'

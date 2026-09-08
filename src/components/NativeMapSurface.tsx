@@ -8,6 +8,22 @@ import type { MyMapSurfaceProps } from './MyMapBrowsePage'
 
 type NativeMapSurfaceProps = MyMapSurfaceProps
 
+type MapVisualViewport = Pick<VisualViewport, 'width' | 'height' | 'offsetLeft' | 'offsetTop'>
+
+export function nativeMapViewportGeometry(width: number, height: number, visualViewport?: MapVisualViewport | null) {
+  const visual = visualViewport && visualViewport.width > 0 && visualViewport.height > 0 ? visualViewport : null
+  return {
+    width: visual?.width ?? width,
+    height: visual?.height ?? height,
+    rect: (value: Pick<DOMRect, 'x' | 'y' | 'width' | 'height'>): TasteMapNativeMapSurfaceRect => ({
+      x: value.x - (visual?.offsetLeft ?? 0),
+      y: value.y - (visual?.offsetTop ?? 0),
+      width: value.width,
+      height: value.height,
+    }),
+  }
+}
+
 export const hybridMapReactControlSelector = [
   '.tm-my-map__add',
   '.tm-my-map__location-note',
@@ -32,7 +48,7 @@ export function isRenderedHybridMapReactControl(value: Pick<HTMLElement, 'getCli
  */
 export function NativeMapSurface({
   active, interactionBlocked, platform, restaurants, images, selectedRestaurantID, scope, filters,
-  sort, search, cameraFitKey, currentUser, overlayRevision, onError,
+  sort, search, cameraFitKey, currentUser, tasteDataProgress, overlayRevision, onError,
 }: NativeMapSurfaceProps) {
   const elementRef = useRef<HTMLDivElement>(null)
   const latestRequestID = useRef('')
@@ -42,23 +58,24 @@ export function NativeMapSurface({
 
   const updateSurface = useCallback(() => {
     if (scheduledFrame.current != null) cancelAnimationFrame(scheduledFrame.current)
-    scheduledFrame.current = requestAnimationFrame(() => {
+    const commitSurface = () => {
       scheduledFrame.current = null
       const element = elementRef.current
       const frame = element?.getBoundingClientRect()
       if (!frame) return
-      lastFrame.current = rect(frame)
+      const viewport = nativeMapViewportGeometry(window.innerWidth, window.innerHeight, window.visualViewport)
+      lastFrame.current = viewport.rect(frame)
       const requestID = globalThis.crypto?.randomUUID?.() ?? `mapkit-${Date.now()}-${Math.random()}`
       const visible = active && !interactionBlocked
       const request: TasteMapNativeMapSurfaceUpdateRequest = {
         requestID,
         visible,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        frame: rect(frame),
+        viewportWidth: viewport.width,
+        viewportHeight: viewport.height,
+        frame: viewport.rect(frame),
         reactControlExclusions: Array.from(document.querySelectorAll<HTMLElement>(hybridMapReactControlSelector))
           .filter(isRenderedHybridMapReactControl)
-          .map((value) => rect(value.getBoundingClientRect())),
+          .map((value) => viewport.rect(value.getBoundingClientRect())),
         scope,
         filters,
         sort,
@@ -67,14 +84,16 @@ export function NativeMapSurface({
         selectedRestaurantID,
         userAvatarPresetID: currentUser.avatarPresetId,
         userAvatarPhotoID: currentUser.avatarPhotoId ?? null,
-        markers: visible ? restaurants.map((restaurant) => ({
+        tasteDataProgress,
+        markers: visible ? restaurants.map((restaurant, index) => ({
           id: restaurant.id,
           name: restaurant.name,
           latitude: restaurant.latitude,
           longitude: restaurant.longitude,
           status: scope === 'recommended' ? 'recommended' as const : restaurant.status,
+          recommendationRank: scope === 'recommended' ? restaurant.recommendationRank ?? index + 1 : null,
           visitCount: restaurant.visitCount,
-          averageRating: restaurant.averageRating,
+          averageRating: scope === 'recommended' ? null : restaurant.averageRating,
           fallbackEmoji: resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji),
           image: images[restaurant.id] ?? {
             kind: 'foodDiningFallback' as const,
@@ -95,8 +114,12 @@ export function NativeMapSurface({
         lastSurfaceSignature.current = ''
         onError(reason instanceof Error ? reason.message : '原生 MapKit 地图暂时不可用。')
       })
-    })
-  }, [active, cameraFitKey, currentUser.avatarPhotoId, currentUser.avatarPresetId, filters, images, interactionBlocked, onError, platform, restaurants, scope, search, selectedRestaurantID, sort])
+    }
+    // Hiding is a lifecycle transition, not a geometry update. Do not leave
+    // MapKit over the next route while waiting for another animation frame.
+    if (!active || interactionBlocked) commitSurface()
+    else scheduledFrame.current = requestAnimationFrame(commitSurface)
+  }, [active, cameraFitKey, currentUser.avatarPhotoId, currentUser.avatarPresetId, filters, images, interactionBlocked, onError, platform, restaurants, scope, search, selectedRestaurantID, sort, tasteDataProgress])
 
   const updateSurfaceRef = useRef(updateSurface)
   updateSurfaceRef.current = updateSurface
@@ -110,9 +133,16 @@ export function NativeMapSurface({
     const observer = new ResizeObserver(requestUpdate)
     observer.observe(element)
     window.addEventListener('resize', requestUpdate)
+    window.addEventListener('scroll', requestUpdate, { passive: true })
+    const visualViewport = window.visualViewport
+    visualViewport?.addEventListener('resize', requestUpdate)
+    visualViewport?.addEventListener('scroll', requestUpdate)
     return () => {
       observer.disconnect()
       window.removeEventListener('resize', requestUpdate)
+      window.removeEventListener('scroll', requestUpdate)
+      visualViewport?.removeEventListener('resize', requestUpdate)
+      visualViewport?.removeEventListener('scroll', requestUpdate)
       if (scheduledFrame.current != null) cancelAnimationFrame(scheduledFrame.current)
     }
   }, [])
@@ -133,6 +163,7 @@ export function NativeMapSurface({
       selectedRestaurantID: null,
       userAvatarPresetID: 'polar-bear',
       userAvatarPhotoID: null,
+      tasteDataProgress: null,
       markers: [],
     }).catch(() => undefined)
   }, [platform])
@@ -144,8 +175,4 @@ export function NativeMapSurface({
     data-restaurant-count={restaurants.length}
     ref={elementRef}
   />
-}
-
-function rect(value: DOMRect): TasteMapNativeMapSurfaceRect {
-  return { x: value.x, y: value.y, width: value.width, height: value.height }
 }

@@ -1,201 +1,149 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Download, MapPin, ReceiptText, Share2, Sparkles, Star, TicketCheck, Utensils, WalletCards } from 'lucide-react'
-import { rankTasteTags } from '../services/tasteProfileCore'
-import type { AnalysisShareData, AnalysisShareType } from '../types/analysisShare'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BarChart3, Download, Image, Share2 } from 'lucide-react'
+import { PremiumFeatureLabel } from './PremiumFeatureLabel'
+import { usePremiumAccess } from './PremiumAccess'
+import { openPremiumPaywall } from '../services/premiumPaywall'
+import type { MembershipFeature } from '../services/featurePolicy'
+import type { AnalysisShareData } from '../types/analysisShare'
 import type { TasteMapPlatform, TasteMapProfileDashboardViewModel } from '../platform/TasteMapPlatform'
-import { renderAnalysisPosterBlob, downloadAnalysisPoster } from '../services/analysisPosterRenderer'
-import { HybridPageHeader, HybridRestaurantImage, HybridState } from './TasteMapHybridShared'
-import { HYBRID_ANALYTICS_MODES } from '../hybrid/app/HybridProductContracts'
+import { renderAnalysisPosterBlob, downloadAnalysisPoster, shareAnalysisPoster } from '../services/analysisPosterRenderer'
+import { buildAnalyticsReport } from '../services/analyticsReport'
+import { analyticsReportOwnerPosterData, analyticsReportShareData, analyticsReportShareText } from '../services/analyticsReportShare'
+import { HybridBackButton, HybridPageHeader, HybridState } from './TasteMapHybridShared'
+import { HYBRID_ANALYTICS_MODES, HYBRID_ANALYTICS_MODULES } from '../hybrid/app/HybridProductContracts'
+import { ZoomablePosterPreview } from './ZoomablePosterPreview'
+import { AnalyticsReportDataView } from './AnalyticsReportDataView'
+import { TasteProfileExplorer } from './TasteProfileExplorer'
+import { RecommendationSourceExplorer } from './RecommendationSourceExplorer'
+import { PeriodMemoryExplorer } from './PeriodMemoryExplorer'
+import { MemoryPoster } from './MemoryPoster'
+import { analyticsMemoryShareData } from '../services/analyticsMemoryShare'
+import { getAnalyticsReadingFilter, setAnalyticsReadingFilter, type AnalyticsExploreFilter } from '../services/analyticsExploreQuery'
 
 export type AnalyticsMode = 'taste' | 'companion' | 'source' | 'monthly' | 'annual'
-const modes: ReadonlyArray<readonly [AnalyticsMode, string]> = HYBRID_ANALYTICS_MODES
+type AnalyticsModule = 'data' | 'poster'
+// IDs and period only; no record snapshot survives a route handoff.
+let readingPeriod: { owner: string; year: number; month: number } | undefined
 
-export function TasteMapAnalyticsPage({ platform, profile, onOpenRestaurant, initialMode = 'taste' }: { platform: TasteMapPlatform; profile: TasteMapProfileDashboardViewModel; onOpenRestaurant: (id: string) => void; initialMode?: AnalyticsMode }) {
+export function TasteMapAnalyticsPage({ platform, profile, onOpenRestaurant, initialMode = 'taste', singleReport = false, onBack }: { platform: TasteMapPlatform; profile: TasteMapProfileDashboardViewModel; onOpenRestaurant: (id: string) => void; initialMode?: AnalyticsMode; singleReport?: boolean; onBack?: () => void }) {
+  const premium = usePremiumAccess()
   const [mode, setMode] = useState<AnalyticsMode>(initialMode)
-  const [poster, setPoster] = useState(false)
-  useEffect(() => { setMode(initialMode); setPoster(false) }, [initialMode])
-  const model = useMemo(() => buildAnalyticsModel(profile, mode), [mode, profile])
-  if (!profile.visits.length) return <main className="tm-hybrid-page"><HybridPageHeader eyebrow="ANALYSIS" title="数据分析" /><HybridState kind="empty" message="记录真实到访后，Taste Map 才会生成口味与回顾结论。" title="还没有足够数据" /></main>
-  return <main className="tm-hybrid-page tm-hybrid-analytics" data-analysis-mode={mode}>
-    <HybridPageHeader description="只根据你的真实餐厅、到访、评分与消费记录动态生成。" eyebrow="TASTE MAP ANALYSIS" title="数据分析" trailing={<button className="tm-hybrid-page-action" onClick={() => setPoster((value) => !value)} type="button">{poster ? <Sparkles size={16} /> : <Share2 size={16} />}{poster ? '返回分析' : '分享海报'}</button>} />
-    <div className="tm-hybrid-analysis-tabs" role="tablist">{modes.map(([value, label]) => <button aria-selected={mode === value} key={value} onClick={() => { setMode(value); setPoster(false) }} role="tab" type="button">{label}</button>)}</div>
-    {poster ? <TasteMapAnalysisPoster model={model} platform={platform} profile={profile} /> : <AnalysisInfographic model={model} onOpenRestaurant={onOpenRestaurant} profile={profile} />}
+  const [module, setModule] = useState<AnalyticsModule>('data')
+  const [posterAudience, setPosterAudience] = useState<'owner' | 'share'>('owner')
+  // A refreshed owner snapshot gets a fresh as-of clock; switching presentation does not.
+  const now = useMemo(() => new Date(), [profile])
+  const [year, setYear] = useState(readingPeriod?.owner === profile.user.id ? readingPeriod.year : now.getFullYear())
+  const [month, setMonth] = useState(readingPeriod?.owner === profile.user.id ? readingPeriod.month : now.getMonth() + 1)
+  const [companionID, setCompanionID] = useState<string | undefined>()
+  const sourceFromTaste = useRef(false)
+  const [sourceFilter, setSourceFilter] = useState<AnalyticsExploreFilter>({})
+  const [sourcePoster, setSourcePoster] = useState(false)
+  const [sourceID, setSourceID] = useState<string | undefined>()
+  const [dataSourceDetailID, setDataSourceDetailID] = useState<string | undefined>()
+  const [tasteFilter, setTasteFilter] = useState<AnalyticsExploreFilter>(() => getAnalyticsReadingFilter(profile.user.id))
+  const filterOwner = useRef(profile.user.id)
+  useEffect(() => { readingPeriod = { owner: profile.user.id, year, month } }, [profile.user.id, year, month])
+  const applyTasteFilter = (value: AnalyticsExploreFilter) => { setAnalyticsReadingFilter(profile.user.id, value); setTasteFilter(value) }
+  useEffect(() => { if (filterOwner.current !== profile.user.id) { filterOwner.current = profile.user.id; applyTasteFilter({}); setYear(now.getFullYear()); setMonth(now.getMonth() + 1); setSourceFilter({}); setSourcePoster(false); sourceFromTaste.current = false } }, [profile.user.id])
+  const memoryShare = useRef<(() => void) | null>(null)
+  const registerMemoryShare = useRef((handler: (() => void) | null) => { memoryShare.current = handler }).current
+  const explorerBack = useRef<(() => boolean) | null>(null)
+  const registerExplorerBack = useRef((handler: (() => boolean) | null) => { explorerBack.current = handler }).current
+  const [sharing, setSharing] = useState(false)
+  const sharingRef = useRef(false)
+  const [shareError, setShareError] = useState<string | null>(null)
+  const [poster, setPoster] = useState<{ data: AnalysisShareData; blob: Blob; url: string } | null>(null)
+  const [posterError, setPosterError] = useState(false)
+  const [posterAttempt, setPosterAttempt] = useState(0)
+  useEffect(() => { setMode(initialMode); setModule('data') }, [initialMode])
+  useEffect(() => { setCompanionID(undefined); setSourceID(undefined); setDataSourceDetailID(undefined); setShareError(null); setPosterAudience('owner') }, [profile.user.id])
+  const report = useMemo(() => buildAnalyticsReport(profile, { mode, now, year, month, companionID, sourceID, filter: mode === 'taste' ? tasteFilter : mode === 'source' ? sourceFilter : undefined }), [profile, mode, now, year, month, companionID, sourceID, tasteFilter, sourceFilter])
+  // F24 rebuilds from public records, not a private snapshot with names hidden.
+  const memoryV2 = mode === 'source' || mode === 'monthly' || mode === 'annual'
+  const editorialPosterMode = memoryV2 || mode === 'companion'
+  const shareReport = useMemo(() => buildAnalyticsReport(profile, { mode, now, year, month, companionID: report.companion?.selectedCompanionID ?? companionID, sourceID, filter: mode === 'taste' ? tasteFilter : mode === 'source' ? sourceFilter : undefined, excludePrivate: true }), [mode, profile, now, tasteFilter, report, year, month, sourceID, sourceFilter, companionID])
+  const data = useMemo(() => editorialPosterMode ? analyticsMemoryShareData(shareReport, profile) : module === 'poster' && posterAudience === 'owner' ? analyticsReportOwnerPosterData(report, profile) : analyticsReportShareData(shareReport, profile), [report, shareReport, profile, module, posterAudience, editorialPosterMode])
+  const ownerMemoryData = useMemo(() => analyticsMemoryShareData(report, profile, 'owner'), [report, profile])
+  const ownerSourceMemoryData = useMemo(() => analyticsMemoryShareData({ ...report, mode: 'source', title: '谁最会种草' }, profile, 'owner'), [report, profile])
+  const sourceMemoryData = useMemo(() => analyticsMemoryShareData({ ...shareReport, mode: 'source', title: '谁最会种草' }, profile), [shareReport, profile])
+  const years = useMemo(() => [...new Set([now.getFullYear(), ...profile.visits.filter(visit => !visit.deletedAt).map(visit => new Date(visit.visitedAt).getFullYear()).filter(value => Number.isFinite(value) && value <= now.getFullYear())])].sort((a, b) => b - a), [profile.visits, now])
+
+  useEffect(() => {
+    if (module !== 'poster' || editorialPosterMode) return
+    let active = true
+    let url: string | null = null
+    setPosterError(false); setPoster(null)
+    void renderAnalysisPosterBlob(data).then(blob => {
+      if (!active) return
+      url = URL.createObjectURL(blob)
+      setPoster({ data, blob, url })
+    }).catch(() => { if (active) setPosterError(true) })
+    return () => { active = false; if (url) URL.revokeObjectURL(url) }
+  }, [data, module, posterAttempt, editorialPosterMode])
+  const readyPoster = poster?.data === data ? poster : null
+  const share = async () => {
+    // Never send the private preview. First show the exact safe export; the user
+    // reviews it and invokes Share again after generation has completed.
+    if (module === 'poster' && posterAudience === 'owner' && !editorialPosterMode) { setPosterAudience('share'); return }
+    if (sharingRef.current || report.dataState === 'unavailable' || (module === 'poster' && !readyPoster)) return
+    sharingRef.current = true; setSharing(true); setShareError(null)
+    try {
+      if (module === 'data') {
+        const text = memoryV2 ? analysisDataShareText(data) : analyticsReportShareText(shareReport, profile)
+        if (platform.kind === 'browser' && typeof navigator.share !== 'function') downloadAnalysisData(text, data.title)
+        else await platform.share.open({ title: data.title + ' · 数据', text })
+      } else if (readyPoster) {
+        // Export the exact preview blob; never rebuild from a later snapshot.
+        if (platform.kind === 'browser') await shareAnalysisPoster(readyPoster.blob, data)
+        else await platform.share.open({ title: data.title, text: data.summary, imageDataURL: await blobDataURL(readyPoster.blob) })
+      }
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'AbortError')) setShareError('分享未完成，请重试。')
+    } finally { sharingRef.current = false; setSharing(false) }
+  }
+  if (!premium) {
+    const feature: MembershipFeature = ({ taste: 'full_taste_profile', companion: 'companion_analysis', source: 'recommendation_source_analysis', monthly: 'monthly_review', annual: 'annual_review' } as const)[mode]
+    return <main className="tm-hybrid-page tm-hybrid-analytics" data-analysis-mode={mode}><HybridBackButton onBack={onBack ?? (() => void platform.navigation.back())} /><HybridPageHeader title={HYBRID_ANALYTICS_MODES.find(([value]) => value === mode)?.[1] ?? '数据分析'} eyebrow="TASTE MAP ANALYSIS" description="会员功能保留在这里，开通后即可查看；原有记录不会改变。" /><div className="tm-hybrid-analysis-tabs" aria-label="会员分析入口">{['数据', '画报', ...(mode === 'source' ? ['最坑推荐来源'] : [])].map(label => <button key={label} onClick={() => openPremiumPaywall(feature)} type="button"><PremiumFeatureLabel>{label}</PremiumFeatureLabel></button>)}</div><HybridState kind="empty" title="会员专享" message="解锁后可查看完整分析与画报。" /><button className="primary-button" onClick={() => openPremiumPaywall(feature)} type="button">查看会员权益</button></main>
+  }
+  if (sourcePoster) return <main className="tm-hybrid-page tm-hybrid-analytics"><HybridBackButton onBack={() => setSourcePoster(false)} /><MemoryPoster ownerData={ownerSourceMemoryData} data={sourceMemoryData} platform={platform} pageID="S10" /></main>
+  return <main className="tm-hybrid-page tm-hybrid-analytics" data-analysis-mode={mode} data-report-presentation={singleReport ? 'dedicated' : 'overview'}>
+    <HybridBackButton onBack={() => { if (module === 'poster') { setModule('data'); return } if (!explorerBack.current?.()) { if (sourceFromTaste.current && mode === 'source') { sourceFromTaste.current = false; setMode('taste') } else onBack?.() } }} />
+    {!singleReport ? <><HybridPageHeader title="数据分析" eyebrow="TASTE MAP ANALYSIS" description="从真实记录里，读懂你的饮食变化。" /><div aria-label="分析类型" className="tm-hybrid-analysis-tabs" role="tablist">{HYBRID_ANALYTICS_MODES.map(([value, label]) => <button aria-selected={mode === value} key={value} onClick={() => { setMode(value); setModule('data') }} role="tab" type="button">{label}</button>)}</div></> : null}
+    <AnalysisModuleNavigation module={module} onChange={setModule} onShare={() => { if (module === 'poster' && editorialPosterMode) memoryShare.current?.(); else void share() }} sharing={sharing} previewBeforeShare={module === 'poster' && posterAudience === 'owner' && !editorialPosterMode} disabled={report.dataState === 'unavailable' || (module === 'poster' && !editorialPosterMode && !readyPoster)} />
+    {shareError ? <p role="alert">{shareError}</p> : null}
+    {mode === 'companion' && report.companion?.companions.length ? <section className="tm-analysis-period"><label>查看饭搭子<select aria-label="选择饭搭子" value={report.companion.selectedCompanionID ?? ''} onChange={event => setCompanionID(event.target.value)}>{report.companion.companions.map(item => <option key={item.id} value={item.id}>{item.displayName} · {item.sharedVisitCount} 次共同到访</option>)}</select></label></section> : null}
+    {mode === 'taste' && report.dataState !== 'unavailable' ? <div hidden={module !== 'data'}><TasteProfileExplorer key={profile.user.id} report={report} filter={tasteFilter} onFilter={applyTasteFilter} onOpenRestaurant={onOpenRestaurant} onOpenVisit={id => { void platform.navigation.openHybrid({ surface: 'visit', identifier: id }).catch(() => setShareError('到访详情未打开，请重试。')) }} onPoster={() => { setModule('poster'); setPosterAudience('share') }} onSourcePoster={() => setSourcePoster(true)} onOpenSources={() => { sourceFromTaste.current = true; setSourceFilter(tasteFilter); setMode('source'); setModule('data') }} registerBack={registerExplorerBack} /></div> : null}
+    {memoryV2 && report.dataState !== 'unavailable' ? <div hidden={module !== 'data'}>{mode === 'source' ? <RecommendationSourceExplorer report={report} onOpenRestaurant={onOpenRestaurant} onOpenVisit={id => { void platform.navigation.openHybrid({ surface: 'visit', identifier: id }).catch(() => setShareError('记录未打开，请重试。')) }} onPoster={() => setModule('poster')} registerBack={registerExplorerBack} /> : <PeriodMemoryExplorer profile={profile} onSourcePoster={() => setSourcePoster(true)} report={report} year={year} month={month} years={years} onPeriod={(valueYear, valueMonth) => { setYear(valueYear); setMonth(valueMonth) }} onOpenRestaurant={onOpenRestaurant} onOpenVisit={id => { void platform.navigation.openHybrid({ surface: 'visit', identifier: id }).catch(() => setShareError('记录未打开，请重试。')) }} onPoster={() => setModule('poster')} registerBack={registerExplorerBack} />}</div> : null}
+    {report.dataState === 'unavailable' ? <HybridState kind="error" title="当前记录暂时无法分析" message={report.dataNote} /> : module === 'data' ? mode === 'taste' || memoryV2 ? null : <><AnalyticsReportDataView key={report.id} report={report} initialSourceID={dataSourceDetailID} onSelectSource={id => { setSourceID(id); setDataSourceDetailID(id) }} onReturnHome={() => setDataSourceDetailID(undefined)} mode={mode} title={report.title} headline={report.headline} period={report.scope.periodLabel} summary={report.summary} sections={report.sections} evidence={report.evidenceRestaurants} visualEvidence={report.visualEvidence} profile={profile} onOpenRestaurant={onOpenRestaurant} source={report.source} /><p className="tm-analysis-privacy-note">{report.dataNote}</p></> : editorialPosterMode ? <MemoryPoster key={`${profile.user.id}:${mode}:${companionID ?? ''}`} ownerData={ownerMemoryData} data={data} platform={platform} registerShare={registerMemoryShare} pageID={mode === 'source' ? 'S10' : mode === 'monthly' ? 'M08' : mode === 'companion' ? 'C08' : 'Y08'} /> : <section className="tm-hybrid-poster-stage" data-explore-page={mode === 'taste' ? 'F24' : undefined}>
+      <HybridPageHeader title={report.title + '画报'} eyebrow={data.eyebrow} description={report.scope.periodLabel + ' · 当前报告的分享摘要'} />
+      <section className="tm-analysis-poster-audience" aria-label="画报隐私预览">
+        <div><strong>{posterAudience === 'owner' ? '本人完整预览' : '对外分享预览'}</strong><p>{posterAudience === 'owner' ? '与数据版同一份记录，仅在本页查看。' : mode === 'taste' ? '仅用公开记录重新分析，已排除私密和好友记录；下方原图就是分享内容。' : '已隐藏消费与同行信息；下方原图就是分享内容。'}</p></div>
+        <button type="button" onClick={() => setPosterAudience(posterAudience === 'owner' ? 'share' : 'owner')}>{posterAudience === 'owner' ? '查看分享版' : '查看完整版'}</button>
+      </section>
+      <div className="tm-hybrid-poster-preview" aria-label={report.title + '画报预览'} style={{ aspectRatio: mode === 'taste' ? '2 / 3' : '9 / 16' }}>
+        {readyPoster ? <ZoomablePosterPreview src={readyPoster.url} alt={report.title + '分享画报'} /> : posterError ? <HybridState kind="error" title="画报生成失败" message="报告数据仍在，请重新生成。" /> : <HybridState kind="loading" title="生成分享画报" message="正在准备同一份报告的画报。" />}
+      </div>
+      {posterError ? <button type="button" onClick={() => setPosterAttempt(value => value + 1)}>重新生成画报</button> : null}
+      <p className="tm-analysis-privacy-note">{mode === 'taste' ? '1080 × 1620' : '1080 × 1920'} · 可双指缩放查看；{posterAudience === 'owner' ? '分享前请先查看分享版。' : '分享的是当前预览原图。'}完整统计保留在数据模式。</p>
+      {platform.kind === 'browser' && posterAudience === 'share' ? <button className="tm-hybrid-poster-export" type="button" disabled={!readyPoster} onClick={() => readyPoster && downloadAnalysisPoster(readyPoster.blob, data)}><Download size={17} />保存画报</button> : null}
+    </section>}
+    <p className="tm-analysis-privacy-note">数据与画报来自同一份报告。分享默认隐藏消费金额和饭搭子姓名，不分享私人笔记。</p>
   </main>
 }
 
-interface AnalyticsModel {
-  mode: AnalyticsMode
-  title: string
-  eyebrow: string
-  period: string
-  heroLabel: string
-  heroAsset: string
-  heroCaption: string
-  heroRestaurantID: string | null
-  nodes: Array<{ label: string; value: string }>
-  headline: string
-  insights: string[]
-  top: Array<{ label: string; detail: string; restaurantID?: string }>
-  spend: number
-  city: string
-  restaurantCount: number
-  visitCount: number
-  averageRating: number | null
-  timeDistribution: Array<{ label: string; value: number }>
-}
-
-function AnalysisInfographic({ model, profile, onOpenRestaurant }: { model: AnalyticsModel; profile: TasteMapProfileDashboardViewModel; onOpenRestaurant: (id: string) => void }) {
-  return <article className="tm-hybrid-analysis-board">
-    <header className="tm-hybrid-analysis-title"><span>{model.eyebrow}</span><h2>{model.title}</h2><p>{model.period}</p><i aria-hidden="true" /></header>
-    <section className="tm-hybrid-analysis-hero-network" aria-label={`${model.title} 核心食物主视觉`}>
-      <div className="tm-hybrid-analysis-hero"><img alt="" src={model.heroAsset} /><strong>{model.heroLabel}</strong><small>{model.heroCaption}</small></div>
-      <div aria-label="周边分析节点" className="tm-hybrid-analysis-nodes">{model.nodes.slice(0, 6).map((node, index) => <div className={`is-node-${index + 1}`} key={`${node.label}-${index}`}><i aria-hidden="true" /><strong>{node.value}</strong><span>{node.label}</span></div>)}</div>
-    </section>
-    <aside className="tm-hybrid-analysis-overview"><span className="tm-hybrid-analysis-paperclip" aria-hidden="true" /><h3>数据总览</h3><Metric icon={<Utensils size={16} />} label="记录餐厅" value={`${model.restaurantCount} 家`} /><Metric icon={<TicketCheck size={16} />} label="记录到访" value={`${model.visitCount} 次`} /><Metric icon={<WalletCards size={16} />} label="总消费" value={`¥${Math.round(model.spend).toLocaleString('zh-CN')}`} /><Metric icon={<MapPin size={16} />} label="主要城市" value={model.city || '—'} /><Metric icon={<Star size={16} />} label="平均评分" value={model.averageRating ? `${model.averageRating.toFixed(1)} / 5` : '未评分'} /></aside>
-    <section aria-label="核心洞察" className="tm-hybrid-analysis-headline"><small>近期洞察</small><h3>{model.headline}</h3>{model.insights.map((value) => <p key={value}><Sparkles size={15} />{value}</p>)}</section>
-    <section className="tm-hybrid-analysis-top"><h3>{model.mode === 'companion' ? '饭搭子 TOP 3' : model.mode === 'source' ? '来源 TOP 3' : '最常吃 TOP 3'}</h3>{model.top.slice(0, 3).map((value, index) => <button disabled={!value.restaurantID} key={`${value.label}-${index}`} onClick={() => value.restaurantID && onOpenRestaurant(value.restaurantID)} type="button"><b>{index + 1}</b><span><strong>{value.label}</strong><small>{value.detail}</small></span></button>)}</section>
-    <section className="tm-hybrid-analysis-preferences"><h3>口味偏好</h3><div>{model.nodes.slice(0, 6).map((item, index) => <span key={`${item.label}-preference`}><i style={{ '--preference': `${Math.max(14, Number.parseInt(item.value, 10) || 24)}%`, '--preference-index': index } as React.CSSProperties} /><strong>{item.label}</strong><small>{item.value}</small></span>)}</div></section>
-    <section className="tm-hybrid-analysis-distribution"><h3><ReceiptText size={17} />消费与时间</h3><div className="tm-hybrid-analysis-spend"><span>累计消费</span><strong>¥{Math.round(model.spend).toLocaleString('zh-CN')}</strong><small>仅统计填写了“我的实际消费”的到访</small></div><div>{model.timeDistribution.map((item) => <span key={item.label}><i style={{ height: `${Math.max(10, item.value)}%` }} /><b>{item.value}%</b><small>{item.label}</small></span>)}</div></section>
-    <section className="tm-hybrid-analysis-footprint"><h3><MapPin size={17} />城市足迹</h3><strong>{model.city || '仍在积累'}</strong><p>{model.restaurantCount} 家餐厅 · {model.visitCount} 次到访</p><div aria-hidden="true"><i /><i /><i /></div></section>
-    <section className="tm-hybrid-analysis-restaurants"><h3>代表餐厅</h3>{profile.restaurants.filter((item) => item.status === 'visited').sort((a, b) => (b.averageRating ?? 0) - (a.averageRating ?? 0)).slice(0, 3).map((item) => <button key={item.id} onClick={() => onOpenRestaurant(item.id)} type="button"><HybridRestaurantImage image={profile.restaurantImages[item.id]} name={item.name} /><span><strong>{item.name}</strong><small>{item.city} · {item.visitCount} 次到访</small></span></button>)}</section>
-    <footer><span><Utensils size={17} />Taste Map</span><small>基于真实记录生成 · Food Hero 仅在真实偏好支持时表达数据</small></footer>
-  </article>
-}
-
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div><span>{icon}{label}</span><strong>{value}</strong></div> }
-
-function TasteMapAnalysisPoster({ model, profile, platform }: { model: AnalyticsModel; profile: TasteMapProfileDashboardViewModel; platform: TasteMapPlatform }) {
-  const shareData = useMemo(() => posterData(model, profile), [model, profile])
-  const [previewURL, setPreviewURL] = useState<string | null>(null)
-  const [previewError, setPreviewError] = useState(false)
-  useEffect(() => {
-    let active = true
-    let objectURL: string | null = null
-    setPreviewURL(null)
-    setPreviewError(false)
-    void renderAnalysisPosterBlob(shareData).then((blob) => {
-      if (!active) return
-      objectURL = URL.createObjectURL(blob)
-      setPreviewURL(objectURL)
-    }).catch(() => { if (active) setPreviewError(true) })
-    return () => { active = false; if (objectURL) URL.revokeObjectURL(objectURL) }
-  }, [shareData])
-  const exportPoster = async () => {
-    const blob = await renderAnalysisPosterBlob(shareData)
-    if (platform.kind === 'browser') downloadAnalysisPoster(blob, shareData)
-    else await platform.share.open({ title: shareData.title, text: shareData.summary, imageDataURL: await blobDataURL(blob) })
-  }
-  return <section className="tm-hybrid-poster-stage">
-    <div className="tm-hybrid-poster-preview" aria-label={`${model.title} 9:16 海报预览`}>
-      {previewURL ? <img alt={`${model.title} 9:16 分享海报`} src={previewURL} /> : previewError ? <HybridState kind="error" message="海报数据仍然保留，可以重新生成。" title="预览生成失败" /> : <HybridState kind="loading" message="正在用正式 1080 × 1920 renderer 生成预览。" title="生成分享海报" />}
-    </div>
-    <p>此处展示的就是正式 1080 × 1920 renderer 输出，不是另一个简化预览模板。</p>
-    <button className="tm-hybrid-poster-export" disabled={!previewURL} onClick={() => void exportPoster()} type="button"><Download size={17} />{platform.kind === 'browser' ? '导出 9:16 海报' : '打开系统分享'}</button>
-  </section>
+export function AnalysisModuleNavigation({ module, onChange, onShare, sharing = false, disabled = false, previewBeforeShare = false }: { module: AnalyticsModule; onChange: (module: AnalyticsModule) => void; onShare: () => void; sharing?: boolean; disabled?: boolean; previewBeforeShare?: boolean }) {
+  return <section aria-label="分析模块" className="tm-hybrid-analysis-modules"><div role="tablist" aria-label="选择数据或画报">{HYBRID_ANALYTICS_MODULES.map(([value, label]) => <button aria-selected={module === value} key={value} onClick={() => onChange(value)} role="tab" type="button">{value === 'data' ? <BarChart3 size={16} /> : <Image size={16} />}{label}</button>)}</div><button aria-busy={sharing} disabled={sharing || disabled} className="tm-hybrid-analysis-data-share" onClick={onShare} type="button"><Share2 size={16} />{sharing ? '准备分享' : module === 'data' ? '分享数据' : previewBeforeShare ? '预览分享版' : '分享画报'}</button></section>
 }
 
 function blobDataURL(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('海报编码失败'))
-    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('海报编码失败'))
-    reader.readAsDataURL(blob)
-  })
+  return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(reader.error ?? new Error('海报编码失败')); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('海报编码失败')); reader.readAsDataURL(blob) })
 }
 
-function buildAnalyticsModel(profile: TasteMapProfileDashboardViewModel, mode: AnalyticsMode): AnalyticsModel {
-  const restaurants = profile.restaurants.filter((item) => item.status === 'visited')
-  const visits = profile.visits.filter((item) => !item.deletedAt)
-  const restaurantsByID = new Map(restaurants.map((item) => [item.id, item]))
-  const now = new Date()
-  const filteredVisits = mode === 'monthly'
-    ? visits.filter((visit) => { const value = new Date(visit.visitedAt); return value.getFullYear() === now.getFullYear() && value.getMonth() === now.getMonth() })
-    : mode === 'annual' ? visits.filter((visit) => new Date(visit.visitedAt).getFullYear() === now.getFullYear()) : visits
-  const filteredRestaurantIDs = new Set(filteredVisits.map((visit) => visit.restaurantId))
-  const filteredRestaurants = mode === 'monthly' || mode === 'annual'
-    ? restaurants.filter((item) => filteredRestaurantIDs.has(item.id))
-    : restaurants
-  const ratings = filteredVisits.flatMap((visit) => visit.rating == null ? [] : [visit.rating])
-  const spend = filteredVisits.reduce((sum, visit) => sum + (visit.myActualSpend ?? 0), 0)
-  const cuisine = rankTasteTags(filteredVisits.flatMap((visit) => {
-    const restaurant = restaurantsByID.get(visit.restaurantId)
-    return visit.rating == null || !restaurant ? [] : [{ restaurantKey: restaurant.id, tags: restaurant.tags, ratingOutOfTen: visit.rating * 2 }]
-  }))
-  const companionCounts = count(filteredVisits.flatMap((visit) => visit.companions))
-  const sourceCounts = count(filteredVisits.map((visit) => visit.recommendationSourceText).filter(Boolean))
-  const cityCounts = count(filteredRestaurants.map((item) => item.city).filter(Boolean))
-  const topRestaurants = [...filteredRestaurants].sort((a, b) => (b.averageRating ?? 0) - (a.averageRating ?? 0) || b.visitCount - a.visitCount)
-  const diningTimes = [0, 0, 0, 0]
-  filteredVisits.forEach((visit) => { const hour = new Date(visit.visitedAt).getHours(); diningTimes[hour < 10 ? 0 : hour < 15 ? 1 : hour < 21 ? 2 : 3] += 1 })
-  const total = diningTimes.reduce((sum, value) => sum + value, 0) || 1
-  const timeDistribution = ['早餐', '午餐', '晚餐', '夜宵'].map((label, index) => ({ label, value: Math.round(diningTimes[index] / total * 100) }))
-  const firstCuisine = cuisine[0]?.tag ?? restaurants[0]?.tags[0] ?? '餐饮偏好'
-  const heroAsset = foodHeroAsset(firstCuisine)
-  const base = {
-    mode, restaurantCount: filteredRestaurants.length, visitCount: filteredVisits.length,
-    spend, city: cityCounts[0]?.[0] ?? profile.user.city,
-    averageRating: ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null,
-    timeDistribution,
-    heroRestaurantID: topRestaurants[0]?.id ?? null, heroAsset,
-    heroCaption: `基于真实高频偏好 · ${firstCuisine}`,
-  }
-  if (mode === 'companion') {
-    const best = companionCounts[0]
-    return { ...base, title: '最佳饭搭子', eyebrow: 'DINING COMPANION', period: '全部真实到访', heroLabel: '双人餐桌', heroCaption: best ? `${best[0]} · 最常一起吃 ${firstCuisine}` : `高频口味 · ${firstCuisine}`, nodes: companionCounts.slice(0, 6).map(([label, value]) => ({ label, value: `${value} 次` })), headline: best ? `和 ${best[0]} 一起吃过最多` : '饭搭子画像正在形成', insights: [`共同到访覆盖 ${new Set(visits.filter((visit) => visit.companions.includes(best?.[0] ?? '')).map((visit) => visit.restaurantId)).size} 家餐厅`, `最常一起吃 ${firstCuisine}`], top: companionCounts.slice(0, 3).map(([label, value]) => ({ label, detail: `${value} 次共同到访` })) }
-  }
-  if (mode === 'source') {
-    const best = sourceCounts[0]
-    return { ...base, title: '谁最会种草', eyebrow: 'RECOMMENDATION SOURCE', period: '全部真实到访', heroLabel: best?.[0] ?? '推荐来源', heroCaption: `到访后验证 · 高频口味 ${firstCuisine}`, nodes: sourceCounts.slice(0, 6).map(([label, value]) => ({ label, value: `${value} 家` })), headline: best ? `${best[0]} 带来的餐厅最多` : '推荐来源样本还在形成', insights: ['只统计实际到访后的真实结果', `高分餐厅集中在 ${firstCuisine}`], top: sourceCounts.slice(0, 3).map(([label, value]) => ({ label, detail: `${value} 家已到访餐厅` })) }
-  }
-  if (mode === 'monthly' || mode === 'annual') {
-    const period = mode === 'monthly' ? `${now.getFullYear()} 年 ${now.getMonth() + 1} 月` : `${now.getFullYear()} 年`
-    return { ...base, title: mode === 'monthly' ? '本月回顾' : '年度回顾', eyebrow: mode === 'monthly' ? 'MONTHLY REVIEW' : 'ANNUAL REVIEW', period, heroLabel: firstCuisine, heroCaption: `${period} 的味觉主线`, nodes: cuisine.slice(0, 6).map((item) => ({ label: item.tag, value: `${item.visits} 次` })), headline: filteredVisits.length ? `${period} 共留下 ${filteredVisits.length} 次真实到访` : `${period} 还没有到访记录`, insights: [`主要城市是 ${base.city || '未记录'}`, `最高频口味是 ${firstCuisine}`], top: topRestaurants.slice(0, 3).map((item) => ({ label: item.name, detail: `${item.visitCount} 次 · ${item.averageRating?.toFixed(1) ?? '未评分'}`, restaurantID: item.id })) }
-  }
-  return { ...base, title: '我的口味档案', eyebrow: 'TASTE PROFILE', period: '基于全部真实记录', heroLabel: firstCuisine, heroCaption: '你的高频菜系主视觉', nodes: cuisine.slice(0, 6).map((item) => ({ label: item.tag, value: `${Math.round(item.highRatingShare * 100)}%` })), headline: `你最稳定的偏好是 ${firstCuisine}`, insights: [`高频记录集中在 ${base.city || '多个城市'}`, `共记录 ${restaurants.length} 家餐厅与 ${visits.length} 次到访`], top: topRestaurants.slice(0, 3).map((item) => ({ label: item.name, detail: `${item.visitCount} 次 · ${item.averageRating?.toFixed(1) ?? '未评分'}`, restaurantID: item.id })) }
+export function analysisDataShareText(data: AnalysisShareData) {
+  const metrics = data.metrics.map(item => item.label + '：' + item.value + (item.note ? '（' + item.note + '）' : ''))
+  return [data.title, data.subtitle, data.summary, metrics.length ? '\n数据\n' + metrics.join('\n') : '', data.insights.length ? '\n洞察\n' + data.insights.map(item => '• ' + item).join('\n') : '', '\n' + data.footer].filter(Boolean).join('\n')
 }
 
-function foodHeroAsset(label: string) {
-  const value = label.toLocaleLowerCase('zh-CN')
-  if (/(日|寿司|刺身|拉面)/.test(value)) return '/food-heroes/japanese.png'
-  if (/(火锅|烧烤|烤肉|串)/.test(value)) return '/food-heroes/hotpot-grill.png'
-  if (/(西|牛排|意|披萨|汉堡)/.test(value)) return '/food-heroes/western.png'
-  if (/(咖啡|茶|甜|蛋糕|面包)/.test(value)) return '/food-heroes/cafe.png'
-  if (/(中|川|粤|湘|江浙|本帮)/.test(value)) return '/food-heroes/chinese.png'
-  return '/food-heroes/mixed.png'
-}
-
-function posterData(model: AnalyticsModel, profile: TasteMapProfileDashboardViewModel): AnalysisShareData {
-  const type: Record<AnalyticsMode, AnalysisShareType> = { taste: 'TASTE_PROFILE', companion: 'COMPANION_ANALYSIS', source: 'RECOMMENDATION_SOURCE', monthly: 'MONTHLY_REVIEW', annual: 'ANNUAL_REVIEW' }
-  const restaurants = model.top.flatMap((item) => {
-    const restaurant = item.restaurantID ? profile.restaurants.find((value) => value.id === item.restaurantID) : null
-    return restaurant ? [{ restaurantId: restaurant.id, name: restaurant.name, meta: item.detail, image: shareVisual(profile, restaurant.id, restaurant.name) }] : []
-  })
-  return {
-    reportId: `hybrid:${model.mode}:${new Date().toISOString().slice(0, 10)}`, type: type[model.mode], userId: profile.user.id,
-    title: model.title, eyebrow: model.eyebrow, subtitle: model.period, summary: model.headline,
-    periodLabel: model.period, metrics: [{ label: '餐厅', value: `${model.restaurantCount} 家` }, { label: '到访', value: `${model.visitCount} 次` }, { label: '消费', value: `¥${Math.round(model.spend)}` }, { label: '城市', value: model.city }],
-    insights: model.insights, keywords: model.nodes.map((item) => item.label), restaurants,
-    heroCandidates: [{ source: model.heroAsset, photoId: null, origin: 'fallback', label: model.heroLabel }, ...restaurants.map((item) => item.image)], footer: 'Taste Map · 基于真实记录生成', logoSource: '/icons/taste-map-icon-192.png',
-    privacy: { companionNameIncluded: model.mode === 'companion', spendIncluded: true, exactLocationIncluded: false },
-  }
-}
-
-function shareVisual(profile: TasteMapProfileDashboardViewModel, restaurantID: string, name: string) {
-  const descriptor = profile.restaurantImages[restaurantID]
-  if (!descriptor || descriptor.kind === 'foodDiningFallback' || descriptor.kind === 'foodCategoryVisual' || descriptor.kind === 'activityPhoto' || descriptor.kind === 'publicUGC') {
-    return { source: null, photoId: null, origin: 'fallback' as const, label: name, restaurantId: restaurantID }
-  }
-  return {
-    source: descriptor.resourceURL,
-    photoId: 'photoID' in descriptor ? descriptor.photoID : null,
-    origin: descriptor.kind === 'nativeResource' || descriptor.kind === 'ownerPhoto' ? 'visit' as const : descriptor.kind === 'providerMerchant' ? 'provider' as const : 'restaurant' as const,
-    label: name,
-    restaurantId: restaurantID,
-  }
-}
-
-function count(values: string[]) {
-  const result = new Map<string, number>()
-  values.map((value) => value.trim()).filter(Boolean).forEach((value) => result.set(value, (result.get(value) ?? 0) + 1))
-  return [...result].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'))
+function downloadAnalysisData(text: string, title: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = title + '-数据.txt'; anchor.click(); URL.revokeObjectURL(url)
 }

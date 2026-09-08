@@ -39,6 +39,7 @@ struct LocalTasteMapStore {
         if !candidate.placeIdentities.isEmpty {
             restaurant.remoteRecordData = try recordData(
                 for: restaurant,
+                candidate: candidate,
                 candidateIdentities: candidate.placeIdentities,
                 replacingGeneratedIdentity: true
             )
@@ -64,6 +65,36 @@ struct LocalTasteMapStore {
         )
         try context.save()
         return restaurant
+    }
+
+    /// Repairs legacy/imported rows that still say WantToGo even though the
+    /// owner already has an active Visit for the Restaurant. A real Visit is
+    /// the authoritative state transition and must always win.
+    @discardableResult
+    func reconcileVisitedRestaurantStatuses(
+        actorUserID: String? = nil,
+        saveChanges: Bool = true
+    ) throws -> Int {
+        let ownerUserID = LocalAccountOwner.normalized(actorUserID ?? LocalAccountOwner.guest)
+        let visitedRestaurantIDs = Set(try context.fetch(FetchDescriptor<Visit>()).filter {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil
+        }.map(\.restaurantId))
+        guard !visitedRestaurantIDs.isEmpty else { return 0 }
+
+        var repairedCount = 0
+        for restaurant in try context.fetch(FetchDescriptor<Restaurant>()) where
+            restaurant.ownerUserID == ownerUserID
+                && restaurant.deletedAt == nil
+                && restaurant.status == .wantToGo
+                && visitedRestaurantIDs.contains(restaurant.id) {
+            restaurant.status = .visited
+            restaurant.updatedAt = .now
+            restaurant.syncStatus = .pending
+            try enqueue(restaurant)
+            repairedCount += 1
+        }
+        if saveChanges, repairedCount > 0 { try context.save() }
+        return repairedCount
     }
 
     @discardableResult
@@ -236,6 +267,9 @@ struct LocalTasteMapStore {
             ownerUserID: ownerUserID
         )
         draft = try draft.validated()
+        let unchangedPayment = visit.totalPrice == draft.totalPrice && visit.myActualSpend == draft.myActualSpend
+            && visit.partySize == draft.partySize && visit.paymentModeRawValue == draft.paymentModeRawValue
+        let preservedReference = unchangedPayment ? visit.pricePerPerson : nil
         visit.visitedAt = draft.visitedAt
         visit.rating = Visit.validatedRating(draft.rating)
         visit.valueRating = Visit.validatedRating(draft.valueRating)
@@ -244,7 +278,7 @@ struct LocalTasteMapStore {
         visit.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         visit.myActualSpend = draft.myActualSpend
         visit.totalPrice = draft.totalPrice
-        visit.pricePerPerson = draft.calculatedPricePerPerson
+        visit.pricePerPerson = draft.calculatedPricePerPerson ?? preservedReference
         visit.diningMode = draft.diningMode
         visit.visibility = draft.visibility
         visit.paymentModeRawValue = draft.paymentModeRawValue
@@ -284,17 +318,37 @@ struct LocalTasteMapStore {
         )
     }
 
-    func delete(_ visit: Visit, actorUserID: String? = nil) throws {
+    /// Returns the Restaurant removed by deleting its final active Visit.
+    /// Existing zero-Visit Restaurants are never swept or retroactively removed.
+    @discardableResult
+    func delete(_ visit: Visit, actorUserID: String? = nil) throws -> UUID? {
         if let actorUserID = Self.normalizedOptional(actorUserID),
            visit.ownerUserID != actorUserID {
             throw LocalTasteMapStoreError.restaurantOwnershipMismatch
         }
-        try LocalDishStore(context: context).removeAssociations(for: visit.id)
+        guard visit.deletedAt == nil else { return nil }
+        let restaurantID = visit.restaurantId
+        guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>()).first(where: {
+            $0.id == restaurantID && $0.ownerUserID == visit.ownerUserID && $0.deletedAt == nil
+        }) else { throw LocalTasteMapStoreError.restaurantOwnershipMismatch }
+        let hasOtherVisit = try context.fetch(FetchDescriptor<Visit>()).contains {
+            $0.restaurantId == restaurantID && $0.ownerUserID == visit.ownerUserID
+                && $0.deletedAt == nil && $0.id != visit.id
+        }
+        if !hasOtherVisit {
+            // Reuse the whole-Restaurant transaction before mutating any child.
+            try delete(restaurant, actorUserID: actorUserID ?? visit.ownerUserID)
+            return restaurantID
+        }
+        let dishStore = LocalDishStore(context: context)
+        for association in try dishStore.activeAssociations(visitID: visit.id) where association.ownerUserID == visit.ownerUserID {
+            try dishStore.remove(association)
+        }
         let queue = SwiftDataSyncQueue(context: context, ownerUserID: visit.ownerUserID)
         guard let remoteID = visit.remoteID else {
             context.delete(visit)
             try context.save()
-            return
+            return nil
         }
         if visit.serverVersion == 0 {
             try queue.removeMutations(entityType: .visit, entityID: remoteID)
@@ -311,6 +365,7 @@ struct LocalTasteMapStore {
             )
         }
         try context.save()
+        return nil
     }
 
     func update(
@@ -399,6 +454,12 @@ struct LocalTasteMapStore {
         let updatedAt = Date.now
         let updatedAddress = update.address.trimmingCharacters(in: .whitespacesAndNewlines)
         let updatedCity = update.city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasActiveVisit = try context.fetch(FetchDescriptor<Visit>()).contains {
+            $0.ownerUserID == restaurant.ownerUserID
+                && $0.restaurantId == restaurant.id
+                && $0.deletedAt == nil
+        }
+        let resolvedStatus: RestaurantStatus = hasActiveVisit ? .visited : update.status
         let updatedMarkerPhotoID = Self.normalizedOptional(update.markerPhotoID)
         if let updatedMarkerPhotoID, updatedMarkerPhotoID != base.markerPhotoId {
             let ownsMarkerPhoto = try context.fetch(FetchDescriptor<PhotoAsset>()).contains { photo in
@@ -420,7 +481,7 @@ struct LocalTasteMapStore {
             city: updatedCity,
             latitude: restaurant.latitude,
             longitude: restaurant.longitude,
-            status: update.status == .wantToGo ? .wantToGo : .visited,
+            status: resolvedStatus == .wantToGo ? .wantToGo : .visited,
             preferenceLevel: base.preferenceLevel,
             overallRating: base.overallRating,
             foodRating: base.foodRating,
@@ -431,6 +492,7 @@ struct LocalTasteMapStore {
             longTermNote: Self.normalizedOptional(update.longTermNote) ?? "",
             pricePerPerson: update.referencePrice.map { NSDecimalNumber(decimal: $0).doubleValue },
             phone: normalizedPhone,
+            websiteUrl: base.websiteUrl,
             openingHours: Self.normalizedOptional(update.openingHours),
             markerType: update.markerType,
             markerPhotoId: updatedMarkerPhotoID,
@@ -447,7 +509,7 @@ struct LocalTasteMapStore {
             restaurant.name = trimmedName
             restaurant.address = updatedAddress
             restaurant.city = updatedCity
-            restaurant.status = update.status
+            restaurant.status = resolvedStatus
             restaurant.updatedAt = updatedAt
             restaurant.syncStatus = .pending
             restaurant.remoteRecordData = recordData
@@ -478,7 +540,20 @@ struct LocalTasteMapStore {
     }
 
     func delete(_ restaurant: Restaurant, actorUserID: String? = nil) throws {
+        if let actorUserID = Self.normalizedOptional(actorUserID), actorUserID != restaurant.ownerUserID {
+            throw LocalTasteMapStoreError.restaurantOwnershipMismatch
+        }
+        guard restaurant.deletedAt == nil else { return }
         let queue = SwiftDataSyncQueue(context: context, ownerUserID: restaurant.ownerUserID)
+        let queuedMutations = try queue.allMutations()
+        // Version zero is not proof that a record never reached the server:
+        // an upload may be in flight, or its acknowledgement may have been lost.
+        func requiresRemoteDelete(_ type: SyncEntityType, _ id: String, _ version: Int64) -> Bool {
+            version > 0 || queuedMutations.contains {
+                $0.entityType == type && $0.entityID.caseInsensitiveCompare(id) == .orderedSame
+                    && ($0.state != .queued || $0.retryCount > 0)
+            }
+        }
         let record = try? SyncRecordMapper.restaurantRecord(restaurant)
         if let actorUserID,
            let ownerUserID = record?.userId.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -489,21 +564,27 @@ struct LocalTasteMapStore {
 
         let now = Date.now
         let visits = try context.fetch(FetchDescriptor<Visit>()).filter {
-            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+            $0.restaurantId == restaurant.id && $0.ownerUserID == restaurant.ownerUserID && $0.deletedAt == nil
         }
         let dishes = try context.fetch(FetchDescriptor<Dish>()).filter {
-            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+            $0.restaurantId == restaurant.id && $0.ownerUserID == restaurant.ownerUserID && $0.deletedAt == nil
         }
         let associations = try context.fetch(FetchDescriptor<VisitDish>()).filter {
-            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+            $0.restaurantId == restaurant.id && $0.ownerUserID == restaurant.ownerUserID && $0.deletedAt == nil
         }
         let photos = try context.fetch(FetchDescriptor<PhotoAsset>()).filter {
-            $0.restaurantId == restaurant.id && $0.deletedAt == nil
+            $0.restaurantId == restaurant.id && $0.ownerUserID == restaurant.ownerUserID && $0.deletedAt == nil
         }
-        let retainsChildTombstones = !photos.isEmpty ||
+        let retainsChildTombstones = queuedMutations.contains { $0.state != .queued || $0.retryCount > 0 } || !photos.isEmpty ||
             visits.contains(where: { $0.serverVersion > 0 }) ||
             dishes.contains(where: { $0.serverVersion > 0 }) ||
             associations.contains(where: { $0.serverVersion > 0 })
+        // A synced/in-flight child also proves its parent may already exist
+        // remotely, even if the parent acknowledgement was never retained.
+        let childHasRemoteEvidence = visits.contains { requiresRemoteDelete(.visit, $0.remoteID ?? $0.id.uuidString.lowercased(), $0.serverVersion) }
+            || dishes.contains { requiresRemoteDelete(.dish, $0.remoteID ?? $0.id.uuidString.lowercased(), $0.serverVersion) }
+            || associations.contains { requiresRemoteDelete(.visitDish, $0.remoteID ?? $0.id.uuidString.lowercased(), $0.serverVersion) }
+            || photos.contains { requiresRemoteDelete(.photo, $0.remoteID ?? $0.id.uuidString.lowercased(), $0.serverVersion) }
 
         try context.transaction {
             // Child tombstones are queued first conceptually. SyncEntityType's
@@ -515,7 +596,7 @@ struct LocalTasteMapStore {
                 photo.updatedAt = now
                 photo.uploadState = .deleted
                 photo.syncStatus = .pending
-                if photo.serverVersion == 0 {
+                if !requiresRemoteDelete(.photo, remoteID, photo.serverVersion) {
                     try queue.removeMutations(entityType: .photo, entityID: remoteID)
                 } else {
                     try queue.enqueueDelete(
@@ -529,7 +610,7 @@ struct LocalTasteMapStore {
 
             for association in associations {
                 let remoteID = association.remoteID ?? association.id.uuidString.lowercased()
-                if association.serverVersion == 0 {
+                if !requiresRemoteDelete(.visitDish, remoteID, association.serverVersion) {
                     try queue.removeMutations(entityType: .visitDish, entityID: remoteID)
                     context.delete(association)
                 } else {
@@ -547,7 +628,7 @@ struct LocalTasteMapStore {
 
             for dish in dishes {
                 let remoteID = dish.remoteID ?? dish.id.uuidString.lowercased()
-                if dish.serverVersion == 0 {
+                if !requiresRemoteDelete(.dish, remoteID, dish.serverVersion) {
                     try queue.removeMutations(entityType: .dish, entityID: remoteID)
                     context.delete(dish)
                 } else {
@@ -565,7 +646,7 @@ struct LocalTasteMapStore {
 
             for visit in visits {
                 let remoteID = visit.remoteID ?? visit.id.uuidString.lowercased()
-                if visit.serverVersion == 0 {
+                if !requiresRemoteDelete(.visit, remoteID, visit.serverVersion) {
                     try queue.removeMutations(entityType: .visit, entityID: remoteID)
                     context.delete(visit)
                 } else {
@@ -582,7 +663,7 @@ struct LocalTasteMapStore {
             }
 
             let remoteID = restaurant.remoteID ?? restaurant.id.uuidString.lowercased()
-            if restaurant.serverVersion == 0 {
+            if !requiresRemoteDelete(.restaurant, remoteID, restaurant.serverVersion) && !childHasRemoteEvidence {
                 try queue.removeMutations(entityType: .restaurant, entityID: remoteID)
                 // Local photo tombstones retain file paths until the established
                 // photo cleanup lifecycle removes binaries. Keep their parent
@@ -605,11 +686,18 @@ struct LocalTasteMapStore {
                     timestamp: now
                 )
             }
+            try context.save()
         }
-        try context.save()
         if !photos.isEmpty {
             NotificationCenter.default.post(name: .tasteMapPhotoTransferStateChanged, object: nil)
         }
+        // Publish only after the transaction commits, including offline deletes
+        // that remove pending upserts and therefore never finish a sync request.
+        NotificationCenter.default.post(
+            name: .tasteMapLocalDataDidChange,
+            object: nil,
+            userInfo: ["reason": "restaurantDeleted"]
+        )
     }
 
     private func enqueue(_ restaurant: Restaurant) throws {
@@ -627,8 +715,24 @@ struct LocalTasteMapStore {
 
     private func merge(candidate: RestaurantCandidate, into restaurant: Restaurant) throws -> Bool {
         var changed = false
-        if restaurant.city.isEmpty, !candidate.city.isEmpty {
+        let hasProviderIdentity = candidate.placeIdentities.contains { $0.provider != .manual }
+        if hasProviderIdentity, !candidate.name.isEmpty, restaurant.name != candidate.name {
+            restaurant.name = candidate.name
+            changed = true
+        }
+        if hasProviderIdentity, !candidate.address.isEmpty, restaurant.address != candidate.address {
+            restaurant.address = candidate.address
+            changed = true
+        }
+        if !candidate.city.isEmpty, restaurant.city != candidate.city {
             restaurant.city = candidate.city
+            changed = true
+        }
+        if hasProviderIdentity,
+           candidate.coordinate.isValid,
+           (restaurant.latitude != candidate.latitude || restaurant.longitude != candidate.longitude) {
+            restaurant.latitude = candidate.latitude
+            restaurant.longitude = candidate.longitude
             changed = true
         }
         if restaurant.appleMapItemIdentifier == nil, let appleID = candidate.appleMapItemIdentifier {
@@ -636,21 +740,23 @@ struct LocalTasteMapStore {
             changed = true
         }
         guard !candidate.placeIdentities.isEmpty else { return changed }
-
-        let before = try SyncRecordMapper.restaurantRecord(restaurant)
-        let beforeKeys = Set(before.placeIdentities.map(Self.identityKey))
-        let added = candidate.placeIdentities.contains { !beforeKeys.contains(Self.identityKey($0)) }
-        guard added else { return changed }
-        restaurant.remoteRecordData = try recordData(
+        let previousData = restaurant.remoteRecordData
+        let projectedData = try recordData(
             for: restaurant,
+            candidate: candidate,
             candidateIdentities: candidate.placeIdentities,
             replacingGeneratedIdentity: false
         )
-        return true
+        if projectedData != previousData {
+            restaurant.remoteRecordData = projectedData
+            changed = true
+        }
+        return changed
     }
 
     private func recordData(
         for restaurant: Restaurant,
+        candidate: RestaurantCandidate?,
         candidateIdentities: [RestaurantCandidatePlaceIdentity],
         replacingGeneratedIdentity: Bool
     ) throws -> Data {
@@ -680,6 +786,23 @@ struct LocalTasteMapStore {
             )
         }
         let amapID = identities.first(where: { $0.provider == .amap })?.externalId
+        let providerTags = candidate?.categoryHints ?? []
+        let tags = providerTags.isEmpty
+            ? base.tags
+            : Array(Set(base.tags + providerTags)).sorted()
+        let providerImageURL = candidate?.photoURL.flatMap(Self.safeProviderResourceURL)?.absoluteString
+        let markerType: RestaurantJSONContractV1.RestaurantMarkerTypeContract
+        if base.markerType == .emoji,
+           base.markerEmoji == "🍽️",
+           providerImageURL != nil {
+            // Native candidates historically kept the generic fallback type
+            // even after a real Provider image arrived. New/enriched automatic
+            // records become image-backed, while a non-generic Emoji continues
+            // to mean that the owner chose it deliberately.
+            markerType = .image
+        } else {
+            markerType = base.markerType
+        }
         let value = try RestaurantJSONContractV1(
             id: base.id,
             userId: base.userId,
@@ -697,14 +820,15 @@ struct LocalTasteMapStore {
             environmentRating: base.environmentRating,
             serviceRating: base.serviceRating,
             valueRating: base.valueRating,
-            tags: base.tags,
+            tags: tags,
             longTermNote: base.longTermNote,
             pricePerPerson: base.pricePerPerson,
-            phone: base.phone,
-            openingHours: base.openingHours,
-            markerType: base.markerType,
+            phone: candidate?.phone ?? base.phone,
+            websiteUrl: candidate?.websiteURL?.absoluteString ?? base.websiteUrl,
+            openingHours: candidate?.openingHours ?? base.openingHours,
+            markerType: markerType,
             markerPhotoId: base.markerPhotoId,
-            merchantImageUrl: base.merchantImageUrl,
+            merchantImageUrl: providerImageURL ?? base.merchantImageUrl,
             markerEmoji: base.markerEmoji,
             createdAt: base.createdAt,
             updatedAt: timestamp,
@@ -712,6 +836,11 @@ struct LocalTasteMapStore {
             isTestData: base.isTestData
         )
         return try JSONEncoder().encode(value)
+    }
+
+    private static func safeProviderResourceURL(_ value: URL) -> URL? {
+        guard value.scheme?.lowercased() == "https", value.host?.isEmpty == false else { return nil }
+        return value
     }
 
     private static func identityKey(_ identity: RestaurantPlaceIdentityContract) -> String {
@@ -755,97 +884,6 @@ enum LocalTasteMapStoreError: Error {
     case visitCreationFailed
 }
 
-enum RestaurantDeduplicator {
-    enum MatchKind: Equatable {
-        case exactProviderIdentity
-        case probableCrossProvider
-    }
-
-    struct Match {
-        let restaurant: Restaurant
-        let kind: MatchKind
-    }
-
-    static func match(for candidate: RestaurantCandidate, in restaurants: [Restaurant]) -> Restaurant? {
-        classifiedMatch(for: candidate, in: restaurants)?.restaurant
-    }
-
-    static func classifiedMatch(
-        for candidate: RestaurantCandidate,
-        in restaurants: [Restaurant]
-    ) -> Match? {
-        let candidateIdentityKeys = Set(candidate.placeIdentities.map(identityKey))
-        if !candidateIdentityKeys.isEmpty,
-           let match = restaurants.first(where: {
-               $0.deletedAt == nil && !candidateIdentityKeys.isDisjoint(with: identityKeys(for: $0))
-           }) {
-            return Match(restaurant: match, kind: .exactProviderIdentity)
-        }
-
-        let candidateName = normalized(candidate.name)
-        let candidateAddress = normalized(candidate.address)
-        return restaurants.first { restaurant in
-            guard restaurant.deletedAt == nil,
-                  normalized(restaurant.name) == candidateName else { return false }
-            let restaurantAddress = normalized(restaurant.address)
-            let addressesCompatible = candidateAddress.isEmpty
-                || restaurantAddress.isEmpty
-                || restaurantAddress == candidateAddress
-            let citiesCompatible = candidate.city.isEmpty
-                || restaurant.city.isEmpty
-                || normalizedCity(restaurant.city) == normalizedCity(candidate.city)
-            return addressesCompatible && citiesCompatible && distanceInMeters(
-                    latitudeA: restaurant.latitude,
-                    longitudeA: restaurant.longitude,
-                    latitudeB: candidate.latitude,
-                    longitudeB: candidate.longitude
-                ) < 80
-        }.map { Match(restaurant: $0, kind: .probableCrossProvider) }
-    }
-
-    private static func identityKeys(for restaurant: Restaurant) -> Set<String> {
-        var values = Set<String>()
-        if let appleID = restaurant.appleMapItemIdentifier, !appleID.isEmpty {
-            values.insert("\(RestaurantPlaceProvider.appleMaps.rawValue):\(appleID)")
-        }
-        if let data = restaurant.remoteRecordData,
-           let record = try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: data) {
-            values.formUnion(record.placeIdentities.map(identityKey))
-        }
-        return values
-    }
-
-    nonisolated private static func identityKey(_ identity: RestaurantCandidatePlaceIdentity) -> String {
-        "\(identity.provider.rawValue):\(identity.externalID)"
-    }
-
-    nonisolated private static func identityKey(_ identity: RestaurantPlaceIdentityContract) -> String {
-        "\(identity.provider.rawValue):\(identity.externalId)"
-    }
-
-    private static func normalized(_ value: String) -> String {
-        value.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
-            .filter { !$0.isWhitespace && !$0.isPunctuation }
-    }
-
-    private static func normalizedCity(_ value: String) -> String {
-        let value = normalized(value)
-        return value.hasSuffix("市") ? String(value.dropLast()) : value
-    }
-
-    private static func distanceInMeters(
-        latitudeA: Double,
-        longitudeA: Double,
-        latitudeB: Double,
-        longitudeB: Double
-    ) -> Double {
-        let latitudeScale = 111_000.0
-        let longitudeScale = latitudeScale * cos((latitudeA + latitudeB) * .pi / 360)
-        let latitudeDistance = (latitudeA - latitudeB) * latitudeScale
-        let longitudeDistance = (longitudeA - longitudeB) * longitudeScale
-        return hypot(latitudeDistance, longitudeDistance)
-    }
-}
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }

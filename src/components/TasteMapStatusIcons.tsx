@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react'
-import { Check } from 'lucide-react'
+import { CircleCheck } from 'lucide-react'
 
-type VisitedIconProps = Omit<ComponentProps<typeof Check>, 'aria-label'>
+type VisitedIconProps = Omit<ComponentProps<typeof CircleCheck>, 'aria-label'>
 
 /**
  * The one product-semantic glyph for an already-visited Restaurant.
@@ -10,5 +10,5 @@ type VisitedIconProps = Omit<ComponentProps<typeof Check>, 'aria-label'>
  * use their own symbols; they are different concepts from visited state.
  */
 export function TasteMapVisitedIcon(props: VisitedIconProps) {
-  return <Check {...props} aria-hidden="true" data-tastemap-semantic-icon="visited" />
+  return <CircleCheck {...props} aria-hidden="true" data-tastemap-semantic-icon="visited" />
 }

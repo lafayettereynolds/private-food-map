@@ -1,0 +1,66 @@
+/* One persistent, compact return row for full-page secondary destinations.
+   Keep the page body in its existing scroll container and below this chrome. */
+.tm-hybrid-page-navigation {
+  position: sticky;
+  top: var(--tm-secondary-nav-top, var(--tm-safe-top, env(safe-area-inset-top, 0px)));
+  z-index: 80;
+  isolation: isolate;
+  min-height: var(--control-min-hit-target, 44px);
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  background: var(--tm-secondary-nav-background, var(--tm-shell-background, var(--color-background)));
+}
+
+/* The navigation owns its safe-area background so scrolled ratings/photos
+   cannot shine through the status bar above the always-visible return arrow. */
+.tm-hybrid-page-navigation::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: calc(-1 * var(--tm-secondary-nav-safe-top, var(--tm-safe-top, env(safe-area-inset-top, 0px)))) 0 0;
+  background: inherit;
+  pointer-events: none;
+}
+
+.tm-hybrid-page-back {
+  flex: none;
+  width: var(--control-min-hit-target, 44px);
+  height: var(--control-min-hit-target, 44px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-primary, #263847);
+  background: transparent;
+  cursor: pointer;
+}
+
+.tm-hybrid-page-back:active { background: var(--color-primary-light); }
+.tm-hybrid-page-back:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.tm-hybrid-page-back:disabled { cursor: default; opacity: 0.45; }
+.modal-header.modal-header--back { justify-content: flex-start; align-items: flex-start; }
+.modal-header--back > div { flex: 1; min-width: 0; }
+.sticky-form-action-bar__buttons > :only-child { grid-column: 1 / -1; }
+
+.public-user-profile,
+.taste-footprints--page,
+.account-privacy-page { --tm-secondary-nav-background: var(--color-surface); }
+/* This full-height page scrolls with its owner (document or settings overlay).
+   A non-scrolling overflow:auto ancestor would trap the sticky header. */
+.social-page.account-privacy-page { overflow: visible; }
+.tm-hybrid-page-navigation > button:first-child {
+  min-width: var(--control-min-hit-target, 44px);
+  min-height: var(--control-min-hit-target, 44px);
+}
+
+/* These preserve the existing page-template insets, not a second back control. */
+.tm-hybrid-page > .tm-hybrid-page-navigation { margin-top: -10px; margin-bottom: 6px; }
+.tm-hybrid-page.tm-hybrid-add > .tm-hybrid-page-navigation { margin: 0; padding-inline: 14px; }
+.app-restaurant-detail > .tm-hybrid-page-navigation {
+  --tm-secondary-nav-top: 0px;
+  --tm-secondary-nav-safe-top: 0px;
+  --tm-secondary-nav-background: var(--color-surface, #fff);
+}

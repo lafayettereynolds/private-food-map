@@ -268,6 +268,24 @@ struct BackupImportTransactionWriter {
                 state.visits[value.sourceID] = try existing(action, context: context)
             } else if action.action != .skip { throw BackupImportPlanningError.unresolvedReview(action.id) }
         }
+        let importedVisitRestaurantIDs = Set(state.visits.values.filter {
+            $0.deletedAt == nil
+        }.map(\.restaurantId))
+        var promotedRestaurantIDs = Set<UUID>()
+        for restaurant in state.restaurants.values where
+            promotedRestaurantIDs.insert(restaurant.id).inserted
+                && importedVisitRestaurantIDs.contains(restaurant.id)
+                && restaurant.status == .wantToGo {
+            restaurant.status = .visited
+            restaurant.updatedAt = .now
+            restaurant.syncStatus = .pending
+            restaurant.remoteRecordData = try JSONEncoder().encode(
+                SyncRecordMapper.restaurantRecord(restaurant)
+            )
+            if !state.mutations.contains(where: { $0.restaurantID == restaurant.id }) {
+                state.mutations.append(.restaurant(restaurant))
+            }
+        }
         #if DEBUG
         try failIfRequested(.afterVisits)
         #endif
@@ -366,7 +384,7 @@ struct BackupImportTransactionWriter {
             environmentRating: value.environmentRating, serviceRating: value.serviceRating,
             valueRating: value.valueRating, tags: value.tags, longTermNote: value.longTermNote,
             pricePerPerson: value.pricePerPerson.map { NSDecimalNumber(decimal: $0).doubleValue },
-            phone: value.phone, openingHours: value.openingHours,
+            phone: value.phone, websiteUrl: value.websiteURL, openingHours: value.openingHours,
             markerType: RestaurantJSONContractV1.RestaurantMarkerTypeContract(rawValue: value.markerType) ?? .emoji,
             markerPhotoId: nil, merchantImageUrl: value.merchantImageURL,
             markerEmoji: value.markerEmoji, createdAt: SyncRecordMapper.dateString(value.createdAt),
@@ -415,6 +433,7 @@ struct BackupImportTransactionWriter {
             environmentRating: current.environmentRating, serviceRating: current.serviceRating,
             valueRating: current.valueRating, tags: current.tags, longTermNote: current.longTermNote,
             pricePerPerson: current.pricePerPerson, phone: current.phone,
+            websiteUrl: current.websiteUrl,
             openingHours: current.openingHours, markerType: current.markerType,
             markerPhotoId: current.markerPhotoId, merchantImageUrl: current.merchantImageUrl,
             markerEmoji: current.markerEmoji, createdAt: current.createdAt,
@@ -534,6 +553,11 @@ private enum BackupImportPendingMutation {
     case dish(Dish, Restaurant, Visit)
     case listItem(RestaurantListItem)
     case visitDish(VisitDish, Restaurant, Visit, Dish)
+
+    var restaurantID: UUID? {
+        guard case .restaurant(let restaurant) = self else { return nil }
+        return restaurant.id
+    }
 
     var priority: Int {
         switch self {

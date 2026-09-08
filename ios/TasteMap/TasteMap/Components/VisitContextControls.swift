@@ -11,6 +11,7 @@ struct VisitOptionalChoicePicker: View {
     @Binding var selection: String?
     let options: [VisitContextChoiceOption]
     let accessibilityIdentifier: String
+    var emptyTitle: String = "不记录"
 
     var body: some View {
         VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.small) {
@@ -28,7 +29,7 @@ struct VisitOptionalChoicePicker: View {
                 alignment: .leading,
                 spacing: TasteMapDesignTokens.Spacing.small
             ) {
-                choiceButton(title: "不记录", value: nil)
+                choiceButton(title: emptyTitle, value: nil)
                 ForEach(options) { option in
                     choiceButton(title: option.title, value: option.value)
                 }

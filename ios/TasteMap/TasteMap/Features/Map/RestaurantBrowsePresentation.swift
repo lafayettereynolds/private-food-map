@@ -77,6 +77,15 @@ struct RestaurantBrowseSnapshot {
     let footprints: [TasteFootprintItem]
     let filterOptions: PersonalRestaurantFilterOptions
 
+    func filterOptions(for segment: RestaurantBrowseSegment) -> PersonalRestaurantFilterOptions {
+        PersonalRestaurantFilterOptions(
+            cities: RestaurantCityFilterIdentity.options(items(for: segment).map(\.restaurant.city)),
+            cuisines: filterOptions.cuisines,
+            companions: filterOptions.companions,
+            sources: filterOptions.sources
+        )
+    }
+
     func items(for segment: RestaurantBrowseSegment) -> [RestaurantBrowseItem] {
         switch segment {
         case .visited: visited
@@ -102,6 +111,10 @@ enum RestaurantBrowseBuilder {
         let activeVisits = visits.filter {
             $0.deletedAt == nil && restaurantByID[$0.restaurantId] != nil
         }
+        let statusPartition = RestaurantVisitStatePolicy.partition(
+            restaurants: activeRestaurants,
+            visits: activeVisits
+        )
         let activeVisitIDs = Set(activeVisits.map(\.id))
         let visitsByRestaurant = Dictionary(grouping: activeVisits, by: \.restaurantId)
 
@@ -135,8 +148,7 @@ enum RestaurantBrowseBuilder {
         let companionNamesByID = directoryNames(companions)
         let sourceNamesByID = directoryNames(recommendationSources)
 
-        let visited = activeRestaurants
-            .filter { $0.status == .visited }
+        let visited = statusPartition.visited
             .map { restaurant in
                 browseItem(
                     restaurant: restaurant,
@@ -149,8 +161,7 @@ enum RestaurantBrowseBuilder {
             }
             .sorted(by: visitedOrder)
 
-        let wantToGo = activeRestaurants
-            .filter { $0.status == .wantToGo }
+        let wantToGo = statusPartition.wantToGo
             .map { restaurant in
                 browseItem(
                     restaurant: restaurant,

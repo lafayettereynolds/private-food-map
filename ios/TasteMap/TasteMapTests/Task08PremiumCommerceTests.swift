@@ -3,7 +3,7 @@ import StoreKitTest
 import Testing
 @testable import TasteMap
 
-@Suite("Task 08 Premium commerce")
+@Suite("Task 08 Premium commerce", .serialized)
 @MainActor
 struct Task08PremiumCommerceTests {
     @Test("Worker catalog contract carries appAccountToken and product references without price")
@@ -20,10 +20,34 @@ struct Task08PremiumCommerceTests {
         }
         """#.utf8)
         let value = try JSONDecoder().decode(PremiumCommerceConfigurationV1.self, from: data)
+        #expect(value.purchaseReady == nil) // Older servers cannot authorize a new purchase.
         #expect(value.apiVersion == 1)
         #expect(value.appAccountToken.uuidString.lowercased() == "11111111-1111-4111-8111-111111111111")
         #expect(value.products.map(\.period) == [.monthly, .annual])
         #expect(!String(decoding: data, as: UTF8.self).contains("price"))
+    }
+
+    @Test("public product lookup does not require an authenticated server catalog")
+    func publicProductLookup() async throws {
+        let api = CatalogProbe()
+        let provider = StoreKitMembershipPurchaseProvider(commerceAPI: api)
+        let products = try await provider.products()
+        #expect(products.allSatisfy { ["com.lafayette.tastemap.premium.monthly.v1", "com.lafayette.tastemap.premium.annual.v1"].contains($0.id) })
+        #expect(api.catalogCalls == 0)
+    }
+
+    @Test("a catalog without explicit server readiness cannot initiate a purchase")
+    func missingReadinessBlocksPurchase() async {
+        let api = CatalogProbe()
+        let provider = StoreKitMembershipPurchaseProvider(commerceAPI: api)
+        await provider.activate(userID: "tm_a")
+        do {
+            _ = try await provider.purchase(productID: "com.lafayette.tastemap.premium.monthly.v1")
+            Issue.record("Purchase must be blocked before invoking StoreKit")
+        } catch {
+            #expect(error as? MembershipPurchaseError == .notConfigured)
+        }
+        #expect(api.catalogCalls == 2) // Purchase rechecks the server instead of using stale readiness.
     }
 
     @Test("purchase outcomes distinguish completed, pending, and cancellation")
@@ -119,4 +143,18 @@ private actor PurchaseProviderSpy: MembershipPurchaseProviding {
     }
     func restore() async throws -> MembershipPurchaseResult { throw MembershipPurchaseError.notConfigured }
     func manageSubscription() async throws { throw MembershipPurchaseError.notConfigured }
+}
+
+@MainActor
+private final class CatalogProbe: PremiumCommerceAPI {
+    var catalogCalls = 0
+    func configuration() async throws -> PremiumCommerceConfigurationV1 {
+        catalogCalls += 1
+        return .init(apiVersion: 1, configured: true, appAccountToken: UUID(), products: [
+            .init(id: "com.lafayette.tastemap.premium.monthly.v1", period: .monthly)
+        ])
+    }
+    func reconcile(transactionID: UInt64) async throws -> PremiumCommerceReconciliationV1 {
+        throw MembershipPurchaseError.notConfigured
+    }
 }

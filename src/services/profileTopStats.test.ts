@@ -51,15 +51,27 @@ describe('selectUniqueProfileRestaurants', () => {
   })
 
   it('keeps visited and want-to-go status calculations separate', () => {
-    const restaurants = [restaurant({ id: 'visited' }), restaurant({ id: 'want', status: 'wantToGo' })]
+    const restaurants = [
+      restaurant({ id: 'visited', visitCount: 1 }),
+      restaurant({ id: 'want', status: 'wantToGo', name: '另一家餐厅', address: '测试路 2 号' }),
+    ]
     expect(selectUniqueProfileRestaurants(restaurants, 'visited').map((item) => item.id)).toEqual(['visited'])
     expect(selectUniqueProfileRestaurants(restaurants, 'wantToGo').map((item) => item.id)).toEqual(['want'])
+  })
+
+  it('lets a visited record win over a duplicate want-to-go record', () => {
+    const restaurants = [
+      restaurant({ id: 'wanted-first', status: 'wantToGo', amapPoiId: 'poi-shared' }),
+      restaurant({ id: 'visited-later', status: 'visited', amapPoiId: 'POI-SHARED', visitCount: 1 }),
+    ]
+    expect(selectUniqueProfileRestaurants(restaurants, 'visited').map((item) => item.id)).toEqual(['visited-later'])
+    expect(selectUniqueProfileRestaurants(restaurants, 'wantToGo')).toEqual([])
   })
 })
 
 describe('profile information architecture', () => {
   it('uses the four agreed top-level stats without public visit counts', () => {
-    expect(OWNER_PROFILE_STAT_LABELS).toEqual(['我关注的', '关注我的', '去过', '想吃'])
+    expect(OWNER_PROFILE_STAT_LABELS).toEqual(['我关注的', '粉丝', '去过', '想吃'])
     expect(PUBLIC_PROFILE_STAT_LABELS).toEqual(['关注', '粉丝', '去过餐厅', '想去餐厅'])
     expect([...OWNER_PROFILE_STAT_LABELS, ...PUBLIC_PROFILE_STAT_LABELS]).not.toContain('公开记录')
   })

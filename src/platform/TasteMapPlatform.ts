@@ -20,10 +20,16 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'map.viewport',
   'map.surface.update',
   'content.snapshot',
+  'discovery.page',
+  'discovery.cityPage',
+  'recommendations.preference',
+  'lists.get',
+  'lists.createShareLink',
   'community.setLike',
   'community.comments',
   'community.addComment',
   'restaurant.setWantToGo',
+  'restaurant.setAvatar',
   'visit.contract',
   'visit.save',
   'visit.delete',
@@ -37,10 +43,18 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'photo.discard',
   'photo.retry',
   'premium.status',
+  'premium.trialEligibility',
+  'premium.claimTrial',
   'premium.products',
   'premium.purchase',
   'premium.restore',
   'premium.manage',
+  'referrals.dashboard',
+  'directory.dashboard',
+  'directory.mutate',
+  'directory.respond',
+  'directory.searchUsers',
+  'referrals.prepareRegistration',
   'permissions.status',
   'permissions.openSettings',
   'backup.openExport',
@@ -76,7 +90,15 @@ export type TasteMapCapability =
   | 'backup'
   | 'accountDelete'
 
-export type TasteMapCapabilityRegistry = Record<TasteMapCapability, boolean>
+export type TasteMapCapabilityRegistry = Record<TasteMapCapability, boolean> & {
+  /** Additive bridge-v1 capability; absent on older hosts means unavailable. */
+  discoveryPage?: boolean
+  discoveryCityPage?: boolean
+  recommendationPreferences?: boolean
+  listsRead?: boolean
+  listShare?: boolean
+  referrals?: boolean
+}
 
 export interface TasteMapRuntimeInfo {
   bridgeVersion: typeof TASTE_MAP_NATIVE_BRIDGE_VERSION
@@ -105,7 +127,7 @@ export type TasteMapImageDescriptor =
   | ({ kind: 'ownerPhoto'; resourceURL: string; accessibilityLabel: string } & TasteMapUGCImageMetadata)
   | ({ kind: 'activityPhoto'; resourceURL: string; accessibilityLabel: string } & TasteMapUGCImageMetadata)
   | ({ kind: 'publicUGC'; resourceURL: string; accessibilityLabel: string } & TasteMapUGCImageMetadata)
-  | { kind: 'foodCategoryVisual'; categoryVisualID: FoodCategoryVisualID; stableSeed: string; accessibilityLabel: string; exportAllowed: false }
+  | { kind: 'foodCategoryVisual'; categoryVisualID: FoodCategoryVisualID; stableSeed: string; preferredEmoji?: string; accessibilityLabel: string; exportAllowed: false }
   | { kind: 'nativeResource'; resourceURL: string; photoID: string; accessibilityLabel: string }
   | { kind: 'publicOrCached'; resourceURL: string; photoID: string; accessibilityLabel: string }
   | { kind: 'providerMerchant'; resourceURL: string; accessibilityLabel: string }
@@ -180,6 +202,7 @@ export interface TasteMapRestaurantDTO {
   status: RestaurantSummary['status']
   tags: string[]
   phone: string | null
+  websiteUrl?: string | null
   openingHours: string | null
   referencePrice: number | null
   visitCount: number
@@ -190,6 +213,22 @@ export interface TasteMapRestaurantDTO {
   updatedAt: string
   visits: TasteMapVisitDTO[]
   image: TasteMapImageDescriptor
+  /** Content photography is independent of the user's custom Restaurant avatar. */
+  contentImage?: TasteMapImageDescriptor
+  contentImageResolution?: TasteMapImageResolutionDTO
+  markerType?: 'image' | 'emoji'
+  markerEmoji?: string
+}
+
+export type TasteMapRestaurantAvatarUpdateDTO =
+  | { kind: 'photo'; photoID: string }
+  | { kind: 'emoji'; emoji: string }
+
+export interface TasteMapRestaurantAvatarMutationDTO {
+  restaurantID: string
+  markerType: 'image' | 'emoji'
+  markerEmoji: string
+  updatedAt: string
 }
 
 export interface TasteMapProfileDashboardDTO {
@@ -197,6 +236,29 @@ export interface TasteMapProfileDashboardDTO {
   restaurants: TasteMapRestaurantDTO[]
   followerCount: number
   followingCount: number
+  analyticsIdentity?: TasteMapAnalyticsIdentityDTO | null
+}
+
+/** Private, owner-scoped directory identities. Linked social-user IDs are not analytics keys. */
+export interface TasteMapAnalyticsDirectoryEntryDTO {
+  id: string
+  ownerUserID: string
+  displayName: string
+  identifiers: string[]
+  updatedAt: string
+  deletedAt: string | null
+}
+export interface TasteMapAnalyticsSourceEntryDTO extends TasteMapAnalyticsDirectoryEntryDTO {
+  sourceType: NonNullable<Visit['recommendationSourceType']>
+}
+export interface TasteMapAnalyticsIdentityDTO {
+  ownerUserID: string
+  /** Explicit proof for the adapter's already owner-scoped presentation sentinel. */
+  recordOwnerID: string
+  companions: TasteMapAnalyticsDirectoryEntryDTO[] | null
+  sources: TasteMapAnalyticsSourceEntryDTO[] | null
+  /** Null means unavailable; sourceID:null is a genuinely ID-less legacy Visit. */
+  visitSourceLinks: Array<{ visitID: string; sourceID: string | null }> | null
 }
 
 export interface TasteMapRestaurantDetailDTO {
@@ -228,11 +290,14 @@ export interface TasteMapProfileDashboardViewModel {
   followerCount: number
   followingCount: number
   restaurantImages: Record<string, TasteMapImageDescriptor>
+  analyticsIdentity?: TasteMapAnalyticsIdentityDTO | null
 }
 
 export interface TasteMapRestaurantDetailViewModel {
   restaurant: RestaurantSummary
   image: TasteMapImageDescriptor
+  contentImage?: TasteMapImageDescriptor
+  contentImageResolution?: TasteMapImageResolutionDTO
   socialStats?: RestaurantSocialStats | null
   viewerState: 'none' | 'want_to_go' | 'visited'
   editableVisitIDs: string[]
@@ -258,10 +323,18 @@ export interface TasteMapMapBounds {
 export interface TasteMapMapFilters {
   city?: string
   minimumScoreOutOfTen?: number
+  scoreBands?: Array<1 | 2 | 3 | 4 | 5>
   maximumSpend?: number
+  priceRange?: 'under100' | '100to200' | 'over200'
   minimumVisitCount?: number
+  diningMode?: Visit['diningMode']
+  queueDuration?: NonNullable<Visit['queueDuration']> | 'unrecorded'
+  diningOccasions?: Visit['diningOccasions']
+  visitPeriod?: 'sixMonths' | 'year'
+  distanceKilometers?: 1 | 3 | 5 | 10
   companion?: string
   cuisine?: string
+  recommendationSourceType?: NonNullable<Visit['recommendationSourceType']>
   recommendationSource?: string
 }
 
@@ -323,10 +396,17 @@ export interface TasteMapNativeMapSurfaceMarkerDTO {
   latitude: number
   longitude: number
   status: TasteMapMapScope
+  recommendationRank: number | null
   visitCount: number
   averageRating: number | null
   fallbackEmoji: string
   image: TasteMapImageDescriptor
+}
+
+export interface TasteMapNativeTasteDataProgressDTO {
+  displayCount: number
+  target: 5 | 10 | 15 | 20
+  message: string
 }
 
 export interface TasteMapNativeMapSurfaceUpdateRequest {
@@ -344,6 +424,7 @@ export interface TasteMapNativeMapSurfaceUpdateRequest {
   selectedRestaurantID: string | null
   userAvatarPresetID: UserProfile['avatarPresetId']
   userAvatarPhotoID: string | null
+  tasteDataProgress: TasteMapNativeTasteDataProgressDTO | null
   markers: TasteMapNativeMapSurfaceMarkerDTO[]
 }
 
@@ -361,7 +442,25 @@ export interface TasteMapHybridListRestaurantDTO {
   position: number
   note: string
   image: TasteMapImageDescriptor
+  /** Original stored/provider coordinate; absent is never a city-centre substitute. */
+  coordinate?: { latitude: number; longitude: number } | null
+  /** Viewer-owned Visit aggregate or explicitly public Restaurant aggregate only. */
+  rating?: TasteMapListRatingDTO | null
 }
+
+export interface TasteMapListRatingDTO {
+  valueOutOfTen: number
+  source: 'viewer' | 'public'
+  sampleCount: number
+}
+
+export interface TasteMapListGetRequest { id: string; cursor?: string | null }
+export interface TasteMapListPageDTO {
+  list: TasteMapHybridListDTO
+  nextCursor: string | null
+  generatedAt: string
+}
+export interface TasteMapListShareLinkDTO { url: string }
 
 export interface TasteMapHybridPersonDTO {
   id: string
@@ -382,12 +481,23 @@ export interface TasteMapHybridContentRestaurantDTO {
   tags: string[]
   referencePrice: number | null
   image: TasteMapImageDescriptor
+  contentImage?: TasteMapImageDescriptor
+  contentImageResolution?: TasteMapImageResolutionDTO
+}
+
+export interface TasteMapHybridDiscoveryReasonDTO {
+  code: string
+  text: string
+  evidence?: import('../contracts/discoveryContract').DiscoveryReasonV1['evidence']
 }
 
 export interface TasteMapHybridDiscoveryItemDTO {
+  tasteEvidence?: import('../contracts/discoveryContract').DiscoveryCardV1['tasteEvidence']
   id: string
   mode: 'for_you' | 'similar_taste' | 'trending'
   restaurant: TasteMapHybridContentRestaurantDTO
+  /** Authorized photos of this exact activity Visit; absent on legacy/system cards. */
+  activityImages?: TasteMapImageDescriptor[]
   viewerState: 'none' | 'want_to_go' | 'visited'
   sourceUser: TasteMapHybridPersonDTO | null
   activityRating: number | null
@@ -400,9 +510,15 @@ export interface TasteMapHybridDiscoveryItemDTO {
     valueOutOfFive: number | null
     sampleCount: number
   }
+  /** History-derived matching index, never a calibrated probability. */
+  personalTastePercent?: number | null
+  calibratedLikeProbability?: import('../contracts/recommendationSignal').CalibratedLikeProbability | null
+  reasons: TasteMapHybridDiscoveryReasonDTO[]
+  /** Backward-compatible first reason for older locally staged bundles. */
   reason: string
   similarityPercent: number | null
   sharedRestaurantCount: number | null
+  trendWindowDays: number | null
   uniqueVisitorCount: number | null
   wantToGoCount: number | null
   rank: number
@@ -414,6 +530,8 @@ export interface TasteMapHybridActivityItemDTO {
   eventAt: string
   user: TasteMapHybridPersonDTO
   restaurant: TasteMapHybridContentRestaurantDTO
+  /** Current visible Visit only. Missing/empty keeps the restaurant image fallback. */
+  activityImages?: TasteMapImageDescriptor[]
   visitID: string | null
   interaction: TasteMapHybridActivityInteractionDTO | null
   visitRating: number | null
@@ -475,12 +593,103 @@ export interface TasteMapHybridListDTO {
   updatedAt: string
 }
 
+export interface TasteMapContentSnapshotOptions { forceRefresh?: boolean }
+
+export type TasteMapDiscoveryMode = 'for_you' | 'similar_taste' | 'trending'
+
+export interface TasteMapDiscoveryPageRequest {
+  mode: TasteMapDiscoveryMode
+  /** Empty means let the server resolve the city, not a client-side all-city filter. */
+  city: string
+  windowDays: 7 | 30
+  /** Both values must come from the same accepted query snapshot. */
+  cursor?: string
+  snapshotID?: string
+  /** First-page only. Invalidates any pending continuation. */
+  forceRefresh?: boolean
+  filters?: import('../contracts/discoveryFilters').NormalizedDiscoveryFilters
+  sort?: 'recommended' | 'taste' | 'public_rating' | 'distance' | 'similar_rating' | 'trend'
+  preferences?: import('../contracts/discoverySessionPreferences').DiscoverySessionPreferences
+}
+
+export interface TasteMapDiscoveryCityPageRequest {
+  mode: TasteMapDiscoveryMode | 'following' | 'latest'
+  city: string
+  windowDays?: 7 | 30
+  cursor?: string
+  snapshotID?: string
+  forceRefresh?: boolean
+  filters?: import('../contracts/discoveryFilters').NormalizedDiscoveryFilters
+  sort?: 'recommended' | 'taste' | 'public_rating' | 'distance' | 'similar_rating' | 'trend' | 'latest'
+  preferences?: import('../contracts/discoverySessionPreferences').DiscoverySessionPreferences
+}
+
+/** Session-only selected-city content. Never replaces the canonical Map recommendation snapshot. */
+export interface TasteMapDiscoveryCityPageDTO {
+  filterCapabilities?: import('../contracts/discoveryFilters').DiscoveryFilterCapabilities
+  filterTaxonomy?: import('../contracts/discoveryFilters').DiscoveryFilterTaxonomy
+  appliedQuery?: import('../contracts/discoveryFilters').DiscoveryAppliedQuery
+  evidenceAvailability?: import('../contracts/discoveryAvailability').DiscoveryEvidenceAvailability
+  dataSource?: 'remote' | 'debug_city_fixture'
+  version: 1
+  mode: TasteMapDiscoveryCityPageRequest['mode']
+  requestedCity: string
+  resolvedCity: string
+  windowDays: 7 | 30
+  snapshotID: string | null
+  generatedAt: string | null
+  discoveryItems: TasteMapHybridDiscoveryItemDTO[]
+  activityItems: TasteMapHybridActivityItemDTO[]
+  nextCursor: string | null
+  pagination: 'more' | 'complete' | 'unknown'
+  refreshStatus: TasteMapDiscoveryRefreshStatusDTO
+  engagementState: 'known' | 'unknown'
+  /** Social Like/Comment only; authorized Restaurant targets remain independently usable. */
+  interactionsAvailable: boolean
+}
+
+export interface TasteMapDiscoveryPageDTO {
+  filterCapabilities?: import('../contracts/discoveryFilters').DiscoveryFilterCapabilities
+  filterTaxonomy?: import('../contracts/discoveryFilters').DiscoveryFilterTaxonomy
+  appliedQuery?: import('../contracts/discoveryFilters').DiscoveryAppliedQuery
+  evidenceAvailability?: import('../contracts/discoveryAvailability').DiscoveryEvidenceAvailability
+  version: 1
+  mode: TasteMapDiscoveryMode
+  requestedCity: string
+  resolvedCity: string
+  windowDays: 7 | 30
+  snapshotID: string | null
+  generatedAt: string | null
+  /** Accumulated accepted pages, in server order; not a complete-city total. */
+  items: TasteMapHybridDiscoveryItemDTO[]
+  nextCursor: string | null
+  /** Unknown for unavailable/restricted results; never infer complete from those. */
+  pagination: 'more' | 'complete' | 'unknown'
+  refreshStatus: TasteMapDiscoveryRefreshStatusDTO
+  /** Page-v1 lacks engagement counts. Do not render its legacy zero defaults as real counts. */
+  engagementState: 'unknown'
+  /** Enable only after the page targets and authoritative engagement read path are wired. */
+  interactionsAvailable: false
+}
+
+export interface TasteMapDiscoveryRefreshStatusDTO {
+  state: 'fresh' | 'cached' | 'unavailable' | 'restricted'
+  city: string
+  windowDays: number
+  sourceGeneratedAt: string | null
+  attemptedAt: string
+  issue: TasteMapBridgeErrorPayload | null
+}
+
 export interface TasteMapHybridContentSnapshotDTO {
   generatedAt: string
   discovery: {
+    evidenceAvailability?: Partial<Record<TasteMapDiscoveryMode, import('../contracts/discoveryAvailability').DiscoveryEvidenceAvailability>>
     forYou: TasteMapHybridDiscoveryItemDTO[]
     similarTaste: TasteMapHybridDiscoveryItemDTO[]
     trending: TasteMapHybridDiscoveryItemDTO[]
+    /** Missing in older bridge-v1 payloads: freshness is unknown, not fresh. */
+    refreshStatus?: Partial<Record<TasteMapDiscoveryMode, TasteMapDiscoveryRefreshStatusDTO>>
   }
   community: {
     following: TasteMapHybridActivityItemDTO[]
@@ -529,7 +738,10 @@ export interface TasteMapAcquisitionCandidateDTO {
   longitude: number
   distanceMeters: number | null
   phone: string | null
+  websiteUrl?: string | null
   openingHours: string | null
+  /** Provider-supplied categories; optional while older Native bundles remain compatible. */
+  categoryHints?: string[]
   /** Kept for Native.v1 compatibility; presentation uses imageResolution. */
   image: TasteMapImageDescriptor
   imageResolution: TasteMapImageResolutionDTO
@@ -538,11 +750,19 @@ export interface TasteMapAcquisitionCandidateDTO {
 }
 
 export interface TasteMapAcquisitionResultsDTO {
+  /** Nearby returns the complete accepted in-range, distance-ordered snapshot.
+   * UI batches only its presentation; expanding never reacquires GPS/search. */
   candidates: TasteMapAcquisitionCandidateDTO[]
   location: TasteMapLocationDTO | null
+  /** Reverse-geocoded city for prefilling the editable search scope. */
+  detectedCity?: string | null
   message: string | null
   sharedImportFingerprint: string | null
+  /** Opaque provider/result snapshot continuation; never a guessed page count. */
+  nextCursor?: string | null
 }
+
+export interface TasteMapAcquisitionSearchOptions { cursor?: string | null }
 
 export interface TasteMapManualRestaurantDraftDTO {
   name: string
@@ -616,6 +836,12 @@ export interface TasteMapVisitWriteRequest {
   restaurantID: string
   visitID: string | null
   draft: TasteMapVisitWriteDraftDTO
+  /** Browser-local material only. NativeAdapter excludes this field from the bridge. */
+  browserPhotoMaterial?: {
+    photos: string[]
+    photoIds: Array<string | null>
+    dishPhotos: Array<{ id: string; imageData: string | null }>
+  }
 }
 
 export interface TasteMapVisitMutationResultDTO {
@@ -623,11 +849,17 @@ export interface TasteMapVisitMutationResultDTO {
   visitID: string
   updatedAt: string
   photoWarning?: string | null
+  /** Present only when deleting the final active owner visit also deleted its restaurant. */
+  deletedRestaurantID?: string | null
 }
 
 export interface TasteMapPremiumStatusDTO {
   state: 'free' | 'premium' | 'unavailable'
   expiresAt: string | null
+  source?: string | null
+  startedAt?: string | null
+  statusText?: string | null
+  canManageSubscription?: boolean
 }
 
 export interface TasteMapPremiumProductDTO {
@@ -665,7 +897,8 @@ export interface TasteMapSharePayload {
 export interface TasteMapNativeRouteRequest {
   route:
     | 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative'
-    | 'dataBackup' | 'permissions' | 'storage' | 'accountDelete'
+    | 'accountSettings' | 'dataBackup' | 'dataClear' | 'privacySettings' | 'permissions'
+    | 'storage' | 'helpSettings' | 'aboutSettings' | 'accountDelete'
     | 'profileEdit' | 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList'
   identifier?: string
 }
@@ -674,7 +907,7 @@ export type TasteMapHybridRoute =
   | { surface: 'profile'; identifier?: string }
   | { surface: 'restaurant'; identifier: string }
   | { surface: 'map' | 'discovery' | 'add' | 'visit' | 'visitEdit' | 'lists' | 'publicList' | 'activity' | 'roulette' | 'analytics' | 'premium' | 'settings'; identifier?: string }
-  | { surface: 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative' | 'dataBackup' | 'permissions' | 'storage' | 'accountDelete'; identifier?: string }
+  | { surface: 'acquisitionNative' | 'listManage' | 'premiumStore' | 'settingsNative' | 'socialNative' | 'accountSettings' | 'dataBackup' | 'dataClear' | 'privacySettings' | 'permissions' | 'storage' | 'helpSettings' | 'aboutSettings' | 'accountDelete'; identifier?: string }
   | { surface: 'profileEdit'; identifier?: string }
   | { surface: 'restaurantEdit' | 'restaurantDelete' | 'restaurantAddToList' | 'restaurantWantToGo'; identifier: string }
 
@@ -682,6 +915,20 @@ export interface TasteMapNavigationStateDTO {
   route: TasteMapHybridRoute
   owner: 'hybrid' | 'native'
   canGoBack: boolean
+  /** Present only for a bridge-command acknowledgement, never Native-origin navigation. */
+  sourceRequestID?: string
+  /** Optional Native-owned completion; old hosts omit it. */
+  completedAction?: 'restaurantDelete'
+}
+
+/** Adapter-local acknowledgement policy; never included in a Native route payload. */
+export interface TasteMapNavigationCommandOptions {
+  localTransition?: boolean
+}
+
+export interface TasteMapHybridNavigationOpenOptions extends TasteMapNavigationCommandOptions {
+  /** Complete the current route instead of retaining it behind the destination. */
+  replaceCurrent?: boolean
 }
 
 export type TasteMapLifecycleState = 'foreground' | 'background' | 'resume' | 'memoryWarning'
@@ -695,6 +942,8 @@ export type TasteMapHybridEvent =
   | { version: 1; sequence: number; name: 'location.changed'; payload: TasteMapLocationDTO }
   | { version: 1; sequence: number; name: 'map.viewport.changed'; payload: TasteMapNativeMapViewport }
   | { version: 1; sequence: number; name: 'map.restaurant.selected'; payload: { restaurantID: string | null } }
+  | { version: 1; sequence: number; name: 'map.restaurant.groupSelected'; payload: { restaurantIDs: string[] } }
+  | { version: 1; sequence: number; name: 'data.changed'; payload: { reason: 'localDataCleared' | 'restaurantDeleted' | 'backupImported' | 'nativePresentationDismissed' | 'premiumEntitlementChanged' | 'syncCompleted' | 'recommendationPreferenceSynced' | 'localDataChanged' } }
 
 export interface TasteMapEventSubscription { remove(): Promise<void> }
 
@@ -720,6 +969,14 @@ export interface TasteMapBridgeResponseEnvelope<TResult = unknown> {
 }
 
 export interface TasteMapPlatform {
+  directory?: {
+    dashboard():Promise<import('../contracts/privateDirectoryV1').PrivateDirectoryDashboard>
+    mutate(input:import('../contracts/privateDirectoryV1').PrivateDirectoryMutation):Promise<unknown>
+    respond(id:string,action:'accept'|'reject'|'cancel'|'unlink'):Promise<unknown>
+    pickAvatar():Promise<string|null>
+    searchUsers(query:string):Promise<Array<{id:string;displayName:string}>>
+  }
+  referrals?: { dashboard(): Promise<import('../contracts/referralsV1').ReferralDashboardV1>; prepareRegistration?(code:string):Promise<unknown> }
   readonly kind: 'browser' | 'native'
   runtime: { info(): Promise<TasteMapRuntimeInfo> }
   auth: {
@@ -732,9 +989,10 @@ export interface TasteMapPlatform {
     get(id: string): Promise<TasteMapRestaurantDetailViewModel>
     list(request?: TasteMapRestaurantListRequest): Promise<TasteMapRestaurantDetailViewModel[]>
     setWantToGo(restaurantID: string, wanted: boolean): Promise<TasteMapRestaurantViewerStateMutationDTO>
+    setAvatar(restaurantID: string, update: TasteMapRestaurantAvatarUpdateDTO): Promise<TasteMapRestaurantAvatarMutationDTO>
   }
   acquisition: {
-    search(query: string, city: string): Promise<TasteMapAcquisitionResultsDTO>
+    search(query: string, city: string, options?: TasteMapAcquisitionSearchOptions): Promise<TasteMapAcquisitionResultsDTO>
     nearby(): Promise<TasteMapAcquisitionResultsDTO>
     shared(): Promise<TasteMapAcquisitionResultsDTO>
     manual(draft: TasteMapManualRestaurantDraftDTO): Promise<TasteMapAcquisitionResultsDTO>
@@ -744,7 +1002,19 @@ export interface TasteMapPlatform {
     viewport(request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse>
     updateNativeSurface(request: TasteMapNativeMapSurfaceUpdateRequest): Promise<TasteMapNativeMapSurfaceUpdateResponse>
   }
-  content: { snapshot(): Promise<TasteMapHybridContentSnapshotDTO> }
+  content: { snapshot(options?: TasteMapContentSnapshotOptions): Promise<TasteMapHybridContentSnapshotDTO> }
+  /** Optional on legacy bridge-v1 hosts; requires supportedCapabilities.discoveryPage. */
+  discovery?: {
+    page(request: TasteMapDiscoveryPageRequest): Promise<TasteMapDiscoveryPageDTO>
+    cityPage(request: TasteMapDiscoveryCityPageRequest): Promise<TasteMapDiscoveryCityPageDTO>
+  }
+  /** Owner-scoped, durable exclusions shared by For You and the recommendation map. */
+  recommendations?: { preference(restaurantID?: string): Promise<import('../services/recommendationIntent').RecommendationPreferences> }
+  /** Optional for older bridge-v1 hosts; absence is an explicit unsupported state. */
+  lists?: {
+    get(request: TasteMapListGetRequest): Promise<TasteMapListPageDTO>
+    createShareLink(id: string): Promise<TasteMapListShareLinkDTO>
+  }
   community: {
     setLike(target: TasteMapHybridActivityInteractionDTO, liked: boolean): Promise<TasteMapCommunityEngagementDTO>
     comments(target: TasteMapHybridActivityInteractionDTO): Promise<TasteMapCommunityCommentPageDTO>
@@ -769,6 +1039,8 @@ export interface TasteMapPlatform {
     retry(photoID: string): Promise<void>
   }
   premium: {
+    trialEligibility(): Promise<{ eligible: boolean; trialDays: number }>
+    claimTrial(): Promise<{ expiresAt: string; status: TasteMapPremiumStatusDTO }>
     status(): Promise<TasteMapPremiumStatusDTO>
     products(): Promise<TasteMapPremiumProductDTO[]>
     purchase(productID: string): Promise<TasteMapPremiumActionResultDTO>
@@ -786,8 +1058,8 @@ export interface TasteMapPlatform {
   account: { openDelete(): Promise<void> }
   navigation: {
     openNative(request: TasteMapNativeRouteRequest): Promise<void>
-    openHybrid(route: TasteMapHybridRoute): Promise<TasteMapNavigationStateDTO>
-    back(): Promise<TasteMapNavigationStateDTO>
+    openHybrid(route: TasteMapHybridRoute, options?: TasteMapHybridNavigationOpenOptions): Promise<TasteMapNavigationStateDTO>
+    back(options?: TasteMapNavigationCommandOptions): Promise<TasteMapNavigationStateDTO>
     current(): Promise<TasteMapNavigationStateDTO>
   }
   events: { subscribe(listener: (event: TasteMapHybridEvent) => void): Promise<TasteMapEventSubscription> }

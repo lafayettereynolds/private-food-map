@@ -1,8 +1,10 @@
-import type { ChangeEventHandler } from 'react'
-import { Clock3, Images, MapPin, Navigation, Phone } from 'lucide-react'
+import type { ChangeEventHandler, ReactNode } from 'react'
+import { Clock3, Images, MapPin, Navigation, Pencil, Phone } from 'lucide-react'
 import { mapService } from '../services/mapService'
 import { STATUS_META, type RestaurantSummary } from '../types/domain'
-import { RestaurantAvatar } from './RestaurantAvatar'
+import { RestaurantContentImage } from './RestaurantContentImage'
+import { visitActivityMedia } from './activityMedia'
+import type { TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
 import { RestaurantSocialStatsPanel, type PersonalRatingOverride } from './RestaurantSocialStatsPanel'
 import { SyncedImage } from './SyncedImage'
 import { RestaurantQuickActions } from './RestaurantQuickActions'
@@ -21,6 +23,8 @@ export interface RestaurantSummarySectionProps {
   restaurant: RestaurantSummary
   historyRestaurants?: RestaurantSummary[]
   additionalUserPhotos?: Array<{ source: string; photoId?: string | null }>
+  contentImage?: TasteMapImageDescriptor
+  contentImageResolution?: TasteMapImageResolutionDTO
   actions?: RestaurantSummaryActionSet
   addressEditor?: {
     value: string
@@ -32,6 +36,8 @@ export interface RestaurantSummarySectionProps {
   socialStats?: RestaurantSocialStats | null
   referencePrice?: number | null
   className?: string
+  onEditAvatar?: () => void
+  imageTrailingAction?: ReactNode
 }
 
 /**
@@ -42,6 +48,8 @@ export function RestaurantSummarySection({
   restaurant,
   historyRestaurants = [],
   additionalUserPhotos = [],
+  contentImage,
+  contentImageResolution,
   actions,
   addressEditor,
   personalRatingOverride,
@@ -49,6 +57,8 @@ export function RestaurantSummarySection({
   socialStats,
   referencePrice,
   className = '',
+  onEditAvatar,
+  imageTrailingAction,
 }: RestaurantSummarySectionProps) {
   const matchingHistoryRestaurants = historyRestaurants.filter((candidate) => sameRestaurant(candidate, restaurant))
   const detailRestaurant = matchingHistoryRestaurants
@@ -57,25 +67,26 @@ export function RestaurantSummarySection({
   const navigationUrl = mapService.directionsUrl(detailRestaurant)
   const allUserPhotos = uniqueUserPhotos([
     ...additionalUserPhotos,
-    ...[restaurant, ...matchingHistoryRestaurants].flatMap((candidate) => candidate.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] })))),
+    ...[restaurant, ...matchingHistoryRestaurants].flatMap((candidate) => candidate.visits.filter((visit) => !visit.deletedAt).flatMap((visit) => [
+      ...visitActivityMedia(visit.photos, visit.photoIds),
+      ...visit.dishes.map((dish) => ({ source: dish.imageData || '', photoId: dish.photoId })),
+    ])),
   ])
   const userPhotos = allUserPhotos.slice(0, 4)
-
   return <section className={`restaurant-record-summary${className ? ` ${className}` : ''}`} data-record-section="restaurant-summary">
     <section className="restaurant-detail-header" aria-label="餐厅信息摘要" data-summary-module="restaurant-facts">
       <div className="restaurant-detail-gallery" aria-label="餐厅图片">
         <div className="restaurant-detail-gallery__merchant">
-          {detailRestaurant.merchantImageUrl
-            ? <img alt={`${detailRestaurant.name} 商家图片`} loading="lazy" src={detailRestaurant.merchantImageUrl} />
-            : <span className="restaurant-detail-gallery__placeholder"><RestaurantAvatar restaurant={detailRestaurant} size="large" /></span>}
-          <em>商家图片</em>
+          {onEditAvatar ? <button aria-label="修改餐厅头像" className="restaurant-avatar-edit-button" onClick={onEditAvatar} type="button"><Pencil aria-hidden="true" size={17} /></button> : null}
+          {imageTrailingAction}
+          <RestaurantContentImage name={detailRestaurant.name} tags={detailRestaurant.tags} image={contentImage} resolution={contentImageResolution} photos={allUserPhotos} />
         </div>
       </div>
 
       <div className="map-card__title-row">
         <div>
-          <span>{detailRestaurant.city} · {STATUS_META[restaurant.status].label}</span>
-          <h2>{detailRestaurant.name}</h2>
+          <span>{detailRestaurant.city || '暂无城市信息'} · {STATUS_META[restaurant.status].label}</span>
+          <h2>{detailRestaurant.name || '暂无餐厅名称'}</h2>
         </div>
         {actions ? <RestaurantQuickActions
           className="restaurant-title-actions"
@@ -91,10 +102,14 @@ export function RestaurantSummarySection({
 
       {addressEditor
         ? <label className="restaurant-record-summary__address-editor"><MapPin size={14} /><input aria-label="餐厅地址" onChange={addressEditor.onChange} required={addressEditor.required} value={addressEditor.value} /></label>
-        : <p className="map-card__address"><MapPin size={14} /> {detailRestaurant.address}</p>}
+        : <p className="map-card__address"><MapPin size={14} /> {detailRestaurant.address || '暂无地址'}</p>}
+
+      <p className="restaurant-detail-categories" data-summary-field="categories">
+        {detailRestaurant.tags.length ? `分类：${detailRestaurant.tags.join(' · ')}` : '暂无分类'}
+      </p>
 
       <div className="restaurant-detail-reference" data-summary-field="reference-price">
-        <span>{typeof displayPrice === 'number' && Number.isFinite(displayPrice) ? `参考人均约 ¥${Math.round(displayPrice)}` : '参考人均待补充'}</span>
+        <span>{typeof displayPrice === 'number' && Number.isFinite(displayPrice) ? `参考人均约 ¥${Math.round(displayPrice)}` : '暂无参考人均'}</span>
       </div>
 
       <div className="restaurant-contact-actions">
@@ -140,6 +155,7 @@ function mergeRestaurantDetails(restaurant: RestaurantSummary, match?: Restauran
     address: restaurant.address || match.address,
     city: restaurant.city || match.city,
     phone: restaurant.phone || match.phone || null,
+    websiteUrl: restaurant.websiteUrl || match.websiteUrl || null,
     openingHours: restaurant.openingHours || match.openingHours || null,
     merchantImageUrl: restaurant.merchantImageUrl || match.merchantImageUrl,
     pricePerPerson: restaurant.pricePerPerson ?? match.pricePerPerson,

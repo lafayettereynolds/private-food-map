@@ -46,11 +46,18 @@ describe('review service', () => {
     expect(review.spendDisplay).toBe('total')
   })
 
-  it('never substitutes totalPrice for my actual spend', () => {
-    const input = { ...visit('a', 'r1', '2026-08-12', 4), totalPrice: 999 }
+  it('never substitutes an ambiguous table total for my actual spend', () => {
+    const input = { ...visit('a', 'r1', '2026-08-12', 4), totalPrice: 999, paymentMode: 'other' as const }
     const review = reviewService.monthly(restaurants, [input], 2026, 8)
     expect(review.actualSpend).toBe(0)
     expect(review.visitsWithSpend).toBe(0)
+  })
+
+  it('recovers personal spend when the former one-price form payment mode is deterministic', () => {
+    const input = { ...visit('a', 'r1', '2026-08-12', 4), totalPrice: 300, paymentMode: 'aa' as const, partySize: 2 }
+    const review = reviewService.monthly(restaurants, [input], 2026, 8)
+    expect(review.actualSpend).toBe(150)
+    expect(review.visitsWithSpend).toBe(1)
   })
 
   it('prioritizes a visit photo over the restaurant and provider cover', () => {

@@ -57,12 +57,15 @@ interface CommunityResponse {
     recommendationType?: CommunityVisit['recommendationType']
     recommendationRank?: number | null
     recommendationConfidence?: CommunityVisit['recommendationConfidence']
+    personalTastePercent?: CommunityVisit['personalTastePercent']
+    calibratedLikeProbability?: CommunityVisit['calibratedLikeProbability']
     reasonCodes?: CommunityVisit['reasonCodes']
     surface?: CommunityVisit['surface']
   }>
 }
 
 export interface CommunityFeedAccess {
+  evidenceAvailability?: import('../contracts/discoveryAvailability').DiscoveryEvidenceAvailability
   entitlementTier: 'free' | 'premium'
   experienceTier: 'basic' | 'deep'
   profileConfidence: 'insufficient' | 'ready'
@@ -115,6 +118,8 @@ export async function fetchCommunityFeed(mode: DiscoveryMode = 'for_you', city =
     recommendationType: item.recommendationType ?? null,
     recommendationRank: item.recommendationRank ?? null,
     recommendationConfidence: item.recommendationConfidence ?? null,
+    personalTastePercent: item.personalTastePercent ?? null,
+    calibratedLikeProbability: item.calibratedLikeProbability ?? null,
     reasonCodes: item.reasonCodes ?? [],
     surface: item.surface ?? null,
   })) }

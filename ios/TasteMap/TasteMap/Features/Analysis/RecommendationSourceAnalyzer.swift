@@ -2,7 +2,10 @@ import Foundation
 
 enum RecommendationSourceAnalyzer {
     nonisolated static let highRatingThreshold = 4.0
-    nonisolated static let lowRatingThreshold = 2.5
+    nonisolated static func isPitfall(_ rating: Double?, baseline: Double?) -> Bool {
+        guard let rating, let baseline else { return false }
+        return baseline - rating >= 0.5 - 1e-10 // one point on the 10-point presentation scale
+    }
     nonisolated static let minimumRatedRestaurantsForRanking = AnalysisSufficiencyThresholds.recommendationSourceRankingRatedRestaurants
     nonisolated static let stableRatedRestaurantCount = AnalysisSufficiencyThresholds.recommendationSourceStableRatedRestaurants
     nonisolated static let minimumRatedRestaurantsForAverage = AnalysisSufficiencyThresholds.recommendationSourceAverageRatedRestaurants
@@ -23,30 +26,35 @@ enum RecommendationSourceAnalyzer {
     nonisolated static func analyze(
         _ input: RecommendationSourceInput,
         now: Date = .now,
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        visitIDs: Set<UUID>? = nil
     ) -> RecommendationSourceOverview {
         let sources = deduplicate(input.sources.filter { $0.deletedAt == nil })
         let restaurants = deduplicate(input.restaurants.filter { $0.deletedAt == nil })
         let restaurantByID = Dictionary(uniqueKeysWithValues: restaurants.map { ($0.id, $0) })
-        let visits = input.visits.filter { $0.deletedAt == nil && restaurantByID[$0.restaurantID] != nil }
+        let visits = input.visits.filter { $0.deletedAt == nil && $0.visitedAt <= now && restaurantByID[$0.restaurantID] != nil }
         let photos = input.photos.filter { $0.deletedAt == nil && $0.kind != .avatar }
         let visitsByRestaurant = Dictionary(grouping: visits, by: \.restaurantID)
         let resolver = SourceResolver(sources: sources)
+        let firstRatings = visitsByRestaurant.values.compactMap { $0.sorted(by: visitSort).first?.rating }.filter { $0.isFinite && $0 >= 0.5 && $0 <= 5 }
+        let overallAverage = mean(firstRatings)
+        let baselineHighRate = ratio(firstRatings.filter { $0 >= highRatingThreshold }.count, firstRatings.count)
 
         let acquired: [AcquiredRestaurant] = restaurants.compactMap { restaurant in
             let restaurantVisits = (visitsByRestaurant[restaurant.id] ?? []).sorted(by: visitSort)
+            guard Set(restaurantVisits.compactMap(resolver.resolve)).count == 1 else { return nil }
             guard let firstResolved = restaurantVisits.enumerated().compactMap({ index, visit -> (Int, RecommendationSourceInput.VisitRecord, UUID)? in
                 guard let sourceID = resolver.resolve(visit) else { return nil }
                 return (index, visit, sourceID)
             }).first else { return nil }
-            let ratings = restaurantVisits.compactMap(\.rating)
+            if let visitIDs, !visitIDs.contains(firstResolved.1.id) { return nil }
             return AcquiredRestaurant(
                 restaurant: restaurant,
                 sourceID: firstResolved.2,
                 acquisitionDate: firstResolved.1.visitedAt,
                 isNewDiscovery: firstResolved.0 == 0,
-                visits: restaurantVisits,
-                averageRating: mean(ratings),
+                visits: restaurantVisits.filter { $0.visitedAt >= firstResolved.1.visitedAt && (visitIDs?.contains($0.id) ?? true) },
+                averageRating: firstResolved.1.rating.flatMap { $0.isFinite && $0 >= 0.5 && $0 <= 5 ? $0 : nil },
                 valueAverage: mean(restaurantVisits.compactMap(\.valueRating)),
                 environmentAverage: mean(restaurantVisits.compactMap(\.environmentRating)),
                 serviceAverage: mean(restaurantVisits.compactMap(\.serviceRating)),
@@ -61,13 +69,13 @@ enum RecommendationSourceAnalyzer {
 
         let acquiredBySource = Dictionary(grouping: acquired, by: \.sourceID)
         let allRestaurantRatings = acquired.compactMap(\.averageRating)
-        let overallAverage = mean(allRestaurantRatings)
 
         let analyses = sources.map { source in
             sourceAnalysis(
                 source: source,
                 acquired: acquiredBySource[source.id] ?? [],
                 overallAverage: overallAverage,
+                baselineHighRate: baselineHighRate,
                 now: now,
                 calendar: calendar
             )
@@ -78,10 +86,10 @@ enum RecommendationSourceAnalyzer {
             $0.ratedRestaurantCount >= minimumRatedRestaurantsForAverage && $0.averageRating != nil
         }.sorted(by: averageSort).first
         let eligible = analyses.filter {
-            $0.ratedRestaurantCount >= minimumRatedRestaurantsForRanking && $0.averageRating != nil
+            $0.sourceType != .self && $0.ratedRestaurantCount >= minimumRatedRestaurantsForRanking && $0.averageRating != nil
         }
-        let bestAnalysis = eligible.count >= 2 ? eligible.sorted(by: bestSort).first : nil
-        let worstAnalysis = eligible.count >= 2 ? eligible.sorted(by: worstSort).first : nil
+        let bestAnalysis = eligible.filter { $0.highRatingCount > 0 }.sorted(by: bestSort).first
+        let worstAnalysis = eligible.filter { $0.lowRatingCount > 0 }.sorted(by: worstSort).first
 
         let mostUsed = mostUsedAnalysis.map {
             RecommendationSourceConclusion(
@@ -131,7 +139,7 @@ enum RecommendationSourceAnalyzer {
         let representatives = representativeRestaurants(
             mostUsed: mostUsedAnalysis,
             best: bestAnalysis,
-            worst: worstAnalysis
+            worst: worstAnalysis, baseline: overallAverage
         )
         let latest = max(
             sources.map(\.updatedAt).max() ?? .distantPast,
@@ -161,13 +169,14 @@ enum RecommendationSourceAnalyzer {
         source: RecommendationSourceInput.SourceRecord,
         acquired: [AcquiredRestaurant],
         overallAverage: Double?,
+        baselineHighRate: Double,
         now: Date,
         calendar: Calendar
     ) -> RecommendationSourceAnalysis {
         let ratings = acquired.compactMap(\.averageRating)
         let average = mean(ratings)
         let high = ratings.filter { $0 >= highRatingThreshold }.count
-        let low = ratings.filter { $0 <= lowRatingThreshold }.count
+        let low = ratings.filter { isPitfall($0, baseline: overallAverage) }.count
         let repeated = acquired.filter { $0.visits.count >= 2 }.count
         let deviation = standardDeviation(ratings)
         let stability: RecommendationSourceRatingStability
@@ -187,21 +196,14 @@ enum RecommendationSourceAnalyzer {
         else if recent > 0 { trend = .cooling }
         else { trend = .inactive }
 
-        let sampleConfidence = min(1, Double(ratings.count) / Double(stableRatedRestaurantCount))
-        let normalizedAverage = max(0, min(1, ((average ?? 2.5) - 0.5) / 4.5))
         let highRate = ratio(high, ratings.count)
         let lowRate = ratio(low, ratings.count)
         let repeatRate = ratio(repeated, acquired.count)
-        let stabilityValue = max(0, 1 - min(1, (deviation ?? 1) / 1.5))
-        let baselineDelta = max(0, min(1, ((average ?? 0) - (overallAverage ?? average ?? 0) + 1) / 2))
-        let reliability = ratings.count >= minimumRatedRestaurantsForRanking
-            ? normalizedAverage * 0.30 + highRate * 0.27 + repeatRate * 0.16
-                + stabilityValue * 0.10 + baselineDelta * 0.10 + sampleConfidence * 0.07
+        let reliability = source.sourceType != .self && ratings.count >= minimumRatedRestaurantsForRanking
+            ? (Double(high) + 5 * baselineHighRate) / Double(ratings.count + 5)
             : nil
-        let normalizedLowAverage = max(0, min(1, (3.5 - (average ?? 3.5)) / 3))
-        let pitfall = ratings.count >= minimumRatedRestaurantsForRanking
-            ? lowRate * 0.34 + (1 - highRate) * 0.22 + (1 - repeatRate) * 0.10
-                + normalizedLowAverage * 0.22 + (1 - stabilityValue) * 0.05 + sampleConfidence * 0.07
+        let pitfall = source.sourceType != .self && ratings.count >= minimumRatedRestaurantsForRanking && overallAverage != nil
+            ? lowRate
             : nil
 
         let sortedRestaurants = acquired.sorted(by: restaurantEvidenceSort)
@@ -241,7 +243,7 @@ enum RecommendationSourceAnalyzer {
                     id: item.restaurant.id,
                     name: item.restaurant.name,
                     city: item.restaurant.city,
-                    role: evidenceRole(item),
+                    role: evidenceRole(item, baseline: overallAverage),
                     detail: evidenceDetail(item),
                     averageRating: item.averageRating,
                     visitCount: item.visits.count,
@@ -281,7 +283,7 @@ enum RecommendationSourceAnalyzer {
     private nonisolated static func representativeRestaurants(
         mostUsed: RecommendationSourceAnalysis?,
         best: RecommendationSourceAnalysis?,
-        worst: RecommendationSourceAnalysis?
+        worst: RecommendationSourceAnalysis?, baseline: Double?
     ) -> [RecommendationSourceRestaurantEvidence] {
         var result: [RecommendationSourceRestaurantEvidence] = []
         var seen = Set<UUID>()
@@ -297,7 +299,7 @@ enum RecommendationSourceAnalyzer {
         append(mostUsed?.restaurants.max(by: { $0.acquisitionDate < $1.acquisitionDate }), role: "近期来源故事")
         append(best?.restaurants.filter { ($0.averageRating ?? 0) >= highRatingThreshold }
             .max(by: { ($0.averageRating ?? 0) < ($1.averageRating ?? 0) }), role: "靠谱来源代表")
-        append(worst?.restaurants.filter { ($0.averageRating ?? 6) <= lowRatingThreshold }
+        append(worst?.restaurants.filter { isPitfall($0.averageRating, baseline: baseline) }
             .min(by: { ($0.averageRating ?? 6) < ($1.averageRating ?? 6) }), role: "最坑来源证据")
         return Array(result.prefix(3))
     }
@@ -320,13 +322,13 @@ enum RecommendationSourceAnalyzer {
         _ item: RecommendationSourceAnalysis,
         overallAverage: Double?
     ) -> String {
-        let averageText = item.averageRating.map { "餐厅平均 \($0.oneDecimal) 分" } ?? "平均分不足"
-        return "\(item.ratedRestaurantCount) 家有评分餐厅中，\(item.lowRatingCount) 家不高于 2.5 分；\(averageText)，且回头餐厅占 \(item.repeatConversionRate.percent)。"
+        let averageText = item.averageRating.map { "首次体验均分 \(($0 * 2).oneDecimal) / 10" } ?? "平均分不足"
+        return "踩坑率 \(item.lowRatingRate.percent)；验证 \(item.ratedRestaurantCount) 家，其中 \(item.lowRatingCount) 家比个人整体首次体验均分低至少 1 分；\(averageText)。"
     }
 
-    private nonisolated static func evidenceRole(_ item: AcquiredRestaurant) -> String {
+    private nonisolated static func evidenceRole(_ item: AcquiredRestaurant, baseline: Double?) -> String {
         if let rating = item.averageRating, rating >= highRatingThreshold { return "高分命中" }
-        if let rating = item.averageRating, rating <= lowRatingThreshold { return "低分证据" }
+        if isPitfall(item.averageRating, baseline: baseline) { return "踩坑证据" }
         if item.visits.count >= 2 { return "后来又回去" }
         return "来源带来的餐厅"
     }
@@ -425,7 +427,7 @@ enum RecommendationSourceAnalyzer {
 
     private nonisolated static func worstSort(_ lhs: RecommendationSourceAnalysis, _ rhs: RecommendationSourceAnalysis) -> Bool {
         if lhs.pitfallScore != rhs.pitfallScore { return (lhs.pitfallScore ?? 0) > (rhs.pitfallScore ?? 0) }
-        if lhs.ratedRestaurantCount != rhs.ratedRestaurantCount { return lhs.ratedRestaurantCount > rhs.ratedRestaurantCount }
+        if lhs.averageRating != rhs.averageRating { return (lhs.averageRating ?? 6) < (rhs.averageRating ?? 6) }
         return lhs.id.uuidString < rhs.id.uuidString
     }
 

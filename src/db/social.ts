@@ -40,7 +40,7 @@ export async function ensureCurrentUser() {
   return user
 }
 
-export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'>) {
+export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'> & Partial<Pick<UserProfile, 'mapSharingEnabled' | 'mapVisibility'>>) {
   const current = await ensureCurrentUser()
   const updated: UserProfile = {
     ...current,
@@ -50,6 +50,7 @@ export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickn
     city: changes.city.trim(),
     avatarImageData: current.membershipTier === 'member' ? changes.avatarImageData : current.avatarImageData,
     avatarPhotoId: current.membershipTier === 'member' ? changes.avatarPhotoId : current.avatarPhotoId,
+    mapVisibility: changes.mapSharingEnabled === false ? 'private' : (changes.mapVisibility ?? current.mapVisibility),
     updatedAt: new Date().toISOString(),
     deletedAt: null,
   }

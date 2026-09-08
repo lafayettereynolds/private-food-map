@@ -1,5 +1,17 @@
 import Foundation
 
+enum DiscoveryEvidencePolicy {
+    /// Product language and UI use ten points. Remote Visit.rating remains on
+    /// the legacy five-point scale only for storage/API compatibility.
+    static let minimumQualifiedScoreOutOfTen = 7.5
+    static let minimumQualifiedRatingOutOfFive = minimumQualifiedScoreOutOfTen / 2
+
+    static func isQualified(ratingOutOfFive rating: Double?) -> Bool {
+        guard let rating else { return false }
+        return rating >= minimumQualifiedRatingOutOfFive
+    }
+}
+
 enum DiscoveryModeV1: String, Codable, CaseIterable, Identifiable, Sendable {
     case forYou = "for_you"
     case similarTaste = "similar_taste"
@@ -40,6 +52,25 @@ struct DiscoveryPhotoProjectionV1: Codable, Equatable, Sendable {
     var visibility: String? = nil
     var createdAt: String? = nil
     var exportAllowed: Bool? = nil
+    var photoKind: String? = nil
+
+    var isActualDiningPhoto: Bool {
+        if let photoKind { return ["visit", "dish"].contains(photoKind) }
+        return visitId?.isEmpty == false
+    }
+
+    /// Nested legacy photos may lack provenance fields, but contradictory
+    /// metadata must never turn another Visit/author's photo into this album.
+    static func activityAlbum(_ photos: [Self]?, visitID: String, authorID: String) -> [Self]? {
+        guard let photos else { return nil }
+        var seen = Set<String>()
+        return photos.filter {
+            !$0.photoId.isEmpty && ($0.photoKind == nil || $0.isActualDiningPhoto)
+                && ($0.visitId == nil || $0.visitId == visitID)
+                && ($0.ownerUserId == nil || $0.ownerUserId == authorID)
+                && seen.insert($0.photoId.lowercased()).inserted
+        }
+    }
 }
 
 struct DiscoveryRestaurantProjectionV1: Codable, Equatable, Identifiable, Sendable {
@@ -55,6 +86,9 @@ struct DiscoveryRestaurantProjectionV1: Codable, Equatable, Identifiable, Sendab
     let merchantImageUrl: String?
     let markerEmoji: String
     let photo: DiscoveryPhotoProjectionV1?
+    var phone: String? = nil
+    var websiteUrl: String? = nil
+    var openingHours: String? = nil
 
     var id: String { globalKey }
 }
@@ -90,6 +124,7 @@ struct DiscoveryActivityProjectionV1: Codable, Equatable, Sendable {
     let visitId: String
     let visitedAt: String
     let rating: Double?
+    var photos: [DiscoveryPhotoProjectionV1]? = nil
 }
 
 struct DiscoveryRatingProjectionV1: Codable, Equatable, Sendable {
@@ -107,6 +142,7 @@ struct DiscoveryRatingsV1: Codable, Equatable, Sendable {
 struct DiscoveryReasonV1: Codable, Equatable, Identifiable, Sendable {
     let code: String
     let text: String
+    var evidence: TasteMapHybridDiscoveryReasonEvidenceDTO? = nil
     var id: String { "\(code):\(text)" }
 }
 
@@ -135,6 +171,9 @@ struct DiscoveryCardV1: Codable, Equatable, Identifiable, Sendable {
     let cacheScope: DiscoveryCacheScopeV1
     let rank: Int
     let score: Double
+    let personalTastePercent: Int?
+    let calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO?
+    let tasteEvidence: TasteMapDiscoveryTasteEvidenceDTO?
 
     init(
         id: String,
@@ -149,7 +188,10 @@ struct DiscoveryCardV1: Codable, Equatable, Identifiable, Sendable {
         trend: DiscoveryTrendContextV1?,
         cacheScope: DiscoveryCacheScopeV1,
         rank: Int,
-        score: Double
+        score: Double,
+        personalTastePercent: Int? = nil,
+        calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO? = nil,
+        tasteEvidence: TasteMapDiscoveryTasteEvidenceDTO? = nil
     ) {
         self.id = id
         self.mode = mode
@@ -164,6 +206,25 @@ struct DiscoveryCardV1: Codable, Equatable, Identifiable, Sendable {
         self.cacheScope = cacheScope
         self.rank = rank
         self.score = score
+        self.personalTastePercent = personalTastePercent
+        self.calibratedLikeProbability = calibratedLikeProbability
+        self.tasteEvidence = tasteEvidence
+    }
+}
+
+extension DiscoveryCardV1 {
+    /// Trend cards are restaurant-level count aggregates and may include
+    /// Visits below 7.5/10 in their visitor totals. Rating-driven placements
+    /// require a qualified concrete Visit whenever such an activity is attached.
+    var isEligibleForDiscoveryPresentation: Bool {
+        switch mode {
+        case .trending:
+            true
+        case .similarTaste:
+            DiscoveryEvidencePolicy.isQualified(ratingOutOfFive: activity?.rating)
+        case .forYou:
+            activity == nil || DiscoveryEvidencePolicy.isQualified(ratingOutOfFive: activity?.rating)
+        }
     }
 }
 
@@ -175,6 +236,10 @@ struct DiscoveryPageV1: Codable, Equatable, Sendable {
     let generatedAt: String
     let items: [DiscoveryCardV1]
     let nextCursor: String?
+    var evidenceAvailability: TasteMapDiscoveryEvidenceAvailabilityDTO? = nil
+    var appliedQuery: TasteMapDiscoveryAppliedQuery? = nil
+    var filterCapabilities: TasteMapDiscoveryFilterCapabilities? = nil
+    var filterTaxonomy: TasteMapDiscoveryFilterTaxonomy? = nil
 }
 
 struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
@@ -190,6 +255,9 @@ struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
     let cacheScope: DiscoveryCacheScopeV1
     let rank: Int
     let score: Double
+    let personalTastePercent: Int?
+    let calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO?
+    var tasteEvidence: TasteMapDiscoveryTasteEvidenceDTO? = nil
 
     init(card: DiscoveryCardV1) {
         id = card.id; mode = card.mode; viewerState = card.viewerState
@@ -197,12 +265,16 @@ struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
         activity = card.activity
         similarity = card.similarity; trend = card.trend; cacheScope = card.cacheScope
         rank = card.rank; score = card.score
+        personalTastePercent = card.personalTastePercent
+        calibratedLikeProbability = card.calibratedLikeProbability
+        tasteEvidence = card.tasteEvidence
     }
 
     func card(restaurant: DiscoveryRestaurantProjectionV1) -> DiscoveryCardV1 {
         .init(id: id, mode: mode, restaurant: restaurant, viewerState: viewerState,
               ratings: ratings, reasons: reasons, sourceUser: sourceUser, activity: activity,
               similarity: similarity, trend: trend, cacheScope: cacheScope,
-              rank: rank, score: score)
+              rank: rank, score: score, personalTastePercent: personalTastePercent,
+              calibratedLikeProbability: calibratedLikeProbability, tasteEvidence: tasteEvidence)
     }
 }

@@ -1,15 +1,22 @@
-import { CalendarClock, ChevronDown, Clock3, Edit3, ListPlus, Share2, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
+import { CalendarClock, ChevronDown, Clock3, Edit3, Star, Store, Trash2, Truck, Users, WalletCards, X } from 'lucide-react'
 import { DINING_OCCASION_OPTIONS, diningModeLabel, formatAverageQueueDuration, queueDurationLabel, starToTenScore, type RestaurantSummary, type Visit } from '../types/domain'
 import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
 import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import type { RestaurantSocialStats } from '../types/restaurantStats'
+import { resolveVisitActualSpend } from '../services/visitSpend'
+import type { TasteMapPlatform, TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
+import { RecommendationNotInterested } from './RecommendationNotInterested'
 
 interface RestaurantPreviewCardProps {
   restaurant: RestaurantSummary
   historyRestaurants?: RestaurantSummary[]
   additionalUserPhotos?: Array<{ source: string; photoId?: string | null }>
+  contentImage?: TasteMapImageDescriptor
+  contentImageResolution?: TasteMapImageResolutionDTO
   onClose: () => void
+  /** Full-page destinations use the shared persistent back navigation instead. */
+  showCloseButton?: boolean
   onEdit?: () => void
   onDelete?: () => void
   onAddVisit?: () => void
@@ -22,6 +29,8 @@ interface RestaurantPreviewCardProps {
   onShare?: () => void
   isInRoulette?: boolean
   onAddToWant?: () => void
+  onEditAvatar?: () => void
+  recommendationPlatform?: TasteMapPlatform
   /** Explicit current-viewer state for public discovery records; null means not saved by the viewer. */
   viewerStatus?: RestaurantSummary['status'] | null
   /** Public discovery details are view-only even when their source visit belongs to another user. */
@@ -36,31 +45,33 @@ export function RestaurantPreviewCard({
   restaurant,
   historyRestaurants = [],
   additionalUserPhotos = [],
+  contentImage,
+  contentImageResolution,
   onClose,
-  onEdit,
-  onDelete,
+  showCloseButton = true,
   onAddVisit,
   onEditVisit,
   canEditVisit,
   onSaveRecommendation,
   onAddToRoulette,
-  onAddToList,
-  onShare,
   isInRoulette = false,
   onAddToWant,
+  onEditAvatar,
+  recommendationPlatform,
+  onDelete,
   viewerStatus,
   readOnly = false,
   remoteStatsEnabled = true,
   socialStats,
 }: RestaurantPreviewCardProps) {
-  const recordedSpend = restaurant.visits.map((visit) => visit.myActualSpend ?? visit.pricePerPerson).filter((value): value is number => value !== null)
+  const recordedSpend = restaurant.visits.map(resolveVisitActualSpend).filter((value): value is number => value !== null)
   const averageActualSpend = recordedSpend.length ? Math.round(recordedSpend.reduce((sum, value) => sum + value, 0) / recordedSpend.length) : null
   const overviewFacets = buildOverviewFacets(restaurant.visits)
   const quickActionStatus = viewerStatus === undefined ? restaurant.status : viewerStatus
   const showPersonalHistory = quickActionStatus === 'visited'
   return (
     <article className="map-card">
-      <button className="map-card__close" aria-label="关闭餐厅卡片" onClick={onClose} type="button"><X size={16} /></button>
+      {showCloseButton ? <button className="map-card__close" aria-label="关闭餐厅卡片" onClick={onClose} type="button"><X size={16} /></button> : null}
       <RestaurantSummarySection
         actions={onAddVisit || onAddToWant || onSaveRecommendation || onAddToRoulette ? {
           isInRoulette,
@@ -71,14 +82,18 @@ export function RestaurantPreviewCard({
           wantActive: quickActionStatus === 'wantToGo',
         } : undefined}
         additionalUserPhotos={additionalUserPhotos}
+        contentImage={contentImage}
+        contentImageResolution={contentImageResolution}
         className="is-detail-card"
         historyRestaurants={historyRestaurants}
+        onEditAvatar={onEditAvatar}
+        imageTrailingAction={recommendationPlatform ? <RecommendationNotInterested platform={recommendationPlatform} restaurantID={restaurant.id} restaurantName={restaurant.name} overlay /> : undefined}
         remoteStatsEnabled={remoteStatsEnabled}
         restaurant={restaurant}
         socialStats={socialStats}
       />
-      {showPersonalHistory ? <section className="restaurant-visit-overview" aria-label="我的到访概览">
-        <header><strong>我的到访概览</strong></header>
+      {showPersonalHistory || (!readOnly && onDelete) ? <section className="restaurant-visit-overview" aria-label="我的到访概览">
+        <header><strong>我的到访概览</strong>{!readOnly && onDelete ? <button aria-label="删除餐厅" title="删除餐厅" className="restaurant-delete-button" onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={17} /></button> : null}</header>
         <div className="restaurant-visit-overview__metrics">
           <span><small>到访次数</small><strong>{restaurant.visitCount} 次</strong></span>
           <span><small>平均消费</small><strong>{averageActualSpend !== null ? `¥${averageActualSpend}` : '—'}</strong></span>
@@ -104,7 +119,7 @@ export function RestaurantPreviewCard({
                 <div className="visit-history-row__details">
                   <span className="visit-mode-chip">{(visit.diningMode ?? 'dine_in') === 'dine_in' ? <Store size={12} /> : <Truck size={12} />} {diningModeLabel(visit.diningMode)}</span>
                   <span className={visit.rating ? 'has-rating' : ''}><Star fill={visit.rating ? 'currentColor' : 'none'} size={12} /> {visit.rating ? `${starToTenScore(visit.rating)?.toFixed(1)} 分` : '未评分'}</span>
-                  <span><WalletCards size={12} /> {visit.paymentMode === 'separate' && visit.myActualSpend !== null ? `我的消费 ¥${visit.myActualSpend}` : visit.totalPrice !== null ? `总价 ¥${visit.totalPrice}${visit.pricePerPerson !== null ? ` · ¥${visit.pricePerPerson}/人` : ''}` : '未记价格'}</span>
+                  <span><WalletCards size={12} /> {visitSpendLabel(visit)}</span>
                   <span><Users size={12} /> {visit.partySize || Math.max(1, visit.companions.length + 1)} 人</span>
                   <span><Clock3 size={12} /> {queueDurationLabel(visit.queueDuration)}</span>
                 </div>
@@ -135,14 +150,19 @@ export function RestaurantPreviewCard({
           </div>
         </details>
       ) : null}
-      <div className="map-card__actions">
-        {onAddToList ? <button className="secondary-button" onClick={onAddToList} type="button"><ListPlus size={15} /> 加入食单</button> : null}
-        {onShare ? <button className="secondary-button" onClick={onShare} type="button"><Share2 size={15} /> 分享</button> : null}
-        {!readOnly && !restaurant.isRecommendation && onEdit ? <button className="secondary-button" onClick={onEdit} type="button"><Edit3 size={15} /> 编辑</button> : null}
-        {!readOnly && !restaurant.isRecommendation && onDelete ? <button className="danger-ghost-button" onClick={onDelete} type="button"><Trash2 size={15} /> 删除</button> : null}
-      </div>
     </article>
   )
+}
+
+function visitSpendLabel(visit: Visit) {
+  const actual = resolveVisitActualSpend(visit)
+  if (actual !== null) {
+    const total = visit.totalPrice !== null && visit.totalPrice !== actual ? ` · 整桌 ¥${visit.totalPrice}` : ''
+    return `我的消费 ¥${actual}${total}`
+  }
+  return visit.totalPrice !== null
+    ? `整桌 ¥${visit.totalPrice}${visit.pricePerPerson !== null ? ` · ¥${visit.pricePerPerson}/人` : ''}`
+    : '未记价格'
 }
 
 function buildOverviewFacets(visits: Visit[]) {

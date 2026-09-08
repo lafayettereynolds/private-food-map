@@ -67,7 +67,7 @@ export const HYBRID_VISIT_HISTORY_EDIT_CONTRACT = {
 
 export const HYBRID_PROFILE_OWNER_MODULES = [
   '身份与 Premium',
-  '关注 / 被关注',
+  '关注 / 粉丝',
   '去过 / 想去 / 总消费',
   '今天吃什么 / 我的口味档案',
   '回味',
@@ -84,6 +84,11 @@ export const HYBRID_ANALYTICS_MODES = [
   ['source', '谁最会种草'],
   ['monthly', '本月回顾'],
   ['annual', '年度回顾'],
+] as const
+
+export const HYBRID_ANALYTICS_MODULES = [
+  ['data', '数据'],
+  ['poster', '画报'],
 ] as const
 
 export const HYBRID_SETTINGS_SECTIONS = [
@@ -105,4 +110,11 @@ export const HYBRID_NATIVE_CAPABILITY_HANDOFFS = [
   'listManage',
   'premiumStore',
   'settingsNative',
+  'accountSettings',
+  'dataClear',
+  'privacySettings',
+  'permissions',
+  'storage',
+  'helpSettings',
+  'aboutSettings',
 ] as const

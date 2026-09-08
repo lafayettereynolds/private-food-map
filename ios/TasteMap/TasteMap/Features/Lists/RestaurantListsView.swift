@@ -701,38 +701,41 @@ struct AddPlaceToListsSheet: View {
 
 struct PublicRestaurantListsSection: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let ownerUserID: String
     let currentUserID: String
     let api: any RestaurantListAPI
     let photoAPI: (any PhotoBinaryAPI)?
     @State private var lists: [PublicListSummaryDTO] = []
-    @State private var loading = false
+    @State private var loading = true
     @State private var message: String?
     @State private var selected: PublicListSummaryDTO?
     @State private var nextCursor: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("餐厅榜单").font(.headline); Spacer(); if loading { ProgressView() } }
+            if loading && !lists.isEmpty { ProgressView() }
             if lists.isEmpty {
-                Text(message ?? "TA 还没有你可以查看的榜单。")
-                    .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 10)
+                if loading {
+                    ProgressView("正在读取真实食单…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                } else {
+                    Text(message ?? "TA 还没有你可以查看的食单。")
+                        .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 10)
+                }
             } else {
-                ForEach(lists) { list in
-                    Button { selected = list } label: {
-                        HStack(spacing: 12) {
-                            PublicListPreviewGrid(values: list.previewRestaurants, photoAPI: photoAPI)
-                                .frame(width: 82, height: 66).clipShape(RoundedRectangle(cornerRadius: 14))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(list.title).font(.headline).foregroundStyle(.primary).lineLimit(2)
-                                Text("\(list.restaurantCount) 家餐厅 · \(list.visibility.title)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: lists.count == 1 || dynamicTypeSize.isAccessibilitySize ? 1 : 2),
+                    alignment: .leading, spacing: 12
+                ) {
+                    ForEach(lists) { list in
+                        Button { selected = list } label: {
+                            PublicProfileListSummaryCard(list: list, photoAPI: photoAPI)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("public-restaurant-list-\(list.id)")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("public-restaurant-list-\(list.id)")
                 }
                 if nextCursor != nil {
                     Button("加载更多榜单") { Task { await loadMore() } }
@@ -740,8 +743,6 @@ struct PublicRestaurantListsSection: View {
                 }
             }
         }
-        .padding(16)
-        .tasteMapCoreCard(radius: 20)
         .task { await load() }
         .sheet(item: $selected) { summary in
             PublicRestaurantListDetailView(
@@ -791,6 +792,31 @@ struct PublicRestaurantListsSection: View {
         } catch {
             message = "更多榜单暂时无法加载。"
         }
+    }
+}
+
+/// Native peer of HybridProfileListsPreview: direct, compact cards on Profile,
+/// not another collection page or a card surrounding several nested cards.
+private struct PublicProfileListSummaryCard: View {
+    let list: PublicListSummaryDTO
+    let photoAPI: (any PhotoBinaryAPI)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(list.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
+                Text("\(list.restaurantCount) 家餐厅 · \(list.visibility.title)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            PublicListPreviewGrid(values: list.previewRestaurants, photoAPI: photoAPI)
+                .frame(height: 82)
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(13)
+        .tasteMapCoreCard(radius: 15)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("查看食单 \(list.title)，\(list.restaurantCount) 家餐厅，\(list.visibility.title)")
     }
 }
 

@@ -13,6 +13,8 @@ nonisolated enum PremiumFeature: String, CaseIterable, Codable, Identifiable, Se
     case companionRecommendation = "companion_recommendation"
     case customAvatar = "custom_avatar"
     case expandedVisitPhotos = "visit_photo_limit"
+    case dishPhotos = "dish_photos"
+    case rouletteUnlimited = "roulette_daily_limit"
 
     var id: String { rawValue }
 
@@ -42,7 +44,9 @@ nonisolated enum PremiumFeatureRegistry {
         .init(feature: .spendingInsights, title: "消费洞察", valueDescription: "理解真实消费区间与长期变化", symbol: "receipt", posterProtected: true),
         .init(feature: .companionRecommendation, title: "饭搭子选餐", valueDescription: "结合共同记录选择下一家餐厅", symbol: "person.2.badge.gearshape", posterProtected: false),
         .init(feature: .customAvatar, title: "自定义头像", valueDescription: "使用自己的照片作为个人头像", symbol: "person.crop.circle.badge.plus", posterProtected: false),
-        .init(feature: .expandedVisitPhotos, title: "更多到访照片", valueDescription: "每次到访从 3 张提升到 20 张", symbol: "photo.stack.fill", posterProtected: false),
+        .init(feature: .expandedVisitPhotos, title: "更多到访照片", valueDescription: "每次到访从 2 张提升到 20 张", symbol: "photo.stack.fill", posterProtected: false),
+        .init(feature: .dishPhotos, title: "菜品照片", valueDescription: "为菜品添加照片，菜名与评分仍可免费记录", symbol: "photo", posterProtected: false),
+        .init(feature: .rouletteUnlimited, title: "不限次抽选", valueDescription: "非会员每天抽选 1 次，Premium 可继续抽选", symbol: "arrow.trianglehead.2.clockwise.rotate.90", posterProtected: false),
     ]
 
     static func definition(for feature: PremiumFeature) -> PremiumFeatureDefinition {
@@ -59,6 +63,8 @@ nonisolated enum PremiumFeatureRegistry {
         case .companionRecommendation: definitions[9]
         case .customAvatar: definitions[10]
         case .expandedVisitPhotos: definitions[11]
+        case .dishPhotos: definitions[12]
+        case .rouletteUnlimited: definitions[13]
         }
     }
 
@@ -102,8 +108,13 @@ nonisolated enum PremiumFeatureAccessPolicy {
     static func visitPhotoLimit(membershipStatus: MembershipStatus) -> Int {
         switch membershipStatus {
         case .premium, .gracePeriod: 20
-        case .loading, .unknown, .free, .expired: 3
+        case .loading, .unknown, .free, .expired: 2
         }
+    }
+
+    static func permitsVisitPhotoAddition(existingCount: Int, newCount: Int, membershipStatus: MembershipStatus) -> Bool {
+        guard newCount > 0 else { return true } // Never invalidate retained historical photos.
+        return existingCount + newCount <= visitPhotoLimit(membershipStatus: membershipStatus)
     }
 }
 

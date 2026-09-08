@@ -113,14 +113,15 @@ struct PremiumPaywallView: View {
                 LazyVStack(spacing: 22) {
                     hero
                     statusSummary
-                    benefits
-                    comparison
+                    trialSection
                     if entitlementService.membershipStatus == .premium ||
                         entitlementService.membershipStatus == .gracePeriod {
                         activeMemberActions
                     } else {
                         productSection
                     }
+                    benefits
+                    comparison
                     dataOwnershipNote
                 }
                 .padding(.horizontal, 18)
@@ -138,9 +139,43 @@ struct PremiumPaywallView: View {
                     .accessibilityIdentifier("premium-paywall-close")
                 }
             }
-            .task { await loadProductsIfNeeded() }
+            .task {
+                await entitlementService.refresh()
+                await entitlementService.refreshTrialEligibility()
+                await loadProductsIfNeeded()
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                    await entitlementService.refresh()
+                }
+            }
         }
         .accessibilityIdentifier("premium-paywall")
+    }
+
+    @ViewBuilder
+    private var trialSection: some View {
+        if entitlementService.trialEligibility?.eligible == true || entitlementService.trialMessage != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                if entitlementService.trialEligibility?.eligible == true {
+                    Text("免费体验 Premium 7 天").font(.headline)
+                    Text("无需订阅，不会自动续费").font(.subheadline).foregroundStyle(.secondary)
+                    Button {
+                        Task { _ = try? await entitlementService.claimTrial() }
+                    } label: {
+                        Text(entitlementService.isClaimingTrial ? "正在领取…" : "免费领取 7 天")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent).tint(PremiumTheme.brand)
+                    .disabled(entitlementService.isClaimingTrial)
+                    .accessibilityIdentifier("premium-signup-trial-claim")
+                }
+                if let message = entitlementService.trialMessage {
+                    Text(message).font(.footnote)
+                        .accessibilityIdentifier("premium-signup-trial-message")
+                }
+            }
+            .premiumStatusCard()
+        }
     }
 
     private var hero: some View {
@@ -254,7 +289,7 @@ struct PremiumPaywallView: View {
                 .font(.headline).padding(.bottom, 10)
             comparisonRow("Restaurant、Visit、想吃", free: "包含", premium: "包含")
             comparisonRow("基础个性化推荐", free: "包含", premium: "深度解释")
-            comparisonRow("每次到访照片", free: "3 张", premium: "20 张")
+            comparisonRow("每次到访照片", free: "2 张", premium: "20 张")
             comparisonRow("完整分析与回顾", free: "预览", premium: "完整")
         }
         .padding(18)
@@ -273,12 +308,18 @@ struct PremiumPaywallView: View {
             } else if products.isEmpty {
                 TasteMapEmptyState(
                     title: "订阅方案暂时不可用",
-                    message: "当前不会显示假价格或无法完成的购买按钮。",
+                    message: "请检查网络后重新加载订阅方案。",
                     systemImage: "cart.badge.questionmark",
                     presentation: .embedded,
                     accessibilityIdentifier: "premium-no-store-products"
                 )
                 .frame(minHeight: 150)
+                Button("重新加载订阅方案") {
+                    productsLoaded = false
+                    Task { await loadProductsIfNeeded() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(actionInProgress)
 #if DEBUG
                 if entitlementService.developmentOverrideAvailable,
                    entitlementService.activeUserID != nil {
@@ -404,12 +445,17 @@ struct PremiumPaywallView: View {
 
     private var memberStatusText: String {
         guard let snapshot = entitlementService.snapshot else { return "会员权益已验证" }
+        if let giftStatus = snapshot.giftStatusText { return giftStatus }
         let source = switch snapshot.source {
+        case .appStoreSubscription: "App Store 订阅"
         case .appStoreMonthly: "App Store 月度方案"
-        case .appStoreYearly: "App Store 年度方案"
+        case .appStoreYearly, .appStoreAnnual: "App Store 年度方案"
+        case .giftAnnual, .giftLifetime: "赠送会员"
+        case .signupTrial: "新用户 7 天体验"
+        case .referralReward: "邀请奖励会员"
         case .appStoreLifetime: "App Store 永久方案"
         case .adminGrant: "赠送资格"
-        case .promo: "活动资格"
+        case .promo, .promotion: "活动资格"
         case .redeemCode: "兑换资格"
         case .development: "Development 测试资格"
         case nil: "会员资格"
@@ -430,7 +476,7 @@ struct PremiumPaywallView: View {
         isLoadingProducts = true
         defer { isLoadingProducts = false }
         do {
-            products = try await entitlementService.productsProvider.products()
+            products = try await entitlementService.productsProvider.products().filter { $0.period == .monthly || $0.period == .annual }
             selectedProductID = products.first(where: { $0.period == .annual })?.id ?? products.first?.id
         } catch {
             products = []
@@ -490,8 +536,8 @@ struct PremiumFeatureInlineBadge: View {
     let feature: PremiumFeature
 
     var body: some View {
-        if entitlementService.access(for: feature) == .denied {
-            Text("Premium")
+        if entitlementService.access(for: feature) != .allowed {
+            Label("Premium", systemImage: "lock.fill")
                 .font(.caption2.bold())
                 .foregroundStyle(PremiumTheme.brandDeep)
                 .padding(.horizontal, 7).padding(.vertical, 4)

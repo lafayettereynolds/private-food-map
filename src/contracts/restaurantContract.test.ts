@@ -59,6 +59,8 @@ describe('Restaurant JSON contract V1', () => {
     expect(schema.required).toContain('deletedAt')
     expect(schema.required).not.toContain('amapPoiId')
     expect(schema.properties.phone.type).toEqual(['string', 'null'])
+    expect(schema.properties.websiteUrl.type).toEqual(['string', 'null'])
+    expect(schema.required).not.toContain('websiteUrl')
     expect(schema.properties.amapPoiId.type).toBe('string')
     expect(schema.properties.id.description).toContain('never a provider POI ID')
   })

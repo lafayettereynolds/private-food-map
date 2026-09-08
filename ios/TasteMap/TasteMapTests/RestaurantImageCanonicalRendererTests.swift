@@ -7,6 +7,36 @@ import Testing
 struct RestaurantImageCanonicalRendererTests {
     private let ownerID = "tm_acquisition_owner"
 
+    @Test("Custom avatar stays explicit and never joins real-photo automatic/content candidates")
+    @MainActor
+    func customAvatarIsNotContent() throws {
+        let restaurant = try acquisitionRestaurant()
+        let avatar = PhotoAsset(ownerUserID: ownerID, restaurantId: restaurant.id, kind: .restaurantMarker,
+                                mimeType: "image/jpeg", byteSize: 12)
+        let actual = PhotoAsset(ownerUserID: ownerID, restaurantId: restaurant.id, kind: .visit,
+                                mimeType: "image/jpeg", byteSize: 12)
+        let deleted = PhotoAsset(ownerUserID: ownerID, restaurantId: restaurant.id, kind: .dish,
+                                 mimeType: "image/jpeg", byteSize: 12)
+        deleted.deletedAt = .now
+        let photos = [avatar, actual, deleted]
+        #expect(RestaurantImagePhotoSelectionPolicy.preferredPhoto(restaurantID: restaurant.id, photos: photos,
+                    referencedPhotoID: avatar.id.uuidString)?.id == avatar.id)
+        #expect(RestaurantImagePhotoSelectionPolicy.preferredPhoto(restaurantID: restaurant.id, photos: photos)?.id == actual.id)
+        #expect(RestaurantImagePhotoSelectionPolicy.actualPhotos(restaurantID: restaurant.id, photos: photos).map(\.id) == [actual.id])
+        #expect(RestaurantImagePhotoSelectionPolicy.preferredContentPhoto(restaurantID: restaurant.id, photos: [avatar]) == nil)
+    }
+
+    @Test("Remote content provenance rejects marker avatars and supports Visit-less actual dish photos")
+    func remotePhotoProvenance() {
+        let marker = DiscoveryPhotoProjectionV1(photoId: "marker", variant: .thumbnail, visitId: "visit", photoKind: "restaurant-marker")
+        let unknown = DiscoveryPhotoProjectionV1(photoId: "legacy-marker", variant: .thumbnail)
+        let actual = DiscoveryPhotoProjectionV1(photoId: "dish", variant: .thumbnail, photoKind: "dish")
+        #expect(!marker.isActualDiningPhoto)
+        #expect(!unknown.isActualDiningPhoto)
+        #expect(actual.isActualDiningPhoto)
+        #expect(DiscoveryPhotoProjectionV1.activityAlbum([marker], visitID: "visit", authorID: "owner")?.isEmpty == true)
+    }
+
     @Test("The canonical plan preserves user, public, provider, fallback priority")
     func canonicalPriority() throws {
         let localID = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000111"))
@@ -174,7 +204,7 @@ struct RestaurantImageCanonicalRendererTests {
         #expect(empty.isFallbackOnly)
     }
 
-    @Test("Personal Map enforces its owner-only visual boundary without weakening the canonical renderer")
+    @Test("Personal Map prefers the owner's photo and retains the real merchant fallback")
     func crossSurfaceConsistency() throws {
         let localID = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000111"))
         let provider = try #require(URL(string: "https://images.example.com/restaurant.jpg"))
@@ -186,18 +216,36 @@ struct RestaurantImageCanonicalRendererTests {
             id: localID, name: "同一家餐厅", latitude: 30.2, longitude: 120.1,
             status: .visited, visual: .photo(localID),
             fallbackMerchantImageURL: provider,
+            allowsRemoteImages: true,
             visitCount: 2, averageRating: 4.5, distanceKilometers: nil
         )
         let analysis = AnalysisImageReference.photo(localID, providerFallback: provider)
 
-        #expect(map.imageResolution == RestaurantImagePriorityPolicy.resolution(
-            localUserPhotoID: localID
-        ))
+        #expect(map.imageResolution == expected)
         #expect(analysis.restaurantResolution == expected)
         #expect(RestaurantImagePriorityPolicy.resolution(
             localUserPhotoID: localID,
             providerMerchantImageURL: provider
         ) == expected)
+    }
+
+    @Test("Public Profile map may render only its permission-authorized remote image sources")
+    func publicProfileMapRemoteImageBoundary() throws {
+        let provider = try #require(URL(string: "https://images.example.com/public-restaurant.jpg"))
+        let marker = RestaurantMapMarkerPresentation(
+            id: UUID(), name: "公开餐厅", latitude: 30.2, longitude: 120.1,
+            status: .visited, visual: .emoji("🍜"),
+            publicPhotoID: "00000000-0000-4000-8000-000000000222",
+            fallbackMerchantImageURL: provider,
+            allowsRemoteImages: true,
+            visitCount: 1, averageRating: 4.5, distanceKilometers: nil
+        )
+
+        #expect(marker.imageResolution == RestaurantImagePriorityPolicy.resolution(
+            localUserPhotoID: nil,
+            publicOrCachedPhotoID: "00000000-0000-4000-8000-000000000222",
+            providerMerchantImageURL: provider
+        ))
     }
 
     @Test("Rich Visual QA contains user, public, provider and honest no-image Restaurants")

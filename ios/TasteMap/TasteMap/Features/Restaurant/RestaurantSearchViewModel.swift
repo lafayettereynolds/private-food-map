@@ -10,7 +10,7 @@ final class RestaurantSearchViewModel: ObservableObject {
     private let searchService: any RestaurantSearching
     private var lastSubmittedQuery = ""
 
-    init(searchService: any RestaurantSearching = MapKitRestaurantSearchService()) {
+    init(searchService: any RestaurantSearching = WorldwideRestaurantSearchService()) {
         self.searchService = searchService
     }
 

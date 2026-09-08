@@ -1,6 +1,6 @@
 # Taste Map 数据结构
 
-更新时间：2026-08-29
+更新时间：2026-09-05
 
 ## Restaurant JSON Contract V1
 
@@ -8,7 +8,7 @@
 - `id` 是 Taste Map 自己维护的稳定 Restaurant ID；`amap`、`apple_maps`、`manual`、`other` 仅作为 `placeIdentities` 中的 Provider identity。
 - V1 必填且不可为 `null`：`schemaVersion`、`id`、`userId`、`placeIdentities`、名称/地址/城市/坐标、状态、偏好、标签、长笔记、Marker 类型/emoji、创建和更新时间。
 - V1 必填但允许明确为 `null`：五项餐厅评分、参考人均、电话、营业时间、Marker Photo ID、商家图片 URL、删除时间。
-- V1 可选且不可为 `null`：仅为旧 Web 兼容保留的 `amapPoiId` 和测试标记 `isTestData`。新客户端不得从 `amapPoiId` 生成 Restaurant.id。
+- V1 可选：`websiteUrl` 是真实 Provider / 用户提供的餐厅官网（字符串或 `null`）；缺失时保持缺失/`null`，不生成占位官网。仅为旧 Web 兼容保留的 `amapPoiId` 和测试标记 `isTestData` 可选且不可为 `null`。新客户端不得从 `amapPoiId` 生成 Restaurant.id。
 - 缺少 `schemaVersion/placeIdentities` 的旧 Web payload 仍可读取；解码层会把非空 `amapPoiId` 映射为一条主 `amap` identity，再按 V1 输出。
 
 ## Visit 本轮相关字段
@@ -95,6 +95,7 @@
 - D1 `0016_sync_v1.sql`：为 Restaurant/Visit 增加服务端版本和最后 mutation，新增 change log 与 idempotency receipt，并为既有记录写入 version 1 bootstrap 事件；空 Provider 旧记录补一条 `manual/tastemap:<id>` identity，不改写原 ID 或 Visit 外键。
 - D1 `0017`—`0027`：依次加入原生认证、Visit 核心字段、Dish/Photo、VisitDish、饭搭子/推荐来源、Profile、社交关系、旧写入兼容、发现/社区索引与社交安全硬化；均保留为不可修改的既有增量 migration。
 - D1 `0028_restaurant_lists_v1.sql`：原地升级既有 Web 食单表，增加 owner/global identity/snapshot/version/summary 字段和索引；复制 V5 revision/receipt 到支持榜单实体的 V6 ledger，并为旧榜单/项目写入 bootstrap 事件。不改写 Restaurant/Visit ID 或关联。
+- D1 `0033_restaurant_provider_website.sql`：仅为 `restaurants` 增加可空 `website_url`，保留旧记录为空；同步、备份和 iOS Provider 投影原样传递真实官网，不回填或推断虚构值。
 
 Development D1 `food-map-db-development` 已按顺序增量应用到 `0028`，并完成隔离 A/B 用户真实 Worker E2E；测试榜单最终 tombstone，读回检查没有活跃 P4-F 测试行。P4-F 未查询、写入或迁移 Production，因此本文不推断 Production 当前 migration 状态。任何 Production 变更仍必须先做只读 preflight、可恢复备份和逐项增量评审。
 

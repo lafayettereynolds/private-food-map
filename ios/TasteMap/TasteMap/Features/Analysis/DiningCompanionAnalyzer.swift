@@ -22,7 +22,7 @@ enum DiningCompanionAnalyzer {
         let activeRestaurants = deduplicateRestaurants(input.restaurants.filter { $0.deletedAt == nil })
         let restaurantByID = Dictionary(uniqueKeysWithValues: activeRestaurants.map { ($0.id, $0) })
         let activeVisits = input.visits.filter {
-            $0.deletedAt == nil && restaurantByID[$0.restaurantID] != nil
+            $0.deletedAt == nil && $0.visitedAt <= now && restaurantByID[$0.restaurantID] != nil
         }
         let activeDishes = input.dishes.filter {
             $0.deletedAt == nil && restaurantByID[$0.restaurantID] != nil
@@ -31,7 +31,7 @@ enum DiningCompanionAnalyzer {
             $0.deletedAt == nil && $0.kind != .avatar
         }
         let activeAssociations = input.visitDishes.filter { $0.deletedAt == nil }
-        let baselineRatings = activeVisits.compactMap(\.rating)
+        let baselineRatings = AnalysisStatisticsDefinitions.representativeRatings(in: activeVisits, restaurantID: \.restaurantID, rating: \.rating)
         let visitsByRestaurant = Dictionary(grouping: activeVisits, by: \.restaurantID)
 
         let visitsByCompanion = groupVisitsByCompanion(
@@ -101,11 +101,8 @@ enum DiningCompanionAnalyzer {
         let restaurantCount = visitsByRestaurant.count
         let repeatedRestaurantCount = visitsByRestaurant.values.filter { $0.count >= 2 }.count
         let repeatRate = ratio(repeatedRestaurantCount, restaurantCount)
-        let sufficiency = AnalysisSufficiencyPolicy.level(
-            sampleCount: visits.count,
-            emergingAt: AnalysisSufficiencyThresholds.companion.emerging,
-            establishedAt: AnalysisSufficiencyThresholds.companion.established
-        )
+        let sufficiency: AnalysisDataSufficiency = visits.count >= 8 && restaurantCount >= 4 ? .established
+            : visits.count >= 3 && restaurantCount >= 2 ? .emerging : .insufficient
         let avatar = avatarPresentation(for: companion)
         let foodRanks = rankFoods(
             visits: visits,
@@ -379,9 +376,11 @@ enum DiningCompanionAnalyzer {
         baselineRatings: [Double]
     ) -> DiningCompanionRatingSummary {
         let ratings = AnalysisStatisticsDefinitions.overallRatings(in: visits, rating: \.rating)
-        let sharedAverage = average(ratings)
+        let representativeRatings = AnalysisStatisticsDefinitions.representativeRatings(in: visits, restaurantID: \.restaurantID, rating: \.rating)
+        let sharedAverage = average(representativeRatings)
         let baselineAverage = average(baselineRatings)
-        let difference: Double? = if ratings.count >= 2, baselineRatings.count >= 3,
+        let difference: Double? = if visits.count >= 8, Set(visits.map(\.restaurantID)).count >= 4,
+                                     representativeRatings.count >= 5, baselineRatings.count >= 5,
                                      let sharedAverage, let baselineAverage {
             sharedAverage - baselineAverage
         } else { nil }
@@ -449,7 +448,7 @@ enum DiningCompanionAnalyzer {
         weekendShare: Double,
         lateMealShare: Double
     ) -> [String] {
-        guard visits.count >= 3 else { return [] }
+        guard visits.count >= 3, restaurantCount >= 2 else { return [] }
         var values: [String] = []
         if visits.count >= 3 {
             if repeatRate >= 0.5 { values.append("常去熟店") }
@@ -473,6 +472,7 @@ enum DiningCompanionAnalyzer {
     ) -> String {
         guard visitCount > 0 else { return "还没有有效的共同到访，暂不生成共同吃饭模式。" }
         guard visitCount >= 2 else { return "目前只有一次共同到访，只展示这次真实记录。" }
+        guard visitCount >= 3, restaurantCount >= 2 else { return "共同经历还在积累，只展示已记录的用餐事实。" }
         var pieces: [String] = []
         if repeatRate >= 0.5 { pieces.append("更常回到熟悉的餐厅") }
         else if restaurantCount == visitCount { pieces.append("每次都在尝试不同餐厅") }

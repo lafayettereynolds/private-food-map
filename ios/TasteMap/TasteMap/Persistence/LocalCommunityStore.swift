@@ -21,6 +21,12 @@ struct LocalCommunityStore {
     }
 
     func append(items: [PublicContentItemV1], currentUserID: String, routeKey: String, fetchedAt: Date) throws {
+        if routeKey == Self.feedRoute(.following) {
+            try LocalSocialStore(context: context).cacheFollowingFeedAuthors(
+                items.map(\.user),
+                currentUserID: currentUserID
+            )
+        }
         let existing = try context.fetch(FetchDescriptor<CachedCommunityContent>())
         // Authorization-sensitive friend content is memory-only. Public content
         // remains useful offline without retaining revoked friendship data.

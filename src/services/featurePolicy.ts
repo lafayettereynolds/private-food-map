@@ -1,6 +1,7 @@
 import type { MembershipTier } from '../types/domain'
 
 export type MembershipFeature =
+  | 'dish_photos'
   | 'custom_avatar'
   | 'full_taste_profile'
   | 'companion_analysis'
@@ -14,6 +15,7 @@ export type MembershipFeature =
   | 'companion_recommendation'
 
 const PREMIUM_FEATURES = new Set<MembershipFeature>([
+  'dish_photos',
   'custom_avatar',
   'full_taste_profile',
   'companion_analysis',
@@ -32,5 +34,5 @@ export function canUseFeature(membershipTier: MembershipTier, feature: Membershi
 }
 
 export function visitPhotoLimit(membershipTier: MembershipTier) {
-  return membershipTier === 'member' ? 20 : 3
+  return membershipTier === 'member' ? 20 : 2
 }

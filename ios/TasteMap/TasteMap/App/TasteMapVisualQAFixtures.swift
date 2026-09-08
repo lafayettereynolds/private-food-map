@@ -10,6 +10,7 @@ enum TasteMapVisualQAMode: String, CaseIterable, Sendable {
     case normal
     case rich
     case veryRich = "very-rich"
+    case denseMall = "dense-mall"
     case longText = "long-text"
     case missingPhoto = "missing-photo"
     case error
@@ -20,7 +21,7 @@ enum TasteMapVisualQAMode: String, CaseIterable, Sendable {
         switch self {
         case .empty: false
         case .normal: true
-        case .rich, .veryRich, .longText, .missingPhoto, .error, .offline, .free: true
+        case .rich, .veryRich, .denseMall, .longText, .missingPhoto, .error, .offline, .free: true
         }
     }
 
@@ -30,6 +31,40 @@ enum TasteMapVisualQAMode: String, CaseIterable, Sendable {
 @MainActor
 enum TasteMapVisualQAFixtures {
     static let userID = TasteMapUITestFixtures.profileUserID
+
+    /// The same people appear in the Hybrid Discovery `following` feed, the
+    /// Profile count and the Native following list. Keeping this as an actual
+    /// cached relationship graph prevents Visual QA from presenting posts by
+    /// people whom the fixture account apparently does not follow.
+    static let socialFollowingUsers: [SocialUserSummaryV1] = [
+        .init(
+            userId: "tm_demo_0", displayName: "林夏", bio: "分享真实到访与餐厅口味", city: "杭州",
+            avatarPhotoId: nil, avatarPresetId: .otter
+        ),
+        .init(
+            userId: "tm_demo_2", displayName: "陈一碗", bio: "分享真实到访与餐厅口味", city: "杭州",
+            avatarPhotoId: nil, avatarPresetId: .fox
+        ),
+        .init(
+            userId: "tm_demo_4", displayName: "阿岚", bio: "分享真实到访与餐厅口味", city: "杭州",
+            avatarPhotoId: nil, avatarPresetId: .otter
+        ),
+        .init(
+            userId: "tm_demo_6", displayName: "陆小满", bio: "分享真实到访与餐厅口味", city: "成都",
+            avatarPhotoId: nil, avatarPresetId: .fox
+        ),
+    ]
+
+    static let socialFollowerOnlyUser = SocialUserSummaryV1(
+        userId: "tm_visual_follower", displayName: "小周", bio: "喜欢记录城市小馆", city: "上海",
+        avatarPhotoId: nil, avatarPresetId: .rabbit
+    )
+
+    static let socialStatistics = ProfileSocialStatistics(
+        friendCount: 2,
+        followingCount: socialFollowingUsers.count,
+        followerCount: 3
+    )
 
     struct Counts: Equatable, Sendable {
         let visitedRestaurants: Int
@@ -53,6 +88,9 @@ enum TasteMapVisualQAFixtures {
         case .veryRich:
             .init(visitedRestaurants: 180, wantToGoRestaurants: 50, visits: 600,
                   photos: 120, dishes: 240, companions: 10, recommendationSources: 12, lists: 8)
+        case .denseMall:
+            .init(visitedRestaurants: 18, wantToGoRestaurants: 0, visits: 36,
+                  photos: 12, dishes: 24, companions: 4, recommendationSources: 4, lists: 2)
         case .rich, .longText, .missingPhoto, .error, .offline, .free:
             .init(visitedRestaurants: 90, wantToGoRestaurants: 25, visits: 275,
                   photos: 60, dishes: 130, companions: 10, recommendationSources: 12, lists: 7)
@@ -71,6 +109,8 @@ enum TasteMapVisualQAFixtures {
         let context = container.mainContext
         let counts = counts(for: mode)
         let baseDate = Date(timeIntervalSince1970: 1_788_105_600) // 2026-08-29, deterministic.
+
+        insertSocialGraph(into: context, now: baseDate)
 
         let companionNames = ["小林", "妈妈", "阿宁", "Luca", "小周", "可可", "阿岚", "Marco", "佳佳", "老陈"]
         let companions: [DiningCompanion] = (0..<counts.companions).map { index in
@@ -114,8 +154,8 @@ enum TasteMapVisualQAFixtures {
         let cities = ["杭州", "杭州", "杭州", "上海", "杭州", "北京", "成都", "广州"]
         // Stable, organic dining anchors replace the old evenly spaced grid.
         // Each anchor intentionally receives repeated and near-coincident
-        // Restaurants so Rich Visual QA exercises natural overlap rather than
-        // presenting a synthetic wall of fully separated markers.
+        // Restaurants so Rich Visual QA exercises the dense-area non-overlap
+        // layout instead of passing only widely separated easy cases.
         let mapAnchors: [(latitude: Double, longitude: Double)] = [
             (30.2741, 120.1551), (30.2676, 120.1474), (30.2819, 120.1628),
             (30.2598, 120.1692), (30.2893, 120.1431), (30.2527, 120.1518),
@@ -128,6 +168,14 @@ enum TasteMapVisualQAFixtures {
             (0, 0), (0, 0), (0.000_16, -0.000_10),
             (-0.000_12, 0.000_15), (0.000_08, 0.000_18),
         ]
+        // Very Rich intentionally puts at least ten of the first 90 records at
+        // each mall-like anchor so the iOS fixture exercises real same-place
+        // density even when a consumer applies a 90-item presentation cap.
+        let activeMapAnchors: [(latitude: Double, longitude: Double)] = switch mode {
+        case .denseMall: [mapAnchors[0]]
+        case .veryRich: Array(mapAnchors.prefix(9))
+        default: mapAnchors
+        }
         let restaurantCount = counts.visitedRestaurants + counts.wantToGoRestaurants
         // Spread owner photos across the library so Map and list screenshots
         // exercise owner-photo and category-visual markers at the same time.
@@ -164,8 +212,8 @@ enum TasteMapVisualQAFixtures {
                 ? "https://visual-qa.invalid/restaurants/\(index).jpg"
                 : nil
             let tags = cuisines[index % cuisines.count]
-            let anchor = mapAnchors[index % mapAnchors.count]
-            let overlap = overlapOffsets[(index / mapAnchors.count) % overlapOffsets.count]
+            let anchor = activeMapAnchors[index % activeMapAnchors.count]
+            let overlap = overlapOffsets[(index / activeMapAnchors.count) % overlapOffsets.count]
             let restaurant = Restaurant(
                 id: id, ownerUserID: userID, name: name,
                 address: "\(city)市美食街 \(index + 1) 号\(isLong ? "（靠近湖滨步行街与地铁换乘通道）" : "")",
@@ -193,7 +241,9 @@ enum TasteMapVisualQAFixtures {
             let restaurant = restaurants[index % max(1, counts.visitedRestaurants)]
             let companion = companions[index % max(1, companions.count)]
             let source = sources[index % max(1, sources.count)]
-            let date = baseDate.addingTimeInterval(Double(-index * 3) * 86_400 + Double(index % 5) * 3_600)
+            // QA meals span actual local dining periods, not a single UTC base hour.
+            let day = Calendar.current.startOfDay(for: baseDate.addingTimeInterval(Double(-index * 3) * 86_400))
+            let date = Calendar.current.date(byAdding: .hour, value: [8, 12, 15, 19, 23][index % 5], to: day) ?? day
             let visit = Visit(
                 id: uuid(34_000 + index), ownerUserID: userID, restaurantId: restaurant.id,
                 visitedAt: date, rating: index.isMultiple(of: 7) ? nil : Double(7 + index % 4) / 2,
@@ -218,12 +268,12 @@ enum TasteMapVisualQAFixtures {
                 diningDuration: [.under60, .under90, .under120][index % 3],
                 portionLevel: [.small, .normal, .generous][index % 3],
                 transportConvenience: [.veryConvenient, .convenient, .normal][index % 3],
-                companionIDs: [companion.remoteID ?? companion.id.uuidString.lowercased()],
-                companionNames: [companion.displayName],
+                companionIDs: index.isMultiple(of: 5) ? [] : [companion.remoteID ?? companion.id.uuidString.lowercased()],
+                companionNames: index.isMultiple(of: 5) ? [] : [companion.displayName],
                 recommendationSourceID: source.remoteID,
                 recommendationSourceType: source.sourceType,
                 recommendationSourceText: source.displayName,
-                partySize: 1 + index % 6,
+                partySize: index.isMultiple(of: 5) ? 1 : 2 + index % 5,
                 createdAt: date, updatedAt: date, remoteID: uuid(34_000 + index).uuidString.lowercased(),
                 serverVersion: 1, lastSyncedAt: baseDate, syncStatus: .synced
             )
@@ -273,6 +323,65 @@ enum TasteMapVisualQAFixtures {
 
         try insertLists(count: counts.lists, restaurants: restaurants, context: context, now: baseDate, longText: mode == .longText)
         try context.save()
+    }
+
+    private static func insertSocialGraph(into context: ModelContext, now: Date) {
+        for user in socialFollowingUsers + [socialFollowerOnlyUser] {
+            context.insert(CachedSocialProfile(
+                tasteMapUserID: user.userId,
+                displayName: user.displayName,
+                bio: user.bio,
+                city: user.city,
+                avatarPhotoID: user.avatarPhotoId,
+                avatarPreset: user.avatarPresetId,
+                fetchedAt: now
+            ))
+        }
+
+        for user in socialFollowingUsers {
+            context.insert(CachedFollow(
+                relationshipID: "follow:\(userID):\(user.userId)",
+                currentUserID: userID,
+                followerUserID: userID,
+                followedUserID: user.userId,
+                createdAt: now,
+                updatedAt: now,
+                serverVersion: 1
+            ))
+        }
+
+        let mutualUsers = Array(socialFollowingUsers.prefix(2))
+        for user in mutualUsers {
+            context.insert(CachedFollow(
+                relationshipID: "follow:\(user.userId):\(userID)",
+                currentUserID: userID,
+                followerUserID: user.userId,
+                followedUserID: userID,
+                createdAt: now,
+                updatedAt: now,
+                serverVersion: 1
+            ))
+            context.insert(CachedFriendship(
+                relationshipID: "friendship:\(userID):\(user.userId)",
+                currentUserID: userID,
+                requesterUserID: userID,
+                addresseeUserID: user.userId,
+                state: .friends,
+                createdAt: now,
+                updatedAt: now,
+                serverVersion: 1
+            ))
+        }
+
+        context.insert(CachedFollow(
+            relationshipID: "follow:\(socialFollowerOnlyUser.userId):\(userID)",
+            currentUserID: userID,
+            followerUserID: socialFollowerOnlyUser.userId,
+            followedUserID: userID,
+            createdAt: now,
+            updatedAt: now,
+            serverVersion: 1
+        ))
     }
 
     static func preparePhotoFiles(mode: TasteMapVisualQAMode) throws {

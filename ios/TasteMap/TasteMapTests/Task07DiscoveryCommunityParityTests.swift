@@ -81,6 +81,49 @@ struct Task07DiscoveryCommunityParityTests {
         #expect(supported.displayableSimilarity?.percent == 82)
     }
 
+    @Test func discoveryEvidenceRequiresSevenPointFiveButKeepsTrendCounts() {
+        let unratedCommunity = communityItem(
+            id: "unrated", globalKey: "place:unrated", rating: nil
+        )
+        let lowCommunity = communityItem(
+            id: "low", globalKey: "place:low", rating: 3.5
+        )
+        let boundaryCommunity = communityItem(
+            id: "boundary", globalKey: "place:boundary", rating: 3.75
+        )
+        let ratedCommunity = communityItem(
+            id: "rated", globalKey: "place:rated", rating: 4.5
+        )
+        #expect(!unratedCommunity.isEligibleForDiscoveryFeed)
+        #expect(!lowCommunity.isEligibleForDiscoveryFeed)
+        #expect(boundaryCommunity.isEligibleForDiscoveryFeed)
+        #expect(ratedCommunity.isEligibleForDiscoveryFeed)
+
+        let unratedActivity = DiscoveryActivityProjectionV1(
+            visitId: "visit:unrated", visitedAt: "2026-09-04T00:00:00.000Z", rating: nil
+        )
+        let lowActivity = DiscoveryActivityProjectionV1(
+            visitId: "visit:low", visitedAt: "2026-09-04T00:00:00.000Z", rating: 3.5
+        )
+        let boundaryActivity = DiscoveryActivityProjectionV1(
+            visitId: "visit:boundary", visitedAt: "2026-09-04T00:00:00.000Z", rating: 3.75
+        )
+        let systemForYou = discoveryPolicyCard(mode: .forYou, activity: nil)
+        let activityForYou = discoveryPolicyCard(mode: .forYou, activity: unratedActivity)
+        let similar = discoveryPolicyCard(mode: .similarTaste, activity: unratedActivity)
+        let lowSimilar = discoveryPolicyCard(mode: .similarTaste, activity: lowActivity)
+        let boundarySimilar = discoveryPolicyCard(mode: .similarTaste, activity: boundaryActivity)
+        let trending = discoveryPolicyCard(mode: .trending, activity: unratedActivity)
+
+        #expect(systemForYou.isEligibleForDiscoveryPresentation)
+        #expect(!activityForYou.isEligibleForDiscoveryPresentation)
+        #expect(!similar.isEligibleForDiscoveryPresentation)
+        #expect(!lowSimilar.isEligibleForDiscoveryPresentation)
+        #expect(boundarySimilar.isEligibleForDiscoveryPresentation)
+        #expect(trending.isEligibleForDiscoveryPresentation)
+        #expect(trending.trend?.uniqueVisitorCount == 1)
+    }
+
     @Test func communityViewerActionUpdatesAllOwnCachesAndNoOtherViewer() throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
         let store = LocalCommunityStore(context: container.mainContext)
@@ -165,7 +208,27 @@ struct Task07DiscoveryCommunityParityTests {
         )
     }
 
-    private func communityItem(id: String, globalKey: String) -> PublicContentItemV1 {
+    private func discoveryPolicyCard(
+        mode: DiscoveryModeV1,
+        activity: DiscoveryActivityProjectionV1?
+    ) -> DiscoveryCardV1 {
+        .init(
+            id: "policy-\(mode.rawValue)", mode: mode,
+            restaurant: projection(key: "policy-\(mode.rawValue)", latitude: 30.25),
+            viewerState: .none, ratings: ratings(4.5), reasons: [], sourceUser: nil,
+            activity: activity, similarity: nil,
+            trend: mode == .trending
+                ? .init(windowDays: 7, uniqueVisitorCount: 1, wantToGoCount: 0)
+                : nil,
+            cacheScope: .public, rank: 1, score: 1
+        )
+    }
+
+    private func communityItem(
+        id: String,
+        globalKey: String,
+        rating: Double? = 4.5
+    ) -> PublicContentItemV1 {
         let user = PublicContentUserV1(
             userId: "tm_author", displayName: "作者", bio: nil, city: "杭州",
             avatarPhotoId: nil, avatarPresetId: .otter, friendshipId: nil,
@@ -183,7 +246,7 @@ struct Task07DiscoveryCommunityParityTests {
             updatedAt: "2026-08-30T00:00:00.000Z", user: user, restaurant: restaurant,
             visit: .init(
                 id: id, ownerUserId: user.userId, restaurantGlobalKey: globalKey,
-                visitedAt: "2026-08-30T00:00:00.000Z", rating: 4.5,
+                visitedAt: "2026-08-30T00:00:00.000Z", rating: rating,
                 note: "作者公开备注", visibility: .public,
                 photos: [.init(photoId: UUID().uuidString, variant: .thumbnail)],
                 updatedAt: "2026-08-30T00:00:00.000Z"

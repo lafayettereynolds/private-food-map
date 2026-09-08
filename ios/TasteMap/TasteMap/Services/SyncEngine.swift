@@ -82,6 +82,10 @@ final class SyncEngine {
     }
 
     private func prepareLocalState() throws {
+        _ = try LocalTasteMapStore(context: context).reconcileVisitedRestaurantStatuses(
+            actorUserID: ownerUserID,
+            saveChanges: false
+        )
         let localRestaurants = try restaurants()
         for restaurant in localRestaurants {
             if restaurant.remoteID == nil { restaurant.remoteID = restaurant.id.uuidString }
@@ -444,6 +448,10 @@ final class SyncEngine {
             for envelope in response.restaurantLists { try applyRestaurantList(envelope) }
             for envelope in response.restaurantListItems { try applyRestaurantListItem(envelope) }
             for tombstone in response.tombstones { try applyTombstone(tombstone) }
+            _ = try LocalTasteMapStore(context: context).reconcileVisitedRestaurantStatuses(
+                actorUserID: ownerUserID,
+                saveChanges: false
+            )
             checkpoint.cursor = response.nextCursor
             checkpoint.lastSyncedAt = now()
             try context.save()
@@ -462,12 +470,26 @@ final class SyncEngine {
         try validateOwner(record.userId)
         let snapshot = try JSONEncoder().encode(record)
         if let restaurant = try restaurants().first(where: { $0.remoteID == record.id }) {
+            if restaurant.deletedAt != nil {
+                // An older upsert may still be awaiting its acknowledgement.
+                // The committed local tombstone wins regardless of which queued
+                // mutation happens to be returned first.
+                restaurant.remoteRecordData = snapshot
+                restaurant.serverVersion = max(restaurant.serverVersion, envelope.serverVersion)
+                for deletion in try queue.allMutations()
+                where deletion.entityType == .restaurant && deletion.entityID == record.id
+                    && deletion.operation == .delete && deletion.state == .queued
+                    && deletion.retryCount == 0 {
+                    deletion.baseVersion = restaurant.serverVersion
+                }
+                return
+            }
             if try queue.hasConflict(entityType: .restaurant, entityID: record.id) {
                 restaurant.remoteRecordData = snapshot
                 engineDebug("Preserved conflicted local Restaurant while recording server snapshot")
                 return
             }
-            if try queue.activeMutation(entityType: .restaurant, entityID: record.id) != nil {
+            if let mutation = try queue.activeMutation(entityType: .restaurant, entityID: record.id) {
                 if envelope.serverVersion > restaurant.serverVersion {
                     try queue.markConflicted(
                         entityType: .restaurant,

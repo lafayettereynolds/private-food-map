@@ -3,6 +3,8 @@ import fixture from '../../hybrid/fixtures/profile-restaurant-rich.json'
 import { debugRestaurantSocialStats, TasteMapBrowserAdapter } from './TasteMapBrowserAdapter'
 import { expandRichMapRestaurants } from './TasteMapBrowserDebugFixture'
 import { hasNativeTasteMapRuntime, TasteMapNativeAdapter } from './TasteMapNativeAdapter'
+import { projectBridgeProfile } from './TasteMapBridgeProjection'
+import { summarizeVisitSpend } from '../services/visitSpend'
 import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { CURRENT_USER_ID } from '../db/social'
 import {
@@ -11,6 +13,7 @@ import {
   type TasteMapBridgeRequestEnvelope,
   type TasteMapBridgeResponseEnvelope,
   type TasteMapCapabilityRegistry,
+  type TasteMapHybridEvent,
   type TasteMapMapBrowseRequest,
   type TasteMapProfileDashboardDTO,
   type TasteMapProfileDashboardViewModel,
@@ -106,6 +109,26 @@ const bridgeProfile: TasteMapProfileDashboardDTO = {
   followingCount: fixture.profile.followingCount,
 }
 
+describe('Native payment/restaurant identity projection', () => {
+  it('projects the saved profile avatar through Native resources without losing its ID', () => {
+    const result = projectBridgeProfile({ ...bridgeProfile, user: { ...bridgeProfile.user, avatarPhotoId: 'avatar/新版 1' } })
+    expect(result.user.avatarImageData).toBe('tastemap-resource://photo/avatar%2F%E6%96%B0%E7%89%88%201/display')
+    expect(result.user.avatarPhotoId).toBe('avatar/新版 1')
+    expect(projectBridgeProfile({ ...bridgeProfile, user: { ...bridgeProfile.user, avatarPhotoId: null } }).user.avatarImageData).toBeNull()
+  })
+  it('joins local/remote IDs to their actual parent and recovers omitted optional keys', () => {
+    const parent = bridgeProfile.restaurants[0]
+    const visit = { ...parent.visits[0], restaurantId: 'different-local-uuid', totalPrice: 17, partySize: 1 }
+    delete (visit as Partial<typeof visit>).paymentMode
+    delete (visit as Partial<typeof visit>).myActualSpend
+    const result = projectBridgeProfile({ ...bridgeProfile, restaurants: [{ ...parent, id: 'REMOTE-ID', city: '', address: '中国浙江省杭州市滨江区江南大道', visits: [visit] }] })
+    expect(result.visits[0].restaurantId).toBe(result.restaurants[0].id)
+    expect(result.visits[0].paymentMode).toBeNull()
+    expect(result.restaurants[0].city).toBe('杭州市')
+    expect(summarizeVisitSpend(result.visits).total).toBe(17)
+  })
+})
+
 describe('TasteMapBrowserAdapter', () => {
   it('keeps the deterministic Hybrid Rich Demo at the real 90/25/275 performance scale', () => {
     const restaurants = expandRichMapRestaurants(fixture.restaurants as unknown as RestaurantSummary[])
@@ -155,10 +178,46 @@ describe('TasteMapBrowserAdapter', () => {
     expect(filtered.items.every((item) => item.city === visited.items[0].city && item.visitCount >= 1)).toBe(true)
     expect(filtered.scopeCounts).toEqual(visited.scopeCounts)
 
+    const completeFilters = await adapter.map.viewport({
+      ...request,
+      requestID: 'viewport-complete-filters',
+      currentLocation: { latitude: 30.2553, longitude: 120.1637 },
+      filters: {
+        city: '杭州', scoreBands: [5], minimumVisitCount: 2, diningMode: 'dine_in',
+        queueDuration: 'under15', diningOccasions: ['date'], recommendationSourceType: 'friend',
+        recommendationSource: '小陈推荐', companion: '小陈', cuisine: '杭帮菜',
+        priceRange: 'over200', visitPeriod: 'sixMonths', distanceKilometers: 1,
+      },
+    })
+    expect(completeFilters.items.map((item) => item.name)).toEqual(['湖滨二十八号 · 江南味道'])
+
+    const noVisitFacetMatch = await adapter.map.viewport({
+      ...request, requestID: 'viewport-no-facet-match', filters: { diningMode: 'takeout', queueDuration: 'under15' },
+    })
+    expect(noVisitFacetMatch.items).toEqual([])
+
     const recommended = await adapter.map.viewport({ ...request, requestID: 'viewport-3', scope: 'recommended' })
     expect(recommended.items).toEqual([])
     expect(recommended.totalCount).toBe(0)
     expect(recommended.scopeCounts).toEqual({ visited: 3, wantToGo: 2, recommended: 0 })
+  })
+
+  it('applies every minimum score inclusively, excludes unrated records and restores them on clear', async () => {
+    const scores = [null, 1, 2, 3, 4, 5, 6, 7, 7.5, 8, 9, 10]
+    const restaurants = scores.map((score, index) => ({
+      ...browserProfile.restaurants[0], id: `rating-filter-${index}`, status: 'visited' as const,
+      scoreOutOfTen: score, averageRating: score == null ? null : score / 2,
+    }))
+    const adapter = new TasteMapBrowserAdapter({ profile: async () => ({ ...browserProfile, restaurants }) })
+    const request: TasteMapMapBrowseRequest = {
+      requestID: 'complete-rating-options', scope: 'visited', filters: {}, sort: 'rating', search: '', limit: 300,
+    }
+    for (let minimum = 1; minimum <= 10; minimum += 1) {
+      const response = await adapter.map.viewport({ ...request, filters: { minimumScoreOutOfTen: minimum } })
+      expect(response.items.map((item) => item.scoreOutOfTen)).toEqual(scores.filter((score) => score != null && score >= minimum).reverse())
+      expect(response.scopeCounts.visited).toBe(scores.length)
+    }
+    expect((await adapter.map.viewport(request)).items).toHaveLength(scores.length)
   })
 
   it('reuses the Browser canonical Restaurant image plan for an existing acquisition match', async () => {
@@ -200,6 +259,7 @@ describe('TasteMapBrowserAdapter', () => {
       district: '西湖区',
       latitude: 30.25,
       longitude: 120.16,
+      categoryHints: ['餐厅'],
       merchantImageUrl: null,
     }, null, profile)
 
@@ -209,11 +269,30 @@ describe('TasteMapBrowserAdapter', () => {
     expect(candidate.imageResolution.fallback.kind).toBe('foodCategoryVisual')
     expect((await adapter.acquisition.select(candidate.id)).restaurantID).toBe(existing.id)
   })
+
+  it('does not use a persisted Provider image as an automatic avatar', async () => {
+    const restaurant = {
+      ...browserProfile.restaurants[0],
+      markerType: 'image' as const,
+      markerImageData: null,
+      markerPhotoId: null,
+      merchantImageUrl: 'https://images.example.test/merchant-only.jpg',
+      visits: [],
+      latestVisit: null,
+    }
+    const adapter = new TasteMapBrowserAdapter({
+      profile: async () => ({ ...browserProfile, restaurants: [restaurant], restaurantImages: {} }),
+    })
+
+    expect((await adapter.restaurant.get(restaurant.id)).image).toMatchObject({
+      kind: 'foodCategoryVisual',
+    })
+  })
 })
 
 describe('TasteMapNativeAdapter', () => {
   function nativeTarget(options: { bridgeVersion?: number; failMethod?: string } = {}) {
-    let eventListener: ((event: { sequence: number; name: 'auth.changed'; payload: { state: 'signedOut' } }) => void) | undefined
+    let eventListener: ((event: { sequence: number; name: 'auth.changed'; payload: { state: 'signedOut' } } | Extract<TasteMapHybridEvent, { name: 'map.restaurant.groupSelected' }>) => void) | undefined
     const remove = vi.fn(async () => undefined)
     const addListener = vi.fn(async (_eventName: 'event', listener: typeof eventListener) => {
       eventListener = listener
@@ -294,6 +373,9 @@ describe('TasteMapNativeAdapter', () => {
       } else if (request.method === 'restaurant.setWantToGo') {
         const payload = request.payload as { restaurantID: string; wanted: boolean }
         result = { restaurantID: payload.restaurantID, viewerState: payload.wanted ? 'want_to_go' : 'none', updatedAt: '2026-09-03T00:00:00.000Z' }
+      } else if (request.method === 'restaurant.setAvatar') {
+        const payload = request.payload as { restaurantID: string; kind: 'photo' | 'emoji'; emoji?: string }
+        result = { restaurantID: payload.restaurantID, markerType: payload.kind === 'photo' ? 'image' : 'emoji', markerEmoji: payload.emoji ?? '🍽️', updatedAt: '2026-09-03T00:00:00.000Z' }
       } else if (request.method === 'photo.pick' || request.method === 'photo.capture') {
         result = { photos: [{
           photoID: 'pending-photo-1',
@@ -315,6 +397,7 @@ describe('TasteMapNativeAdapter', () => {
           location: request.method === 'acquisition.nearby'
             ? { latitude: 30.25, longitude: 120.16, timestamp: '2026-09-03T00:00:00.000Z', horizontalAccuracy: 8, accuracyMode: 'full', authorizationStatus: 'allowed' }
             : null,
+          detectedCity: request.method === 'acquisition.nearby' ? '杭州市' : null,
           message: null,
           sharedImportFingerprint: request.method === 'acquisition.shared' ? 'share-fingerprint' : null,
         }
@@ -322,6 +405,10 @@ describe('TasteMapNativeAdapter', () => {
         result = { restaurantID: 'amap:candidate-1', duplicateKind: 'none', existingRestaurantID: null }
       } else if (request.method === 'premium.status') {
         result = { state: 'free', expiresAt: null }
+      } else if (request.method === 'premium.trialEligibility') {
+        result = { eligible: true, trialDays: 7 }
+      } else if (request.method === 'premium.claimTrial') {
+        result = { expiresAt: '2026-09-15T00:00:00Z', status: { state: 'premium', source: 'signup_trial', expiresAt: '2026-09-15T00:00:00Z' } }
       } else if (request.method === 'premium.products') {
         result = [{ id: 'store-product', displayName: '年度会员', valueDescription: '正式商品', displayPrice: '¥88.00', period: 'annual', billingPeriodDescription: '每年续订' }]
       } else if (request.method === 'premium.purchase' || request.method === 'premium.restore') {
@@ -372,6 +459,21 @@ describe('TasteMapNativeAdapter', () => {
     }
   })
 
+  it('keeps private directory edits and picked image bytes behind the typed Native boundary', async () => {
+    const { invoke,target }=nativeTarget()
+    const adapter=new TasteMapNativeAdapter(target as never)
+    const photoID=await adapter.directory.pickAvatar()
+    expect(photoID).toBe('pending-photo-1')
+    await adapter.directory.dashboard()
+    await adapter.directory.searchUsers('Alice')
+    await adapter.directory.mutate({kind:'companion',id:'companion-a',action:'avatar',photoID})
+    await adapter.directory.respond('request-a','accept')
+    const requests=invoke.mock.calls.map(([call])=>call.request)
+    expect(requests.map(request=>request.method)).toEqual(expect.arrayContaining(['photo.pick','directory.dashboard','directory.searchUsers','directory.mutate','directory.respond']))
+    expect(requests.find(request=>request.method==='directory.mutate')?.payload).toEqual({kind:'companion',id:'companion-a',action:'avatar',photoID:'pending-photo-1'})
+    expect(JSON.stringify(requests)).not.toMatch(/base64|file:\/\/|avatarData/)
+  })
+
   it('passes a single versioned viewport request and preserves its request ID', async () => {
     const { invoke, target } = nativeTarget()
     const adapter = new TasteMapNativeAdapter(target as never)
@@ -389,12 +491,16 @@ describe('TasteMapNativeAdapter', () => {
       frame: { x: 0, y: 168, width: 402, height: 646 }, reactControlExclusions: [],
       scope: 'visited', filters: {}, sort: 'recent', search: '', cameraFitKey: 'initial',
       selectedRestaurantID: null, userAvatarPresetID: 'otter', userAvatarPhotoID: null,
+      tasteDataProgress: { displayCount: 7, target: 10, message: '再评分 3 家，推荐和分析会更准确' },
       markers: [],
     })
     expect(response).toEqual({ requestID: 'mapkit-surface-1', surface: 'mapkit', persistent: true })
     const request = invoke.mock.calls.find((call) => call[0].request.method === 'map.surface.update')?.[0].request
     expect(request?.payload).not.toHaveProperty('token')
     expect(request?.payload).not.toHaveProperty('credential')
+    expect(request?.payload).toMatchObject({
+      tasteDataProgress: { displayCount: 7, target: 10, message: '再评分 3 家，推荐和分析会更准确' },
+    })
   })
 
   it('rejects incompatible envelopes and structured native errors', async () => {
@@ -421,6 +527,9 @@ describe('TasteMapNativeAdapter', () => {
     const subscription = await adapter.events.subscribe(listener)
     native.emit({ sequence: 1, name: 'auth.changed', payload: { state: 'signedOut' } })
     expect(listener).toHaveBeenCalledWith({ sequence: 1, name: 'auth.changed', payload: { state: 'signedOut' } })
+    const groupEvent: Extract<TasteMapHybridEvent, { name: 'map.restaurant.groupSelected' }> = { version: 1, sequence: 2, name: 'map.restaurant.groupSelected', payload: { restaurantIDs: fixture.restaurants.slice(0, 3).map((restaurant) => restaurant.id) } }
+    native.emit(groupEvent)
+    expect(listener).toHaveBeenLastCalledWith(groupEvent)
     await subscription.remove()
     expect(native.addListener).toHaveBeenCalledWith('event', expect.any(Function))
     expect(native.remove).toHaveBeenCalledOnce()
@@ -454,6 +563,11 @@ describe('TasteMapNativeAdapter', () => {
       }),
     }))
     expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|bearer/i)
+    invoke.mockClear()
+    await adapter.visit.save({ ...request, browserPhotoMaterial: {
+      photos: ['data:image/png;base64,browser-only-material'], photoIds: [null], dishPhotos: [],
+    } })
+    expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/browserPhotoMaterial|browser-only-material|data:image/)
   })
 
   it('routes Activity identity and viewer-state mutations through dedicated typed methods', async () => {
@@ -466,12 +580,14 @@ describe('TasteMapNativeAdapter', () => {
     expect(await adapter.community.comments(interaction)).toEqual({ items: [], nextCursor: null })
     expect((await adapter.community.addComment(interaction, '真不错')).comment).toMatchObject({ visitID: 'visit-1', body: '真不错' })
     expect((await adapter.restaurant.setWantToGo('restaurant-1', true)).viewerState).toBe('want_to_go')
+    expect((await adapter.restaurant.setAvatar('restaurant-1', { kind: 'emoji', emoji: '🍣' })).markerEmoji).toBe('🍣')
     const requests = invoke.mock.calls.map((call) => call[0].request)
     expect(requests).toEqual(expect.arrayContaining([
       expect.objectContaining({ method: 'community.setLike', payload: { target: interaction, liked: true } }),
       expect.objectContaining({ method: 'community.comments', payload: { target: interaction } }),
       expect.objectContaining({ method: 'community.addComment', payload: { target: interaction, body: '真不错' } }),
       expect.objectContaining({ method: 'restaurant.setWantToGo', payload: { restaurantID: 'restaurant-1', wanted: true } }),
+      expect.objectContaining({ method: 'restaurant.setAvatar', payload: { restaurantID: 'restaurant-1', kind: 'emoji', emoji: '🍣' } }),
     ]))
     expect(JSON.stringify(requests)).not.toMatch(/ownerUserID|accessToken|refreshToken|authorization|bearer/i)
   })
@@ -502,9 +618,15 @@ describe('TasteMapNativeAdapter', () => {
     const { invoke, target } = nativeTarget()
     const adapter = new TasteMapNativeAdapter(target as never)
     const search = await adapter.acquisition.search('湖滨', '杭州')
+    await adapter.acquisition.search('湖滨', '杭州', { cursor: 'opaque-next-page' })
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({ method: 'acquisition.search', payload: { query: '湖滨', city: '杭州', cursor: 'opaque-next-page' } }),
+    }))
     expect(search.candidates[0].name).toBe('湖滨候选餐厅')
     expect(JSON.stringify(search.candidates[0].imageResolution)).not.toMatch(/file:\/\/|\/Users\/|base64|imageData|credential/i)
-    expect((await adapter.acquisition.nearby()).candidates[0].distanceMeters).toBe(42)
+    const nearby = await adapter.acquisition.nearby()
+    expect(nearby.candidates[0].distanceMeters).toBe(42)
+    expect(nearby.detectedCity).toBe('杭州市')
     expect((await adapter.acquisition.shared()).sharedImportFingerprint).toBe('share-fingerprint')
     expect((await adapter.acquisition.manual({ name: '手动餐厅', city: '杭州', address: '西湖边' })).candidates).toHaveLength(1)
     expect((await adapter.acquisition.select('candidate-1', true)).restaurantID).toBe('amap:candidate-1')
@@ -512,6 +634,15 @@ describe('TasteMapNativeAdapter', () => {
       request: expect.objectContaining({ method: 'acquisition.select', payload: { candidateID: 'candidate-1', confirmProbableMatch: true } }),
     }))
     expect(JSON.stringify(invoke.mock.calls)).not.toMatch(/ownerUserID|accessToken|refreshToken|authorization|bearer|keychain/i)
+  })
+
+  it('claims a server trial over distinct bridge methods with no purchase or client authority payload', async () => {
+    const { invoke, target } = nativeTarget()
+    const adapter = new TasteMapNativeAdapter(target as never)
+    expect(await adapter.premium.trialEligibility()).toEqual({ eligible: true, trialDays: 7 })
+    expect((await adapter.premium.claimTrial()).status).toMatchObject({ state: 'premium', source: 'signup_trial' })
+    const calls = JSON.stringify(invoke.mock.calls)
+    expect(calls).not.toMatch(/premium.purchase|productID|userId|eligible|expiresAt|transaction|trial_claimed_at/)
   })
 
   it('routes StoreKit, sync, permissions, backup and account actions through typed v1 methods', async () => {

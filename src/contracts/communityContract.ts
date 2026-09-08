@@ -19,6 +19,7 @@ export interface PublicContentPlaceIdentityV1 {
 }
 
 export interface PublicContentPhotoV1 {
+  photoKind?: string
   photoId: string
   variant: 'thumbnail'
   sourceType?: 'currentOwnerPhoto' | 'activityAuthorPhoto' | 'publicUGC'
@@ -171,6 +172,11 @@ export interface PublicProfileContentPageV1 {
 }
 
 export interface CommunityFeedPageV1 {
+  filterCapabilities?: import('./discoveryFilters').DiscoveryFilterCapabilities
+  filterTaxonomy?: import('./discoveryFilters').DiscoveryFilterTaxonomy
+  appliedQuery?: import('./discoveryFilters').DiscoveryAppliedQuery
+  /** Optional for older servers; present and normalized for city-query support. Empty means all cities. */
+  city?: string
   apiVersion: typeof COMMUNITY_API_VERSION
   scope: CommunityFeedScopeV1
   generatedAt: string

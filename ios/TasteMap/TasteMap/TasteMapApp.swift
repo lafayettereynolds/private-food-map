@@ -154,23 +154,31 @@ struct TasteMapApp: App {
         }
         nativeAuthServices = authServices
         automaticServicesEnabled = runtime.allowsAutomaticServices
+        var entitlementAPI: any PremiumEntitlementAPI = authServices.premiumAPI
+#if DEBUG
+        let trialUIFixture = ProcessInfo.processInfo.environment["TASTEMAP_SIGNUP_TRIAL_UI_TEST"] == "1"
+        if trialUIFixture { entitlementAPI = SignupTrialUITestAPI() }
+#endif
         let premiumService = PremiumEntitlementService(
-            api: authServices.premiumAPI,
+            api: entitlementAPI,
             purchaseProvider: StoreKitMembershipPurchaseProvider(
                 commerceAPI: authServices.premiumCommerceAPI
             ),
             environment: .current
         )
 #if DEBUG
-        if let override = TasteMapUITestFixtures.premiumOverride {
+        if !trialUIFixture, let override = TasteMapUITestFixtures.premiumOverride {
             _ = premiumService.setDevelopmentOverride(override)
         }
-        if let visualQAMode = TasteMapUITestFixtures.visualQAMode {
+        if !trialUIFixture, let visualQAMode = TasteMapUITestFixtures.visualQAMode {
             premiumService.activateVisualQAFixture(
                 userID: TasteMapVisualQAFixtures.userID,
-                override: visualQAMode == .free ? .free : .premium
+                override: TasteMapUITestFixtures.premiumOverride ?? (visualQAMode == .free ? .free : .premium)
             )
         }
+#endif
+#if DEBUG
+        if trialUIFixture { Task { await premiumService.activate(userID: SignupTrialUITestAPI.owner) } }
 #endif
         premiumEntitlementService = premiumService
         modelContainer = container
@@ -214,7 +222,7 @@ struct TasteMapApp: App {
 #if DEBUG
         let hybridSearchService: any RestaurantSearching = TasteMapUITestFixtures.hybridRestaurantSearchService
 #else
-        let hybridSearchService: any RestaurantSearching = MapKitRestaurantSearchService()
+        let hybridSearchService: any RestaurantSearching = WorldwideRestaurantSearchService()
 #endif
         hybridRuntime = TasteMapHybridRuntime(
             mode: TasteMapHybridRuntimeConfiguration.current,

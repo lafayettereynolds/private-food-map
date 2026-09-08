@@ -27,6 +27,9 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(profile.restaurants.flatMap(\.visits).count, 275)
         XCTAssertEqual(profile.user.id, TasteMapHybridDebugFixture.ownerUserID)
         XCTAssertEqual(profile.user.membershipTier, "member")
+        for restaurant in profile.restaurants {
+            XCTAssertTrue(restaurant.visits.allSatisfy { $0.restaurantId == restaurant.id })
+        }
 
         let detail = try service.restaurantDetail(id: "11111111-1111-4111-8111-111111111111")
         XCTAssertEqual(detail.restaurant.name, "湖滨二十八号 · 江南味道")
@@ -227,8 +230,12 @@ final class TasteMapHybridBridgeTests: XCTestCase {
             limit: 300,
             currentLocation: nil
         ))
-        XCTAssertEqual(recommended.items.count, 18)
-        XCTAssertEqual(recommended.totalCount, 18)
+        let forYou = try service.contentSnapshot().discovery.forYou
+        XCTAssertEqual(recommended.items.count, 12)
+        XCTAssertEqual(recommended.totalCount, 12)
+        XCTAssertEqual(recommended.scopeCounts.recommended, 12)
+        XCTAssertEqual(recommended.items.map(\.id), forYou.map(\.restaurant.id))
+        XCTAssertEqual(recommended.items.map(\.image.accessibilityLabel), forYou.map(\.restaurant.image.accessibilityLabel))
         XCTAssertEqual(service.projectedRestaurantSnapshotBuildCount, 1)
     }
 
@@ -239,6 +246,7 @@ final class TasteMapHybridBridgeTests: XCTestCase {
             latitude: 30.2741,
             longitude: 120.1551,
             status: .visited,
+            recommendationRank: nil,
             visitCount: 4,
             averageRating: 4.5,
             fallbackEmoji: "🍣",
@@ -266,6 +274,7 @@ final class TasteMapHybridBridgeTests: XCTestCase {
             selectedRestaurantID: marker.id,
             userAvatarPresetID: "otter",
             userAvatarPhotoID: nil,
+            tasteDataProgress: nil,
             markers: [marker]
         )
         let encoded = try JSONEncoder().encode(request)
@@ -286,13 +295,13 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(snapshot.discovery.trending.count, 12)
         XCTAssertTrue(snapshot.discovery.similarTaste.allSatisfy { $0.sourceUser != nil })
         XCTAssertTrue(snapshot.discovery.similarTaste.allSatisfy { $0.activityRating != nil })
-        XCTAssertEqual(snapshot.community.latest.count, 12)
+        XCTAssertEqual(snapshot.community.latest.count, 11)
         XCTAssertEqual(snapshot.lists.count, 5)
         XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { !$0.restaurant.name.isEmpty })
         XCTAssertTrue(snapshot.community.latest.contains { $0.visitRating == nil })
         XCTAssertEqual(snapshot.discovery.forYou.first?.viewerState, "none")
         XCTAssertEqual(snapshot.discovery.forYou.dropFirst().first?.viewerState, "want_to_go")
-        XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { $0.interaction?.visitID.hasPrefix("demo-visit-") == true })
+        XCTAssertTrue(snapshot.discovery.forYou.allSatisfy { $0.interaction == nil })
         XCTAssertTrue(snapshot.community.latest.filter { $0.visitID != nil }.allSatisfy {
             $0.interaction?.activityID == $0.id && $0.interaction?.restaurantID == $0.restaurant.id
         })
@@ -302,6 +311,30 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         for forbidden in ["accessToken", "refreshToken", "identityToken", "authorizationCode", "file://", "/Users/"] {
             XCTAssertNil(encoded.range(of: Data(forbidden.utf8)))
         }
+    }
+
+    func testActivityAlbumsPreserveExactVisitIdentityCountsAndLegacyCompatibility() throws {
+        let snapshot = try makeService().contentSnapshot()
+        for count in [1, 2, 4, 5, 6, 7] {
+            XCTAssertEqual(snapshot.discovery.similarTaste.filter { $0.activityImages?.count == count }.count, 1)
+            XCTAssertEqual(snapshot.community.latest.filter { $0.activityImages?.count == count }.count, 1)
+        }
+        for item in snapshot.discovery.similarTaste {
+            let photos = item.activityImages ?? []
+            XCTAssertEqual(Set(photos.compactMap(\.resourceURL)).count, photos.count)
+            XCTAssertEqual(Set(photos.compactMap(\.photoID)).count, photos.count)
+            XCTAssertTrue(photos.allSatisfy {
+                $0.visitID == item.interaction?.visitID && $0.sourceOwnerID == item.sourceUser?.id
+                    && $0.kind == .activityPhoto && $0.exportAllowed == false
+            })
+        }
+        XCTAssertTrue((snapshot.discovery.forYou + snapshot.discovery.trending).allSatisfy { $0.activityImages == nil })
+        let encoded = try JSONEncoder().encode(snapshot.discovery.similarTaste[0])
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        legacy.removeValue(forKey: "activityImages")
+        let old = try JSONDecoder().decode(TasteMapHybridDiscoveryItemDTO.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(old.activityImages)
+        XCTAssertEqual(old.restaurant.id, snapshot.discovery.similarTaste[0].restaurant.id)
     }
 
     private func response(

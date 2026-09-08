@@ -86,6 +86,7 @@ interface SyncRestaurantRow extends VersionedEntityRow {
   long_term_note: string
   price_per_person: number | null
   phone: string | null
+  website_url: string | null
   opening_hours: string | null
   marker_type: RestaurantJSONContractV1['markerType']
   marker_photo_id: string | null
@@ -731,7 +732,18 @@ async function applyMutation(
   if (mutation.entityType === 'photo' && mutation.operation === 'upsert') {
     const photo = mutation.payload as PhotoJSONContractV1
     await assertOwnedPhotoParents(database, viewerId, photo)
-    if (!current && photo.visitId) {
+    if (!access.isPremium && photo.kind === 'dish') {
+      const retained = current ? await database.prepare('SELECT kind, storage_key, deleted_at FROM photos WHERE id = ? AND user_id = ?')
+        .bind(photo.id, viewerId).first<{kind:string;storage_key:string|null;deleted_at:string|null}>() : null
+      if (!retained || retained.deleted_at || retained.kind !== 'dish' || retained.storage_key !== photo.storageKey) {
+        throw new SyncV1RequestError('Dish photos require Premium; existing photos remain available.', 403)
+      }
+    }
+    const previousPhoto = current && photo.visitId
+      ? await database.prepare('SELECT visit_id, deleted_at FROM photos WHERE id = ? AND user_id = ?')
+        .bind(photo.id, viewerId).first<{ visit_id: string | null; deleted_at: string | null }>()
+      : null
+    if (photo.visitId && (!previousPhoto || previousPhoto.deleted_at || previousPhoto.visit_id !== photo.visitId)) {
       const count = await database.prepare(`SELECT COUNT(*) AS count FROM photos
         WHERE user_id = ? AND visit_id = ? AND deleted_at IS NULL`)
         .bind(viewerId, photo.visitId).first<{ count: number | string }>()
@@ -788,7 +800,7 @@ async function applyMutation(
       case 'visit': return visitMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
       case 'dish': return dishMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
       case 'visitDish': return visitDishMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
-      case 'photo': return photoMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
+      case 'photo': return photoMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt, access.visitPhotoLimit)
       case 'companion': return companionMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
       case 'recommendationSource': return recommendationSourceMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
       case 'profile': return profileMutationStatements(database, viewerId, applicableMutation, fingerprint, nextVersion, processedAt)
@@ -853,10 +865,10 @@ function restaurantMutationStatements(
   const entityStatement = database.prepare(`INSERT INTO restaurants (
     id, user_id, amap_poi_id, name, address, city, latitude, longitude, status, preference_level,
     overall_rating, food_rating, environment_rating, service_rating, value_rating, tags_json,
-    long_term_note, price_per_person, phone, opening_hours, marker_type, marker_photo_id,
+    long_term_note, price_per_person, phone, website_url, opening_hours, marker_type, marker_photo_id,
     merchant_image_url, marker_emoji, created_at, updated_at, deleted_at, is_test_data,
     server_version, last_mutation_id
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     name = excluded.name, address = excluded.address, city = excluded.city,
     latitude = excluded.latitude, longitude = excluded.longitude, status = excluded.status,
@@ -865,6 +877,7 @@ function restaurantMutationStatements(
     service_rating = excluded.service_rating, value_rating = excluded.value_rating,
     tags_json = excluded.tags_json, long_term_note = excluded.long_term_note,
     price_per_person = excluded.price_per_person, phone = excluded.phone,
+    website_url = excluded.website_url,
     opening_hours = excluded.opening_hours, marker_type = excluded.marker_type,
     marker_photo_id = excluded.marker_photo_id, merchant_image_url = excluded.merchant_image_url,
     marker_emoji = excluded.marker_emoji, updated_at = excluded.updated_at,
@@ -876,7 +889,7 @@ function restaurantMutationStatements(
       restaurant.city, restaurant.latitude, restaurant.longitude, restaurant.status, restaurant.preferenceLevel,
       restaurant.overallRating, restaurant.foodRating, restaurant.environmentRating, restaurant.serviceRating,
       restaurant.valueRating, JSON.stringify(restaurant.tags), restaurant.longTermNote,
-      restaurant.pricePerPerson, restaurant.phone, restaurant.openingHours, restaurant.markerType,
+      restaurant.pricePerPerson, restaurant.phone, restaurant.websiteUrl ?? null, restaurant.openingHours, restaurant.markerType,
       restaurant.markerPhotoId, restaurant.merchantImageUrl, restaurant.markerEmoji,
       restaurant.createdAt, restaurant.updatedAt, restaurant.isTestData ? 1 : 0,
       nextVersion, mutation.mutationId, viewerId, mutation.baseVersion,
@@ -1360,6 +1373,7 @@ function photoMutationStatements(
   fingerprint: string,
   nextVersion: number,
   processedAt: string,
+  visitPhotoLimit: number,
 ) {
   if (mutation.operation === 'delete') {
     const entityStatement = database.prepare(`UPDATE photos
@@ -1381,7 +1395,10 @@ function photoMutationStatements(
     thumbnail_file_size, kind, file_name, mime_type, file_size, width, height,
     sort_order, visibility, sync_status, created_at, updated_at, deleted_at,
     server_version, last_mutation_id
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?, NULL, ?, ?)
+  ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?, NULL, ?, ?
+  WHERE ? IS NULL OR EXISTS (
+    SELECT 1 FROM photos WHERE id = ? AND user_id = ? AND visit_id = ? AND deleted_at IS NULL
+  ) OR (SELECT COUNT(*) FROM photos WHERE user_id = ? AND visit_id = ? AND deleted_at IS NULL) < ?
   ON CONFLICT(id) DO UPDATE SET
     restaurant_id = excluded.restaurant_id, visit_id = excluded.visit_id,
     dish_id = excluded.dish_id, storage_provider = excluded.storage_provider,
@@ -1399,7 +1416,8 @@ function photoMutationStatements(
       photo.storageKey, photo.thumbnailStorageKey, photo.kind, photo.fileName,
       photo.mimeType, photo.byteSize, photo.width, photo.height, photo.sortOrder,
       photo.visibility, photo.createdAt, photo.updatedAt, nextVersion,
-      mutation.mutationId, viewerId, mutation.baseVersion,
+      mutation.mutationId, photo.visitId, mutation.entityId, viewerId, photo.visitId,
+      viewerId, photo.visitId, visitPhotoLimit, viewerId, mutation.baseVersion,
     )
   return finalMutationStatements(
     database, viewerId, mutation, fingerprint, nextVersion, processedAt,
@@ -1747,6 +1765,7 @@ function rowToRestaurant(row: SyncRestaurantRow, identities: RestaurantPlaceIden
     longTermNote: row.long_term_note,
     pricePerPerson: row.price_per_person,
     phone: row.phone,
+    websiteUrl: row.website_url,
     openingHours: row.opening_hours,
     markerType: row.marker_type,
     markerPhotoId: row.marker_photo_id,

@@ -15,6 +15,7 @@ struct RootTabView: View {
     @State private var isShowingRoulette = false
     @State private var pendingSharedImport: PendingRestaurantImport?
     @State private var publicShareRoute: PublicShareRouteSelection?
+    @State private var referralReceived = false
     @State private var rouletteSession = RestaurantRouletteSession()
 
     init() {
@@ -113,6 +114,7 @@ struct RootTabView: View {
                 if value == .active { loadPendingSharedImportIfNeeded() }
             }
             .onOpenURL { url in
+                if ReferralInvitationStore.receive(url) { referralReceived = true; return }
                 if let shareID = PublicShareRoute.shareID(from: url) {
                     publicShareRoute = PublicShareRouteSelection(shareID: shareID)
                     return
@@ -121,6 +123,12 @@ struct RootTabView: View {
                 if let pending = try? PendingRestaurantImportStore.live().enqueue(text: nil, url: url) {
                     pendingSharedImport = pending
                 }
+            }
+            .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                if let url = activity.webpageURL, ReferralInvitationStore.receive(url) { referralReceived = true }
+            }
+            .alert("已收到 Taste Map 邀请", isPresented: $referralReceived) { Button("知道了", role: .cancel) {} } message: {
+                Text("邀请码已暂存。请前往‘我的’，使用 Apple 登录创建新账号，并完成首次有效到访。已有账号不会重新绑定邀请人。")
             }
     }
 

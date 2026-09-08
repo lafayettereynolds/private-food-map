@@ -29,6 +29,8 @@ final class TasteMapHybridRuntime {
     private let photoFiles: any LocalPhotoFileStoring
     private let photoTransferCoordinator: PhotoTransferCoordinator
     private let locationPermissionManager = LocationPermissionManager()
+    private let locationRequestCoordinator = RestaurantLocationRequestCoordinator()
+    private var discoveryLocationProofs = TasteMapDiscoveryLocationProofs()
     private let restaurantSearchService: any RestaurantSearching
     private weak var plugin: TasteMapProductionNativePlugin?
     private weak var mapSurfaceHost: TasteMapHybridMapSurfaceHost?
@@ -40,9 +42,26 @@ final class TasteMapHybridRuntime {
     private var cachedBridgeServiceOwnerUserID: String?
     private var cachedBridgeServiceMembershipTier: String?
     private var cachedMapSurfaceResources: TasteMapHybridCachedMapSurfaceResources?
+    private let discoveryRefreshCoordinator = TasteMapDiscoveryRefreshCoordinator()
+    private let discoveryPageCoordinator = TasteMapDiscoveryPageCoordinator()
+    private let discoveryCitySession = TasteMapDiscoveryCitySession()
+    private var listService: TasteMapHybridListService?
     private(set) var pendingSharedImport: PendingRestaurantImport?
     private var pendingPhotoSelections: [String: PendingHybridPhotoSelection] = [:]
     private var pendingAcquisitionCandidates: [String: PendingHybridAcquisitionCandidate] = [:]
+    private struct AcquisitionSearchPage {
+        let owner: String
+        let query: String
+        let city: String
+        let candidates: [RestaurantCandidate]
+        let location: TasteMapHybridLocationDTO?
+        let expiresAt: Date
+    }
+    private var acquisitionSearchPages: [String: AcquisitionSearchPage] = [:]
+    private var acquisitionSearchGeneration = 0
+    private var acquisitionNearbyGeneration = 0
+    private var acquisitionLocation: (location: CLLocation, dto: TasteMapHybridLocationDTO)?
+    private var acquisitionLocationTask: Task<(location: CLLocation, dto: TasteMapHybridLocationDTO), Error>?
     private var photoPickerSession: HybridPhotoPickerSession?
     private var cameraCaptureSession: HybridCameraCaptureSession?
     private var debugEngagementByVisit: [String: TasteMapHybridCommunityEngagementDTO] = [:]
@@ -57,7 +76,7 @@ final class TasteMapHybridRuntime {
         syncCoordinator: SyncCoordinator,
         photoFiles: any LocalPhotoFileStoring,
         photoTransferCoordinator: PhotoTransferCoordinator,
-        restaurantSearchService: any RestaurantSearching = MapKitRestaurantSearchService()
+        restaurantSearchService: any RestaurantSearching = WorldwideRestaurantSearchService()
     ) {
         self.mode = mode
         self.container = container
@@ -68,6 +87,7 @@ final class TasteMapHybridRuntime {
         self.photoTransferCoordinator = photoTransferCoordinator
         self.restaurantSearchService = restaurantSearchService
         navigation.didChange = { [weak self] state in
+            self?.mapSurfaceHost?.setRouteAllowsMap(state.route.owner == .hybrid && state.route.surface == .map)
             self?.emit(.navigationRoute, payload: state)
         }
     }
@@ -89,6 +109,8 @@ final class TasteMapHybridRuntime {
 
     func attach(mapSurfaceHost: TasteMapHybridMapSurfaceHost) {
         self.mapSurfaceHost = mapSurfaceHost
+        let route = navigation.current.route
+        mapSurfaceHost.setRouteAllowsMap(route.owner == .hybrid && route.surface == .map)
     }
 
     func mapSurfaceDidChangeViewport(_ viewport: TasteMapHybridMapViewportDTO) {
@@ -97,6 +119,10 @@ final class TasteMapHybridRuntime {
 
     func mapSurfaceDidSelect(restaurantID: String?) {
         emit(.mapRestaurantSelected, payload: TasteMapHybridMapSelectionEventDTO(restaurantID: restaurantID))
+    }
+
+    func mapSurfaceDidSelectGroup(restaurantIDs: [String]) {
+        emit(.mapRestaurantGroupSelected, payload: TasteMapHybridMapGroupSelectionEventDTO(restaurantIDs: restaurantIDs))
     }
 
     func ensureSessionRestored() async -> TasteMapHybridAuthStateDTO {
@@ -121,9 +147,47 @@ final class TasteMapHybridRuntime {
     }
 
     func responseData(for requestData: Data) async throws -> Data {
-        let requestMethod = (try? JSONDecoder().decode(TasteMapHybridBridgeRequest.self, from: requestData))?.method
-        let authState = await ensureSessionRestored()
+        let envelope = try? JSONDecoder().decode(TasteMapHybridBridgeRequest.self, from: requestData)
+        let requestMethod = envelope?.method
+        if let envelope, TasteMapHybridBridgeDispatcher.isNavigationMethod(envelope.method) {
+            // Navigation only mutates local presentation/history. It never
+            // requires session restoration or a data service. Dispatch through
+            // the same envelope/capability validation, synchronously before the
+            // first await, so independent invoke Tasks cannot reorder intents.
+            let dispatcher = TasteMapHybridBridgeDispatcher(
+                service: nil, appVersion: "", build: "", dataSource: "native-navigation",
+                authState: { TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil) },
+                capabilityOverrides: [.nativeNavigation: true],
+                navigationAction: { [unowned self] request in
+                    try self.performNavigation(method: request.method, payload: request.payload, sourceRequestID: request.requestId)
+                }
+            )
+            return try JSONEncoder().encode(dispatcher.dispatch(envelope))
+        }
+        // Every invoke runs in its own Task. Allocate ordering before session
+        // restoration suspends, so an older show cannot overtake a newer hide.
+        var mapSurfaceRevision: UInt64?
+        if requestMethod == .mapSurfaceUpdate, let payload = envelope?.payload,
+           let request: TasteMapHybridMapSurfaceUpdateRequest = try? decode(payload) {
+            mapSurfaceRevision = mapSurfaceHost?.receiveUpdate(visible: request.visible)
+        }
+        var authState = await ensureSessionRestored()
+        if requestMethod == .contentSnapshot, let userID = authState.userID {
+            let options: TasteMapHybridContentSnapshotRequest? = envelope.flatMap { request in
+                try? decode(request.payload)
+            }
+            await refreshDiscoveryContentIfNeeded(for: userID, force: options?.forceRefresh == true)
+            // Session changes may happen while the three independent requests
+            // await. Never project an old owner's snapshot after that boundary.
+            authState = await safeSessionState()
+        }
         let service = try bridgeService(for: authState)
+        if requestMethod == .contentSnapshot, let userID = authState.userID {
+            service?.discoveryRefreshStatus = discoveryRefreshCoordinator.snapshot(
+                ownerUserID: userID, city: discoveryCity(for: userID), windowDays: 7)
+            service?.discoveryEvidenceAvailability = discoveryRefreshCoordinator.evidenceSnapshot(
+                ownerUserID: userID, city: discoveryCity(for: userID), windowDays: 7)
+        }
         let bundle = Bundle.main
         let dispatcher = TasteMapHybridBridgeDispatcher(
             service: service,
@@ -144,28 +208,393 @@ final class TasteMapHybridRuntime {
                 .restaurantAcquisition: true,
                 .location: true,
                 .premium: true,
+                .referrals: true,
                 .permissions: true,
                 .sync: true,
                 .backup: true,
                 .accountDelete: true,
+                .recommendationPreferences: true,
                 .share: true,
+                .listsRead: true,
+                .listShare: true,
                 .photoPicker: true,
                 .communityInteraction: true,
+                .discoveryPage: true,
+                .discoveryCityPage: true,
                 .restaurantViewerState: true,
             ],
             asynchronousAction: { [weak self] method, payload in
                 guard let self else { throw Self.bridgeError("hybrid_runtime_unavailable", recoverable: true) }
-                return try await self.perform(method: method, payload: payload)
+                return try await self.perform(method: method, payload: payload, mapSurfaceRevision: mapSurfaceRevision)
             }
         )
         let response = try await dispatcher.responseDataAsync(for: requestData)
-        if requestMethod == .visitSave || requestMethod == .visitDelete {
+        if requestMethod == .visitSave || requestMethod == .visitDelete || requestMethod == .restaurantSetAvatar {
             // These writes can replace the photo set used by native map markers.
             // Keep the bridge service (it invalidates its own projections), but
             // rebuild only the map's small resource index on its next update.
             cachedMapSurfaceResources = nil
         }
         return response
+    }
+
+    private func refreshDiscoveryContentIfNeeded(for userID: String, force: Bool) async {
+#if DEBUG
+        if userID == TasteMapHybridDebugFixture.ownerUserID || TasteMapUITestFixtures.usesVisualQA { return }
+#endif
+        let city = discoveryCity(for: userID)
+        async let forYou = refreshDiscoveryMode(.forYou, userID: userID, city: city, force: force)
+        async let similarTaste = refreshDiscoveryMode(.similarTaste, userID: userID, city: city, force: force)
+        async let trending = refreshDiscoveryMode(.trending, userID: userID, city: city, force: force)
+        _ = await (forYou, similarTaste, trending)
+    }
+
+    private func refreshDiscoveryMode(_ mode: DiscoveryModeV1, userID: String, city: String, force: Bool) async {
+        // A failed cache transaction must not mutate the context that owns
+        // unsaved editor drafts or replace the last valid on-disk page.
+        let cacheContext = ModelContext(container)
+        cacheContext.autosaveEnabled = false
+        let store = LocalDiscoveryStore(context: cacheContext)
+        _ = await discoveryRefreshCoordinator.refresh(
+            scope: .init(ownerUserID: userID, mode: mode.rawValue, city: city, windowDays: 7),
+            force: force,
+            isCurrent: { [weak self] in self?.authServices.localAccountScope == .authenticated(userID) },
+            load: { [self] in
+                let page = try await authServices.discoveryAPI.page(
+                    mode: mode, city: city, trendWindowDays: 7, cursor: nil, limit: 20)
+                guard page.mode == mode else { throw SyncAPIError.invalidResponse }
+                // A remote failure (including capacity/permission) never
+                // masquerades as empty evidence or triggers provider fallback.
+                if mode == .forYou, page.items.isEmpty,
+                   let provider = try await providerForYouPage(for: userID, city: city) { return provider }
+                return page
+            },
+            save: { page in
+                do { try store.replaceCache(page: page, currentUserID: userID, trendWindowDays: 7) }
+                catch { cacheContext.rollback(); throw error }
+            },
+            generatedAt: { $0.generatedAt },
+            resolvedCity: { $0.city },
+            evidenceAvailability: { $0.evidenceAvailability },
+            cachedGeneratedAt: { [self] in
+                let resolvedCity = discoveryRefreshCoordinator.snapshot(ownerUserID: userID, city: city, windowDays: 7)[mode.rawValue]?.city ?? city
+                return try store.cachedPage(mode: mode, city: resolvedCity, currentUserID: userID, trendWindowDays: 7)
+                    .map { ISO8601DateFormatter().string(from: $0.updatedAt) }
+            })
+    }
+
+    private func discoveryPage(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridDiscoveryPageRequest
+        do { request = try decode(payload) }
+        catch { throw Self.bridgeError("invalid_discovery_query", method: .discoveryPage) }
+        let authState = await safeSessionState()
+        guard authState.state == "authenticated", let userID = authState.userID,
+              let service = try bridgeService(for: authState),
+              let mode = DiscoveryModeV1(rawValue: request.mode.rawValue) else {
+            throw Self.bridgeError("auth_required", method: .discoveryPage)
+        }
+        let result = try await discoveryPageCoordinator.page(
+            ownerUserID: userID, request: request,
+            isCurrent: { [weak self] in self?.authServices.localAccountScope == .authenticated(userID) },
+            load: { [self] city, cursor in
+                let query = try TasteMapDiscoveryAppliedQuery.normalized(mode: mode.rawValue, filters: request.filters, sort: request.sort, preferences: request.preferences)
+                try validateDiscoveryReferences(query, owner: userID, continuation: cursor != nil)
+                // No profile-city substitution, local filtering, provider
+                // fallback or raw-visit cap: these are real server page inputs.
+                let page = try await authServices.discoveryAPI.page(
+                    mode: mode, city: city, trendWindowDays: request.windowDays, cursor: cursor, limit: 20, query: query)
+                return try service.discoveryPageSource(page)
+            })
+        return try encode(result)
+    }
+
+    private func discoveryCityPage(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridDiscoveryCityPageRequest
+        do { request = try decode(payload) }
+        catch { throw Self.bridgeError("invalid_discovery_query", method: .discoveryCityPage) }
+        let state = await safeSessionState()
+        guard state.state == "authenticated", let userID = state.userID,
+              let service = try bridgeService(for: state) else { throw Self.bridgeError("auth_required", method: .discoveryCityPage) }
+        let result = try await discoveryCitySession.page(ownerUserID: userID, request: request,
+            isCurrent: { [weak self] in self?.authServices.localAccountScope == .authenticated(userID) },
+            load: { [self] city, cursor in
+                let query = try TasteMapDiscoveryAppliedQuery.normalized(mode: request.mode, filters: request.filters, sort: request.sort, preferences: request.preferences)
+                try validateDiscoveryReferences(query, owner: userID, continuation: cursor != nil)
+#if DEBUG
+                if TasteMapUITestFixtures.usesVisualQA {
+#if targetEnvironment(simulator)
+                    if ProcessInfo.processInfo.environment["TASTEMAP_ALGORITHM_LAB"] == "1" {
+                        // Explicit isolated Simulator-only laboratory. Never accepts
+                        // a caller-supplied host or sends real auth credentials.
+                        let paths = ["for_you": "discovery/for-you", "similar_taste": "discovery/similar-taste", "trending": "discovery/trending", "latest": "community/feed", "following": "community/feed"]
+                        guard let path = paths[request.mode] else { throw SyncAPIError.invalidResponse }
+                        var url = URLComponents(string: "http://127.0.0.1:4187/api/v1/\(path)")!
+                        url.queryItems = [URLQueryItem(name: "city", value: city), URLQueryItem(name: "limit", value: "20"),
+                            URLQueryItem(name: "windowDays", value: String(request.windowDays ?? 7)),
+                            URLQueryItem(name: "scope", value: request.mode),
+                            URLQueryItem(name: "filters", value: try TasteMapDiscoveryAppliedQuery.json(query.filters)),
+                            URLQueryItem(name: "sort", value: query.sort),
+                            URLQueryItem(name: "preferences", value: try TasteMapDiscoveryAppliedQuery.json(query.preferences))]
+                        if let cursor { url.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
+                        var localRequest = URLRequest(url: url.url!); localRequest.timeoutInterval = 15
+                        let session = URLSession(configuration: .ephemeral)
+                        defer { session.invalidateAndCancel() }
+                        // Forward the isolated owner's real durable events into
+                        // the local test DB; use the same server event contract.
+                        let events = try RecommendationPreferenceLedger.load(owner: userID).events
+                        struct LabPush: Encodable { let apiVersion = 1; let events: [RecommendationPreferenceEvent] }
+                        for start in stride(from: 0, to: events.count, by: 100) {
+                            var push = URLRequest(url: URL(string: "http://127.0.0.1:4187/api/v1/recommendation-preferences/push")!)
+                            push.httpMethod = "POST"; push.timeoutInterval = 15
+                            push.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                            push.httpBody = try JSONEncoder().encode(LabPush(events: Array(events[start..<min(start + 100, events.count)])))
+                            let (_, response) = try await session.data(for: push)
+                            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw SyncAPIError.invalidResponse }
+                        }
+                        let (data, response) = try await session.data(for: localRequest)
+                        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw SyncAPIError.invalidResponse }
+                        if DiscoveryModeV1(rawValue: request.mode) != nil {
+                            return try service.discoveryCitySource(JSONDecoder().decode(DiscoveryPageV1.self, from: data))
+                        }
+                        return try service.communityCitySource(JSONDecoder().decode(CommunityFeedPageV1.self, from: data))
+                    }
+#endif
+                    return try service.debugCitySource(mode: request.mode, city: city, cursor: cursor,
+                        windowDays: request.windowDays ?? 7, query: query, limit: 20)
+                }
+#endif
+                if let mode = DiscoveryModeV1(rawValue: request.mode) {
+                    let page = try await authServices.discoveryAPI.page(mode: mode, city: city, trendWindowDays: request.windowDays ?? 7, cursor: cursor, limit: 20, query: query)
+                    guard page.mode == mode else { throw SyncAPIError.invalidResponse }
+                    return try service.discoveryCitySource(page)
+                }
+                guard let scope = CommunityFeedScopeV1(rawValue: request.mode) else { throw SyncAPIError.invalidResponse }
+                let page = try await authServices.communityAPI.feed(scope: scope, city: city, cursor: cursor, limit: 20, query: query)
+                guard page.scope == scope else { throw SyncAPIError.invalidResponse }
+                return try service.communityCitySource(page)
+            })
+        return try encode(result)
+    }
+
+    private func discoveryCity(for userID: String) -> String {
+        let context = container.mainContext
+        if let profileCity = try? context.fetch(FetchDescriptor<UserProfile>()).first(where: {
+            $0.tasteMapUserID == userID && $0.deletedAt == nil && !$0.city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })?.city {
+            return Self.canonicalDiscoveryCity(profileCity)
+        }
+
+        let restaurants = ((try? context.fetch(FetchDescriptor<Restaurant>())) ?? []).filter {
+            $0.ownerUserID == userID && $0.deletedAt == nil
+        }
+        let restaurantByID = Dictionary(uniqueKeysWithValues: restaurants.map { ($0.id, $0) })
+        let recentVisits = ((try? context.fetch(FetchDescriptor<Visit>())) ?? [])
+            .filter { $0.ownerUserID == userID && $0.deletedAt == nil }
+            .sorted { $0.visitedAt > $1.visitedAt }
+        let recentCity = recentVisits.lazy.compactMap { visit -> String? in
+            guard let value = restaurantByID[visit.restaurantId]?.city.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { return nil }
+            return value
+        }.first ?? ""
+        return Self.canonicalDiscoveryCity(recentCity)
+    }
+
+    private static func canonicalDiscoveryCity(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 2, trimmed.hasSuffix("市") else { return trimmed }
+        return String(trimmed.dropLast())
+    }
+
+    private func providerForYouPage(
+        for userID: String,
+        city: String
+    ) async throws -> DiscoveryPageV1? {
+        let context = container.mainContext
+        let restaurants = ((try? context.fetch(FetchDescriptor<Restaurant>())) ?? []).filter {
+            $0.ownerUserID == userID && $0.deletedAt == nil
+        }
+        let restaurantByID = Dictionary(uniqueKeysWithValues: restaurants.map { ($0.id, $0) })
+        let visits = ((try? context.fetch(FetchDescriptor<Visit>())) ?? [])
+            .filter { $0.ownerUserID == userID && $0.deletedAt == nil }
+            .sorted { $0.visitedAt > $1.visitedAt }
+
+        var latestRatingByRestaurantID: [UUID: Double] = [:]
+        var orderedRatedRestaurants: [(restaurant: Restaurant, rating: Double)] = []
+        for visit in visits {
+            guard latestRatingByRestaurantID[visit.restaurantId] == nil,
+                  let rating = visit.rating,
+                  rating.isFinite,
+                  rating > 0,
+                  rating <= 5,
+                  let restaurant = restaurantByID[visit.restaurantId] else { continue }
+            latestRatingByRestaurantID[visit.restaurantId] = rating
+            orderedRatedRestaurants.append((restaurant, rating))
+        }
+        guard orderedRatedRestaurants.count >= 3 else { return nil }
+
+        let originRestaurant = orderedRatedRestaurants.first?.restaurant
+        let origin = originRestaurant.map {
+            RestaurantCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+        }.flatMap { $0.isValid ? $0 : nil }
+        let preference = Self.discoveryPreference(from: orderedRatedRestaurants)
+        let candidates = try await restaurantSearchService.search(
+            query: Self.discoverySearchTerm(for: preference.category),
+            scope: RestaurantSearchScope(
+                city: origin == nil ? city : "",
+                center: origin,
+                radiusMeters: 30_000
+            )
+        )
+        let visible = candidates.filter { candidate in
+            !restaurants.contains { restaurant in
+                let sameName = Self.normalizedRestaurantName(restaurant.name)
+                    == Self.normalizedRestaurantName(candidate.name)
+                guard sameName else { return false }
+                let existing = RestaurantCoordinate(
+                    latitude: restaurant.latitude,
+                    longitude: restaurant.longitude
+                )
+                return existing.isValid && RestaurantDistanceOrdering.distance(
+                    from: existing,
+                    to: candidate.coordinate
+                ) < 300
+            }
+        }
+        guard !visible.isEmpty else { return nil }
+
+        let emptyRating = DiscoveryRatingProjectionV1(value: nil, sampleCount: 0)
+        let ratings = DiscoveryRatingsV1(
+            mine: emptyRating,
+            community: emptyRating,
+            friends: emptyRating,
+            similarTaste: emptyRating
+        )
+        let reasonText: String
+        if preference.category == .other {
+            reasonText = "基于你已评分的 \(orderedRatedRestaurants.count) 家餐厅和常用区域推测"
+        } else {
+            reasonText = "基于你已评分的 \(orderedRatedRestaurants.count) 家餐厅、常用区域和\(Self.discoveryCategoryTitle(preference.category))偏好推测"
+        }
+        let cards = Array(visible.prefix(20)).enumerated().map { index, candidate in
+            let identities = candidate.placeIdentities.map {
+                DiscoveryPlaceIdentityV1(
+                    provider: $0.provider,
+                    externalId: $0.externalID,
+                    isPrimary: $0.isPrimary
+                )
+            }
+            let primary = identities.first(where: \.isPrimary) ?? identities.first
+            let globalKey = primary.map { "\($0.provider.rawValue):\($0.externalId)" }
+                ?? "provider:\(candidate.id.uuidString.lowercased())"
+            let distance = candidate.distanceMeters ?? origin.map {
+                RestaurantDistanceOrdering.distance(from: $0, to: candidate.coordinate)
+            }
+            let proximity = distance.map { max(0, 1 - min($0, 30_000) / 30_000) } ?? 0
+            let maturity = min(8, Double(orderedRatedRestaurants.count) * 0.4)
+            let categoryEvidence = preference.category == .other ? 0 : preference.strength * 8
+            let percent = Int(min(93, max(70, 70 + maturity + categoryEvidence + proximity * 6)).rounded())
+            let projection = DiscoveryRestaurantProjectionV1(
+                globalKey: globalKey,
+                placeIdentities: identities,
+                name: candidate.name,
+                address: candidate.address,
+                city: candidate.city.isEmpty ? city : Self.canonicalDiscoveryCity(candidate.city),
+                latitude: candidate.latitude,
+                longitude: candidate.longitude,
+                tags: candidate.categoryHints,
+                pricePerPerson: nil,
+                merchantImageUrl: candidate.photoURL?.absoluteString,
+                markerEmoji: "",
+                photo: nil,
+                phone: candidate.phone,
+                websiteUrl: candidate.websiteURL?.absoluteString,
+                openingHours: candidate.openingHours
+            )
+            return DiscoveryCardV1(
+                id: "for_you:\(globalKey)",
+                mode: .forYou,
+                restaurant: projection,
+                viewerState: .none,
+                ratings: ratings,
+                reasons: [DiscoveryReasonV1(code: "PROVIDER_HISTORY_MATCH", text: reasonText)],
+                sourceUser: nil,
+                similarity: nil,
+                trend: nil,
+                cacheScope: .public,
+                rank: index + 1,
+                score: Double(percent) * 1_000 - (distance ?? 30_000) / 1_000,
+                personalTastePercent: percent
+            )
+        }
+        return DiscoveryPageV1(
+            apiVersion: 1,
+            mode: .forYou,
+            city: city,
+            personalizationConfidence: orderedRatedRestaurants.count >= 8 ? .high : .medium,
+            generatedAt: Self.dateFormatter.string(from: .now),
+            items: cards,
+            nextCursor: nil
+        )
+    }
+
+    private static func discoveryPreference(
+        from history: [(restaurant: Restaurant, rating: Double)]
+    ) -> (category: FoodCategoryVisualID, strength: Double) {
+        var scores: [FoodCategoryVisualID: Double] = [:]
+        for value in history where value.rating >= DiscoveryEvidencePolicy.minimumQualifiedRatingOutOfFive {
+            let category = FoodCategoryVisualResolver.resolve(name: value.restaurant.name)
+            guard category != .other else { continue }
+            scores[category, default: 0] += max(0.5, value.rating - 3)
+        }
+        guard let best = scores.max(by: { left, right in
+            left.value == right.value
+                ? left.key.rawValue > right.key.rawValue
+                : left.value < right.value
+        }) else { return (.other, 0) }
+        let total = scores.values.reduce(0, +)
+        return (best.key, total > 0 ? best.value / total : 0)
+    }
+
+    private static func discoverySearchTerm(for category: FoodCategoryVisualID) -> String {
+        switch category {
+        case .chinese: "中餐"
+        case .japaneseKorean: "日料"
+        case .western: "西餐"
+        case .hotpotBBQ: "火锅 烧烤"
+        case .noodles: "面馆"
+        case .cafeBakery: "咖啡 烘焙"
+        case .drinksDessert: "甜品"
+        case .seafood: "海鲜"
+        case .fastFood: "小吃"
+        case .vegetarianLight: "轻食"
+        case .other: "餐厅"
+        }
+    }
+
+    private static func discoveryCategoryTitle(_ category: FoodCategoryVisualID) -> String {
+        switch category {
+        case .chinese: "中餐"
+        case .japaneseKorean: "日料与韩餐"
+        case .western: "西餐"
+        case .hotpotBBQ: "火锅与烧烤"
+        case .noodles: "面食"
+        case .cafeBakery: "咖啡与烘焙"
+        case .drinksDessert: "甜品饮品"
+        case .seafood: "海鲜"
+        case .fastFood: "小吃快餐"
+        case .vegetarianLight: "轻食"
+        case .other: "餐饮"
+        }
+    }
+
+    private static func normalizedRestaurantName(_ value: String) -> String {
+        value.precomposedStringWithCompatibilityMapping
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                locale: Locale(identifier: "zh_CN")
+            )
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
     }
 
     private func bridgeService(
@@ -206,6 +635,14 @@ final class TasteMapHybridRuntime {
             }
         )
         cachedBridgeService = service
+        service.didDeleteRestaurantWithVisit = { [weak self] restaurantIDs, visitIDs in
+            guard let self, self.cachedBridgeServiceOwnerUserID == userID else { return }
+            self.navigation.completeVisitDeletion(restaurantIDs: restaurantIDs, visitIDs: visitIDs)
+        }
+        service.sessionRestaurantReference = { [weak self] id in
+            guard let self, self.authServices.localAccountScope == .authenticated(userID) else { return nil }
+            return self.discoveryCitySession.reference(id, ownerUserID: userID)
+        }
         cachedBridgeServiceOwnerUserID = userID
         cachedBridgeServiceMembershipTier = membershipTier
         return service
@@ -233,6 +670,16 @@ final class TasteMapHybridRuntime {
     /// emitted by the typed bridge. JavaScript never receives an absolute file
     /// path and cannot use this resource scheme as an arbitrary photo endpoint.
     func resourceData(for url: URL) async throws -> (data: Data, mimeType: String) {
+        if url.scheme == "tastemap-resource", url.host == "directory-avatar" {
+            guard case .authenticated(let owner) = authServices.localAccountScope,
+                  url.pathComponents.count == 4,
+                  url.pathComponents[1] == owner else { throw TasteMapHybridResourceError.authRequired }
+            let kind = url.pathComponents[2], id = url.pathComponents[3]
+            guard ["companion","source"].contains(kind), let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))) else { throw TasteMapHybridResourceError.notFound }
+            let data = try await authServices.premiumAPI.directoryRequest(path: "/api/v1/directory/avatar/\(kind)/\(encoded)")
+            guard authServices.localAccountScope == .authenticated(owner) else { throw TasteMapHybridResourceError.authRequired }
+            return (data,"image/jpeg")
+        }
         guard url.scheme == "tastemap-resource" else {
             throw TasteMapHybridResourceError.unsupportedResource
         }
@@ -272,16 +719,21 @@ final class TasteMapHybridRuntime {
         }
 
         guard parts[0] == "public-photo",
-              Self.isOwnerVisibleCachedPhoto(
+              (discoveryCitySession.permitsPhoto(identifier, ownerUserID: ownerUserID) || Self.isOwnerVisibleCachedPhoto(
                 identifier,
                 ownerUserID: ownerUserID,
                 context: context
-              ),
+              )),
               let remoteID = UUID(uuidString: identifier) else {
             throw TasteMapHybridResourceError.notFound
         }
         let variant = PhotoBinaryVariant(rawValue: parts[2]) ?? .thumbnail
         let data = try await authServices.photoAPI.download(photoID: remoteID, variant: variant)
+        guard authServices.localAccountScope == .authenticated(ownerUserID),
+              discoveryCitySession.permitsPhoto(identifier, ownerUserID: ownerUserID)
+                || Self.isOwnerVisibleCachedPhoto(identifier, ownerUserID: ownerUserID, context: context) else {
+            throw TasteMapHybridResourceError.notFound
+        }
         return (data, Self.imageMimeType(data))
     }
 
@@ -311,6 +763,16 @@ final class TasteMapHybridRuntime {
                     && cached.projection?.photo?.photoId.lowercased() == normalized
             }
         if discoveryContainsPhoto { return true }
+
+        let discoveryActivityContainsPhoto = ((try? context.fetch(FetchDescriptor<CachedDiscoveryPlacement>())) ?? [])
+            .contains { cached in
+                guard cached.currentUserID == ownerUserID, cached.mode == .similarTaste,
+                      let value = cached.context, let activity = value.activity,
+                      let authorID = value.sourceUser?.userId else { return false }
+                return DiscoveryPhotoProjectionV1.activityAlbum(activity.photos, visitID: activity.visitId, authorID: authorID)?
+                    .contains { $0.photoId.lowercased() == normalized } == true
+            }
+        if discoveryActivityContainsPhoto { return true }
 
         let communityContainsPhoto = ((try? context.fetch(FetchDescriptor<CachedCommunityContent>())) ?? [])
             .contains { cached in
@@ -366,47 +828,102 @@ final class TasteMapHybridRuntime {
         if state == .foreground, lastLifecycleState == .background { eventState = .resume }
         else { eventState = state }
         lastLifecycleState = state
+        if state == .background { acquisitionNearbyGeneration += 1 }
         if eventState == .resume || eventState == .memoryWarning {
             invalidateBridgeReadCaches()
         }
         emit(.appLifecycle, payload: TasteMapHybridLifecycleEventPayload(state: eventState))
     }
 
-    private func perform(
+    private func performNavigation(
         method: TasteMapHybridBridgeMethod,
-        payload: TasteMapHybridJSONValue
-    ) async throws -> TasteMapHybridJSONValue {
+        payload: TasteMapHybridJSONValue,
+        sourceRequestID: String?
+    ) throws -> TasteMapHybridJSONValue {
         switch method {
-        case .authSignInWithApple:
-            return try await signInWithApple()
-        case .authLogout:
-            return await logout()
-        case .communitySetLike:
-            return try await setCommunityLike(payload)
-        case .communityComments:
-            return try await communityComments(payload)
-        case .communityAddComment:
-            return try await addCommunityComment(payload)
-        case .restaurantSetWantToGo:
-            return try setRestaurantWantToGo(payload)
         case .navigationOpenNative:
             let request: TasteMapHybridNativeRouteRequest = try decode(payload)
             let route = try TasteMapHybridRouteDTO(surface: request.route, identifier: request.identifier)
             guard route.owner == .native else {
                 throw Self.bridgeError("hybrid_route_requires_openHybrid", method: .navigationOpenNative)
             }
-            return try encode(navigation.openNative(route))
+            return try encode(navigation.openNative(route, sourceRequestID: sourceRequestID))
         case .navigationOpenHybrid:
             let route: TasteMapHybridRouteDTO = try decode(payload)
-            return try encode(navigation.openHybrid(route))
+            let options: TasteMapHybridNavigationOpenOptions = try decode(payload)
+            return try encode(navigation.openHybrid(route, sourceRequestID: sourceRequestID, replaceCurrent: options.replaceCurrent == true))
         case .navigationBack:
-            return try encode(navigation.back())
+            return try encode(navigation.back(sourceRequestID: sourceRequestID))
         case .navigationCurrent:
             return try encode(navigation.current)
+        default:
+            throw Self.bridgeError("invalid_navigation_method", method: method)
+        }
+    }
+
+    private func perform(
+        method: TasteMapHybridBridgeMethod,
+        payload: TasteMapHybridJSONValue,
+        mapSurfaceRevision: UInt64?
+    ) async throws -> TasteMapHybridJSONValue {
+        switch method {
+        case .discoveryPage:
+            return try await discoveryPage(payload)
+        case .discoveryCityPage:
+            return try await discoveryCityPage(payload)
+        case .recommendationsPreference:
+            guard case .authenticated(let owner) = authServices.localAccountScope else {
+                throw Self.bridgeError("auth_required", method: method)
+            }
+            struct PreferenceRequest: Decodable { let restaurantID: String? }
+            struct PreferenceResult: Encodable {
+                let ownerID: String
+                let excludedIDs: [String]
+                let intentFeedback: RestaurantRecommendationIntentFeedback?
+            }
+            let request: PreferenceRequest = try decode(payload)
+            let preference = try RestaurantRecommendationPreferences.snapshot(
+                ownerID: owner, context: container.mainContext, adding: request.restaurantID,
+                authorizedSessionIdentityGroups: discoveryCitySession.identityGroups(ownerUserID: owner),
+                authorizedSessionMetadata: discoveryCitySession.recommendationIntentMetadata(ownerUserID: owner)
+            )
+            return try encode(PreferenceResult(ownerID: owner, excludedIDs: preference.excludedIDs,
+                                               intentFeedback: preference.intentFeedback))
+        case .authSignInWithApple:
+            return try await signInWithApple()
+        case .authLogout:
+            return await logout()
+        case .communitySetLike:
+            return try await setCommunityLike(payload)
+        case .listsGet, .listsCreateShareLink:
+            guard case .authenticated(let owner) = authServices.localAccountScope else {
+                throw Self.bridgeError("auth_required", method: method, recoverable: true)
+            }
+            if listService?.ownerUserID != owner {
+                listService = TasteMapHybridListService(
+                    container: container, ownerUserID: owner, api: authServices.restaurantListAPI,
+                    sharing: authServices.publicSharingAPI, currentOwner: { [weak self] in
+                        guard case .authenticated(let current) = self?.authServices.localAccountScope else { return nil }
+                        return current
+                    })
+            }
+            let request: TasteMapHybridListGetRequest = try decode(payload)
+            if method == .listsGet { return try encode(await listService!.get(request)) }
+            return try encode(await listService!.createShareLink(id: request.id))
+        case .communityComments:
+            return try await communityComments(payload)
+        case .communityAddComment:
+            return try await addCommunityComment(payload)
+        case .restaurantSetWantToGo:
+            return try setRestaurantWantToGo(payload)
+        case .restaurantSetAvatar:
+            return try await setRestaurantAvatar(payload)
+        case .navigationOpenNative, .navigationOpenHybrid, .navigationBack, .navigationCurrent:
+            return try performNavigation(method: method, payload: payload, sourceRequestID: nil)
         case .locationCurrent:
             return try await currentLocation()
         case .mapSurfaceUpdate:
-            return try updateMapSurface(payload)
+            return try updateMapSurface(payload, revision: mapSurfaceRevision)
         case .acquisitionSearch:
             return try await searchRestaurants(payload)
         case .acquisitionNearby:
@@ -419,8 +936,71 @@ final class TasteMapHybridRuntime {
             let result = try selectRestaurantCandidate(payload)
             invalidateBridgeReadCaches()
             return result
+        case .premiumTrialEligibility:
+            await premiumEntitlementService.refreshTrialEligibility()
+            guard let result = premiumEntitlementService.trialEligibility else { throw Self.bridgeError("unavailable", method: method) }
+            return try encode(result)
+        case .premiumClaimTrial:
+            let result = try await premiumEntitlementService.claimTrial()
+            return .object(["expiresAt": .string(result.expiresAt), "status": premiumStatus()])
         case .premiumStatus:
+            await premiumEntitlementService.refresh()
             return premiumStatus()
+        case .directorySearchUsers:
+            guard case .authenticated(let owner)=authServices.localAccountScope,
+                  case .object(let fields)=payload,case .string(let query)=fields["query"],query.count>=2 else { throw Self.bridgeError("invalid_request",method:method) }
+            let page=try await authServices.socialAPI.search(query:query,cursor:nil,limit:20)
+            guard authServices.localAccountScope == .authenticated(owner) else { throw Self.bridgeError("account_changed",method:method) }
+            return try encode(page.items.map { PrivateDirectoryDashboard.Person(id:$0.profile.userId,displayName:$0.profile.displayName) })
+        case .directoryDashboard, .directoryMutate, .directoryRespond:
+            guard case .authenticated(let owner) = authServices.localAccountScope else { throw Self.bridgeError("auth_required",method:method) }
+            if method == .directoryDashboard {
+                await syncCoordinator.synchronizeNow()
+                var result = try await authServices.premiumAPI.directoryDashboard(userID: owner)
+                guard authServices.localAccountScope == .authenticated(owner) else { throw Self.bridgeError("account_changed",method:method) }
+                for index in result.entries.indices where result.entries[index].avatarURL != nil {
+                    let entry = result.entries[index]
+                    let encoded = entry.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn:"/?#%"))) ?? ""
+                    let revision = entry.avatarURL?.components(separatedBy:"?").dropFirst().joined(separator:"?") ?? ""
+                    result.entries[index].avatarURL = "tastemap-resource://directory-avatar/\(owner)/\(entry.kind)/\(encoded)?\(revision)"
+                }
+                return try encode(result)
+            }
+            let encodedPayload = try JSONEncoder().encode(payload)
+            guard var body = try JSONSerialization.jsonObject(with: encodedPayload) as? [String:Any] else { throw Self.bridgeError("invalid_request",method:method) }
+            var endpoint = "/api/v1/directory"
+            if method == .directoryRespond {
+                guard let id=body["id"] as? String, let escaped=id.addingPercentEncoding(withAllowedCharacters:.urlPathAllowed.subtracting(CharacterSet(charactersIn:"/?#%"))) else { throw Self.bridgeError("invalid_request",method:method) }
+                endpoint = "/api/v1/social/companion-links/\(escaped)"
+            } else if body["action"] as? String == "avatar" {
+                if let id=body["photoID"] as? String {
+                    guard let pending=pendingPhotoSelections[id],pending.ownerUserID==owner else { throw Self.bridgeError("photo_not_found",method:method) }
+                    let bytes=try await photoFiles.load(relativePath:pending.prepared.thumbnailFileRelativePath)
+                    body["avatarData"]=try PrivateDirectoryAvatar.encoded(bytes)
+                } else { body["avatarData"]=NSNull() }
+            }
+            guard authServices.localAccountScope == .authenticated(owner) else { throw Self.bridgeError("account_changed",method:method) }
+            _ = try await authServices.premiumAPI.directoryRequest(path:endpoint,body:JSONSerialization.data(withJSONObject:body))
+            guard authServices.localAccountScope == .authenticated(owner) else { throw Self.bridgeError("account_changed",method:method) }
+            if let id=body["photoID"] as? String { _ = try? await discardPhoto(.object(["photoID":.string(id)])) }
+            await syncCoordinator.synchronizeNow()
+            return .object(["saved":.bool(true)])
+        case .referralsDashboard:
+            guard case .authenticated(let owner) = authServices.localAccountScope else {
+                throw Self.bridgeError("auth_required", method: .referralsDashboard)
+            }
+            let result = try await authServices.premiumAPI.referralDashboard(userID: owner)
+            guard authServices.localAccountScope == .authenticated(owner), result.userID == owner else {
+                throw Self.bridgeError("account_changed", method: .referralsDashboard)
+            }
+            return try encode(result)
+        case .referralsPrepareRegistration:
+            guard authServices.localAccountScope == .guest else {
+                throw Self.bridgeError("new_account_only", method: .referralsPrepareRegistration)
+            }
+            let request: ReferralRegistrationPayload = try decode(payload)
+            try ReferralInvitationStore.prepare(request.code)
+            return .object(["prepared": .bool(true)])
         case .premiumProducts:
             return try await premiumProducts()
         case .premiumPurchase:
@@ -462,7 +1042,7 @@ final class TasteMapHybridRuntime {
         }
     }
 
-    private func updateMapSurface(_ payload: TasteMapHybridJSONValue) throws -> TasteMapHybridJSONValue {
+    private func updateMapSurface(_ payload: TasteMapHybridJSONValue, revision: UInt64?) throws -> TasteMapHybridJSONValue {
         let request: TasteMapHybridMapSurfaceUpdateRequest = try decode(payload)
         guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
             throw Self.bridgeError("auth_required", method: .mapSurfaceUpdate, recoverable: true)
@@ -470,9 +1050,13 @@ final class TasteMapHybridRuntime {
         guard let mapSurfaceHost else {
             throw Self.bridgeError("native_map_surface_unavailable", method: .mapSurfaceUpdate, recoverable: true)
         }
+        guard let revision else {
+            throw Self.bridgeError("native_map_surface_unavailable", method: .mapSurfaceUpdate, recoverable: true)
+        }
         if !request.visible {
             try mapSurfaceHost.apply(
                 request,
+                revision: revision,
                 resources: TasteMapHybridMapSurfaceResources(
                     photosByID: [:],
                     userAvatarPhoto: nil,
@@ -489,6 +1073,7 @@ final class TasteMapHybridRuntime {
         }
         try mapSurfaceHost.apply(
             request,
+            revision: revision,
             resources: TasteMapHybridMapSurfaceResources(
                 photosByID: cachedResources.photosByID,
                 userAvatarPhoto: avatarPhoto,
@@ -638,7 +1223,7 @@ final class TasteMapHybridRuntime {
         }
 #endif
         guard case .authenticated(let ownerUserID) = authServices.localAccountScope,
-              let reference = try TasteMapHybridRestaurantReferenceResolver.resolve(
+              let reference = try discoveryCitySession.reference(request.restaurantID, ownerUserID: ownerUserID) ?? TasteMapHybridRestaurantReferenceResolver.resolve(
                 identifier: request.restaurantID, ownerUserID: ownerUserID, context: container.mainContext
               ) else {
             throw Self.bridgeError("restaurant_not_found", method: .restaurantSetWantToGo, recoverable: true)
@@ -676,11 +1261,107 @@ final class TasteMapHybridRuntime {
         ))
     }
 
+    private func setRestaurantAvatar(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridRestaurantAvatarRequest = try decode(payload)
+        guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
+            throw Self.bridgeError("auth_required", method: .restaurantSetAvatar)
+        }
+        let context = container.mainContext
+        guard let restaurant = try context.fetch(FetchDescriptor<Restaurant>()).first(where: {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil && (
+                $0.remoteID?.caseInsensitiveCompare(request.restaurantID) == .orderedSame ||
+                $0.id.uuidString.caseInsensitiveCompare(request.restaurantID) == .orderedSame
+            )
+        }) else {
+            throw Self.bridgeError("restaurant_not_found", method: .restaurantSetAvatar, recoverable: true)
+        }
+
+        let metadata = RestaurantDetailMetadata(restaurant: restaurant)
+        let store = LocalTasteMapStore(context: context)
+        let markerType: RestaurantJSONContractV1.RestaurantMarkerTypeContract
+        let markerPhotoID: String?
+        let markerEmoji: String
+        var attachedPhoto: PhotoAsset?
+
+        switch request.kind {
+        case "emoji":
+            guard let value = Self.normalizedRestaurantAvatarEmoji(request.emoji) else {
+                throw Self.bridgeError("invalid_restaurant_avatar_emoji", method: .restaurantSetAvatar, recoverable: true)
+            }
+            markerType = .emoji
+            markerPhotoID = nil
+            markerEmoji = value
+        case "photo":
+            guard let photoID = request.photoID?.lowercased(),
+                  let pending = pendingPhotoSelections[photoID],
+                  pending.ownerUserID == ownerUserID else {
+                throw Self.bridgeError("photo_not_found", method: .restaurantSetAvatar, recoverable: true)
+            }
+            do {
+                let photo = try photoTransferCoordinator.attachPreparedRestaurantMarker(
+                    pending.prepared,
+                    restaurantID: restaurant.id,
+                    queueForUpload: true
+                )
+                attachedPhoto = photo
+                try photoTransferCoordinator.enqueue(photo)
+                markerType = .image
+                markerPhotoID = photo.remoteID ?? photo.id.uuidString.lowercased()
+                markerEmoji = metadata.markerEmoji
+            } catch {
+                pendingPhotoSelections[photoID] = nil
+                if let attachedPhoto { try? await photoTransferCoordinator.discardLocalPhoto(attachedPhoto) }
+                else { await photoTransferCoordinator.discardPrepared(pending.prepared) }
+                throw Self.bridgeError("restaurant_avatar_photo_save_failed", method: .restaurantSetAvatar, recoverable: true)
+            }
+        default:
+            throw Self.bridgeError("invalid_restaurant_avatar_kind", method: .restaurantSetAvatar, recoverable: true)
+        }
+
+        do {
+            try store.updateDetails(
+                restaurant,
+                update: RestaurantDetailsUpdate(
+                    name: restaurant.name,
+                    address: restaurant.address,
+                    city: restaurant.city,
+                    status: restaurant.status,
+                    phone: metadata.storedPhone,
+                    openingHours: metadata.openingHours,
+                    referencePrice: metadata.referencePrice,
+                    longTermNote: metadata.longTermNote,
+                    markerType: markerType,
+                    markerPhotoID: markerPhotoID,
+                    markerEmoji: markerEmoji
+                ),
+                actorUserID: ownerUserID
+            )
+        } catch {
+            if let attachedPhoto { try? await photoTransferCoordinator.discardLocalPhoto(attachedPhoto) }
+            if let photoID = request.photoID?.lowercased() { pendingPhotoSelections[photoID] = nil }
+            throw Self.bridgeError("restaurant_avatar_save_failed", method: .restaurantSetAvatar, recoverable: true)
+        }
+        if let photoID = request.photoID?.lowercased() { pendingPhotoSelections[photoID] = nil }
+        invalidateBridgeReadCaches()
+        Task { await syncCoordinator.synchronizeNow() }
+        return try encode(TasteMapHybridRestaurantAvatarMutationDTO(
+            restaurantID: request.restaurantID,
+            markerType: markerType.rawValue,
+            markerEmoji: markerEmoji,
+            updatedAt: Self.dateFormatter.string(from: restaurant.updatedAt)
+        ))
+    }
+
+    private static func normalizedRestaurantAvatarEmoji(_ input: String?) -> String? {
+        RestaurantOwnerAvatarEmojiPolicy.normalized(input)
+    }
+
     private func validateInteractionTarget(_ target: TasteMapHybridActivityInteractionDTO) throws {
         guard case .authenticated(let ownerUserID) = authServices.localAccountScope,
               !target.visitID.isEmpty, !target.authorID.isEmpty, !target.restaurantID.isEmpty else {
             throw Self.bridgeError("invalid_interaction_target", recoverable: false)
         }
+        if discoveryCitySession.permits(target, ownerUserID: ownerUserID) { return }
 #if DEBUG
         if TasteMapUITestFixtures.usesVisualQA, target.visitID.hasPrefix("demo-visit-") { return }
 #endif
@@ -710,6 +1391,8 @@ final class TasteMapHybridRuntime {
         visitID: String, likedByViewer: Bool, likeCount: Int, commentCount: Int
     ) throws {
         guard case .authenticated(let ownerUserID) = authServices.localAccountScope else { return }
+        discoveryCitySession.setEngagement(.init(likedByViewer: likedByViewer, likeCount: likeCount, commentCount: commentCount),
+                                           visitID: visitID, ownerUserID: ownerUserID)
         try LocalCommunityStore(context: container.mainContext).updateEngagement(
             visitID: visitID, currentUserID: ownerUserID,
             engagement: .init(
@@ -720,6 +1403,7 @@ final class TasteMapHybridRuntime {
 
     private func cachedEngagement(visitID: String) -> CommunityEngagementSummaryV1? {
         guard case .authenticated(let ownerUserID) = authServices.localAccountScope else { return nil }
+        if let value = discoveryCitySession.engagement(visitID, ownerUserID: ownerUserID) { return value }
         return ((try? container.mainContext.fetch(FetchDescriptor<CachedCommunityContent>())) ?? [])
             .first { $0.currentUserID == ownerUserID && $0.item?.visit?.id == visitID }?
             .item?.engagement
@@ -791,29 +1475,132 @@ final class TasteMapHybridRuntime {
         guard !query.isEmpty, query.count <= 200, city.count <= 120 else {
             throw Self.bridgeError("invalid_acquisition_search", method: .acquisitionSearch)
         }
-        let values = try await restaurantSearchService.search(
+        guard case .authenticated(let owner) = authServices.localAccountScope else {
+            throw Self.bridgeError("auth_required", method: .acquisitionSearch)
+        }
+        acquisitionSearchPages = acquisitionSearchPages.filter { $0.value.expiresAt > Date() && $0.value.owner == owner }
+        if let cursor = request.cursor {
+            guard let page = acquisitionSearchPages.removeValue(forKey: cursor), page.query == query, page.city == city else {
+                throw Self.bridgeError("search_cursor_expired", method: .acquisitionSearch, recoverable: true)
+            }
+            return try encode(searchPage(page))
+        }
+        acquisitionSearchGeneration += 1
+        let generation = acquisitionSearchGeneration
+        acquisitionSearchPages.removeAll(keepingCapacity: true)
+        var searchAuthorization = locationPermissionManager.authorizationStatus
+        var searchAccuracy = locationPermissionManager.accuracyAuthorization
+#if DEBUG
+        if TasteMapUITestFixtures.usesRestaurantAcquisitionFixture {
+            searchAuthorization = .authorizedWhenInUse
+            searchAccuracy = .fullAccuracy
+        }
+#endif
+        let searchLocation = await RestaurantSearchLocationPolicy.location(
+            accepted: acquisitionLocation?.location,
+            authorizationStatus: searchAuthorization,
+            accuracyAuthorization: searchAccuracy
+        ) { try await self.freshLocationFix(method: .acquisitionSearch).location }
+        guard acquisitionSearchGeneration == generation,
+              case .authenticated(let locationOwner) = authServices.localAccountScope,
+              locationOwner == owner else {
+            throw Self.bridgeError("search_request_superseded", method: .acquisitionSearch, recoverable: true)
+        }
+        // Preserve the last accepted fix after a failed refresh so the next
+        // submitted search can retry. Only this request's valid fix is used.
+        let fix = searchLocation.map { location in
+            (location: location, dto: TasteMapHybridLocationDTO(
+                latitude: location.coordinate.latitude, longitude: location.coordinate.longitude,
+                timestamp: Self.dateFormatter.string(from: location.timestamp),
+                horizontalAccuracy: location.horizontalAccuracy,
+                accuracyMode: "full", authorizationStatus: "allowed"))
+        }
+        if let fix { acquisitionLocation = fix }
+        let locationCenter = fix.map { RestaurantCoordinate(latitude: $0.location.coordinate.latitude, longitude: $0.location.coordinate.longitude, reference: .wgs84) }
+        let locationCity: String?
+        if let locationCenter, !city.isEmpty {
+            locationCity = try? await restaurantSearchService.locationContext(for: locationCenter).city
+        } else { locationCity = nil }
+        let normalizedCity = { (value: String) in value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "市", with: "").lowercased() }
+        // A manually chosen remote city always wins. If reverse geocoding
+        // cannot establish that GPS belongs to that city, omit the GPS bias.
+        let center = city.isEmpty || locationCity.map({ normalizedCity($0) == normalizedCity(city) }) == true ? locationCenter : nil
+        var values = RestaurantSearchRelevancePolicy.rankedMatches(
+            try await restaurantSearchService.search(
+                query: query,
+                scope: RestaurantSearchScope(city: city, center: center)
+            ),
             query: query,
-            scope: RestaurantSearchScope(city: city)
+            scopeCity: city
         )
-        return try encode(acquisitionResults(
-            candidates: Array(values.prefix(20)),
-            location: nil,
-            message: values.isEmpty ? "没有找到匹配的餐厅，请换一个名称、地址或城市。" : nil
-        ))
+        guard acquisitionSearchGeneration == generation,
+              case .authenticated(let currentOwner) = authServices.localAccountScope,
+              currentOwner == owner else {
+            throw Self.bridgeError("search_request_superseded", method: .acquisitionSearch, recoverable: true)
+        }
+        if let center { values = RestaurantDistanceOrdering.measuringAndSorting(values, from: center) }
+        return try encode(searchPage(AcquisitionSearchPage(owner: owner, query: query, city: city,
+            candidates: values, location: center == nil ? nil : fix?.dto, expiresAt: Date().addingTimeInterval(300))))
+    }
+
+    private func searchPage(_ page: AcquisitionSearchPage) -> TasteMapHybridAcquisitionResultsDTO {
+        var nextCursor: String?
+        if page.candidates.count > 20 {
+            let cursor = UUID().uuidString.lowercased()
+            acquisitionSearchPages[cursor] = AcquisitionSearchPage(owner: page.owner, query: page.query, city: page.city,
+                candidates: Array(page.candidates.dropFirst(20)), location: page.location, expiresAt: page.expiresAt)
+            nextCursor = cursor
+        }
+        return acquisitionResults(candidates: Array(page.candidates.prefix(20)), location: page.location,
+            message: page.candidates.isEmpty ? "没有找到匹配的餐厅，请换一个名称、地址或城市。" : nil,
+            nextCursor: nextCursor)
     }
 
     private func nearbyRestaurants() async throws -> TasteMapHybridJSONValue {
+        guard case .authenticated(let owner) = authServices.localAccountScope else {
+            throw Self.bridgeError("auth_required", method: .acquisitionNearby, recoverable: false)
+        }
+        acquisitionNearbyGeneration += 1
+        let generation = acquisitionNearbyGeneration
         let fix = try await freshLocationFix(method: .acquisitionNearby)
+        guard acquisitionNearbyGeneration == generation,
+              case .authenticated(let currentOwner) = authServices.localAccountScope, currentOwner == owner else {
+            throw Self.bridgeError("nearby_request_superseded", method: .acquisitionNearby, recoverable: true)
+        }
+        acquisitionLocation = fix
         let center = RestaurantCoordinate(
             latitude: fix.location.coordinate.latitude,
-            longitude: fix.location.coordinate.longitude
+            longitude: fix.location.coordinate.longitude,
+            reference: .wgs84
         )
-        let values = try await restaurantSearchService.nearby(center: center, radiusMeters: 3_000)
+        async let contextTask: RestaurantLocationContext? = try? restaurantSearchService.locationContext(for: center)
+        async let nearbyTask = restaurantSearchService.nearby(center: center, radiusMeters: 3_000)
+        let locationContext = await contextTask
+        let values = try await nearbyTask
+        guard acquisitionNearbyGeneration == generation,
+              case .authenticated(let currentOwner) = authServices.localAccountScope, currentOwner == owner else {
+            throw Self.bridgeError("nearby_request_superseded", method: .acquisitionNearby, recoverable: true)
+        }
+        let resolvedCity = locationContext?.city.trimmingCharacters(in: .whitespacesAndNewlines)
         let ordered = RestaurantDistanceOrdering.measuringAndSorting(values, from: center)
             .filter { ($0.distanceMeters ?? .greatestFiniteMagnitude) <= 3_000 }
+#if DEBUG
+        RestaurantAcquisitionDebugTrace.record("nearby_results", location: fix.location, fields: [
+            "provider": "MapKit",
+            "city": resolvedCity ?? "",
+            "candidateCount": ordered.count,
+            "candidates": ordered.prefix(24).map { candidate in
+                ["name": candidate.name, "latitude": candidate.latitude, "longitude": candidate.longitude,
+                 "distanceMeters": candidate.distanceMeters ?? -1] as [String: Any]
+            },
+        ])
+#endif
         return try encode(acquisitionResults(
-            candidates: Array(ordered.prefix(12)),
+            // The full accepted snapshot crosses the typed boundary once.
+            // React expands local batches without another GPS/provider query.
+            candidates: ordered,
             location: fix.dto,
+            detectedCity: resolvedCity?.isEmpty == false ? resolvedCity : nil,
             message: ordered.isEmpty ? "3 公里内暂时没有找到餐厅；搜索和手动添加仍可使用。" : nil
         ))
     }
@@ -907,7 +1694,21 @@ final class TasteMapHybridRuntime {
             throw Self.bridgeError("probable_match_confirmation_required", method: .acquisitionSelect, recoverable: true)
         }
         let restaurantID: String
-        if pending.duplicateKind == "exactProvider", let existing = pending.existingRestaurantID {
+        let confirmedExistingMatch = pending.duplicateKind == "exactProvider"
+            || (pending.duplicateKind == "probableCrossProvider" && request.confirmProbableMatch)
+        if confirmedExistingMatch, let existing = pending.existingRestaurantID {
+            // Selecting the same real Provider place is also a safe metadata
+            // refresh. A cross-provider probable match reaches this branch only
+            // after the user explicitly confirms it is the same Restaurant.
+            // This backfills categories/images that older clients dropped
+            // without creating a duplicate Restaurant.
+            let restaurants = try container.mainContext.fetch(FetchDescriptor<Restaurant>())
+            _ = try LocalTasteMapStore(context: container.mainContext).restaurant(
+                for: pending.candidate,
+                among: restaurants,
+                actorUserID: ownerUserID
+            )
+            try container.mainContext.save()
             restaurantID = existing
         } else {
             restaurantID = try TasteMapHybridRestaurantReferenceResolver.cacheCandidate(
@@ -927,11 +1728,19 @@ final class TasteMapHybridRuntime {
     private func acquisitionResults(
         candidates: [RestaurantCandidate],
         location: TasteMapHybridLocationDTO?,
+        detectedCity: String? = nil,
         message: String?,
-        sharedImportFingerprint: String? = nil
+        sharedImportFingerprint: String? = nil,
+        nextCursor: String? = nil
     ) -> TasteMapHybridAcquisitionResultsDTO {
         guard case .authenticated(let ownerUserID) = authServices.localAccountScope else {
-            return TasteMapHybridAcquisitionResultsDTO(candidates: [], location: location, message: "请先登录。", sharedImportFingerprint: sharedImportFingerprint)
+            return TasteMapHybridAcquisitionResultsDTO(
+                candidates: [],
+                location: location,
+                detectedCity: detectedCity,
+                message: "请先登录。",
+                sharedImportFingerprint: sharedImportFingerprint
+            )
         }
         let restaurants = ((try? container.mainContext.fetch(FetchDescriptor<Restaurant>())) ?? [])
             .filter { $0.ownerUserID == ownerUserID && $0.deletedAt == nil }
@@ -999,7 +1808,9 @@ final class TasteMapHybridRuntime {
                 longitude: candidate.longitude,
                 distanceMeters: candidate.distanceMeters,
                 phone: candidate.phone,
+                websiteUrl: candidate.websiteURL?.absoluteString,
                 openingHours: candidate.openingHours,
+                categoryHints: candidate.categoryHints,
                 image: image,
                 imageResolution: imageResolution,
                 duplicateKind: duplicateKind,
@@ -1009,8 +1820,10 @@ final class TasteMapHybridRuntime {
         return TasteMapHybridAcquisitionResultsDTO(
             candidates: values,
             location: location,
+            detectedCity: detectedCity,
             message: message,
-            sharedImportFingerprint: sharedImportFingerprint
+            sharedImportFingerprint: sharedImportFingerprint,
+            nextCursor: nextCursor
         )
     }
 
@@ -1042,7 +1855,16 @@ final class TasteMapHybridRuntime {
                     attributionRequired: false,
                     accessibilityLabel: "\(label) · 用户实拍"
                 )
-            case .publicOrCachedPhoto, .providerMerchantImage, .foodDiningFallback: return nil
+            case .providerMerchantImage(let url):
+                return TasteMapHybridImageDescriptor(
+                    kind: .providerMerchant,
+                    resourceURL: url.absoluteString,
+                    restaurantID: matchedRestaurantID,
+                    exportAllowed: false,
+                    attributionRequired: false,
+                    accessibilityLabel: "\(label) · Provider 商户图片"
+                )
+            case .publicOrCachedPhoto, .foodDiningFallback: return nil
             }
         }
         var orderedSources = sources
@@ -1095,8 +1917,44 @@ final class TasteMapHybridRuntime {
     }
 
     private func freshLocationFix(method: TasteMapHybridBridgeMethod) async throws -> (location: CLLocation, dto: TasteMapHybridLocationDTO) {
+        if let acquisitionLocationTask { return try await acquisitionLocationTask.value }
+        let task = Task { try await self.obtainFreshLocationFix(method: method) }
+        acquisitionLocationTask = task
+        defer { acquisitionLocationTask = nil }
+        return try await task.value
+    }
+
+    private func obtainFreshLocationFix(method: TasteMapHybridBridgeMethod) async throws -> (location: CLLocation, dto: TasteMapHybridLocationDTO) {
+#if DEBUG
+        // Synthetic coordinates are allowed only alongside the explicitly
+        // synthetic acquisition provider, never an ordinary QA real search.
+        if TasteMapUITestFixtures.usesRestaurantAcquisitionFixture {
+            let location = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 30.2741, longitude: 120.1551),
+                altitude: 8,
+                horizontalAccuracy: 12,
+                verticalAccuracy: 8,
+                timestamp: Date()
+            )
+            let dto = TasteMapHybridLocationDTO(
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                timestamp: Self.dateFormatter.string(from: location.timestamp),
+                horizontalAccuracy: location.horizontalAccuracy,
+                accuracyMode: "full",
+                authorizationStatus: "allowed"
+            )
+            emit(.locationChanged, payload: dto)
+            return (location, dto)
+        }
+#endif
         do {
-            let location = try await locationPermissionManager.requestCurrentLocation()
+            let location = try await locationRequestCoordinator.request {
+                try await self.locationPermissionManager.requestCurrentLocation()
+            }
+            guard locationPermissionManager.accuracyAuthorization == .fullAccuracy else {
+                throw RestaurantLocationError.preciseLocationRequired
+            }
             guard RestaurantLocationFixPolicy.isUsable(location, accuracyAuthorization: locationPermissionManager.accuracyAuthorization) else {
                 throw RestaurantLocationError.staleOrInaccurate
             }
@@ -1112,6 +1970,8 @@ final class TasteMapHybridRuntime {
             return (location, dto)
         } catch RestaurantLocationError.permissionDenied {
             throw Self.bridgeError("location_permission_denied", method: method, recoverable: true)
+        } catch RestaurantLocationError.preciseLocationRequired {
+            throw Self.bridgeError("location_precise_required", method: method, recoverable: true)
         } catch {
             throw Self.bridgeError("location_stale_or_inaccurate", method: method, recoverable: true)
         }
@@ -1119,7 +1979,7 @@ final class TasteMapHybridRuntime {
 
     private func pickPhotos(_ payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
         let request: TasteMapHybridPhotoPickRequest = try decode(payload)
-        let limit = min(max(request.selectionLimit, 1), PhotoImportService.maximumSelectionCount)
+        let limit = min(max(request.selectionLimit, 1), PhotoImportService.maximumSelectionCount, premiumEntitlementService.visitPhotoLimit)
         guard let presenter = presentationController else {
             throw Self.bridgeError("presentation_anchor_unavailable", method: .photoPick, recoverable: true)
         }
@@ -1367,12 +2227,16 @@ final class TasteMapHybridRuntime {
             "expiresAt": premiumEntitlementService.snapshot?.expiresAt.map {
                 .string(Self.dateFormatter.string(from: $0))
             } ?? .null,
+            "source": premiumEntitlementService.snapshot?.source.map { .string($0.rawValue) } ?? .null,
+            "startedAt": premiumEntitlementService.snapshot?.startsAt.map { .string(Self.dateFormatter.string(from: $0)) } ?? .null,
+            "statusText": premiumEntitlementService.snapshot?.giftStatusText.map { .string($0) } ?? .null,
+            "canManageSubscription": .bool(status == "premium" && premiumEntitlementService.snapshot?.source?.isAppStoreSubscription == true),
         ])
     }
 
     private func premiumProducts() async throws -> TasteMapHybridJSONValue {
         do {
-            let products = try await premiumEntitlementService.productsProvider.products().map {
+            let products = try await premiumEntitlementService.productsProvider.products().filter { $0.period == .monthly || $0.period == .annual }.map {
                 TasteMapHybridPremiumProductDTO(
                     id: $0.id,
                     displayName: $0.displayName,
@@ -1420,6 +2284,9 @@ final class TasteMapHybridRuntime {
     }
 
     private func managePremium() async throws -> TasteMapHybridJSONValue {
+        guard premiumEntitlementService.snapshot?.source?.isAppStoreSubscription == true else {
+            throw Self.bridgeError("premium_management_unavailable", method: .premiumManage, recoverable: false)
+        }
         do {
             try await premiumEntitlementService.productsProvider.manageSubscription()
             return try encode(TasteMapHybridPremiumActionResultDTO(outcome: "opened", status: premiumStatus()))
@@ -1450,21 +2317,13 @@ final class TasteMapHybridRuntime {
 
     private func permissionsStatus() -> TasteMapHybridPermissionsStatusDTO {
         let value = SettingsPermissionSnapshot.live(locationStatus: locationPermissionManager.authorizationStatus)
-        let camera = switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: "allowed"
-        case .denied: "denied"
-        case .restricted: "restricted"
-        case .notDetermined: "notDetermined"
-        @unknown default: "restricted"
-        }
         return TasteMapHybridPermissionsStatusDTO(
             location: value.location.rawValue,
-            camera: camera,
+            camera: value.camera.rawValue,
             photoAddOnly: value.photoAddOnly.rawValue,
             canOpenSystemSettings: value.location.canOpenSystemSettings
                 || value.photoAddOnly.canOpenSystemSettings
-                || camera == "denied"
-                || camera == "restricted"
+                || value.camera.canOpenSystemSettings
         )
     }
 
@@ -1531,7 +2390,12 @@ final class TasteMapHybridRuntime {
 
     private func currentLocation() async throws -> TasteMapHybridJSONValue {
         do {
-            let location = try await locationPermissionManager.requestCurrentLocation()
+            let location = try await locationRequestCoordinator.request {
+                try await self.locationPermissionManager.requestCurrentLocation()
+            }
+            guard RestaurantLocationFixPolicy.isUsable(
+                location, accuracyAuthorization: locationPermissionManager.accuracyAuthorization
+            ) else { throw RestaurantLocationError.staleOrInaccurate }
             let value = TasteMapHybridLocationDTO(
                 latitude: location.coordinate.latitude,
                 longitude: location.coordinate.longitude,
@@ -1540,6 +2404,10 @@ final class TasteMapHybridRuntime {
                 accuracyMode: locationPermissionManager.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
                 authorizationStatus: "allowed"
             )
+            if let owner = authServices.localAccountScope.authenticatedUserID {
+                let reference = TasteMapDiscoveryReference(latitude: value.latitude, longitude: value.longitude, source: "device_location")
+                try discoveryLocationProofs.register(reference, owner: owner, timestamp: location.timestamp)
+            }
             emit(.locationChanged, payload: value)
             return try encode(value)
         } catch RestaurantLocationError.permissionDenied {
@@ -1569,11 +2437,16 @@ final class TasteMapHybridRuntime {
         }
     }
 
+    private func validateDiscoveryReferences(_ query: TasteMapDiscoveryAppliedQuery, owner: String, continuation: Bool) throws {
+        try discoveryLocationProofs.validate(query, owner: owner, permissionAllowed: locationAuthorizationStatus == "allowed", continuation: continuation)
+    }
+
     private func signInWithApple() async throws -> TasteMapHybridJSONValue {
         guard let window = presentationWindow else { throw Self.bridgeError("presentation_anchor_unavailable", recoverable: true) }
         do {
             let user = try await authServices.appleSignIn.signIn(presentationAnchor: window)
             authServices.activateLocalAccount(user)
+            acquisitionNearbyGeneration += 1
             pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
             pendingPhotoSelections.removeAll(keepingCapacity: false)
             try LocalAccountOwnershipMigrator(context: container.mainContext).activate(userID: user.id)
@@ -1591,6 +2464,7 @@ final class TasteMapHybridRuntime {
     }
 
     private func logout() async -> TasteMapHybridJSONValue {
+        acquisitionNearbyGeneration += 1
         do { try await authServices.sessionManager.logout() }
         catch { /* Local logout is authoritative; server revocation remains bounded by expiry. */ }
         authServices.endLocalAccountSession()
@@ -1606,6 +2480,7 @@ final class TasteMapHybridRuntime {
     }
 
     func accountDeletionDidComplete() async {
+        acquisitionNearbyGeneration += 1
         authServices.endLocalAccountSession()
         pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
         pendingPhotoSelections.removeAll(keepingCapacity: false)
@@ -1615,6 +2490,21 @@ final class TasteMapHybridRuntime {
         resetToCurrentProfileIfNeeded()
         let session = TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil)
         emit(.authChanged, payload: session)
+    }
+
+    func localDataDidClear() {
+        acquisitionNearbyGeneration += 1
+        pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
+        pendingPhotoSelections.removeAll(keepingCapacity: false)
+        localDataDidChange(reason: "localDataCleared")
+    }
+
+    /// Refreshes the already-running Hybrid app after a Native SwiftData
+    /// transaction. Rebuilding the service also creates a fresh ModelContext,
+    /// so the next content/profile request can see externally imported rows.
+    func localDataDidChange(reason: String) {
+        invalidateBridgeReadCaches()
+        emit(.dataChanged, payload: ["reason": reason])
     }
 
     private func safeSessionState() async -> TasteMapHybridAuthStateDTO {
@@ -1663,6 +2553,13 @@ final class TasteMapHybridRuntime {
     }
 
     private func emit<T: Encodable>(_ name: TasteMapHybridEventName, payload: T) {
+        if name == .authChanged {
+            discoveryLocationProofs.reset()
+            discoveryRefreshCoordinator.reset()
+            discoveryPageCoordinator.reset()
+            discoveryCitySession.reset()
+        }
+        if name == .authChanged { listService?.invalidate(); listService = nil }
         guard let value = try? encode(payload) else { return }
         sequence += 1
         let event = TasteMapHybridEventEnvelope(sequence: sequence, name: name, payload: value)
@@ -1777,3 +2674,4 @@ private struct TasteMapHybridShareEventPayload: Codable {
 }
 
 private struct TasteMapHybridLifecycleEventPayload: Codable { let state: TasteMapHybridLifecycleState }
+private struct ReferralRegistrationPayload: Codable { let code: String }

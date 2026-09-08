@@ -1,4 +1,5 @@
 import type { DiningCompanion, RestaurantSummary, UserProfile, Visit } from '../types/domain'
+import { resolveVisitActualSpend } from './visitSpend'
 
 export type CompanionInsightConfidence = 'INSUFFICIENT' | 'EMERGING' | 'LIGHT' | 'STABLE'
 export type CompanionListMode = 'ALL' | 'RECENT' | 'FREQUENT' | 'HISTORICAL'
@@ -112,7 +113,10 @@ export function buildCompanionInsights(companion: DiningCompanion, restaurants: 
   )).sort((left, right) => left.visitedAt.localeCompare(right.visitedAt))
   const restaurantById = new Map(restaurants.map((restaurant) => [restaurant.id, restaurant]))
   const restaurantGroups = groupBy(sharedVisits, (visit) => visit.restaurantId)
-  const spendValues = sharedVisits.flatMap((visit) => visit.myActualSpend === null ? [] : [visit.myActualSpend])
+  const spendValues = sharedVisits.flatMap((visit) => {
+    const spend = resolveVisitActualSpend(visit)
+    return spend === null ? [] : [spend]
+  })
   const ratedValues = sharedVisits.flatMap((visit) => visit.rating === null ? [] : [visit.rating * 2])
   const cuisineGroups = new Map<string, Visit[]>()
   sharedVisits.forEach((visit) => {

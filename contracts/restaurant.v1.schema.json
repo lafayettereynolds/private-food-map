@@ -38,6 +38,7 @@
     "longTermNote": { "type": "string" },
     "pricePerPerson": { "type": ["number", "null"] },
     "phone": { "type": ["string", "null"] },
+    "websiteUrl": { "type": ["string", "null"], "format": "uri", "pattern": "^https?://", "description": "Optional real Provider or user-supplied Restaurant website. Absence must not be filled with fixture data." },
     "openingHours": { "type": ["string", "null"] },
     "markerType": { "enum": ["image", "emoji"] },
     "markerPhotoId": { "type": ["string", "null"] },

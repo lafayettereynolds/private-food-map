@@ -66,6 +66,35 @@ struct P3DCommunityTests {
         #expect(try store.cached(currentUserID: "tm_viewer", routeKey: LocalCommunityStore.feedRoute(.following))?.items.map(\.id) == ["owner-b"])
     }
 
+    @Test func followingFeedAuthorsPopulateProfileCountAndOfflinePeopleList() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let store = LocalCommunityStore(context: context)
+        try store.replace(
+            items: [item(id: "followed", scope: .public, owner: "tm_followed", isFollowing: true)],
+            currentUserID: "tm_viewer",
+            routeKey: LocalCommunityStore.feedRoute(.following),
+            fetchedAt: .now
+        )
+
+        let social = LocalSocialStore(context: context)
+        let follows = try social.cachedFollows(currentUserID: "tm_viewer")
+        let profiles = try social.cachedProfiles()
+        let statistics = ProfileSocialStatisticsLoader.cached(
+            context: context,
+            currentUserID: "tm_viewer"
+        )
+
+        #expect(statistics.followingCount == 1)
+        #expect(follows.contains {
+            $0.deletedAt == nil && $0.followerUserID == "tm_viewer"
+                && $0.followedUserID == "tm_followed"
+        })
+        #expect(profiles.contains {
+            $0.tasteMapUserID == "tm_followed" && $0.displayName == "公开用户"
+        })
+    }
+
     @Test func publicRestaurantCanEnterOfflineWantToGoOnlyOnExplicitAction() throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
         let context = container.mainContext
@@ -82,7 +111,8 @@ struct P3DCommunityTests {
     private func item(
         id: String,
         scope: PublicContentCacheScopeV1,
-        owner: String = "tm_owner"
+        owner: String = "tm_owner",
+        isFollowing: Bool = false
     ) -> PublicContentItemV1 {
         let restaurant = PublicContentRestaurantV1(
             globalKey: "place:\(id)",
@@ -94,7 +124,7 @@ struct P3DCommunityTests {
         let user = PublicContentUserV1(
             userId: owner, displayName: "公开用户", bio: nil, city: "杭州",
             avatarPhotoId: nil, avatarPresetId: .otter, friendshipId: nil,
-            friendshipState: scope == .friends ? .friends : .none, isFollowing: false
+            friendshipState: scope == .friends ? .friends : .none, isFollowing: isFollowing
         )
         return PublicContentItemV1(
             id: id, kind: .visit, eventAt: "2026-08-28T12:00:00.000Z",

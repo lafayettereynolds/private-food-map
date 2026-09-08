@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { AnalysisShareData } from '../types/analysisShare'
 import { downloadAnalysisPoster, renderAnalysisPosterBlob, shareAnalysisPoster } from '../services/analysisPosterRenderer'
 import { ModalShell } from './ModalShell'
+import { ZoomablePosterPreview } from './ZoomablePosterPreview'
 
 export function AnalysisShareAction({ data }: { data: AnalysisShareData }) {
   const [open, setOpen] = useState(false)
@@ -59,7 +60,7 @@ function AnalysisShareSheet({ data, onClose }: { data: AnalysisShareData; onClos
         <div className="analysis-poster-preview" aria-live="polite">
           {loading ? <div className="analysis-poster-loading"><LoaderCircle className="spin" size={28} />正在生成海报</div> : null}
           {!loading && error ? <div className="empty-copy">{error}</div> : null}
-          {!loading && previewUrl ? <img src={previewUrl} alt={`${data.title}分享海报预览`} /> : null}
+          {!loading && previewUrl ? <ZoomablePosterPreview src={previewUrl} alt={`${data.title}分享海报预览`} /> : null}
         </div>
         <div className="analysis-share-actions">
           <button type="button" onClick={cycleHero} disabled={loading || data.heroCandidates.length < 2}>

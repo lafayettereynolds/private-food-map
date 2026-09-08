@@ -1,6 +1,6 @@
 # Taste Map Data Collection Map
 
-Status: code-fact audit for Task 13. This document describes the current repository; it is not a substitute for Lafayette's final App Store Connect privacy questionnaire or legal review.
+Status: refreshed for the 2026-09-08 Release Privacy Manifest audit (see `reports/IOS_RELEASE_PRIVACY_MANIFEST_AUDIT_2026-09-08.md`). This document describes the current repository; it is not a substitute for Lafayette's final App Store Connect privacy questionnaire or legal review.
 
 ## Principles
 
@@ -30,14 +30,36 @@ Status: code-fact audit for Task 13. This document describes the current reposit
 
 ## Apple privacy-manifest mapping
 
-The main target currently declares Name, Email Address, User ID, Purchase History, Photos or Videos, and Other User Content as linked, not used for tracking, and used for app functionality. It declares file timestamp access reason `C617.1` because bounded cleanup of app-created backup/poster temporary files reads creation or modification dates. The Share Extension declares no tracking, collection, or Required Reason API access; it accepts user-invoked shared text/URL and places the clue in the App Group import queue for the main app.
+The main target declares ten linked data types, none used for tracking:
+
+| Manifest data type suffix | Actual retained data | Purposes |
+|---|---|---|
+| Name | Profile/Apple sign-in name; named private companion/source records | App Functionality |
+| EmailAddress | Apple sign-in email/account identity | App Functionality |
+| UserID | Account and ownership IDs | App Functionality, Product Personalization |
+| PurchaseHistory | StoreKit entitlements and recorded dining purchases/price evidence | App Functionality, Product Personalization |
+| PhotosorVideos | Selected/captured images synced to private R2 storage | App Functionality |
+| OtherUserContent | Ratings, notes, dishes, saved restaurants, lists and other authored content | App Functionality, Product Personalization |
+| PreciseLocation | User-confirmed visits linked to stored restaurant coordinates and dates | App Functionality, Product Personalization |
+| CoarseLocation | Stored profile city and city-scoped dining history | App Functionality, Product Personalization |
+| Contacts | In-app follows/friendships/companion links (the user's social graph) | App Functionality, Product Personalization |
+| ProductInteraction | Synced explicit recommendation dismissals and community likes | App Functionality, Product Personalization |
+
+The location declarations describe retained user/place data, not background GPS tracking. Transient Core Location input is not itself added as a separate data type or tracking purpose. Apple's Contacts data category includes a social graph; this declaration does not add an address-book permission or Contacts framework. Local report calculations are user-facing features, not evidence of a product-analytics SDK. Backend request-error category logging does not by itself demonstrate collection of client diagnostic data or device IDs.
+
+The main app uses `NSPrivacyAccessedAPICategoryFileTimestamp` / `C617.1` for cleanup of its own backup/poster files, and `NSPrivacyAccessedAPICategoryUserDefaults` / `CA92.1` for app-local preferences and recommendation state. The actual Share Extension uses an App Group JSON file queue, not shared UserDefaults, and declares no tracking, collection or Required Reason APIs. Legacy `ios/Shared` and `ios/ShareExtension` templates with shared defaults are not members of the formal targets.
+
+Only `fileSizeKey` is used on user-selected backup imports. That key is not on Apple's current Required Reason API list; do not add `3B52.1` solely because a document picker is used. No disk-space, boot-time, keyboard-list, shared-defaults or SDK-wrapper reasons are added.
 
 The app requests only:
 
 - Location When In Use, for the map position and nearby restaurants.
-- Photos add-only, when the user explicitly saves a generated analysis poster.
+- Camera, for user-initiated dining/food photographs.
+- Photos add-only, when the user explicitly saves a generated analysis or memory poster.
 
-`PhotosPicker` supplies user-selected input without a broad photo-library read permission. No camera, microphone, contacts, notifications, tracking, or always-on location permission is declared by the current target.
+`PhotosPicker`/`PHPickerViewController` supply user-selected input without broad photo-library read permission. No microphone, contacts/address-book, Bluetooth, notifications, tracking or always-on location permission is declared.
+
+Formal third-party iOS dependencies are the signed Capacitor and Cordova 8.5.1 binary frameworks. Both ship their own manifests. The local first-party `TasteMapHybridBridge` package is used by the separate internal Capacitor shell and is not a package dependency of the formal app; the formal app compiles its own native source. Cloudflare Workers, D1 and R2 are HTTPS backend services, not embedded iOS SDKs.
 
 ## Manual release gates
 

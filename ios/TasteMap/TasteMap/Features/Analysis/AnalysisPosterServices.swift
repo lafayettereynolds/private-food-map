@@ -297,16 +297,12 @@ struct AnalysisPosterExportSheet: View {
     private var content: some View {
         if let posterImage {
             VStack(spacing: 16) {
-                ScrollView {
-                    Image(uiImage: posterImage)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.15), radius: 18, y: 9)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 18)
-                        .accessibilityIdentifier("analysis-poster-preview")
-                }
+                ZoomablePosterPreview(image: posterImage)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: TasteMapAnalysisTheme.brandDeep.opacity(0.15), radius: 18, y: 9)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 HStack(spacing: 12) {
                     Button { Task { await saveImage(posterImage) } } label: {
@@ -401,6 +397,149 @@ struct AnalysisPosterExportSheet: View {
     private func isAllowed(_ operation: PremiumProtectedOperation) -> Bool {
         guard let requiredFeature else { return true }
         return entitlementService.access(for: requiredFeature, operation: operation) == .allowed
+    }
+}
+
+/// Keeps poster inspection on the export page itself. The image opens fitted to the
+/// available space, supports native two-finger pinch/pan, and returns to the fitted
+/// size with a double tap. Export controls remain outside the zooming surface.
+private struct ZoomablePosterPreview: UIViewRepresentable {
+    let image: UIImage
+
+    func makeUIView(context: Context) -> PosterZoomScrollView {
+        let view = PosterZoomScrollView()
+        view.setPosterImage(image)
+        return view
+    }
+
+    func updateUIView(_ view: PosterZoomScrollView, context: Context) {
+        view.setPosterImage(image)
+    }
+}
+
+private final class PosterZoomScrollView: UIScrollView, UIScrollViewDelegate {
+    private let posterImageView = UIImageView()
+    private var fittedZoomScale: CGFloat = 1
+    private var previousBoundsSize: CGSize = .zero
+    private var needsInitialFit = true
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        delegate = self
+        backgroundColor = .clear
+        contentInsetAdjustmentBehavior = .never
+        showsHorizontalScrollIndicator = false
+        showsVerticalScrollIndicator = false
+        bounces = true
+        bouncesZoom = true
+        decelerationRate = .fast
+        clipsToBounds = true
+
+        posterImageView.contentMode = .scaleAspectFit
+        posterImageView.isAccessibilityElement = true
+        posterImageView.accessibilityIdentifier = "analysis-poster-preview"
+        posterImageView.accessibilityLabel = "分享海报预览"
+        posterImageView.accessibilityHint = "双指张合可以缩放，放大后可以拖动，双击恢复完整大小。"
+        posterImageView.accessibilityTraits = .image
+        addSubview(posterImageView)
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        addGestureRecognizer(doubleTap)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func setPosterImage(_ image: UIImage) {
+        guard posterImageView.image !== image else { return }
+        posterImageView.image = image
+        posterImageView.frame = CGRect(origin: .zero, size: image.size)
+        contentSize = image.size
+        needsInitialFit = true
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let image = posterImageView.image,
+              image.size.width > 0,
+              image.size.height > 0,
+              bounds.width > 0,
+              bounds.height > 0 else { return }
+
+        let boundsChanged = previousBoundsSize != bounds.size
+        guard needsInitialFit || boundsChanged else {
+            centerPoster()
+            return
+        }
+
+        let previousFittedZoomScale = fittedZoomScale
+        let relativeZoom = previousFittedZoomScale > 0
+            ? zoomScale / previousFittedZoomScale
+            : 1
+        fittedZoomScale = min(bounds.width / image.size.width, bounds.height / image.size.height)
+        minimumZoomScale = fittedZoomScale * 0.75
+        maximumZoomScale = fittedZoomScale * 5
+        previousBoundsSize = bounds.size
+
+        let shouldFit = needsInitialFit
+        needsInitialFit = false
+        let targetZoom = shouldFit
+            ? fittedZoomScale
+            : min(maximumZoomScale, max(minimumZoomScale, fittedZoomScale * relativeZoom))
+        setZoomScale(targetZoom, animated: false)
+        centerPoster()
+        updateAccessibilityValue()
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        posterImageView
+    }
+
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        centerPoster()
+        updateAccessibilityValue()
+    }
+
+    @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
+        guard fittedZoomScale > 0 else { return }
+        if abs(zoomScale - fittedZoomScale) > fittedZoomScale * 0.05 {
+            setZoomScale(fittedZoomScale, animated: true)
+            return
+        }
+
+        let targetZoom = min(maximumZoomScale, fittedZoomScale * 2.5)
+        let location = recognizer.location(in: posterImageView)
+        let zoomSize = CGSize(
+            width: bounds.width / targetZoom,
+            height: bounds.height / targetZoom
+        )
+        let zoomRect = CGRect(
+            x: location.x - zoomSize.width / 2,
+            y: location.y - zoomSize.height / 2,
+            width: zoomSize.width,
+            height: zoomSize.height
+        )
+        zoom(to: zoomRect, animated: true)
+    }
+
+    private func centerPoster() {
+        let horizontalInset = max(0, (bounds.width - contentSize.width) / 2)
+        let verticalInset = max(0, (bounds.height - contentSize.height) / 2)
+        contentInset = UIEdgeInsets(
+            top: verticalInset,
+            left: horizontalInset,
+            bottom: verticalInset,
+            right: horizontalInset
+        )
+    }
+
+    private func updateAccessibilityValue() {
+        guard fittedZoomScale > 0 else { return }
+        let percentage = Int(((zoomScale / fittedZoomScale) * 100).rounded())
+        posterImageView.accessibilityValue = "缩放 " + String(percentage) + "%"
     }
 }
 

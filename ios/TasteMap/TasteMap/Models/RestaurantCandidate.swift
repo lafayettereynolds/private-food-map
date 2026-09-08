@@ -1,8 +1,16 @@
 import Foundation
 
+/// Query-time provenance only. Never infer or rewrite the datum of saved data.
+enum RestaurantCoordinateReference: String, Hashable, Sendable {
+    case unspecified
+    case wgs84
+    case gcj02
+}
+
 struct RestaurantCoordinate: Hashable, Sendable {
     let latitude: Double
     let longitude: Double
+    var reference: RestaurantCoordinateReference = .unspecified
 
     var isValid: Bool {
         (-90...90).contains(latitude) && (-180...180).contains(longitude)
@@ -34,11 +42,16 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
     let distanceMeters: Double?
     let photoURL: URL?
     let phone: String?
+    let websiteURL: URL?
     let openingHours: String?
     let categoryHints: [String]
+    let coordinateReference: RestaurantCoordinateReference
+    /// Ephemeral provider evidence for a name + independently resolved place query.
+    /// Never written to Restaurant name/address or the saved record contract.
+    var resolvedSearchQuery: String? = nil
 
     var coordinate: RestaurantCoordinate {
-        RestaurantCoordinate(latitude: latitude, longitude: longitude)
+        RestaurantCoordinate(latitude: latitude, longitude: longitude, reference: coordinateReference)
     }
 
     init(
@@ -54,8 +67,10 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         distanceMeters: Double? = nil,
         photoURL: URL? = nil,
         phone: String? = nil,
+        websiteURL: URL? = nil,
         openingHours: String? = nil,
-        categoryHints: [String] = []
+        categoryHints: [String] = [],
+        coordinateReference: RestaurantCoordinateReference = .unspecified
     ) {
         self.id = id
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -64,6 +79,7 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         self.district = district.trimmingCharacters(in: .whitespacesAndNewlines)
         self.latitude = latitude
         self.longitude = longitude
+        self.coordinateReference = coordinateReference
         let appleID = appleMapItemIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.appleMapItemIdentifier = appleID?.isEmpty == false ? appleID : nil
         self.placeIdentities = Self.normalizedIdentities(
@@ -73,6 +89,7 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         self.distanceMeters = distanceMeters
         self.photoURL = photoURL
         self.phone = Self.normalizedOptional(phone)
+        self.websiteURL = Self.normalizedWebURL(websiteURL)
         self.openingHours = Self.normalizedOptional(openingHours)
         self.categoryHints = Array(Set(categoryHints.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -141,8 +158,17 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
     }
+
+    private static func normalizedWebURL(_ value: URL?) -> URL? {
+        guard let value,
+              let scheme = value.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              value.host?.isEmpty == false else { return nil }
+        return value
+    }
 }
 
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
 extension DiscoveryRestaurantProjectionV1 {
     /// Provider-neutral conversion used only after an explicit viewer action.
     /// Public author Visits, notes and photos are intentionally not part of it.
@@ -162,7 +188,11 @@ extension DiscoveryRestaurantProjectionV1 {
                 )
             },
             photoURL: merchantImageUrl.flatMap(URL.init(string:)),
+            phone: phone,
+            websiteURL: websiteUrl.flatMap(URL.init(string:)),
+            openingHours: openingHours,
             categoryHints: tags
         )
     }
 }
+#endif

@@ -166,7 +166,7 @@ nonisolated struct DiningCompanionInput: Sendable {
                     valueRating: visit.valueRating,
                     environmentRating: visit.environmentRating,
                     serviceRating: visit.serviceRating,
-                    myActualSpend: visit.myActualSpend,
+                    myActualSpend: visit.resolvedActualSpend,
                     diningMode: visit.diningMode,
                     diningOccasionLabels: visit.diningOccasionDisplayTitles,
                     environmentTags: visit.environmentTags,

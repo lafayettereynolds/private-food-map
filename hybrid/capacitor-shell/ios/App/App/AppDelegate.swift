@@ -46,31 +46,37 @@ final class TasteMapNativePlugin: CAPPlugin, CAPBridgedPlugin {
         let appVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
 #if DEBUG
-        let fixtureURL = bundle.bundleURL
-            .appendingPathComponent("public", isDirectory: true)
-            .appendingPathComponent("_hybrid_debug", isDirectory: true)
-            .appendingPathComponent("profile-restaurant-rich.json")
-        let service = try TasteMapHybridDebugFixture.makeService(fixtureData: Data(contentsOf: fixtureURL))
-        let dispatcher = TasteMapHybridBridgeDispatcher(
-            service: service,
-            appVersion: appVersion,
-            build: build,
-            dataSource: "native-swiftdata-debug-fixture",
-            authState: {
-                TasteMapHybridAuthStateDTO(
-                    state: "authenticated",
-                    userID: TasteMapHybridDebugFixture.ownerUserID,
-                    displayName: "Lafayette Hybrid"
-                )
-            },
-            nativeAction: { method in
-                guard method == .hapticsSelection else { return }
-                let generator = UISelectionFeedbackGenerator()
-                generator.prepare()
-                generator.selectionChanged()
-            }
-        )
-#else
+        let explicitFixture = ProcessInfo.processInfo.arguments.contains("-hybrid-rich-fixture")
+            || ProcessInfo.processInfo.environment["TASTEMAP_HYBRID_FIXTURE"] == "rich"
+        if explicitFixture {
+            let fixtureURL = bundle.bundleURL
+                .appendingPathComponent("public", isDirectory: true)
+                .appendingPathComponent("_hybrid_debug", isDirectory: true)
+                .appendingPathComponent("profile-restaurant-rich.json")
+            let service = try TasteMapHybridDebugFixture.makeService(fixtureData: Data(contentsOf: fixtureURL))
+            let dispatcher = TasteMapHybridBridgeDispatcher(
+                service: service,
+                appVersion: appVersion,
+                build: build,
+                dataSource: "native-swiftdata-debug-fixture",
+                authState: {
+                    TasteMapHybridAuthStateDTO(
+                        state: "authenticated",
+                        userID: TasteMapHybridDebugFixture.ownerUserID,
+                        displayName: "Lafayette Hybrid"
+                    )
+                },
+                nativeAction: { method in
+                    guard method == .hapticsSelection else { return }
+                    let generator = UISelectionFeedbackGenerator()
+                    generator.prepare()
+                    generator.selectionChanged()
+                }
+            )
+            self.dispatcher = dispatcher
+            return dispatcher
+        }
+#endif
         let dispatcher = TasteMapHybridBridgeDispatcher(
             service: nil,
             appVersion: appVersion,
@@ -78,7 +84,6 @@ final class TasteMapNativePlugin: CAPPlugin, CAPBridgedPlugin {
             dataSource: "native-swiftdata",
             authState: { TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil) }
         )
-#endif
         self.dispatcher = dispatcher
         return dispatcher
     }

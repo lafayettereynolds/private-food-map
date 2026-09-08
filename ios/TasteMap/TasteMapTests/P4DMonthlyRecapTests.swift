@@ -176,7 +176,7 @@ struct P4DMonthlyRecapTests {
         #expect(analyze(input(restaurants: [r], visits: [visit], sources: [source])).recommendationStory == nil)
     }
 
-    @Test("38–39 cuisine increase and decrease are based on adjacent months")
+    @Test("38–39 three meals in two restaurants cannot establish cuisine change")
     func cuisineTasteChange() {
         let japaneseA = restaurant(80, "日料 A", tags: ["日料"])
         let japaneseB = restaurant(81, "日料 B", tags: ["日料"])
@@ -189,12 +189,25 @@ struct P4DMonthlyRecapTests {
             visit(83, japaneseA.id, 2026, 8, 1), visit(84, japaneseB.id, 2026, 8, 2), visit(85, japaneseA.id, 2026, 8, 3),
         ]
         let report = analyze(input(restaurants: [japaneseA, japaneseB, hotpotA, hotpotB], visits: previous + current))
-        #expect(report.tasteChange?.kind == .cuisineIncrease)
-        #expect(report.tasteChange?.title.contains("日料") == true)
-        #expect(report.tasteChange?.statement.contains("上个月") == true)
+        #expect(report.tasteChange == nil)
+        #expect(report.tasteChangeSufficiency == .insufficient)
     }
 
-    @Test("40 exploration increase is deterministic")
+    @Test("Eligible adjacent-month change uses ten visits in five restaurants and matching dates")
+    func eligibleComparisonAndCurrentWindow() {
+        let previousRestaurants = (0..<5).map { restaurant(800 + $0, "旧店 \($0)", tags: ["火锅"]) }
+        let currentRestaurants = (0..<5).map { restaurant(810 + $0, "新店 \($0)", tags: ["日料"]) }
+        let previous = (0..<10).map { visit(800 + $0, previousRestaurants[$0 % 5].id, 2026, 7, $0 + 1) }
+        let current = (0..<10).map { visit(810 + $0, currentRestaurants[$0 % 5].id, 2026, 8, $0 + 1) }
+        let value = input(restaurants: previousRestaurants + currentRestaurants, visits: previous + current)
+        let completeEvidence = analyze(value)
+        #expect(completeEvidence.tasteChange != nil)
+        let early = MonthlyRecapAnalyzer.analyze(value, period: MonthlyPeriod(year: 2026, month: 8, calendar: calendar), now: date(2026, 8, 5))
+        #expect(early.visitCount == 5)
+        #expect(early.tasteChange == nil)
+    }
+
+    @Test("40 sparse exploration comparison stays unavailable")
     func explorationIncrease() {
         let oldA = restaurant(90, "熟店 A")
         let oldB = restaurant(91, "熟店 B")
@@ -206,10 +219,10 @@ struct P4DMonthlyRecapTests {
             visit(95, newA.id, 2026, 8, 1), visit(96, newB.id, 2026, 8, 2), visit(97, newA.id, 2026, 8, 3),
         ]
         let report = analyze(input(restaurants: [oldA, oldB, newA, newB], visits: visits))
-        #expect(report.tasteChange?.kind == .explorationIncrease)
+        #expect(report.tasteChange == nil)
     }
 
-    @Test("41 repeat increase is deterministic")
+    @Test("41 two restaurants cannot establish repeat-behavior change")
     func repeatIncrease() {
         let a = restaurant(100, "A")
         let b = restaurant(101, "B")
@@ -218,7 +231,7 @@ struct P4DMonthlyRecapTests {
             visit(103, a.id, 2026, 8, 1), visit(104, b.id, 2026, 8, 2), visit(105, a.id, 2026, 8, 3),
         ]
         let report = analyze(input(restaurants: [a, b], visits: visits))
-        #expect(report.tasteChange?.kind == .repeatIncrease)
+        #expect(report.tasteChange == nil)
     }
 
     @Test("42–45 insufficient current/previous, no previous and deterministic keywords")

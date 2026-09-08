@@ -30,6 +30,19 @@ struct AnalysisVisualParityTests {
         #expect(FoodDiningVisualLibrary.kind() == .genericDining)
     }
 
+    @Test("Sparse annual poster uses the shared decorative visual and exports without emoji artwork")
+    func sparseAnnualPosterVisual() throws {
+        #expect(AnnualRecapPosterView.emptyJourneyVisualKind == .trend)
+        let report = AnnualRecapPreviewFixtures.sparse
+        #expect(report.tasteJourney.milestones.isEmpty)
+        let image = try AnalysisPosterRenderer.render(
+            content: AnnualRecapPosterView(report: report, resolvedImages: [:]),
+            canvasSize: AnnualRecapPosterView.canvasSize
+        )
+        #expect(image.size == AnnualRecapPosterView.canvasSize)
+        #expect(image.pngData() != nil)
+    }
+
     @Test("Approved dynamic Food Hero illustrations remain bundled")
     func foodHeroAssets() {
         for asset in [

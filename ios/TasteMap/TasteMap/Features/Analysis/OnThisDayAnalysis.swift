@@ -152,7 +152,7 @@ nonisolated struct OnThisDayInput: Sendable {
                     visitedAt: visit.visitedAt,
                     rating: visit.rating,
                     note: visit.note?.onThisDayNonEmpty,
-                    myActualSpend: visit.myActualSpend,
+                    myActualSpend: visit.resolvedActualSpend,
                     companionNames: unique(fallbackCompanions),
                     recommendationSource: source?.onThisDayNonEmpty,
                     updatedAt: visit.updatedAt,

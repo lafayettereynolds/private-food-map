@@ -3,6 +3,9 @@ import UIKit
 
 struct AnnualRecapPosterView: View {
     static let canvasSize = CGSize(width: 1_080, height: 1_920)
+    // An incomplete timeline is a state, not evidence of a particular food
+    // preference. Keep its illustration in the shared decorative vocabulary.
+    static let emptyJourneyVisualKind: FoodDiningVisualKind = .trend
 
     let report: AnnualRecapAnalysis
     let resolvedImages: [UUID: UIImage]
@@ -135,7 +138,13 @@ struct AnnualRecapPosterView: View {
             }
             if report.tasteJourney.milestones.isEmpty {
                 HStack(spacing: 18) {
-                    Text("🌱").font(.system(size: 48))
+                    FoodDiningVisualIcon(
+                        kind: Self.emptyJourneyVisualKind,
+                        usage: .decorative,
+                        size: 48,
+                        foregroundColor: TasteMapAnalysisTheme.leafGreen,
+                        backgroundColor: TasteMapAnalysisTheme.leafGreenSoft
+                    )
                     VStack(alignment: .leading, spacing: 6) {
                         Text("味觉轨迹正在形成").font(.system(size: 25, weight: .heavy)).foregroundStyle(TasteMapAnalysisTheme.ink)
                         Text(keywordLine).font(.system(size: 19, weight: .semibold)).foregroundStyle(TasteMapAnalysisTheme.secondaryInk)

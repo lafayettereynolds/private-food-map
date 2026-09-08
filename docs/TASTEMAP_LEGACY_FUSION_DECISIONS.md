@@ -129,7 +129,7 @@ Legacy 默认没有权限删除或降级当前正式 feature、data field、inte
 | 34 | Dishes/context/detailed ratings | Legacy 有嵌入式菜品和丰富 Visit context | 当前分离 Dish/VisitDish、独立照片与详细评分 | C:`Dish.swift`,`VisitDish.swift`,`RestaurantDetailedRatingsSection.swift` | KEEP CURRENT | 高：不得退回嵌入式模型 | 否 |
 | 35 | Cross-entry Detail | Legacy 入口较少且共享程度有限 | 当前 Map/Search/Nearby/Discovery/Community/Public Profile/List/Analytics/Roulette/On This Day/Share 都传 entrySource 进入同一主体 | C:`RestaurantDetailEntrySource` 全局引用 | KEEP CURRENT | 高 | 否 |
 | 36 | Profile compact dashboard | Legacy 是高密度 dashboard，而非纵向大卡片流 | 当前已恢复 compact header、分组和双列入口 | L:`src/components/ProfilePage.tsx`; C:`ProfileView.swift` | FUSE | 中 | 否 |
-| 37 | Profile followers/following | Legacy 显示关注/被关注并可导航 | 当前与身份区相邻，连接真实 Social contract | L:`ProfilePage.tsx`; C:`ProfileView.swift`,`SocialViews.swift` | FUSE | 中 | 否 |
+| 37 | Profile followers/following | 显示关注/粉丝并可导航 | 当前与身份区相邻，连接真实 Social contract | L:`ProfilePage.tsx`; C:`ProfileView.swift`,`SocialViews.swift` | FUSE | 中 | 否 |
 | 38 | Profile 主统计 | Legacy 统计组合曾包含社交与餐厅数据 | 最新决定固定去过/想去/总消费，当前已按真实口径实现 | L:`ProfilePage.tsx`; C:`ProfileSocialStatistics.swift`,`ProfileView.swift`; R:Profile override | KEEP CURRENT | 中 | 否 |
 | 39 | 今天吃什么 + 我的口味档案 | Legacy 并排主入口 | 当前恢复同级双入口并连接原生功能 | L:`ProfilePage.tsx`; C:`ProfileView.swift` | FUSE | 低 | 否 |
 | 40 | 回味 | Legacy 本月/年度/那年今日同一 section | 当前恢复同一 hierarchy | L:`ProfilePage.tsx`; C:`ProfileView.swift` | FUSE | 低 | 否 |

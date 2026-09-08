@@ -52,6 +52,11 @@ struct ContentView: View {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .tasteMapSyncDidComplete)) { _ in
+                guard automaticServicesEnabled, premiumEntitlementService.activeUserID != nil else { return }
+                // First valid Visit may have qualified a referral on the server.
+                Task { await premiumEntitlementService.refresh() }
+            }
             .sheet(item: $premiumEntitlementService.presentedSource) { source in
                 PremiumPaywallView(source: source)
                     .environment(premiumEntitlementService)

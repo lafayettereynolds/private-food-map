@@ -12,6 +12,7 @@ struct RestaurantDetailCompletionTests {
         let metadata = RestaurantDetailMetadata(restaurant: restaurant)
 
         #expect(metadata.callablePhone == "+86 571-1234-5678")
+        #expect(metadata.websiteURL == nil)
         #expect(metadata.openingHours == "周一至周日 11:00–22:00")
         #expect(metadata.referencePrice == Decimal(168))
         #expect(metadata.longTermNote == "适合周末慢慢吃。")
@@ -24,10 +25,22 @@ struct RestaurantDetailCompletionTests {
         let metadata = RestaurantDetailMetadata(restaurant: restaurant)
 
         #expect(metadata.callablePhone == nil)
+        #expect(metadata.websiteURL == nil)
         #expect(metadata.openingHours == nil)
         #expect(metadata.referencePrice == nil)
         #expect(metadata.longTermNote == nil)
         #expect(!metadata.hasBusinessInformation)
+    }
+
+    @Test("官网只接受真实的 HTTP 或 HTTPS Provider URL")
+    func providerWebsiteRequiresSafeWebURL() throws {
+        let https = try makeRestaurant(websiteURL: "https://restaurant.example/menu")
+        let http = try makeRestaurant(websiteURL: "http://restaurant.example")
+        let invalid = try makeRestaurant(websiteURL: "javascript:alert(1)")
+
+        #expect(RestaurantDetailMetadata(restaurant: https).websiteURL?.host == "restaurant.example")
+        #expect(RestaurantDetailMetadata(restaurant: http).websiteURL?.scheme == "http")
+        #expect(RestaurantDetailMetadata(restaurant: invalid).websiteURL == nil)
     }
 
     @Test("电话只生成安全 tel URL")
@@ -166,7 +179,7 @@ struct RestaurantDetailCompletionTests {
         #expect(RestaurantRatingReferenceResolver.resolve(metadata: metadata, currentUserID: "tm_owner", placements: [placement]).isEmpty)
     }
 
-    @Test("自己的 marker 或 Visit 照片优先于商家图")
+    @Test("餐厅主图只使用真实 Visit 照片，不使用自定义头像")
     func ownedPhotoHasHighestImagePriority() throws {
         let restaurant = try makeRestaurant(markerPhotoID: "marker-photo", merchantImageURL: "https://example.test/merchant.jpg")
         let marker = makePhoto(restaurantID: restaurant.id, kind: .restaurantMarker, remoteID: "marker-photo", days: 1)
@@ -174,16 +187,16 @@ struct RestaurantDetailCompletionTests {
         let metadata = RestaurantDetailMetadata(restaurant: restaurant)
 
         let ordered = RestaurantDetailImageResolver.orderedPhotos([recentVisit, marker], metadata: metadata)
-        #expect(ordered.map(\.id) == [marker.id, recentVisit.id])
-        #expect(RestaurantDetailImageResolver.preferredSource(photos: ordered, metadata: metadata) == .ownedPhoto(marker.id))
+        #expect(ordered.map(\.id) == [recentVisit.id])
+        #expect(RestaurantDetailImageResolver.preferredSource(photos: ordered, metadata: metadata) == .ownedPhoto(recentVisit.id))
     }
 
-    @Test("无自己的照片时依次使用商家图和品牌 fallback")
+    @Test("无用户实拍时主图使用素材 fallback，不使用商家图")
     func imageFallbackOrder() throws {
         let merchantMetadata = RestaurantDetailMetadata(restaurant: try makeRestaurant(merchantImageURL: "https://example.test/merchant.jpg"))
         let brandMetadata = RestaurantDetailMetadata(restaurant: try makeRestaurant(merchantImageURL: nil, markerEmoji: "🍜"))
 
-        #expect(RestaurantDetailImageResolver.preferredSource(photos: [], metadata: merchantMetadata) == .merchant(URL(string: "https://example.test/merchant.jpg")!))
+        #expect(RestaurantDetailImageResolver.preferredSource(photos: [], metadata: merchantMetadata) == .brand(merchantMetadata.markerEmoji))
         #expect(RestaurantDetailImageResolver.preferredSource(photos: [], metadata: brandMetadata) == .brand("🍜"))
     }
 
@@ -352,6 +365,7 @@ struct RestaurantDetailCompletionTests {
         note: String = "适合周末慢慢吃。",
         markerPhotoID: String? = nil,
         merchantImageURL: String? = nil,
+        websiteURL: String? = nil,
         markerEmoji: String = "🍲",
         serverVersion: Int64 = 0
     ) throws -> Restaurant {
@@ -374,7 +388,7 @@ struct RestaurantDetailCompletionTests {
             preferenceLevel: .normal, overallRating: nil, foodRating: nil,
             environmentRating: nil, serviceRating: nil, valueRating: nil,
             tags: ["江浙菜"], longTermNote: note, pricePerPerson: price,
-            phone: phone, openingHours: openingHours, markerType: .emoji,
+            phone: phone, websiteUrl: websiteURL, openingHours: openingHours, markerType: .emoji,
             markerPhotoId: markerPhotoID, merchantImageUrl: merchantImageURL,
             markerEmoji: markerEmoji, createdAt: timestamp, updatedAt: timestamp,
             deletedAt: nil, isTestData: true

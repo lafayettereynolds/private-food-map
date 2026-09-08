@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CloudOff, Globe2, Map as MapIcon, RotateCcw, UserRound } from 'lucide-react'
 import { MyMapBrowsePage } from '../../components/MyMapBrowsePage'
+import { PremiumAccessBoundary } from '../../components/PremiumAccess'
+import { PremiumReturnLayer } from '../../components/PremiumReturnLayer'
 import { NativeMapSurface } from '../../components/NativeMapSurface'
 import { ProfilePage } from '../../components/ProfilePage'
 import { RestaurantPreviewCard } from '../../components/RestaurantPreviewCard'
-import { RestaurantRoulette, type RouletteTemporaryCandidate } from '../../components/RestaurantRoulette'
+import { HybridBackButton, HybridState } from '../../components/TasteMapHybridShared'
+import { RestaurantRoulette, type RouletteSessionState, type RouletteTemporaryCandidate } from '../../components/RestaurantRoulette'
 import { RouletteCandidateDock } from '../../components/RouletteCandidateDock'
 import { resolveTasteMapPlatform } from '../../platform/tasteMapPlatformResolver'
 import { TasteMapPlatformError, type TasteMapHybridContentSnapshotDTO, type TasteMapHybridRoute as PlatformRoute, type TasteMapPlatform, type TasteMapProfileDashboardViewModel, type TasteMapRestaurantDetailViewModel, type TasteMapRuntimeInfo } from '../../platform/TasteMapPlatform'
@@ -13,9 +16,16 @@ import './hybridShell.css'
 import { HybridDiscoveryPage } from './HybridDiscoveryPage'
 import { HybridAddRestaurantPage } from './HybridAddRestaurantPage'
 import { HybridVisitEditorPage } from './HybridVisitEditorPage'
-import { TasteMapListsPage } from '../../components/TasteMapListsPage'
+import { boundedSnapshotRead, refreshHybridSnapshots } from './hybridSnapshotRefresh'
+import { discoveryRefreshMessage } from './discoveryRefreshState'
+import { beginHybridHistoryBack } from './hybridHistoryTraversal'
+import { detailMatchesRoute, restaurantDetailIdentityKey } from './restaurantDetailIdentity'
+import { HybridProfileListsPreview, TasteMapListsPage } from '../../components/TasteMapListsPage'
 import { TasteMapAnalyticsPage, type AnalyticsMode } from '../../components/TasteMapAnalyticsPage'
 import { TasteMapPremiumPage, TasteMapSettingsPage } from '../../components/TasteMapPremiumSettingsPages'
+import { TasteMapReferralPage } from '../../components/TasteMapReferralPage'
+import { TasteMapDirectoryPage } from '../../components/TasteMapDirectoryPage'
+import { RestaurantAvatarEditorSheet } from '../../components/RestaurantAvatarEditorSheet'
 import { HYBRID_BOTTOM_NAVIGATION } from './HybridProductContracts'
 import { PREMIUM_PAYWALL_OPEN_EVENT } from '../../services/premiumPaywall'
 import type { RestaurantSummary } from '../../types/domain'
@@ -29,8 +39,10 @@ type BootstrapState =
 export function HybridAppShell({ platform: injectedPlatform }: { platform?: TasteMapPlatform }) {
   const platform = useMemo(() => injectedPlatform ?? resolveTasteMapPlatform(), [injectedPlatform])
   const [route, setRoute] = useState<HybridRoute>(initialRoute)
+  const [premiumLayerOpen, setPremiumLayerOpen] = useState(false)
   const [bootstrap, setBootstrap] = useState<BootstrapState>({ state: 'loading' })
   const [restaurant, setRestaurant] = useState<TasteMapRestaurantDetailViewModel | null>(null)
+  const [resolvedRestaurantRequestID, setResolvedRestaurantRequestID] = useState<string | null>(null)
   const [routeError, setRouteError] = useState<string | null>(null)
   const [online, setOnline] = useState(() => navigator.onLine)
   const [generation, setGeneration] = useState(0)
@@ -40,26 +52,135 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   const [rouletteRestaurantIDs, setRouletteRestaurantIDs] = useState<string[]>([])
   const [rouletteExternalRestaurants, setRouletteExternalRestaurants] = useState<RestaurantSummary[]>([])
   const [rouletteTemporaryItems, setRouletteTemporaryItems] = useState<RouletteTemporaryCandidate[]>([])
+  const [rouletteSession, setRouletteSession] = useState<RouletteSessionState>({ rotation: 0, winnerId: null })
   const [showRouletteCandidates, setShowRouletteCandidates] = useState(false)
-  const [visitReturnToDiscovery, setVisitReturnToDiscovery] = useState(false)
+  const visitParentRoute = useRef<HybridRoute | null>(null)
+  const currentRouteRef = useRef(route)
+  currentRouteRef.current = route
   const [detailRevision, setDetailRevision] = useState(0)
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false)
   const didSynchronizeInitialRoute = useRef(false)
   const pendingHybridNavigation = useRef<{ hash: string; expiresAt: number } | null>(null)
+  const navigationRevision = useRef(0)
+  const pendingRestaurantDeletion = useRef<{ routeID: string } | null>(null)
   const restaurantDetailCache = useRef(new Map<string, TasteMapRestaurantDetailViewModel>())
+  const deletedRestaurantRoutes = useRef(new Set<string>())
+  const snapshotRefreshSequence = useRef(0)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [contentReadError, setContentReadError] = useState<string | null>(null)
+  const readyRef = useRef(false)
+  readyRef.current = bootstrap.state === 'ready'
+
+  const navigate = useCallback((nextRoute: HybridRoute, replace = false) => {
+    if (nextRoute.surface === 'premium') {
+      setPremiumLayerOpen(true)
+      return
+    }
+    const current = currentRouteRef.current
+    if ((nextRoute.surface === 'visit' || nextRoute.surface === 'visitEdit')
+      && current.surface !== 'visit' && current.surface !== 'visitEdit') visitParentRoute.current = current
+    const revision = ++navigationRevision.current
+    currentRouteRef.current = nextRoute
+    if (replace) replaceLocalRoute(nextRoute, setRoute)
+    else commitLocalRoute(nextRoute, setRoute)
+    if (platform.kind !== 'native') return
+    // Older hosts have no correlation ID; retain their same-route acknowledgement
+    // compatibility. Current hosts consume correlated acknowledgements in the adapter.
+    pendingHybridNavigation.current = { hash: routeHash(nextRoute), expiresAt: Date.now() + 2_000 }
+    // Enqueue now, without awaiting: deferring this to RAF lets a Back request
+    // overtake the open request and corrupt Native history before first paint.
+    void platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute), { localTransition: true, replaceCurrent: replace }).catch(reason => {
+      if (revision === navigationRevision.current) setRouteError(normalizeError(reason).message)
+    })
+  }, [platform])
+
+  const refreshReadyData = useCallback(async (forceRefresh = false) => {
+    if (!readyRef.current) return
+    const sequence = ++snapshotRefreshSequence.current
+    const isCurrent = () => readyRef.current && sequence === snapshotRefreshSequence.current
+    const result = await refreshHybridSnapshots(platform, {
+      isCurrent,
+      onProfile: (profile) => setBootstrap((current) => isCurrent() && current.state === 'ready'
+        ? { ...current, profile } : current),
+      onContent: (content) => setBootstrap((current) => isCurrent() && current.state === 'ready'
+        ? { ...current, content, contentReady: true } : current),
+    }, 15_000, { forceRefresh })
+    if (sequence !== snapshotRefreshSequence.current) return
+    // Local owner records must still update when the independent social/feed
+    // request fails. Keep mounted pages and drafts; never re-run boot for data.
+    setRefreshError((current) => isCurrent()
+      ? result.failed ? result.message ?? '部分内容暂未更新，已保留当前页面。请重试。' : null
+      : current)
+    setContentReadError((current) => isCurrent()
+      ? result.contentFailed ? '发现内容暂时无法读取，请重试。' : null
+      : current)
+  }, [platform])
 
   useEffect(() => {
     let active = true
     let remove: (() => Promise<void>) | undefined
+    const refreshSnapshot = () => { void refreshReadyData() }
     platform.events.subscribe((event) => {
       if (!active) return
       if (event.name === 'auth.changed') {
+        pendingRestaurantDeletion.current = null
+        ++snapshotRefreshSequence.current
+        readyRef.current = false
         setRestaurant(null)
         restaurantDetailCache.current.clear()
+        visitParentRoute.current = null
         setGeneration((value) => value + 1)
+      }
+      if (event.name === 'data.changed') {
+        restaurantDetailCache.current.clear()
+        // New Native hosts complete successful deletion explicitly. Ordinary
+        // sheet dismissal is cancellation and must resume Detail refreshes.
+        if (event.payload.reason === 'nativePresentationDismissed') pendingRestaurantDeletion.current = null
+        const deletion = pendingRestaurantDeletion.current
+        const awaitingDeletedDetailExit = deletion && currentRouteRef.current.surface === 'restaurant'
+          && sameRestaurantID(currentRouteRef.current.id, deletion.routeID)
+        if (event.payload.reason === 'restaurantDeleted') {
+          if (!awaitingDeletedDetailExit) setRestaurant(null)
+        }
+        if (event.payload.reason === 'localDataCleared') {
+          setRestaurant(null)
+          setRouletteRestaurantIDs([])
+          setRouletteExternalRestaurants([])
+          setRouletteTemporaryItems([])
+          setRouletteSession({ rotation: 0, winnerId: null })
+        }
+        refreshSnapshot()
+        // The successful Native deletion still owns its confirmation sheet.
+        // Do not reread the deleted detail while that sheet is closing.
+        if (!awaitingDeletedDetailExit) setDetailRevision((value) => value + 1)
+      }
+      if (event.name === 'app.lifecycle' && (event.payload.state === 'foreground' || event.payload.state === 'resume')) {
+        refreshSnapshot()
       }
       if (event.name === 'navigation.route' || event.name === 'deepLink.received') {
         const next = platformRouteToHybrid(event.payload.route)
         if (next) {
+          if (event.name === 'navigation.route' && event.payload.completedAction === 'restaurantDelete') {
+            // Native has atomically closed its sheet and consumed the deleted
+            // Detail. Reflect that result with replace, never issue a second
+            // Native Back or push the deleted Detail behind its return page.
+            pendingRestaurantDeletion.current = null
+            pendingHybridNavigation.current = null
+            ++navigationRevision.current
+            currentRouteRef.current = next
+            restaurantDetailCache.current.clear()
+            setRestaurant(null)
+            replaceLocalRoute(next, setRoute)
+            refreshSnapshot()
+            return
+          }
+          const deletion = pendingRestaurantDeletion.current
+          if (event.name === 'navigation.route' && deletion) {
+            // A queued underlying-detail echo while the confirmation opens
+            // must neither disarm the operation nor reread its deleted data.
+            if (next.surface === 'restaurant' && sameRestaurantID(next.id, deletion.routeID)) return
+            pendingRestaurantDeletion.current = null
+          }
           const nextHash = routeHash(next)
           const pending = pendingHybridNavigation.current
           const isLocalNavigationEcho = event.name === 'navigation.route'
@@ -69,34 +190,48 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
             pendingHybridNavigation.current = null
           }
           const routeWasAlreadyVisible = window.location.hash === nextHash
-          if (!routeWasAlreadyVisible) commitLocalRoute(next, setRoute)
+          if (!routeWasAlreadyVisible && (next.surface === 'visit' || next.surface === 'visitEdit')) {
+            const current = currentRouteRef.current
+            if (current.surface !== 'visit' && current.surface !== 'visitEdit') visitParentRoute.current = current
+          }
+          if (!routeWasAlreadyVisible) {
+            ++navigationRevision.current
+            currentRouteRef.current = next
+            commitLocalRoute(next, setRoute)
+          }
           if (next.surface === 'restaurant' && routeWasAlreadyVisible && !isLocalNavigationEcho) {
             setDetailRevision((value) => value + 1)
+          }
+          if (event.name === 'navigation.route' && !isLocalNavigationEcho && (next.surface === 'profile' || next.surface === 'lists')) {
+            refreshSnapshot()
           }
         }
       }
     }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
     return () => {
       active = false
+      ++snapshotRefreshSequence.current
       void remove?.()
     }
-  }, [platform])
+  }, [platform, refreshReadyData])
 
   useEffect(() => {
     const openPremium = () => {
       const next: HybridRoute = { surface: 'premium' }
-      commitLocalRoute(next, setRoute)
-      if (platform.kind === 'native') {
-        window.requestAnimationFrame(() => void platform.navigation.openHybrid(hybridRouteToPlatform(next)))
-      }
+      navigate(next)
     }
     window.addEventListener(PREMIUM_PAYWALL_OPEN_EVENT, openPremium)
     return () => window.removeEventListener(PREMIUM_PAYWALL_OPEN_EVENT, openPremium)
-  }, [platform])
+  }, [navigate])
 
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, '', routeHash(initialRoute()))
-    const updateRoute = () => setRoute(routeFromLocation(window.location))
+    const updateRoute = () => {
+      const next = routeFromLocation(window.location)
+      if (next.surface === 'restaurant' && deletedRestaurantRoutes.current.has(restaurantDetailIdentityKey(next.id))) {
+        replaceLocalRoute({ surface: 'map' }, setRoute)
+      } else setRoute(next)
+    }
     const updateOnline = () => setOnline(navigator.onLine)
     window.addEventListener('hashchange', updateRoute)
     window.addEventListener('popstate', updateRoute)
@@ -113,12 +248,15 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
   useEffect(() => {
     if (didSynchronizeInitialRoute.current || platform.kind !== 'native') return
     didSynchronizeInitialRoute.current = true
-    if (route.surface === 'map') void platform.navigation.openHybrid({ surface: 'map' })
-  }, [platform, route.surface])
+    if (route.surface === 'map') navigate({ surface: 'map' })
+  }, [navigate, platform, route.surface])
 
   useEffect(() => {
     let active = true
+    const sequence = ++snapshotRefreshSequence.current
     setBootstrap({ state: 'loading' })
+    setRefreshError(null)
+    setContentReadError(null)
     Promise.all([platform.runtime.info(), platform.auth.sessionStatus()])
       .then(async ([runtime, session]) => {
         if (!active) return
@@ -127,14 +265,19 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
           return
         }
         const profileRequest = platform.profile.getCurrent()
-        const contentRequest = platform.content.snapshot().catch(() => emptyContentSnapshot())
+        const contentRequest = boundedSnapshotRead(platform.content.snapshot()).then(
+          (value) => ({ value, failed: false }),
+          () => ({ value: emptyContentSnapshot(), failed: true }),
+        )
         const profile = await profileRequest
         if (!active) return
         setBootstrap({ state: 'ready', runtime, profile, content: emptyContentSnapshot(), contentReady: false })
-        const content = await contentRequest
-        if (!active) return
+        const result = await contentRequest
+        if (!active || sequence !== snapshotRefreshSequence.current) return
+        setRefreshError(result.failed ? '发现与食单暂未更新，请重试。' : discoveryRefreshMessage(result.value))
+        setContentReadError(result.failed ? '发现内容暂时无法读取，请重试。' : null)
         setBootstrap((current) => current.state === 'ready'
-          ? { ...current, content, contentReady: true }
+          ? { ...current, content: result.value, contentReady: true }
           : current)
       })
       .catch((reason: unknown) => {
@@ -149,21 +292,24 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
 
   useEffect(() => {
     setRouteError(null)
-    if (route.surface !== 'restaurant') {
+    if (route.surface !== 'restaurant' || bootstrap.state !== 'ready') {
       return
     }
-    const cached = restaurantDetailCache.current.get(route.id.toLowerCase())
+    const cached = restaurantDetailCache.current.get(restaurantDetailIdentityKey(route.id))
+    if (cached) setResolvedRestaurantRequestID(route.id)
     setRestaurant((current) => cached ?? (current && sameRestaurantID(current.restaurant.id, route.id) ? current : null))
     let active = true
-    platform.restaurant.get(route.id)
+    boundedSnapshotRead(platform.restaurant.get(route.id))
       .then((value) => {
-        restaurantDetailCache.current.set(route.id.toLowerCase(), value)
-        restaurantDetailCache.current.set(value.restaurant.id.toLowerCase(), value)
-        if (active) setRestaurant(value)
+        if (!active || !readyRef.current) return
+        restaurantDetailCache.current.set(restaurantDetailIdentityKey(route.id), value)
+        restaurantDetailCache.current.set(restaurantDetailIdentityKey(value.restaurant.id), value)
+        setResolvedRestaurantRequestID(route.id)
+        setRestaurant(value)
       })
       .catch((reason: unknown) => { if (active) setRouteError(normalizeError(reason).message) })
     return () => { active = false }
-  }, [detailRevision, platform, route])
+  }, [bootstrap.state, detailRevision, generation, platform, route])
 
   useEffect(() => {
     if (route.surface === 'map') setMapWasActivated(true)
@@ -171,30 +317,27 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     if (route.surface === 'profile') setProfileWasActivated(true)
   }, [route.surface])
 
-  const navigate = (nextRoute: HybridRoute) => {
-    commitLocalRoute(nextRoute, setRoute)
-    if (platform.kind === 'native') {
-      const nextHash = routeHash(nextRoute)
-      // Native publishes the accepted route back as an event. Keep a short
-      // acknowledgement window so an asynchronously delivered echo cannot
-      // trigger a second Restaurant read after the visible route changes.
-      pendingHybridNavigation.current = { hash: nextHash, expiresAt: Date.now() + 2_000 }
-      // Let React commit the next screen before synchronizing Native history;
-      // the bookkeeping bridge must never sit in the user's tap-to-paint path.
-      window.requestAnimationFrame(() => {
-        void platform.navigation.openHybrid(hybridRouteToPlatform(nextRoute))
-      })
-    }
-  }
+  useEffect(() => {
+    // Hybrid routes replace the visible document surface. Do not carry the
+    // previous Profile/List scroll offset into the next screen.
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }))
+  }, [route.id, route.surface])
+
+  useEffect(() => {
+    if (route.surface !== 'restaurant') setAvatarEditorOpen(false)
+  }, [route.surface])
 
   const navigateBack = async () => {
+    const revision = ++navigationRevision.current
     if (platform.kind === 'native') {
       // Browser history owns the immediately visible Hybrid transition. Native
       // history reconciles afterward for deep links and Native-owned sheets.
-      window.history.back()
-      const state = await platform.navigation.back()
+      const traversed = beginHybridHistoryBack()
+      const [state] = await Promise.all([platform.navigation.back({ localTransition: true }), traversed])
+      if (revision !== navigationRevision.current) return
       const next = platformRouteToHybrid(state.route)
       if (next && window.location.hash !== routeHash(next)) {
+        currentRouteRef.current = next
         replaceLocalRoute(next, setRoute)
       }
       return
@@ -202,24 +345,48 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     window.history.back()
   }
 
-  const refreshReadyData = async () => {
-    const [nextProfile, nextContent] = await Promise.all([platform.profile.getCurrent(), platform.content.snapshot()])
-    setBootstrap((current) => current.state === 'ready'
-      ? { ...current, profile: nextProfile, content: nextContent, contentReady: true }
-      : current)
+  const requestRestaurantDeletion = (restaurantID: string) => {
+    const current = currentRouteRef.current
+    const attempt = platform.kind === 'native' && current.surface === 'restaurant'
+      ? { routeID: current.id } : null
+    pendingRestaurantDeletion.current = attempt
+    void openNativeRoute(platform, 'restaurantDelete', restaurantID).catch(reason => {
+      if (pendingRestaurantDeletion.current === attempt) pendingRestaurantDeletion.current = null
+      setRouteError(normalizeError(reason).message)
+    })
+  }
+
+  const returnFromProfileList = async () => {
+    const revision = ++navigationRevision.current
+    const profileRoute: HybridRoute = { surface: 'profile' }
+    // A Profile List detail is a drill-in, not a standalone destination. Replace
+    // it synchronously so returning never exposes the intermediate all-Lists page
+    // or asks WKWebView to perform a document-history navigation.
+    replaceLocalRoute(profileRoute, setRoute)
+    currentRouteRef.current = profileRoute
+    if (platform.kind !== 'native') return
+    const state = await platform.navigation.back({ localTransition: true })
+    if (revision !== navigationRevision.current) return
+    const next = platformRouteToHybrid(state.route)
+    if (next?.surface !== 'profile') {
+      await platform.navigation.openHybrid(hybridRouteToPlatform(profileRoute), { localTransition: true })
+    }
   }
 
   const openDiscoveryVisit = (restaurantID: string) => {
-    setVisitReturnToDiscovery(true)
     void navigate({ surface: 'visit', id: restaurantID })
   }
 
   const openDiscoveryRoulette = (restaurantID: string) => {
-    navigate({ surface: 'roulette' })
+    if (rouletteRestaurantIDs.includes(restaurantID)) {
+      setRouletteRestaurantIDs((current) => current.filter((id) => id !== restaurantID))
+      return
+    }
+    if (rouletteRestaurantIDs.length + rouletteTemporaryItems.length >= 10) return
     void platform.restaurant.get(restaurantID).then((detail) => {
-      restaurantDetailCache.current.set(detail.restaurant.id.toLowerCase(), detail)
+      restaurantDetailCache.current.set(restaurantDetailIdentityKey(detail.restaurant.id), detail)
       setRouletteExternalRestaurants((current) => current.some((item) => item.id === detail.restaurant.id) ? current : [...current, detail.restaurant])
-      setRouletteRestaurantIDs((current) => current.includes(detail.restaurant.id) ? current : [...current, detail.restaurant.id].slice(0, 10))
+      setRouletteRestaurantIDs((current) => current.includes(detail.restaurant.id) ? current : [...current, detail.restaurant.id].slice(0, 10 - rouletteTemporaryItems.length))
     }).catch((reason: unknown) => setRouteError(normalizeError(reason).message))
   }
 
@@ -242,11 +409,13 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     } else {
       setRouletteRestaurantIDs((current) => current.filter((id) => id !== candidateID))
     }
+    setRouletteSession((current) => current.winnerId === candidateID ? { ...current, winnerId: null } : current)
   }
 
   const clearRouletteCandidates = () => {
     setRouletteRestaurantIDs([])
     setRouletteTemporaryItems([])
+    setRouletteSession({ rotation: 0, winnerId: null })
     setShowRouletteCandidates(false)
   }
 
@@ -256,7 +425,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       detail.restaurant.id,
       detail.viewerState !== 'want_to_go',
     )
-    restaurantDetailCache.current.delete(detail.restaurant.id.toLowerCase())
+    restaurantDetailCache.current.delete(restaurantDetailIdentityKey(detail.restaurant.id))
     void refreshReadyData().catch(() => undefined)
     if (result.viewerState === 'none') {
       await navigateBack()
@@ -287,22 +456,38 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     ...rouletteTemporaryItems,
   ]
   const detailRestaurant = route.surface === 'restaurant'
-    ? restaurant && sameRestaurantID(restaurant.restaurant.id, route.id)
+    ? restaurant && detailMatchesRoute(restaurant, route.id, resolvedRestaurantRequestID)
       ? restaurant
-      : ownedRestaurantPreview(profile, route.id)
+      : routeError ? null : ownedRestaurantPreview(profile, route.id)
     : null
-  return <div className="tm-hybrid-shell" data-adapter={platform.kind} data-bridge-version={runtime.bridgeVersion} data-route={route.surface}>
+  return <PremiumAccessBoundary key={profile.user.id} ownerID={profile.user.id} platform={platform} revision={`${profile.user.membershipTier}:${route.surface}`}><div
+    className="tm-hybrid-shell"
+    data-adapter={platform.kind}
+    data-bridge-version={runtime.bridgeVersion}
+    data-route={route.surface}
+    onContextMenu={(event) => {
+      if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return
+      event.preventDefault()
+    }}
+  >
     {!online ? <div className="tm-hybrid-shell__offline" role="status"><CloudOff aria-hidden="true" size={15} />离线模式 · 正在使用本地数据</div> : null}
+    {refreshError ? <div className="tm-hybrid-shell__offline" role="status"><span>{refreshError}</span><button onClick={() => void refreshReadyData(true)} type="button">重试刷新</button></div> : null}
     {mapWasActivated ? <MyMapBrowsePage
       MapSurface={NativeMapSurface}
-      active={route.surface === 'map'}
+      active={route.surface === 'map' && !premiumLayerOpen}
       controlOverlayRevision={`roulette:${rouletteCandidates.length}:${showRouletteCandidates}`}
       onAddRestaurant={() => void navigate({ surface: 'add' })}
       onOpenRestaurant={(restaurantID) => void navigate({ surface: 'restaurant', id: restaurantID })}
       platform={platform}
       profile={profile}
+      forYouRecommendations={content.discovery.forYou}
+      recommendationSnapshotGeneratedAt={content.generatedAt}
     /> : null}
     {discoveryWasActivated ? <HybridDiscoveryPage
+      profile={profile}
+      onOpenPremium={() => void navigate({ surface: 'premium' })}
+      onAddRestaurant={() => void navigate({ surface: 'add' })}
+      candidateRestaurantIDs={rouletteRestaurantIDs}
       active={route.surface === 'discovery' || route.surface === 'activity'}
       content={content}
       onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })}
@@ -310,14 +495,26 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       onRecordVisit={openDiscoveryVisit}
       platform={platform}
       loading={!contentReady}
+      loadError={contentReadError}
+      onRetry={() => void refreshReadyData(true)}
     /> : null}
     {profileWasActivated ? <div className="tm-hybrid-persistent-route" hidden={route.surface !== 'profile'}>
       <ProfilePage
+        memoryProfile={profile}
+        memoryPlatform={platform}
         connections={<p>用户搜索仍由原生主路径承载。</p>}
-        followerConnections={<p>关注者列表仍由原生主路径承载。</p>}
+        followerConnections={<p>粉丝列表仍由原生主路径承载。</p>}
         followerCount={profile.followerCount}
         followingConnections={<p>关注列表仍由原生主路径承载。</p>}
         followingCount={profile.followingCount}
+        listCount={contentReady ? content.lists.filter((item) => item.isOwnedByViewer).length : undefined}
+        listsPreview={<HybridProfileListsPreview
+          lists={content.lists}
+          loading={!contentReady}
+          onCreate={() => void platform.navigation.openNative({ route: 'listManage' })}
+          onOpenList={(id) => void navigate({ surface: 'lists', id })}
+        />}
+        onDeleteAccount={() => void platform.account.openDelete()}
         onOpenAnalytics={(section) => void navigate({ surface: 'analytics', id: section })}
         onOpenLists={() => void navigate({ surface: 'lists' })}
         onOpenRoulette={() => void navigate({ surface: 'roulette' })}
@@ -338,8 +535,12 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
         : route.surface === 'restaurant'
         ? detailRestaurant
           ? <main className="tm-hybrid-detail">
-              <button aria-label="返回上一页" className="tm-hybrid-detail__back" onClick={() => void navigateBack()} type="button"><ArrowLeft aria-hidden="true" size={18} />返回</button>
+              <HybridBackButton onBack={() => void navigateBack()} />
               <RestaurantPreviewCard
+                recommendationPlatform={platform}
+                contentImage={detailRestaurant.contentImage}
+                contentImageResolution={detailRestaurant.contentImageResolution}
+                showCloseButton={false}
                 additionalUserPhotos={detailRestaurant.restaurant.visits.flatMap((visit) => visit.photos.map((source, index) => ({ source, photoId: visit.photoIds[index] })))}
                 historyRestaurants={profile.restaurants}
                 isInRoulette={rouletteRestaurantIDs.includes(detailRestaurant.restaurant.id)}
@@ -348,9 +549,13 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
                 onAddToWant={detailRestaurant.capabilities.canAddToWantToGo && detailRestaurant.viewerState !== 'visited' ? () => void toggleDetailCollection(detailRestaurant) : undefined}
                 onAddVisit={detailRestaurant.capabilities.canRecordVisit ? () => void navigate({ surface: 'visit', id: detailRestaurant.restaurant.id }) : undefined}
                 onClose={() => void navigateBack()}
-                onDelete={detailRestaurant.capabilities.canDeleteRestaurant ? () => void openNativeRoute(platform, 'restaurantDelete', detailRestaurant.restaurant.id) : undefined}
+                onDelete={detailRestaurant.capabilities.canDeleteRestaurant ? () => requestRestaurantDeletion(detailRestaurant.restaurant.id) : undefined}
                 onEdit={detailRestaurant.capabilities.canEditRestaurant ? () => void openNativeRoute(platform, 'restaurantEdit', detailRestaurant.restaurant.id) : undefined}
                 onEditVisit={(visit) => void navigate({ surface: 'visitEdit', id: visit.id })}
+                onEditAvatar={detailRestaurant.capabilities.canEditRestaurant ? () => {
+                  void platform.haptics.selection()
+                  setAvatarEditorOpen(true)
+                } : undefined}
                 onShare={detailRestaurant.capabilities.canShare ? () => void platform.share.open({ title: detailRestaurant.restaurant.name, text: `${detailRestaurant.restaurant.name} · ${detailRestaurant.restaurant.address}` }) : undefined}
                 canEditVisit={(visit) => detailRestaurant.editableVisitIDs.includes(visit.id)}
                 readOnly={!detailRestaurant.capabilities.canEditRestaurant && !detailRestaurant.capabilities.canDeleteRestaurant}
@@ -360,20 +565,40 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
                 viewerStatus={detailRestaurant.viewerState === 'none' ? null : detailRestaurant.viewerState === 'visited' ? 'visited' : 'wantToGo'}
               />
             </main>
-          : <ShellState kind="loading" message={routeError ?? '正在读取餐厅详情…'} />
+          : <main className="tm-hybrid-page"><HybridBackButton onBack={() => void navigateBack()} /><HybridState kind={routeError ? 'error' : 'loading'} title={routeError ? '无法读取餐厅详情' : '正在读取餐厅详情'} message={routeError ?? '请稍候…'} action={routeError ? <button onClick={() => setDetailRevision((value) => value + 1)} type="button">重试</button> : undefined} /></main>
         : route.surface === 'add'
-          ? <HybridAddRestaurantPage onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} />
+          ? <HybridAddRestaurantPage onBack={() => void navigateBack()} onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} />
         : route.surface === 'visit' || route.surface === 'visitEdit'
           ? <HybridVisitEditorPage
-              onClose={() => { setVisitReturnToDiscovery(false); void navigateBack() }}
+              membershipTier={profile.user.membershipTier}
+              onClose={() => { visitParentRoute.current = null; void navigateBack() }}
+              onRestaurantDeleted={(restaurantID) => {
+                visitParentRoute.current = null
+                deletedRestaurantRoutes.current.add(restaurantDetailIdentityKey(restaurantID))
+                for (const [key, detail] of restaurantDetailCache.current) {
+                  if (sameRestaurantID(detail.restaurant.id, restaurantID)) deletedRestaurantRoutes.current.add(key)
+                }
+                restaurantDetailCache.current.clear()
+                setRestaurant(null)
+                setRouletteRestaurantIDs((ids) => ids.filter((id) => !sameRestaurantID(id, restaurantID)))
+                void refreshReadyData()
+                // Native emits completedAction=restaurantDelete and owns stack
+                // cleanup. Do not back again or override a newer destination.
+                if (platform.kind !== 'native' && routeHash(currentRouteRef.current) === routeHash(route)) navigate({ surface: 'map' }, true)
+              }}
               onSaved={(restaurantID) => {
+                deletedRestaurantRoutes.current.delete(restaurantDetailIdentityKey(restaurantID))
+                const parentRoute = visitParentRoute.current
+                visitParentRoute.current = null
                 setDetailRevision((value) => value + 1)
-                if (visitReturnToDiscovery) {
-                  setVisitReturnToDiscovery(false)
-                  void refreshReadyData().finally(() => void navigateBack())
+                void refreshReadyData()
+                if (parentRoute) {
+                  // Complete the editor's existing history entry. Pushing a
+                  // second Detail would make its Back action reopen the editor.
+                  void navigateBack()
                 } else {
-                  setGeneration((value) => value + 1)
-                  void navigate({ surface: 'restaurant', id: restaurantID })
+                  const destination: HybridRoute = { surface: 'restaurant', id: restaurantID }
+                  navigate(destination, true)
                 }
               }}
               platform={platform}
@@ -381,27 +606,32 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
               restaurants={profile.restaurants}
               visitID={route.surface === 'visitEdit' ? route.id : undefined}
               visits={profile.visits}
+              sourceDetail={route.surface === 'visitEdit' ? restaurant : undefined}
             />
         : route.surface === 'lists' || route.surface === 'publicList'
-          ? <TasteMapListsPage lists={content.lists} onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} />
+          ? <TasteMapListsPage initialSelectedID={route.id} lists={content.lists} onBack={() => void navigateBack()} onInitialDetailBack={() => void (route.surface === 'lists' ? returnFromProfileList() : navigateBack())} onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} />
         : route.surface === 'roulette'
           ? <RestaurantRoulette
               onClose={() => void navigateBack()}
               onSelectRestaurant={(item) => void navigate({ surface: 'restaurant', id: item.id })}
+              onSessionStateChange={setRouletteSession}
               onSelectedRestaurantIdsChange={setRouletteRestaurantIDs}
               onTemporaryItemsChange={setRouletteTemporaryItems}
               restaurants={rouletteRestaurants}
+              sessionState={rouletteSession}
               selectedRestaurantIds={rouletteRestaurantIDs}
               temporaryItems={rouletteTemporaryItems}
             />
         : route.surface === 'analytics'
-          ? <TasteMapAnalyticsPage initialMode={analyticsMode(route.id)} onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} profile={profile} />
+          ? <TasteMapAnalyticsPage initialMode={analyticsMode(route.id)} onBack={() => void navigateBack()} onOpenRestaurant={(id) => void navigate({ surface: 'restaurant', id })} platform={platform} profile={profile} singleReport />
         : route.surface === 'premium'
-          ? <TasteMapPremiumPage platform={platform} />
+          ? <TasteMapPremiumPage onBack={() => void navigateBack()} platform={platform} />
         : route.surface === 'settings'
-          ? <TasteMapSettingsPage onOpenPremium={() => void navigate({ surface: 'premium' })} platform={platform} profile={profile} />
+          ? route.id === 'directory' ? <TasteMapDirectoryPage platform={platform} onBack={()=>void navigateBack()}/> : route.id === 'referrals'
+            ? <TasteMapReferralPage platform={platform} onBack={()=>void navigateBack()}/>
+            : <TasteMapSettingsPage onBack={() => void navigateBack()} onOpenDirectory={()=>void navigate({surface:'settings',id:'directory'})} onOpenReferral={()=>void navigate({surface:'settings',id:'referrals'})} onOpenPremium={() => void navigate({ surface: 'premium' })} platform={platform} profile={profile} />
         : <NativePrimaryHandoff route={route} onBack={() => navigate({ surface: 'profile' })} />}
-    {route.surface === 'map' ? <RouletteCandidateDock
+    {route.surface === 'map' || route.surface === 'discovery' ? <RouletteCandidateDock
       candidates={rouletteCandidates}
       expanded={showRouletteCandidates}
       onClear={clearRouletteCandidates}
@@ -409,6 +639,18 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       onOpen={() => void navigate({ surface: 'roulette' })}
       onRemove={removeRouletteCandidate}
     /> : null}
+    {avatarEditorOpen && detailRestaurant ? <RestaurantAvatarEditorSheet
+      detail={detailRestaurant}
+      onClose={() => setAvatarEditorOpen(false)}
+      onSaved={async (next) => {
+        restaurantDetailCache.current.set(restaurantDetailIdentityKey(next.restaurant.id), next)
+        restaurantDetailCache.current.set(restaurantDetailIdentityKey(detailRestaurant.restaurant.id), next)
+        setRestaurant(next)
+        await refreshReadyData()
+      }}
+      platform={platform}
+    /> : null}
+    {premiumLayerOpen ? <PremiumReturnLayer onClose={() => setPremiumLayerOpen(false)}><TasteMapPremiumPage platform={platform} onBack={() => { setPremiumLayerOpen(false); void refreshReadyData(true) }} /></PremiumReturnLayer> : null}
     <nav aria-label="主要功能" className="tm-hybrid-bottom-nav" data-product-contract="bottom-navigation">
       {HYBRID_BOTTOM_NAVIGATION.map((item) => <button
         aria-current={route.surface === item.surface ? 'page' : undefined}
@@ -421,7 +663,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     {import.meta.env.DEV && import.meta.env.VITE_HYBRID_DIAGNOSTICS === 'true'
       ? <output className="tm-hybrid-shell__diagnostics" aria-label="Hybrid 开发诊断">{platform.kind} · bridge v{runtime.bridgeVersion} · {runtime.dataSource}</output>
       : null}
-  </div>
+  </div></PremiumAccessBoundary>
 }
 
 function ShellState({ kind, message, code, action }: { kind: 'loading' | 'auth' | 'fatal'; message: string; code?: string; action?: () => void | Promise<void> }) {
@@ -462,7 +704,7 @@ function emptyContentSnapshot(): TasteMapHybridContentSnapshotDTO {
 }
 
 function sameRestaurantID(left: string, right: string) {
-  return left.toLowerCase() === right.toLowerCase()
+  return restaurantDetailIdentityKey(left) === restaurantDetailIdentityKey(right)
 }
 
 function ownedRestaurantPreview(
@@ -527,15 +769,19 @@ function hybridRouteToPlatform(route: HybridRoute): PlatformRoute {
 }
 
 function platformRouteToHybrid(route: PlatformRoute): HybridRoute | null {
-  if (route.surface === 'visitEdit'
-    || route.surface === 'acquisitionNative'
+  if (route.surface === 'acquisitionNative'
     || route.surface === 'listManage'
     || route.surface === 'premiumStore'
     || route.surface === 'settingsNative'
     || route.surface === 'socialNative'
+    || route.surface === 'accountSettings'
     || route.surface === 'dataBackup'
+    || route.surface === 'dataClear'
+    || route.surface === 'privacySettings'
     || route.surface === 'permissions'
     || route.surface === 'storage'
+    || route.surface === 'helpSettings'
+    || route.surface === 'aboutSettings'
     || route.surface === 'accountDelete'
     || route.surface === 'profileEdit'
     || route.surface === 'restaurantEdit'

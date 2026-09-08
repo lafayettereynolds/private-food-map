@@ -35,6 +35,8 @@ interface AppStoreTransactionPayload {
   revocationReason?: number
   inAppOwnershipType?: string
   transactionReason?: string
+  offerType?: number
+  offerIdentifier?: string
 }
 
 interface AppStoreNotificationPayload {
@@ -87,9 +89,12 @@ export async function handleAppStoreCommerceV1(
   if (url.pathname === '/api/v1/storekit/config' && request.method === 'GET') {
     const products = configuredProducts(environment)
     const account = await ensureAppStoreAccount(database, userId)
+    let purchaseReady = false
+    try { requireServerConfiguration(environment); purchaseReady = true } catch { /* Catalog remains readable before server credentials are configured. */ }
     return {
       apiVersion: APP_STORE_COMMERCE_API_VERSION,
       configured: products.length > 0,
+      purchaseReady,
       appAccountToken: account.app_account_token,
       products,
     }
@@ -179,7 +184,7 @@ export async function verifyAndReconcileTransaction(
   return reconcileVerifiedTransaction(database, userId, transaction, environment)
 }
 
-async function fetchVerifiedTransaction(
+export async function fetchVerifiedTransaction(
   transactionId: string,
   environment: AppStoreCommerceEnvironment,
   appleFetch: typeof fetch,
@@ -307,7 +312,7 @@ async function reconcileMembershipProjection(
   const current = usable[0] ?? result.results[0]
   const source = current.product_id === configuration.monthlyProductId
     ? 'app_store_monthly'
-    : 'app_store_yearly'
+    : 'app_store_annual'
   const status = usable.length > 0 ? 'active' : result.results.every((item) => item.revocation_at !== null)
     ? 'revoked'
     : 'active'

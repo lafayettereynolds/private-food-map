@@ -47,6 +47,7 @@ nonisolated struct BackupImportSourceRestaurant: Codable, Equatable, Sendable {
     let longTermNote: String
     let pricePerPerson: Decimal?
     let phone: String?
+    var websiteURL: String? = nil
     let openingHours: String?
     let markerType: String
     let markerPhotoSourceID: String?

@@ -1,100 +1,66 @@
+import { RECOMMENDATION_EVIDENCE_POLICY as policy, tasteEvidenceState } from '../src/contracts/recommendationEvidencePolicy'
+
 export interface TasteRatingSignal {
   userId: string
+  /** Stable restaurant identity, never a name, tag or geographic fingerprint. */
   poiId: string
   ratingOutOfTen: number
   tags: string[]
+  sampleCount?: number
 }
-
-interface ProfileValue {
-  total: number
-  count: number
+interface ProfileValue { total: number; count: number }
+interface TasteProfile { pois: Map<string, ProfileValue>; mean: number }
+export const MIN_TASTE_SIMILARITY = policy.forming.minimumCorrelation
+export function tasteSimilarityForDisplay(evidence: { evidenceState: string; similarity: number } | undefined) {
+  return evidence?.evidenceState === 'sufficient' ? evidence.similarity : null
 }
-
-interface TasteProfile {
-  pois: Map<string, ProfileValue>
-  tags: Map<string, ProfileValue>
+export function tastePersonalEvidence(signals: TasteRatingSignal[], viewerId: string) {
+  const profile = buildProfiles(signals).get(viewerId)
+  const values = profile ? [...profile.pois.values()].map(average) : []
+  const deviation = values.length ? Math.sqrt(mean(values.map(value => (value - profile!.mean) ** 2))) : 0
+  return { personalRatedRestaurantCount: values.length, personalScoreStandardDeviationOutOfTen: deviation,
+    personalEvidence: values.length >= policy.forming.minimumSharedRestaurants && deviation >= policy.minimumStandardDeviationOutOfTen ? 'eligible' as const : 'insufficient' as const }
 }
-
-const MIN_SIGNAL_COUNT = 3
-const MIN_SHARED_RESTAURANT_COUNT = 3
-export const MIN_TASTE_SIMILARITY = 0.85
 
 export function findSimilarTasteUserIds(signals: TasteRatingSignal[], viewerId: string) {
-  return new Set(calculateTasteSimilarities(signals, viewerId).filter((item) => item.similarity >= MIN_TASTE_SIMILARITY).map((item) => item.userId))
+  return new Set(calculateTasteSimilarities(signals, viewerId).filter(item => item.evidenceState !== 'insufficient').map(item => item.userId))
 }
-
 export function calculateTasteSimilarities(signals: TasteRatingSignal[], viewerId: string) {
   const profiles = buildProfiles(signals)
   const viewer = profiles.get(viewerId)
   if (!viewer) return []
-  const similarities: Array<{
-    userId: string
-    similarity: number
-    signalCount: number
-    sharedRestaurantCount: number
-  }> = []
-  profiles.forEach((profile, userId) => {
-    if (userId === viewerId) return
-    const comparison = compareProfiles(viewer, profile)
-    if (
-      comparison.signalCount >= MIN_SIGNAL_COUNT &&
-      comparison.sharedRestaurantCount >= MIN_SHARED_RESTAURANT_COUNT
-    ) similarities.push({ userId, ...comparison })
-  })
-  return similarities.sort((a, b) => b.similarity - a.similarity || a.userId.localeCompare(b.userId))
+  return [...profiles.entries()].flatMap(([userId, profile]) => {
+    if (userId === viewerId) return []
+    const shared = [...viewer.pois.keys()].filter(key => profile.pois.has(key))
+    if (shared.length < policy.forming.minimumSharedRestaurants) return []
+    const left = shared.map(key => average(viewer.pois.get(key)!) - viewer.mean)
+    const right = shared.map(key => average(profile.pois.get(key)!) - profile.mean)
+    const leftMean = mean(left); const rightMean = mean(right)
+    const a = left.map(value => value - leftMean); const b = right.map(value => value - rightMean)
+    const leftVariance = mean(a.map(value => value * value)); const rightVariance = mean(b.map(value => value * value))
+    if (Math.sqrt(leftVariance) < policy.minimumStandardDeviationOutOfTen || Math.sqrt(rightVariance) < policy.minimumStandardDeviationOutOfTen) return []
+    const similarity = Math.max(-1, Math.min(1, mean(a.map((value, index) => value * b[index])) / Math.sqrt(leftVariance * rightVariance)))
+    return [{ userId, similarity, signalCount: shared.length, sharedRestaurantCount: shared.length,
+      weightedSimilarity: similarity * shared.length / (shared.length + policy.similarityShrinkageRestaurants),
+      evidenceState: tasteEvidenceState(shared.length, similarity), userMeanOutOfTen: profile.mean,
+      viewerMeanOutOfTen: viewer.mean, sharedRestaurantIDs: shared,
+    }]
+  }).sort((a, b) => b.weightedSimilarity - a.weightedSimilarity || a.userId.localeCompare(b.userId))
 }
-
 function buildProfiles(signals: TasteRatingSignal[]) {
   const profiles = new Map<string, TasteProfile>()
-  const userMeans = new Map<string, number>()
-  const byUser = new Map<string, number[]>()
-  signals.forEach((signal) => {
-    const ratings = byUser.get(signal.userId)
-    if (ratings) ratings.push(signal.ratingOutOfTen)
-    else byUser.set(signal.userId, [signal.ratingOutOfTen])
-  })
-  byUser.forEach((ratings, userId) => userMeans.set(userId, ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length))
-  signals.forEach((signal) => {
-    const profile = profiles.get(signal.userId) ?? { pois: new Map(), tags: new Map() }
-    const centeredRating = signal.ratingOutOfTen - (userMeans.get(signal.userId) ?? signal.ratingOutOfTen)
-    addValue(profile.pois, signal.poiId, centeredRating)
-    signal.tags.forEach((tag) => addValue(profile.tags, tag.trim().toLocaleLowerCase(), centeredRating))
-    profiles.set(signal.userId, profile)
-  })
+  for (const signal of signals) {
+    const count = signal.sampleCount ?? 1
+    if (!signal.userId || !signal.poiId || !Number.isFinite(signal.ratingOutOfTen) || signal.ratingOutOfTen <= 0 || signal.ratingOutOfTen > 10 || !Number.isFinite(count) || count <= 0) continue
+    const profile = profiles.get(signal.userId) ?? { pois: new Map<string, ProfileValue>(), mean: 0 }
+    const value = profile.pois.get(signal.poiId) ?? { total: 0, count: 0 }
+    value.total += signal.ratingOutOfTen * count; value.count += count
+    profile.pois.set(signal.poiId, value); profiles.set(signal.userId, profile)
+  }
+  // Repeated Visits weight only that restaurant's representative score. Each
+  // distinct restaurant then contributes once to the person's baseline.
+  for (const profile of profiles.values()) profile.mean = mean([...profile.pois.values()].map(average))
   return profiles
 }
-
-function compareProfiles(left: TasteProfile, right: TasteProfile) {
-  const differences: number[] = []
-  let sharedRestaurantCount = 0
-  left.pois.forEach((leftValue, key) => {
-    const rightValue = right.pois.get(key)
-    if (!rightValue) return
-    sharedRestaurantCount += 1
-    const difference = Math.min(1, Math.abs(average(leftValue) - average(rightValue)) / 5)
-    differences.push(difference, difference)
-  })
-  left.tags.forEach((leftValue, key) => {
-    const rightValue = right.tags.get(key)
-    if (!rightValue) return
-    differences.push(Math.min(1, Math.abs(average(leftValue) - average(rightValue)) / 5))
-  })
-  if (!differences.length) return { signalCount: 0, sharedRestaurantCount: 0, similarity: 0 }
-  return {
-    signalCount: differences.length,
-    sharedRestaurantCount,
-    similarity: 1 - differences.reduce((sum, value) => sum + value, 0) / differences.length,
-  }
-}
-
-function addValue(target: Map<string, ProfileValue>, key: string, value: number) {
-  if (!key) return
-  const current = target.get(key) ?? { total: 0, count: 0 }
-  current.total += value
-  current.count += 1
-  target.set(key, current)
-}
-
-function average(value: ProfileValue) {
-  return value.total / value.count
-}
+function average(value: ProfileValue) { return value.total / value.count }
+function mean(values: number[]) { return values.reduce((sum, value) => sum + value, 0) / values.length }

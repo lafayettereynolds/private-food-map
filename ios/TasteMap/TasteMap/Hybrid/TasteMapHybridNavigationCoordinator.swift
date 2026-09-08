@@ -10,8 +10,10 @@ final class TasteMapHybridNavigationCoordinator {
     var didChange: ((TasteMapHybridNavigationStateDTO) -> Void)?
 
     init(initialRoute: TasteMapHybridRouteDTO? = nil) {
-        let profile = try! TasteMapHybridRouteDTO(surface: .profile)
-        let route = initialRoute?.owner == .hybrid ? initialRoute! : profile
+        // A fresh app session starts at Map. Explicit entry routes still own
+        // their destination; foreground resume never constructs this stack.
+        let map = try! TasteMapHybridRouteDTO(surface: .map)
+        let route = initialRoute?.owner == .hybrid ? initialRoute! : map
         hybridRoute = route
         hybridHistory = [route]
     }
@@ -24,30 +26,37 @@ final class TasteMapHybridNavigationCoordinator {
     }
 
     @discardableResult
-    func openHybrid(_ route: TasteMapHybridRouteDTO) throws -> TasteMapHybridNavigationStateDTO {
+    func openHybrid(_ route: TasteMapHybridRouteDTO, sourceRequestID: String? = nil, replaceCurrent: Bool = false) throws -> TasteMapHybridNavigationStateDTO {
         guard route.owner == .hybrid else { throw TasteMapHybridRouteError.unsupportedRoute }
         presentedNativeRoute = nil
-        if hybridHistory.last != route { hybridHistory.append(route) }
+        if replaceCurrent {
+            hybridHistory[hybridHistory.count - 1] = route
+            // A completed editor often returns to the Detail directly beneath
+            // it. Keep that original Detail entry, not a duplicate return stop.
+            if hybridHistory.count > 1 && hybridHistory[hybridHistory.count - 2] == route {
+                hybridHistory.removeLast()
+            }
+        } else if hybridHistory.last != route { hybridHistory.append(route) }
         hybridRoute = route
-        return publish()
+        return publish(sourceRequestID: sourceRequestID)
     }
 
     @discardableResult
-    func openNative(_ route: TasteMapHybridRouteDTO) throws -> TasteMapHybridNavigationStateDTO {
+    func openNative(_ route: TasteMapHybridRouteDTO, sourceRequestID: String? = nil) throws -> TasteMapHybridNavigationStateDTO {
         guard route.owner == .native else { throw TasteMapHybridRouteError.unsupportedRoute }
         presentedNativeRoute = route
-        return publish()
+        return publish(sourceRequestID: sourceRequestID)
     }
 
     @discardableResult
-    func back() -> TasteMapHybridNavigationStateDTO {
+    func back(sourceRequestID: String? = nil) -> TasteMapHybridNavigationStateDTO {
         if presentedNativeRoute != nil {
             presentedNativeRoute = nil
         } else if hybridHistory.count > 1 {
             hybridHistory.removeLast()
             hybridRoute = hybridHistory.last!
         }
-        return publish()
+        return publish(sourceRequestID: sourceRequestID)
     }
 
     @discardableResult
@@ -57,8 +66,47 @@ final class TasteMapHybridNavigationCoordinator {
 
     func dismissNativePresentation() { _ = back() }
 
-    private func publish() -> TasteMapHybridNavigationStateDTO {
-        let value = current
+    /// Successful deletion is one Native-owned transition, never two Back calls.
+    /// Generic data-change notifications do not determine navigation success.
+    @discardableResult
+    func completeRestaurantDeletion() -> TasteMapHybridNavigationStateDTO {
+        guard presentedNativeRoute?.surface == .restaurantDelete else { return current }
+        presentedNativeRoute = nil
+        if hybridRoute.surface == .restaurant {
+            if hybridHistory.count > 1 {
+                hybridHistory.removeLast()
+                hybridRoute = hybridHistory.last!
+            } else {
+                hybridRoute = try! TasteMapHybridRouteDTO(surface: .map)
+                hybridHistory = [hybridRoute]
+            }
+        }
+        return publish(completedAction: .restaurantDelete)
+    }
+
+    /// Called only after Native commits the final-Visit Restaurant cascade.
+    /// Remove proven aliases from retained history without consuming unrelated routes.
+    @discardableResult
+    func completeVisitDeletion(restaurantIDs: Set<String>, visitIDs: Set<String>) -> TasteMapHybridNavigationStateDTO {
+        let restaurants = Set(restaurantIDs.map { $0.lowercased() })
+        let visits = Set(visitIDs.map { $0.lowercased() })
+        func deletedRoute(_ route: TasteMapHybridRouteDTO) -> Bool {
+            guard let id = route.identifier?.lowercased() else { return false }
+            switch route.surface {
+            case .restaurant, .visit: return restaurants.contains(id)
+            case .visitEdit: return visits.contains(id)
+            default: return false
+            }
+        }
+        if let presentedNativeRoute, deletedRoute(presentedNativeRoute) { self.presentedNativeRoute = nil }
+        hybridHistory.removeAll(where: deletedRoute)
+        if hybridHistory.isEmpty { hybridHistory = [try! TasteMapHybridRouteDTO(surface: .map)] }
+        hybridRoute = hybridHistory.last!
+        return publish(completedAction: .restaurantDelete)
+    }
+
+    private func publish(sourceRequestID: String? = nil, completedAction: TasteMapHybridRouteSurface? = nil) -> TasteMapHybridNavigationStateDTO {
+        let value = TasteMapHybridNavigationStateDTO(route: current.route, canGoBack: current.canGoBack, sourceRequestID: sourceRequestID, completedAction: completedAction)
         didChange?(value)
         return value
     }

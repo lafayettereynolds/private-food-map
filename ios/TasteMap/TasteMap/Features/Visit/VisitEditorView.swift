@@ -22,10 +22,11 @@ struct VisitEditorView: View {
     private let visit: Visit?
     private let onSaved: ((UUID) -> Void)?
     private let onVisitSaved: ((Visit) -> Void)?
+    private let onRestaurantDeleted: ((UUID) -> Void)?
 
     @State private var draft: VisitDraft
     @State private var partySizeText: String
-    @State private var spendText: String
+    private let initialPaymentDraft: VisitDraft
     @State private var totalPriceText: String
     @State private var submissionGate = VisitSubmissionGate()
     @State private var didSaveCore = false
@@ -63,18 +64,21 @@ struct VisitEditorView: View {
         visit: Visit? = nil,
         initialDraft: VisitDraft? = nil,
         onSaved: ((UUID) -> Void)? = nil,
-        onVisitSaved: ((Visit) -> Void)? = nil
+        onVisitSaved: ((Visit) -> Void)? = nil,
+        onRestaurantDeleted: ((UUID) -> Void)? = nil
     ) {
         self.restaurant = restaurant
         candidate = nil
         self.visit = visit
         self.onSaved = onSaved
         self.onVisitSaved = onVisitSaved
-        let initialDraft = visit.map(VisitDraft.init) ?? initialDraft ?? VisitDraft()
+        self.onRestaurantDeleted = onRestaurantDeleted
+        var initialDraft = visit.map(VisitDraft.init) ?? initialDraft ?? VisitDraft()
+        if visit == nil && initialDraft.partySize == nil { initialDraft.partySize = 1 }
         _draft = State(initialValue: initialDraft)
         _partySizeText = State(initialValue: Self.integerString(initialDraft.partySize))
-        _spendText = State(initialValue: Self.spendString(initialDraft.myActualSpend))
-        _totalPriceText = State(initialValue: Self.spendString(initialDraft.totalPrice))
+        self.initialPaymentDraft = initialDraft
+        _totalPriceText = State(initialValue: Self.spendString(VisitSpendPolicy.inputAmount(actual: initialDraft.myActualSpend, total: initialDraft.totalPrice, mode: initialDraft.paymentModeRawValue, partySize: initialDraft.partySize)))
     }
 
     @MainActor
@@ -89,11 +93,13 @@ struct VisitEditorView: View {
         visit = nil
         self.onSaved = onSaved
         self.onVisitSaved = onVisitSaved
-        let initialDraft = initialDraft ?? VisitDraft()
+        self.onRestaurantDeleted = nil
+        var initialDraft = initialDraft ?? VisitDraft()
+        if initialDraft.partySize == nil { initialDraft.partySize = 1 }
         _draft = State(initialValue: initialDraft)
         _partySizeText = State(initialValue: Self.integerString(initialDraft.partySize))
-        _spendText = State(initialValue: Self.spendString(initialDraft.myActualSpend))
-        _totalPriceText = State(initialValue: Self.spendString(initialDraft.totalPrice))
+        self.initialPaymentDraft = initialDraft
+        _totalPriceText = State(initialValue: Self.spendString(VisitSpendPolicy.inputAmount(actual: initialDraft.myActualSpend, total: initialDraft.totalPrice, mode: initialDraft.paymentModeRawValue, partySize: initialDraft.partySize)))
     }
 
     var body: some View {
@@ -139,7 +145,7 @@ struct VisitEditorView: View {
                 Button("删除到访记录", role: .destructive, action: deleteVisit)
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("这只会删除当前 Visit，不会影响这家餐厅的其他记录。")
+                Text(RestaurantDeletionPresentation.visitMessage(isLast: isDeletingLastVisit))
             }
             .alert("无法完成", isPresented: Binding(
                 get: { saveError != nil },
@@ -448,7 +454,7 @@ struct VisitEditorView: View {
 #endif
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("当前每次到访最多新增 \(photoLimit) 张照片；已有照片会继续保留。")
+                    Text("本次到访已达当前 \(photoLimit) 张照片上限；已有照片会继续保留。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     if premiumEntitlementService.access(for: .expandedVisitPhotos) == .denied {
@@ -622,7 +628,8 @@ struct VisitEditorView: View {
                 options: VisitPaymentMode.allCases.map {
                     VisitContextChoiceOption(value: $0.rawValue, title: $0.title)
                 },
-                accessibilityIdentifier: "visit-editor-payment-mode"
+                accessibilityIdentifier: "visit-editor-payment-mode",
+                emptyTitle: "单人消费"
             )
             if draft.paymentModeRawValue != nil {
                 Button("清空消费方式") {
@@ -630,28 +637,33 @@ struct VisitEditorView: View {
                 }
                 .accessibilityIdentifier("visit-editor-payment-clear")
             }
-            LabeledContent("整桌账单") {
+            LabeledContent("消费金额（元）") {
                 TextField("未填写", text: $totalPriceText)
                     .multilineTextAlignment(.trailing)
                     .keyboardType(.decimalPad)
-                    .accessibilityLabel("整桌账单，可选")
-                    .accessibilityIdentifier("visit-editor-total-price")
-            }
-            TextField("例如 128.50", text: $spendText)
-                .keyboardType(.decimalPad)
-                .accessibilityLabel("我的实际消费，可选")
-                .accessibilityIdentifier("visit-editor-spend")
-            if let pricePerPerson = displayedPricePerPerson {
-                LabeledContent("人均参考") {
-                    Text("¥\(NSDecimalNumber(decimal: pricePerPerson).stringValue)")
-                        .foregroundStyle(.secondary)
-                }
+                    .accessibilityLabel("消费金额（元），可选")
+                    .accessibilityIdentifier("visit-editor-spend")
             }
         } header: {
             Text("消费")
-        } footer: {
-            Text("整桌账单、本人实际消费与菜品价格彼此独立；留空表示未记录，不会按 0 元保存。")
         }
+    }
+
+    private func paymentDraft() throws -> VisitDraft {
+        var result = draft
+        result.partySize = try VisitDraft.partySize(from: partySizeText)
+        let amount = try VisitDraft.totalPrice(from: totalPriceText)
+        let initial = initialPaymentDraft
+        if amount == VisitSpendPolicy.inputAmount(actual: initial.myActualSpend, total: initial.totalPrice, mode: initial.paymentModeRawValue, partySize: initial.partySize)
+            && result.partySize == initial.partySize && result.paymentModeRawValue == initial.paymentModeRawValue {
+            result.totalPrice = initial.totalPrice
+            result.myActualSpend = initial.myActualSpend ?? VisitSpendPolicy.resolve(actual: nil, amount: initial.totalPrice, mode: initial.paymentModeRawValue, partySize: initial.partySize)
+        } else {
+            let payment = VisitSpendPolicy.calculate(amount: amount, mode: result.paymentModeRawValue, partySize: result.partySize)
+            result.totalPrice = payment.total
+            result.myActualSpend = payment.actual
+        }
+        return result
     }
 
     private var displayedPricePerPerson: Decimal? {
@@ -770,7 +782,7 @@ struct VisitEditorView: View {
             .disabled(isSaving)
             .accessibilityIdentifier("visit-editor-delete")
         } footer: {
-            Text("不会删除餐厅，也不会影响其他到访记录。")
+            Text(RestaurantDeletionPresentation.visitMessage(isLast: isDeletingLastVisit))
         }
     }
 
@@ -782,11 +794,26 @@ struct VisitEditorView: View {
     private func saveAsync() async {
         defer { submissionGate.finish() }
 
+        let draftPhotoCount = visibleVisitPhotos.filter { $0.draftSessionID == photoDraftSessionID }.count
+        if premiumEntitlementService.access(for: .expandedVisitPhotos) != .allowed {
+            let retainedDishPhotoIDs = Set(owned.photos.filter { $0.visitId == visit?.id && $0.dishId != nil && $0.deletedAt == nil }.map(\.id))
+            if dishDrafts.contains(where: { $0.photoID.map { !retainedDishPhotoIDs.contains($0) } ?? false }) {
+                photoError = "菜品照片仅限 Premium；已有照片会继续保留。"
+                return
+            }
+        }
+        guard PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(
+            existingCount: visibleVisitPhotos.count - draftPhotoCount,
+            newCount: draftPhotoCount + preparedPhotos.count,
+            membershipStatus: premiumEntitlementService.membershipStatus
+        ) else {
+            photoError = "每次到访最多可添加 \(photoLimit) 张照片；已有照片会继续保留。"
+            return
+        }
+
         do {
             var validatedDraft = draft
-            validatedDraft.partySize = try VisitDraft.partySize(from: partySizeText)
-            validatedDraft.myActualSpend = try VisitDraft.spend(from: spendText)
-            validatedDraft.totalPrice = try VisitDraft.totalPrice(from: totalPriceText)
+            validatedDraft = try paymentDraft()
             validatedDraft = try validatedDraft.validated()
 
             let result = try LocalVisitRecordingStore(context: modelContext).commit(
@@ -980,14 +1007,20 @@ struct VisitEditorView: View {
         guard let visit, submissionGate.begin() else { return }
         defer { submissionGate.finish() }
         do {
-            try LocalTasteMapStore(context: modelContext).delete(
+            let deletedRestaurantID = try LocalTasteMapStore(context: modelContext).delete(
                 visit,
                 actorUserID: currentUserID
             )
             dismiss()
+            if let deletedRestaurantID { onRestaurantDeleted?(deletedRestaurantID) }
         } catch {
             saveError = "这条到访记录没有删除成功，请重试。"
         }
+    }
+
+    private var isDeletingLastVisit: Bool {
+        guard let visit else { return false }
+        return !owned.visits.contains { $0.restaurantId == visit.restaurantId && $0.deletedAt == nil && $0.id != visit.id }
     }
 
     private var existingRestaurantDishes: [Dish] {

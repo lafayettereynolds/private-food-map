@@ -1,6 +1,32 @@
 import SwiftData
 import SwiftUI
 
+private enum TasteFootprintTimelineItem: Identifiable {
+    case visit(TasteFootprintItem)
+    case wantToGo(RestaurantBrowseItem)
+
+    var id: String {
+        switch self {
+        case let .visit(item): "visit-\(item.visit.id.uuidString)"
+        case let .wantToGo(item): "want-to-go-\(item.restaurant.id.uuidString)"
+        }
+    }
+
+    var eventAt: Date {
+        switch self {
+        case let .visit(item): item.visit.visitedAt
+        case let .wantToGo(item): item.restaurant.createdAt
+        }
+    }
+
+    var restaurant: Restaurant {
+        switch self {
+        case let .visit(item): item.restaurant
+        case let .wantToGo(item): item.restaurant
+        }
+    }
+}
+
 struct TasteFootprintsView: View {
     @Query private var restaurants: [Restaurant]
     @Query private var visits: [Visit]
@@ -37,12 +63,19 @@ struct TasteFootprintsView: View {
             companions: owned.companions,
             recommendationSources: owned.recommendationSources
         )
+        let timelineItems = (
+            snapshot.footprints.map(TasteFootprintTimelineItem.visit)
+                + snapshot.wantToGo.map(TasteFootprintTimelineItem.wantToGo)
+        ).sorted {
+            if $0.eventAt != $1.eventAt { return $0.eventAt > $1.eventAt }
+            return $0.id < $1.id
+        }
 
         Group {
-            if snapshot.footprints.isEmpty {
+            if timelineItems.isEmpty {
                 TasteMapEmptyState(
                     title: "还没有味觉足迹",
-                    message: "每次真实到访都会在这里留下独立的一条记录，包括未评分的到访。",
+                    message: "每次真实到访与想去收藏都会在这里留下记录，包括未评分的到访。",
                     systemImage: "point.bottomleft.forward.to.point.topright.scurvepath",
                     foodDiningVisualKind: .location,
                     presentation: .embedded,
@@ -51,15 +84,27 @@ struct TasteFootprintsView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(snapshot.footprints.enumerated()), id: \.element.id) { index, item in
-                            TasteFootprintRow(
-                                item: item,
-                                showsTopLine: index > 0,
-                                showsBottomLine: index < snapshot.footprints.count - 1,
-                                onSelect: {
-                                    selectedRestaurant = RestaurantBrowseSelection(id: item.restaurant.id)
-                                }
-                            )
+                        ForEach(Array(timelineItems.enumerated()), id: \.element.id) { index, item in
+                            switch item {
+                            case let .visit(visitItem):
+                                TasteFootprintRow(
+                                    item: visitItem,
+                                    showsTopLine: index > 0,
+                                    showsBottomLine: index < timelineItems.count - 1,
+                                    onSelect: {
+                                        selectedRestaurant = RestaurantBrowseSelection(id: item.restaurant.id)
+                                    }
+                                )
+                            case let .wantToGo(wantItem):
+                                WantToGoFootprintRow(
+                                    item: wantItem,
+                                    showsTopLine: index > 0,
+                                    showsBottomLine: index < timelineItems.count - 1,
+                                    onSelect: {
+                                        selectedRestaurant = RestaurantBrowseSelection(id: item.restaurant.id)
+                                    }
+                                )
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -96,7 +141,6 @@ private struct TasteFootprintRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            timeline
             Button(action: onSelect) {
                 VStack(alignment: .leading, spacing: 11) {
                     header
@@ -110,34 +154,20 @@ private struct TasteFootprintRow: View {
                             try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
                         }?.tags ?? []
                     )
-                        .frame(maxWidth: .infinity)
-                        .frame(height: item.photo == nil ? 112 : 180)
-                        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-                    if let rating = item.visit.rating {
-                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.orange)
-                    } else {
-                        Label("未评分", systemImage: "star")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                        .frame(width: TasteMapDesignTokens.Layout.socialFeedMediaWidth, height: TasteMapDesignTokens.Layout.socialFeedMediaWidth)
+                        .clipShape(RoundedRectangle(cornerRadius: TasteMapDesignTokens.Radius.compact, style: .continuous))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     if let note = item.visit.note, !note.isEmpty {
                         Text(note)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
-                            .lineLimit(4)
                             .multilineTextAlignment(.leading)
                     }
                     metadata
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .tasteMapCoreCard(radius: 20)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color(uiColor: .separator).opacity(0.16))
-                }
+                .padding(.vertical, TasteMapDesignTokens.Spacing.content)
+                .overlay(alignment: .bottom) { Divider() }
                 .padding(.bottom, 14)
             }
             .buttonStyle(.plain)
@@ -172,9 +202,7 @@ private struct TasteFootprintRow: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                TasteMapActivityRatingBadge(rating: item.visit.rating)
             }
             Text(TasteMapDisplayDate.abbreviatedDateTime(item.visit.visitedAt))
                 .font(.caption.weight(.medium))
@@ -211,6 +239,89 @@ private struct TasteFootprintRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct WantToGoFootprintRow: View {
+    let item: RestaurantBrowseItem
+    let showsTopLine: Bool
+    let showsBottomLine: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Button(action: onSelect) {
+                VStack(alignment: .leading, spacing: 11) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label("加入想吃", systemImage: "bookmark.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                        Spacer(minLength: 8)
+                        Text(TasteMapDisplayDate.abbreviatedDateTime(item.restaurant.createdAt))
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(item.restaurant.name)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 6)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    RestaurantBrowsePhoto(
+                        photo: item.photo,
+                        publicPhotoID: item.publicPhotoID,
+                        merchantImageURL: item.merchantImageURL,
+                        restaurantID: item.restaurant.id,
+                        restaurantName: item.restaurant.name,
+                        categoryTags: item.restaurantTags.sorted()
+                    )
+                    .frame(width: TasteMapDesignTokens.Layout.socialFeedMediaWidth, height: TasteMapDesignTokens.Layout.socialFeedMediaWidth)
+                    .clipShape(RoundedRectangle(cornerRadius: TasteMapDesignTokens.Radius.compact, style: .continuous))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    let location = [item.restaurant.city, item.restaurant.address]
+                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                        .joined(separator: " · ")
+                    if !location.isEmpty {
+                        Label(location, systemImage: "mappin.and.ellipse")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Text("先收藏起来，留给下一次出发。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, TasteMapDesignTokens.Spacing.content)
+                .overlay(alignment: .bottom) { Divider() }
+                .padding(.bottom, 14)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("taste-footprint-want-to-go-\(item.restaurant.id.uuidString)")
+        }
+    }
+
+    private var timeline: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(showsTopLine ? Color.accentColor.opacity(0.22) : .clear)
+                .frame(width: 2, height: 13)
+            Circle()
+                .fill(Color.accentColor.opacity(0.88))
+                .frame(width: 11, height: 11)
+                .overlay(Circle().stroke(.background, lineWidth: 3))
+                .shadow(color: Color.accentColor.opacity(0.2), radius: 3)
+            Rectangle()
+                .fill(showsBottomLine ? Color.accentColor.opacity(0.22) : .clear)
+                .frame(width: 2)
+        }
+        .frame(width: 14)
+        .accessibilityHidden(true)
     }
 }
 

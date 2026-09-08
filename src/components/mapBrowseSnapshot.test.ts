@@ -5,7 +5,7 @@ import {
   LatestMapRequestGate,
   LatestMapViewportCommitScheduler,
   MapBrowseSnapshotCache,
-  mapBrowseCameraFitKey,
+  mapBrowseDataVersion,
   mapBrowseSnapshotKey,
   type MapBrowsePresentationSnapshot,
 } from './mapBrowseSnapshot'
@@ -25,21 +25,57 @@ function snapshot(scope: 'visited' | 'wantToGo' | 'recommended'): MapBrowsePrese
 }
 
 describe('MapBrowse snapshot and request performance contract', () => {
+  it('invalidates same-timestamp accepted city/status/identity/delete changes without depending on row order', () => {
+    const initial = restaurants.map((item) => ({ ...item }))
+    const version = mapBrowseDataVersion(initial)
+    expect(mapBrowseDataVersion([...initial].reverse())).toBe(version)
+    for (const change of [{ city: '温州' }, { status: 'wantToGo' as const }, { id: 'replacement' }, { deletedAt: '2026-09-06' }]) {
+      expect(mapBrowseDataVersion(initial.map((item, index) => index === 0 ? { ...item, ...change } : item))).not.toBe(version)
+    }
+  })
+
   afterEach(() => vi.useRealTimers())
 
-  it('keys each owner/scope/query while excluding scope from the camera-fit identity', () => {
+  it('invalidates edited avatars even when another restaurant owns the latest timestamp', () => {
+    const initial = restaurants.map((item, index) => ({ ...item, updatedAt: index === 0 ? '2026-09-01' : '2026-10-01' }))
+    const version = mapBrowseDataVersion(initial)
+    for (const change of [
+      { markerType: 'emoji' as const, markerEmoji: '🐸' },
+      { markerType: 'image' as const, markerPhotoId: 'new-owner-photo' },
+      { updatedAt: '2026-09-06' },
+    ]) {
+      expect(mapBrowseDataVersion(initial.map((item, index) => index === 0 ? { ...item, ...change } : item))).not.toBe(version)
+    }
+  })
+
+  it('keys each owner/scope/query independently', () => {
     const base = {
       ownerUserID: 'tm_owner', dataVersion: '5:2:v1', mode: 'map' as const,
-      filters: { city: '杭州' }, sort: 'rating' as const, search: '', viewport: {
-        zoom: 14, center: { latitude: 30.27, longitude: 120.15 },
-        bounds: { north: 30.3, east: 120.2, south: 30.2, west: 120.1 },
-      }, currentLocation: null,
+      filters: { city: '杭州' }, sort: 'rating' as const, search: '', currentLocation: null,
     }
     const visited = mapBrowseSnapshotKey({ ...base, scope: 'visited' })
     const wanted = mapBrowseSnapshotKey({ ...base, scope: 'wantToGo' })
     expect(visited).not.toBe(wanted)
-    expect(mapBrowseCameraFitKey(base.filters, base.search)).toBe(mapBrowseCameraFitKey(base.filters, base.search))
-    expect(mapBrowseCameraFitKey(base.filters, base.search)).not.toContain('visited')
+  })
+
+  it('does not key Restaurant data by viewport, so a pan cannot replace marker identities', () => {
+    const key = mapBrowseSnapshotKey({
+      ownerUserID: 'tm_owner', dataVersion: '5:2:v1', mode: 'map', scope: 'visited',
+      filters: {}, sort: 'recent', search: '', currentLocation: null,
+    })
+    expect(key).not.toContain('bounds')
+    expect(key).not.toContain('viewport')
+  })
+
+  it('keeps full-sheet conditions in cache identity rather than replaying a different scope query', () => {
+    const input = { ownerUserID: 'owner', dataVersion: 'v1', mode: 'map' as const,
+      scope: 'visited' as const, filters: {}, sort: 'recent' as const, search: '', currentLocation: null }
+    const base = mapBrowseSnapshotKey(input)
+    for (const filters of [{ scoreBands: [3] as const }, { diningMode: 'solo' }, { queueDuration: 'unrecorded' },
+      { diningOccasions: ['breakfast'] }, { visitPeriod: 'year' }, { distanceKilometers: 3 },
+      { priceRange: 'under100' }, { recommendationSourceType: 'friend' }]) {
+      expect(mapBrowseSnapshotKey({ ...input, filters: filters as Parameters<typeof mapBrowseSnapshotKey>[0]['filters'] })).not.toBe(base)
+    }
   })
 
   it('reuses unchanged snapshots without unbounded memory growth', () => {

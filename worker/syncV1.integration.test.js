@@ -13,6 +13,21 @@ import { ensureUserProfile, readPublicProfile } from './profileV1'
 import { applyAllMigrations } from './testSupport/migrations.js'
 
 describe('Worker Sync API V1 integration', () => {
+  it('rejects new free dish photos even below quota and preserves Premium-era photos', async () => {
+    const database=makeDatabase();await ensureUser(database,'user-a')
+    await push(database,'user-a',mutation('dish-gate-r','restaurant',appleFixture.id,0,appleFixture))
+    const visit=visitPayload('dish-gate-v',appleFixture.id,'user-a')
+    await push(database,'user-a',mutation('dish-gate-v','visit',visit.id,0,visit))
+    const dish=dishPayload('dish-gate-d',appleFixture.id,visit.id,'user-a')
+    await push(database,'user-a',mutation('dish-gate-d','dish',dish.id,0,dish))
+    const photo=photoPayload('dish-gate-p',appleFixture.id,visit.id,dish.id,'user-a')
+    await expect(pushWithAccess(database,'user-a',{isPremium:false,visitPhotoLimit:2},
+      mutation('dish-gate-free','photo',photo.id,0,photo))).rejects.toMatchObject({status:403})
+    const saved=await pushWithAccess(database,'user-a',{isPremium:true,visitPhotoLimit:20},
+      mutation('dish-gate-paid','photo',photo.id,0,photo))
+    expect(saved.acknowledgements[0].status).toBe('applied')
+    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE id = ?',photo.id).count).toBe(1)
+  })
   it('allows explicit test identities only in a configured Development deployment', async () => {
     const database = makeDatabase()
     const developmentResponse = await worker.fetch(new Request(
@@ -463,17 +478,17 @@ describe('Worker Sync API V1 integration', () => {
       .toMatchObject({ status: 'conflict' })
   })
 
-  it('enforces the Free 3 / Premium 20 Visit-photo policy and custom-avatar entitlement on the server', async () => {
+  it('enforces the Free 2 / Premium 20 Visit-photo policy and custom-avatar entitlement on the server', async () => {
     const database = makeDatabase()
     await ensureUser(database, 'user-a')
     await ensureUserProfile(database, 'user-a')
     await push(database, 'user-a', mutation('premium-policy-r', 'restaurant', appleFixture.id, 0, appleFixture))
     const visit = visitPayload('premium-policy-v', appleFixture.id, 'forged-user')
     await push(database, 'user-a', mutation('premium-policy-v', 'visit', visit.id, 0, visit))
-    const freeAccess = { isPremium: false, visitPhotoLimit: 3 }
+    const freeAccess = { isPremium: false, visitPhotoLimit: 2 }
     const premiumAccess = { isPremium: true, visitPhotoLimit: 20 }
 
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 2; index += 1) {
       const photo = {
         ...photoPayload(`premium-policy-photo-${index}`, appleFixture.id, visit.id, null, 'forged-user'),
         kind: 'visit', sortOrder: index,
@@ -484,19 +499,35 @@ describe('Worker Sync API V1 integration', () => {
       )
       expect(result.acknowledgements[0].status).toBe('applied')
     }
-    const fourth = {
-      ...photoPayload('premium-policy-photo-3', appleFixture.id, visit.id, null, 'forged-user'),
-      kind: 'visit', sortOrder: 3,
+    const third = {
+      ...photoPayload('premium-policy-photo-2', appleFixture.id, visit.id, null, 'forged-user'),
+      kind: 'visit', sortOrder: 2,
     }
     await expect(pushWithAccess(
       database, 'user-a', freeAccess,
-      mutation('premium-policy-photo-3', 'photo', fourth.id, 0, fourth),
+      mutation('premium-policy-photo-2', 'photo', third.id, 0, third),
     )).rejects.toMatchObject({ status: 403 })
-    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE visit_id = ?', visit.id).count).toBe(3)
+    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE visit_id = ?', visit.id).count).toBe(2)
     await expect(pushWithAccess(
       database, 'user-a', premiumAccess,
-      mutation('premium-policy-photo-3-premium', 'photo', fourth.id, 0, fourth),
+      mutation('premium-policy-photo-2-premium', 'photo', third.id, 0, third),
     )).resolves.toMatchObject({ acknowledgements: [expect.objectContaining({ status: 'applied' })] })
+
+    // Downgraded members retain all historical photos and can edit metadata.
+    await expect(pushWithAccess(database, 'user-a', freeAccess,
+      mutation('retained-photo-metadata', 'photo', third.id, 1, { ...third, sortOrder: 0 }),
+    )).resolves.toMatchObject({ acknowledgements: [expect.objectContaining({ status: 'applied' })] })
+    await pushWithAccess(database, 'user-a', freeAccess,
+      mutation('retained-visit-note', 'visit', visit.id, 1, { ...visit, note: 'Unrelated edit' }))
+    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE visit_id = ? AND deleted_at IS NULL', visit.id).count).toBe(3)
+    const otherVisit = visitPayload('quota-other-visit', appleFixture.id, 'forged-user')
+    await push(database, 'user-a', mutation('quota-other-visit', 'visit', otherVisit.id, 0, otherVisit))
+    const moving = { ...photoPayload('quota-moving', appleFixture.id, otherVisit.id, null, 'forged-user'), kind: 'visit' }
+    await pushWithAccess(database, 'user-a', freeAccess, mutation('quota-moving', 'photo', moving.id, 0, moving))
+    await expect(pushWithAccess(database, 'user-a', freeAccess,
+      mutation('quota-moving-rebind', 'photo', moving.id, 1, { ...moving, visitId: visit.id }),
+    )).rejects.toMatchObject({ status: 403 })
+    expect(database.get('SELECT visit_id FROM photos WHERE id = ?', moving.id).visit_id).toBe(otherVisit.id)
 
     const avatar = {
       ...photoPayload('premium-policy-avatar', null, null, null, 'forged-user'),
@@ -516,6 +547,20 @@ describe('Worker Sync API V1 integration', () => {
       database, 'user-a', premiumAccess,
       mutation('premium-policy-avatar-profile-premium', 'profile', 'user-a', 1, profile),
     )).resolves.toMatchObject({ acknowledgements: [expect.objectContaining({ status: 'applied' })] })
+  })
+
+  it('atomically bounds concurrent free photo additions to two', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('quota-race-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = visitPayload('quota-race-v', appleFixture.id, 'forged-user')
+    await push(database, 'user-a', mutation('quota-race-v', 'visit', visit.id, 0, visit))
+    const outcomes = await Promise.allSettled(Array.from({ length: 4 }, (_, index) => {
+      const photo = { ...photoPayload(`quota-race-${index}`, appleFixture.id, visit.id, null, 'forged-user'), kind: 'visit' }
+      return pushWithAccess(database, 'user-a', { isPremium: false, visitPhotoLimit: 2 },
+        mutation(photo.id, 'photo', photo.id, 0, photo))
+    }))
+    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE visit_id = ? AND deleted_at IS NULL', visit.id).count).toBe(2)
+    expect(outcomes.filter(outcome => outcome.status === 'fulfilled' && outcome.value.acknowledgements[0].status === 'applied')).toHaveLength(2)
   })
 
   it('reuses one Restaurant Dish across Visits with idempotent associations and no resurrection', async () => {

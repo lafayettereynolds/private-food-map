@@ -27,7 +27,6 @@ export interface MapBrowseSnapshotKeyInput {
   filters: TasteMapMapFilters
   sort: TasteMapMapSort
   search: string
-  viewport: TasteMapMapViewport | null
   currentLocation: Coordinates | null
 }
 
@@ -74,9 +73,9 @@ export class LatestMapRequestGate {
 }
 
 /**
- * Coalesces the duplicate viewport notifications emitted while a map gesture
- * settles. Querying and re-projecting every intermediate region is expensive,
- * especially when the Native surface is also updating dozens of annotations.
+ * Coalesces duplicate viewport-state notifications emitted while a gesture
+ * settles. Viewport state is retained for camera restoration, but it no longer
+ * keys or re-requests Restaurant data during a pan.
  */
 export class LatestMapViewportCommitScheduler {
   private timeout: ReturnType<typeof setTimeout> | undefined
@@ -101,16 +100,19 @@ export class LatestMapViewportCommitScheduler {
 export function mapBrowseDataVersion(restaurants: RestaurantSummary[]) {
   const newest = restaurants.reduce((value, restaurant) => restaurant.updatedAt > value ? restaurant.updatedAt : value, '')
   const visitCount = restaurants.reduce((value, restaurant) => value + restaurant.visits.length, 0)
-  return `${restaurants.length}:${visitCount}:${newest}`
+  // Imported/accepted snapshots can change city, status or identities without
+  // moving the maximum updatedAt. Keep this independent of viewport geometry.
+  const membership = restaurants.map((restaurant) => [
+    restaurant.id, restaurant.status, restaurant.city, restaurant.deletedAt ?? null,
+    // Each record's revision matters: a future-dated/late-synced peer can keep
+    // the global maximum unchanged after this restaurant's avatar is saved.
+    restaurant.updatedAt, restaurant.markerType, restaurant.markerEmoji, restaurant.markerPhotoId ?? null,
+  ])
+    .sort((left, right) => left[0]!.localeCompare(right[0]!))
+  return `${restaurants.length}:${visitCount}:${newest}:${JSON.stringify(membership)}`
 }
 
 export function mapBrowseSnapshotKey(input: MapBrowseSnapshotKeyInput) {
-  const bounds = input.mode === 'map' && input.viewport ? {
-    north: rounded(input.viewport.bounds.north),
-    east: rounded(input.viewport.bounds.east),
-    south: rounded(input.viewport.bounds.south),
-    west: rounded(input.viewport.bounds.west),
-  } : null
   const location = input.currentLocation ? {
     latitude: rounded(input.currentLocation.latitude),
     longitude: rounded(input.currentLocation.longitude),
@@ -123,20 +125,22 @@ export function mapBrowseSnapshotKey(input: MapBrowseSnapshotKeyInput) {
     filters: orderedFilters(input.filters),
     sort: input.sort,
     search: input.search.trim(),
-    bounds,
     location,
   })
-}
-
-/** Scope is intentionally absent: changing it must never request a camera fit. */
-export function mapBrowseCameraFitKey(filters: TasteMapMapFilters, search: string) {
-  return JSON.stringify({ filters: orderedFilters(filters), search: search.trim() })
 }
 
 function orderedFilters(filters: TasteMapMapFilters) {
   return {
     city: filters.city ?? null,
     minimumScoreOutOfTen: filters.minimumScoreOutOfTen ?? null,
+    scoreBands: filters.scoreBands ? [...filters.scoreBands].sort() : [],
+    diningMode: filters.diningMode ?? null,
+    queueDuration: filters.queueDuration ?? null,
+    diningOccasions: filters.diningOccasions ? [...filters.diningOccasions].sort() : [],
+    visitPeriod: filters.visitPeriod ?? null,
+    distanceKilometers: filters.distanceKilometers ?? null,
+    priceRange: filters.priceRange ?? null,
+    recommendationSourceType: filters.recommendationSourceType ?? null,
     maximumSpend: filters.maximumSpend ?? null,
     minimumVisitCount: filters.minimumVisitCount ?? null,
     companion: filters.companion ?? null,

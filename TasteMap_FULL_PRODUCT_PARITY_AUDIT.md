@@ -13,7 +13,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 1. Map 顶部需要明确留白与标题「我的地图」；标题下使用紧凑的图标式「地图 / 列表」切换。旧结论中“只能使用右下浮动 Map/List 切换”的限制已废止。
 2. Map 的去过 / 想吃 / 适合你状态、筛选结果与 Map/List 必须继续共享同一个 projection；横向 compact chips 保留。
 3. Discovery 标题「发现」居中；关注 / 为你推荐 / 同味之选 / 最新 / 趋势等宽分布；筛选与 Map 使用同源视觉和交互 token。
-4. Profile 身份区展示关注 / 被关注；顶部业务统计改为去过 / 想去 / 总消费。统计必须复用真实 Web 口径对应的数据来源，不允许只替换标题。
+4. Profile 身份区展示关注 / 粉丝；顶部业务统计改为去过 / 想去 / 总消费。统计必须复用真实 Web 口径对应的数据来源，不允许只替换标题。
 5. 自本修订起，每个页面先完成 Step A（Web 功能语义、数据来源、入口与状态审计），再完成 Step B（SwiftUI 布局/交互还原）。功能搬错按 parity bug 修复，不归为视觉差异。
 6. Analytics 是独立完整模块：口味档案、饭搭子、推荐来源、本月回顾、年度回顾及各自竖版分享海报必须恢复已经确认的 Analysis Theme。仅有普通卡片、统计列表或图表不算通过；先检查 Git 历史/现有分支中的既有实现并优先复用，不得凭感觉设计第三套。
 7. 全 App 建立统一 `Food & Dining Visual Language`：Food、Drink、Tableware、Receipt、Menu、Takeaway 与 Generic Dining 使用同一资产/组件系统。Core App 中只作为克制的辅助视觉；Analytics / Poster 中可以更突出。任何视觉必须标明是 Decorative 还是 Data-linked，后者只能来自真实数据。Premium 历史汉堡资产不受该系统覆盖。
@@ -56,7 +56,7 @@ Lafayette 在修复执行期确认了更晚的产品决定。以下决定覆盖�
 1. **Map 顶部产品结构已按最新决定完成重排**：独立居中「我的地图」标题、icon-only Map/List、去过 / 想吃 / 适合你和横向 compact chips 依次成层，仍共享同一 projection。
 2. **List 高信息密度结构已恢复**：标题/数量、搜索、筛选、紧凑餐厅行及三类快捷动作均在同一浏览上下文中，Map/List 状态保持同源。
 3. **Discovery 一级导航及数据语义已恢复正确**：关注 / 为你推荐 / 同味之选 / 最新 / 趋势均为同一级，没有错误的中间层；Activity optional rating 与 Restaurant aggregate rating 已分离，城市/筛选与 Map 共用紧凑交互语言。
-4. **Profile / Public Profile 拓扑和统计语义已经收口**：身份、关注/被关注、去过/想去/总消费、主要入口、回味、食单、洞察与 Settings 恢复为高密度 dashboard；统计继续读取真实 owner-scoped projection。
+4. **Profile / Public Profile 拓扑和统计语义已经收口**：身份、关注/粉丝、去过/想去/总消费、主要入口、回味、食单、洞察与 Settings 恢复为高密度 dashboard；统计继续读取真实 owner-scoped projection。
 5. **Add Restaurant / Nearby 已按 Web 功能语义和紧凑结构恢复**：Search、City、Apple Maps、AMap、URL、Nearby、Manual、WantToGo/Visited 和显式确认保持同一 acquisition flow；fresh-location、精度/时间、3 km 与距离排序有自动化覆盖。真实 GPS provider 结果仍保留一次最终真机 smoke，不以 fixture 冒充硬件验收。
 6. **Restaurant Detail 的 S0 结构问题已经在 Module 5 关闭**：本地 Restaurant 与远程公开 projection 现在共用 `RestaurantDetailStandardBody`，`entrySource` 只表达入口来源，不再决定主体 UI。
 7. **Restaurant Detail 固定顺序已经落地并可测试**：Hero → 城市/状态/名称/地址 → Actions → 人均/电话/营业时间/路线 → 评分参考 → 用户实拍 → 我的到访概览 → 到访历史；无值的 optional 字段不会制造假数据。
@@ -199,7 +199,7 @@ RestaurantDetailView(
 | 1 | Map + Filter + Map/List | 调整 + List重构 | 保持最新 Map topology；补 List header/数量/行快捷动作；收紧 chips；Map/List状态同源 | `Restore Map and List product parity` |
 | 2 | Add Restaurant + Nearby + GPS | 调整 + regression | 压缩 IA；保持 search/link/Nearby/manual顺序；验证 fresh/stale/reduced/3km/distance/foreground | `Restore restaurant acquisition parity` |
 | 3 | Discovery + Community | 功能语义修复 + 调整 | 五个一级 tab；Activity optional rating 与 aggregate rating严格分离；收紧居中 header/统一 filter/card；Community仍在相同一级结构 | `Restore Discovery and Community parity` |
-| 4 | Profile / My + Public Profile + Premium badge | 重构布局 + 历史资产恢复 | compact header；关注/被关注；去过/想去/总消费真实口径；主入口/回味/食单/洞察恢复 Web密度；恢复唯一已认可 Premium hamburger | `Restore Profile product parity` |
+| 4 | Profile / My + Public Profile + Premium badge | 重构布局 + 历史资产恢复 | compact header；关注/粉丝；去过/想去/总消费真实口径；主入口/回味/食单/洞察恢复 Web密度；恢复唯一已认可 Premium hamburger | `Restore Profile product parity` |
 | 5 | Global Restaurant Detail | **核心重构** | local/remote使用同一主体；固定 section contract；entrySource只管导航；全部入口验证 | `Unify global Restaurant Detail` |
 | 6 | Roulette | 历史视觉恢复 + 数据一致性 | 找回已认可 wheel；候选数/segments/selected result一致；均匀随机不偷换；统一详情 | `Restore approved Roulette experience` |
 | 7 | Analytics + Share Posters | **独立完整模块** | 先核对五类 analyzer 的统计口径，再复用已确认 Analysis Theme；动态中心 Food Hero、四周分析、代表餐厅图文、五类统一竖版海报；所有 Data-linked visual 有真实证据 | `Restore Analytics and poster product parity` |

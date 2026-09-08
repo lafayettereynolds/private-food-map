@@ -1,3 +1,7 @@
+import { signupTrialEligibility, claimSignupTrial } from './signupTrialV1'
+import { referralDashboard, qualifyReferral, settlePremiumRewards, settleAllPremiumRewards, revokeReferral } from './referralsV1'
+import { referralLandingPage } from './referralLandingPage'
+import { handlePrivateDirectoryV1, privateDirectoryAvatar } from './privateDirectoryV1'
 import type {
   CloudFriendship,
   CloudPhoto,
@@ -34,7 +38,8 @@ import type {
 import type { RestaurantPlaceIdentity, RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
 import { decodeRestaurantJSONContract, RestaurantContractError } from '../src/contracts/restaurantContract'
 import { readRestaurantSocialStats } from './restaurantStats'
-import { calculateTasteSimilarities } from './tasteSimilarity'
+import { calculateTasteSimilarities, tasteSimilarityForDisplay } from './tasteSimilarity'
+import { recommendationHistoryReasons } from '../src/services/recommendationHistoryReasons'
 import { rankFriendRecommendations } from './friendRecommendation'
 import { rankTasteTags } from '../src/services/tasteProfileCore'
 import {
@@ -74,6 +79,9 @@ import {
   SocialCollaborationV1Error,
 } from './socialCollaborationV1'
 import { handleDiscoveryV1, DiscoveryV1RequestError } from './discoveryV1'
+import { handleRecommendationPreferencesV1, RecommendationPreferencesV1Error } from './recommendationPreferencesV1'
+import { DiscoveryQueryError } from './discoveryHardFilters'
+import { DiscoveryAggregateCapacityError } from './discoveryVisitAggregates'
 import { handleCommunityV1, CommunityV1RequestError } from './communityV1'
 import {
   CommunityInteractionV1Error,
@@ -119,6 +127,7 @@ interface Env {
   SYNC_AUTH_MODE?: 'cloudflare-access' | 'development-test'
   APPLE_CLIENT_IDS?: string
   ADMIN_EMAILS?: string
+  MEMBERSHIP_ADMIN_USER_IDS?: string
   APP_STORE_BUNDLE_ID?: string
   APP_STORE_MONTHLY_PRODUCT_ID?: string
   APP_STORE_YEARLY_PRODUCT_ID?: string
@@ -149,6 +158,7 @@ interface RestaurantRow {
   long_term_note: string
   price_per_person: number | null
   phone: string | null
+  website_url: string | null
   opening_hours: string | null
   marker_type: MarkerType
   marker_photo_id: string | null
@@ -249,7 +259,10 @@ interface UserRow {
 interface MembershipEntitlementRow {
   id: string
   user_id: string
-  source: 'app_store_monthly' | 'app_store_yearly' | 'app_store_lifetime' | 'admin_grant' | 'promo' | 'redeem_code'
+  source: 'app_store_monthly' | 'app_store_annual' | 'gift_annual' | 'gift_lifetime' | 'app_store_subscription'
+  | 'promotion'
+  | 'signup_trial'
+  | 'referral_reward' | 'app_store_yearly' | 'app_store_lifetime' | 'admin_grant' | 'promo' | 'redeem_code'
   starts_at: string
   expires_at: string | null
   is_lifetime: number
@@ -361,9 +374,9 @@ const RESTAURANT_UPSERT = `
   INSERT INTO restaurants (
     id, user_id, amap_poi_id, name, address, city, latitude, longitude, status,
     preference_level, overall_rating, food_rating, environment_rating, service_rating,
-    value_rating, tags_json, long_term_note, price_per_person, phone, opening_hours, marker_type,
+    value_rating, tags_json, long_term_note, price_per_person, phone, website_url, opening_hours, marker_type,
     marker_photo_id, merchant_image_url, marker_emoji, created_at, updated_at, deleted_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     user_id = excluded.user_id,
     amap_poi_id = excluded.amap_poi_id,
@@ -383,6 +396,7 @@ const RESTAURANT_UPSERT = `
     long_term_note = excluded.long_term_note,
     price_per_person = excluded.price_per_person,
     phone = excluded.phone,
+    website_url = excluded.website_url,
     opening_hours = excluded.opening_hours,
     marker_type = excluded.marker_type,
     marker_photo_id = excluded.marker_photo_id,
@@ -610,15 +624,26 @@ const RESTAURANT_LIST_ITEM_UPSERT = `
   WHERE excluded.updated_at > restaurant_list_items.updated_at
 `
 
+import { premiumAdminPage } from './premiumAdminPage'
+
 export default {
+  async scheduled(_controller, env) { await settleAllPremiumRewards(env.DB) },
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
+    // Public liveness probe: never touch authentication, data bindings, or SPA assets.
+    if (url.pathname === '/health' && request.method === 'GET') {
+      return new Response('{"status":"ok"}', {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      })
+    }
+    if (url.pathname.startsWith('/invite/') && request.method==='GET') return referralLandingPage(url.pathname.slice('/invite/'.length))
+    if (url.pathname === '/internal/premium' && request.method === 'GET') return premiumAdminPage()
     if (url.pathname === '/.well-known/apple-app-site-association' && request.method === 'GET') {
       return new Response(JSON.stringify({
         applinks: {
           details: [{
             appIDs: ['7G5J9MJX88.com.lafayette.tastemap'],
-            components: [{ '/': '/share/*', comment: 'Taste Map public sharing' }],
+            components: [{ '/': '/share/*', comment: 'Taste Map public sharing' }, { '/': '/invite/*', comment: 'Taste Map referral registration' }],
           }],
         },
       }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' } })
@@ -627,8 +652,34 @@ export default {
     if (!isSameOriginRequest(request, url)) return json({ error: '不允许跨站访问同步 API。' }, 403)
 
     try {
+      if (url.pathname === '/api/v1/admin/memberships' || url.pathname === '/api/admin/memberships') {
+        // Never accept spoofable Access-email headers or development test identities here.
+        const authenticated = await authenticateAccessToken(request, env.DB)
+        if (!authenticated) throw new RequestError('请使用有效的 Taste Map 管理员登录会话。', 401)
+        const viewer: ViewerIdentity = { id: authenticated.id, email: authenticated.email, authProvider: 'apple', authSubject: null }
+        requireMembershipAdmin(request, env, viewer)
+        if (request.method === 'GET') return json(await searchMembershipUsers(env.DB, url.searchParams.get('q') ?? ''))
+        if (request.method === 'POST') return json(await mutateMembership(env.DB, viewer.id, request))
+        throw new RequestError('不支持这个会员操作。', 405)
+      }
       if (url.pathname.startsWith('/api/v1/auth/')) {
         return json(await handleAuthV1Request(request, env))
+      }
+      if (url.pathname === '/api/v1/referrals') {
+        if (request.method !== 'GET') throw new RequestError('邀请只能在新账号注册时绑定。', 405)
+        const user = await authenticateAccessToken(request, env.DB)
+        if (!user) throw new RequestError('请先登录。',401)
+        return json(await referralDashboard(env.DB,user.id,url.origin))
+      }
+      if (url.pathname === '/api/v1/admin/referrals/revoke') {
+        if (request.method !== 'POST') throw new RequestError('Method not allowed.',405)
+        const user = await authenticateAccessToken(request,env.DB)
+        if (!user) throw new RequestError('请先登录。',401)
+        requireMembershipAdmin(request,env,{id:user.id,email:user.email,authProvider:'apple',authSubject:null})
+        const body = await request.json() as {inviteeID?:string,note?:string}
+        if (typeof body.inviteeID!=='string' || typeof body.note!=='string' || !body.note.trim()) throw new RequestError('需要被邀请人 ID 和撤销原因。',400)
+        await revokeReferral(env.DB,body.inviteeID,user.id,body.note)
+        return json({revoked:true})
       }
       if (url.pathname === '/api/v1/account-deletion/status' ||
           url.pathname === '/api/v1/account-deletion/retry') {
@@ -648,6 +699,19 @@ export default {
       if (url.pathname.startsWith('/api/v1/development/demo-data')) {
         const viewer = await resolveSyncViewer(request, env)
         return json(await handleDevelopmentDemoAdminV1(request, env.DB, viewer.id, env))
+      }
+      if (url.pathname === '/api/v1/me/premium-trial-eligibility' || url.pathname === '/api/v1/me/premium-trial/claim') {
+        const claim = url.pathname.endsWith('/claim')
+        if (request.method !== (claim ? 'POST' : 'GET')) throw new RequestError('Trial method is not supported.', 405)
+        const viewer = await resolveSyncViewer(request, env)
+        if (viewer.testMembership !== undefined) throw new RequestError('请使用正式登录账号领取。', 403)
+        if (!claim) return json(await signupTrialEligibility(env.DB, viewer.id))
+        const body = await request.text()
+        if (body.trim() && body.trim() !== '{}') throw new RequestError('领取接口不接受客户端资格、账号或时间字段。', 400)
+        const trial = await claimSignupTrial(env.DB, viewer.id)
+        if (!trial) throw new RequestError('这个账号已经领取过 7 天 Premium。', 409)
+        return json({ apiVersion: 1, userId: viewer.id, ...trial,
+          membership: membershipSelfResponseV1(viewer.id, await readEffectiveMembership(env.DB, viewer.id)) })
       }
       if (url.pathname === '/api/v1/me/entitlements') {
         if (request.method !== 'GET') throw new RequestError('Membership method is not supported.', 405)
@@ -744,10 +808,12 @@ export default {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
         const membership = await readViewerMembership(env.DB, viewer)
-        return json(await handleSyncV1Push(env.DB, viewer.id, request, {
+        const result = await handleSyncV1Push(env.DB, viewer.id, request, {
           isPremium: membership.isPremium,
-          visitPhotoLimit: membership.isPremium ? 20 : 3,
-        }))
+          visitPhotoLimit: membership.isPremium ? 20 : 2,
+        })
+        await qualifyReferral(env.DB,viewer.id)
+        return json(result)
       }
       if (url.pathname.startsWith('/api/v1/public/profiles/') && request.method === 'GET') {
         const viewer = await resolveSyncViewer(request, env)
@@ -755,6 +821,15 @@ export default {
         await consumePublicAPIQuota(env.DB, viewer.id, 'public-profile-read', 180)
         const profileId = decodeURIComponent(url.pathname.slice('/api/v1/public/profiles/'.length))
         return json(await readPublicProfileV1(env.DB, viewer.id, profileId))
+      }
+      if (url.pathname === '/api/v1/directory' || url.pathname.startsWith('/api/v1/directory/avatar/')) {
+        const viewer = await resolveSyncViewer(request, env)
+        await ensureUserProfile(env.DB, viewer.id)
+        await consumePublicAPIQuota(env.DB, viewer.id, request.method === 'GET' ? 'social-read' : 'social-mutation', 120)
+        if(url.pathname.startsWith('/api/v1/directory/avatar/') && request.method==='GET') {
+          const parts=url.pathname.split('/'); return await privateDirectoryAvatar(env.DB,viewer.id,parts[5],decodeURIComponent(parts.slice(6).join('/')))
+        }
+        return json(await handlePrivateDirectoryV1(request,env.DB,viewer.id))
       }
       if (url.pathname.startsWith('/api/v1/social/')) {
         const viewer = await resolveSyncViewer(request, env)
@@ -787,6 +862,10 @@ export default {
         }
         return json(await handleCommunityV1(request, env.DB, viewer.id))
       }
+      if (url.pathname.startsWith('/api/v1/recommendation-preferences/')) {
+        const viewer = await resolveSyncViewer(request, env)
+        return json(await handleRecommendationPreferencesV1(request, env.DB, viewer.id))
+      }
       if (url.pathname.startsWith('/api/v1/lists/')) {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
@@ -817,6 +896,7 @@ export default {
           userId: viewer.id,
           recommendationSourceUserId: mapUserId(item.recommendationSourceUserId) ?? null,
         })))
+        await qualifyReferral(env.DB,viewer.id)
         await upsertPhotos(env.DB, payload.photos.map((item) => ({ ...item, userId: viewer.id })))
         await upsertUsers(env.DB, payload.users
           .filter((item) => item.id === 'owner' || item.id === viewer.id)
@@ -850,14 +930,6 @@ export default {
       }
       if (url.pathname === '/api/membership' && request.method === 'GET') {
         return json({ entitlement: await readViewerMembership(env.DB, viewer), isAdmin: isMembershipAdmin(request, env, viewer) })
-      }
-      if (url.pathname === '/api/admin/memberships' && request.method === 'GET') {
-        requireMembershipAdmin(request, env, viewer)
-        return json(await searchMembershipUsers(env.DB, url.searchParams.get('q') ?? ''))
-      }
-      if (url.pathname === '/api/admin/memberships' && request.method === 'POST') {
-        requireMembershipAdmin(request, env, viewer)
-        return json(await mutateMembership(env.DB, viewer.id, request))
       }
       if (url.pathname === '/api/follows' && request.method === 'GET') return json(await readFollows(env.DB, viewer.id))
       if (url.pathname === '/api/follows' && request.method === 'POST') {
@@ -905,8 +977,8 @@ export default {
         status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
       })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.status : 500
-      const code = error instanceof AuthV1RequestError || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.code : undefined
+      const status = error instanceof RecommendationPreferencesV1Error || error instanceof DiscoveryQueryError || error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof DiscoveryAggregateCapacityError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.status : 500
+      const code = error instanceof RecommendationPreferencesV1Error || error instanceof DiscoveryQueryError || error instanceof AuthV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof DiscoveryAggregateCapacityError || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
   },
@@ -1185,6 +1257,7 @@ async function upsertRestaurants(database: D1Database, restaurants: CloudRestaur
     restaurant.longTermNote,
     restaurant.pricePerPerson,
     restaurant.phone ?? null,
+    restaurant.websiteUrl ?? null,
     restaurant.openingHours ?? null,
     restaurant.markerType,
     restaurant.markerPhotoId ?? null,
@@ -1718,8 +1791,10 @@ async function ensureDevelopmentSyncUser(database: D1Database, userId: string) {
 }
 
 function isMembershipAdmin(request: Request, env: Env, viewer: ViewerIdentity) {
-  const hostname = new URL(request.url).hostname
-  if ((hostname === 'localhost' || hostname === '127.0.0.1') && viewer.authProvider === 'local') return viewer.testMembership !== 'free'
+  // Internal authority is always server configured; localhost/test identities cannot grant.
+  if (viewer.authProvider === 'local' || viewer.testMembership) return false
+  const ids = (env.MEMBERSHIP_ADMIN_USER_IDS ?? '').split(',').map((item) => item.trim()).filter(Boolean)
+  if (ids.includes(viewer.id)) return true
   if (!viewer.email) return false
   const allowed = (env.ADMIN_EMAILS ?? '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
   return allowed.includes(viewer.email.toLowerCase())
@@ -1729,23 +1804,36 @@ function requireMembershipAdmin(request: Request, env: Env, viewer: ViewerIdenti
   if (!isMembershipAdmin(request, env, viewer)) throw new RequestError('没有会员管理权限。', 403)
 }
 
-async function readEffectiveMembership(database: D1Database, userId: string) {
+export async function readEffectiveMembership(database: D1Database, userId: string) {
+  await settlePremiumRewards(database,userId)
   const result = await database.prepare(`SELECT * FROM membership_entitlements
     WHERE user_id = ? ORDER BY created_at DESC`).bind(userId).all<MembershipEntitlementRow>()
   const entitlements = result.results.map(rowToMembershipEntitlement)
   const now = Date.now()
-  const active = entitlements.filter((item) => item.status === 'active'
+  const active = entitlements.filter((item) => item.status === 'active' && item.revokedAt === null
     && new Date(item.startsAt).getTime() <= now
     && (item.isLifetime || (item.expiresAt !== null && new Date(item.expiresAt).getTime() > now)))
   const primary = [...active].sort((left, right) => {
+    // Gift identity wins display precedence. Access is the union of all active sources.
+    const priority = (source: string) => source === 'gift_lifetime' ? 4 : source === 'gift_annual' ? 3 : source.startsWith('app_store_') ? 2 : 1
+    if (priority(left.source) !== priority(right.source)) return priority(right.source) - priority(left.source)
     if (left.isLifetime !== right.isLifetime) return left.isLifetime ? -1 : 1
-    return (right.expiresAt ? new Date(right.expiresAt).getTime() : 0) - (left.expiresAt ? new Date(left.expiresAt).getTime() : 0)
+    return (right.expiresAt ? new Date(right.expiresAt).getTime() : 0) - (left.expiresAt ? new Date(left.expiresAt).getTime() : 0) || left.id.localeCompare(right.id)
   })[0]
+  // A Gift's displayed end includes only contiguous Reward intervals, never Apple dates.
+  let effectiveExpiry = primary?.expiresAt ?? null
+  if (primary && !primary.isLifetime && !primary.source.startsWith('app_store_') && effectiveExpiry) {
+    for (const reward of entitlements.filter(e=>e.source==='referral_reward' && e.status==='active')
+      .sort((a,b)=>a.startsAt.localeCompare(b.startsAt))) {
+      if (reward.startsAt <= effectiveExpiry && reward.expiresAt && reward.expiresAt > effectiveExpiry) effectiveExpiry = reward.expiresAt
+    }
+  }
   return {
     isPremium: Boolean(primary),
     source: primary?.source ?? null,
     startsAt: primary?.startsAt ?? null,
-    expiresAt: primary?.expiresAt ?? null,
+    startedAt: primary?.startsAt ?? null,
+    expiresAt: effectiveExpiry,
     isLifetime: primary?.isLifetime ?? false,
     entitlements,
   }
@@ -1777,8 +1865,8 @@ async function searchMembershipUsers(database: D1Database, query: string) {
   const keyword = query.trim()
   const result = keyword
     ? await database.prepare(`SELECT * FROM users WHERE deleted_at IS NULL
-        AND (nickname LIKE ? OR COALESCE(email, '') LIKE ? OR city LIKE ?)
-        ORDER BY nickname LIMIT 30`).bind(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`).all<UserRow>()
+        AND (id = ? OR nickname LIKE ? OR COALESCE(email, '') LIKE ? OR city LIKE ?)
+        ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, nickname LIMIT 30`).bind(keyword, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, keyword).all<UserRow>()
     : await database.prepare(`SELECT * FROM users WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 30`).all<UserRow>()
   return {
     users: await Promise.all(result.results.map(async (user) => ({
@@ -1791,17 +1879,19 @@ async function searchMembershipUsers(database: D1Database, query: string) {
   }
 }
 
-async function mutateMembership(database: D1Database, actorUserId: string, request: Request) {
+export async function mutateMembership(database: D1Database, actorUserId: string, request: Request) {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null
   if (!body || typeof body.action !== 'string') throw new RequestError('会员操作格式不正确。', 400)
   const now = new Date()
   const nowIso = now.toISOString()
 
   if (body.action === 'grant') {
+    if (body.source !== undefined && body.source !== 'gift_annual' && body.source !== 'gift_lifetime') throw new RequestError('赠送来源无效。', 400)
     if (typeof body.userId !== 'string') throw new RequestError('请选择要赠送会员的用户。', 400)
     const exists = await database.prepare('SELECT id FROM users WHERE id = ? AND deleted_at IS NULL').bind(body.userId).first()
     if (!exists) throw new RequestError('没有找到这个用户。', 404)
-    const duration = typeof body.duration === 'string' ? body.duration : '1m'
+    const duration = body.source === 'gift_annual' ? '1y' : body.source === 'gift_lifetime' ? 'lifetime' : body.duration
+    if (duration !== '1y' && duration !== 'lifetime') throw new RequestError('只能赠送 Premium 1 年或永久。', 400)
     const expiresAt = membershipExpiry(now, duration, typeof body.expiresAt === 'string' ? body.expiresAt : null)
     const isLifetime = duration === 'lifetime'
     const note = typeof body.note === 'string' ? body.note.slice(0, 160) : ''
@@ -1809,12 +1899,28 @@ async function mutateMembership(database: D1Database, actorUserId: string, reque
     await database.prepare(`INSERT INTO membership_entitlements (
       id, user_id, source, starts_at, expires_at, is_lifetime, status, note, metadata_json,
       created_by_user_id, created_at, updated_at
-    ) VALUES (?, ?, 'admin_grant', ?, ?, ?, 'active', ?, '{}', ?, ?, ?)`)
-      .bind(id, body.userId, nowIso, expiresAt, isLifetime ? 1 : 0, note, actorUserId, nowIso, nowIso).run()
-    const after = await database.prepare('SELECT * FROM membership_entitlements WHERE id = ?').bind(id).first<MembershipEntitlementRow>()
-    await writeMembershipAudit(database, actorUserId, body.userId, 'grant', id, null, after, note)
+    ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, '{}', ?, ?, ?)`)
+      .bind(id, body.userId, isLifetime ? 'gift_lifetime' : 'gift_annual', nowIso, expiresAt, isLifetime ? 1 : 0, note, actorUserId, nowIso, nowIso).run()
     await refreshMembershipTier(database, body.userId)
     return { entitlement: await readEffectiveMembership(database, body.userId) }
+  }
+
+  if (body.action === 'extend' || body.action === 'note') {
+    if (typeof body.entitlementId !== 'string') throw new RequestError('会员权益无效。', 400)
+    const before = await database.prepare(`SELECT * FROM membership_entitlements WHERE id = ? AND source IN ('gift_annual', 'gift_lifetime') AND status = 'active'`)
+      .bind(body.entitlementId).first<MembershipEntitlementRow>()
+    if (!before) throw new RequestError('只能操作未撤销的 Gift。', 404)
+    if (body.action === 'extend' && before.source !== 'gift_annual') throw new RequestError('永久会员无需延长。', 400)
+    const expiresAt = body.action === 'extend'
+      ? membershipExpiry(new Date(Math.max(now.getTime(), Date.parse(before.expires_at!))), '1y', null)
+      : before.expires_at
+    const note = typeof body.note === 'string' ? body.note.slice(0, 160) : before.note
+    const result = await database.prepare(`UPDATE membership_entitlements SET expires_at = ?, note = ?, updated_at = ?, updated_by_user_id = ?
+      WHERE id = ? AND status = 'active' AND updated_at = ? AND expires_at IS ?`)
+      .bind(expiresAt, note, nowIso, actorUserId, before.id, before.updated_at, before.expires_at).run()
+    if (!result.meta.changes) throw new RequestError('权益已被其他操作更新，请刷新后重试。', 409)
+    await refreshMembershipTier(database, before.user_id)
+    return { entitlement: await readEffectiveMembership(database, before.user_id) }
   }
 
   if (body.action === 'update') {
@@ -1835,14 +1941,15 @@ async function mutateMembership(database: D1Database, actorUserId: string, reque
 
   if (body.action === 'revoke') {
     if (typeof body.entitlementId !== 'string') throw new RequestError('会员权益无效。', 400)
-    const before = await database.prepare(`SELECT * FROM membership_entitlements WHERE id = ? AND source = 'admin_grant' AND status = 'active'`)
+    const before = await database.prepare(`SELECT * FROM membership_entitlements WHERE id = ? AND source IN ('gift_annual', 'gift_lifetime', 'admin_grant') AND status = 'active'`)
       .bind(body.entitlementId).first<MembershipEntitlementRow>()
     if (!before) throw new RequestError('只能撤销管理员赠送，真实购买不会受影响。', 404)
     const reason = typeof body.reason === 'string' ? body.reason.slice(0, 160) : ''
-    await database.prepare(`UPDATE membership_entitlements SET status = 'revoked', revoked_at = ?, revoked_by_user_id = ?, updated_at = ? WHERE id = ?`)
-      .bind(nowIso, actorUserId, nowIso, before.id).run()
+    const note = typeof body.note === 'string' && body.note.trim() ? body.note.slice(0, 160) : before.note
+    await database.prepare(`UPDATE membership_entitlements SET status = 'revoked', revoked_at = ?, revoked_by_user_id = ?, updated_at = ?, updated_by_user_id = ?, note = ? WHERE id = ? AND status = 'active'`)
+      .bind(nowIso, actorUserId, nowIso, actorUserId, note, before.id).run()
     const after = await database.prepare('SELECT * FROM membership_entitlements WHERE id = ?').bind(before.id).first<MembershipEntitlementRow>()
-    await writeMembershipAudit(database, actorUserId, before.user_id, 'revoke', before.id, before, after, reason)
+    if (before.source === 'admin_grant') await writeMembershipAudit(database, actorUserId, before.user_id, 'revoke', before.id, before, after, reason)
     await refreshMembershipTier(database, before.user_id)
     return { entitlement: await readEffectiveMembership(database, before.user_id) }
   }
@@ -1860,7 +1967,11 @@ function membershipExpiry(now: Date, duration: string, custom: string | null) {
   const months = ({ '1m': 1, '3m': 3, '6m': 6, '1y': 12 } as Record<string, number>)[duration]
   if (!months) throw new RequestError('会员赠送期限无效。', 400)
   const expires = new Date(now)
+  const day = expires.getUTCDate()
+  expires.setUTCDate(1)
   expires.setUTCMonth(expires.getUTCMonth() + months)
+  const lastDay = new Date(Date.UTC(expires.getUTCFullYear(), expires.getUTCMonth() + 1, 0)).getUTCDate()
+  expires.setUTCDate(Math.min(day, lastDay))
   return expires.toISOString()
 }
 
@@ -1893,6 +2004,9 @@ function rowToMembershipEntitlement(row: MembershipEntitlementRow) {
     userId: row.user_id,
     source: row.source,
     startsAt: row.starts_at,
+    startedAt: row.starts_at,
+    grantedAt: row.created_at,
+    grantedBy: row.created_by_user_id,
     expiresAt: row.expires_at,
     isLifetime: Boolean(row.is_lifetime),
     status: row.status,
@@ -2020,7 +2134,7 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
     const restaurant = restaurants.get(row.restaurant_id)
     return row.rating && restaurant ? [{ userId: row.user_id, poiId: restaurant.amap_poi_id, ratingOutOfTen: Number(row.rating) * 2, tags: parseStringArray(restaurant.tags_json) }] : []
   })
-  const similarityByUser = new Map(calculateTasteSimilarities(signals, viewerId).map((item) => [item.userId, item.similarity]))
+  const similarityByUser = new Map(calculateTasteSimilarities(signals, viewerId).map((item) => [item.userId, item]))
   const viewerVisitedRestaurantIds = new Set(visitRows.filter((row) => row.user_id === viewerId).map((row) => row.restaurant_id))
   const defaultCity = requestedCity.trim() || userRows.get(viewerId)?.city || '杭州市'
   const now = Date.now()
@@ -2034,12 +2148,12 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
       row,
       restaurant,
       user,
-      similarity: similarityByUser.get(row.user_id) ?? null,
+      similarity: tasteSimilarityForDisplay(similarityByUser.get(row.user_id)),
       recommendationReason: null as string | null,
     }]
   })
   const ratedHistoryCount = visitRows.filter((visit) => visit.user_id === viewerId && visit.rating).length
-  const viewerRatedVisits = visitRows.filter((visit) => visit.user_id === viewerId && visit.rating != null)
+  const viewerHistoryVisits = visitRows.filter((visit) => visit.user_id === viewerId)
   const deepRecommendation = isPremium && ratedHistoryCount >= 12
   const publicRatings = aggregatePublicRestaurantRatings(visitRows)
   let selected = candidates
@@ -2050,16 +2164,14 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
   }), defaultCity)
   if (mode === 'similar' && !isPremium) selected = []
   if (mode === 'similar' && isPremium) selected = uniqueCandidatesByRestaurant(candidates
-    .filter((item) => item.similarity !== null && item.similarity >= 0.58 && (!requestedCity || item.restaurant.city === defaultCity))
-    .sort((a, b) => recommendationRank(b, now, defaultCity) - recommendationRank(a, now, defaultCity)))
-  if (mode === 'similar' && isPremium && !selected.length) selected = personalizedCandidates(
-    candidates.filter((item) => !viewerVisitedRestaurantIds.has(item.restaurant.id)),
-    visitRows.flatMap((row) => {
-      const restaurant = restaurants.get(row.restaurant_id)
-      return row.user_id === viewerId && row.rating && restaurant ? [{ restaurant, ratingOutOfTen: Number(row.rating) * 2 }] : []
-    }),
-    defaultCity,
-  ).map((item) => ({ ...item, similarity: null, recommendationReason: '同味样本不足，先按你的个人口味匹配' }))
+    .filter((item) => {
+      const evidence = similarityByUser.get(item.row.user_id)
+      return evidence && evidence.evidenceState !== 'insufficient' && Number(item.row.rating) >= 3.75 &&
+        item.restaurant.city.trim().replace(/市$/, '') === defaultCity.trim().replace(/市$/, '')
+    })
+    .sort((a, b) => Number(b.row.rating) - Number(a.row.rating) ||
+      similarityByUser.get(b.row.user_id)!.weightedSimilarity - similarityByUser.get(a.row.user_id)!.weightedSimilarity || b.row.visited_at.localeCompare(a.row.visited_at))
+    .map(item => ({ ...item, recommendationReason: `与你共同评过${similarityByUser.get(item.row.user_id)!.sharedRestaurantCount}家餐厅，双方对高低分的判断较接近。` })))
   if (mode === 'latest' && requestedCity) selected = candidates.filter((item) => item.restaurant.city === defaultCity)
   if (mode === 'trending') selected = trendingCandidates(candidates, wantsResult.results as Array<{ restaurant_id: string; created_at: string }>, defaultCity, now, trendWindow)
   return {
@@ -2078,10 +2190,10 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
         : null,
     },
     items: selected.slice(0, 160).map(({ row, restaurant, user, similarity, recommendationReason }, index) => {
-      const isExploration = mode === 'for_you' && ((index + 1) % 5 === 0 || Number(row.rating ?? 0) * 2 < 5.5)
       const reasons = mode === 'for_you'
-        ? buildRecommendationReasons(recommendationReason, restaurant, viewerRatedVisits, restaurants, isExploration)
+        ? buildRecommendationReasons(restaurant, viewerHistoryVisits, restaurants, row, now, visitRows.length < 5000)
         : []
+      const isExploration = reasons.some((reason) => reason.code === 'SHORT_TERM_DIVERSITY')
       const primaryLimit = deepRecommendation ? 3 : 1
       const primaryReasons = reasons.slice(0, primaryLimit)
       const primaryTexts = new Set(primaryReasons.map((item) => item.text))
@@ -2090,7 +2202,7 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
         visit: rowToVisit(row),
         restaurant: { id: restaurant.id, amapPoiId: restaurant.amap_poi_id, name: restaurant.name, address: restaurant.address, city: restaurant.city, latitude: restaurant.latitude, longitude: restaurant.longitude, merchantImageUrl: restaurant.merchant_image_url, phone: restaurant.phone, openingHours: restaurant.opening_hours, pricePerPerson: restaurant.price_per_person, tags: parseStringArray(restaurant.tags_json), markerEmoji: restaurant.marker_emoji },
         user, similarity: similarity === null ? null : Math.round(similarity * 100),
-        recommendationReason: primaryReasons[0]?.text ?? null,
+        recommendationReason: primaryReasons[0]?.text ?? recommendationReason,
         recommendationReasons: mode === 'for_you' ? reasons.map((item) => item.text) : undefined,
         primaryReasons: mode === 'for_you' ? primaryReasons : undefined,
         secondaryReasons: mode === 'for_you' ? secondaryReasons : undefined,
@@ -2107,39 +2219,32 @@ async function readCommunity(database: D1Database, viewerId: string, requestedMo
   }
 }
 
-function buildRecommendationReasons(reason: string | null, restaurant: RestaurantRow, viewerVisits: VisitRow[], restaurants: Map<string, RestaurantRow>, exploration: boolean) {
-  const tags = parseStringArray(restaurant.tags_json)
-  const normalizedTags = new Set(tags.map((tag) => tag.trim().toLocaleLowerCase()).filter(Boolean))
-  const relatedVisits = viewerVisits.filter((visit) => {
-    const visitedRestaurant = restaurants.get(visit.restaurant_id)
-    if (!visitedRestaurant) return false
-    return parseStringArray(visitedRestaurant.tags_json).some((tag) => normalizedTags.has(tag.trim().toLocaleLowerCase()))
+function buildRecommendationReasons(restaurant: RestaurantRow, viewerVisits: VisitRow[], restaurants: Map<string, RestaurantRow>, candidateVisit: VisitRow, now: number, completeHistory: boolean) {
+  // This legacy endpoint still caps rows. A truncated prefix cannot establish
+  // complete historical means, repeat counts, or a last-year absence.
+  if (!completeHistory) return []
+  const byPlace = new Map<string, { record: RestaurantRow; visits: VisitRow[] }>()
+  for (const visit of viewerVisits) {
+    const record = restaurants.get(visit.restaurant_id)
+    if (visit.deleted_at != null || !record || record.deleted_at != null) continue
+    const key = record.amap_poi_id?.trim() || record.id
+    const group = byPlace.get(key) ?? { record, visits: [] }
+    group.visits.push(visit); byPlace.set(key, group)
+  }
+  const bill = (visit: VisitRow) => visit.total_price != null && Number.isFinite(visit.total_price) && visit.total_price > 0 && visit.party_size_optional != null && Number.isInteger(visit.party_size_optional) && visit.party_size_optional > 0 ? visit.total_price / visit.party_size_optional : null
+  const history = [...byPlace].map(([canonicalID, { record, visits }]) => {
+    const ratings = visits.flatMap(visit => visit.rating != null && Number.isFinite(Number(visit.rating)) && Number(visit.rating) > 0 && Number(visit.rating) <= 5 ? [Number(visit.rating)] : [])
+    const prices = visits.flatMap(visit => { const value = bill(visit); return value != null ? [value] : [] })
+    const dates = visits.map(visit => visit.visited_at).sort()
+    return { canonicalID, name: record.name, tags: parseStringArray(record.tags_json),
+      pricePerPerson: prices.length ? prices.reduce((sum, value) => sum + value, 0) / prices.length : null, priceReliable: prices.length > 0,
+      firstVisitedAt: dates[0], lastVisitedAt: dates[dates.length - 1],
+      referenceRatingOutOfFive: visits.filter(visit => visit.rating != null && visit.rating >= 4 && visit.rating <= 5).sort((a, b) => b.visited_at.localeCompare(a.visited_at))[0]?.rating ?? null,
+      ratingCount: ratings.length, ratingSumOutOfFive: ratings.reduce((sum, value) => sum + value, 0), visitCount: visits.length }
   })
-  const ratingsByRestaurant = new Map<string, number[]>()
-  relatedVisits.forEach((visit) => ratingsByRestaurant.set(visit.restaurant_id, [...(ratingsByRestaurant.get(visit.restaurant_id) ?? []), Number(visit.rating) * 2]))
-  const relatedRestaurantAverages = [...ratingsByRestaurant.values()].map((ratings) => ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length)
-  const relatedAverage = relatedRestaurantAverages.length ? relatedRestaurantAverages.reduce((sum, rating) => sum + rating, 0) / relatedRestaurantAverages.length : null
-  const tagLabel = tags.slice(0, 2).join('、') || '同类口味'
-  const repeatedRestaurantCount = [...ratingsByRestaurant.values()].filter((ratings) => ratings.length >= 2).length
-  const highRatedPrices = viewerVisits.flatMap((visit) => {
-    if (Number(visit.rating) * 2 < 8) return []
-    const visitedRestaurant = restaurants.get(visit.restaurant_id)
-    const price = Number(visitedRestaurant?.price_per_person ?? 0)
-    return price > 0 ? [price] : []
-  }).sort((left, right) => left - right)
-  const candidatePrice = Number(restaurant.price_per_person ?? 0)
-  const priceLow = highRatedPrices.length ? Math.round(highRatedPrices[Math.floor((highRatedPrices.length - 1) * .2)]) : 0
-  const priceHigh = highRatedPrices.length ? Math.round(highRatedPrices[Math.floor((highRatedPrices.length - 1) * .8)]) : 0
-  const reasons = [
-    reason && /相似\s*\d+%/.test(reason) ? { code: 'HIGH_CUISINE_MATCH', text: reason } : null,
-    relatedAverage !== null ? { code: 'HIGH_CUISINE_MATCH', text: `你过去 ${relatedRestaurantAverages.length} 家${tagLabel}相关餐厅的平均评分为 ${relatedAverage.toFixed(1)}` } : null,
-    repeatedRestaurantCount > 0 ? { code: 'REPEAT_VISIT_PATTERN', text: `${tagLabel}是你会重复到访的类型，${repeatedRestaurantCount} 家同类餐厅曾再次到访` } : null,
-    candidatePrice > 0 && priceLow > 0 && candidatePrice >= priceLow && candidatePrice <= priceHigh
-      ? { code: 'PRICE_RANGE_MATCH', text: `这家人均约 ¥${Math.round(candidatePrice)}，落在你高分餐厅常见的 ¥${priceLow}–${priceHigh} 区间` }
-      : null,
-    exploration && relatedRestaurantAverages.length < 2 ? { code: 'SHORT_TERM_DIVERSITY', text: `这类口味在你的历史记录中较少，适合作为一次探索` } : null,
-  ].filter((item): item is { code: string; text: string } => Boolean(item))
-  return reasons.filter((item, index) => reasons.findIndex((candidate) => candidate.text === item.text) === index).slice(0, 8)
+  const pricePerPerson = bill(candidateVisit)
+  return recommendationHistoryReasons({ tags: parseStringArray(restaurant.tags_json), pricePerPerson, priceReliable: pricePerPerson != null,
+    explorationEligible: candidateVisit.rating != null && candidateVisit.rating >= 4 }, history, { now })
 }
 
 function recommendationFitLevel(index: number, deep: boolean, evidenceCount: number, exploration: boolean) {
@@ -2177,7 +2282,7 @@ function recommendationConfidence(mode: string, similarity: number | null, viewe
 
 function recommendationReasonCodes(mode: string, similarity: number | null, reason: string | null) {
   if (mode === 'trending') return ['TRENDING']
-  if (mode === 'similar') return similarity !== null ? ['SIMILAR_USERS'] : ['TASTE_MATCH', 'COLD_START']
+  if (mode === 'similar') return ['SIMILAR_USERS']
   if (mode === 'for_you') return reason?.includes('初步') ? ['QUALITY', 'COLD_START'] : ['TASTE_MATCH', 'QUALITY']
   return []
 }
@@ -2408,8 +2513,8 @@ async function readFriendRecommendations(database: D1Database, viewerId: string,
       userId: candidate.id,
       mutualFriendCount: [...viewerFriends].filter((friendId) => candidateFriends.has(friendId)).length,
       linkedCompanion: linkedCompanionIds.has(candidate.id),
-      tasteSimilarity: similarity?.similarity ?? null,
-      tasteSignalCount: similarity?.signalCount ?? 0,
+      tasteSimilarity: tasteSimilarityForDisplay(similarity),
+      tasteSignalCount: similarity?.evidenceState === 'sufficient' ? similarity.signalCount : 0,
       sharedRestaurantCount: [...viewerPois].filter((poiId) => candidatePois.has(poiId)).length,
       sameCity: Boolean(viewer.city.trim() && candidate.city.trim() && viewer.city.trim().toLocaleLowerCase() === candidate.city.trim().toLocaleLowerCase()),
     }
@@ -2750,6 +2855,7 @@ function rowToRestaurant(row: RestaurantRow, identities?: RestaurantPlaceIdentit
     longTermNote: row.long_term_note,
     pricePerPerson: row.price_per_person,
     phone: row.phone,
+    websiteUrl: row.website_url,
     openingHours: row.opening_hours,
     markerType: row.marker_type,
     markerPhotoId: row.marker_photo_id,

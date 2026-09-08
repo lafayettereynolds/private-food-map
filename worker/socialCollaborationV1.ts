@@ -486,6 +486,13 @@ function restaurantContract(row: SharedMealRow, identities: PublicContentPlaceId
 }
 
 async function requireAcceptedFriend(database: D1Database, first: string, second: string) {
+  const blocked = await database.prepare(`SELECT 1 FROM user_blocks WHERE deleted_at IS NULL AND
+    ((blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?))`).bind(first,second,second,first).first()
+  if(blocked) throw new SocialCollaborationV1Error('当前关系不允许协作。',403)
+  const mutual = await database.prepare(`SELECT 1 FROM follows a JOIN follows b
+    ON b.follower_id=a.followed_user_id AND b.followed_user_id=a.follower_id
+    WHERE a.follower_id=? AND a.followed_user_id=? AND a.deleted_at IS NULL AND b.deleted_at IS NULL`).bind(first,second).first()
+  if(mutual) return
   const row = await database.prepare(`SELECT id FROM friendships WHERE status = 'accepted'
     AND deleted_at IS NULL AND ((requester_id = ? AND addressee_id = ?)
       OR (requester_id = ? AND addressee_id = ?)) LIMIT 1`).bind(first, second, second, first).first()

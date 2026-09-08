@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { CalendarClock, Users, WalletCards } from 'lucide-react'
+import { CalendarClock, Users } from 'lucide-react'
 import { CompanionPicker } from './CompanionPicker'
 import { DishEditor } from './DishEditor'
 import { ModalShell } from './ModalShell'
@@ -12,7 +12,6 @@ import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddVisitInput } from '../db/restaurants'
 import {
-  calculatePricePerPerson,
   type QueueDuration,
   type RestaurantSummary,
   type StarRating as StarRatingValue,
@@ -21,11 +20,16 @@ import {
 } from '../types/domain'
 import { currentDateAndTime, dateAndTimeFromIso, localDateTimeToIso } from '../utils/date'
 import { splitCompanions } from '../utils/companions'
+import { resolveVisitPaymentEdit, visitPaymentInputAmount } from '../services/visitSpend'
+import { VisitSpendFields } from './VisitSpendFields'
+import { visitPhotoLimit } from '../services/featurePolicy'
+import { assertDishPhotoAccess, assertVisitPhotoAllowance, visitPhotoCount } from '../services/visitPhotoAllowance'
 
 interface AddVisitModalProps {
   companionOptions: string[]
   friendOptions?: Array<{ id: string; nickname: string }>
   initialVisit?: Visit
+  canUploadDishPhotos?: boolean
   maxPhotos?: number
   photoUpgradeAvailable?: boolean
   restaurant: RestaurantSummary
@@ -37,12 +41,12 @@ interface AddVisitModalProps {
   onRemoveNativePhoto?: (photoID: string) => Promise<void>
 }
 
-export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = 20, photoUpgradeAvailable = false, restaurant, onClose, onDelete, onSave, onPickNativePhotos, onCaptureNativePhoto, onRemoveNativePhoto }: AddVisitModalProps) {
+export function AddVisitModal({ companionOptions, friendOptions = [], initialVisit, maxPhotos = visitPhotoLimit('free'), canUploadDishPhotos = false, photoUpgradeAvailable = false, restaurant, onClose, onDelete, onSave, onPickNativePhotos, onCaptureNativePhoto, onRemoveNativePhoto }: AddVisitModalProps) {
   const initialTime = initialVisit ? dateAndTimeFromIso(initialVisit.visitedAt) : currentDateAndTime()
   const [date, setDate] = useState(initialTime.date)
   const [time, setTime] = useState(initialTime.time)
   const [rating, setRating] = useState<StarRatingValue | null>(initialVisit?.rating ?? null)
-  const [price, setPrice] = useState((initialVisit?.paymentMode === 'separate' ? initialVisit.myActualSpend : initialVisit?.totalPrice)?.toString() ?? '')
+  const [totalPrice, setTotalPrice] = useState(initialVisit ? visitPaymentInputAmount(initialVisit)?.toString() ?? '' : '')
   const [companions, setCompanions] = useState(initialVisit?.companions.join('、') ?? '')
   const [partySize, setPartySize] = useState(initialVisit?.partySize?.toString() ?? '1')
   const [queueDuration, setQueueDuration] = useState<QueueDuration>(initialVisit?.queueDuration ?? 'none')
@@ -53,7 +57,6 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
   const [extraFields, setExtraFields] = useState<VisitExtraFieldsValue>(() => initialVisit ? {
     visibility: initialVisit.visibility ?? 'private',
     diningMode: initialVisit.diningMode ?? 'dine_in',
-    myActualSpend: initialVisit.myActualSpend?.toString() ?? '',
     paymentMode: initialVisit.paymentMode ?? null,
     diningOccasions: initialVisit.diningOccasions?.length ? initialVisit.diningOccasions : initialVisit.diningOccasion ? [initialVisit.diningOccasion] : [],
     diningOccasionText: initialVisit.diningOccasionText ?? '',
@@ -121,9 +124,9 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    const numericPrice = price ? Number(price) : null
-    if (numericPrice !== null && (!Number.isFinite(numericPrice) || numericPrice < 0)) {
-      setError(extraFields.paymentMode === 'separate' ? '请输入正确的个人消费金额。' : '请输入正确的消费总价。')
+    const numericTotalPrice = totalPrice ? Number(totalPrice) : null
+    if (numericTotalPrice !== null && (!Number.isFinite(numericTotalPrice) || numericTotalPrice < 0)) {
+      setError('请输入正确的消费金额。')
       return
     }
     const numericPartySize = Number(partySize)
@@ -131,17 +134,18 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
       setError('用餐人数至少为 1 人。')
       return
     }
-    const isSeparatePayment = extraFields.paymentMode === 'separate'
+    const payment = resolveVisitPaymentEdit(numericTotalPrice, extraFields.paymentMode, numericPartySize, initialVisit)
     setSaving(true)
     setError('')
     try {
+      assertDishPhotoAccess({ photos, photoIds, dishes }, canUploadDishPhotos, initialVisit)
+      assertVisitPhotoAllowance({ photos, photoIds, dishes }, maxPhotos, initialVisit)
       await onSave({
         visitedAt: localDateTimeToIso(date, time),
         rating,
         visibility: extraFields.visibility,
         diningMode: extraFields.diningMode,
-        totalPrice: isSeparatePayment ? null : numericPrice,
-        myActualSpend: isSeparatePayment ? numericPrice : null,
+        ...payment,
         paymentMode: extraFields.paymentMode,
         partySize: numericPartySize,
         queueDuration,
@@ -190,7 +194,7 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
         <div className="editor-form sticky-action-form__content">
         <RestaurantSummarySection
           additionalUserPhotos={photos.map((source, index) => ({ source, photoId: photoIds[index] }))}
-          className="is-form-summary"
+          className="is-form-summary is-unframed"
           historyRestaurants={[restaurant]}
           restaurant={restaurant}
         />
@@ -202,17 +206,20 @@ export function AddVisitModal({ companionOptions, friendOptions = [], initialVis
           <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input onChange={(event) => setDate(event.target.value)} required type="date" value={date} /></div></label>
           <label className="field"><span>时间</span><input onChange={(event) => setTime(event.target.value)} required type="time" value={time} /></label>
         </div>
-        <label className="field field-with-leading-icon"><span>{extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）'}</span><div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 193.50" step="0.01" type="number" value={price} /></div>{extraFields.paymentMode !== 'separate' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">{partySize} 人 · 约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}</label>
+        <VisitSpendFields
+          onAmountChange={setTotalPrice}
+          amount={totalPrice}
+        />
         <div className="field-grid party-grid">
           <label className="field field-with-leading-icon"><span>用餐人数</span><div><Users size={16} /><input min="1" onChange={(event) => setPartySize(event.target.value)} required step="1" type="number" value={partySize} /></div></label>
           <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
         </div>
         <QueueDurationPicker onChange={(value) => { setQueueDuration(value); setDirty(true) }} value={queueDuration} />
-        <VisitPhotoPicker maxPhotos={maxPhotos} onCaptureNative={onCaptureNativePhoto ? captureNativePhoto : undefined} onChange={(nextPhotos, nextPhotoIds) => { setPhotos(nextPhotos); setPhotoIds(nextPhotoIds); setDirty(true) }} onPickNative={onPickNativePhotos ? pickNativePhotos : undefined} onRemoveNative={onRemoveNativePhoto ? removeNativePhoto : undefined} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
-        <DishEditor onChange={(value) => { setDishes(value); setDirty(true) }} onPickNativePhoto={onPickNativePhotos ? async () => (await pickNativePhotos(1))[0] ?? null : undefined} onRemoveNativePhoto={onRemoveNativePhoto ? removeNativePhoto : undefined} value={dishes} />
+        <VisitPhotoPicker totalPhotoCount={visitPhotoCount({ photos, photoIds, dishes })} maxPhotos={maxPhotos} onCaptureNative={onCaptureNativePhoto ? captureNativePhoto : undefined} onChange={(nextPhotos, nextPhotoIds) => { assertVisitPhotoAllowance({ photos: nextPhotos, photoIds: nextPhotoIds, dishes }, maxPhotos, initialVisit); setPhotos(nextPhotos); setPhotoIds(nextPhotoIds); setDirty(true) }} onPickNative={onPickNativePhotos ? pickNativePhotos : undefined} onRemoveNative={onRemoveNativePhoto ? removeNativePhoto : undefined} photoIds={photoIds} upgradeAvailable={photoUpgradeAvailable} value={photos} />
+        <DishEditor canUploadPhotos={canUploadDishPhotos} validatePhotoChange={(nextDishes) => assertVisitPhotoAllowance({ photos, photoIds, dishes: nextDishes }, maxPhotos, initialVisit)} onChange={(value) => { setDishes(value); setDirty(true) }} onPickNativePhoto={onPickNativePhotos ? async () => (await pickNativePhotos(1))[0] ?? null : undefined} onRemoveNativePhoto={onRemoveNativePhoto ? removeNativePhoto : undefined} value={dishes} />
         <VisitExtraFields friendOptions={friendOptions} onChange={(value) => { setExtraFields(value); setDirty(true) }} section="details" value={extraFields} />
         {initialVisit && onDelete ? <button className="danger-ghost-button visit-delete-action" disabled={saving} onClick={() => {
-          if (!window.confirm('删除这次到访记录？这不会删除餐厅。')) return
+              if (!window.confirm('删除这次到访记录？其余到访会保留；如果这是最后一次到访，这家餐厅也会一起删除，并从地图和统计中移除。')) return
           setSaving(true)
           setError('')
           void onDelete().catch((reason) => {

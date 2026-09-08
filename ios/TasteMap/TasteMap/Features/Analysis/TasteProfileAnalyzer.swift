@@ -57,7 +57,7 @@ enum TasteProfileAnalyzer {
         let activeRestaurants = input.restaurants.filter { $0.deletedAt == nil }
         let restaurantByID = Dictionary(uniqueKeysWithValues: activeRestaurants.map { ($0.id, $0) })
         let activeVisits = input.visits
-            .filter { $0.deletedAt == nil && restaurantByID[$0.restaurantID] != nil }
+            .filter { $0.deletedAt == nil && $0.visitedAt <= now && restaurantByID[$0.restaurantID] != nil }
             .sorted { lhs, rhs in
                 lhs.visitedAt == rhs.visitedAt ? lhs.id.uuidString < rhs.id.uuidString : lhs.visitedAt < rhs.visitedAt
             }
@@ -197,7 +197,11 @@ enum TasteProfileAnalyzer {
             insights: insights,
             restaurants: representatives,
             dataNote: "只分析你本机已同步的个人记录；nil 评分与 nil 消费不会当作 0。\(diningTime.timeZoneNotice)",
-            footer: "Taste Map · 记录每一次真实的味觉记忆"
+            footer: "Taste Map · 记录每一次真实的味觉记忆",
+            recentComparison: AnalysisStatisticsDefinitions.recentComparison(
+                in: activeVisits, now: now, calendar: calendar,
+                visitedAt: \.visitedAt, restaurantID: \.restaurantID, rating: \.rating
+            )
         )
     }
 
@@ -227,9 +231,13 @@ enum TasteProfileAnalyzer {
             let repeatVisits = value.restaurantIDs.reduce(0) { partial, id in
                 partial + max(0, (visitsByRestaurant[id]?.count ?? 0) - 1)
             }
-            let averageRating = average(value.ratings)
-            let highShare = share(value.ratings.filter { $0 >= 4 }.count, value.ratings.count)
-            let ratingReliability = min(1, Double(value.ratings.count) / 3)
+            let representativeRatings = AnalysisStatisticsDefinitions.representativeRatings(
+                in: value.restaurantIDs.flatMap { visitsByRestaurant[$0] ?? [] },
+                restaurantID: \.restaurantID, rating: \.rating
+            )
+            let averageRating = average(representativeRatings)
+            let highShare = share(representativeRatings.filter { $0 >= 4 }.count, representativeRatings.count)
+            let ratingReliability = min(1, Double(representativeRatings.count) / 3)
             let ratingScore = ((averageRating ?? 0) * 2 * 0.48 + highShare * 3) * ratingReliability
             let frequencyScore = log2(Double(visits) + 1) * 1.15
             let repeatScore = log2(Double(repeatVisits) + 1) * 0.75
@@ -244,7 +252,9 @@ enum TasteProfileAnalyzer {
                 restaurantCount: value.restaurantIDs.count,
                 repeatVisitCount: repeatVisits,
                 averageRating: averageRating,
-                ratedVisitCount: value.ratings.count
+                ratedVisitCount: value.ratings.count,
+                ratedRestaurantCount: representativeRatings.count,
+                observedSpanDays: value.latestVisit.timeIntervalSince(value.restaurantIDs.flatMap { visitsByRestaurant[$0] ?? [] }.map(\.visitedAt).min() ?? value.latestVisit) / 86_400
             )
         }
         .sorted { lhs, rhs in
@@ -764,8 +774,8 @@ enum TasteProfileAnalyzer {
         sufficiency: AnalysisDataSufficiency
     ) -> String {
         guard sufficiency != .insufficient else { return "口味正在形成" }
-        if let cuisine, cuisine.visitCount >= 2 {
-            return sufficiency == .established
+        if let cuisine, cuisine.ratedRestaurantCount >= 5 {
+            return cuisine.ratedRestaurantCount >= 10 && cuisine.observedSpanDays >= 30
                 ? "最稳定偏爱 \(cuisine.label)"
                 : "\(cuisine.label)正在成为偏爱"
         }

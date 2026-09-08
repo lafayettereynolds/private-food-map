@@ -194,6 +194,7 @@ async function deleteD1Data(database: D1Database, job: JobRow, now: Date) {
   }
 
   const statements = [
+    database.prepare('DELETE FROM recommendation_preference_events WHERE user_id = ?').bind(userID),
     database.prepare(`UPDATE public_share_links SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE owner_user_id = ?`).bind(timestamp, timestamp, userID),
     database.prepare(`UPDATE content_likes SET deleted_at = COALESCE(deleted_at, ?), updated_at = ?, server_version = server_version + CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END WHERE user_id = ?`).bind(timestamp, timestamp, userID),
     database.prepare(`UPDATE content_comments SET body = '[deleted]', deleted_at = COALESCE(deleted_at, ?), updated_at = ?, server_version = server_version + CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END WHERE user_id = ?`).bind(timestamp, timestamp, userID),

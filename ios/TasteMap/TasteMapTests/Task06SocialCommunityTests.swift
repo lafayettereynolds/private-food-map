@@ -98,7 +98,8 @@ private actor Task06AuthAPI: AuthAPI {
     func challenge() async throws -> AuthChallengeV1 { throw AuthClientError.invalidResponse }
     func exchangeAppleToken(
         identityToken: String, state: String, nonce: String,
-        givenName: String?, familyName: String?
+        givenName: String?, familyName: String?,
+        referralCode: String?
     ) async throws -> AuthSessionResponseV1 { throw AuthClientError.invalidResponse }
     func refresh(refreshToken: String) async throws -> AuthSessionResponseV1 { throw AuthClientError.invalidResponse }
     func logout(accessToken: String?, refreshToken: String) async throws {}

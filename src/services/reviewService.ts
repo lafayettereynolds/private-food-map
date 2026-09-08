@@ -1,4 +1,5 @@
 import type { RestaurantSummary, Visit } from '../types/domain'
+import { resolveVisitActualSpend } from './visitSpend'
 
 export type ReviewPhoto = {
   source: string | null
@@ -107,9 +108,7 @@ function rating10(visit: Visit) {
 }
 
 function visitSpend(visit: Visit) {
-  return typeof visit.myActualSpend === 'number' && Number.isFinite(visit.myActualSpend) && visit.myActualSpend >= 0
-    ? visit.myActualSpend
-    : null
+  return resolveVisitActualSpend(visit)
 }
 
 function restaurantPhoto(restaurant: RestaurantSummary | undefined): ReviewPhoto {

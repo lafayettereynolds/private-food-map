@@ -6,6 +6,13 @@ nonisolated enum PremiumEntitlementContract {
 
 nonisolated enum PremiumEntitlementSource: String, Codable, CaseIterable, Sendable {
     case appStoreMonthly = "app_store_monthly"
+    case appStoreAnnual = "app_store_annual"
+    case giftAnnual = "gift_annual"
+    case giftLifetime = "gift_lifetime"
+    case appStoreSubscription = "app_store_subscription"
+    case promotion = "promotion"
+    case signupTrial = "signup_trial"
+    case referralReward = "referral_reward"
     case appStoreYearly = "app_store_yearly"
     case appStoreLifetime = "app_store_lifetime"
     case adminGrant = "admin_grant"
@@ -14,7 +21,7 @@ nonisolated enum PremiumEntitlementSource: String, Codable, CaseIterable, Sendab
     case development
 
     var isAppStoreSubscription: Bool {
-        self == .appStoreMonthly || self == .appStoreYearly
+        self == .appStoreSubscription || self == .appStoreMonthly || self == .appStoreYearly || self == .appStoreAnnual
     }
 }
 
@@ -72,6 +79,16 @@ nonisolated struct PremiumEntitlementSnapshot: Codable, Equatable, Sendable {
         let startsAt = try Self.optionalDate(response.entitlement.startsAt)
         let expiresAt = try Self.optionalDate(response.entitlement.expiresAt)
         let updatedAt = try Self.optionalDate(response.entitlement.updatedAt)
+        if response.entitlement.source == .giftLifetime {
+            guard response.entitlement.kind == .lifetime, expiresAt == nil, startsAt != nil else {
+                throw PremiumEntitlementContractError.invalidResponse
+            }
+        }
+        if response.entitlement.source == .giftAnnual || response.entitlement.source == .referralReward || response.entitlement.source == .signupTrial {
+            guard response.entitlement.kind == .fixedTerm, let startsAt, let expiresAt, expiresAt > startsAt else {
+                throw PremiumEntitlementContractError.invalidResponse
+            }
+        }
         guard response.entitlement.isPremium == response.entitlement.state.isAccessActive,
               response.entitlement.isLifetime == (response.entitlement.kind == .lifetime),
               !response.entitlement.isLifetime || expiresAt == nil,
@@ -114,9 +131,20 @@ nonisolated struct PremiumEntitlementSnapshot: Codable, Equatable, Sendable {
 
     func isUsable(at date: Date) -> Bool {
         guard isPremium else { return false }
+        guard startsAt.map({ $0 <= date }) ?? true else { return false }
         if isLifetime { return true }
         guard let expiresAt else { return state == .gracePeriod }
         return expiresAt > date || state == .gracePeriod
+    }
+
+    var giftStatusText: String? {
+        if source == .giftLifetime { return "永久会员 · 由 Taste Map 赠送" }
+        guard source == .giftAnnual || source == .referralReward || source == .signupTrial, let expiresAt else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy年MM月dd日"
+        return "\(source == .signupTrial ? "新用户 7 天体验" : source == .referralReward ? "邀请奖励" : "赠送会员") · 有效期至 \(formatter.string(from: expiresAt))"
     }
 
     private static func optionalDate(_ value: String?) throws -> Date? {
@@ -125,7 +153,7 @@ nonisolated struct PremiumEntitlementSnapshot: Codable, Equatable, Sendable {
         return date
     }
 
-    private static func date(_ value: String) -> Date? {
+    static func date(_ value: String) -> Date? {
         ISO8601DateFormatter.premiumFractional.date(from: value)
             ?? ISO8601DateFormatter().date(from: value)
     }
@@ -145,4 +173,20 @@ nonisolated private extension ISO8601DateFormatter {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+}
+
+nonisolated struct PremiumTrialEligibility: Codable, Sendable {
+    let apiVersion: Int
+    let userId: String
+    let eligible: Bool
+    let trialDays: Int
+}
+
+nonisolated struct PremiumTrialClaim: Codable, Sendable {
+    let apiVersion: Int
+    let userId: String
+    let isPremium: Bool
+    let source: String
+    let expiresAt: String
+    let membership: PremiumEntitlementResponseV1
 }

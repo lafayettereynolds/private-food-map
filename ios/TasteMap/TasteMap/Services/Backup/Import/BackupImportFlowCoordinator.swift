@@ -324,6 +324,14 @@ final class BackupImportFlowCoordinator {
                     currentUserID: currentUserIDAtConfirmation
                 )
                 state = .completed
+                // Import commits in a disposable ModelContext. Long-lived
+                // Hybrid read services otherwise keep their pre-import DTO
+                // snapshots until the next app launch.
+                NotificationCenter.default.post(
+                    name: .tasteMapLocalDataDidChange,
+                    object: nil,
+                    userInfo: ["reason": "backupImported"]
+                )
             } catch BackupImportPlanningError.planStale {
                 state = .planStale
             } catch BackupImportPlanningError.userChanged {

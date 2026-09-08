@@ -58,43 +58,53 @@ struct ProfileView: View {
     private var statistics: ProfileBasicStatistics {
         ProfileBasicStatistics(restaurants: activeRestaurants, visits: activeVisits)
     }
+    private var tasteFootprintCount: Int {
+        activeVisits.count + RestaurantVisitStatePolicy.partition(
+            restaurants: activeRestaurants,
+            visits: activeVisits
+        ).wantToGo.count
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    ProfileIdentityCard(
-                        profile: activeProfile,
-                        avatarPhoto: avatarPhoto,
-                        isSignedIn: authenticatedUser != nil,
-                        shareEntityID: activeProfile?.visibility == .public ? authenticatedUser?.id : nil,
-                        membershipStatus: premiumEntitlementService.membershipStatus,
-                        socialStatistics: socialStatistics,
-                        onEdit: { isEditingProfile = true },
-                        onSignIn: { Task { await signIn() } },
-                        onPremium: { premiumEntitlementService.openPaywall(from: .profile) },
-                        onFollowing: { socialHubSection = .follows },
-                        onFollowers: { socialHubSection = .follows },
-                        onDiscover: { socialHubSection = .search },
-                        onSettings: { isShowingSettings = true }
-                    )
-                    if isRunningAuthOperation {
-                        ProgressView()
-                            .accessibilityLabel("正在处理账户操作")
-                    }
-                    if let authMessage {
-                        Text(authMessage)
-                            .font(.footnote)
-                            .foregroundStyle(authMessage.hasPrefix("失败") ? .red : .secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if authenticatedUser != nil {
+                    ProfileSummaryTemplate(showsStatistics: authenticatedUser != nil) {
+                        ProfileIdentityCard(
+                            profile: activeProfile,
+                            avatarPhoto: avatarPhoto,
+                            isSignedIn: authenticatedUser != nil,
+                            shareEntityID: activeProfile?.visibility == .public ? authenticatedUser?.id : nil,
+                            membershipStatus: premiumEntitlementService.membershipStatus,
+                            socialStatistics: socialStatistics,
+                            onEdit: { isEditingProfile = true },
+                            onSignIn: { Task { await signIn() } },
+                            onPremium: { premiumEntitlementService.openPaywall(from: .profile) },
+                            onFollowing: { socialHubSection = .following },
+                            onFollowers: { socialHubSection = .followers },
+                            onDiscover: { socialHubSection = .recommendations },
+                            onSettings: { isShowingSettings = true }
+                        )
+                        if isRunningAuthOperation {
+                            ProgressView()
+                                .accessibilityLabel("正在处理账户操作")
+                        }
+                        if let authMessage {
+                            Text(authMessage)
+                                .font(.footnote)
+                                .foregroundStyle(authMessage.hasPrefix("失败") ? .red : .secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    } statistics: {
                         ProfileStatisticsSection(
                             statistics: statistics,
                             onVisited: { browseDestination = .visited },
                             onWantToGo: { browseDestination = .wantToGo }
                         )
+                    } actions: {
                         primaryActions
+                    }
+                    if authenticatedUser != nil {
                         memoriesSection
                         listsSection
                         insightsSection
@@ -303,8 +313,8 @@ struct ProfileView: View {
             Button { browseDestination = .footprints } label: {
                 ProfileCompactRow(
                     emoji: "🗺️",
-                    title: "查看到访时间线",
-                    detail: statistics.visitCount == 0 ? "从第一次到访开始记录" : "\(statistics.visitCount) 次独立到访"
+                    title: "查看味觉时间线",
+                    detail: tasteFootprintCount == 0 ? "从第一次到访或收藏开始记录" : "\(tasteFootprintCount) 条味觉操作"
                 )
             }
             .buttonStyle(.plain)
@@ -524,12 +534,16 @@ struct ProfileBasicStatistics: Equatable {
         let activeVisits = visits.filter {
             $0.deletedAt == nil && activeRestaurantIDs.contains($0.restaurantId)
         }
-        visitedRestaurantCount = activeRestaurants.filter { $0.status == .visited }.count
-        wantToGoRestaurantCount = activeRestaurants.filter { $0.status == .wantToGo }.count
+        let statusPartition = RestaurantVisitStatePolicy.partition(
+            restaurants: activeRestaurants,
+            visits: activeVisits
+        )
+        visitedRestaurantCount = statusPartition.visited.count
+        wantToGoRestaurantCount = statusPartition.wantToGo.count
         visitCount = activeVisits.count
         let ratings = activeVisits.compactMap(\.rating)
         averageRating = ratings.isEmpty ? nil : ratings.reduce(0, +) / Double(ratings.count)
-        let spend = activeVisits.compactMap(\.myActualSpend)
+        let spend = activeVisits.compactMap(\.resolvedActualSpend)
         totalSpend = spend.isEmpty ? nil : spend.reduce(Decimal.zero, +)
     }
 
@@ -585,7 +599,9 @@ private struct ProfileIdentityCard: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, isSignedIn ? TasteMapDesignTokens.ProfileSummary.statisticInset : 12)
         .background(
             LinearGradient(
                 colors: [TasteMapCoreTheme.brandSoft, TasteMapCoreTheme.surface],
@@ -663,10 +679,14 @@ private struct ProfileIdentityCard: View {
                 .accessibilityLabel(didCopyUserID ? "用户 ID 已复制" : "复制用户 ID")
                 .accessibilityValue("ID \(TasteMapPublicUserID.numeric(from: profile.tasteMapUserID))")
                 .accessibilityIdentifier("profile-user-id")
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 16) { connectionButtons }
-                    VStack(spacing: 4) { connectionButtons }
-                }
+                ProfileConnectionMetrics(
+                    followingCount: socialStatistics.followingCount,
+                    followerCount: socialStatistics.followerCount,
+                    isLoading: false,
+                    identifierPrefix: "profile",
+                    onFollowing: onFollowing,
+                    onFollowers: onFollowers
+                )
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { profileMetadata(profile) }
                     VStack(alignment: .center, spacing: 5) { profileMetadata(profile) }
@@ -674,9 +694,11 @@ private struct ProfileIdentityCard: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { profileActions }
-                    VStack(alignment: .center, spacing: 8) { profileActions }
+                if membershipStatus == .free || membershipStatus == .expired || shareEntityID != nil {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) { profileActions }
+                        VStack(alignment: .center, spacing: 8) { profileActions }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -716,10 +738,6 @@ private struct ProfileIdentityCard: View {
 
     @ViewBuilder
     private var profileActions: some View {
-        Button("编辑资料", action: onEdit)
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .accessibilityIdentifier("profile-edit-button")
         if membershipStatus == .free || membershipStatus == .expired {
             Button("Premium", action: onPremium)
                 .buttonStyle(.borderedProminent)
@@ -736,37 +754,104 @@ private struct ProfileIdentityCard: View {
         }
     }
 
+}
+
+/// Shared compact social identity metadata for both the owner Profile and a
+/// public Profile. Public counts are genuinely remote, so the component keeps
+/// loading and unavailable states distinct instead of inventing zeroes or
+/// rendering ambiguous dashes.
+struct ProfileConnectionMetrics: View {
+    let followingCount: Int?
+    let followerCount: Int?
+    let isLoading: Bool
+    let identifierPrefix: String
+    var onFollowing: (() -> Void)?
+    var onFollowers: (() -> Void)?
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { metrics }
+            VStack(spacing: 4) { metrics }
+        }
+    }
+
     @ViewBuilder
-    private var connectionButtons: some View {
-        connectionMetric(
-            "关注", value: socialStatistics.followingCount,
-            systemImage: "person.2",
-            identifier: "profile-following-stat", action: onFollowing
+    private var metrics: some View {
+        metric(
+            "关注", value: followingCount, systemImage: "person.2",
+            identifier: "\(identifierPrefix)-following-stat", action: onFollowing
         )
-        connectionMetric(
-            "粉丝", value: socialStatistics.followerCount,
-            systemImage: "person.2.fill",
-            identifier: "profile-followers-stat", action: onFollowers
+        metric(
+            "粉丝", value: followerCount, systemImage: "person.2.fill",
+            identifier: "\(identifierPrefix)-followers-stat", action: onFollowers
         )
     }
 
-    private func connectionMetric(
+    @ViewBuilder
+    private func metric(
         _ title: String,
-        value: Int,
+        value: Int?,
         systemImage: String,
         identifier: String,
-        action: @escaping () -> Void
+        action: (() -> Void)?
     ) -> some View {
-        Button(action: action) {
-            Label("\(value) \(title)", systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(TasteMapCoreTheme.brandDeep)
-                .lineLimit(1)
+        if let action {
+            Button(action: action) {
+                metricLabel(title, value: value, systemImage: systemImage)
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 36)
+            .accessibilityLabel(accessibilityLabel(title, value: value, isAction: true))
+            .accessibilityIdentifier(identifier)
+        } else {
+            metricLabel(title, value: value, systemImage: systemImage)
+                .frame(minHeight: 36)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilityLabel(title, value: value, isAction: false))
+                .accessibilityIdentifier(identifier)
         }
-        .buttonStyle(.plain)
-        .frame(minHeight: 36)
-        .accessibilityLabel("\(title) \(value)，查看")
-        .accessibilityIdentifier(identifier)
+    }
+
+    private func metricLabel(_ title: String, value: Int?, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            if let value {
+                Text("\(value) \(title)")
+                    .monospacedDigit()
+            } else if isLoading {
+                ProgressView().controlSize(.mini)
+                Text(title)
+            } else {
+                Text("\(title)暂不可用")
+            }
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(TasteMapCoreTheme.brandDeep)
+        .lineLimit(1)
+    }
+
+    private func accessibilityLabel(_ title: String, value: Int?, isAction: Bool) -> String {
+        if let value { return "\(title) \(value)\(isAction ? "，查看" : "")" }
+        return isLoading ? "\(title)数据正在加载" : "\(title)数据暂时无法加载"
+    }
+}
+
+/// The owner Profile and its previews share one compact summary rhythm.
+/// Other Dashboard sections keep their existing independent spacing.
+private struct ProfileSummaryTemplate<Header: View, Statistics: View, Actions: View>: View {
+    let showsStatistics: Bool
+    @ViewBuilder let header: Header
+    @ViewBuilder let statistics: Statistics
+    @ViewBuilder let actions: Actions
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: TasteMapDesignTokens.Spacing.content) { header }
+            if showsStatistics {
+                statistics.padding(.top, TasteMapDesignTokens.ProfileSummary.identityGap)
+                actions.padding(.top, TasteMapDesignTokens.ProfileSummary.nextGap)
+            }
+        }
     }
 }
 
@@ -784,7 +869,7 @@ private struct ProfileStatisticsSection: View {
                 HStack(spacing: 0) { statisticsContent(vertical: false) }
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, TasteMapDesignTokens.ProfileSummary.statisticInset)
         .tasteMapCoreCard(radius: 18)
     }
 
@@ -801,7 +886,7 @@ private struct ProfileStatisticsSection: View {
             divider(vertical: vertical)
             Button(action: onWantToGo) {
                 statistic(
-                    "想去", value: "\(statistics.wantToGoRestaurantCount)",
+                    RestaurantStatus.wantToGo.title, value: "\(statistics.wantToGoRestaurantCount)",
                     systemImage: "bookmark.fill"
                 )
             }
@@ -838,7 +923,7 @@ private struct ProfileStatisticsSection: View {
             }
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, minHeight: 42)
+        .frame(maxWidth: .infinity, minHeight: TasteMapDesignTokens.ProfileSummary.statisticMinimumHeight)
     }
 
     nonisolated private static func currencyString(_ value: Decimal) -> String {
@@ -897,10 +982,6 @@ private struct ProfileDashboardTile: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
         .padding(.horizontal, 11)
@@ -971,6 +1052,22 @@ private struct ProfileCompactRow: View {
     }
 }
 
+enum ProfileEditorDestination: String, Identifiable, CaseIterable {
+    case all, displayName, visibility
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: "编辑资料"
+        case .displayName: "修改显示名称"
+        case .visibility: "主页可见范围"
+        }
+    }
+
+    var editsIdentity: Bool { self == .all || self == .displayName }
+    var editsVisibility: Bool { self == .all || self == .visibility }
+}
+
 struct ProfileEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -978,6 +1075,8 @@ struct ProfileEditorSheet: View {
     @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
     let profile: UserProfile
     let avatarPhoto: PhotoAsset?
+    let destination: ProfileEditorDestination
+    @FocusState private var isNameFocused: Bool
     @State private var displayName: String
     @State private var city: String
     @State private var selectedPreset: ProfileAvatarPreset
@@ -988,9 +1087,10 @@ struct ProfileEditorSheet: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    init(profile: UserProfile, avatarPhoto: PhotoAsset?) {
+    init(profile: UserProfile, avatarPhoto: PhotoAsset?, destination: ProfileEditorDestination = .all) {
         self.profile = profile
         self.avatarPhoto = avatarPhoto
+        self.destination = destination
         _displayName = State(initialValue: profile.displayName)
         _city = State(initialValue: profile.city)
         _selectedPreset = State(initialValue: profile.avatarPreset)
@@ -1001,7 +1101,8 @@ struct ProfileEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("头像") {
+                if destination == .all {
+                  Section("头像") {
                     HStack {
                         Spacer()
                         editorAvatar.frame(width: 104, height: 104).clipShape(Circle())
@@ -1056,15 +1157,22 @@ struct ProfileEditorSheet: View {
                         .padding(.vertical, 4)
                     }
                     .scrollIndicators(.hidden)
+                  }
                 }
-                Section("个人资料") {
+                if destination.editsIdentity {
+                  Section("个人资料") {
                     TextField("显示名称", text: $displayName)
                         .textInputAutocapitalization(.words)
+                        .focused($isNameFocused)
                         .accessibilityIdentifier("profile-display-name")
-                    TextField("城市（可选）", text: $city)
-                        .accessibilityIdentifier("profile-city")
+                    if destination == .all {
+                        TextField("城市（可选）", text: $city)
+                            .accessibilityIdentifier("profile-city")
+                    }
+                  }
                 }
-                Section("个人主页可见范围") {
+                if destination.editsVisibility {
+                  Section("个人主页可见范围") {
                     TasteMapSegmentedControl(
                         selection: $visibility,
                         items: ProfileVisibility.allCases.map {
@@ -1075,16 +1183,20 @@ struct ProfileEditorSheet: View {
                     Text("公开资料只包含头像、显示名称、城市和基于公开到访计算的统计。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                  }
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(.red).font(.footnote) }
                 }
             }
-            .navigationTitle("编辑资料")
+            .disabled(isSaving)
+            .navigationTitle(destination.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    TasteMapReturnButton { dismiss() }
+                        .disabled(isSaving)
+                        .accessibilityIdentifier("profile-back-button")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") { Task { await save() } }
@@ -1093,11 +1205,13 @@ struct ProfileEditorSheet: View {
                 }
             }
             .overlay { if isSaving { ProgressView().controlSize(.large) } }
+            .task { isNameFocused = destination == .displayName }
             .task(id: pickerItem) {
                 selectedImageData = try? await pickerItem?.loadTransferable(type: Data.self)
                 if selectedImageData != nil { avatarPhotoID = nil }
             }
         }
+        .interactiveDismissDisabled(isSaving)
     }
 
     @ViewBuilder
@@ -1113,6 +1227,7 @@ struct ProfileEditorSheet: View {
 
     @MainActor
     private func save() async {
+        guard !isSaving else { return }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
@@ -1134,12 +1249,12 @@ struct ProfileEditorSheet: View {
             }
             try LocalUserProfileStore(context: modelContext).update(
                 profile,
-                displayName: displayName,
+                displayName: destination.editsIdentity ? displayName : profile.displayName,
                 bio: profile.bio,
-                city: city,
-                avatarPhotoID: newAvatarPhotoID,
-                avatarPreset: selectedPreset,
-                visibility: visibility
+                city: destination == .all ? city : profile.city,
+                avatarPhotoID: destination == .all ? newAvatarPhotoID : profile.avatarPhotoID,
+                avatarPreset: destination == .all ? selectedPreset : profile.avatarPreset,
+                visibility: destination.editsVisibility ? visibility : profile.visibility
             )
             photoTransferCoordinator?.resumePendingTransfers()
             dismiss()
@@ -1159,31 +1274,35 @@ private struct ProfilePreviewScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                ProfileIdentityCard(
-                    profile: profile,
-                    avatarPhoto: photo,
-                    isSignedIn: true,
-                    shareEntityID: profile.tasteMapUserID,
-                    membershipStatus: .free,
-                    socialStatistics: .init(friendCount: 8, followingCount: 18, followerCount: 9),
-                    onEdit: {},
-                    onSignIn: {},
-                    onPremium: {},
-                    onFollowing: {},
-                    onFollowers: {},
-                    onDiscover: {},
-                    onSettings: {}
-                )
-                ProfileStatisticsSection(
-                    statistics: statistics,
-                    onVisited: {},
-                    onWantToGo: {}
-                )
-                ProfileCompactRow(
-                    emoji: "🗺️",
-                    title: "查看到访时间线",
-                    detail: "\(statistics.visitCount) 次独立到访"
-                )
+                ProfileSummaryTemplate(showsStatistics: true) {
+                    ProfileIdentityCard(
+                        profile: profile,
+                        avatarPhoto: photo,
+                        isSignedIn: true,
+                        shareEntityID: profile.tasteMapUserID,
+                        membershipStatus: .free,
+                        socialStatistics: .init(friendCount: 8, followingCount: 18, followerCount: 9),
+                        onEdit: {},
+                        onSignIn: {},
+                        onPremium: {},
+                        onFollowing: {},
+                        onFollowers: {},
+                        onDiscover: {},
+                        onSettings: {}
+                    )
+                } statistics: {
+                    ProfileStatisticsSection(
+                        statistics: statistics,
+                        onVisited: {},
+                        onWantToGo: {}
+                    )
+                } actions: {
+                    ProfileCompactRow(
+                        emoji: "🗺️",
+                        title: "查看到访时间线",
+                        detail: "\(statistics.visitCount) 次独立到访"
+                    )
+                }
                 SyncStatusView(presentation: sync)
                     .padding(18)
                     .tasteMapCoreCard(radius: 20)

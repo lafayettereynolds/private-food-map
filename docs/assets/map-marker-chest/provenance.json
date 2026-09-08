@@ -1,0 +1,23 @@
+{
+  "source": "original.png",
+  "sourceSHA256": "791e0d5383504e54247bb099269b7779cb4a32e9f50bf4be3ba643442bbb3a44",
+  "algorithm": "4-connected exterior exact RGB(255,255,255) alpha removal; lossless crop; no resize",
+  "sourceSize": [
+    173,
+    137
+  ],
+  "cropBox": [
+    54,
+    34,
+    116,
+    96
+  ],
+  "outputSize": [
+    62,
+    62
+  ],
+  "removedBackgroundPixels": 20105,
+  "unchangedVisiblePixels": 3596,
+  "visibleRGBChanges": 0,
+  "outputSHA256": "081811cf56788cedb7d83c98be677ecf694a87770340c6b1bdd55af6e530213a"
+}

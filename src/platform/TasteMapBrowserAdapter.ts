@@ -1,12 +1,22 @@
 import { db } from '../db/appDb'
+import { browserPrivateDirectory } from '../services/privateDirectoryBrowser'
+import { MembershipService } from '../services/membershipService'
+import { membershipStatusPresentation } from '../services/membershipPresentation'
 import { CURRENT_USER_ID, ensureCurrentUser } from '../db/social'
 import { buildRestaurantSummaries } from '../services/restaurantSummaryProjection'
+import { restaurantCityComparisonKey, restaurantCityFilterOptions } from '../services/restaurantCity'
 import { addVisit, deleteRestaurant, deleteVisit, updateRestaurantBasics, updateVisit, type AddVisitInput } from '../db/restaurants'
 import type { RestaurantListCollection, RestaurantListItem } from '../types/domain'
 import type { RestaurantSummary } from '../types/domain'
 import { resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
+import { restaurantAvatarSelection } from '../services/restaurantAvatarSelection'
 import { fetchRestaurantSocialStats } from '../services/restaurantStats'
 import type { RestaurantSocialStats } from '../types/restaurantStats'
+import { listCoordinate, listRating, validatedListShareURL } from './restaurantListProjection'
+import { requestRestaurantListAPI, type PublicListPage } from '../services/restaurantListApi'
+import { CLOUD_SYNC_ENABLED } from '../config/appEnvironment'
+import { BrowserRecommendationPreferenceSync } from '../services/browserRecommendationPreferenceSync'
+import { browserRecommendationPreferenceStore } from '../db/recommendationPreferences'
 import {
   TASTE_MAP_NATIVE_BRIDGE_VERSION,
   capabilityUnavailable,
@@ -14,6 +24,7 @@ import {
   type TasteMapCommunityCommentDTO,
   type TasteMapCommunityEngagementDTO,
   type TasteMapHybridActivityInteractionDTO,
+  type TasteMapHybridEvent,
   type TasteMapAcquisitionCandidateDTO,
   type TasteMapAcquisitionResultsDTO,
   type TasteMapImageDescriptor,
@@ -36,10 +47,11 @@ export interface TasteMapBrowserDataSource {
 class IndexedDBTasteMapDataSource implements TasteMapBrowserDataSource {
   async profile(): Promise<TasteMapProfileDashboardViewModel> {
     const user = await ensureCurrentUser()
-    const [restaurants, visits, follows] = await Promise.all([
+    const [restaurants, visits, follows, companions] = await Promise.all([
       db.restaurants.filter((item) => !item.deletedAt && item.userId === CURRENT_USER_ID).toArray(),
       db.visits.filter((item) => !item.deletedAt && item.userId === CURRENT_USER_ID).toArray(),
       db.follows.toArray(),
+      db.diningCompanions.where('ownerUserId').equals(CURRENT_USER_ID).toArray().catch(() => null),
     ])
     const summaries = buildRestaurantSummaries(restaurants, visits)
     return {
@@ -49,6 +61,13 @@ class IndexedDBTasteMapDataSource implements TasteMapBrowserDataSource {
       followingCount: follows.filter((item) => item.followerId === CURRENT_USER_ID).length,
       followerCount: follows.filter((item) => item.followedUserId === CURRENT_USER_ID).length,
       restaurantImages: Object.fromEntries(summaries.map((restaurant) => [restaurant.id, browserImageDescriptor(restaurant)])),
+      analyticsIdentity: {
+        ownerUserID: user.id, recordOwnerID: CURRENT_USER_ID,
+        companions: companions?.map((item) => ({ id: item.id, ownerUserID: user.id, displayName: item.displayName,
+          identifiers: [item.id], updatedAt: item.updatedAt, deletedAt: item.deletedAt })) ?? null,
+        // Browser v1 has no formal RecommendationSource directory/Visit source-ID association.
+        sources: null, visitSourceLinks: null,
+      },
     }
   }
 }
@@ -61,6 +80,10 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
   restaurantAcquisition: true,
   mapBrowse: true,
   contentRead: true,
+  listsRead: true,
+  listShare: true,
+  discoveryPage: false,
+  recommendationPreferences: true,
   communityInteraction: true,
   restaurantViewerState: true,
   visitContract: true,
@@ -77,13 +100,36 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
 }
 
 export class TasteMapBrowserAdapter implements TasteMapPlatform {
+  directory = browserPrivateDirectory()
+  referrals = { dashboard: async (): Promise<import('../contracts/referralsV1').ReferralDashboardV1> => {
+    const response = await fetch('/api/v1/referrals', {credentials:'same-origin',cache:'no-store'})
+    if (!response.ok) throw new TasteMapPlatformError('请在 iPhone App 登录后查看邀请奖励。','auth_required',true)
+    return response.json()
+  } }
   readonly kind = 'browser' as const
   private profilePromise: Promise<TasteMapProfileDashboardViewModel> | null = null
+  private preferenceOwner: string | null = null
+  private eventSequence = 0
+  private readonly eventListeners = new Set<(event: TasteMapHybridEvent) => void>()
   private readonly acquisitionCandidates = new Map<string, TasteMapAcquisitionCandidateDTO>()
+  private acquisitionGPS: { coordinates: { latitude: number; longitude: number }; city: string; acquiredAt: number } | null = null
+  private acquisitionNearbyGeneration = 0
+  private acquisitionOwner: string | null = null
   private readonly engagement = new Map<string, TasteMapCommunityEngagementDTO>()
   private readonly commentsByVisit = new Map<string, TasteMapCommunityCommentDTO[]>()
+  private listSessionRevision = 0
+  private readonly listGenerations = new Map<string, number>()
+  private readonly listPages = new Map<string, { owner: string; id: string; cursor: string; updatedAt: string; generation: number; expiresAt: number }>()
+  private readonly preferenceSync: BrowserRecommendationPreferenceSync
+  private disconnectPreferenceLifecycle: (() => void) | null = null
 
-  constructor(private readonly dataSource: TasteMapBrowserDataSource = new IndexedDBTasteMapDataSource()) {}
+  constructor(private readonly dataSource: TasteMapBrowserDataSource = new IndexedDBTasteMapDataSource(), preferenceSync?: BrowserRecommendationPreferenceSync) {
+    this.preferenceSync = preferenceSync ?? new BrowserRecommendationPreferenceSync(browserRecommendationPreferenceStore, requestRestaurantListAPI, ownerID => {
+      if (ownerID !== this.preferenceOwner) return
+      const event: TasteMapHybridEvent = { version: 1, sequence: ++this.eventSequence, name: 'data.changed', payload: { reason: 'syncCompleted' } }
+      this.eventListeners.forEach(listener => listener(event))
+    }, () => CLOUD_SYNC_ENABLED)
+  }
 
   runtime = {
     info: async (): Promise<TasteMapRuntimeInfo> => ({
@@ -107,7 +153,57 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     logout: async () => capabilityUnavailable('logout'),
   }
 
-  profile = { getCurrent: () => this.loadProfile() }
+  profile = { getCurrent: () => this.loadProfile(true) }
+
+  recommendations = {
+    preference: async (restaurantID?: string) => {
+      const requestOwner = this.acquisitionOwner
+      const requestRevision = this.listSessionRevision
+      const requestProfile = this.loadProfile()
+      const profile = await requestProfile
+      const groups = profile.restaurants.map(item => [item.id,
+        ...(item.placeIdentities ?? []).map(identity => `${identity.provider}:${identity.externalId}`)])
+      const restaurant = profile.restaurants.find((_, index) => groups[index].some(id => id.toLowerCase() === restaurantID?.toLowerCase()))
+      // Browser recommendations currently originate from this owner snapshot or
+      // the explicitly gated QA fixture. Never accept caller-supplied categories.
+      const fixture = restaurantID && !restaurant ? await this.loadDebugFixture() : null
+      const candidate = restaurant ?? (fixture?.profile.user.id === profile.user.id ? fixture.content.discovery.forYou.find(item => item.restaurant.id === restaurantID)?.restaurant : undefined)
+      if (requestProfile !== this.profilePromise || requestRevision !== this.listSessionRevision || (requestOwner !== null && profile.user.id !== requestOwner)) {
+        throw new TasteMapPlatformError('账户已切换，请在当前账户重试。', 'account_changed', true)
+      }
+      if (restaurantID && !candidate) throw new TasteMapPlatformError('餐厅推荐已失效，请刷新后重试。', 'candidate_not_found', true)
+      const aliases = restaurant ? groups[profile.restaurants.indexOf(restaurant)] : restaurantID ? [restaurantID] : []
+      if (requestProfile === this.profilePromise) this.preferenceOwner = profile.user.id
+      this.preferenceSync.setOwner(profile.user.id)
+      return this.preferenceSync.preference(profile.user.id, localStorage, groups,
+        restaurantID && candidate ? { aliases, metadata: candidate } : undefined,
+        () => requestProfile === this.profilePromise && requestRevision === this.listSessionRevision)
+    },
+  }
+
+  /** The Browser host already observes owner-scoped IndexedDB data. Accept that
+   * snapshot once per data change; viewport/pan reads must not requery the DB. */
+  acceptProfileSnapshot(profile: Omit<TasteMapProfileDashboardViewModel, 'restaurantImages'>) {
+    const previousOwner = this.acquisitionOwner ?? this.preferenceOwner
+    const ownerChanged = previousOwner !== null && previousOwner !== profile.user.id
+    if (ownerChanged) {
+      ++this.listSessionRevision
+      this.listPages.clear()
+      ++this.acquisitionNearbyGeneration
+      this.acquisitionCandidates.clear()
+      this.acquisitionGPS = null
+    }
+    this.acquisitionOwner = profile.user.id
+    if (ownerChanged) this.preferenceSync.setOwner(profile.user.id)
+    this.profilePromise = Promise.resolve({
+      ...profile,
+      restaurantImages: Object.fromEntries(profile.restaurants.map((restaurant) => [restaurant.id, browserImageDescriptor(restaurant)])),
+    })
+    if (ownerChanged) {
+      const event: TasteMapHybridEvent = { version: 1, sequence: ++this.eventSequence, name: 'auth.changed', payload: { state: 'authenticated', userID: profile.user.id, displayName: profile.user.nickname } }
+      this.eventListeners.forEach(listener => listener(event))
+    }
+  }
 
   restaurant = {
     get: async (id: string) => {
@@ -172,43 +268,78 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       this.profilePromise = null
       return { restaurantID, viewerState: 'want_to_go' as const, updatedAt: new Date().toISOString() }
     },
+    setAvatar: async () => capabilityUnavailable('restaurantRead'),
   }
 
   acquisition = {
-    search: async (query: string, city: string): Promise<TasteMapAcquisitionResultsDTO> => {
-      const { mapService } = await import('../services/mapService')
+    search: async (query: string, city: string, options: import('./TasteMapPlatform').TasteMapAcquisitionSearchOptions = {}): Promise<TasteMapAcquisitionResultsDTO> => {
+      const { mapService, rankRestaurantSearchMatches } = await import('../services/mapService')
       if (!mapService.isConfigured) {
         const fixture = await this.loadDebugFixture()
         if (fixture) {
-          const candidates = debugAcquisitionPOIs(city || '杭州')
-            .filter((value) => !query.trim() || `${value.name} ${value.address}`.toLocaleLowerCase('zh-CN').includes(query.trim().toLocaleLowerCase('zh-CN')))
+          const candidates = rankRestaurantSearchMatches(debugAcquisitionPOIs(city || '杭州'), query)
             .map((value) => this.cacheBrowserCandidate(value, null, fixture.profile))
           return { candidates, location: null, message: candidates.length ? null : '没有找到匹配的餐厅。', sharedImportFingerprint: null }
         }
         return { candidates: [], location: null, message: '地图服务尚未配置，仍可手动添加。', sharedImportFingerprint: null }
       }
       const profile = await this.loadProfile()
-      const candidates = (await mapService.searchRestaurantPois(query, city)).map((value) => this.cacheBrowserCandidate(value, null, profile))
-      return { candidates, location: null, message: candidates.length ? null : '没有找到匹配的餐厅。', sharedImportFingerprint: null }
+      const page = Number(options.cursor ?? '1')
+      if (!Number.isInteger(page) || page < 1 || page > 20) throw new TasteMapPlatformError('搜索已过期，请重新搜索。', 'invalid_search_cursor')
+      const { resolveRestaurantSearchLocation } = await import('../services/restaurantSearchLocation')
+      const gps = await resolveRestaurantSearchLocation(this.acquisitionGPS, async () => {
+        const coordinates = await mapService.detectCurrentCoordinates()
+        const acquiredAt = Date.now()
+        const locationContext = await mapService.resolveCoordinatesLocation(coordinates).catch(() => null)
+        return { coordinates, city: locationContext?.city ?? '', acquiredAt }
+      })
+      if (gps) this.acquisitionGPS = gps
+      const center = gps && (!city.trim() || city.trim().replace(/市$/, '') === gps.city.replace(/市$/, '')) ? gps.coordinates : undefined
+      const batches = await Promise.all([
+        mapService.searchRestaurantPois(query, city, { page }),
+        center ? mapService.searchRestaurantPois(query, city, { page, center, radiusMeters: 3_000 }).catch(() => []) : [],
+      ])
+      const values = batches.flat().filter((item, index, all) => all.findIndex((other) => other.amapPoiId === item.amapPoiId) === index)
+      const candidates = values.map((value) => this.cacheBrowserCandidate(value, center ? distanceBetween(center, value) : null, profile))
+      if (center) candidates.sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity))
+      return { candidates, location: null, nextCursor: batches.some((batch) => batch.length >= 15) && page < 20 ? String(page + 1) : null, message: candidates.length ? null : '没有找到匹配的餐厅。', sharedImportFingerprint: null }
     },
     nearby: async (): Promise<TasteMapAcquisitionResultsDTO> => {
+      const generation = ++this.acquisitionNearbyGeneration
       const { mapService } = await import('../services/mapService')
       if (!mapService.isConfigured) {
         const fixture = await this.loadDebugFixture()
         if (fixture) {
           const candidates = debugAcquisitionPOIs('杭州').map((value, index) =>
             this.cacheBrowserCandidate(value, 180 + index * 260, fixture.profile))
-          return { candidates, location: null, message: null, sharedImportFingerprint: null }
+          return { candidates, location: null, detectedCity: '杭州', message: null, sharedImportFingerprint: null }
         }
         return { candidates: [], location: null, message: '地图服务尚未配置，搜索和手动添加仍可使用。', sharedImportFingerprint: null }
       }
       const profile = await this.loadProfile()
+      const owner = profile.user.id
+      this.acquisitionOwner ??= owner
+      const ensureCurrent = async () => {
+        const currentProfile = await this.loadProfile()
+        if (generation !== this.acquisitionNearbyGeneration || currentProfile.user.id !== owner) {
+          throw new TasteMapPlatformError('附近结果已更新，请重新查找。', 'nearby_request_superseded', true)
+        }
+      }
+      await ensureCurrent()
       const coordinates = await mapService.detectCurrentCoordinates()
-      const values = await mapService.searchNearbyRestaurantPois(coordinates, undefined, { radiusMeters: 3_000 })
-      const candidates = values.map((value) => this.cacheBrowserCandidate(value, distanceBetween(coordinates, value), profile))
+      await ensureCurrent()
+      const acquiredAt = Date.now()
+      const [values, locationContext] = await Promise.all([
+        mapService.searchNearbyRestaurantPois(coordinates, undefined, { radiusMeters: 3_000 }),
+        mapService.resolveCoordinatesLocation(coordinates).catch(() => null),
+      ])
+      await ensureCurrent()
+      this.acquisitionGPS = { coordinates, city: locationContext?.city ?? '', acquiredAt }
+      const candidates = values.filter((value, index, all) => all.findIndex((other) => other.amapPoiId === value.amapPoiId) === index)
+        .map((value) => this.cacheBrowserCandidate(value, distanceBetween(coordinates, value), profile))
         .filter((value) => (value.distanceMeters ?? Number.POSITIVE_INFINITY) <= 3_000)
         .sort((left, right) => (left.distanceMeters ?? Number.POSITIVE_INFINITY) - (right.distanceMeters ?? Number.POSITIVE_INFINITY))
-      return { candidates, location: null, message: candidates.length ? null : '3 公里内没有找到餐厅。', sharedImportFingerprint: null }
+      return { candidates, location: null, detectedCity: locationContext?.city ?? null, message: candidates.length ? null : '3 公里内没有找到餐厅。', sharedImportFingerprint: null }
     },
     shared: async (): Promise<TasteMapAcquisitionResultsDTO> => ({ candidates: [], location: null, message: '浏览器请使用系统分享或正式网页导入入口。', sharedImportFingerprint: null }),
     manual: async (draft: import('./TasteMapPlatform').TasteMapManualRestaurantDraftDTO): Promise<TasteMapAcquisitionResultsDTO> => {
@@ -224,6 +355,7 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
         district: '',
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
+        categoryHints: [],
         merchantImageUrl: null,
         phone: null,
         openingHours: null,
@@ -240,6 +372,9 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
 
   map = {
     viewport: async (request: TasteMapMapBrowseRequest): Promise<TasteMapMapBrowseResponse> => {
+      if (request.filters.companion || request.filters.recommendationSource || request.filters.recommendationSourceType) {
+        if ((await this.premium.status()).state !== 'premium') throw new TasteMapPlatformError('推荐来源和饭搭子筛选需要 Premium。', 'premium_filters_required')
+      }
       const debugFixture = await this.loadDebugFixture()
       const profile = debugFixture?.profile ?? await this.loadProfile()
       return projectBrowserMapViewport(profile, request, Boolean(debugFixture))
@@ -247,17 +382,113 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     updateNativeSurface: async () => capabilityUnavailable('mapBrowse'),
   }
 
+  // The browser's legacy local social mutations are not an authoritative page
+  // producer. Fail closed until real page authentication AND interactions exist.
+  discovery = {
+    cityPage: async (_request: import('./TasteMapPlatform').TasteMapDiscoveryCityPageRequest): Promise<import('./TasteMapPlatform').TasteMapDiscoveryCityPageDTO> => {
+      throw new TasteMapPlatformError('当前浏览器尚未连接真实城市发现查询，请使用已更新的 App。', 'capability_unavailable')
+    },
+    page: async (_request: import('./TasteMapPlatform').TasteMapDiscoveryPageRequest): Promise<import('./TasteMapPlatform').TasteMapDiscoveryPageDTO> => {
+      throw new TasteMapPlatformError('Server-scoped Discovery pages are not connected in this browser runtime.', 'capability_unavailable')
+    },
+  }
+
   content = {
-    snapshot: async () => {
+    snapshot: async (options: import('./TasteMapPlatform').TasteMapContentSnapshotOptions = {}) => {
       const debugFixture = await this.loadDebugFixture()
       if (debugFixture) return applyDebugViewerStates(debugFixture.content)
       const [profile, lists, listItems] = await Promise.all([
-        this.loadProfile(),
+        this.loadProfile(options.forceRefresh === true),
         db.restaurantLists.filter((value) => !value.deletedAt && value.userId === CURRENT_USER_ID).toArray(),
         db.restaurantListItems.filter((value) => !value.deletedAt).toArray(),
       ])
       return browserContentSnapshot(profile, lists, listItems)
     },
+  }
+
+  lists = {
+    get: async (request: import('./TasteMapPlatform').TasteMapListGetRequest): Promise<import('./TasteMapPlatform').TasteMapListPageDTO> => {
+      this.validateListID(request.id)
+      const profile = await this.loadProfile(true)
+      const owner = profile.user.id
+      const session = this.listSessionRevision
+      const continuation = request.cursor ? this.listPages.get(request.cursor) : undefined
+      if (request.cursor) {
+        this.listPages.delete(request.cursor)
+        if (!continuation || continuation.id !== request.id || continuation.owner !== owner
+          || continuation.expiresAt < Date.now() || continuation.generation !== this.listGenerations.get(request.id)) {
+          throw new TasteMapPlatformError('食单分页已失效，请重新读取。', 'list_cursor_expired', true)
+        }
+      } else {
+        this.listGenerations.set(request.id, (this.listGenerations.get(request.id) ?? 0) + 1)
+        for (const [token, page] of this.listPages) {
+          if (page.id === request.id || page.expiresAt < Date.now()) this.listPages.delete(token)
+        }
+      }
+      const generation = this.listGenerations.get(request.id)
+      const assertCurrent = async () => {
+        if (session !== this.listSessionRevision || (await this.loadProfile()).user.id !== owner
+          || this.listGenerations.get(request.id) !== generation) {
+          throw new TasteMapPlatformError('账户或食单已变化，请重新读取。', 'list_request_superseded', true)
+        }
+      }
+      const fixture = await this.loadDebugFixture()
+      const fixtureList = fixture?.content.lists.find(value => value.id === request.id)
+      if (fixtureList && !request.cursor) {
+        await assertCurrent()
+        return { list: fixtureList, nextCursor: null, generatedAt: fixture!.content.generatedAt }
+      }
+      const own = await db.restaurantLists.get(request.id)
+      if (own?.userId === CURRENT_USER_ID && own.deletedAt) {
+        throw new TasteMapPlatformError('这份食单已删除。', 'list_unavailable', true)
+      }
+      if (own?.userId === CURRENT_USER_ID && !own.deletedAt && !request.cursor) {
+        const items = await db.restaurantListItems.where('listId').equals(own.id).filter(value => !value.deletedAt).toArray()
+        await assertCurrent()
+        return { list: browserContentSnapshot(profile, [own], items).lists[0], nextCursor: null, generatedAt: new Date().toISOString() }
+      }
+      const query = new URLSearchParams({ limit: '50', ...(continuation ? { cursor: continuation.cursor } : {}) })
+      const page = await requestRestaurantListAPI<PublicListPage>(`/api/v1/lists/${encodeURIComponent(request.id)}?${query}`)
+      await assertCurrent()
+      if (page.apiVersion !== 1 || page.list?.id !== request.id || !Array.isArray(page.items)
+        || !Number.isInteger(page.list.restaurantCount) || page.list.restaurantCount < 0) {
+        throw new TasteMapPlatformError('食单服务返回的数据无效。', 'invalid_list_response', true)
+      }
+      if (continuation && continuation.updatedAt !== page.list.updatedAt) {
+        throw new TasteMapPlatformError('食单已更新，请重新读取后继续。', 'list_changed', true)
+      }
+      if (continuation && page.nextCursor === continuation.cursor) {
+        throw new TasteMapPlatformError('食单服务返回了重复分页，请重新读取。', 'invalid_list_response', true)
+      }
+      const nextCursor = page.nextCursor ? crypto.randomUUID() : null
+      if (nextCursor) this.listPages.set(nextCursor, {
+        owner, id: request.id, cursor: page.nextCursor!, updatedAt: page.list.updatedAt,
+        generation: generation!, expiresAt: Date.now() + 300_000,
+      })
+      return { list: browserPublicListProjection(page, profile), nextCursor, generatedAt: page.generatedAt }
+    },
+    createShareLink: async (id: string) => {
+      this.validateListID(id)
+      const owner = (await this.loadProfile()).user.id
+      const session = this.listSessionRevision
+      const list = await db.restaurantLists.get(id)
+      if (!list || list.deletedAt || list.userId !== CURRENT_USER_ID) {
+        throw new TasteMapPlatformError('只能为自己的公开食单生成分享链接。', 'list_share_not_owned', true)
+      }
+      if (list.visibility !== 'public') throw new TasteMapPlatformError('这份食单尚未公开；不会自动修改可见范围。', 'list_share_not_public', true)
+      const result = await requestRestaurantListAPI<{ apiVersion: number; entityType: string; url: string }>('/api/v1/public-shares', { entityType: 'list', entityId: id })
+      const latest = await db.restaurantLists.get(id)
+      if (session !== this.listSessionRevision || (await this.loadProfile()).user.id !== owner
+        || !latest || latest.deletedAt || latest.visibility !== 'public' || latest.userId !== CURRENT_USER_ID) {
+        throw new TasteMapPlatformError('账户或食单已变化，请重新生成链接。', 'list_share_superseded', true)
+      }
+      if (result.apiVersion !== 1 || result.entityType !== 'list') throw new TasteMapPlatformError('分享服务返回的数据无效。', 'invalid_list_share', true)
+      return { url: validatedListShareURL(result.url) }
+    },
+  }
+
+  private validateListID(id: string) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new TasteMapPlatformError('食单标识无效。', 'invalid_list_id')
   }
 
   community = {
@@ -301,6 +532,15 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     contract: async () => ({ version: 1 as const, writeUIReady: true as const }),
     save: async (request: import('./TasteMapPlatform').TasteMapVisitWriteRequest) => {
       const input = browserVisitInput(request.draft)
+      const existing = request.visitID ? await db.visits.get(request.visitID) : undefined
+      const material = request.browserPhotoMaterial
+      input.photos = material?.photos ?? existing?.photos ?? []
+      input.photoIds = material?.photoIds ?? existing?.photoIds ?? []
+      input.dishes = input.dishes.map((dish) => ({ ...dish,
+        imageData: material
+          ? material.dishPhotos.find((photo) => photo.id === dish.id)?.imageData ?? null
+          : existing?.dishes.find((value) => value.id === dish.id)?.imageData ?? null,
+      }))
       const visit = request.visitID
         ? await updateVisit(request.visitID, input)
         : await addVisit(request.restaurantID, input)
@@ -311,7 +551,7 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     delete: async (visitID: string) => {
       const result = await deleteVisit(visitID)
       this.profilePromise = null
-      return { restaurantID: result.restaurantId, visitID: result.visitId, updatedAt: result.updatedAt }
+      return { restaurantID: result.restaurantId, visitID: result.visitId, updatedAt: result.updatedAt, deletedRestaurantID: result.deletedRestaurantID }
     },
   }
   sync = {
@@ -333,10 +573,25 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     retry: async () => capabilityUnavailable('photoPicker'),
   }
   premium = {
-    status: async (): Promise<TasteMapPremiumStatusDTO> => ({
-      state: (await this.loadProfile()).user.membershipTier === 'member' ? 'premium' : 'free',
-      expiresAt: null,
-    }),
+    trialEligibility: async (): Promise<{ eligible: boolean; trialDays: number }> => {
+      const response = await fetch('/api/v1/me/premium-trial-eligibility', { credentials: 'same-origin', cache: 'no-store' })
+      if (!response.ok) throw new TasteMapPlatformError('请登录后重试。', 'auth_required')
+      return response.json()
+    },
+    claimTrial: async () => {
+      const response = await fetch('/api/v1/me/premium-trial/claim', { method: 'POST', credentials: 'same-origin', cache: 'no-store' })
+      const result = await response.json() as { expiresAt: string; error?: string }
+      if (!response.ok) throw new Error(result.error ?? '领取暂时无法完成。')
+      return { expiresAt: result.expiresAt, status: await this.premium.status() }
+    },
+    status: async (): Promise<TasteMapPremiumStatusDTO> => {
+      const { entitlement } = await MembershipService.getEntitlement()
+      const presentation = membershipStatusPresentation(entitlement, 'free')
+      return { state: entitlement.isPremium ? 'premium' : 'free', expiresAt: entitlement.expiresAt,
+        source: entitlement.source, startedAt: entitlement.startsAt,
+        statusText: entitlement.source === 'gift_annual' || entitlement.source === 'gift_lifetime' || entitlement.source === 'referral_reward' || entitlement.source === 'signup_trial' ? presentation.planLabel : null,
+        canManageSubscription: entitlement.isPremium && presentation.canManageAppStoreSubscription }
+    },
     products: async () => [],
     purchase: async () => capabilityUnavailable('premium'),
     restore: async () => capabilityUnavailable('premium'),
@@ -357,15 +612,25 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     back: async () => ({ route: { surface: 'profile' as const }, owner: 'hybrid' as const, canGoBack: false }),
     current: async () => ({ route: { surface: 'profile' as const }, owner: 'hybrid' as const, canGoBack: false }),
   }
-  events = { subscribe: async () => ({ remove: async () => undefined }) }
+  events = { subscribe: async (listener: (event: TasteMapHybridEvent) => void) => {
+    this.disconnectPreferenceLifecycle ??= this.preferenceSync.connectLifecycle()
+    this.eventListeners.add(listener)
+    return { remove: async () => {
+      this.eventListeners.delete(listener)
+      if (!this.eventListeners.size) { this.disconnectPreferenceLifecycle?.(); this.disconnectPreferenceLifecycle = null }
+    } }
+  } }
 
-  private loadProfile() {
+  private loadProfile(refresh = false) {
+    if (refresh) this.profilePromise = null
     this.profilePromise ??= this.loadDebugFixture().then((fixture) => fixture?.profile ?? this.dataSource.profile())
     return this.profilePromise
   }
 
   private async loadDebugFixture() {
-    if (import.meta.env.VITE_HYBRID_INTERNAL !== 'true') return null
+    const explicitFixture = typeof window !== 'undefined'
+      && new URLSearchParams(window.location.search).get('debugFixture') === 'rich'
+    if (import.meta.env.VITE_HYBRID_INTERNAL !== 'true' || !explicitFixture) return null
     const { loadTasteMapBrowserDebugFixture } = await import('./TasteMapBrowserDebugFixture')
     return loadTasteMapBrowserDebugFixture()
   }
@@ -408,10 +673,16 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
     const id = `browser-candidate-${value.amapPoiId}`
     const existing = profile?.restaurants.find((restaurant) => restaurant.amapPoiId === value.amapPoiId)
     const existingImage = existing ? profile?.restaurantImages[existing.id] ?? browserImageDescriptor(existing) : null
-    const sources = [existingImage]
+    const providerImage: TasteMapImageDescriptor | null = value.merchantImageUrl ? {
+      kind: 'providerMerchant',
+      resourceURL: value.merchantImageUrl,
+      accessibilityLabel: `${value.name} 商家图片`,
+    } : null
+    const sources = [existingImage, providerImage]
       .filter((image): image is TasteMapImageDescriptor => image != null && image.kind !== 'foodDiningFallback' && image.kind !== 'foodCategoryVisual')
       .filter((image, index, values) => values.findIndex((candidate) => descriptorIdentity(candidate) === descriptorIdentity(image)) === index)
-    const fallback = categoryImageDescriptor(value.name, existing?.tags ?? [], existing?.id ?? id)
+    const categoryHints = stableValues([...(existing?.tags ?? []), ...value.categoryHints])
+    const fallback = categoryImageDescriptor(value.name, categoryHints, existing?.id ?? id)
     const candidate: TasteMapAcquisitionCandidateDTO = {
       id,
       name: value.name,
@@ -422,7 +693,9 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
       longitude: value.longitude,
       distanceMeters,
       phone: value.phone ?? null,
+      websiteUrl: value.websiteUrl ?? null,
       openingHours: value.openingHours ?? null,
+      categoryHints,
       image: sources[0] ?? fallback,
       imageResolution: { sources, fallback },
       duplicateKind: existing ? 'exactProvider' : 'none',
@@ -456,7 +729,7 @@ function browserCandidateDetail(candidate: TasteMapAcquisitionCandidateDTO): Tas
     environmentRating: null,
     serviceRating: null,
     valueRating: null,
-    tags: [],
+    tags: candidate.categoryHints ?? [],
     longTermNote: '',
     pricePerPerson: null,
     phone: candidate.phone,
@@ -656,6 +929,10 @@ function browserContentSnapshot(
             city: restaurant?.city ?? '',
             position: item.position,
             note: item.note,
+            coordinate: listCoordinate(restaurant?.latitude, restaurant?.longitude),
+            rating: restaurant && restaurant.userId === profile.user.id
+              ? listRating(restaurant.scoreOutOfTen, 'viewer', restaurant.visits.filter(visit => visit.rating != null && visit.rating > 0 && visit.rating <= 5).length)
+              : null,
             image: restaurant
               ? profile.restaurantImages[restaurant.id] ?? browserImageDescriptor(restaurant)
               : { kind: 'foodDiningFallback', stableSeed: item.restaurantId, accessibilityLabel: '餐厅图示' },
@@ -667,18 +944,47 @@ function browserContentSnapshot(
   }
 }
 
+function browserPublicListProjection(page: PublicListPage, profile: TasteMapProfileDashboardViewModel): import('./TasteMapPlatform').TasteMapHybridListDTO {
+  return {
+    id: page.list.id, title: page.list.title, description: page.list.description,
+    visibility: page.list.visibility, isRanked: page.list.isRanked,
+    restaurantCount: page.list.restaurantCount, updatedAt: page.list.updatedAt,
+    isOwnedByViewer: page.list.owner.userId === profile.user.id,
+    ownerName: page.list.owner.displayName,
+    restaurants: page.items.map(item => {
+      const place = item.restaurant
+      const own = profile.restaurants.find(value => value.userId === profile.user.id && value.id.toLowerCase() === place.restaurantId.toLowerCase())
+      return {
+        id: place.restaurantId, name: place.name, address: place.address, city: place.city,
+        position: item.position, note: item.note,
+        coordinate: listCoordinate(place.latitude, place.longitude),
+        // This API has no public aggregate field; do not borrow a private author score.
+        rating: own ? listRating(own.scoreOutOfTen, 'viewer', own.visits.filter(visit => visit.rating != null && visit.rating > 0 && visit.rating <= 5).length) : null,
+        image: own ? profile.restaurantImages[own.id] ?? browserImageDescriptor(own)
+          : publicListBrowserImage(place),
+      }
+    }).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
+  }
+}
+
+function publicListBrowserImage(place: PublicListPage['items'][number]['restaurant']): TasteMapImageDescriptor {
+  // Preserve a real API-supplied image; this does not issue provider/photo queries.
+  try {
+    const url = new URL(place.merchantImageUrl ?? '')
+    if (url.protocol === 'https:' && !url.username && !url.password) {
+      return { kind: 'providerMerchant', resourceURL: url.href, accessibilityLabel: `${place.name} 餐厅图片` }
+    }
+  } catch { /* Missing real image uses the canonical deterministic fallback. */ }
+  return { kind: 'foodDiningFallback', stableSeed: place.globalKey, accessibilityLabel: `${place.name} 餐饮图示` }
+}
+
 function projectBrowserMapViewport(
   profile: TasteMapProfileDashboardViewModel,
   request: TasteMapMapBrowseRequest,
   includeDebugRecommendations = false,
 ): TasteMapMapBrowseResponse {
-  const all = profile.restaurants
-  const options = {
-    cities: stableValues(all.map((item) => item.city)),
-    companions: stableValues(profile.visits.flatMap((visit) => visit.companions)),
-    cuisines: stableValues(all.flatMap((item) => item.tags)),
-    recommendationSources: stableValues(profile.visits.map((visit) => visit.recommendationSourceText ?? '')),
-  }
+  const all = profile.restaurants.filter((item) => !item.deletedAt && item.userId === profile.user.id
+    && (item.status !== 'visited' || item.visitCount > 0))
   const normalizedSearch = request.search.trim().toLocaleLowerCase()
   const sourceFor = (scope: TasteMapMapBrowseRequest['scope']) => {
     // Shipping Browser data never invents recommendations. The isolated
@@ -695,18 +1001,35 @@ function projectBrowserMapViewport(
     const requestedStatus = scope === 'wantToGo' ? 'wantToGo' : 'visited'
     if (item.status !== requestedStatus) return false
     if (includeBounds && request.bounds && !coordinateIsInBounds(item, request.bounds)) return false
-    if (request.filters.city && item.city !== request.filters.city) return false
+    if (request.filters.city && restaurantCityComparisonKey(item.city) !== restaurantCityComparisonKey(request.filters.city)) return false
     if (request.filters.minimumScoreOutOfTen && (item.scoreOutOfTen ?? -1) < request.filters.minimumScoreOutOfTen) return false
+    if (request.filters.scoreBands?.length) {
+      const band = mapScoreBand(item.scoreOutOfTen)
+      if (band == null || !request.filters.scoreBands.includes(band)) return false
+    }
     if (request.filters.maximumSpend && (item.averagePricePerPerson ?? item.pricePerPerson ?? Number.POSITIVE_INFINITY) > request.filters.maximumSpend) return false
-    if (request.filters.minimumVisitCount && item.visitCount < request.filters.minimumVisitCount) return false
     if (request.filters.cuisine && !item.tags.includes(request.filters.cuisine)) return false
-    if (request.filters.companion && !item.visits.some((visit) => visit.companions.includes(request.filters.companion!))) return false
-    if (request.filters.recommendationSource && !item.visits.some((visit) => visit.recommendationSourceText === request.filters.recommendationSource)) return false
+    if (request.filters.distanceKilometers) {
+      if (!request.currentLocation || distanceBetween(request.currentLocation, item) > request.filters.distanceKilometers * 1_000) return false
+    }
+    if (scope !== 'wantToGo') {
+      if (request.filters.minimumVisitCount && item.visitCount < request.filters.minimumVisitCount) return false
+      if (hasVisitScopedMapFilters(request.filters) && !item.visits.some((visit) => visitMatchesMapFilters(visit, request.filters))) return false
+    }
     return !normalizedSearch || [item.name, item.city, item.address, ...item.tags].join('\n').toLocaleLowerCase().includes(normalizedSearch)
   })
   const scopeTotal = (scope: TasteMapMapBrowseRequest['scope']) => {
     const requestedStatus = scope === 'wantToGo' ? 'wantToGo' : 'visited'
     return sourceFor(scope).filter((item) => item.status === requestedStatus).length
+  }
+  // Options belong to the full selected scope, before city/search/viewport
+  // filters. Selecting one city must not hide the other valid cities.
+  const citySource = sourceFor(request.scope).filter((item) => item.status === (request.scope === 'wantToGo' ? 'wantToGo' : 'visited'))
+  const options = {
+    cities: restaurantCityFilterOptions(citySource.map((item) => item.city)),
+    companions: stableValues(profile.visits.flatMap((visit) => visit.companions)),
+    cuisines: stableValues(all.flatMap((item) => item.tags)),
+    recommendationSources: stableValues(profile.visits.map((visit) => visit.recommendationSourceText ?? '')),
   }
   const scopeCounts = {
     visited: scopeTotal('visited'),
@@ -721,6 +1044,55 @@ function projectBrowserMapViewport(
     return bridgeDTOFromBrowser(restaurant, image)
   })
   return { requestID: request.requestID, items, totalCount, scopeCounts, options }
+}
+
+function mapScoreBand(score: number | null): 1 | 2 | 3 | 4 | 5 | null {
+  if (score == null || !Number.isFinite(score)) return null
+  if (score >= 9) return 5
+  if (score >= 7) return 4
+  if (score >= 5) return 3
+  if (score >= 3) return 2
+  return 1
+}
+
+function hasVisitScopedMapFilters(filters: TasteMapMapBrowseRequest['filters']) {
+  return Boolean(
+    filters.diningMode
+    || filters.queueDuration
+    || filters.diningOccasions?.length
+    || filters.recommendationSourceType
+    || filters.recommendationSource
+    || filters.priceRange
+    || filters.visitPeriod
+    || filters.companion,
+  )
+}
+
+function visitMatchesMapFilters(
+  visit: RestaurantSummary['visits'][number],
+  filters: TasteMapMapBrowseRequest['filters'],
+) {
+  if (filters.diningMode && visit.diningMode !== filters.diningMode) return false
+  if (filters.queueDuration === 'unrecorded' ? visit.queueDuration != null : filters.queueDuration && visit.queueDuration !== filters.queueDuration) return false
+  if (filters.diningOccasions?.length && !filters.diningOccasions.some((value) => visit.diningOccasions.includes(value))) return false
+  if (filters.recommendationSourceType && visit.recommendationSourceType !== filters.recommendationSourceType) return false
+  if (filters.recommendationSource && visit.recommendationSourceText !== filters.recommendationSource) return false
+  if (filters.companion && !visit.companions.includes(filters.companion)) return false
+  if (filters.priceRange && !priceMatchesMapRange(visit.pricePerPerson, filters.priceRange)) return false
+  if (filters.visitPeriod) {
+    const months = filters.visitPeriod === 'sixMonths' ? 6 : 12
+    const cutoff = new Date()
+    cutoff.setMonth(cutoff.getMonth() - months)
+    if (new Date(visit.visitedAt) < cutoff) return false
+  }
+  return true
+}
+
+function priceMatchesMapRange(value: number | null, range: NonNullable<TasteMapMapBrowseRequest['filters']['priceRange']>) {
+  if (value == null || !Number.isFinite(value)) return false
+  if (range === 'under100') return value < 100
+  if (range === '100to200') return value >= 100 && value <= 200
+  return value > 200
 }
 
 function bridgeDTOFromBrowser(restaurant: RestaurantSummary, image: TasteMapImageDescriptor) {
@@ -783,36 +1155,28 @@ function stableValues(values: string[]) {
 }
 
 function browserImageDescriptor(restaurant: RestaurantSummary): TasteMapImageDescriptor {
-  const userPhoto = restaurant.visits.flatMap((visit) => visit.photos.map((resourceURL, index) => ({
-    resourceURL,
-    photoID: visit.photoIds[index] ?? '',
-    visit,
-  }))).find((item) => item.resourceURL)
-  if (userPhoto) {
+  const selected = restaurantAvatarSelection(restaurant)
+  if (selected?.source) {
     return {
       kind: 'ownerPhoto',
-      resourceURL: userPhoto.resourceURL,
-      photoID: userPhoto.photoID,
+      resourceURL: selected.source,
+      photoID: selected.photoId ?? '',
       restaurantID: restaurant.id,
-      visitID: userPhoto.visit.id,
+      visitID: selected.visit?.id ?? null,
       sourceOwnerID: restaurant.userId,
-      visibility: userPhoto.visit.visibility,
+      visibility: selected.visit?.visibility ?? 'private',
       exportAllowed: true,
       attributionRequired: false,
-      accessibilityLabel: `${restaurant.name} 的用户实拍`,
+      accessibilityLabel: `${restaurant.name} 的${selected.visit ? '用户实拍' : '自定义头像'}`,
     }
   }
-  if (restaurant.markerImageData) return {
-    kind: 'ownerPhoto', resourceURL: restaurant.markerImageData, photoID: restaurant.markerPhotoId ?? '',
-    restaurantID: restaurant.id, visitID: null, sourceOwnerID: restaurant.userId, visibility: 'private',
-    exportAllowed: true, attributionRequired: false, accessibilityLabel: `${restaurant.name} 的用户实拍`,
-  }
-  return categoryImageDescriptor(restaurant.name, restaurant.tags, restaurant.id)
+  return categoryImageDescriptor(restaurant.name, restaurant.tags, restaurant.id, restaurant.markerEmoji)
 }
 
-function categoryImageDescriptor(name: string, tags: readonly string[], stableSeed: string): Extract<TasteMapImageDescriptor, { kind: 'foodCategoryVisual' }> {
+function categoryImageDescriptor(name: string, tags: readonly string[], stableSeed: string, preferredEmoji?: string): Extract<TasteMapImageDescriptor, { kind: 'foodCategoryVisual' }> {
   return {
     kind: 'foodCategoryVisual', categoryVisualID: resolveFoodCategoryVisualID({ name, tags }), stableSeed,
+    preferredEmoji,
     exportAllowed: false, accessibilityLabel: `${name} 餐饮分类图示`,
   }
 }
@@ -833,6 +1197,7 @@ function debugAcquisitionPOIs(city: string): import('../types/domain').PoiSearch
   ].map(([amapPoiId, name, address], index) => ({
     amapPoiId, name, address, city, district: '上城区',
     latitude: 30.266 + index * 0.001, longitude: 120.155 + index * 0.001,
+    categoryHints: [],
     merchantImageUrl: null, phone: null, openingHours: null,
   }))
 }

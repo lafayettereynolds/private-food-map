@@ -35,13 +35,13 @@ const hybridPath = /^#\/(?:hybrid\/)?([^/?#]+)(?:\/([^/?#]+))?/
 
 export function routeFromLocation(location: Pick<Location, 'hash'>): HybridRoute {
   const match = location.hash.match(hybridPath)
-  if (!match) return { surface: 'profile' }
+  if (!match) return { surface: 'map' }
   const surface = match[1] as HybridSurface
-  if (!(surface in HYBRID_ROUTE_REGISTRY)) return { surface: 'profile' }
+  if (!(surface in HYBRID_ROUTE_REGISTRY)) return { surface: 'map' }
   if (surface === 'restaurant') {
     return match[2]
       ? { surface, id: decodeURIComponent(match[2]) }
-      : { surface: 'profile' }
+      : { surface: 'map' }
   }
   if (surface === 'profile') return { surface, id: match[2] ? decodeURIComponent(match[2]) : undefined }
   return { surface, id: match[2] ? decodeURIComponent(match[2]) : undefined }

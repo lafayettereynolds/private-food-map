@@ -1,5 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import native from '../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift?raw'
+import hybridShell from '../hybrid/app/HybridAppShell.tsx?raw'
+import browserShell from '../App.tsx?raw'
 import { RouletteCandidateDock } from './RouletteCandidateDock'
 
 const handlers = {
@@ -10,6 +13,16 @@ const handlers = {
 }
 
 describe('RouletteCandidateDock', () => {
+  it('reserves separate space for Add in both shared map hosts', () => {
+    expect(native).toContain('path.subtracting(')
+    expect(native).not.toContain('mask.fillRule = .evenOdd')
+  })
+  it('shows the shared session dock on Map and Discovery in both hosts', () => {
+    expect(hybridShell).toContain("route.surface === 'map' || route.surface === 'discovery'")
+    expect(browserShell).toContain("activeView === 'map' || activeView === 'community'")
+    const action = hybridShell.split('const openDiscoveryRoulette =')[1].split('const toggleDetailRoulette')[0]
+    expect(action).not.toContain('navigate(')
+  })
   it('stays absent until the current session has a candidate', () => {
     expect(renderToStaticMarkup(<RouletteCandidateDock candidates={[]} expanded={false} {...handlers} />)).toBe('')
   })

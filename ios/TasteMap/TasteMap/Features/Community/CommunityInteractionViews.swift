@@ -1,6 +1,57 @@
 import SwiftUI
 
-struct CommunityInteractionControls: View {
+/// The activity header owns secondary actions; the footer retains exactly three Restaurant actions.
+struct CommunityContentMoreMenu: View {
+    let visitID: String?
+    let authorUserID: String
+    let currentUserID: String?
+    let safetyAPI: (any ReleaseSafetyAPI)?
+    let onAddToList: () -> Void
+    let onBlocked: () -> Void
+    @State private var reportTarget: CommunityReportTarget?
+    @State private var confirmingBlock = false
+    @State private var failure: String?
+
+    var body: some View {
+        Menu {
+            Button("加入我的食单", systemImage: "list.number", action: onAddToList)
+                .accessibilityIdentifier("community-list-\(visitID ?? authorUserID)")
+            if authorUserID != currentUserID, safetyAPI != nil {
+                if let visitID {
+                    Button("举报内容", systemImage: "exclamationmark.bubble") {
+                        reportTarget = .init(type: .visit, contentID: visitID, authorUserID: authorUserID, title: "公开到访记录")
+                    }
+                }
+                Button("屏蔽用户", systemImage: "person.crop.circle.badge.xmark", role: .destructive) { confirmingBlock = true }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: TasteMapDesignTokens.Icon.standard))
+                .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                .frame(width: TasteMapDesignTokens.Control.minimumHitTarget, height: TasteMapDesignTokens.Control.minimumHitTarget)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("更多动态操作")
+        .accessibilityIdentifier("community-more-\(visitID ?? authorUserID)")
+        .sheet(item: $reportTarget) { target in
+            if let safetyAPI { CommunityReportSheet(target: target, api: safetyAPI) }
+        }
+        .alert("屏蔽这个用户？", isPresented: $confirmingBlock) {
+            Button("屏蔽", role: .destructive) {
+                Task {
+                    do { _ = try await safetyAPI?.setBlocked(true, userID: authorUserID); onBlocked() }
+                    catch { failure = "屏蔽没有完成，请稍后重试。" }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: { Text("你们将无法在搜索、主页和社区内容中看到对方。已有好友和关注关系会解除。") }
+        .alert("操作未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("知道了", role: .cancel) { failure = nil }
+        } message: { Text(failure ?? "") }
+    }
+}
+
+struct CommunityInteractionControls<RestaurantActions: View>: View {
     let visitID: String
     let initial: CommunityEngagementSummaryV1
     let currentUserID: String
@@ -9,6 +60,8 @@ struct CommunityInteractionControls: View {
     let safetyAPI: any ReleaseSafetyAPI
     let onChange: (CommunityEngagementSummaryV1) -> Void
     let onBlocked: () -> Void
+    let shareText: String
+    let restaurantActions: RestaurantActions
 
     @State private var engagement: CommunityEngagementSummaryV1
     @State private var processingLike = false
@@ -25,7 +78,9 @@ struct CommunityInteractionControls: View {
         api: any CommunityInteractionAPI,
         safetyAPI: any ReleaseSafetyAPI,
         onChange: @escaping (CommunityEngagementSummaryV1) -> Void,
-        onBlocked: @escaping () -> Void
+        onBlocked: @escaping () -> Void,
+        shareText: String,
+        @ViewBuilder restaurantActions: () -> RestaurantActions
     ) {
         self.visitID = visitID
         self.initial = initial
@@ -35,47 +90,28 @@ struct CommunityInteractionControls: View {
         self.safetyAPI = safetyAPI
         self.onChange = onChange
         self.onBlocked = onBlocked
+        self.shareText = shareText
+        self.restaurantActions = restaurantActions()
         _engagement = State(initialValue: initial)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 18) {
-                Button { Task { await toggleLike() } } label: {
-                    Label("\(engagement.likeCount)", systemImage: engagement.likedByViewer ? "heart.fill" : "heart")
-                        .foregroundStyle(engagement.likedByViewer ? .red : .primary)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) {
+                    socialActions
+                    Spacer(minLength: 8)
+                    restaurantActions
                 }
-                .buttonStyle(.plain)
-                .disabled(processingLike)
-                .accessibilityLabel(engagement.likedByViewer ? "取消点赞，当前 \(engagement.likeCount) 个赞" : "点赞，当前 \(engagement.likeCount) 个赞")
-                .accessibilityIdentifier("community-like-\(visitID)")
-
-                Button { showingComments = true } label: {
-                    Label("\(engagement.commentCount)", systemImage: "bubble.left")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("查看评论，当前 \(engagement.commentCount) 条")
-                .accessibilityIdentifier("community-comments-\(visitID)")
-                Spacer()
-                if authorUserID != currentUserID {
-                    Menu {
-                        Button("举报内容", systemImage: "exclamationmark.bubble") {
-                            reportTarget = CommunityReportTarget(
-                                type: .visit, contentID: visitID, authorUserID: authorUserID,
-                                title: "公开到访记录"
-                            )
-                        }
-                        Button("屏蔽用户", systemImage: "person.crop.circle.badge.xmark", role: .destructive) {
-                            confirmingBlock = true
-                        }
-                    } label: { Image(systemName: "ellipsis") }
-                    .accessibilityLabel("内容安全操作")
-                    .accessibilityIdentifier("community-safety-\(visitID)")
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) { socialActions; Spacer(minLength: 8) }
+                    HStack { Spacer(minLength: 0); restaurantActions }
                 }
             }
             .font(.subheadline.weight(.semibold))
             if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
         }
+        .onChange(of: initial) { _, value in engagement = value }
         .sheet(isPresented: $showingComments) {
             CommunityCommentsView(
                 visitID: visitID, currentUserID: currentUserID, api: api,
@@ -91,6 +127,57 @@ struct CommunityInteractionControls: View {
             Button("屏蔽", role: .destructive) { Task { await blockAuthor() } }
             Button("取消", role: .cancel) {}
         } message: { Text("你们将无法在搜索、主页和社区内容中看到对方。已有好友和关注关系会解除。") }
+    }
+
+    private var socialActions: some View {
+        HStack(spacing: 0) {
+                Button { Task { await toggleLike() } } label: {
+                    TasteMapSocialActionLabel(systemImage: engagement.likedByViewer ? "heart.fill" : "heart", count: engagement.likeCount)
+                            .foregroundStyle(engagement.likedByViewer ? .red : TasteMapCoreTheme.brandDeep)
+                }
+                .buttonStyle(.plain)
+                .disabled(processingLike)
+                .accessibilityLabel(engagement.likedByViewer ? "取消点赞，当前 \(engagement.likeCount) 个赞" : "点赞，当前 \(engagement.likeCount) 个赞")
+                .accessibilityIdentifier("community-like-\(visitID)")
+
+                Button { showingComments = true } label: {
+                    TasteMapSocialActionLabel(systemImage: "bubble.left", count: engagement.commentCount)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("查看评论，当前 \(engagement.commentCount) 条")
+                .accessibilityIdentifier("community-comments-\(visitID)")
+                ShareLink(item: shareText) {
+                    TasteMapSocialActionLabel(systemImage: "paperplane", count: 0)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("分享动态")
+                .accessibilityIdentifier("community-share-\(visitID)")
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .foregroundStyle(TasteMapCoreTheme.brandDeep)
+    }
+
+    @ViewBuilder
+    private var safetyMenu: some View {
+                if authorUserID != currentUserID {
+                    Menu {
+                        Button("举报内容", systemImage: "exclamationmark.bubble") {
+                            reportTarget = CommunityReportTarget(
+                                type: .visit, contentID: visitID, authorUserID: authorUserID,
+                                title: "公开到访记录"
+                            )
+                        }
+                        Button("屏蔽用户", systemImage: "person.crop.circle.badge.xmark", role: .destructive) {
+                            confirmingBlock = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(minWidth: TasteMapDesignTokens.Control.minimumHitTarget, minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("内容安全操作")
+                    .accessibilityIdentifier("community-safety-\(visitID)")
+                }
     }
 
     @MainActor
@@ -135,6 +222,7 @@ private struct CommunityCommentsView: View {
     @State private var loading = true
     @State private var submitting = false
     @State private var message: String?
+    @State private var loadError: String?
     @State private var reportTarget: CommunityReportTarget?
     @State private var confirmingBlockUserID: String?
 
@@ -144,6 +232,17 @@ private struct CommunityCommentsView: View {
                 Group {
                     if loading && comments.isEmpty {
                         ProgressView("正在加载评论…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if comments.isEmpty, let loadError {
+                        TasteMapEmptyState(
+                            title: "评论加载失败",
+                            message: loadError,
+                            systemImage: "exclamationmark.bubble",
+                            actionTitle: "重试加载评论",
+                            action: { Task { await load(reset: true) } },
+                            actionAccessibilityIdentifier: "community-comments-retry",
+                            presentation: .embedded,
+                            accessibilityIdentifier: "community-comments-error-state"
+                        )
                     } else if comments.isEmpty {
                         TasteMapEmptyState(
                             title: "还没有评论",
@@ -162,6 +261,11 @@ private struct CommunityCommentsView: View {
                                     .frame(maxWidth: .infinity)
                             }
                             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                            if let loadError {
+                                Text(loadError).font(.footnote).foregroundStyle(.secondary)
+                                Button("重试加载评论") { Task { await load(reset: false) } }
+                                    .accessibilityIdentifier("community-comments-retry")
+                            }
                         }
                         .listStyle(.plain)
                     }
@@ -237,6 +341,7 @@ private struct CommunityCommentsView: View {
     @MainActor
     private func load(reset: Bool) async {
         loading = true; defer { loading = false }
+        loadError = nil
         do {
             let page = try await api.comments(visitID: visitID, cursor: reset ? nil : nextCursor, limit: 20)
             if reset { comments = page.items } else {
@@ -246,7 +351,7 @@ private struct CommunityCommentsView: View {
             nextCursor = page.nextCursor
             onCountChange(comments.count + (page.nextCursor == nil ? 0 : max(0, initialCount - comments.count)))
             message = nil
-        } catch { message = "评论暂时无法加载。" }
+        } catch { loadError = "评论暂时无法加载，请重试。" }
     }
 
     @MainActor private func loadMore() async { guard nextCursor != nil else { return }; await load(reset: false) }

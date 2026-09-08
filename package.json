@@ -5,6 +5,7 @@
   "packageManager": "pnpm@9.15.9",
   "type": "module",
   "scripts": {
+    "sandbox:offers": "node --experimental-transform-types scripts/sandbox-offers.mjs",
     "dev": "vite --config vite.config.ts",
     "build": "pnpm run typecheck && vite build",
     "typecheck": "tsc -b && tsc -p tsconfig.worker.json --noEmit",

@@ -118,6 +118,8 @@ struct RestaurantRouletteScreen: View {
 }
 
 struct RestaurantRouletteExperienceView: View {
+    @Environment(PremiumEntitlementService.self) private var premium
+    @Environment(\.localAccountScope) private var accountScope
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -730,6 +732,16 @@ struct RestaurantRouletteExperienceView: View {
     }
 
     private func spin() {
+        guard !isSpinning, filteredCandidates.count > 1 else { return }
+        if premium.access(for: .rouletteUnlimited) != .allowed {
+            let day = Calendar.current.startOfDay(for: .now).timeIntervalSince1970
+            let key = "tastemap.roulette.daily.\(accountScope.ownerUserID)"
+            if UserDefaults.standard.double(forKey: key) == day {
+                premium.openPaywall(from: .feature(.rouletteUnlimited))
+                return
+            }
+            UserDefaults.standard.set(day, forKey: key)
+        }
         guard !isSpinning, filteredCandidates.count > 1,
               let selected = RestaurantRouletteEngine.select(
                   from: filteredCandidates,

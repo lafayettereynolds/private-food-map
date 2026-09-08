@@ -11,7 +11,7 @@ struct RestaurantAcquisitionDependencies {
 
     static func live(linkResolver: any ExternalRestaurantLinkResolving) -> Self {
         Self(
-            searchService: MapKitRestaurantSearchService(),
+            searchService: WorldwideRestaurantSearchService(),
             linkResolver: linkResolver,
             locationProvider: LocationPermissionManager()
         )
@@ -84,7 +84,7 @@ struct AddRestaurantView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    TasteMapReturnButton { dismiss() }
                 }
             }
             .task {
@@ -109,8 +109,14 @@ struct AddRestaurantView: View {
                 }
             }
             .onChange(of: scenePhase) { previous, value in
-                guard value == .active, previous != .active, viewModel.nearbyState != .idle else { return }
+                if value == .background { viewModel.invalidateNearby(); return }
+                guard value == .active, previous != .active else { return }
                 Task { await viewModel.refreshAfterForeground() }
+            }
+            .onChange(of: accountScope) { _, _ in
+                viewModel.invalidateNearby()
+                selectedCandidate = nil
+                if accountScope.authenticatedUserID != nil { Task { await viewModel.loadNearby() } }
             }
             .sheet(isPresented: $manualPresented, onDismiss: presentPendingManualCandidate) {
                 ManualRestaurantAddView(
@@ -144,7 +150,7 @@ struct AddRestaurantView: View {
     }
 
     private var nearbySection: some View {
-        AcquisitionSection(title: "附近餐厅", subtitle: "当前位置 3 公里内", systemImage: "location.fill") {
+        AcquisitionSection(title: "附近餐厅", subtitle: "当前位置 3 公里内，按直线距离排序", systemImage: "location.fill") {
             switch viewModel.nearbyState {
             case .idle, .loading:
                 HStack(spacing: 10) {
@@ -190,7 +196,7 @@ struct AddRestaurantView: View {
                         retry: { Task { await viewModel.loadNearby() } }
                     )
                 } else {
-                    ForEach(viewModel.nearbyResults.prefix(8)) { candidate in
+                    ForEach(viewModel.visibleNearbyResults) { candidate in
                         let match = RestaurantDeduplicator.classifiedMatch(for: candidate, in: scopedRestaurants)
                         RestaurantAcquisitionCandidateRow(
                             candidate: candidate,
@@ -198,6 +204,16 @@ struct AddRestaurantView: View {
                             ownerPhoto: ownerPhoto(for: match),
                             onSelect: select
                         )
+                    }
+                    if viewModel.hasMoreNearbyResults {
+                        Button("继续加载附近餐厅（已显示 \(min(viewModel.nearbyVisibleCount, viewModel.nearbyResults.count)) / \(viewModel.nearbyResults.count) 家）") {
+                            viewModel.loadMoreNearby()
+                        }
+                        .buttonStyle(.plain)
+                        .font(TasteMapDesignTokens.Typography.control)
+                        .foregroundStyle(AcquisitionPalette.brand)
+                        .frame(maxWidth: .infinity, minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+                        .accessibilityIdentifier("nearby-load-more")
                     }
                 }
             }
@@ -591,11 +607,13 @@ private struct RestaurantCandidateBusinessSection: View {
                 .font(.headline)
                 .padding(.bottom, 8)
                 .accessibilityIdentifier("restaurant-business-information")
-            candidateRow(title: "参考人均", value: "地图来源暂未提供", icon: "yensign.circle")
+            candidateRow(title: "参考人均", value: "暂无参考人均", icon: "yensign.circle")
             Divider().padding(.leading, 34)
-            candidateRow(title: "电话", value: candidate.phone ?? "地图来源暂未提供", icon: "phone")
+            candidateRow(title: "电话", value: candidate.phone ?? "暂无电话", icon: "phone")
             Divider().padding(.leading, 34)
-            candidateRow(title: "营业时间", value: candidate.openingHours ?? "地图来源暂未提供", icon: "clock")
+            candidateRow(title: "官网", value: candidate.websiteURL?.host ?? "暂无官网", icon: "globe")
+            Divider().padding(.leading, 34)
+            candidateRow(title: "营业时间", value: candidate.openingHours ?? "暂无营业时间", icon: "clock")
         }
         .padding(14)
         .tasteMapCoreCard(radius: 16)

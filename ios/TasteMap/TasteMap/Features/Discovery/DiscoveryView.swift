@@ -19,10 +19,17 @@ struct DiscoveryView: View {
     @State private var trendWindowDays = 7
     @State private var authenticatedUser: AuthenticatedUserV1?
     @State private var cards: [DiscoveryCardV1] = []
+    @State private var excludedRecommendationIDs: Set<String>?
+    @State private var recommendationIntentFeedback = RestaurantRecommendationIntentFeedback()
     @State private var nextCursor: String?
     @State private var loading = false
     @State private var loadingMore = false
     @State private var message: String?
+    @State private var evidenceAvailability: TasteMapDiscoveryEvidenceAvailabilityDTO?
+    @State private var addingEvidence = false
+    @State private var pendingEvidenceCandidate: RestaurantCandidate?
+    @State private var evidenceVisitCandidate: RestaurantCandidate?
+    @State private var refreshIssue: TasteMapHybridBridgeErrorDTO?
     @State private var cacheDate: Date?
     @State private var showingCache = false
     @State private var selectedCard: DiscoveryCardV1?
@@ -61,6 +68,20 @@ struct DiscoveryView: View {
 
     private var city: String { didInitializeCity ? selectedCity : defaultCity }
 
+    private func refreshRecommendationPreferences() {
+        guard let owner = accountScope.authenticatedUserID else {
+            excludedRecommendationIDs = nil; recommendationIntentFeedback = .init(); return
+        }
+        do {
+            let snapshot = try RestaurantRecommendationPreferences.snapshot(ownerID: owner, context: modelContext)
+            excludedRecommendationIDs = Set(snapshot.excludedIDs)
+            recommendationIntentFeedback = snapshot.intentFeedback
+        } catch {
+            excludedRecommendationIDs = nil; recommendationIntentFeedback = .init()
+            message = "推荐偏好暂时无法读取，请重试。"
+        }
+    }
+
     private var availableCities: [String] {
         Set(
             ownedRestaurants.filter { $0.deletedAt == nil }.map(\.city) +
@@ -73,11 +94,19 @@ struct DiscoveryView: View {
     }
 
     private var browseResolution: DiscoveryBrowseResolution {
-        DiscoveryBrowseResolver.resolve(
-            cards: cards,
+        let resolution = DiscoveryBrowseResolver.resolve(
+            cards: mode == .forYou ? cards.filter { card in
+                excludedRecommendationIDs != nil && !excludedRecommendationIDs!.contains(card.restaurant.globalKey.lowercased())
+                    && RestaurantRecommendationIntentPolicy.permits(name: card.restaurant.name, tags: card.restaurant.tags,
+                                                                    feedback: recommendationIntentFeedback)
+            } : cards,
             filters: mode == .forYou ? browseFilters : DiscoveryBrowseFilters(),
             anchor: distanceAnchor
         )
+        guard mode == .forYou, browseFilters.sort == .recommended else { return resolution }
+        return DiscoveryBrowseResolution(cards: RestaurantRecommendationIntentPolicy.stablePriority(
+            resolution.cards, feedback: recommendationIntentFeedback,
+            metadata: { ($0.restaurant.name, $0.restaurant.tags) }), emptyReason: resolution.emptyReason)
     }
 
     var body: some View {
@@ -86,6 +115,7 @@ struct DiscoveryView: View {
                 mode: $mode, trendWindowDays: $trendWindowDays,
                 cards: browseResolution.cards, unfilteredCardCount: cards.count,
                 loading: loading, loadingMore: loadingMore, message: message,
+                refreshIssue: refreshIssue,
                 cacheDate: cacheDate, showingCache: showingCache,
                 isSignedIn: authenticatedUser != nil,
                 similarTasteAccess: premiumEntitlementService.access(for: .similarTaste),
@@ -105,13 +135,17 @@ struct DiscoveryView: View {
                 onOpenUser: { selectedUser = $0 },
                 onLoadMore: { Task { await loadMore() } },
                 photoAPI: authServices.photoAPI,
-                showsModePicker: showsModePicker
+                showsModePicker: showsModePicker,
+                evidenceAvailability: evidenceAvailability,
+                onAddEvidence: { addingEvidence = true }
             )
             .navigationTitle(showsNavigationTitle ? "发现" : "")
             .toolbar(showsNavigationTitle ? .visible : .hidden, for: .navigationBar)
             .background(TasteMapCoreTheme.page)
             .refreshable { await load(reset: true, preferCache: false) }
             .task { await restoreAndLoad() }
+            .task(id: accountScope.authenticatedUserID) { refreshRecommendationPreferences() }
+            .onReceive(NotificationCenter.default.publisher(for: RestaurantRecommendationPreferences.didChange)) { _ in refreshRecommendationPreferences() }
             .onChange(of: mode) { _, _ in Task { await load(reset: true, preferCache: true) } }
             .onChange(of: premiumEntitlementService.membershipStatus) { _, _ in
                 guard mode == .similarTaste else { return }
@@ -140,6 +174,24 @@ struct DiscoveryView: View {
                         Task { await syncCoordinator.synchronizeNow() }
                     }
                 )
+            }
+            .sheet(isPresented: $addingEvidence, onDismiss: {
+                evidenceVisitCandidate = pendingEvidenceCandidate
+                pendingEvidenceCandidate = nil
+            }) {
+                AddRestaurantView(dependencies: .live(linkResolver: authServices.externalRestaurantLinkAPI)) { candidate, action in
+                    switch action {
+                    case .wantToGo:
+                        _ = try LocalTasteMapStore(context: modelContext).addToWantToGo(
+                            candidate: candidate, among: ownedRestaurants, actorUserID: accountScope.ownerUserID)
+                    case .recordVisit: pendingEvidenceCandidate = candidate
+                    }
+                }
+            }
+            .sheet(item: $evidenceVisitCandidate) { candidate in
+                VisitEditorView(candidate: candidate, onVisitSaved: { _ in
+                    Task { await syncCoordinator.synchronizeNow(); await load(reset: true, preferCache: false) }
+                })
             }
             .sheet(item: $selectedListCard) { card in
                 if let userID = authenticatedUser?.id {
@@ -212,6 +264,7 @@ struct DiscoveryView: View {
     @MainActor
     private func load(reset: Bool, preferCache: Bool) async {
         guard let userID = authenticatedUser?.id, !loading else { return }
+        if reset { evidenceAvailability = nil }
         if mode == .similarTaste,
            premiumEntitlementService.access(for: .similarTaste) != .allowed {
             cards = []
@@ -219,6 +272,7 @@ struct DiscoveryView: View {
             cacheDate = nil
             showingCache = false
             message = nil
+            refreshIssue = nil
             return
         }
 #if DEBUG
@@ -232,7 +286,8 @@ struct DiscoveryView: View {
                 return
             }
             let page = TasteMapUITestFixtures.discoveryPage(mode: mode, window: trendWindowDays)
-            cards = page.items
+            cards = page.items.filter(\.isEligibleForDiscoveryPresentation)
+            evidenceAvailability = page.evidenceAvailability
             nextCursor = nil
             cacheDate = .now.addingTimeInterval(-1800)
             showingCache = TasteMapUITestFixtures.usesDiscoveryOfflineFixture
@@ -244,34 +299,58 @@ struct DiscoveryView: View {
 #endif
         loading = reset
         message = nil
+        refreshIssue = nil
         defer { loading = false }
         let window = mode == .trending ? trendWindowDays : 7
-        let store = LocalDiscoveryStore(context: modelContext)
+        let requestMode = mode
+        let requestCity = city
+        let cacheContext = ModelContext(modelContext.container)
+        cacheContext.autosaveEnabled = false
+        let store = LocalDiscoveryStore(context: cacheContext)
+        let isCurrent = {
+            authenticatedUser?.id == userID && accountScope.contains(ownerUserID: userID)
+                && mode == requestMode && city == requestCity
+                && (mode == .trending ? trendWindowDays : 7) == window
+        }
         if reset && preferCache,
            let cached = try? store.cachedPage(mode: mode, city: city, currentUserID: userID,
                                                trendWindowDays: window) {
-            cards = cached.cards; cacheDate = cached.updatedAt; showingCache = true; nextCursor = nil
+            cards = cached.cards.filter(\.isEligibleForDiscoveryPresentation); cacheDate = cached.updatedAt; showingCache = true; nextCursor = nil
         } else if reset {
             cards = []; nextCursor = nil; showingCache = false
         }
+        var stage = TasteMapDiscoveryRefreshFailureStage.request
         do {
             let page = try await authServices.discoveryAPI.page(
                 mode: mode, city: city, trendWindowDays: window, cursor: nil, limit: 20
             )
-            cards = page.items
+            guard isCurrent() else { return }
+            stage = .cacheWrite
+            try store.replaceCache(page: page, currentUserID: userID, trendWindowDays: window)
+            cards = page.items.filter(\.isEligibleForDiscoveryPresentation)
             nextCursor = page.nextCursor
             cacheDate = LocalDiscoveryStoreDate.parse(page.generatedAt)
             showingCache = false
-            try store.replaceCache(page: page, currentUserID: userID, trendWindowDays: window)
-            if page.items.isEmpty { message = emptyMessage(page.personalizationConfidence) }
+            if cards.isEmpty { message = emptyMessage(page.evidenceAvailability) }
             await establishDistanceAnchorIfNeeded()
         } catch {
+            cacheContext.rollback()
+            guard isCurrent() else { return }
+            let issue = tasteMapDiscoveryRefreshIssue(error, stage: stage)
+            refreshIssue = issue
+            if issue.recoverable == false {
+                cards = []; nextCursor = nil; cacheDate = nil; showingCache = false
+                message = issue.message
+                return
+            }
             if cards.isEmpty,
                 let cached = try? store.cachedPage(mode: mode, city: city, currentUserID: userID,
                                                    trendWindowDays: window) {
-                cards = cached.cards; cacheDate = cached.updatedAt; showingCache = true; nextCursor = nil
+                cards = cached.cards.filter(\.isEligibleForDiscoveryPresentation); cacheDate = cached.updatedAt; showingCache = true; nextCursor = nil
             }
-            message = cards.isEmpty ? "发现内容暂时无法加载，请检查网络后重试。" : "当前显示上次缓存的内容。"
+            showingCache = !cards.isEmpty
+            nextCursor = nil
+            message = issue.message + (cards.isEmpty ? "" : "正在显示上次缓存。")
         }
     }
 
@@ -287,11 +366,18 @@ struct DiscoveryView: View {
                 mode: mode, city: city, trendWindowDays: window, cursor: cursor, limit: 20
             )
             let existing = Set(cards.map(\.restaurant.globalKey))
-            cards.append(contentsOf: page.items.filter { !existing.contains($0.restaurant.globalKey) })
+            cards.append(contentsOf: page.items.filter {
+                $0.isEligibleForDiscoveryPresentation && !existing.contains($0.restaurant.globalKey)
+            })
             nextCursor = page.nextCursor
             try LocalDiscoveryStore(context: modelContext)
                 .appendCache(page: page, currentUserID: userID, trendWindowDays: window)
-        } catch { message = "加载更多失败，请稍后重试。" }
+        } catch {
+            let issue = tasteMapDiscoveryRefreshIssue(error)
+            refreshIssue = issue
+            if !issue.recoverable { cards = []; nextCursor = nil; cacheDate = nil; showingCache = false }
+            message = issue.message
+        }
     }
 
     @MainActor
@@ -404,8 +490,10 @@ struct DiscoveryView: View {
         }
     }
 
-    private func emptyMessage(_ confidence: DiscoveryConfidenceV1) -> String {
-        if mode == .similarTaste && confidence == .insufficient { return "共同评分数据还不够，多记录几次后再来看看。" }
+    private func emptyMessage(_ evidence: TasteMapDiscoveryEvidenceAvailabilityDTO?) -> String {
+        if mode == .similarTaste {
+            return evidence?.similarTasteEmptyMessage ?? TasteMapDiscoveryEvidenceAvailabilityDTO.unknownMessage
+        }
         return city.isEmpty ? "先在个人资料设置城市，或记录一家餐厅。" : "这个城市暂时还没有可见的真实发现内容。"
     }
 }
@@ -442,6 +530,7 @@ struct DiscoveryContentView: View {
     let loading: Bool
     let loadingMore: Bool
     let message: String?
+    var refreshIssue: TasteMapHybridBridgeErrorDTO? = nil
     let cacheDate: Date?
     let showingCache: Bool
     let isSignedIn: Bool
@@ -464,6 +553,8 @@ struct DiscoveryContentView: View {
     let onLoadMore: () -> Void
     let photoAPI: (any PhotoBinaryAPI)?
     var showsModePicker = true
+    var evidenceAvailability: TasteMapDiscoveryEvidenceAvailabilityDTO? = nil
+    var onAddEvidence: (() -> Void)? = nil
     @State private var filterFocus: DiscoveryFilterFocus?
     @State private var enteringCity = false
 
@@ -525,8 +616,8 @@ struct DiscoveryContentView: View {
                     }
                 }
                 if showingCache, let cacheDate {
-                    Label("离线内容 · 更新于 \(TasteMapDisplayDate.relative(cacheDate))",
-                          systemImage: "wifi.slash")
+                    Label("缓存内容 · 更新于 \(TasteMapDisplayDate.relative(cacheDate))",
+                          systemImage: "clock.arrow.circlepath")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if mode == .forYou, let distanceAnchorDescription, filters.needsDistanceAnchor {
@@ -546,8 +637,21 @@ struct DiscoveryContentView: View {
                     accessibilityIdentifier: "discovery-auth-empty-state"
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if mode == .similarTaste && similarTasteAccess != .allowed {
-                if similarTasteAccess == .loading {
+            } else if DiscoveryContentAccessPolicy.blocksCards(mode: mode, access: similarTasteAccess) {
+                if let refreshIssue {
+                    TasteMapEmptyState(
+                        title: refreshIssue.recoverable ? "发现内容暂未更新" : "暂时无法访问这部分发现内容",
+                        message: refreshIssue.message,
+                        systemImage: "exclamationmark.circle",
+                        actionTitle: refreshIssue.recoverable ? "重试" : nil,
+                        action: refreshIssue.recoverable ? onRetry : nil,
+                        secondaryActionTitle: "为你推荐",
+                        secondaryAction: { mode = .forYou },
+                        presentation: .embedded,
+                        accessibilityIdentifier: "discovery-access-error-state"
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if similarTasteAccess == .loading {
                     ProgressView("正在确认同味权益…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -563,11 +667,11 @@ struct DiscoveryContentView: View {
                         ? (mode == .similarTaste ? "person.2.wave.2" : "fork.knife.circle")
                         : "line.3.horizontal.decrease.circle",
                     foodDiningVisualKind: filterEmptyReason == nil ? .genericDining : nil,
-                    actionTitle: filterEmptyReason != nil ? "重置筛选" : "重试",
-                    action: filterEmptyReason != nil ? onResetFilters : onRetry,
+                    actionTitle: primaryEmptyActionTitle,
+                    action: primaryEmptyAction,
                     secondaryActionTitle: filterEmptyReason != nil && canLoadMore
-                        ? "继续加载更多结果" : nil,
-                    secondaryAction: filterEmptyReason != nil && canLoadMore ? onLoadMore : nil,
+                        ? "继续加载更多结果" : offersEvidenceRecovery ? "为你推荐" : nil,
+                    secondaryAction: filterEmptyReason != nil && canLoadMore ? onLoadMore : offersEvidenceRecovery ? { mode = .forYou } : nil,
                     presentation: .embedded,
                     accessibilityIdentifier: "discovery-content-empty-state"
                 )
@@ -610,18 +714,42 @@ struct DiscoveryContentView: View {
     }
 
     private var emptyStateTitle: String {
+        if let refreshIssue {
+            return refreshIssue.recoverable ? "发现内容暂未更新" : "暂时无法访问这部分发现内容"
+        }
         switch filterEmptyReason {
-        case .locationUnavailable: "暂时无法计算距离"
-        case .filtersTooStrict: "当前筛选没有结果"
-        case nil: mode == .similarTaste ? "数据还不够" : "暂时没有发现内容"
+        case .locationUnavailable: return "暂时无法计算距离"
+        case .filtersTooStrict: return "当前筛选没有结果"
+        case nil: return mode == .similarTaste ? evidenceAvailability?.emptyTitle ?? "暂未找到可展示的同味推荐" : "暂时没有发现内容"
         }
     }
 
+    private var offersEvidenceRecovery: Bool { mode == .similarTaste && refreshIssue == nil && filterEmptyReason == nil }
+    private var primaryEmptyActionTitle: String? {
+        if refreshIssue?.recoverable == false { return nil }
+        if filterEmptyReason != nil { return "重置筛选" }
+        if offersEvidenceRecovery {
+            if evidenceAvailability?.recoveryAction == "record", onAddEvidence != nil { return "补充到访与评分" }
+            if evidenceAvailability?.recoveryAction == "city" { return "切换城市" }
+        }
+        return "重试"
+    }
+    private var primaryEmptyAction: (() -> Void)? {
+        if refreshIssue?.recoverable == false { return nil }
+        if filterEmptyReason != nil { return onResetFilters }
+        if offersEvidenceRecovery {
+            if evidenceAvailability?.recoveryAction == "record", let onAddEvidence { return onAddEvidence }
+            if evidenceAvailability?.recoveryAction == "city" { return { enteringCity = true } }
+        }
+        return onRetry
+    }
+
     private var emptyStateMessage: String {
+        if let refreshIssue { return refreshIssue.message }
         switch filterEmptyReason {
-        case .locationUnavailable: "允许定位，或等待当前城市餐厅加载后再试。"
-        case .filtersTooStrict: "已加载 \(unfilteredCardCount) 家真实餐厅；可以重置筛选或继续加载。"
-        case nil: message ?? "换个时间再来看看。"
+        case .locationUnavailable: return "允许定位，或等待当前城市餐厅加载后再试。"
+        case .filtersTooStrict: return "已加载 \(unfilteredCardCount) 家真实餐厅；可以重置筛选或继续加载。"
+        case nil: return message ?? "换个时间再来看看。"
         }
     }
 
@@ -630,7 +758,7 @@ struct DiscoveryContentView: View {
     }
 
     private var ratingChipTitle: String {
-        filters.minimumRating.map { String(format: "餐厅评分 %.1f+", $0) } ?? "餐厅评分"
+        filters.minimumRating.map { String(format: "餐厅评分 %.1f+", $0 * 2) } ?? "餐厅评分"
     }
 
     private func discoveryFilterChip(
@@ -770,10 +898,10 @@ private struct DiscoveryFilterSheet: View {
                 if focus == .all || focus == .rating {
                     Section {
                     Picker("最低评分", selection: $filters.minimumRating) {
-                        Text("不限").tag(Double?.none)
-                        Text("3.5 分以上").tag(Double?.some(3.5))
-                        Text("4.0 分以上").tag(Double?.some(4.0))
-                        Text("4.5 分以上").tag(Double?.some(4.5))
+                        Text("不限评分").tag(Double?.none)
+                        ForEach(TasteMapRatingFilterOptions.discoveryThresholdsOutOfTen, id: \.self) { score in
+                            Text(TasteMapRatingFilterOptions.label(for: score)).tag(Double?.some(score / 2))
+                        }
                     }
                     .accessibilityIdentifier("discovery-rating")
                 } header: {
@@ -819,7 +947,6 @@ private struct DiscoveryFilterSheet: View {
 }
 
 struct DiscoveryRestaurantQuickActions: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let viewerState: DiscoveryViewerRestaurantStateV1
     let onRecordVisit: () -> Void
     let onWantToGo: () -> Void
@@ -829,44 +956,53 @@ struct DiscoveryRestaurantQuickActions: View {
     let restaurantKey: String
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                LazyVGrid(columns: [GridItem(.flexible())], spacing: 8) { actions }
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 7) { actions }
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) { actions }
-                }
-            }
-        }
-        .controlSize(.small)
+        HStack(spacing: 0) { actions }
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder private var actions: some View {
-        Button(action: onRecordVisit) { Label("记录", systemImage: "plus.circle") }
-            .buttonStyle(.borderedProminent)
+        circularAction("记录到访", systemImage: "plus", action: onRecordVisit)
             .accessibilityIdentifier("\(identifierPrefix)-record-\(restaurantKey)")
+            .contextMenu {
+                Button("加入我的食单", systemImage: "list.number", action: onAddToList)
+            }
         if viewerState == .none {
-            Button(action: onWantToGo) { Label("想吃", systemImage: "bookmark") }
-                .buttonStyle(.bordered)
+            circularAction("加入想吃", systemImage: "bookmark", action: onWantToGo)
                 .accessibilityIdentifier("\(identifierPrefix)-want-\(restaurantKey)")
         } else {
-            Label(
-                viewerState == .visited ? "去过" : "已想吃",
-                systemImage: viewerState == .visited
-                    ? RestaurantStatus.visited.systemImage
-                    : "bookmark.fill"
+            circularAction(
+                viewerState == .visited ? "已去过" : "已想吃",
+                systemImage: "bookmark.fill",
+                selected: true,
+                action: onWantToGo
             )
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(viewerState == .visited ? .green : .blue)
-            .frame(minHeight: 30)
+            .disabled(true)
         }
-        Button(action: onAddToList) { Label("榜单", systemImage: "list.number") }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("\(identifierPrefix)-list-\(restaurantKey)")
-        Button(action: onAddToRoulette) { Label("轮盘", systemImage: "circle.hexagongrid") }
-            .buttonStyle(.bordered)
+        circularAction("加入转盘", systemImage: "dice", action: onAddToRoulette)
             .accessibilityIdentifier("\(identifierPrefix)-roulette-\(restaurantKey)")
+    }
+
+    private func circularAction(
+        _ title: String,
+        systemImage: String,
+        selected: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Group {
+                if systemImage == "dice" { TasteMapDiceActionGlyph().frame(width: TasteMapDesignTokens.Icon.standard, height: TasteMapDesignTokens.Icon.standard) }
+                else { Image(systemName: systemImage) }
+            }
+                .font(.system(size: TasteMapDesignTokens.Icon.standard, weight: .regular))
+                .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                .frame(width: TasteMapDesignTokens.Activity.restaurantActionDiameter, height: TasteMapDesignTokens.Activity.restaurantActionDiameter)
+                .background(selected ? TasteMapCoreTheme.brandSoft : TasteMapCoreTheme.surface, in: Circle())
+                .overlay { Circle().stroke(TasteMapCoreTheme.border, lineWidth: TasteMapDesignTokens.Border.standard) }
+                .frame(width: TasteMapDesignTokens.Control.minimumHitTarget, height: TasteMapDesignTokens.Control.minimumHitTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 }
 
@@ -884,9 +1020,9 @@ private struct DiscoveryRestaurantCard: View {
     var body: some View {
         TasteMapActivityCard {
             VStack(alignment: .leading, spacing: 13) {
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top) {
+                        Button(action: onOpen) {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(card.restaurant.name).font(.headline).foregroundStyle(.primary)
                                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
@@ -896,26 +1032,38 @@ private struct DiscoveryRestaurantCard: View {
                                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("discovery-open-\(card.restaurant.globalKey)")
                         Spacer()
-                        FoodDiningVisualIcon(
+                        if card.mode == .forYou {
+                            TasteMapRecommendationSignalView(matchPercent: card.personalTastePercent, probability: card.calibratedLikeProbability)
+                        } else {
+                            FoodDiningVisualIcon(
                             kind: FoodDiningVisualLibrary.kind(
                                 legacySymbol: card.restaurant.markerEmoji
                             ),
                             usage: .decorative,
                             size: 34
-                        )
+                            )
+                        }
                     }
-                    DiscoveryRestaurantImage(restaurant: card.restaurant, photoAPI: photoAPI)
+                    if card.mode == .similarTaste {
+                        PublicContentActivityMedia(presentation: .init(card: card), restaurantName: card.restaurant.name,
+                                                   tags: card.restaurant.tags, semanticID: card.id, photoAPI: photoAPI,
+                                                   onOpenRestaurant: onOpen)
+                    } else {
+                    Button(action: onOpen) { DiscoveryRestaurantImage(restaurant: card.restaurant, photoAPI: photoAPI)
                         .frame(
                             width: TasteMapDesignTokens.Layout.socialFeedMediaWidth,
                             height: TasteMapDesignTokens.Layout.socialFeedMediaWidth
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                    }.buttonStyle(.plain)
+                    }
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("discovery-open-\(card.restaurant.globalKey)")
             recommendationReasons
             if let similarity = card.displayableSimilarity {
                 Label(
@@ -943,6 +1091,9 @@ private struct DiscoveryRestaurantCard: View {
                 )
                 .font(.caption)
                 .foregroundStyle(TasteMapCoreTheme.textSecondary)
+            }
+            if card.mode == .forYou {
+                RestaurantNotInterestedButton(restaurantID: card.restaurant.globalKey)
             }
             DiscoveryRestaurantQuickActions(
                 viewerState: card.viewerState,
@@ -988,27 +1139,10 @@ private struct DiscoveryRestaurantCard: View {
     }
 
     @ViewBuilder private var recommendationReasons: some View {
-        if let first = card.reasons.first {
-            Label(first.text, systemImage: reasonIcon)
-                .font(.subheadline.weight(.medium)).foregroundStyle(Color.accentColor)
-            if card.reasons.count > 1 {
-                DisclosureGroup("查看全部推荐依据") {
-                    VStack(alignment: .leading, spacing: 7) {
-                        ForEach(card.reasons.dropFirst()) { reason in
-                            Label(reason.text, systemImage: "checkmark.circle")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.top, 6)
-                }
-                .font(.caption.weight(.semibold))
+        if !card.reasons.isEmpty {
+            TasteMapRecommendationReasons(reasons: card.reasons.map(\.text))
                 .accessibilityIdentifier("discovery-reasons-\(card.restaurant.globalKey)")
-            }
         }
-    }
-
-    private var reasonIcon: String {
-        switch card.mode { case .forYou: "sparkles"; case .similarTaste: "person.2.wave.2"; case .trending: "flame.fill" }
     }
 }
 
@@ -1021,7 +1155,7 @@ struct DiscoveryRestaurantImage: View {
         TasteMapRestaurantImage(
             resolution: RestaurantImagePriorityPolicy.resolution(
                 localUserPhotoID: nil,
-                publicOrCachedPhotoID: restaurant.photo?.photoId,
+                publicOrCachedPhotoID: restaurant.photo?.isActualDiningPhoto == true ? restaurant.photo?.photoId : nil,
                 providerMerchantImageURL: nil as String?
             ),
             photoAPI: photoAPI,
@@ -1030,6 +1164,8 @@ struct DiscoveryRestaurantImage: View {
             fallbackBackgroundColor: Color.accentColor.opacity(0.14),
             fallbackIconSize: 64,
             categoryVisualID: FoodCategoryVisualResolver.resolve(name: restaurant.name, tags: restaurant.tags),
+            foodLibraryArtwork: .init(name: restaurant.name, tags: restaurant.tags,
+                                      categoryVisualID: FoodCategoryVisualResolver.resolve(name: restaurant.name, tags: restaurant.tags)),
             accessibilityLabel: "\(restaurant.name)餐厅图片"
         )
     }
@@ -1103,7 +1239,6 @@ struct DiscoveryRestaurantDestination: View {
                             canRecordVisit: currentUserID != nil,
                             canMarkWantToGo: currentUserID != nil && viewerState == .none,
                             canEdit: false,
-                            canDelete: false,
                             canAddToList: currentUserID != nil,
                             canAddToRoulette: currentUserID != nil,
                             identifiers: .discoveryDetail(restaurantKey: card.restaurant.globalKey),
@@ -1113,8 +1248,7 @@ struct DiscoveryRestaurantDestination: View {
                             onAddToList: { addingToList = true },
                             onAddToRoulette: addToRoulette,
                             onCopyName: { UIPasteboard.general.string = card.restaurant.name },
-                            onCopyAddress: { UIPasteboard.general.string = card.restaurant.address },
-                            onDelete: {}
+                            onCopyAddress: { UIPasteboard.general.string = card.restaurant.address }
                         )
                     } business: {
                         if remoteMetadata.hasBusinessInformation {

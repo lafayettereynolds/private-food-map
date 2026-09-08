@@ -1,17 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { wantedMarkerScale } from './mapMarkers'
+import { isUnvisitedMapMarker } from './mapMarkers'
 
-describe('wantedMarkerScale', () => {
-  it('makes nearby restaurants larger and distant restaurants smaller', () => {
-    expect(wantedMarkerScale(0)).toBeCloseTo(1.28)
-    expect(wantedMarkerScale(2)).toBeGreaterThan(wantedMarkerScale(10))
-    expect(wantedMarkerScale(10)).toBeGreaterThan(wantedMarkerScale(30))
-    expect(wantedMarkerScale(30)).toBeCloseTo(0.78)
-    expect(wantedMarkerScale(100)).toBeCloseTo(0.78)
+describe('pending map marker emphasis', () => {
+  it('enlarges wanted and recommended destinations using the same semantic state', () => {
+    expect(isUnvisitedMapMarker('wantToGo')).toBe(true)
+    expect(isUnvisitedMapMarker('visited', true)).toBe(true)
+    expect(isUnvisitedMapMarker('wantToGo', true)).toBe(true)
   })
 
-  it('falls back to the normal size for invalid distances', () => {
-    expect(wantedMarkerScale(Number.NaN)).toBe(1)
-    expect(wantedMarkerScale(-1)).toBe(1)
+  it('leaves visited markers at their existing size', () => {
+    expect(isUnvisitedMapMarker('visited')).toBe(false)
   })
 })

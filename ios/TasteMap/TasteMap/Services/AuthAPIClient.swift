@@ -7,7 +7,8 @@ protocol AuthAPI: Sendable {
         state: String,
         nonce: String,
         givenName: String?,
-        familyName: String?
+        familyName: String?,
+        referralCode: String?
     ) async throws -> AuthSessionResponseV1
     func refresh(refreshToken: String) async throws -> AuthSessionResponseV1
     func logout(accessToken: String?, refreshToken: String) async throws
@@ -38,7 +39,8 @@ final class URLSessionAuthAPIClient: AuthAPI, @unchecked Sendable {
         state: String,
         nonce: String,
         givenName: String?,
-        familyName: String?
+        familyName: String?,
+        referralCode: String? = nil
     ) async throws -> AuthSessionResponseV1 {
         try await send(path: "/api/v1/auth/apple/exchange", body: AppleExchangeRequest(
             apiVersion: AuthV1Contract.apiVersion,
@@ -46,7 +48,8 @@ final class URLSessionAuthAPIClient: AuthAPI, @unchecked Sendable {
             state: state,
             nonce: nonce,
             givenName: givenName,
-            familyName: familyName
+            familyName: familyName,
+            referralCode: referralCode
         ))
     }
 
@@ -101,6 +104,7 @@ private struct AppleExchangeRequest: Encodable {
     let nonce: String
     let givenName: String?
     let familyName: String?
+    let referralCode: String?
 }
 
 private struct RefreshRequest: Encodable {

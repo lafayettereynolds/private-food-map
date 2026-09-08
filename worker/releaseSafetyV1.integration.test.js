@@ -62,6 +62,9 @@ describe('Release safety V1 integration', () => {
   })
 
   it('reports idempotently and blocks content in feed, comments, search, and direct profile reads', async () => {
+    // This test must start with an eligible public feed visit. Unrated visits
+    // remain private-history content and are excluded by the feed contract.
+    await database.prepare("UPDATE visits SET rating = 4 WHERE id = 'visit-b'").run()
     const reportBody = {
       apiVersion: 1, requestId: crypto.randomUUID(), contentType: 'visit', contentId: 'visit-b',
       reason: 'spam', details: 'Repeated promotional content', userId: 'tm_b',

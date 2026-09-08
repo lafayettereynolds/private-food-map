@@ -11,6 +11,11 @@ export interface AMapLngLat {
   getLat(): number
 }
 
+export interface AMapPixel {
+  getX(): number
+  getY(): number
+}
+
 interface AMapPoi {
   id?: string
   name?: string
@@ -19,9 +24,11 @@ interface AMapPoi {
   adname?: string | string[]
   location?: AMapLngLat
   photos?: { url?: string }[]
+  type?: string | string[]
+  typecode?: string
   tel?: string | string[]
   biz_ext?: { open_time?: string }
-  business?: { opentime_today?: string; opentime_week?: string }
+  business?: { opentime_today?: string; opentime_week?: string; tag?: string | string[] }
 }
 
 interface PlaceSearchResult {
@@ -64,14 +71,15 @@ export interface AMapInstance {
   getZoom(): number
   getCenter(): AMapLngLat
   getBounds(): { getNorthEast(): AMapLngLat; getSouthWest(): AMapLngLat }
+  lngLatToContainer(position: [number, number] | AMapLngLat): AMapPixel
   setZoomAndCenter(
     zoom: number,
     center: [number, number] | AMapLngLat,
     immediately?: boolean,
     duration?: number,
   ): void
-  on(event: 'click' | 'moveend' | 'zoomend', handler: (event?: unknown) => void): void
-  off(event: 'click' | 'moveend' | 'zoomend', handler: (event?: unknown) => void): void
+  on(event: 'click' | 'moveend' | 'zoomend' | 'zoomchange', handler: (event?: unknown) => void): void
+  off(event: 'click' | 'moveend' | 'zoomend' | 'zoomchange', handler: (event?: unknown) => void): void
 }
 
 export interface AMapMarkerInstance {
@@ -144,6 +152,23 @@ const securityCode = (
 
 export const isAmapConfigured = Boolean(amapKey && securityCode)
 
+/**
+ * Keeps only category words returned by AMap itself. The universal root
+ * "餐饮服务" carries no taste signal, so the more specific provider levels
+ * and food tags are persisted instead. Nothing is guessed from the POI name.
+ */
+export function amapCategoryHints(
+  type: string | string[] | null | undefined,
+  businessTag: string | string[] | null | undefined,
+) {
+  const values = [type, businessTag]
+    .flatMap((value) => Array.isArray(value) ? value : value ? [value] : [])
+    .flatMap((value) => value.split(/[;；|,/、]+/u))
+    .map((value) => value.trim())
+    .filter((value) => value && value !== '餐饮服务')
+  return [...new Set(values)]
+}
+
 let amapPromise: Promise<AMapNamespace> | null = null
 
 export function loadAmap(): Promise<AMapNamespace> {
@@ -181,14 +206,28 @@ export async function detectCurrentCoordinates(): Promise<Coordinates> {
     withTimeout(loadAmap(), 7_000, '地图服务加载超时，请检查网络后重试。'),
     readBrowserGps(),
   ])
-  return withTimeout(new Promise<Coordinates>((resolve) => {
-    AMap.convertFrom([gps.longitude, gps.latitude], 'gps', (status, result) => {
-      const converted = status === 'complete' && typeof result !== 'string' ? result.locations?.[0] : null
-      resolve(converted
-        ? { longitude: converted.getLng(), latitude: converted.getLat() }
-        : { longitude: gps.longitude, latitude: gps.latitude })
-    })
-  }), 2_500, '坐标转换超时。').catch(() => ({ longitude: gps.longitude, latitude: gps.latitude }))
+  // Browser GPS and the AMap provider do not share a coordinate contract.
+  // Only an explicit, valid SDK conversion may cross this boundary; raw GPS
+  // must never impersonate an AMap query/distance/marker coordinate on failure.
+  const conversionError = () => new Error('当前位置转换失败，请重试定位，或使用城市/地址搜索。')
+  return withTimeout(new Promise<Coordinates>((resolve, reject) => {
+    try {
+      AMap.convertFrom([gps.longitude, gps.latitude], 'gps', (status, result) => {
+        try {
+          const converted = status === 'complete' && result && typeof result !== 'string' ? result.locations?.[0] : null
+          if (!converted) throw conversionError()
+          const longitude = converted.getLng()
+          const latitude = converted.getLat()
+          if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || Math.abs(longitude) > 180 || Math.abs(latitude) > 90) throw conversionError()
+          resolve({ longitude, latitude })
+        } catch {
+          reject(conversionError())
+        }
+      })
+    } catch {
+      reject(conversionError())
+    }
+  }), 2_500, '当前位置转换超时，请重试定位，或使用城市/地址搜索。')
 }
 
 function readBrowserGps(): Promise<Coordinates> {
@@ -314,7 +353,7 @@ function textValue(value: string | string[] | undefined) {
 export async function searchRestaurantPois(
   keyword: string,
   city?: string,
-  options: { center?: Coordinates; timeoutMs?: number; radiusMeters?: number; categoryOnly?: boolean } = {},
+  options: { center?: Coordinates; timeoutMs?: number; radiusMeters?: number; categoryOnly?: boolean; page?: number } = {},
 ): Promise<PoiSearchResult[]> {
   const normalizedKeyword = normalizeRestaurantKeyword(keyword)
   if (!normalizedKeyword && !options.categoryOnly) return []
@@ -336,7 +375,7 @@ export async function searchRestaurantPois(
       citylimit: Boolean(city?.trim()),
       type: '050000',
       pageSize: 15,
-      pageIndex: 1,
+      pageIndex: Math.min(20, Math.max(1, Math.floor(options.page ?? 1))),
       extensions: 'all',
     })
 
@@ -365,6 +404,7 @@ export async function searchRestaurantPois(
               district: textValue(poi.adname),
               longitude: poi.location.getLng(),
               latitude: poi.location.getLat(),
+              categoryHints: amapCategoryHints(poi.type, poi.business?.tag),
               merchantImageUrl: Array.isArray(poi.photos)
                 ? poi.photos.find((photo) => photo?.url)?.url ?? null
                 : null,

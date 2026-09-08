@@ -9,16 +9,22 @@ describe('HybridRouteRegistry', () => {
     expect(HYBRID_ROUTE_REGISTRY.visitEdit).toBe('HYBRID_INTEGRATED')
   })
 
-  it('round-trips ready routes and keeps unknown paths at Profile', () => {
+  it('round-trips ready routes and keeps empty or invalid paths at Map', () => {
     const detail = { surface: 'restaurant' as const, id: 'restaurant id' }
     expect(routeFromLocation({ hash: routeHash(detail) } as Location)).toEqual(detail)
-    expect(routeFromLocation({ hash: '#/unknown' } as Location)).toEqual({ surface: 'profile' })
+    for (const hash of ['', '#/', '#/unknown', '#/restaurant']) {
+      expect(routeFromLocation({ hash } as Location)).toEqual({ surface: 'map' })
+    }
+    expect(routeFromStartupLocation({ hash: '' })).toEqual({ surface: 'map' })
   })
 
   it('keeps an explicit Browser or Capacitor route authoritative over the Debug fallback', () => {
     expect(routeFromStartupLocation({ hash: '#/discovery' } as Location, '#/map')).toEqual({ surface: 'discovery' })
     expect(routeFromStartupLocation({ hash: '#/add' } as Location, '#/map')).toEqual({ surface: 'add' })
     expect(routeFromStartupLocation({ hash: '' } as Location, '#/map')).toEqual({ surface: 'map' })
+    expect(routeFromStartupLocation({ hash: '' }, '#/profile')).toEqual({ surface: 'profile' })
+    expect(routeFromStartupLocation({ hash: '#/profile' }, '#/map')).toEqual({ surface: 'profile' })
+    expect(routeFromStartupLocation({ hash: '#/restaurant/r1' }, '#/map')).toEqual({ surface: 'restaurant', id: 'r1' })
   })
 
   it('allowlists app and universal deep-link shapes', () => {

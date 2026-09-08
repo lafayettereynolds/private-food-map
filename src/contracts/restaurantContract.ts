@@ -26,6 +26,7 @@ export interface RestaurantJSONContractV1 {
   longTermNote: string
   pricePerPerson: number | null
   phone: string | null
+  websiteUrl?: string | null
   openingHours: string | null
   markerType: Restaurant['markerType']
   markerPhotoId: string | null
@@ -59,7 +60,7 @@ const allowedKeys = new Set([
   'address', 'city', 'latitude', 'longitude', 'status', 'preferenceLevel',
   'overallRating', 'foodRating', 'environmentRating', 'serviceRating',
   'valueRating', 'tags', 'longTermNote', 'pricePerPerson', 'phone',
-  'openingHours', 'markerType', 'markerPhotoId', 'merchantImageUrl',
+  'websiteUrl', 'openingHours', 'markerType', 'markerPhotoId', 'merchantImageUrl',
   'markerEmoji', 'createdAt', 'updatedAt', 'deletedAt', 'isTestData',
 ])
 const legacyAllowedKeys = new Set([...allowedKeys].filter((key) => !['schemaVersion', 'placeIdentities'].includes(key)))
@@ -98,6 +99,7 @@ export function restaurantToJSONContract(
     longTermNote: restaurant.longTermNote,
     pricePerPerson: restaurant.pricePerPerson,
     phone: restaurant.phone ?? null,
+    websiteUrl: restaurant.websiteUrl ?? null,
     openingHours: restaurant.openingHours ?? null,
     markerType: restaurant.markerType,
     markerPhotoId: restaurant.markerPhotoId ?? null,
@@ -128,6 +130,12 @@ export function decodeRestaurantJSONContract(value: unknown): RestaurantJSONCont
   }
   if ('isTestData' in value && typeof value.isTestData !== 'boolean') {
     throw new RestaurantContractError('isTestData must be boolean when present.')
+  }
+  if ('websiteUrl' in value && value.websiteUrl !== null && typeof value.websiteUrl !== 'string') {
+    throw new RestaurantContractError('websiteUrl must be a string or null when present.')
+  }
+  if (typeof value.websiteUrl === 'string' && !isSafeWebsiteURL(value.websiteUrl)) {
+    throw new RestaurantContractError('websiteUrl must use http or https when present.')
   }
   return { ...value, placeIdentities } as unknown as RestaurantJSONContractV1
 }
@@ -248,6 +256,15 @@ function assertPrimaryIdentity(identities: RestaurantPlaceIdentity[]) {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+function isSafeWebsiteURL(value: string) {
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && Boolean(url.hostname)
+  } catch {
+    return false
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

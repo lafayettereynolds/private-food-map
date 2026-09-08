@@ -1,13 +1,16 @@
 import { useState, type ChangeEvent } from 'react'
-import { ChevronDown, ImagePlus, Plus, Trash2, UtensilsCrossed } from 'lucide-react'
+import { ChevronDown, ImagePlus, LockKeyhole, Plus, Trash2, UtensilsCrossed } from 'lucide-react'
 import type { VisitDish } from '../types/domain'
 import { optimizeMarkerImage } from '../utils/images'
 import { StarRating } from './StarRating'
 import { SyncedImage } from './SyncedImage'
+import { openPremiumPaywall } from '../services/premiumPaywall'
 
 interface DishEditorProps {
+  canUploadPhotos?: boolean
   value: VisitDish[]
   onChange: (value: VisitDish[]) => void
+  validatePhotoChange?: (value: VisitDish[]) => void
   onPickNativePhoto?: () => Promise<{ source: string; photoID: string } | null>
   onRemoveNativePhoto?: (photoID: string) => Promise<void>
 }
@@ -24,7 +27,7 @@ function createDish(): VisitDish {
   }
 }
 
-export function DishEditor({ value, onChange, onPickNativePhoto, onRemoveNativePhoto }: DishEditorProps) {
+export function DishEditor({ value, onChange, validatePhotoChange, onPickNativePhoto, onRemoveNativePhoto, canUploadPhotos = false }: DishEditorProps) {
   const [expanded, setExpanded] = useState(value.length > 0)
   const [error, setError] = useState('')
 
@@ -38,7 +41,10 @@ export function DishEditor({ value, onChange, onPickNativePhoto, onRemoveNativeP
     if (!file) return
     setError('')
     try {
-      updateDish(dishId, { imageData: await optimizeMarkerImage(file), photoId: null })
+      const imageData = await optimizeMarkerImage(file)
+      const next = value.map((dish) => dish.id === dishId ? { ...dish, imageData, photoId: null } : dish)
+      validatePhotoChange?.(next)
+      onChange(next)
     } catch (imageError) {
       setError(imageError instanceof Error ? imageError.message : '图片处理失败。')
     }
@@ -50,8 +56,14 @@ export function DishEditor({ value, onChange, onPickNativePhoto, onRemoveNativeP
     try {
       const photo = await onPickNativePhoto()
       if (photo) {
+        const next = value.map((item) => item.id === dish.id ? { ...item, imageData: photo.source, photoId: photo.photoID } : item)
+        try { validatePhotoChange?.(next) }
+        catch (error) {
+          await onRemoveNativePhoto?.(photo.photoID)
+          throw error
+        }
         if (dish.photoId && onRemoveNativePhoto) await onRemoveNativePhoto(dish.photoId)
-        updateDish(dish.id, { imageData: photo.source, photoId: photo.photoID })
+        onChange(next)
       }
     } catch (imageError) {
       setError(imageError instanceof Error ? imageError.message : '图片处理失败。')
@@ -70,14 +82,16 @@ export function DishEditor({ value, onChange, onPickNativePhoto, onRemoveNativeP
           <span><UtensilsCrossed size={15} /><strong>菜品</strong>{value.length ? <b>{value.length}</b> : null}</span>
           {value.length ? <ChevronDown className={expanded ? 'is-open' : ''} size={15} /> : null}
         </button>
-        <button className="dish-editor__quick-add" onClick={addDish} type="button"><Plus size={13} /> 添加</button>
+        <button aria-label="添加菜品" className="dish-editor__quick-add" onClick={addDish} type="button"><Plus aria-hidden="true" size={16} /> 添加菜品</button>
       </header>
 
       {expanded ? (
         <div className="dish-editor__content">
           {value.map((dish, index) => (
             <article className="dish-row" key={dish.id}>
-              {onPickNativePhoto ? <button aria-label={`选择第 ${index + 1} 道菜的照片`} className="dish-image-input" onClick={() => void handleNativeImage(dish)} type="button">
+              {!canUploadPhotos ? <button aria-label="菜品照片需要 Premium" className="dish-image-input" type="button" onClick={()=>openPremiumPaywall('dish_photos')}>
+                {dish.imageData || dish.photoId ? <SyncedImage alt="" photoId={dish.photoId} source={dish.imageData}/> : <LockKeyhole size={18}/>}
+              </button> : onPickNativePhoto ? <button aria-label={`选择第 ${index + 1} 道菜的照片`} className="dish-image-input" onClick={() => void handleNativeImage(dish)} type="button">
                 {dish.imageData || dish.photoId ? <SyncedImage alt="" photoId={dish.photoId} source={dish.imageData} /> : <ImagePlus size={18} />}
               </button> : <label className="dish-image-input">
                 {dish.imageData || dish.photoId ? <SyncedImage alt="" photoId={dish.photoId} source={dish.imageData} /> : <ImagePlus size={18} />}

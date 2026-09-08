@@ -27,13 +27,13 @@ struct RestaurantDetailPresentation {
     var latestVisit: Visit? { activeVisits.first }
 
     var totalSpend: Decimal? {
-        let values = activeVisits.compactMap(\.myActualSpend)
+        let values = activeVisits.compactMap(\.resolvedActualSpend)
         guard !values.isEmpty else { return nil }
         return values.reduce(.zero, +)
     }
 
     var averageSpend: Decimal? {
-        let values = activeVisits.compactMap(\.myActualSpend)
+        let values = activeVisits.compactMap(\.resolvedActualSpend)
         guard !values.isEmpty else { return nil }
         return values.reduce(.zero, +) / Decimal(values.count)
     }
@@ -114,6 +114,7 @@ struct RestaurantExperienceTagGroup: Identifiable, Equatable {
 struct RestaurantDetailMetadata: Equatable {
     let ownerUserID: String?
     let storedPhone: String?
+    let websiteURL: URL?
     let openingHours: String?
     let referencePrice: Decimal?
     let longTermNote: String?
@@ -130,6 +131,7 @@ struct RestaurantDetailMetadata: Equatable {
         }
         ownerUserID = Self.trimmed(record?.userId)
         storedPhone = Self.trimmed(record?.phone)
+        websiteURL = Self.safeWebURL(record?.websiteUrl)
         openingHours = Self.trimmed(record?.openingHours)
         if let price = record?.pricePerPerson, price.isFinite, price > 0 {
             referencePrice = Decimal(price)
@@ -153,8 +155,9 @@ struct RestaurantDetailMetadata: Equatable {
 
     init(projection: DiscoveryRestaurantProjectionV1) {
         ownerUserID = nil
-        storedPhone = nil
-        openingHours = nil
+        storedPhone = Self.trimmed(projection.phone)
+        websiteURL = Self.safeWebURL(projection.websiteUrl)
+        openingHours = Self.trimmed(projection.openingHours)
         if let price = projection.pricePerPerson, price.isFinite, price > 0 {
             referencePrice = Decimal(price)
         } else {
@@ -162,7 +165,7 @@ struct RestaurantDetailMetadata: Equatable {
         }
         longTermNote = nil
         merchantImageURL = Self.safeHTTPSURL(projection.merchantImageUrl)
-        markerPhotoID = projection.photo?.photoId
+        markerPhotoID = projection.photo.flatMap { $0.isActualDiningPhoto ? $0.photoId : nil }
         markerEmoji = Self.trimmed(projection.markerEmoji) ?? "🍽️"
         markerType = .emoji
         globalIdentityKeys = Set(
@@ -176,7 +179,7 @@ struct RestaurantDetailMetadata: Equatable {
     }
 
     var hasBusinessInformation: Bool {
-        callablePhone != nil || openingHours != nil || referencePrice != nil || longTermNote != nil
+        callablePhone != nil || websiteURL != nil || openingHours != nil || referencePrice != nil || longTermNote != nil
     }
 
     static func trimmed(_ value: String?) -> String? {
@@ -188,6 +191,13 @@ struct RestaurantDetailMetadata: Equatable {
     static func safeHTTPSURL(_ value: String?) -> URL? {
         guard let value = trimmed(value), let url = URL(string: value),
               url.scheme?.lowercased() == "https", url.host?.isEmpty == false else { return nil }
+        return url
+    }
+
+    static func safeWebURL(_ value: String?) -> URL? {
+        guard let value = trimmed(value), let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false else { return nil }
         return url
     }
 }
@@ -281,7 +291,8 @@ enum RestaurantDetailImageResolver {
             guard photo.restaurantId == restaurantID,
                   photo.deletedAt == nil,
                   photo.binaryDeletedAt == nil,
-                  [.restaurantMarker, .visit, .dish].contains(photo.kind) else { return false }
+                  photo.uploadState != .deleted,
+                  [.visit, .dish].contains(photo.kind) else { return false }
             return photo.visitId.map(activeVisitIDs.contains) ?? true
         }
     }
@@ -290,7 +301,7 @@ enum RestaurantDetailImageResolver {
         _ photos: [PhotoAsset],
         metadata: RestaurantDetailMetadata
     ) -> [PhotoAsset] {
-        photos.sorted { left, right in
+        photos.filter { [.visit, .dish].contains($0.kind) }.sorted { left, right in
             let leftRank = rank(left, markerPhotoID: metadata.markerPhotoID)
             let rightRank = rank(right, markerPhotoID: metadata.markerPhotoID)
             if leftRank != rightRank { return leftRank < rightRank }
@@ -306,7 +317,6 @@ enum RestaurantDetailImageResolver {
         if let photo = orderedPhotos(photos, metadata: metadata).first {
             return .ownedPhoto(photo.id)
         }
-        if let url = metadata.merchantImageURL { return .merchant(url) }
         return .brand(metadata.markerEmoji)
     }
 

@@ -202,6 +202,21 @@ struct PersonalRestaurantFilterState: Equatable {
     }
 }
 
+/// One independent query per Map scope, shared by its Map and List views.
+struct PersonalRestaurantScopeQueries {
+    struct Query {
+        var filters: PersonalRestaurantFilterState
+        var search = ""
+    }
+    var scope: RestaurantBrowseSegment = .visited
+    private var saved: [RestaurantBrowseSegment: Query] = [:]
+
+    var current: Query {
+        get { saved[scope] ?? Query(filters: .init(status: scope == .wantToGo ? .wantToGo : .visited)) }
+        set { saved[scope] = newValue }
+    }
+}
+
 struct PersonalRestaurantFilterResult {
     let items: [RestaurantBrowseItem]
     let activeFilterCount: Int
@@ -230,7 +245,7 @@ enum PersonalRestaurantFilterEngine {
                 guard let band = PersonalRatingBand.band(for: item.averageRating),
                       state.ratingBands.contains(band) else { return false }
             }
-            if let city = state.city, item.restaurant.city != city { return false }
+            if let city = state.city, !RestaurantCityFilterIdentity.matches(item.restaurant.city, city) { return false }
             if let cuisine = state.cuisine,
                !item.restaurantTags.contains(cuisine) { return false }
             if let distance = state.distance {
@@ -343,11 +358,11 @@ enum PersonalRestaurantFilterEngine {
 
 enum PersonalRestaurantFilterProjection {
     static func options(from items: [RestaurantBrowseItem]) -> PersonalRestaurantFilterOptions {
-        let cities = Set(items.map(\.restaurant.city).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let cities = RestaurantCityFilterIdentity.options(items.map(\.restaurant.city))
         let cuisines = Set(items.flatMap(\.restaurantTags))
         let facets = items.flatMap(\.visitFacets)
         return PersonalRestaurantFilterOptions(
-            cities: cities.sorted { $0.localizedStandardCompare($1) == .orderedAscending },
+            cities: cities,
             cuisines: cuisines.sorted { $0.localizedStandardCompare($1) == .orderedAscending },
             companions: stableOptions(facets.flatMap(\.companionOptions)),
             sources: stableOptions(facets.flatMap(\.sourceOptions))

@@ -8,6 +8,7 @@ import UIKit
 enum TasteMapCoreTheme {
     static let brandUIColor = dynamicColor(light: .init(80, 108, 140), dark: .init(142, 167, 192))
     static let brand = Color(uiColor: brandUIColor)
+    static let onBrand = Color(uiColor: dynamicColor(light: .init(255, 255, 255), dark: .init(23, 42, 58)))
     static let brandDeep = Color(uiColor: dynamicColor(light: .init(52, 79, 105), dark: .init(183, 202, 220)))
     static let brandSoft = Color(uiColor: dynamicColor(light: .init(237, 242, 246), dark: .init(34, 47, 59)))
 
@@ -407,20 +408,24 @@ struct TasteMapActivityRatingBadge: View {
     var prefix = "这次到访"
     var accessibilityIdentifier: String?
 
+    private var score: Double? {
+        RestaurantScoreColorPolicy.score(forFivePointRating: rating)
+    }
+
     private var scoreColor: Color {
         let value = RestaurantScoreColorPolicy.color(forFivePointRating: rating)
         return Color(red: value.red, green: value.green, blue: value.blue)
     }
 
     var body: some View {
-        Text(rating.map { String(format: "%.1f", $0) } ?? "—")
-            .font(.system(size: 14, weight: .bold, design: .rounded))
+        Text(score.map { String(format: "%.1f", $0) } ?? "未评分")
+            .font(.system(size: score == nil ? 9 : 14, weight: .bold, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(scoreColor)
             .frame(width: 46, height: 46)
             .background(scoreColor.opacity(0.04), in: Circle())
             .overlay { Circle().stroke(scoreColor, lineWidth: 1.5) }
-            .accessibilityLabel(rating.map { String(format: "\(prefix)评分 %.1f", $0) } ?? "\(prefix)未评分")
+            .accessibilityLabel(score.map { String(format: "\(prefix)评分 %.1f", $0) } ?? "\(prefix)未评分")
             .accessibilityIdentifier(accessibilityIdentifier ?? "taste-map-activity-rating")
     }
 }
@@ -441,6 +446,200 @@ struct TasteMapActivityCard<Content: View>: View {
             .padding(.vertical, TasteMapDesignTokens.Spacing.regular)
             .overlay(alignment: .bottom) { Divider() }
             .accessibilityElement(children: .contain)
+    }
+}
+
+/// Complete supplied reasons are readable without opening a second presentation.
+struct TasteMapRecommendationReasons: View {
+    let reasons: [String]
+
+    private var normalizedReasons: [String] {
+        var seen = Set<String>()
+        return reasons.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    var body: some View {
+          TasteMapEvidenceFlowLayout(spacing: TasteMapDesignTokens.Activity.reasonGap) {
+            ForEach(normalizedReasons, id: \.self) { reason in
+                Text(reason)
+                    .font(TasteMapDesignTokens.Activity.reasonFont)
+                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, TasteMapDesignTokens.Activity.reasonHorizontalInset)
+                    .padding(.vertical, TasteMapDesignTokens.Activity.reasonVerticalInset)
+                    .background(TasteMapCoreTheme.brand.opacity(0.08), in: RoundedRectangle(cornerRadius: TasteMapDesignTokens.Activity.reasonRadius))
+            }
+          }
+          .accessibilityElement(children: .contain)
+          .accessibilityLabel("推荐理由")
+    }
+}
+
+private struct TasteMapEvidenceFlowLayout: Layout {
+    let spacing: CGFloat
+
+    private func layout(width: CGFloat, subviews: Subviews) -> (CGSize, [CGRect]) {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var usedWidth: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+            if x > 0 && x + size.width > width {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            frames.append(CGRect(x: x, y: y, width: size.width, height: size.height))
+            usedWidth = max(usedWidth, x + size.width)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return (CGSize(width: usedWidth, height: y + rowHeight), frames)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        layout(width: proposal.width ?? .infinity, subviews: subviews).0
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let (_, frames) = layout(width: bounds.width, subviews: subviews)
+        for (subview, frame) in zip(subviews, frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), anchor: .topLeading, proposal: ProposedViewSize(frame.size))
+        }
+    }
+}
+
+/// Native rendering of the same two-dice Lucide glyph used by React's RestaurantQuickActions (ISC).
+struct TasteMapDiceActionGlyph: View {
+    var body: some View {
+        GeometryReader { geometry in
+            Path { path in
+                path.addRoundedRect(in: CGRect(x: 2, y: 10, width: 12, height: 12), cornerSize: CGSize(width: 2, height: 2))
+                path.move(to: CGPoint(x: 17.92, y: 14))
+                path.addLine(to: CGPoint(x: 21.42, y: 10.5))
+                path.addCurve(to: CGPoint(x: 21.42, y: 7.5), control1: CGPoint(x: 22.25, y: 9.67), control2: CGPoint(x: 22.25, y: 8.33))
+                path.addLine(to: CGPoint(x: 16.42, y: 2.58))
+                path.addCurve(to: CGPoint(x: 13.42, y: 2.58), control1: CGPoint(x: 15.59, y: 1.75), control2: CGPoint(x: 14.25, y: 1.75))
+                path.addLine(to: CGPoint(x: 10, y: 6))
+                for point in [CGPoint(x: 6, y: 18), CGPoint(x: 10, y: 14), CGPoint(x: 15, y: 6), CGPoint(x: 18, y: 9)] {
+                    path.move(to: point); path.addLine(to: CGPoint(x: point.x + 0.01, y: point.y))
+                }
+            }
+            .applying(CGAffineTransform(scaleX: geometry.size.width / 24, y: geometry.size.height / 24))
+            .stroke(style: StrokeStyle(lineWidth: geometry.size.width / 12, lineCap: .round, lineJoin: .round))
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+struct TasteMapSocialActionLabel: View {
+    let systemImage: String
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: TasteMapDesignTokens.Activity.socialCountGap) {
+            Image(systemName: systemImage)
+                .font(.system(size: TasteMapDesignTokens.Icon.standard, weight: .regular))
+            if count > 0 {
+                Text(count, format: .number.notation(.compactName))
+                    .font(TasteMapDesignTokens.Activity.socialCountFont)
+                    .foregroundStyle(TasteMapCoreTheme.textSecondary)
+            }
+        }
+        .frame(minWidth: TasteMapDesignTokens.Control.minimumHitTarget, minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The legacy percentage is a match index. Only an approved, validated model
+/// target may supply probability; adding owner records alone never enables it.
+struct TasteMapRecommendationSignalView: View {
+    let matchPercent: Int?
+    let probability: TasteMapCalibratedLikeProbabilityDTO?
+    @State private var showingExplanation = false
+
+    private var validatedProbability: TasteMapCalibratedLikeProbabilityDTO? {
+        probability.flatMap { $0.isDisplayable() ? $0 : nil }
+    }
+    private var label: String { validatedProbability == nil ? "口味匹配度" : "喜欢概率" }
+    private var signalColor: Color {
+        let percent: Double?
+        if let probability = validatedProbability {
+            percent = (probability.value * 100).rounded()
+        } else if let matchPercent, (0...100).contains(matchPercent) {
+            percent = Double(matchPercent)
+        } else {
+            percent = nil
+        }
+        let rgb = RestaurantScoreColorPolicy.color(forTenPointScore: percent.map { $0 / 10 })
+        return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+    private var value: String {
+        if let probability = validatedProbability { return "\(Int((probability.value * 100).rounded()))%" }
+        guard let matchPercent, (0...100).contains(matchPercent) else { return "积累中" }
+        return "\(matchPercent)%"
+    }
+    private var explanation: String {
+        if let probability = validatedProbability {
+            return "经校准模型估计的正反馈概率。正反馈定义：\(probability.positiveFeedbackDefinition)。模型 \(probability.modelVersion) · 校准 \(probability.calibrationVersion) · 经过验证的样本 \(probability.validationSampleCount) 条。"
+        }
+        return "根据已有口味记录计算的匹配指数，不代表喜欢这家餐厅的概率。尚无符合展示条件的经校准概率；记录数量增加不会自动变成喜欢概率。"
+    }
+    var body: some View {
+        Button { showingExplanation = true } label: {
+          TasteMapRecommendationMedalArtwork(accent: signalColor, value: value, label: label)
+          .frame(width: TasteMapDesignTokens.Activity.recommendationMedalWidth, height: TasteMapDesignTokens.Activity.recommendationMedalHeight)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label) \(value)，查看说明")
+        .alert(label, isPresented: $showingExplanation) { Button("知道了", role: .cancel) {} } message: { Text(explanation) }
+    }
+}
+
+/// The same ornamental rosette/ribbon geometry as the shared React signal.
+/// It is decoration, not an award or an additional recommendation claim.
+private struct TasteMapRecommendationMedalArtwork: View {
+    let accent: Color
+    let value: String
+    let label: String
+    private let gold = Gradient(colors: [Color(red: 0.65, green: 0.42, blue: 0.11), Color(red: 0.96, green: 0.84, blue: 0.49), Color(red: 1, green: 0.94, blue: 0.72), Color(red: 0.76, green: 0.55, blue: 0.18), Color(red: 0.94, green: 0.82, blue: 0.48)])
+
+    var body: some View {
+        Canvas { context, size in
+            context.scaleBy(x: size.width / 72, y: size.height / 80)
+            func polygon(_ points: [CGPoint]) -> Path {
+                Path { path in
+                    if let first = points.first { path.move(to: first) }
+                    for point in points.dropFirst() { path.addLine(to: point) }
+                    path.closeSubpath()
+                }
+            }
+            let ribbon = polygon([.init(x: 20, y: 51), .init(x: 12, y: 75), .init(x: 23, y: 70), .init(x: 29, y: 77), .init(x: 35, y: 56)])
+            let ribbonRight = polygon([.init(x: 37, y: 56), .init(x: 43, y: 77), .init(x: 49, y: 70), .init(x: 60, y: 75), .init(x: 52, y: 51)])
+            context.fill(ribbon, with: .color(Color(red: 0.255, green: 0.345, blue: 0.42)))
+            context.fill(ribbonRight, with: .color(Color(red: 0.255, green: 0.345, blue: 0.42)))
+            for points in [[CGPoint(x: 25, y: 53), .init(x: 20, y: 71), .init(x: 25, y: 68), .init(x: 29, y: 73), .init(x: 34, y: 57)], [.init(x: 38, y: 57), .init(x: 43, y: 73), .init(x: 47, y: 68), .init(x: 52, y: 71), .init(x: 47, y: 53)]] {
+                context.fill(polygon(points), with: .linearGradient(gold, startPoint: .zero, endPoint: .init(x: 72, y: 86)))
+            }
+            let seal = polygon((0..<144).map { index in
+                let angle = Double(index) * .pi / 72 - .pi / 2
+                let radius = 30 + 1.6 * cos(Double(index) * .pi / 6)
+                return CGPoint(x: 36 + cos(angle) * radius, y: 34 + sin(angle) * radius)
+            })
+            context.fill(seal, with: .linearGradient(gold, startPoint: .zero, endPoint: .init(x: 72, y: 68)))
+            context.stroke(seal, with: .color(.brown.opacity(0.7)), lineWidth: 0.8)
+            context.stroke(Path(ellipseIn: CGRect(x: 8.6, y: 6.6, width: 54.8, height: 54.8)), with: .color(Color(red: 1, green: 0.96, blue: 0.8)), lineWidth: 0.8)
+            context.fill(Path(ellipseIn: CGRect(x: 11.5, y: 9.5, width: 49, height: 49)), with: .color(Color(red: 1, green: 0.992, blue: 0.96)))
+            context.stroke(Path(ellipseIn: CGRect(x: 13.5, y: 11.5, width: 45, height: 45)), with: .color(accent), lineWidth: 1)
+            let crown = polygon([.init(x: 30, y: 16), .init(x: 32, y: 21), .init(x: 40, y: 21), .init(x: 42, y: 16), .init(x: 38, y: 18), .init(x: 36, y: 14), .init(x: 34, y: 18)])
+            context.fill(crown, with: .color(Color(red: 0.75, green: 0.55, blue: 0.21)))
+            context.draw(Text(value).font(.system(size: value == "积累中" ? 12 : value == "100%" ? 13 : 16, weight: .bold)).monospacedDigit().foregroundStyle(accent), at: CGPoint(x: 36, y: 31), anchor: .center)
+            context.draw(Text(label).font(.system(size: 7.3, weight: .semibold)).foregroundStyle(Color(red: 0.41, green: 0.35, blue: 0.26)), at: CGPoint(x: 36, y: 43.5), anchor: .center)
+        }
+        .accessibilityHidden(true)
     }
 }
 

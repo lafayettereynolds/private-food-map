@@ -22,6 +22,7 @@ describe('Membership self contract V1', () => {
       entitlement: {
         state: 'active', isPremium: true, source: 'development', kind: 'lifetime',
         startsAt: '2026-01-01T00:00:00.000Z', expiresAt: null, isLifetime: true,
+        startedAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-08-28T12:00:00.000Z',
       },
       verifiedAt: NOW.toISOString(),
@@ -44,6 +45,7 @@ describe('Membership self contract V1', () => {
     expect(response.entitlement).toEqual({
       state: 'free', isPremium: false, source: null, kind: 'unspecified',
       startsAt: null, expiresAt: null, isLifetime: false, updatedAt: null,
+      startedAt: null,
     })
     expect(Object.keys(response).sort()).toEqual(['apiVersion', 'entitlement', 'userId', 'verifiedAt'])
   })

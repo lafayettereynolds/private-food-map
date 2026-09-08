@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import appleRestaurant from '../contracts/fixtures/restaurant.v1.valid.json'
+import referralVisit from '../contracts/fixtures/visit.v1.valid.json'
 import worker from './index'
 import {
   authenticateAccessToken,
@@ -56,6 +57,34 @@ describe('Native Auth V1', () => {
 
     await expect(exchange(database, 'apple-token-one', 'apple-subject-a'))
       .rejects.toMatchObject({ code: 'identity_token_replay' })
+  })
+
+  it('binds referral only inside new Apple registration, never on existing-account sign-in',async()=>{
+    const database=makeDatabase()
+    const inviter=await exchange(database,'referrer-token','referrer-subject')
+    const code='1234567890abcdef12345678'
+    database.sqlite.prepare('INSERT INTO referral_codes VALUES(?,?,?)').run(inviter.user.id,code,NOW.toISOString())
+    const invited=await exchange(database,'invitee-token','invitee-subject',code)
+    expect(database.get('SELECT referrer_id,invitee_id,status FROM referrals')).toMatchObject({referrer_id:inviter.user.id,invitee_id:invited.user.id,status:'pending'})
+    await exchange(database,'invitee-token-2','invitee-subject',code)
+    await exchange(database,'referrer-token-2','referrer-subject',code)
+    expect(database.get('SELECT count(*) n FROM referrals').n).toBe(1)
+    expect(database.get('SELECT count(*) n FROM premium_rewards').n).toBe(0)
+    const restaurant={...appleRestaurant,id:'referral-restaurant',userId:invited.user.id,isTestData:false}
+    const visit={...referralVisit,id:'referral-visit',restaurantId:restaurant.id,userId:invited.user.id,visitedAt:NOW.toISOString()}
+    const visitMutation={...mutation('referral-visit-write',visit.id,0,visit),entityType:'visit'}
+    const push=await sync(database,invited.session.accessToken,'/api/v1/sync/push','POST',{
+      apiVersion:1,schemaVersion:1,mutations:[mutation('referral-restaurant-write',restaurant.id,0,restaurant),visitMutation],
+    })
+    expect(push.status).toBe(200)
+    expect(database.get('SELECT status FROM referrals').status).toBe('qualified')
+    const own=await sync(database,inviter.session.accessToken,`/api/v1/referrals?userID=${invited.user.id}`,'GET')
+    expect(await own.json()).toMatchObject({userID:inviter.user.id,qualifiedCount:1,earnedDays:30})
+    expect((await sync(database,invited.session.accessToken,'/api/v1/referrals','POST',{code})).status).toBe(405)
+    expect((await sync(database,invited.session.accessToken,'/api/v1/admin/referrals/revoke','POST',{inviteeID:invited.user.id,note:'fake admin'})).status).toBe(403)
+    const before=database.get('SELECT count(*) n FROM users').n
+    await expect(exchange(database,'bad-invitation-token','bad-invitation-subject','invalid')).rejects.toMatchObject({code:'invalid_referral_code'})
+    expect(database.get('SELECT count(*) n FROM users').n).toBe(before)
   })
 
   it('uses access tokens for sync and isolates user A from user B', async () => {
@@ -225,14 +254,14 @@ async function appleSigningFixture() {
   }
 }
 
-async function exchange(database, identityToken, subject) {
+async function exchange(database, identityToken, subject, referralCode) {
   const challenge = await handleAuthV1Request(
     new Request('https://dev.test/api/v1/auth/challenge', { method: 'POST' }),
     environment(database), { now: () => NOW },
   )
   return handleAuthV1Request(new Request('https://dev.test/api/v1/auth/apple/exchange', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ apiVersion: 1, identityToken, state: challenge.state, nonce: challenge.nonce }),
+    body: JSON.stringify({ apiVersion: 1, identityToken, state: challenge.state, nonce: challenge.nonce, referralCode }),
   }), environment(database), {
     now: () => NOW,
     verifyAppleToken: async (_token, audiences, expectedNonce) => {

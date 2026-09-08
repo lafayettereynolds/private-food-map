@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 @Observable
 @MainActor
@@ -22,6 +23,9 @@ final class NativeAuthServices {
     let publicSharingAPI: URLSessionPublicSharingAPIClient
     let releaseSafetyAPI: URLSessionReleaseSafetyAPIClient
     let appleSignIn: AppleSignInService
+    let recommendationPreferenceSync: RecommendationPreferenceSync
+    @ObservationIgnored private var preferenceObservers: [NSObjectProtocol] = []
+    private var recommendationSyncSuspendedForVisualQA = false
 
     init(
         configuration: APIConfiguration,
@@ -105,20 +109,48 @@ final class NativeAuthServices {
             session: session
         )
         appleSignIn = AppleSignInService(api: authAPI, sessionManager: sessionManager)
+        recommendationPreferenceSync = RecommendationPreferenceSync(api: URLSessionRecommendationPreferenceAPI(
+            configuration: configuration, authorization: sessionManager, session: session))
+        for name in [UIApplication.didBecomeActiveNotification, RestaurantRecommendationPreferences.didChange] {
+            preferenceObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                guard notification.userInfo?["origin"] as? String != "remotePreferenceSync" else { return }
+                Task { @MainActor [weak self] in self?.retryRecommendationPreferences() }
+            })
+        }
     }
 
     @discardableResult
     func restoreLocalAccountScope() async -> AuthenticatedUserV1? {
         let user = await sessionManager.restoredUser()
         localAccountScope = user.map { .authenticated($0.id) } ?? .guest
+        retryRecommendationPreferences()
         return user
     }
 
     func activateLocalAccount(_ user: AuthenticatedUserV1) {
+        recommendationSyncSuspendedForVisualQA = false
         localAccountScope = .authenticated(user.id)
+        retryRecommendationPreferences()
+    }
+
+    private func retryRecommendationPreferences() {
+#if DEBUG
+        // The fixture scope may be activated after session restoration. Block
+        // fixture launches from the first lifecycle callback, not only after it.
+        guard !TasteMapUITestFixtures.usesVisualQA else { return }
+#endif
+        guard !recommendationSyncSuspendedForVisualQA, let owner = localAccountScope.authenticatedUserID else { return }
+        Task { @MainActor [weak self] in
+            guard let self, !self.recommendationSyncSuspendedForVisualQA, self.localAccountScope.authenticatedUserID == owner,
+                  await self.sessionManager.restoredUser()?.id == owner else { return }
+            await self.recommendationPreferenceSync.synchronize(owner: owner) { [weak self] in
+                self?.recommendationSyncSuspendedForVisualQA == false && self?.localAccountScope.authenticatedUserID == owner
+            }
+        }
     }
 
     func endLocalAccountSession() {
+        ReferralInvitationStore.clear()
         localAccountScope = .guest
     }
 
@@ -126,6 +158,7 @@ final class NativeAuthServices {
     /// Activates only the isolated, compilation-gated Visual QA workspace.
     /// No credential is persisted and no server authorization is fabricated.
     func activateVisualQAFixture(userID: String) {
+        recommendationSyncSuspendedForVisualQA = true
         localAccountScope = .authenticated(userID)
     }
 #endif

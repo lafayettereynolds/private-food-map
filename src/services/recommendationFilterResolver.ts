@@ -1,4 +1,5 @@
 import { SCORE_BAND_ORDER, scoreBandFromScore, type Coordinates, type ScoreBand } from '../types/domain'
+import { restaurantCityComparisonKey } from './restaurantCity'
 
 export type EmptyResultReason =
   | 'FILTER_EMPTY'
@@ -93,8 +94,8 @@ export function candidateCentroid<T extends Pick<RecommendationFilterCandidate, 
 }
 
 export function sameCity(left: string, right: string) {
-  const normalize = (value: string) => value.trim().replace(/[市州地区]$/u, '').toLocaleLowerCase('zh-CN')
-  return Boolean(normalize(left)) && normalize(left) === normalize(right)
+  const key = restaurantCityComparisonKey(left)
+  return Boolean(key) && key === restaurantCityComparisonKey(right)
 }
 
 export function buildRecommendationEmptyState(
@@ -132,7 +133,7 @@ export function buildRecommendationEmptyState(
 
 function applyFilters<T extends RecommendationFilterCandidate>(candidates: T[], state: RecommendationFilterState, anchor: Coordinates | null) {
   return candidates.filter((candidate) => {
-    if (state.city && candidate.city !== state.city) return false
+    if (state.city && !sameCity(candidate.city, state.city)) return false
     if (state.ratingMinimum && (candidate.scoreOutOfTen === null || candidate.scoreOutOfTen < state.ratingMinimum)) return false
     const scoreBand = scoreBandFromScore(candidate.scoreOutOfTen)
     if (state.scoreBands?.length && (!scoreBand || !state.scoreBands.includes(scoreBand))) return false

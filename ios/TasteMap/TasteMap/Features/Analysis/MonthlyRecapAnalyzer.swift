@@ -1,8 +1,8 @@
 import Foundation
 
 nonisolated enum MonthlyRecapSufficiencyPolicy {
-    static let minimumVisitsForTasteChange = 3
-    static let minimumRestaurantsForTasteChange = 2
+    static let minimumVisitsForTasteChange = AnalysisSufficiencyThresholds.frequencyVisits
+    static let minimumRestaurantsForTasteChange = AnalysisSufficiencyThresholds.frequencyRestaurants
     static let minimumSpendCoverageForProminence = 0.6
     static let highRatingThreshold = 4.0
     static let materialShareDelta = 0.20
@@ -49,7 +49,7 @@ nonisolated enum MonthlyRecapAnalyzer {
         now: Date = .now
     ) -> MonthlyRecapAnalysis {
         let restaurants = deduplicate(input.restaurants).filter { $0.deletedAt == nil }
-        let allVisits = deduplicate(input.visits).filter { $0.deletedAt == nil }
+        let allVisits = deduplicate(input.visits).filter { $0.deletedAt == nil && $0.visitedAt <= now }
         let dishes = deduplicate(input.dishes).filter { $0.deletedAt == nil }
         let visitDishes = input.visitDishes.filter { $0.deletedAt == nil }
         let photos = deduplicate(input.photos).filter { $0.deletedAt == nil && $0.kind != .avatar }
@@ -59,7 +59,9 @@ nonisolated enum MonthlyRecapAnalyzer {
         let currentVisits = allVisits.filter { period.contains($0.visitedAt) }
             .sorted(by: chronologicalVisitSort)
         let comparisonPeriod = period.previous
-        let comparisonVisits = allVisits.filter { comparisonPeriod.contains($0.visitedAt) }
+        let comparisonEnds = AnalysisStatisticsDefinitions.comparableMonthEnds(period: period, now: now)
+        let comparisonCurrentVisits = currentVisits.filter { $0.visitedAt < comparisonEnds.current }
+        let comparisonVisits = allVisits.filter { comparisonPeriod.contains($0.visitedAt) && $0.visitedAt < comparisonEnds.previous }
             .sorted(by: chronologicalVisitSort)
         let earliestVisits = earliestVisitsByRestaurant(allVisits)
         let dishesByID = Dictionary(uniqueKeysWithValues: dishes.map { ($0.id, $0) })
@@ -69,6 +71,11 @@ nonisolated enum MonthlyRecapAnalyzer {
             earliestVisits: earliestVisits, period: period,
             dishesByID: dishesByID, dishIDsByVisit: dishIDsByVisit,
             photos: photos
+        )
+        let comparisonCurrentAggregates = buildAggregates(
+            visits: comparisonCurrentVisits, restaurantsByID: restaurantsByID,
+            earliestVisits: earliestVisits, period: period,
+            dishesByID: dishesByID, dishIDsByVisit: dishIDsByVisit, photos: []
         )
         let previousAggregates = buildAggregates(
             visits: comparisonVisits, restaurantsByID: restaurantsByID,
@@ -94,7 +101,7 @@ nonisolated enum MonthlyRecapAnalyzer {
             sources: sources, visits: currentVisits, aggregates: aggregates
         )
         let tasteResult = tasteChange(
-            currentVisits: currentVisits, currentAggregates: aggregates,
+            currentVisits: comparisonCurrentVisits, currentAggregates: comparisonCurrentAggregates,
             previousVisits: comparisonVisits, previousAggregates: previousAggregates,
             restaurantsByID: restaurantsByID, earliestVisits: earliestVisits,
             currentPeriod: period, previousPeriod: comparisonPeriod
@@ -382,7 +389,7 @@ nonisolated enum MonthlyRecapAnalyzer {
         var candidates: [MonthlyTasteChange] = []
         for label in Set(currentTags.keys).union(previousTags.keys).sorted() {
             let delta = (currentTags[label] ?? 0) - (previousTags[label] ?? 0)
-            guard abs(delta) >= MonthlyRecapSufficiencyPolicy.materialShareDelta else { continue }
+            guard abs(delta) + Double.ulpOfOne >= AnalysisSufficiencyThresholds.frequencyShareChange else { continue }
             if delta > 0 {
                 candidates.append(MonthlyTasteChange(
                     kind: .cuisineIncrease, title: "本月更常出现 \(label)",

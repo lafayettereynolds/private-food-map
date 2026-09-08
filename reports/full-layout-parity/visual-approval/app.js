@@ -16,7 +16,7 @@ const decisions = window.round3Decisions || window.round2Decisions || [
     ],
     fuseVisuals: [v("FUSE CANDIDATE — REAL IMPLEMENTATION", "Profile FUSE V1", FUSE + "fuse-v1-profile-real-implementation.png", "独立 preview branch 的 DEBUG SwiftUI 实现；固定 Simulator 实际截图。")],
     legacyBase: ["紧凑身份头部与高密度 Dashboard 骨架。", "横向关系/统计、并排核心入口、统一回味、食单与洞察分组。"],
-    currentAdditions: ["avatar / name / joined date / edit、Premium、关注 / 被关注。", "去过 / 想去 / 总消费、今天吃什么、我的口味档案、三类回味、食单、最佳饭搭子、谁最会种草。", "Current Social、Sharing、Settings 与安全边界。"],
+    currentAdditions: ["avatar / name / joined date / edit、Premium、关注 / 粉丝。", "去过 / 想去 / 总消费、今天吃什么、我的口味档案、三类回味、食单、最佳饭搭子、谁最会种草。", "Current Social、Sharing、Settings 与安全边界。"],
     proposedFinal: ["紧凑身份 → 社交关系 → 核心统计 → 核心入口 → 回味 → 食单 → 洞察 → 次级 Settings。", "使用当前共享 tokens/components，不恢复废弃字段，不删除 Current-only 能力。"],
     recommendation: "Recommended: FUSE。先按区域审批 V1；KEEP 的区域立即冻结。",
     regions: ["Header", "Social Metrics", "Main Statistics", "Core Entries", "Memory / 回味", "Lists", "Insights", "Settings"],

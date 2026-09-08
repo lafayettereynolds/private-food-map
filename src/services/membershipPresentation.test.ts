@@ -15,6 +15,11 @@ function entitlement(source: MembershipEntitlementSource, options: Partial<Effec
 }
 
 describe('membershipStatusPresentation', () => {
+  it('shows Reward dates without Apple renewal or subscription management',()=>{
+    expect(membershipStatusPresentation(entitlement('referral_reward'),'free')).toMatchObject({
+      planLabel:'邀请奖励 · 有效期至 2026年09月01日',sourceLabel:'Taste Map 邀请奖励',dateLabel:'有效期至',canManageAppStoreSubscription:false,
+    })
+  })
   it.each([
     ['app_store_monthly', '月度会员'],
     ['app_store_yearly', '年度会员'],
@@ -37,9 +42,15 @@ describe('membershipStatusPresentation', () => {
     expect(result).toMatchObject({ planLabel, sourceLabel, dateLabel: '有效期至', canManageAppStoreSubscription: false })
   })
 
-  it('uses the profile tier only as a fallback while entitlement is unavailable', () => {
-    expect(membershipStatusPresentation(null, 'member').isPremium).toBe(true)
+  it('never unlocks Premium from a cached profile tier without authority', () => {
+    expect(membershipStatusPresentation(null, 'member').isPremium).toBe(false)
     expect(membershipStatusPresentation(null, 'free').isPremium).toBe(false)
+  })
+
+  it('renders exact Gift copy without subscription management', () => {
+    expect(membershipStatusPresentation(entitlement('gift_annual'), 'free')).toMatchObject({planLabel:'赠送会员 · 有效期至 2026年09月01日',canManageAppStoreSubscription:false})
+    expect(membershipStatusPresentation(entitlement('gift_lifetime', {expiresAt:null,isLifetime:true}), 'free')).toMatchObject({planLabel:'永久会员 · 由 Taste Map 赠送',canManageAppStoreSubscription:false})
+    expect(membershipStatusPresentation(entitlement('app_store_annual'), 'free').canManageAppStoreSubscription).toBe(true)
   })
 
   it('lets an authoritative expired entitlement override a stale member tier', () => {

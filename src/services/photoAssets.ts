@@ -7,6 +7,10 @@ const MAX_CACHE_BYTES = 300 * 1024 * 1024
 const objectUrls = new Map<string, string>()
 
 export async function resolvePhotoSource(source: string | null | undefined, explicitPhotoId?: string | null) {
+  // Native descriptors are already scoped by the platform adapter. Only the
+  // Native scheme handler can authorize/read them; Browser cache IDs are a
+  // different namespace and must not replace an otherwise valid resource.
+  if (source?.startsWith('tastemap-resource://')) return source
   const photoId = explicitPhotoId ?? photoIdFromReference(source)
   if (!photoId) return source || null
 

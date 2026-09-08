@@ -37,7 +37,14 @@ struct PublicContentPhotoV1: Codable, Equatable, Identifiable, Sendable {
     var visibility: String? = nil
     var createdAt: String? = nil
     var exportAllowed: Bool? = nil
+    var photoKind: String? = nil
     var id: String { photoId }
+
+    var discoveryProjection: DiscoveryPhotoProjectionV1 {
+        .init(photoId: photoId, variant: variant, sourceType: sourceType,
+              restaurantId: restaurantId, visitId: visitId, ownerUserId: ownerUserId,
+              visibility: visibility, createdAt: createdAt, exportAllowed: exportAllowed, photoKind: photoKind)
+    }
 }
 
 struct PublicContentUserV1: Codable, Equatable, Identifiable, Sendable {
@@ -173,6 +180,14 @@ struct PublicContentItemV1: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+extension PublicContentItemV1 {
+    /// Discovery is an evidence surface. A Visit below 7.5/10 remains valid on
+    /// the author's Profile/history, but it is not qualified public evidence.
+    var isEligibleForDiscoveryFeed: Bool {
+        kind != .visit || DiscoveryEvidencePolicy.isQualified(ratingOutOfFive: visit?.rating)
+    }
+}
+
 struct CommunityEngagementSummaryV1: Codable, Equatable, Sendable {
     var likedByViewer: Bool
     var likeCount: Int
@@ -259,9 +274,14 @@ struct PublicProfileContentPageV1: Codable, Equatable, Sendable {
 }
 
 struct CommunityFeedPageV1: Codable, Equatable, Sendable {
+    /// Nil on older servers; a nonempty requested city requires an explicit echo.
+    var city: String? = nil
     let apiVersion: Int
     let scope: CommunityFeedScopeV1
     let generatedAt: String
     let items: [PublicContentItemV1]
     let nextCursor: String?
+    var appliedQuery: TasteMapDiscoveryAppliedQuery? = nil
+    var filterCapabilities: TasteMapDiscoveryFilterCapabilities? = nil
+    var filterTaxonomy: TasteMapDiscoveryFilterTaxonomy? = nil
 }

@@ -1,4 +1,7 @@
 node_modules/
+# Sandbox offer inventory, original downloads, and private redemption handoffs.
+.private/
+OfferCodeOneTimeUseCodes_*.csv
 dist/
 coverage/
 .wrangler/

@@ -6,6 +6,9 @@ extension Notification.Name {
     static let tasteMapPhotoTransferStateChanged = Notification.Name("TasteMapPhotoTransferStateChanged")
     static let tasteMapManualSyncRetryRequested = Notification.Name("TasteMapManualSyncRetryRequested")
     static let tasteMapSyncDidComplete = Notification.Name("TasteMapSyncDidComplete")
+    /// A committed local business-data transaction that must invalidate
+    /// read-only presentation caches immediately (for example Backup import).
+    static let tasteMapLocalDataDidChange = Notification.Name("TasteMapLocalDataDidChange")
 }
 
 @MainActor
@@ -56,7 +59,11 @@ struct SwiftDataSyncQueue {
         baseVersion: Int64,
         timestamp: Date = .now
     ) throws -> SyncMutation {
-        if let pending = try pendingMutation(entityType: entityType, entityID: entityID) {
+        if let pending = try pendingMutation(entityType: entityType, entityID: entityID),
+           pending.operation == .delete || pending.retryCount == 0 {
+            // A previously sent upsert keeps its mutation ID and payload until
+            // acknowledged. Reusing that ID for a delete breaks idempotent retry.
+            if pending.operation == .delete { return pending }
             pending.operation = .delete
             pending.payload = nil
             pending.timestamp = timestamp
@@ -117,8 +124,18 @@ struct SwiftDataSyncQueue {
     }
 
     func nextReadyMutation(at date: Date = .now) throws -> SyncMutation? {
-        try allMutations()
+        let mutations = try allMutations()
+        return mutations
             .filter { $0.state == .queued && ($0.nextRetryAt == nil || $0.nextRetryAt! <= date) }
+            .filter { candidate in
+                // A delete must not overtake an earlier unacknowledged upload
+                // merely because that upload is sleeping in retry backoff.
+                candidate.operation != .delete || !mutations.contains {
+                    $0.entityType == candidate.entityType && $0.entityID == candidate.entityID
+                        && $0.operation == .upsert && ($0.state == .queued || $0.state == .uploading)
+                        && $0.timestamp <= candidate.timestamp
+                }
+            }
             .sorted {
                 if $0.entityType != $1.entityType {
                     return $0.entityType.dependencyPriority(for: $0.operation) <

@@ -6,8 +6,8 @@ nonisolated enum AnnualRecapSufficiencyPolicy {
     static let minimumActiveMonthsForMonthlyJourney = 4
     static let minimumVisitsForQuarterlyJourney = 6
     static let minimumActiveQuartersForQuarterlyJourney = 2
-    static let minimumVisitsPerHalfForChange = 4
-    static let minimumRestaurantsPerHalfForChange = 2
+    static let minimumVisitsPerHalfForChange = AnalysisSufficiencyThresholds.frequencyVisits
+    static let minimumRestaurantsPerHalfForChange = AnalysisSufficiencyThresholds.frequencyRestaurants
     static let materialShareDelta = 0.20
     static let minimumRatedRestaurantsForSourceRanking = RecommendationSourceAnalyzer.minimumRatedRestaurantsForRanking
     static let stableRatedRestaurantCount = RecommendationSourceAnalyzer.stableRatedRestaurantCount
@@ -61,7 +61,7 @@ nonisolated enum AnnualRecapAnalyzer {
         now: Date = .now
     ) -> AnnualRecapAnalysis {
         let restaurants = deduplicate(input.restaurants).filter { $0.deletedAt == nil }
-        let allVisits = deduplicate(input.visits).filter { $0.deletedAt == nil }
+        let allVisits = deduplicate(input.visits).filter { $0.deletedAt == nil && $0.visitedAt <= now }
         let dishes = deduplicate(input.dishes).filter { $0.deletedAt == nil }
         let visitDishes = input.visitDishes.filter { $0.deletedAt == nil }
         let photos = deduplicate(input.photos).filter { $0.deletedAt == nil && $0.kind != .avatar }
@@ -92,7 +92,7 @@ nonisolated enum AnnualRecapAnalyzer {
         let explorationRate = ratio(newAggregates.count, aggregates.count)
         let spend = spendSummary(visits: annualVisits, period: period)
         let companion = companionStory(companions: companions, visits: annualVisits, aggregates: aggregates)
-        let recommendation = recommendationSummary(sources: sources, visits: annualVisits, aggregates: aggregates)
+        let recommendation = recommendationSummary(sources: sources, visits: annualVisits, aggregates: aggregates, allVisits: allVisits, allRestaurants: restaurants, now: now)
         let snapshots = monthlySnapshots(
             visits: annualVisits, aggregates: aggregates, restaurantsByID: restaurantsByID,
             earliestVisits: earliestVisits, period: period
@@ -101,7 +101,7 @@ nonisolated enum AnnualRecapAnalyzer {
             visits: annualVisits, aggregates: aggregates, snapshots: snapshots,
             restaurantsByID: restaurantsByID, earliestVisits: earliestVisits,
             period: period, photos: photos, dishesByID: dishesByID,
-            dishIDsByVisit: dishIDsByVisit
+            dishIDsByVisit: dishIDsByVisit, now: now
         )
         let highlights = monthlyHighlights(
             snapshots: snapshots, visits: annualVisits, spend: spend, period: period
@@ -333,94 +333,41 @@ nonisolated enum AnnualRecapAnalyzer {
 
     private static func recommendationSummary(
         sources: [MonthlyRecapInput.SourceRecord],
-        visits: [MonthlyRecapInput.VisitRecord], aggregates: [RestaurantAggregate]
+        visits: [MonthlyRecapInput.VisitRecord], aggregates: [RestaurantAggregate],
+        allVisits: [MonthlyRecapInput.VisitRecord], allRestaurants: [MonthlyRecapInput.RestaurantRecord], now: Date
     ) -> AnnualRecommendationSummary {
-        let resolver = SourceResolver(sources: sources)
-        let sourcesByID = Dictionary(uniqueKeysWithValues: sources.map { ($0.id, $0) })
-        let aggregateByID = Dictionary(uniqueKeysWithValues: aggregates.map { ($0.restaurantID, $0) })
-        let groupedVisits = Dictionary(grouping: visits, by: \.restaurantID)
-        var bySource: [UUID: [RestaurantAggregate]] = [:]
-        for (restaurantID, restaurantVisits) in groupedVisits {
-            guard let aggregate = aggregateByID[restaurantID] else { continue }
-            let sourceID = restaurantVisits.sorted(by: visitSort).compactMap(resolver.resolve).first
-            if let sourceID { bySource[sourceID, default: []].append(aggregate) }
-        }
-        let allRatings = bySource.values.flatMap { $0.compactMap(\.averageRating) }
-        let overall = mean(allRatings)
-        let evidence = sources.compactMap { source -> SourceEvidence? in
-            let restaurants = bySource[source.id] ?? []
-            guard !restaurants.isEmpty else { return nil }
-            let ratings = restaurants.compactMap(\.averageRating)
-            let high = ratings.filter { $0 >= RecommendationSourceAnalyzer.highRatingThreshold }.count
-            let low = ratings.filter { $0 <= RecommendationSourceAnalyzer.lowRatingThreshold }.count
-            let repeated = restaurants.filter { $0.visits.count >= 2 }.count
-            let deviation = standardDeviation(ratings) ?? 1
-            let sampleConfidence = min(1, Double(ratings.count) / Double(AnnualRecapSufficiencyPolicy.stableRatedRestaurantCount))
-            let normalizedAverage = max(0, min(1, ((mean(ratings) ?? 2.5) - 0.5) / 4.5))
-            let highRate = ratio(high, ratings.count), lowRate = ratio(low, ratings.count)
-            let repeatRate = ratio(repeated, restaurants.count)
-            let stability = max(0, 1 - min(1, deviation / 1.5))
-            let baseline = max(0, min(1, ((mean(ratings) ?? 0) - (overall ?? mean(ratings) ?? 0) + 1) / 2))
-            let eligible = ratings.count >= AnnualRecapSufficiencyPolicy.minimumRatedRestaurantsForSourceRanking
-            let reliability = eligible
-                ? normalizedAverage * 0.30 + highRate * 0.27 + repeatRate * 0.16
-                    + stability * 0.10 + baseline * 0.10 + sampleConfidence * 0.07
-                : nil
-            let lowAverage = max(0, min(1, (3.5 - (mean(ratings) ?? 3.5)) / 3))
-            let pitfall = eligible
-                ? lowRate * 0.34 + (1 - highRate) * 0.22 + (1 - repeatRate) * 0.10
-                    + lowAverage * 0.22 + (1 - stability) * 0.05 + sampleConfidence * 0.07
-                : nil
-            return SourceEvidence(
-                source: sourcesByID[source.id] ?? source, restaurants: restaurants,
-                ratings: ratings, highCount: high, lowCount: low, repeatCount: repeated,
-                reliability: reliability, pitfall: pitfall
-            )
-        }
-        let most = evidence.sorted(by: mostUsedSourceSort).first
-        let eligible = evidence.filter { $0.reliability != nil && $0.pitfall != nil }
-        let best = eligible.count >= 2 ? eligible.sorted(by: bestSourceSort).first : nil
-        let worst = eligible.count >= 2 ? eligible.sorted(by: worstSourceSort).first : nil
-        return AnnualRecommendationSummary(
-            mostUsed: most.map { sourceConclusion($0, kind: "年度最常使用来源") },
-            best: best.map { sourceConclusion($0, kind: "年度最靠谱推荐来源") },
-            worst: worst.map { sourceConclusion($0, kind: "年度最坑推荐来源") },
-            usedSourceCount: evidence.count,
-            attributedRestaurantCount: evidence.reduce(0) { $0 + $1.restaurants.count },
-            rankingSufficiency: eligible.count >= 2 ? .established : (evidence.isEmpty ? .insufficient : .emerging)
+        let input = RecommendationSourceInput(
+            userDisplayName: "",
+            sources: sources.map { .init(id: $0.id, identifiers: $0.identifiers, displayName: $0.displayName, sourceType: $0.sourceType, updatedAt: $0.updatedAt, deletedAt: $0.deletedAt) },
+            restaurants: allRestaurants.map { .init(id: $0.id, name: $0.name, city: $0.city, status: $0.status, updatedAt: $0.updatedAt, deletedAt: $0.deletedAt) },
+            visits: allVisits.map { .init(id: $0.id, restaurantID: $0.restaurantID, visitedAt: $0.visitedAt, rating: $0.rating, valueRating: $0.valueRating, environmentRating: $0.environmentRating, serviceRating: $0.serviceRating, recommendationSourceID: $0.recommendationSourceID, recommendationSourceType: $0.recommendationSourceType, recommendationSourceText: $0.recommendationSourceText, updatedAt: $0.updatedAt, deletedAt: $0.deletedAt) },
+            photos: []
         )
-    }
-
-    private static func sourceConclusion(_ value: SourceEvidence, kind: String) -> AnnualSourceConclusion {
-        let average = mean(value.ratings)
-        let representative: RestaurantAggregate?
-        if kind.contains("最坑") {
-            representative = value.restaurants.sorted {
-                if $0.averageRating != $1.averageRating { return ($0.averageRating ?? 6) < ($1.averageRating ?? 6) }
-                return $0.restaurantID.uuidString < $1.restaurantID.uuidString
+        let result = RecommendationSourceAnalyzer.analyze(input, now: now, visitIDs: Set(visits.map(\.id)))
+        func conclusion(_ item: RecommendationSourceConclusion?) -> AnnualSourceConclusion? {
+            guard let item, let source = result.analysis(for: item.sourceID) else { return nil }
+            let isWorst = item.title.contains("最坑")
+            let candidates = source.restaurants.filter { !isWorst || RecommendationSourceAnalyzer.isPitfall($0.averageRating, baseline: result.overallRestaurantRating) }
+            let representative = candidates.sorted {
+                if $0.averageRating != $1.averageRating {
+                    return isWorst ? ($0.averageRating ?? 6) < ($1.averageRating ?? 6) : ($0.averageRating ?? 0) > ($1.averageRating ?? 0)
+                }
+                return $0.id.uuidString < $1.id.uuidString
             }.first
-        } else {
-            representative = value.restaurants.sorted(by: favoriteSort).first
-        }
-        let statement: String
-        if kind.contains("最常") {
-            statement = "通过 \(value.source.displayName) 记录了 \(value.restaurants.count) 家不同餐厅。"
-        } else if kind.contains("最坑") {
-            statement = "\(value.ratings.count) 家有评分餐厅中，\(value.lowCount) 家不高于 2.5 分；样本达到 P4-C 门槛后才显示。"
-        } else {
-            statement = "\(value.ratings.count) 家有评分餐厅中，\(value.highCount) 家达到 4.0 分，\(value.repeatCount) 家后来又去。"
-        }
-        return AnnualSourceConclusion(
-            sourceID: value.source.id, displayName: value.source.displayName,
-            sourceType: value.source.sourceType, title: kind, statement: statement,
-            restaurantCount: value.restaurants.count, ratedRestaurantCount: value.ratings.count,
-            averageRating: average,
-            score: kind.contains("最坑") ? value.pitfall : value.reliability,
-            representativeRestaurant: representative.map { story($0, role: kind) },
-            sufficiency: AnalysisSufficiencyPolicy.level(
-                sampleCount: value.ratings.count, emergingAt: 2,
-                establishedAt: AnnualRecapSufficiencyPolicy.minimumRatedRestaurantsForSourceRanking
+            let aggregate = aggregates.first { $0.restaurantID == representative?.id }
+            return AnnualSourceConclusion(
+                sourceID: source.id, displayName: source.displayName, sourceType: source.sourceType,
+                title: "年度" + item.title, statement: item.explanation,
+                restaurantCount: source.restaurantCount, ratedRestaurantCount: source.ratedRestaurantCount,
+                averageRating: source.averageRating, score: isWorst ? source.pitfallScore : source.reliabilityScore,
+                representativeRestaurant: aggregate.map { story($0, role: "年度" + item.title) },
+                sufficiency: source.sufficiency
             )
+        }
+        return AnnualRecommendationSummary(
+            mostUsed: conclusion(result.mostUsed), best: conclusion(result.bestSource), worst: conclusion(result.worstSource),
+            usedSourceCount: result.usedSourceCount, attributedRestaurantCount: result.attributedRestaurantCount,
+            rankingSufficiency: result.sources.contains { $0.reliabilityScore != nil } ? .established : .insufficient
         )
     }
 
@@ -455,7 +402,7 @@ nonisolated enum AnnualRecapAnalyzer {
         restaurantsByID: [UUID: MonthlyRecapInput.RestaurantRecord],
         earliestVisits: [UUID: MonthlyRecapInput.VisitRecord], period: AnnualPeriod,
         photos: [MonthlyRecapInput.PhotoRecord],
-        dishesByID: [UUID: MonthlyRecapInput.DishRecord], dishIDsByVisit: [UUID: Set<UUID>]
+        dishesByID: [UUID: MonthlyRecapInput.DishRecord], dishIDsByVisit: [UUID: Set<UUID>], now: Date
     ) -> AnnualTasteJourney {
         let activeMonths = snapshots.filter { $0.visitCount > 0 }
         let granularity: AnnualTasteJourneyGranularity
@@ -517,10 +464,10 @@ nonisolated enum AnnualRecapAnalyzer {
                 imageReference: aggregate?.imageReference ?? .none
             )
         }
-        let summaries = annualChangeSummaries(
+        let summaries = now >= period.end ? annualChangeSummaries(
             visits: visits, restaurantsByID: restaurantsByID,
             earliestVisits: earliestVisits, period: period
-        )
+        ) : []
         return AnnualTasteJourney(
             granularity: granularity, milestones: Array(milestones.prefix(5)),
             changeSummaries: Array(summaries.prefix(3)),
@@ -587,11 +534,11 @@ nonisolated enum AnnualRecapAnalyzer {
         let secondCuisine = dominantCuisine(visits: second, restaurantsByID: restaurantsByID)
         if let secondCuisine, secondCuisine.share - cuisineShare(
             secondCuisine.name, visits: first, restaurantsByID: restaurantsByID
-        ) >= AnnualRecapSufficiencyPolicy.materialShareDelta {
+        ) + Double.ulpOfOne >= AnalysisSufficiencyThresholds.frequencyShareChange {
             result.append("下半年更常出现 \(secondCuisine.name)：占比比上半年高 \(Int(((secondCuisine.share - cuisineShare(secondCuisine.name, visits: first, restaurantsByID: restaurantsByID)) * 100).rounded())) 个百分点。")
         } else if let firstCuisine, firstCuisine.share - cuisineShare(
             firstCuisine.name, visits: second, restaurantsByID: restaurantsByID
-        ) >= AnnualRecapSufficiencyPolicy.materialShareDelta {
+        ) + Double.ulpOfOne >= AnalysisSufficiencyThresholds.frequencyShareChange {
             result.append("\(firstCuisine.name) 更集中在上半年；下半年占比下降。")
         }
         let firstExplore = explorationRate(visits: first, earliestVisits: earliestVisits, period: period)

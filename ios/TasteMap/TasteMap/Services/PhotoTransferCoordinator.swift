@@ -164,6 +164,21 @@ final class PhotoTransferCoordinator {
     }
 
     @discardableResult
+    func attachPreparedRestaurantMarker(
+        _ prepared: PreparedLocalPhoto,
+        restaurantID: UUID,
+        queueForUpload: Bool = true
+    ) throws -> PhotoAsset {
+        try LocalDishPhotoStore(context: context, photoFiles: files).createLocalPhoto(
+            prepared: prepared,
+            kind: .restaurantMarker,
+            restaurantId: restaurantID,
+            visibility: .private,
+            queueForUpload: queueForUpload
+        )
+    }
+
+    @discardableResult
     func attachPreparedAvatar(
         _ prepared: PreparedLocalPhoto,
         queueForUpload: Bool = true,

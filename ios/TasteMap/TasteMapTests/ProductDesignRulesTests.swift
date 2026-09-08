@@ -36,6 +36,9 @@ struct ProductDesignRulesTests {
         #expect(zip(spacing, spacing.dropFirst()).allSatisfy { $0.0 < $0.1 })
         #expect(zip(radii, radii.dropFirst()).allSatisfy { $0.0 < $0.1 })
         #expect(TasteMapDesignTokens.Control.minimumHitTarget >= 44)
+        #expect(TasteMapDesignTokens.FollowAction.minimumWidth == 64)
+        #expect(TasteMapDesignTokens.FollowAction.visibleHeight == 30)
+        #expect(TasteMapDesignTokens.FollowAction.visibleHeight < TasteMapDesignTokens.Control.minimumHitTarget)
         #expect(TasteMapDesignTokens.Control.primaryTabMinimumHeight >= 44)
         #expect(
             TasteMapDesignTokens.Control.chipVisibleHeight

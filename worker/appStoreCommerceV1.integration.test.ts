@@ -9,6 +9,7 @@ import {
   handleAppStoreServerNotificationV1,
 } from './appStoreCommerceV1'
 import { applyAllMigrations } from './testSupport/migrations.js'
+import { mutateMembership, readEffectiveMembership } from './index'
 
 const BUNDLE_ID = 'com.lafayette.tastemap'
 const MONTHLY = 'dev.tastemap.storekit.monthly'
@@ -42,12 +43,22 @@ describe('App Store commerce V1 integration', () => {
     const repeated = await configuration(database, 'tm_a', environment)
     const b = await configuration(database, 'tm_b', environment)
     expect(a).toEqual(repeated)
+    expect(a.purchaseReady).toBe(true)
     expect(a.appAccountToken).not.toBe(b.appAccountToken)
     expect(a.products).toEqual([
       { id: MONTHLY, period: 'monthly' },
       { id: YEARLY, period: 'annual' },
     ])
     expect(JSON.stringify(a)).not.toContain('price')
+  })
+
+  it('keeps catalog readable but disables purchase when verification credentials are absent', async () => {
+    delete environment.APP_STORE_PRIVATE_KEY
+    const result = await configuration(database, 'tm_a', environment)
+    expect(result.configured).toBe(true)
+    expect(result.purchaseReady).toBe(false)
+    expect(result.products).toHaveLength(2)
+    expect(JSON.stringify(result)).not.toContain('APP_STORE_PRIVATE_KEY')
   })
 
   it('reconciles verified Apple data idempotently and rejects cross-user claims', async () => {
@@ -85,6 +96,32 @@ describe('App Store commerce V1 integration', () => {
     expect(database.get("SELECT membership_tier FROM users WHERE id = 'tm_a'").membership_tier).toBe('free')
     expect(database.get("SELECT status FROM membership_entitlements WHERE id = 'app-store:90004'").status).toBe('revoked')
     expect(database.get("SELECT COUNT(*) AS value FROM users WHERE id = 'tm_a'").value).toBe(1)
+  })
+
+  it.each(['gift_annual', 'gift_lifetime'])('purchase, refund and repeated reconciliation preserve %s', async (source) => {
+    await mutateMembership(database as never, 'tm_b', new Request('https://dev.test', { method: 'POST', body: JSON.stringify({ action: 'grant', userId: 'tm_a', source, note: 'gift' }) }))
+    const before = await readEffectiveMembership(database as never, 'tm_a')
+    const account = await configuration(database, 'tm_a', environment)
+    await reconcile(database, 'tm_a', '100099', environment, appleFetch(transaction('100099', '900099', account.appAccountToken, FUTURE, YEARLY)))
+    expect((await readEffectiveMembership(database as never, 'tm_a')).source).toBe(source)
+    expect(database.get("SELECT source FROM membership_entitlements WHERE id='app-store:900099'").source).toBe('app_store_annual')
+    const refunded = appleFetch(transaction('100099', '900099', account.appAccountToken, FUTURE, YEARLY, Date.now()))
+    await reconcile(database, 'tm_a', '100099', environment, refunded)
+    await reconcile(database, 'tm_a', '100099', environment, refunded)
+    const after = await readEffectiveMembership(database as never, 'tm_a')
+    expect(after).toMatchObject({ isPremium: true, source, expiresAt: before.expiresAt })
+    expect(after.entitlements.find(x => x.source === source)).toEqual(before.entitlements[0])
+  })
+
+  it('keeps independent referral rewards after Apple reconciliation and refund',async()=>{
+    database.sqlite.prepare(`INSERT INTO membership_entitlements(id,user_id,source,starts_at,expires_at,status,created_at,updated_at)
+      VALUES('reward-a','tm_a','referral_reward',?,?,'active',?,?)`).run(new Date().toISOString(),new Date(FUTURE).toISOString(),new Date().toISOString(),new Date().toISOString())
+    const account=await configuration(database,'tm_a',environment)
+    await reconcile(database,'tm_a','100088',environment,appleFetch(transaction('100088','900088',account.appAccountToken,FUTURE,YEARLY)))
+    expect((await readEffectiveMembership(database as never,'tm_a')).source).toBe('app_store_annual')
+    await reconcile(database,'tm_a','100088',environment,appleFetch(transaction('100088','900088',account.appAccountToken,FUTURE,YEARLY,Date.now())))
+    expect((await readEffectiveMembership(database as never,'tm_a'))).toMatchObject({isPremium:true,source:'referral_reward'})
+    expect(database.get("SELECT status FROM membership_entitlements WHERE id='reward-a'").status).toBe('active')
   })
 
   it('fails closed for bundle, product, environment and missing server secrets', async () => {

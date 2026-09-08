@@ -14,7 +14,7 @@ import SwiftUI
     P2BPhotoPreviewFactory.visitEditor(photoStates: [.uploaded, .uploading, .failed, .queued])
 }
 
-#Preview("P2-B · Free 3 张上限") {
+#Preview("P2-B · Free 2 张上限") {
     P2BPhotoPreviewFactory.visitEditor(photoStates: [
         .uploaded, .uploading, .queued,
     ], premium: false)

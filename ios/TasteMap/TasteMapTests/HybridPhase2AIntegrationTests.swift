@@ -1,10 +1,144 @@
 import Foundation
 import SwiftData
 import Testing
+import UIKit
 @testable import TasteMap
 
 @MainActor
 struct HybridPhase2AIntegrationTests {
+    @Test func restaurantHeroSeparatesActualPhotosFromExplicitAvatarAndRefreshesAfterDelete() throws {
+        let owner = "tm_content_photo_contract"
+        let container = try TasteMapPersistence.makeContainer(inMemory: true, configurationName: "ContentPhotoContract")
+        let context = ModelContext(container)
+        let restaurant = Restaurant(ownerUserID: owner, name: "真实照片测试餐厅", address: "测试地址",
+                                    latitude: 30.2, longitude: 120.1, city: "杭州", status: .visited)
+        let visit = Visit(ownerUserID: owner, restaurantId: restaurant.id, visitedAt: .now)
+        let marker = PhotoAsset(ownerUserID: owner, restaurantId: restaurant.id, kind: .restaurantMarker,
+                                mimeType: "image/jpeg", byteSize: 12)
+        let actual = PhotoAsset(ownerUserID: owner, restaurantId: restaurant.id, visitId: visit.id,
+                                kind: .visit, mimeType: "image/jpeg", byteSize: 12)
+        let foreign = PhotoAsset(ownerUserID: "tm_another_owner", restaurantId: restaurant.id,
+                                 kind: .dish, mimeType: "image/jpeg", byteSize: 12)
+        context.insert(restaurant); context.insert(visit); context.insert(marker); context.insert(actual); context.insert(foreign)
+        try context.save()
+        let metadata: [UUID: TasteMapHybridRestaurantMetadata] = [restaurant.id: .init(localUserPhotoID: marker.id, markerType: "image")]
+        let service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner, metadataByRestaurantID: metadata)
+        let detail = try service.restaurantDetail(id: restaurant.id.uuidString).restaurant
+        #expect(detail.image.photoID == marker.id.uuidString.lowercased())
+        #expect(detail.contentImage?.photoID == actual.id.uuidString.lowercased())
+        #expect(detail.contentImageResolution?.sources.map(\.photoID) == [actual.id.uuidString.lowercased()])
+        actual.deletedAt = .now
+        try context.save()
+        let reopened = try TasteMapHybridBridgeService(container: container, ownerUserID: owner, metadataByRestaurantID: metadata)
+            .restaurantDetail(id: restaurant.id.uuidString).restaurant
+        #expect(reopened.image.photoID == marker.id.uuidString.lowercased())
+        #expect(reopened.contentImage?.kind == .foodCategoryVisual)
+        #expect(reopened.contentImageResolution?.sources.isEmpty == true)
+    }
+
+    @Test func mapPresentationRejectsDelayedShowAndDelayedHide() {
+        var state = TasteMapHybridMapPresentationState()
+        state.routeAllowsMap = true
+        let show = state.receiveUpdate()
+        let hide = state.receiveUpdate()
+        let acceptedHide = state.apply(visible: false, revision: hide)
+        let acceptedOldShow = state.apply(visible: true, revision: show)
+        #expect(acceptedHide)
+        #expect(!acceptedOldShow)
+        #expect(!state.isVisible)
+        let returnToMap = state.receiveUpdate()
+        let acceptedReturn = state.apply(visible: true, revision: returnToMap)
+        let acceptedOldHide = state.apply(visible: false, revision: hide)
+        #expect(acceptedReturn)
+        #expect(!acceptedOldHide)
+        #expect(state.isVisible)
+    }
+
+    @Test func mapPresentationCannotCoverAnotherRouteOrReactModal() {
+        var state = TasteMapHybridMapPresentationState()
+        for _ in 0..<30 {
+            state.routeAllowsMap = false
+            let geometryBeforeRoute = state.receiveUpdate()
+            state.apply(visible: true, revision: geometryBeforeRoute)
+            #expect(!state.isVisible)
+            state.routeAllowsMap = true
+            #expect(state.isVisible)
+            let modal = state.receiveUpdate()
+            state.apply(visible: false, revision: modal)
+            #expect(!state.isVisible)
+            state.routeAllowsMap = false
+            state.routeAllowsMap = true
+            #expect(!state.isVisible)
+        }
+    }
+
+    @Test func similarTasteFixtureInteractionsUseTheCommunityVisitNamespace() throws {
+        let owner = "tm_hybrid_debug"
+        let container = try TasteMapPersistence.makeContainer(inMemory: true, configurationName: "SameTasteCommentIdentity")
+        let context = ModelContext(container)
+        let restaurant = Restaurant(ownerUserID: owner, name: "评论关联测试餐厅", address: "杭州测试地址", latitude: 30.2, longitude: 120.1, city: "杭州", status: .visited)
+        context.insert(restaurant)
+        let visit = Visit(ownerUserID: owner, restaurantId: restaurant.id, visitedAt: .now)
+        visit.rating = 4.5
+        context.insert(visit)
+        try context.save()
+        let snapshot = try TasteMapHybridBridgeService(container: container, ownerUserID: owner).contentSnapshot()
+        let similar = try #require(snapshot.discovery.similarTaste.first?.interaction)
+        let activity = try #require(snapshot.community.latest.first?.interaction)
+        #expect(similar.visitID.hasPrefix("demo-visit-similar-"))
+        #expect(activity.visitID.hasPrefix("demo-visit-"))
+        #expect(similar.visitID != activity.visitID)
+        #expect(!similar.authorID.isEmpty && !similar.restaurantID.isEmpty)
+    }
+
+    @Test func recommendationFixturesExposeDistinctHistoricalReasonsWithoutInventingMissingEvidence() throws {
+        let owner = "tm_hybrid_debug"
+        let container = try TasteMapPersistence.makeContainer(inMemory: true, configurationName: "RecommendationReasonEvidence")
+        let context = ModelContext(container)
+        var metadata: [UUID: TasteMapHybridRestaurantMetadata] = [:]
+        for index in 0..<3 {
+            let restaurant = Restaurant(ownerUserID: owner, name: "日料历史样本\(index)", address: "杭州测试地址", latitude: 30.2, longitude: 120.1, city: "杭州", status: .visited)
+            context.insert(restaurant)
+            metadata[restaurant.id] = .init(tags: ["日料"])
+            for _ in 0..<2 {
+                let visit = Visit(ownerUserID: owner, restaurantId: restaurant.id, visitedAt: .now)
+                visit.rating = 4.5
+                context.insert(visit)
+            }
+        }
+        try context.save()
+        let snapshot = try TasteMapHybridBridgeService(container: container, ownerUserID: owner, metadataByRestaurantID: metadata).contentSnapshot()
+        let personalized = try #require(snapshot.discovery.forYou.first)
+        #expect(personalized.reasons.count == 3)
+        #expect(personalized.reasons[1].text == "你过去 2 家日料相关餐厅的平均评分为 9.0/10")
+        #expect(personalized.reasons[2].code == "REPEAT_VISIT_PATTERN")
+        let similar = try #require(snapshot.discovery.similarTaste.first)
+        #expect(similar.reasons.count == 3)
+        #expect(similar.reasons[1].code == "SOURCE_VISIT_RATING")
+        #expect(similar.reasons[1].text.contains("9/10"))
+    }
+
+    @Test func overlappingReactControlsNeverRevealNativeMap() {
+        let overlay = TasteMapHybridMapOverlayView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        overlay.reactControlExclusions = [
+            CGRect(x: 140, y: 475, width: 110, height: 44),
+            CGRect(x: 14, y: 465, width: 362, height: 58),
+            CGRect(x: 0, y: 544, width: 390, height: 56)
+        ]
+        overlay.layoutSubviews()
+        let mask = overlay.layer.mask as? CAShapeLayer
+        #expect(mask?.path?.contains(CGPoint(x: 195, y: 495)) == false)
+        #expect(mask?.path?.contains(CGPoint(x: 40, y: 495)) == false)
+        #expect(mask?.path?.contains(CGPoint(x: 1, y: 599)) == false)
+        #expect(mask?.path?.contains(CGPoint(x: 195, y: 400)) == true)
+        #expect(!overlay.point(inside: CGPoint(x: 195, y: 495), with: nil))
+
+        overlay.reactControlExclusions = []
+        overlay.layoutSubviews()
+        #expect((overlay.layer.mask as? CAShapeLayer)?.path?.contains(CGPoint(x: 195, y: 495)) == true)
+        #expect(overlay.point(inside: CGPoint(x: 195, y: 495), with: nil))
+    }
+
     @Test func routeValidationAndOwnershipAreCanonical() throws {
         let profile = try TasteMapHybridRouteDTO(surface: .profile)
         let map = try TasteMapHybridRouteDTO(surface: .map)
@@ -16,8 +150,14 @@ struct HybridPhase2AIntegrationTests {
         let restaurantDelete = try TasteMapHybridRouteDTO(surface: .restaurantDelete, identifier: "restaurant-1")
         let restaurantAddToList = try TasteMapHybridRouteDTO(surface: .restaurantAddToList, identifier: "restaurant-1")
         let restaurantWantToGo = try TasteMapHybridRouteDTO(surface: .restaurantWantToGo, identifier: "restaurant-1")
+        let accountSettings = try TasteMapHybridRouteDTO(surface: .accountSettings)
         let dataBackup = try TasteMapHybridRouteDTO(surface: .dataBackup)
+        let dataClear = try TasteMapHybridRouteDTO(surface: .dataClear)
+        let privacySettings = try TasteMapHybridRouteDTO(surface: .privacySettings)
         let permissions = try TasteMapHybridRouteDTO(surface: .permissions)
+        let storage = try TasteMapHybridRouteDTO(surface: .storage)
+        let helpSettings = try TasteMapHybridRouteDTO(surface: .helpSettings)
+        let aboutSettings = try TasteMapHybridRouteDTO(surface: .aboutSettings)
         let accountDelete = try TasteMapHybridRouteDTO(surface: .accountDelete)
         #expect(profile.owner == .hybrid)
         #expect(map.owner == .hybrid)
@@ -29,8 +169,14 @@ struct HybridPhase2AIntegrationTests {
         #expect(restaurantDelete.owner == .native)
         #expect(restaurantAddToList.owner == .native)
         #expect(restaurantWantToGo.owner == .native)
+        #expect(accountSettings.owner == .native)
         #expect(dataBackup.owner == .native)
+        #expect(dataClear.owner == .native)
+        #expect(privacySettings.owner == .native)
         #expect(permissions.owner == .native)
+        #expect(storage.owner == .native)
+        #expect(helpSettings.owner == .native)
+        #expect(aboutSettings.owner == .native)
         #expect(accountDelete.owner == .native)
         #expect(throws: TasteMapHybridRouteError.missingIdentifier) {
             try TasteMapHybridRouteDTO(surface: .restaurant)
@@ -56,13 +202,113 @@ struct HybridPhase2AIntegrationTests {
         #expect(try coordinator.openHybrid(visit).owner == .hybrid)
         #expect(coordinator.current.route.surface == .visit)
         #expect(coordinator.back().route.surface == .restaurant)
-        #expect(coordinator.back().route.surface == .profile)
+        #expect(coordinator.back().route.surface == .map)
         #expect(try coordinator.openHybrid(restaurant).route.surface == .restaurant)
         #expect(try coordinator.openHybrid(visitEdit).route.surface == .visitEdit)
         #expect(coordinator.back().route.surface == .restaurant)
         #expect(throws: TasteMapHybridRouteError.unsupportedRoute) {
             try coordinator.openNative(restaurant)
         }
+    }
+
+    @Test func cancelledRestaurantDeletionClosesOnlyTheNativeSheet() throws {
+        let coordinator = TasteMapHybridNavigationCoordinator()
+        let profile = try TasteMapHybridRouteDTO(surface: .profile)
+        let detail = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "provider:place")
+        _ = try coordinator.openHybrid(profile)
+        _ = try coordinator.openHybrid(detail)
+        var events: [TasteMapHybridNavigationStateDTO] = []
+        coordinator.didChange = { events.append($0) }
+        _ = try coordinator.openNative(TasteMapHybridRouteDTO(surface: .restaurantDelete, identifier: "owned-local-id"))
+        #expect(events.last?.route.surface == .restaurantDelete)
+        coordinator.dismissNativePresentation()
+        #expect(coordinator.current.route == detail)
+        #expect(events.allSatisfy { $0.completedAction == nil })
+        // A late/duplicate callback after cancellation cannot consume Detail.
+        let count = events.count
+        #expect(coordinator.completeRestaurantDeletion().route == detail)
+        #expect(events.count == count)
+        #expect(coordinator.back().route == profile)
+    }
+
+    @Test func successfulRestaurantDeletionIsOneAtomicNativeTransitionInEitherNotificationOrder() throws {
+        for notificationFirst in [true, false] {
+            let coordinator = TasteMapHybridNavigationCoordinator()
+            let profile = try TasteMapHybridRouteDTO(surface: .profile)
+            let detail = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "provider:place")
+            _ = try coordinator.openHybrid(profile)
+            _ = try coordinator.openHybrid(detail)
+            _ = try coordinator.openNative(TasteMapHybridRouteDTO(surface: .restaurantDelete, identifier: "owned-local-id"))
+            var events: [TasteMapHybridNavigationStateDTO] = []
+            var deliveryOrder: [String] = []
+            coordinator.didChange = { events.append($0); deliveryOrder.append("completion") }
+            // Data notifications invalidate storage projections only; they do
+            // not drive Coordinator navigation in either delivery order.
+            if notificationFirst { deliveryOrder.append("data") }
+            let result = coordinator.completeRestaurantDeletion()
+            if !notificationFirst { deliveryOrder.append("data") }
+            #expect(deliveryOrder == (notificationFirst ? ["data", "completion"] : ["completion", "data"]))
+            #expect(result.route == profile)
+            #expect(result.completedAction == .restaurantDelete)
+            #expect(result.sourceRequestID == nil)
+            #expect(coordinator.presentedNativeRoute == nil)
+            #expect(events.count == 1)
+            // Mirrors Root's binding: explicit completion already cleared the
+            // sheet, so its later dismissal cannot issue a second Back.
+            if coordinator.presentedNativeRoute != nil { coordinator.dismissNativePresentation() }
+            #expect(coordinator.completeRestaurantDeletion().route == profile)
+            #expect(events.count == 1)
+            #expect(coordinator.back().route.surface == .map)
+        }
+    }
+
+    @Test func restaurantDeletionCompletionDoesNotPopAnUnrelatedRouteOrNativeOperation() throws {
+        let profile = try TasteMapHybridRouteDTO(surface: .profile)
+        let coordinator = TasteMapHybridNavigationCoordinator(initialRoute: profile)
+        let deletion = try TasteMapHybridRouteDTO(surface: .restaurantDelete, identifier: "owned-local-id")
+        _ = try coordinator.openNative(deletion)
+        #expect(coordinator.completeRestaurantDeletion().route == profile)
+        #expect(!coordinator.current.canGoBack)
+        let edit = try TasteMapHybridRouteDTO(surface: .restaurantEdit, identifier: "owned-local-id")
+        _ = try coordinator.openNative(edit)
+        #expect(coordinator.completeRestaurantDeletion().route == edit)
+        #expect(coordinator.presentedNativeRoute == edit)
+        // A new explicit destination invalidates the old Native operation.
+        _ = try coordinator.openNative(deletion)
+        let other = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "another-restaurant")
+        _ = try coordinator.openHybrid(other)
+        #expect(coordinator.completeRestaurantDeletion().route == other)
+        #expect(coordinator.back().route == profile)
+    }
+
+    @Test func coldRestaurantDeletionFallsBackToMapAndCompletionMetadataIsAdditive() throws {
+        let detail = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "cold-detail")
+        let coordinator = TasteMapHybridNavigationCoordinator(initialRoute: detail)
+        _ = try coordinator.openNative(TasteMapHybridRouteDTO(surface: .restaurantDelete, identifier: "cold-detail"))
+        let completed = coordinator.completeRestaurantDeletion()
+        #expect(completed.route.surface == .map)
+        #expect(!completed.canGoBack)
+        let roundtrip = try JSONDecoder().decode(TasteMapHybridNavigationStateDTO.self, from: JSONEncoder().encode(completed))
+        #expect(roundtrip.completedAction == .restaurantDelete)
+        let legacy = Data(#"{"route":{"surface":"map"},"owner":"hybrid","canGoBack":false}"#.utf8)
+        #expect(try JSONDecoder().decode(TasteMapHybridNavigationStateDTO.self, from: legacy).completedAction == nil)
+    }
+
+    @Test func ordinaryColdStartUsesMapButExplicitEntriesAndSessionHistoryWin() throws {
+        let cold = TasteMapHybridNavigationCoordinator()
+        #expect(cold.current.route.surface == .map)
+        #expect(!cold.current.canGoBack)
+        let profile = try TasteMapHybridRouteDTO(surface: .profile)
+        let explicit = TasteMapHybridNavigationCoordinator(initialRoute: profile)
+        #expect(explicit.current.route == profile)
+        let detail = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "deep-linked")
+        #expect(TasteMapHybridNavigationCoordinator(initialRoute: detail).current.route == detail)
+        _ = try cold.openHybrid(profile)
+        #expect(cold.current.route == profile)
+        #expect(cold.back().route.surface == .map)
+        let share = try TasteMapHybridRouteDTO(surface: .add)
+        _ = try cold.handleExternalRoute(share)
+        #expect(cold.current.route == share)
     }
 
     @Test func deepLinksAreAllowlistedAndTyped() throws {
@@ -73,6 +319,73 @@ struct HybridPhase2AIntegrationTests {
         #expect(throws: TasteMapHybridRouteError.self) {
             try TasteMapHybridDeepLinkParser.route(from: #require(URL(string: "javascript://restaurant/r-1")))
         }
+    }
+
+    @Test func correlatedNavigationKeepsRapidMapAddBackHistoryAndNativeOriginEvents() throws {
+        let coordinator = TasteMapHybridNavigationCoordinator()
+        var events: [TasteMapHybridNavigationStateDTO] = []
+        coordinator.didChange = { events.append($0) }
+        let map = try TasteMapHybridRouteDTO(surface: .map)
+        let add = try TasteMapHybridRouteDTO(surface: .add)
+        let discovery = try TasteMapHybridRouteDTO(surface: .discovery)
+        _ = try coordinator.openHybrid(map, sourceRequestID: "request-map-1")
+        _ = try coordinator.openHybrid(add, sourceRequestID: "request-add-1")
+        #expect(coordinator.back(sourceRequestID: "request-back-1").route == map)
+        _ = try coordinator.openHybrid(discovery, sourceRequestID: "request-discovery-1")
+        _ = try coordinator.openHybrid(map, sourceRequestID: "request-map-2")
+        #expect(coordinator.current.route == map)
+        #expect(events.map(\.sourceRequestID) == ["request-map-1", "request-add-1", "request-back-1", "request-discovery-1", "request-map-2"])
+        #expect(coordinator.back().route == discovery)
+        #expect(events.last?.sourceRequestID == nil)
+        let external = try TasteMapHybridDeepLinkParser.route(from: #require(URL(string: "tastemap://restaurant/cold-start")))
+        _ = try coordinator.handleExternalRoute(external)
+        #expect(coordinator.current.route == external)
+        #expect(events.last?.sourceRequestID == nil)
+        let native = try TasteMapHybridRouteDTO(surface: .restaurantEdit, identifier: "cold-start")
+        _ = try coordinator.openNative(native, sourceRequestID: "request-native-edit")
+        coordinator.dismissNativePresentation()
+        #expect(events.last?.route == external)
+        #expect(events.last?.sourceRequestID == nil)
+        _ = try coordinator.handleExternalRoute(add) // Share-extension handoff keeps its original uncorrelated origin.
+        #expect(events.last?.route == add)
+        #expect(events.last?.sourceRequestID == nil)
+        #expect(throws: TasteMapHybridRouteError.unsupportedRoute) { try coordinator.openHybrid(native, sourceRequestID: "wrong-owner") }
+        #expect(coordinator.current.route == add)
+    }
+
+    @Test func completedRestoredVisitEditorReplacesNativeHistoryAndBackRestoresOrigin() throws {
+        let coordinator = TasteMapHybridNavigationCoordinator()
+        let detail = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "restaurant-1")
+        let editor = try TasteMapHybridRouteDTO(surface: .visitEdit, identifier: "visit-1")
+        _ = try coordinator.openHybrid(detail)
+        _ = try coordinator.openHybrid(editor)
+        let saved = try coordinator.openHybrid(detail, sourceRequestID: "completed-editor", replaceCurrent: true)
+        #expect(saved.route == detail)
+        #expect(saved.sourceRequestID == "completed-editor")
+        let returned = coordinator.back()
+        #expect(returned.route.surface == .map)
+        #expect(!returned.canGoBack)
+        #expect(coordinator.back().route.surface == .map)
+    }
+
+    @Test func replacementKeepsColdRootAndDifferentParentWithoutChangingRouteOwnership() throws {
+        let editor = try TasteMapHybridRouteDTO(surface: .visitEdit, identifier: "visit-1")
+        let detail = try TasteMapHybridRouteDTO(surface: .restaurant, identifier: "restaurant-1")
+        let cold = TasteMapHybridNavigationCoordinator(initialRoute: editor)
+        let saved = try cold.openHybrid(detail, replaceCurrent: true)
+        #expect(!saved.canGoBack)
+        #expect(cold.back().route == detail)
+        let coordinator = TasteMapHybridNavigationCoordinator()
+        let discovery = try TasteMapHybridRouteDTO(surface: .discovery)
+        _ = try coordinator.openHybrid(discovery)
+        _ = try coordinator.openHybrid(editor)
+        _ = try coordinator.openHybrid(detail, replaceCurrent: true)
+        #expect(coordinator.back().route == discovery)
+        let native = try TasteMapHybridRouteDTO(surface: .restaurantEdit, identifier: "restaurant-1")
+        #expect(throws: TasteMapHybridRouteError.unsupportedRoute) {
+            try coordinator.openHybrid(native, replaceCurrent: true)
+        }
+        #expect(coordinator.current.route == discovery)
     }
 
     @Test func sessionAndEventDTOsContainNoCredentialFields() throws {
@@ -107,8 +420,12 @@ struct HybridPhase2AIntegrationTests {
             configurationName: "HybridMapScopeCounts"
         )
         let context = ModelContext(container)
-        context.insert(Restaurant(ownerUserID: owner, name: "去过一", address: "A", latitude: 30.2, longitude: 120.1, city: "杭州", status: .visited))
-        context.insert(Restaurant(ownerUserID: owner, name: "去过二", address: "B", latitude: 30.3, longitude: 120.2, city: "上海", status: .visited))
+        let firstVisited = Restaurant(ownerUserID: owner, name: "去过一", address: "A", latitude: 30.2, longitude: 120.1, city: "杭州", status: .visited)
+        let secondVisited = Restaurant(ownerUserID: owner, name: "去过二", address: "B", latitude: 30.3, longitude: 120.2, city: "上海", status: .visited)
+        context.insert(firstVisited)
+        context.insert(secondVisited)
+        context.insert(Visit(ownerUserID: owner, restaurantId: firstVisited.id, rating: 4))
+        context.insert(Visit(ownerUserID: owner, restaurantId: secondVisited.id, rating: 4.5))
         context.insert(Restaurant(ownerUserID: owner, name: "想吃一", address: "C", latitude: 30.4, longitude: 120.3, city: "杭州", status: .wantToGo))
         context.insert(Restaurant(ownerUserID: foreignOwner, name: "其他账户", address: "D", latitude: 30.5, longitude: 120.4, city: "杭州", status: .visited))
         try context.save()
@@ -138,6 +455,74 @@ struct HybridPhase2AIntegrationTests {
         #expect(response.items.count == 1)
         #expect(response.totalCount == 1)
         #expect(response.scopeCounts == .init(visited: 2, wantToGo: 1, recommended: 0))
+    }
+
+    @Test func activeVisitWinsOverStaleAndDuplicateWantToGoRows() throws {
+        let owner = "tm_hybrid_visit_status_precedence"
+        let container = try TasteMapPersistence.makeContainer(
+            inMemory: true,
+            configurationName: "HybridVisitStatusPrecedence"
+        )
+        let context = ModelContext(container)
+        context.insert(UserProfile(tasteMapUserID: owner, displayName: "状态测试"))
+        let recorded = Restaurant(
+            ownerUserID: owner,
+            name: "同一家餐厅",
+            address: "商场 5 层 501",
+            latitude: 30.2500,
+            longitude: 120.1600,
+            city: "杭州",
+            status: .wantToGo
+        )
+        let duplicateWanted = Restaurant(
+            ownerUserID: owner,
+            name: "同一家餐厅",
+            address: "商场 5 层 501",
+            latitude: 30.25005,
+            longitude: 120.16005,
+            city: "杭州",
+            status: .wantToGo
+        )
+        let unrelatedWanted = Restaurant(
+            ownerUserID: owner,
+            name: "真正想吃的餐厅",
+            address: "另一条路 8 号",
+            latitude: 30.30,
+            longitude: 120.20,
+            city: "杭州",
+            status: .wantToGo
+        )
+        context.insert(recorded)
+        context.insert(duplicateWanted)
+        context.insert(unrelatedWanted)
+        context.insert(Visit(ownerUserID: owner, restaurantId: recorded.id, visitedAt: .now))
+        try context.save()
+
+        let service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner)
+        let dashboard = try service.profileDashboard()
+        #expect(dashboard.restaurants.count == 2)
+        #expect(dashboard.restaurants.first { $0.id == recorded.remoteID }?.status == "visited")
+        #expect(dashboard.restaurants.first { $0.id == duplicateWanted.remoteID } == nil)
+        #expect(dashboard.restaurants.first { $0.id == unrelatedWanted.remoteID }?.status == "wantToGo")
+
+        let wanted = try service.mapViewport(request: .init(
+            requestID: "visit-status-wanted-request",
+            scope: .wantToGo,
+            bounds: nil,
+            filters: .init(),
+            sort: .recent,
+            search: "",
+            limit: 300,
+            currentLocation: nil
+        ))
+        #expect(wanted.items.map(\.id) == [unrelatedWanted.remoteID!])
+        #expect(wanted.scopeCounts == .init(visited: 1, wantToGo: 1, recommended: 0))
+
+        let verificationContext = ModelContext(container)
+        let repaired = try #require(verificationContext.fetch(FetchDescriptor<Restaurant>()).first {
+            $0.id == recorded.id
+        })
+        #expect(repaired.status == .visited)
     }
 
     @Test func ownerVisibleCachedRestaurantUsesCanonicalDetailWithoutGrantingEditRights() throws {
@@ -394,6 +779,16 @@ struct HybridPhase2AIntegrationTests {
             )],
             note: "会再来"
         )
+        let quotaObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(draft))
+        var quotaJSON = try #require(quotaObject as? [String: Any])
+        quotaJSON["pendingPhotos"] = (0..<3).map { ["photoID": "new-photo-\($0)"] }
+        let overLimitDraft = try JSONDecoder().decode(TasteMapHybridVisitWriteDraftDTO.self, from: JSONSerialization.data(withJSONObject: quotaJSON))
+        #expect(throws: TasteMapHybridBridgeErrorDTO.self) {
+            try service.saveVisit(request: .init(restaurantID: restaurant.remoteID!, visitID: nil, draft: overLimitDraft))
+        }
+        let beforeSaveVisits = try context.fetch(FetchDescriptor<Visit>())
+        #expect(beforeSaveVisits.isEmpty) // Quota rejection must precede the core Visit write.
+        #expect(attachedPhotoIDs.isEmpty)
         let saved = try service.saveVisit(request: .init(
             restaurantID: restaurant.remoteID!,
             visitID: nil,
@@ -412,6 +807,23 @@ struct HybridPhase2AIntegrationTests {
         #expect(mutations.contains { $0.entityType == .dish })
         #expect(attachedPhotoIDs == ["opaque-pending-photo"])
         #expect(saved.photoWarning == "到访已保存，但有 1 张照片未能附加。")
+        let historicalPhotos = (0..<3).map { index in
+            PhotoAsset(ownerUserID: owner, restaurantId: restaurant.id, visitId: visits[0].id,
+                       kind: .visit, mimeType: "image/jpeg", byteSize: 10, sortOrder: index)
+        }
+        historicalPhotos.forEach { context.insert($0) }
+        try context.save()
+        quotaJSON["pendingPhotos"] = historicalPhotos.map { ["photoID": $0.remoteID!] }
+        quotaJSON["note"] = "保留旧三张的无关编辑"
+        let retainedDraft = try JSONDecoder().decode(TasteMapHybridVisitWriteDraftDTO.self, from: JSONSerialization.data(withJSONObject: quotaJSON))
+        _ = try service.saveVisit(request: .init(restaurantID: restaurant.remoteID!, visitID: saved.visitID, draft: retainedDraft))
+        let retainedPhotos = try context.fetch(FetchDescriptor<PhotoAsset>()).filter { $0.visitId == visits[0].id && $0.deletedAt == nil }
+        #expect(retainedPhotos.count == 3)
+        let retainedVisit = try ModelContext(container).fetch(FetchDescriptor<Visit>()).first { $0.id == visits[0].id }
+        #expect(retainedVisit?.note == "保留旧三张的无关编辑")
+        #expect(throws: TasteMapHybridBridgeErrorDTO.self) {
+            try service.saveVisit(request: .init(restaurantID: restaurant.remoteID!, visitID: saved.visitID, draft: draft))
+        }
         #expect(throws: TasteMapHybridServiceError.restaurantMissing) {
             try service.saveVisit(request: .init(
                 restaurantID: foreign.remoteID!,

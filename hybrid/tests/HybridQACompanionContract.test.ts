@@ -38,7 +38,20 @@ describe('iOS QA companion app isolation contract', () => {
     const fixtures = source('../../ios/TasteMap/TasteMap/App/TasteMapUITestFixtures.swift')
 
     expect(appRuntime).toMatch(/#if TASTEMAP_QA\s+TasteMapRuntimeConfiguration\(tier: \.visualQA\)/)
-    expect(hybridRuntime).toMatch(/#if DEBUG && TASTEMAP_QA\s+return \.hybridDevelopment/)
+    expect(hybridRuntime).toMatch(/#if DEBUG && \(TASTEMAP_QA \|\| TASTEMAP_PRIVATE_PREVIEW\)\s+return \.hybridDevelopment/)
     expect(fixtures).toMatch(/#if TASTEMAP_QA[\s\S]*?\?\? \.rich/)
+  })
+
+  it('keeps the physical private app on current Hybrid UI with real private storage', () => {
+    const project = source('../../ios/TasteMap/TasteMap.xcodeproj/project.pbxproj')
+    const scheme = source('../../ios/TasteMap/TasteMap.xcodeproj/xcshareddata/xcschemes/Taste Map Private.xcscheme')
+    const hybridRuntime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntimeConfiguration.swift')
+    const appRuntime = source('../../ios/TasteMap/TasteMap/App/TasteMapRuntimeConfiguration.swift')
+
+    expect(scheme).toContain('buildConfiguration = "DebugPrivatePreview"')
+    expect(project).toContain('SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG TASTEMAP_PRIVATE_PREVIEW $(inherited)";')
+    expect(project).toMatch(/DebugPrivatePreview[\s\S]*?ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;[\s\S]*?PRODUCT_BUNDLE_IDENTIFIER = com\.lafayette\.tastemap;[\s\S]*?TASTEMAP_APP_GROUP_IDENTIFIER = group\.com\.lafayette\.tastemap;/)
+    expect(hybridRuntime).toMatch(/#if DEBUG && \(TASTEMAP_QA \|\| TASTEMAP_PRIVATE_PREVIEW\)\s+return \.hybridDevelopment/)
+    expect(appRuntime).not.toContain('TASTEMAP_PRIVATE_PREVIEW')
   })
 })

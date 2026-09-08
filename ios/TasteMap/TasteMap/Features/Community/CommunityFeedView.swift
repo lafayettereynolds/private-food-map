@@ -173,8 +173,12 @@ struct CommunityFeedView: View {
                         interactionAPI: authServices.socialCollaborationAPI,
                         safetyAPI: authServices.releaseSafetyAPI,
                         onChange: { result in
-                            if result.friendshipState != .friends {
+                            if result.friendshipState != .friends
+                                || (scope == .following && !result.isFollowing) {
                                 items.removeAll { $0.cacheScope == .friends && $0.user.userId == result.profile.userId }
+                                if scope == .following && !result.isFollowing {
+                                    items.removeAll { $0.user.userId == result.profile.userId }
+                                }
                                 try? LocalCommunityStore(context: modelContext)
                                     .invalidateOwner(result.profile.userId, currentUserID: currentUserID)
                             }
@@ -192,7 +196,7 @@ struct CommunityFeedView: View {
         if TasteMapUITestFixtures.usesCommunityFixture {
             currentUserID = TasteMapUITestFixtures.profileUserID
             let fixture = TasteMapUITestFixtures.communityPage(scope: scope)
-            items = fixture.items
+            items = fixture.items.filter(\.isEligibleForDiscoveryFeed)
             nextCursor = fixture.nextCursor
             showingCache = TasteMapUITestFixtures.usesCommunityOfflineFixture
             return
@@ -209,7 +213,7 @@ struct CommunityFeedView: View {
         if reset {
             if preferCache, let cached = try? LocalCommunityStore(context: modelContext)
                 .cached(currentUserID: currentUserID, routeKey: route) {
-                items = cached.items
+                items = cached.items.filter(\.isEligibleForDiscoveryFeed)
                 showingCache = true
                 nextCursor = nil
             } else {
@@ -221,7 +225,7 @@ struct CommunityFeedView: View {
         loading = true; defer { loading = false }
         do {
             let page = try await authServices.communityAPI.feed(scope: scope, cursor: nil, limit: 20)
-            items = page.items
+            items = page.items.filter(\.isEligibleForDiscoveryFeed)
             nextCursor = page.nextCursor
             showingCache = false
             message = nil
@@ -232,7 +236,7 @@ struct CommunityFeedView: View {
         } catch {
             if items.isEmpty, let cached = try? LocalCommunityStore(context: modelContext)
                 .cached(currentUserID: currentUserID, routeKey: route) {
-                items = cached.items; showingCache = true; nextCursor = nil
+                items = cached.items.filter(\.isEligibleForDiscoveryFeed); showingCache = true; nextCursor = nil
             }
             message = items.isEmpty ? "社区内容暂时无法加载，请稍后重试。" : "刷新失败，继续显示已有缓存。"
         }
@@ -244,7 +248,7 @@ struct CommunityFeedView: View {
         loadingMore = true; defer { loadingMore = false }
         do {
             let page = try await authServices.communityAPI.feed(scope: scope, cursor: cursor, limit: 20)
-            items = deduplicated(items + page.items)
+            items = deduplicated(items + page.items.filter(\.isEligibleForDiscoveryFeed))
             nextCursor = page.nextCursor
             try LocalCommunityStore(context: modelContext).append(
                 items: page.items, currentUserID: currentUserID,
@@ -333,9 +337,9 @@ struct PublicContentCard: View {
     let onOpenRestaurant: () -> Void
     let onOpenUser: () -> Void
     let onWantToGo: () -> Void
-    var onRecordVisit: () -> Void = {}
-    var onAddToList: () -> Void = {}
-    var onAddToRoulette: () -> Void = {}
+    let onRecordVisit: () -> Void
+    let onAddToList: () -> Void
+    let onAddToRoulette: () -> Void
     var interactionAPI: (any CommunityInteractionAPI)? = nil
     var safetyAPI: (any ReleaseSafetyAPI)? = nil
     var currentUserID: String? = nil
@@ -345,6 +349,7 @@ struct PublicContentCard: View {
     var body: some View {
         TasteMapActivityCard {
             VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: TasteMapDesignTokens.Spacing.xSmall) {
             Button(action: onOpenUser) {
                 HStack(spacing: 10) {
                     PresetProfileAvatarView(preset: item.user.avatarPresetId)
@@ -360,6 +365,13 @@ struct PublicContentCard: View {
                     }
                 }
             }.buttonStyle(.plain)
+
+                CommunityContentMoreMenu(
+                    visitID: item.visit?.id, authorUserID: item.user.userId,
+                    currentUserID: currentUserID, safetyAPI: safetyAPI,
+                    onAddToList: onAddToList, onBlocked: { onBlocked?() }
+                )
+            }
 
             Button(action: onOpenRestaurant) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -377,18 +389,13 @@ struct PublicContentCard: View {
                             )
                         }
                     }
-                    PublicContentMedia(item: item, photoAPI: photoAPI)
-                        .frame(
-                            width: TasteMapDesignTokens.Layout.socialFeedMediaWidth,
-                            height: TasteMapDesignTokens.Layout.socialFeedMediaWidth
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let note = item.visit?.note {
-                        Text("“\(note)”").font(.body).foregroundStyle(.primary).lineLimit(5)
-                    }
                 }
             }.buttonStyle(.plain)
+
+            PublicContentMedia(item: item, photoAPI: photoAPI, onOpenRestaurant: onOpenRestaurant)
+            if let note = item.visit?.note {
+                Text("“\(note)”").font(.body).foregroundStyle(.primary)
+            }
 
             if let visitID = item.visit?.id, let interactionAPI, let safetyAPI, let currentUserID {
                 CommunityInteractionControls(
@@ -399,11 +406,24 @@ struct PublicContentCard: View {
                     api: interactionAPI,
                     safetyAPI: safetyAPI,
                     onChange: { onEngagementChange?($0) },
-                    onBlocked: { onBlocked?() }
-                )
+                    onBlocked: { onBlocked?() },
+                    shareText: shareText
+                ) { restaurantActions }
+            } else {
+                HStack(spacing: 8) {
+                    ShareLink(item: shareText) { TasteMapSocialActionLabel(systemImage: "paperplane", count: 0) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("分享动态")
+                    Spacer(minLength: 8)
+                    restaurantActions
+                }
             }
+            }
+        }
+    }
 
-            DiscoveryRestaurantQuickActions(
+    private var restaurantActions: some View {
+        DiscoveryRestaurantQuickActions(
                 viewerState: item.viewerState,
                 onRecordVisit: onRecordVisit,
                 onWantToGo: onWantToGo,
@@ -411,11 +431,7 @@ struct PublicContentCard: View {
                 onAddToRoulette: onAddToRoulette,
                 identifierPrefix: "community",
                 restaurantKey: item.restaurant.globalKey
-            )
-            ShareLink(item: shareText) { Label("分享动态", systemImage: "square.and.arrow.up") }
-                .font(.subheadline)
-            }
-        }
+        )
     }
 
     private var eventText: String {
@@ -432,61 +448,11 @@ struct PublicContentCard: View {
 struct PublicContentMedia: View {
     let item: PublicContentItemV1
     let photoAPI: (any PhotoBinaryAPI)?
-
+    let onOpenRestaurant: () -> Void
     var body: some View {
-        let photos = Array((item.visit?.photos ?? []).prefix(3))
-        if photos.count > 1 {
-            HStack(spacing: 3) {
-                PublicContentPhotoTile(
-                    photo: photos[0], restaurant: item.restaurant, photoAPI: photoAPI
-                )
-                VStack(spacing: 3) {
-                    ForEach(Array(photos.dropFirst().enumerated()), id: \.offset) { _, photo in
-                        PublicContentPhotoTile(
-                            photo: photo, restaurant: item.restaurant, photoAPI: photoAPI
-                        )
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
-        } else {
-            PublicContentThumbnail(restaurant: item.restaurant, photoAPI: photoAPI)
-        }
-    }
-}
-
-private struct PublicContentPhotoTile: View {
-    let photo: PublicContentPhotoV1
-    let restaurant: PublicContentRestaurantV1
-    let photoAPI: (any PhotoBinaryAPI)?
-    @State private var image: UIImage?
-
-    var body: some View {
-        ZStack {
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else {
-                LinearGradient(
-                    colors: [Color.accentColor.opacity(0.15), .orange.opacity(0.12)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                ).overlay {
-                    FoodDiningVisualIcon(
-                        kind: FoodDiningVisualLibrary.kind(legacySymbol: restaurant.markerEmoji),
-                        usage: .decorative,
-                        size: 48,
-                        foregroundColor: TasteMapCoreTheme.brandDeep,
-                        backgroundColor: TasteMapCoreTheme.surface.opacity(0.82)
-                    )
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
-        .task(id: photo.photoId) {
-            guard let id = UUID(uuidString: photo.photoId), let photoAPI else { return }
-            if let data = try? await photoAPI.download(photoID: id, variant: .thumbnail) {
-                image = UIImage(data: data)
-            }
-        }
+        PublicContentActivityMedia(presentation: .init(item: item), restaurantName: item.restaurant.name,
+                                   tags: item.restaurant.tags, semanticID: item.id, photoAPI: photoAPI,
+                                   onOpenRestaurant: onOpenRestaurant)
     }
 }
 
@@ -499,7 +465,7 @@ struct PublicContentThumbnail: View {
             resolution: RestaurantImagePriorityPolicy.resolution(
                 localUserPhotoID: nil,
                 publicOrCachedPhotoID: restaurant.photo?.photoId,
-                providerMerchantImageURL: nil as String?
+                providerMerchantImageURL: restaurant.merchantImageUrl
             ),
             photoAPI: photoAPI,
             semanticID: restaurant.globalKey,

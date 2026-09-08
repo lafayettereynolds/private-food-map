@@ -14,6 +14,7 @@ export interface AppleTokenExchangeRequestV1 {
   nonce: string
   givenName?: string | null
   familyName?: string | null
+  referralCode?: string | null
 }
 
 export interface AuthUserV1 {

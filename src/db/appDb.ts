@@ -16,6 +16,7 @@ import type {
   Visit,
 } from '../types/domain'
 import type { SyncMetadata, SyncQueueItem } from '../types/sync'
+import type { BrowserRecommendationPreferenceState } from '../services/browserRecommendationPreferenceSync'
 
 const legacyRestaurantSchema =
   'id, &amapPoiId, name, city, status, preferenceLevel, *tags, createdAt, updatedAt'
@@ -39,6 +40,7 @@ class FoodMapDatabase extends Dexie {
   diningCompanions!: EntityTable<DiningCompanion, 'id'>
   restaurantLists!: EntityTable<RestaurantListCollection, 'id'>
   restaurantListItems!: EntityTable<RestaurantListItem, 'id'>
+  recommendationPreferences!: EntityTable<BrowserRecommendationPreferenceState, 'ownerID'>
 
   constructor() {
     super(DATABASE_NAME)
@@ -503,6 +505,10 @@ class FoodMapDatabase extends Dexie {
           restaurant.openingHours ??= null
         })
       })
+
+    // One owner record atomically contains exclusions, immutable events,
+    // pending upload state and pull checkpoint. Existing tables are retained.
+    this.version(21).stores({ recommendationPreferences: 'ownerID' })
   }
 }
 

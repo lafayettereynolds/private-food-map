@@ -173,7 +173,7 @@ generic device build 只验证设备架构编译；没有修改 Bundle Identifie
 | 我的地图：留白、居中标题、icon switch、scope、compact chips | PASS |
 | 极远地图 Food/Dining cluster；近距独立 Marker | PASS |
 | Discovery：居中标题、五个等宽一级入口、Activity rating | PASS |
-| Profile：关注/被关注、去过/想去/总消费 | PASS |
+| Profile：关注/粉丝、去过/想去/总消费 | PASS |
 | Restaurant Detail：global single body | PASS |
 | Roulette：approved wheel | PASS |
 | Analytics：approved Analysis Theme + 五类 poster | PASS |
@@ -216,4 +216,3 @@ generic device build 只验证设备架构编译；没有修改 Bundle Identifie
 - F1-C4 duplicate Visit：**CLOSED**。
 - Production：**未访问**。
 - StoreKit 正式配置 / App Store 提交：**未开始**。
-

@@ -21,6 +21,9 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
     @Published private(set) var nearbyState: RestaurantAcquisitionLoadState = .idle
     @Published private(set) var locationAccuracy: RestaurantAcquisitionLocationAccuracy = .unknown
     @Published private(set) var nearbyResults: [RestaurantCandidate] = []
+    @Published private(set) var nearbyVisibleCount = 12
+    var visibleNearbyResults: ArraySlice<RestaurantCandidate> { nearbyResults.prefix(nearbyVisibleCount) }
+    var hasMoreNearbyResults: Bool { nearbyVisibleCount < nearbyResults.count }
     @Published private(set) var searchResults: [RestaurantCandidate] = []
     @Published private(set) var hasSearched = false
     @Published private(set) var isSearching = false
@@ -35,42 +38,59 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
     private let searchService: any RestaurantSearching
     private let linkResolver: any ExternalRestaurantLinkResolving
     private let locationProvider: any RestaurantLocationProviding
+    private let now: () -> Date
+    private var acceptedLocation: CLLocation?
+    private var searchGeneration = 0
+    private var nearbyGeneration = 0
 
     init(
         searchService: any RestaurantSearching,
         linkResolver: any ExternalRestaurantLinkResolving,
-        locationProvider: any RestaurantLocationProviding
+        locationProvider: any RestaurantLocationProviding,
+        now: @escaping () -> Date = { Date() }
     ) {
         self.searchService = searchService
         self.linkResolver = linkResolver
         self.locationProvider = locationProvider
+        self.now = now
     }
 
     func loadNearby() async {
-        guard nearbyState != .loading else { return }
+        invalidateNearby()
+        let generation = nearbyGeneration
         nearbyState = .loading
-        nearbyResults = []
         currentLocationLabel = nil
+        currentCoordinate = nil
+        acceptedLocation = nil
         locationAccuracy = .unknown
         do {
             let location = try await locationProvider.requestCurrentLocation()
+            guard nearbyGeneration == generation, !Task.isCancelled else { return }
             let accuracyAuthorization = locationProvider.accuracyAuthorization
+            guard accuracyAuthorization == .fullAccuracy else {
+                locationAccuracy = .reduced
+                throw RestaurantLocationError.preciseLocationRequired
+            }
             guard RestaurantLocationFixPolicy.isUsable(
                 location,
-                accuracyAuthorization: accuracyAuthorization
+                accuracyAuthorization: accuracyAuthorization,
+                now: now()
             ) else {
                 throw RestaurantLocationError.staleOrInaccurate
             }
             let coordinate = RestaurantCoordinate(
                 latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude
+                longitude: location.coordinate.longitude,
+                reference: .wgs84
             )
             currentCoordinate = coordinate
+            acceptedLocation = location
             locationAccuracy = accuracyAuthorization == .reducedAccuracy ? .reduced : .precise
             async let contextTask: RestaurantLocationContext? = try? searchService.locationContext(for: coordinate)
             async let nearbyTask = searchService.nearby(center: coordinate, radiusMeters: 3_000)
             let locationContext = await contextTask
             let candidates = try await nearbyTask
+            guard nearbyGeneration == generation, !Task.isCancelled else { return }
             if let locationContext {
                 detectedCity = locationContext.city.nilIfBlank
                 currentLocationLabel = locationContext.address.nilIfBlank
@@ -79,17 +99,33 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
                         .joined(separator: " · ")
                         .nilIfBlank
             }
-            nearbyResults = Array(
-                RestaurantDistanceOrdering.measuringAndSorting(candidates, from: coordinate)
-                    .filter { ($0.distanceMeters ?? .greatestFiniteMagnitude) <= 3_000 }
-                    .prefix(8)
-            )
+            nearbyResults = RestaurantDistanceOrdering.measuringAndSorting(candidates, from: coordinate)
+                .filter { ($0.distanceMeters ?? .greatestFiniteMagnitude) <= 3_000 }
             nearbyState = .loaded
         } catch RestaurantLocationError.permissionDenied {
+            guard nearbyGeneration == generation, !Task.isCancelled else { return }
             nearbyState = .locationDenied
+        } catch RestaurantLocationError.preciseLocationRequired {
+            guard nearbyGeneration == generation, !Task.isCancelled else { return }
+            nearbyState = .failed("请在系统设置中为味图开启精确位置，再查找附近餐厅。城市搜索仍可使用。")
         } catch {
+            guard nearbyGeneration == generation, !Task.isCancelled else { return }
             nearbyState = .failed("暂时无法读取附近餐厅，你仍可按城市搜索、粘贴链接或手动添加。")
         }
+    }
+
+    func loadMoreNearby() {
+        guard nearbyState == .loaded else { return }
+        nearbyVisibleCount = min(nearbyResults.count, nearbyVisibleCount + 12)
+    }
+
+    func invalidateNearby() {
+        nearbyGeneration += 1
+        nearbyResults = []
+        nearbyVisibleCount = 12
+        nearbyState = .idle
+        acceptedLocation = nil
+        currentCoordinate = nil
     }
 
     func refreshAfterForeground() async {
@@ -103,28 +139,69 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
             return
         }
         hasSearched = true
+        searchGeneration += 1
+        let generation = searchGeneration
         isSearching = true
         searchMessage = nil
-        defer { isSearching = false }
+        defer { if searchGeneration == generation { isSearching = false } }
         do {
-            let values = try await searchService.search(
+            let searchCenter = await currentSearchCenter(city: city)
+            guard searchGeneration == generation else { return }
+            let values = RestaurantSearchRelevancePolicy.rankedMatches(
+                try await searchService.search(
+                    query: query,
+                    scope: RestaurantSearchScope(city: city, center: searchCenter)
+                ),
                 query: query,
-                scope: RestaurantSearchScope(city: city, center: currentCoordinate)
+                scopeCity: city
             )
-            searchResults = values
+            guard searchGeneration == generation else { return }
+            searchResults = searchCenter.map { RestaurantDistanceOrdering.measuringAndSorting(values, from: $0) } ?? values
             searchMessage = values.isEmpty ? "没有找到匹配的餐厅，请换一个名称、地址或城市。" : nil
         } catch is CancellationError {
             return
         } catch {
+            guard searchGeneration == generation else { return }
             searchResults = []
             searchMessage = "搜索失败，请检查网络后重试。附近功能不可用时，仍可手动添加。"
         }
     }
 
     func clearSearch() {
+        searchGeneration += 1
+        isSearching = false
         searchResults = []
         searchMessage = nil
         hasSearched = false
+    }
+
+    private func currentSearchCenter(city: String) async -> RestaurantCoordinate? {
+        guard let location = await RestaurantSearchLocationPolicy.location(
+            accepted: acceptedLocation,
+            authorizationStatus: locationProvider.authorizationStatus,
+            accuracyAuthorization: locationProvider.accuracyAuthorization,
+            now: now,
+            refresh: { try await self.locationProvider.requestCurrentLocation() }
+        ),
+              locationProvider.accuracyAuthorization == .fullAccuracy else { return nil }
+        let refreshed = acceptedLocation?.timestamp != location.timestamp
+        if let previous = acceptedLocation,
+           previous.coordinate.latitude != location.coordinate.latitude || previous.coordinate.longitude != location.coordinate.longitude {
+            invalidateNearby()
+            nearbyState = .failed("位置已变化，请重新查找附近餐厅。")
+        }
+        acceptedLocation = location
+        currentCoordinate = RestaurantCoordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude, reference: .wgs84)
+        locationAccuracy = .precise
+        if refreshed, let currentCoordinate {
+            // A refreshed position may be in another city. Never reuse the old
+            // detected city to authorize the new origin's location bias.
+            detectedCity = try? await searchService.locationContext(for: currentCoordinate).city
+        }
+        let normalize = { (value: String) in value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "市", with: "").lowercased() }
+        guard city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || detectedCity.map({ normalize($0) == normalize(city) }) == true else { return nil }
+        return currentCoordinate
     }
 
     func clearLinkResolution() {
@@ -236,6 +313,7 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
     func requestCurrentCoordinate() async throws -> (RestaurantCoordinate, RestaurantLocationContext?) {
         let location = try await locationProvider.requestCurrentLocation()
         let accuracyAuthorization = locationProvider.accuracyAuthorization
+        guard accuracyAuthorization == .fullAccuracy else { throw RestaurantLocationError.preciseLocationRequired }
         guard RestaurantLocationFixPolicy.isUsable(
             location,
             accuracyAuthorization: accuracyAuthorization
@@ -247,6 +325,7 @@ final class RestaurantAcquisitionViewModel: ObservableObject {
             longitude: location.coordinate.longitude
         )
         currentCoordinate = coordinate
+        acceptedLocation = location
         locationAccuracy = accuracyAuthorization == .reducedAccuracy ? .reduced : .precise
         return (coordinate, try? await searchService.locationContext(for: coordinate))
     }

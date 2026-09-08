@@ -14,7 +14,6 @@ import type {
 export interface VisitExtraFieldsValue {
   visibility: Visibility
   diningMode: DiningMode
-  myActualSpend: string
   paymentMode: PaymentMode | null
   diningOccasions: DiningOccasion[]
   diningOccasionText: string
@@ -39,7 +38,6 @@ export function createDefaultVisitExtraFields(): VisitExtraFieldsValue {
   return {
     visibility: 'private',
     diningMode: 'dine_in',
-    myActualSpend: '',
     paymentMode: null,
     diningOccasions: [],
     diningOccasionText: '',

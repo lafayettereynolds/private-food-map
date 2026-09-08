@@ -112,7 +112,8 @@ private actor MockAuthAPI: AuthAPI {
         state: String,
         nonce: String,
         givenName: String?,
-        familyName: String?
+        familyName: String?,
+        referralCode: String?
     ) async throws -> AuthSessionResponseV1 {
         throw AuthClientError.invalidResponse
     }

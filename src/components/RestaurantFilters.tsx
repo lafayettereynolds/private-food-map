@@ -1,3 +1,4 @@
+import { FilterChoiceGroup } from './MyMapBrowsePage'
 import {
   DINING_MODE_OPTIONS,
   DINING_OCCASION_OPTIONS,
@@ -160,14 +161,14 @@ export function RestaurantFilters({
         </div>
       ) : null}
       {showVisitCount ? <FilterChoices label="适合场景" value={diningOccasion} options={DINING_OCCASION_OPTIONS} onChange={(value) => onDiningOccasionChange(value as DiningOccasionFilter)} /> : null}
-      {showVisitCount ? <FilterChoices label="推荐来源" value={recommendationSource} options={RECOMMENDATION_SOURCE_OPTIONS.map((item) => item.value === 'other' ? { ...item, label: '自定义' } : item)} onChange={(value) => onRecommendationSourceChange(value as RecommendationSourceFilter)} /> : null}
+      {showVisitCount ? <FilterChoiceGroup premiumOnly label="推荐来源" value={recommendationSource === 'all' ? '' : recommendationSource} options={RECOMMENDATION_SOURCE_OPTIONS.filter(item => item.value !== 'other').map(item => [item.value, item.label])} onSelect={(value) => onRecommendationSourceChange((value || 'all') as RecommendationSourceFilter)} /> : null}
       {showVisitCount ? <FilterChoices label="人均价格" value={priceRange} options={[{ value: 'under100', label: '¥100 以下' }, { value: '100to200', label: '¥100–200' }, { value: 'over200', label: '¥200 以上' }]} onChange={(value) => onPriceRangeChange(value as PriceRangeFilter)} /> : null}
       {showVisitCount ? <FilterChoices label="到访时间" value={visitPeriod} allLabel="不限" options={[{ value: 'sixMonths', label: '最近半年' }, { value: 'year', label: '最近一年' }]} onChange={(value) => onVisitPeriodChange(value as VisitPeriodFilter)} /> : null}
       <div className="filter-select-grid">
         {isRecommendation ? <label><span>排序</span><select aria-label="推荐排序" onChange={(event) => onRecommendationSortChange?.(event.target.value as RecommendationSortFilter)} value={recommendationSort}><option value="recommended">综合推荐</option><option value="nearest">距离最近</option><option value="rating">评分最高</option></select></label> : null}
-        <FilterSelect label="城市" value={city} allLabel="全部城市" options={cityOptions} onChange={onCityChange} />
+        <FilterSelect label="城市" value={city} allLabel="城市" options={cityOptions} onChange={onCityChange} />
         {showVisitCount ? (
-          <FilterSelect label="饭搭子" value={companion} allLabel="全部饭搭子" options={companionOptions} onChange={onCompanionChange} />
+          <FilterChoiceGroup premiumOnly label="饭搭子" value={companion === 'all' ? '' : companion} options={companionOptions.map(value => [value, value])} onSelect={value => onCompanionChange(value || 'all')} />
         ) : null}
       </div>
       {isRecommendation && (recommendationDistance !== 'all' || recommendationSort === 'nearest') ? <p className={`recommendation-filter-location is-${recommendationLocationStatus}`}>{recommendationLocationStatus === 'loading' ? '正在确定距离基准…' : recommendationLocationStatus === 'ready' ? recommendationLocationLabel : recommendationLocationStatus === 'error' ? '无法取得位置，距离条件暂未生效' : ''}</p> : null}

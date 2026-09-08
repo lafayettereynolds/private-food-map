@@ -1,6 +1,8 @@
 import { DINING_OCCASION_OPTIONS, RECOMMENDATION_SOURCE_OPTIONS, type RestaurantSummary, type Visibility, type Visit } from '../types/domain'
 import { rankTasteTags, type TastePreferenceSignal } from './tasteProfileCore'
+import { NON_CUISINE_TAG } from './tasteProfileSnapshot'
 import { buildValidTasteVisits, moduleConfidence, type ModuleConfidence, type ValidTasteVisit } from './validTasteVisits'
+import { summarizeVisitSpend } from './visitSpend'
 
 const PRICE_BUCKETS = [
   { key: 'under50', label: '¥0～50', min: 0, max: 50 },
@@ -11,8 +13,6 @@ const PRICE_BUCKETS = [
   { key: '500to800', label: '¥500～800', min: 500, max: 800 },
   { key: 'over800', label: '¥800+', min: 800, max: Number.POSITIVE_INFINITY },
 ]
-const NON_CUISINE_TAG = /约会|聚餐|朋友|家人|同事|庆祝|商务|会再去|打卡|环境|服务|性价比|商场|中心|广场|银泰|来福士|附近|安静|热闹|舒适|拥挤|宽敞|精致|氛围|景观|偏贵|合理|划算|超值/
-
 export function buildProfileInsights(restaurants: RestaurantSummary[], visits: Visit[], now = new Date()) {
   const activeVisits = visits.filter((visit) => !visit.deletedAt)
   const monthVisits = activeVisits.filter((visit) => sameMonth(new Date(visit.visitedAt), now))
@@ -105,7 +105,7 @@ function compareGroups(withValues: number[], withoutValues: number[]) { const wi
 function topTags(items: ValidTasteVisit[]) { return rankTasteTags(items.map((item) => ({ restaurantKey: item.restaurant.id, tags: item.restaurant.tags.filter((tag) => !NON_CUISINE_TAG.test(tag)), ratingOutOfTen: item.ratingOutOfTen as number }))).slice(0, 4).map((item) => item.tag) }
 function countBy<T>(items: T[], key: (item: T) => string) { const map = new Map<string, number>(); items.forEach((item) => map.set(key(item), (map.get(key(item)) ?? 0) + 1)); return map }
 function tasteSummary(cuisine: string | undefined, priceRange: string, traits: string[], repeatShare: number) { const subject = cuisine ? `你更喜欢${cuisine}` : '你的高分记录'; const traitText = traits.slice(0, 2).join('、'); return `${subject}${priceRange !== '尚无足够数据' ? `，常去${priceRange}价位` : ''}${traitText ? `，记录中常伴随${traitText}` : ''}${repeatShare >= .35 ? '，也更常回到稳定喜欢的店' : ''}。` }
-function summarizePeriod(visits: Visit[], restaurantById: Map<string, RestaurantSummary>) { return { visitCount: visits.length, restaurantCount: new Set(visits.map((visit) => visit.restaurantId)).size, cityCount: new Set(visits.map((visit) => restaurantById.get(visit.restaurantId)?.city).filter(Boolean)).size, spend: Math.round(visits.reduce((sum, visit) => sum + (visit.myActualSpend ?? visit.totalPrice ?? 0), 0)) } }
+function summarizePeriod(visits: Visit[], restaurantById: Map<string, RestaurantSummary>) { return { visitCount: visits.length, restaurantCount: new Set(visits.map((visit) => visit.restaurantId)).size, cityCount: new Set(visits.map((visit) => restaurantById.get(visit.restaurantId)?.city).filter(Boolean)).size, spend: Math.round(summarizeVisitSpend(visits).total) } }
 function sameMonth(left: Date, right: Date) { return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() }
 function average(values: number[]) { return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null }
 function share(count: number, total: number) { return total ? count / total : 0 }

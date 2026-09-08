@@ -5,9 +5,238 @@ import SwiftData
 import Testing
 @testable import TasteMap
 
+private final class AcquisitionWorldwideURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            guard let handler = Self.handler else { throw URLError(.badServerResponse) }
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+    override func stopLoading() {}
+}
+
 @Suite("Restaurant acquisition", .serialized)
 @MainActor
 struct RestaurantAcquisitionTests {
+    @Test("Live provider accepts the user's original full restaurant name", .enabled(if: ProcessInfo.processInfo.environment["TASTEMAP_LIVE_SEARCH"] == "1"))
+    func liveFullForeignRestaurantName() async throws {
+        // Explicit opt-in integration test: never introduce public-network
+        // availability into the deterministic regression suite.
+        let fallback = AcquisitionSearchSpy()
+        let values = try await WorldwideRestaurantSearchService(mapKit: fallback)
+            .search(query: "Da Andrea Greenwich Village", scope: .init(city: "纽约"))
+        #expect(fallback.lastQuery == nil)
+        #expect(values.first?.placeIdentities.first?.externalID == "osm:n:2569050392")
+        #expect(values.first?.address.contains("35 West 13th Street") == true)
+        #expect(values.first?.address.contains("Union Square") == true)
+        #expect(values.first?.resolvedSearchQuery == "Da Andrea Greenwich Village")
+        print("LIVE_SEARCH_RESULT \(values.map { "\($0.name) | \($0.address)" }.joined(separator: " ; "))")
+    }
+
+    @Test("Qualified fallback rejects wrong-city or non-place anchors and other-city businesses")
+    func qualifiedFallbackRequiresCityAndPlaceEvidence() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AcquisitionWorldwideURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); AcquisitionWorldwideURLProtocol.handler = nil }
+        let city = RestaurantResolvedCity(displayName: "New York", countryCode: "US", region: MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 40.71427, longitude: -74.00597), latitudinalMeters: 120_000, longitudinalMeters: 120_000))
+        for (anchorKey, anchorCity, businessCity) in [("place", "Jersey City", "New York"), ("amenity", "New York", "New York"), ("place", "New York", "Jersey City")] {
+            AcquisitionWorldwideURLProtocol.handler = { request in
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
+                let body: String
+                if query == "Greenwich Village" {
+                    body = "{\"features\":[{\"properties\":{\"osm_type\":\"N\",\"osm_id\":1,\"osm_key\":\"\(anchorKey)\",\"osm_value\":\"neighbourhood\",\"name\":\"Greenwich Village\",\"city\":\"\(anchorCity)\"},\"geometry\":{\"coordinates\":[-73.9965658,40.7319802]}}]}"
+                } else if query == "Da Andrea" {
+                    body = "{\"features\":[{\"properties\":{\"osm_type\":\"N\",\"osm_id\":2,\"osm_key\":\"amenity\",\"osm_value\":\"restaurant\",\"name\":\"Da Andrea\",\"city\":\"\(businessCity)\"},\"geometry\":{\"coordinates\":[-73.995801,40.7361321]}}]}"
+                } else { body = #"{"features":[]}"# }
+                #expect(request.timeoutInterval <= 10)
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+            }
+            let values = try await PhotonRestaurantSearchService(session: session).searchQualifiedName(
+                query: "Da Andrea Greenwich Village", scopeCity: "纽约", resolvedCity: city)
+            #expect(values.isEmpty)
+        }
+    }
+
+    @Test("A provider timeout uses independent fallback; cancellation does not start another search")
+    func qualifiedFallbackTimeoutAndCancellation() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AcquisitionWorldwideURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); AcquisitionWorldwideURLProtocol.handler = nil }
+        for code in [URLError.timedOut, URLError.cancelled] {
+            AcquisitionWorldwideURLProtocol.handler = { request in
+                if request.url?.host == "geocoding-api.open-meteo.com" {
+                    let body = #"{"results":[{"name":"New York","latitude":40.71427,"longitude":-74.00597,"feature_code":"PPL","country_code":"US"}]}"#
+                    return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+                }
+                throw URLError(code)
+            }
+            let fallback = AcquisitionSearchSpy()
+            do {
+                _ = try await WorldwideRestaurantSearchService(session: session, mapKit: fallback)
+                    .search(query: "Da Andrea Greenwich Village", scope: .init(city: "纽约"))
+                #expect(code == .timedOut)
+                #expect(fallback.lastQuery == "Da Andrea Greenwich Village")
+            } catch {
+                #expect(code == .cancelled)
+                #expect((error as? URLError)?.code == .cancelled)
+                #expect(fallback.lastQuery == nil)
+            }
+        }
+    }
+
+    @Test("Full name plus neighbourhood automatically retrieves real branches despite provider locality mismatch")
+    func fullForeignNameWithProviderLocalityMismatch() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AcquisitionWorldwideURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); AcquisitionWorldwideURLProtocol.handler = nil }
+        AcquisitionWorldwideURLProtocol.handler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
+            let body: String
+            if request.url?.host == "geocoding-api.open-meteo.com" {
+                body = #"{"results":[{"name":"New York","latitude":40.71427,"longitude":-74.00597,"feature_code":"PPL","country_code":"US"}]}"#
+            } else if query == "Greenwich Village" {
+                body = #"{"features":[{"properties":{"osm_type":"N","osm_id":158861717,"osm_key":"place","osm_value":"neighbourhood","name":"Greenwich Village","city":"New York"},"geometry":{"coordinates":[-73.9965658,40.7319802]}}]}"#
+            } else if query == "Da Andrea" {
+                // Both real branches; provider calls the desired branch Union Square.
+                body = #"{"features":[{"properties":{"osm_type":"N","osm_id":2377128176,"osm_key":"amenity","osm_value":"restaurant","name":"Da Andrea","city":"New York","locality":"Chelsea District","street":"8th Avenue","housenumber":"160"},"geometry":{"coordinates":[-74.0006,40.742]}},{"properties":{"osm_type":"N","osm_id":2569050392,"osm_key":"amenity","osm_value":"restaurant","name":"Da Andrea","city":"New York","locality":"Union Square","street":"West 13th Street","housenumber":"35"},"geometry":{"coordinates":[-73.995801,40.7361321]}}]}"#
+            } else { body = #"{"features":[]}"# }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let values = try await WorldwideRestaurantSearchService(session: session, mapKit: AcquisitionSearchSpy())
+            .search(query: "Da Andrea Greenwich Village", scope: .init(city: "纽约"))
+        #expect(values.count == 2)
+        #expect(values.first?.address.contains("35 West 13th Street") == true)
+        #expect(values.first?.address.contains("Union Square") == true)
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(values, query: "Da Andrea Greenwich Village").count == 2)
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(values, query: "unrelated restaurant name").isEmpty)
+    }
+    @Test("Lanzhou shorthand retains the actual beef-noodle branch and excludes unrelated shops")
+    func lanzhouShorthand() {
+        let candidates = ["兰州牛肉拉面（凯旋门商业中心店）", "兰州拉面（另一分店）", "杭州牛肉拉面", "兰州烧烤", "兰州某个很长很长很长的商城拉面"].map {
+            RestaurantCandidate(name: $0, address: "", city: "杭州", latitude: 30.27, longitude: 120.15)
+        }
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(candidates, query: "兰州拉面").map(\.name) == ["兰州拉面（另一分店）", "兰州牛肉拉面（凯旋门商业中心店）"])
+        #expect(RestaurantSearchRelevancePolicy.queryVariants("兰州拉面") == ["兰州拉面", "兰州牛肉拉面"])
+        #expect(RestaurantSearchRelevancePolicy.queryVariants("陌生小馆") == ["陌生小馆"])
+    }
+    @Test("Search relevance removes unrelated provider suggestions and handles mixed CJK/Latin input")
+    func searchRelevance() {
+        let values = [
+            RestaurantCandidate(name: "青岚寿司", address: "杭州市美食街 1 号", city: "杭州", latitude: 30.27, longitude: 120.15),
+            RestaurantCandidate(name: "牛 New 寿喜烧", address: "杭州市延安路 88 号", city: "杭州", latitude: 30.28, longitude: 120.16),
+            RestaurantCandidate(name: "山茶烘焙", address: "杭州市美食街 81 号", city: "杭州", latitude: 30.29, longitude: 120.17),
+        ]
+
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(values, query: "牛new").map(\.name) == ["牛 New 寿喜烧"])
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(values, query: "延安路 88").map(\.name) == ["牛 New 寿喜烧"])
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(values, query: "完全不存在").isEmpty)
+    }
+
+    @Test("Worldwide city and dining-intent searches remain relevant across scripts")
+    func worldwideCitySearchRelevance() {
+        let shanghai = RestaurantCandidate(
+            name: "南翔馒头店", address: "上海市黄浦区豫园路", city: "上海",
+            latitude: 31.227, longitude: 121.492,
+            categoryHints: [MKPointOfInterestCategory.restaurant.rawValue]
+        )
+        let newYork = RestaurantCandidate(
+            name: "Katz's Delicatessen", address: "205 E Houston St", city: "New York",
+            latitude: 40.722, longitude: -73.987,
+            categoryHints: [MKPointOfInterestCategory.restaurant.rawValue]
+        )
+
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(
+            [shanghai], query: "上海餐厅"
+        ).map(\.name) == ["南翔馒头店"])
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(
+            [newYork], query: "New York restaurant"
+        ).map(\.name) == ["Katz's Delicatessen"])
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(
+            [newYork], query: "餐厅", scopeCity: "纽约"
+        ).map(\.name) == ["Katz's Delicatessen"])
+    }
+
+    @Test("Worldwide city aliases preserve common Chinese and compact spellings")
+    func worldwideCityAliases() {
+        #expect(WorldwideCityResolver.canonicalQuery(for: "纽约") == "New York")
+        #expect(WorldwideCityResolver.canonicalQuery(for: "NewYork") == "New York")
+        #expect(WorldwideCityResolver.canonicalQuery(for: " new york ") == "New York")
+        #expect(WorldwideCityResolver.canonicalQuery(for: "东京") == "Tokyo")
+        #expect(WorldwideCityResolver.canonicalQuery(for: "上海市") == "Shanghai")
+        #expect(WorldwideCityResolver.canonicalQuery(for: " Reykjavík ") == "Reykjavík")
+    }
+
+    @Test("Unrelated foreign-provider dining suggestions cannot suppress the independent fallback")
+    func worldwideIrrelevantDiningFallsBack() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AcquisitionWorldwideURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); AcquisitionWorldwideURLProtocol.handler = nil }
+        AcquisitionWorldwideURLProtocol.handler = { request in
+            let body: String
+            if request.url?.host == "geocoding-api.open-meteo.com" {
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                #expect(query?.first(where: { $0.name == "name" })?.value == "New York")
+                body = #"{"results":[{"name":"New York","latitude":40.71427,"longitude":-74.00597,"feature_code":"PPL","country_code":"US","population":8804190}]}"#
+            } else {
+                // This is the actual failure shape: the full query returned a
+                // restaurant matching only "Greenwich", not the requested name.
+                body = #"{"features":[{"properties":{"osm_type":"N","osm_id":6053253585,"osm_key":"amenity","osm_value":"restaurant","name":"Top Thai Greenwich","city":"New York","district":"Manhattan"},"geometry":{"coordinates":[-73.9994469,40.7297907]}}]}"#
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let fallback = AcquisitionSearchSpy()
+        fallback.searchOverride = [RestaurantCandidate(name: "Da Andrea", address: "35 W 13th St",
+            city: "New York", district: "Greenwich Village, Manhattan", latitude: 40.7361321, longitude: -73.995801)]
+        let values = try await WorldwideRestaurantSearchService(session: session, mapKit: fallback)
+            .search(query: "Da Andrea Greenwich Village", scope: .init(city: "new york"))
+        #expect(values.map(\.name) == ["Da Andrea"])
+        #expect(fallback.lastQuery == "Da Andrea Greenwich Village")
+        #expect(fallback.lastScope?.city == "new york")
+        #expect(fallback.lastScope?.center == nil)
+    }
+
+    @Test("A genuine foreign-provider match does not trigger an unnecessary fallback")
+    func worldwideRelevantDiningReturns() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AcquisitionWorldwideURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); AcquisitionWorldwideURLProtocol.handler = nil }
+        AcquisitionWorldwideURLProtocol.handler = { request in
+            let body = request.url?.host == "geocoding-api.open-meteo.com"
+                ? #"{"results":[{"name":"New York","latitude":40.71427,"longitude":-74.00597,"feature_code":"PPL","country_code":"US","population":8804190}]}"#
+                : #"{"features":[{"properties":{"osm_type":"N","osm_id":2569050392,"osm_key":"amenity","osm_value":"restaurant","name":"Da Andrea","city":"New York","district":"Manhattan","street":"West 13th Street","housenumber":"35"},"geometry":{"coordinates":[-73.995801,40.7361321]}}]}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let fallback = AcquisitionSearchSpy()
+        let values = try await WorldwideRestaurantSearchService(session: session, mapKit: fallback)
+            .search(query: "Da Andrea", scope: .init(city: "new york"))
+        #expect(values.map(\.name) == ["Da Andrea"])
+        #expect(values.first?.address.contains("35 West 13th Street") == true)
+        #expect(fallback.lastQuery == nil)
+    }
+
+    @Test("Name plus neighbourhood does not admit another branch or an unrelated neighbourhood restaurant")
+    func qualifiedForeignRestaurantName() {
+        let values = [
+            RestaurantCandidate(name: "Da Andrea", address: "160 8th Ave", city: "New York", district: "Chelsea", latitude: 40.742, longitude: -74.0006),
+            RestaurantCandidate(name: "Top Thai Greenwich", address: "235 Sullivan St", city: "New York", district: "Greenwich Village", latitude: 40.7298, longitude: -73.9994),
+            RestaurantCandidate(name: "Da Andrea", address: "35 W 13th St", city: "New York", district: "Greenwich Village", latitude: 40.7361, longitude: -73.9958),
+        ]
+        #expect(RestaurantSearchRelevancePolicy.rankedMatches(values, query: "Da Andrea Greenwich Village")
+            .map(\.address) == ["35 W 13th St"])
+    }
+
     @Test("Nearby uses current location, keeps distance, and detects the city")
     func nearbySuccess() async throws {
         let search = AcquisitionSearchSpy()
@@ -24,8 +253,61 @@ struct RestaurantAcquisitionTests {
         #expect(abs((viewModel.nearbyResults.first?.distanceMeters ?? 0) - 110.9) < 1)
         #expect(viewModel.detectedCity == "杭州")
         #expect(search.nearbyRadius == 3_000)
-        #expect(search.nearbyCenters == [RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)])
+        #expect(search.nearbyCenters == [RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551, reference: .wgs84)])
         #expect(viewModel.locationAccuracy == .precise)
+    }
+
+    @Test("Nearby expands the complete accepted snapshot without another GPS or provider request")
+    func nearbyCompleteSnapshotLocalContinuation() async {
+        let search = AcquisitionSearchSpy()
+        let location = AcquisitionLocationStub()
+        let origin = RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)
+        let candidates = (0..<29).map { index in
+            RestaurantCandidate(name: "批次测试 \(index)", address: "测试地址", city: "测试城市",
+                latitude: origin.latitude + Double(index + 1) / 10_000, longitude: origin.longitude,
+                appleMapItemIdentifier: "nearby-batch-\(index)")
+        }
+        search.nearbyOverride = Array(candidates.reversed()) + [RestaurantCandidate(name: "半径外测试", address: "测试地址", city: "测试城市",
+            latitude: origin.latitude + 0.1, longitude: origin.longitude, appleMapItemIdentifier: "outside")]
+        let model = RestaurantAcquisitionViewModel(searchService: search, linkResolver: AcquisitionLinkResolverStub(), locationProvider: location)
+        await model.loadNearby()
+        #expect(model.nearbyResults.count == 29)
+        #expect(model.visibleNearbyResults.count == 12)
+        model.loadMoreNearby()
+        #expect(model.visibleNearbyResults.count == 24)
+        model.loadMoreNearby()
+        model.loadMoreNearby()
+        #expect(model.visibleNearbyResults.map(\.id) == candidates.map(\.id))
+        #expect(!model.hasMoreNearbyResults)
+        #expect(location.requestCount == 1)
+        #expect(search.nearbyCenters.count == 1)
+        await model.loadNearby()
+        #expect(model.visibleNearbyResults.count == 12)
+        #expect(location.requestCount == 2)
+        #expect(search.nearbyCenters.count == 2)
+    }
+
+    @Test("A superseded Nearby batch cannot reappear after owner or lifecycle invalidation")
+    func nearbyInvalidationRejectsLateBatch() async {
+        let search = AcquisitionSearchSpy()
+        search.nearbyDelay = .milliseconds(40)
+        let model = RestaurantAcquisitionViewModel(searchService: search, linkResolver: AcquisitionLinkResolverStub(), locationProvider: AcquisitionLocationStub())
+        let pending = Task { await model.loadNearby() }
+        for _ in 0..<1_000 {
+            if !search.nearbyCenters.isEmpty { break }
+            await Task.yield()
+        }
+        #expect(!search.nearbyCenters.isEmpty)
+        model.invalidateNearby()
+        model.loadMoreNearby()
+        await pending.value
+        #expect(model.nearbyState == .idle)
+        #expect(model.nearbyResults.isEmpty)
+        #expect(!model.hasMoreNearbyResults)
+        search.nearbyDelay = nil
+        await model.loadNearby()
+        #expect(model.nearbyState == .loaded)
+        #expect(model.nearbyResults.count == 1)
     }
 
     @Test("Fresh CLLocation is accepted and a stale cached CLLocation is rejected")
@@ -36,6 +318,48 @@ struct RestaurantAcquisitionTests {
 
         #expect(RestaurantLocationFixPolicy.isUsable(fresh, accuracyAuthorization: .fullAccuracy, now: now))
         #expect(!RestaurantLocationFixPolicy.isUsable(stale, accuracyAuthorization: .fullAccuracy, now: now))
+    }
+
+    @Test("A new Nearby request rejects a replayed recent fix even when text search could reuse it")
+    func freshRequestRejectsRecentCachedFix() {
+        let startedAt = Date(timeIntervalSince1970: 2_000_000_000)
+        let cached = acquisitionLocation(timestamp: startedAt.addingTimeInterval(-12), horizontalAccuracy: 8)
+        let current = acquisitionLocation(timestamp: startedAt.addingTimeInterval(1), horizontalAccuracy: 15)
+        #expect(RestaurantLocationFixPolicy.isUsable(cached, accuracyAuthorization: .fullAccuracy, now: startedAt))
+        #expect(!RestaurantLocationFixPolicy.belongsToRequest(cached, startedAt: startedAt))
+        #expect(RestaurantLocationFixPolicy.belongsToRequest(current, startedAt: startedAt))
+        #expect(RestaurantLocationFixPolicy.belongsToRequest(
+            acquisitionLocation(timestamp: startedAt.addingTimeInterval(-0.5), horizontalAccuracy: 12), startedAt: startedAt
+        ))
+    }
+
+    @Test("Map and Nearby share the active sensor request but the next request is fresh")
+    func concurrentFreshRequests() async throws {
+        let coordinator = RestaurantLocationRequestCoordinator()
+        var requestCount = 0
+        let acquire: @MainActor () async throws -> CLLocation = {
+            requestCount += 1
+            try await Task.sleep(for: .milliseconds(30))
+            return acquisitionLocation(horizontalAccuracy: 12)
+        }
+        async let mapFix = coordinator.request(acquire)
+        async let nearbyFix = coordinator.request(acquire)
+        let (map, nearby) = try await (mapFix, nearbyFix)
+        #expect(requestCount == 1)
+        #expect(map.timestamp == nearby.timestamp)
+        _ = try await coordinator.request(acquire)
+        #expect(requestCount == 2)
+    }
+
+    @Test("A failed shared sensor request does not poison retry")
+    func failedFreshRequestCanRetry() async throws {
+        let coordinator = RestaurantLocationRequestCoordinator()
+        do {
+            _ = try await coordinator.request { throw RestaurantLocationError.unavailable }
+            Issue.record("Expected the sensor failure to propagate")
+        } catch RestaurantLocationError.unavailable { }
+        let fix = try await coordinator.request { acquisitionLocation(horizontalAccuracy: 14) }
+        #expect(fix.horizontalAccuracy == 14)
     }
 
     @Test("Nearby does not accept the first coarse full-accuracy fix")
@@ -147,7 +471,7 @@ struct RestaurantAcquisitionTests {
         #expect(viewModel.currentCoordinate == nil)
     }
 
-    @Test("Reduced accuracy stays honest while still using the returned CLLocation")
+    @Test("Reduced accuracy cannot impersonate a precise Nearby origin")
     func reducedAccuracy() async {
         let search = AcquisitionSearchSpy()
         let location = acquisitionLocation(horizontalAccuracy: 3_000)
@@ -162,9 +486,11 @@ struct RestaurantAcquisitionTests {
 
         await viewModel.loadNearby()
 
-        #expect(viewModel.nearbyState == .loaded)
+        guard case .failed(let message) = viewModel.nearbyState else { Issue.record("Expected precision guidance"); return }
+        #expect(message.contains("精确位置"))
         #expect(viewModel.locationAccuracy == .reduced)
-        #expect(search.nearbyCenters == [RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551)])
+        #expect(search.nearbyCenters.isEmpty)
+        #expect(viewModel.currentCoordinate == nil)
     }
 
     @Test("Movement update replaces the GPS query center and distance origin")
@@ -183,10 +509,10 @@ struct RestaurantAcquisitionTests {
         await viewModel.loadNearby()
 
         #expect(search.nearbyCenters == [
-            RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551),
-            RestaurantCoordinate(latitude: 30.2841, longitude: 120.1651),
+            RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551, reference: .wgs84),
+            RestaurantCoordinate(latitude: 30.2841, longitude: 120.1651, reference: .wgs84),
         ])
-        #expect(viewModel.currentCoordinate == RestaurantCoordinate(latitude: 30.2841, longitude: 120.1651))
+        #expect(viewModel.currentCoordinate == RestaurantCoordinate(latitude: 30.2841, longitude: 120.1651, reference: .wgs84))
     }
 
     @Test("Foreground refresh requests a new fix instead of reusing the prior center")
@@ -206,7 +532,7 @@ struct RestaurantAcquisitionTests {
         await viewModel.refreshAfterForeground()
 
         #expect(location.requestCount == 2)
-        #expect(search.nearbyCenters.last == RestaurantCoordinate(latitude: 30.2941, longitude: 120.1751))
+        #expect(search.nearbyCenters.last == RestaurantCoordinate(latitude: 30.2941, longitude: 120.1751, reference: .wgs84))
     }
 
     @Test("Shared fixed coordinate sorts a 40m restaurant before farther results")
@@ -270,6 +596,9 @@ struct RestaurantAcquisitionTests {
         )
 
         #expect(RestaurantNearbySearchPolicy.keywords == ["餐厅", "美食", "饭店", "小吃"])
+        #expect(RestaurantNearbySearchPolicy.fallbackKeywords == ["餐饮", "餐馆", "咖啡馆", "烘焙店"])
+        #expect(RestaurantNearbySearchPolicy.fallbackProviderRadius(for: 3_000) == 12_000)
+        #expect(RestaurantNearbySearchPolicy.fallbackProviderRadius(for: 5_000) == 20_000)
         #expect(RestaurantNearbySearchPolicy.pointOfInterestCategories == [
             .restaurant,
             .cafe,
@@ -337,6 +666,58 @@ struct RestaurantAcquisitionTests {
         #expect(viewModel.isSearching == false)
         #expect(viewModel.searchResults.isEmpty)
         #expect(viewModel.searchMessage?.contains("没有找到") == true)
+    }
+
+    @Test("A fresh Hangzhou fix biases Hangzhou search but never the manually selected Shanghai scope")
+    func sameCityGPSBiasOnly() async {
+        let search = AcquisitionSearchSpy()
+        let viewModel = RestaurantAcquisitionViewModel(searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(), locationProvider: AcquisitionLocationStub())
+        await viewModel.loadNearby()
+        await viewModel.search(query: "兰州拉面", city: "上海")
+        #expect(search.lastScope?.city == "上海")
+        #expect(search.lastScope?.center == nil)
+        await viewModel.search(query: "兰州拉面", city: "杭州市")
+        #expect(search.lastScope?.center == RestaurantCoordinate(latitude: 30.2741, longitude: 120.1551, reference: .wgs84))
+    }
+
+    @Test("After typing for 30 seconds search refreshes an accepted origin and sends the new GPS coordinate")
+    func staleAcceptedSearchFixRefreshes() async {
+        var clock = Date(timeIntervalSince1970: 2_000_000_000)
+        let initial = acquisitionLocation(timestamp: clock)
+        let refreshed = acquisitionLocation(latitude: 30.281, longitude: 120.162, timestamp: clock.addingTimeInterval(30))
+        let location = AcquisitionLocationStub(locations: [initial, refreshed])
+        let search = AcquisitionSearchSpy()
+        let viewModel = RestaurantAcquisitionViewModel(searchService: search,
+            linkResolver: AcquisitionLinkResolverStub(), locationProvider: location, now: { clock })
+        await viewModel.loadNearby()
+        #expect(location.requestCount == 1)
+        clock = clock.addingTimeInterval(30)
+        await viewModel.search(query: "兰州拉面", city: "杭州")
+        #expect(location.requestCount == 2)
+        #expect(search.lastScope?.center == RestaurantCoordinate(latitude: 30.281, longitude: 120.162, reference: .wgs84))
+        #expect(!viewModel.searchResults.isEmpty)
+    }
+
+    @Test("Shared Hybrid/rollback search location policy falls back on failure and never requests first-time permission")
+    func searchLocationRefreshFailureIsNonBlocking() async {
+        let clock = Date(timeIntervalSince1970: 2_000_000_000)
+        let expired = acquisitionLocation(timestamp: clock.addingTimeInterval(-30))
+        var requests = 0
+        let failed = await RestaurantSearchLocationPolicy.location(accepted: expired,
+            authorizationStatus: .authorizedWhenInUse, accuracyAuthorization: .fullAccuracy, now: { clock }) {
+                requests += 1
+                throw RestaurantLocationError.unavailable
+            }
+        #expect(failed == nil)
+        #expect(requests == 1)
+        let missing = await RestaurantSearchLocationPolicy.location(accepted: nil,
+            authorizationStatus: .notDetermined, accuracyAuthorization: .fullAccuracy, now: { clock }) {
+                requests += 1
+                return acquisitionLocation(timestamp: clock)
+            }
+        #expect(missing == nil)
+        #expect(requests == 1)
     }
 
     @Test("Browsing nearby, search, and link candidates never creates a Restaurant")
@@ -512,6 +893,81 @@ struct RestaurantAcquisitionTests {
         #expect(try container.mainContext.fetch(FetchDescriptor<Restaurant>()).count == 1)
     }
 
+    @Test("MapKit Provider facts persist without inventing unavailable detail fields")
+    func providerFactsPersistWithoutFabrication() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let store = LocalTasteMapStore(context: container.mainContext)
+        let candidate = RestaurantCandidate(
+            name: "Provider 真餐厅",
+            address: "1 Infinite Loop",
+            city: "Cupertino",
+            latitude: 37.3317,
+            longitude: -122.0301,
+            appleMapItemIdentifier: "apple-provider-facts",
+            phone: "+1 408 555 0100",
+            websiteURL: URL(string: "https://restaurant.example/menu"),
+            categoryHints: [MKPointOfInterestCategory.restaurant.rawValue]
+        )
+
+        let saved = try store.addToWantToGo(candidate: candidate, among: [])
+        let record = try JSONDecoder().decode(
+            RestaurantJSONContractV1.self,
+            from: try #require(saved.remoteRecordData)
+        )
+
+        #expect(saved.name == candidate.name)
+        #expect(saved.address == candidate.address)
+        #expect(saved.city == candidate.city)
+        #expect(saved.latitude == candidate.latitude)
+        #expect(saved.longitude == candidate.longitude)
+        #expect(record.phone == "+1 408 555 0100")
+        #expect(record.websiteUrl == "https://restaurant.example/menu")
+        #expect(record.tags == [MKPointOfInterestCategory.restaurant.rawValue])
+        #expect(record.openingHours == nil)
+        #expect(record.pricePerPerson == nil)
+        #expect(record.merchantImageUrl == nil)
+        #expect(record.overallRating == nil)
+    }
+
+    @Test("A later Provider result refreshes the same Restaurant instead of leaving stale facts")
+    func providerFactsRefreshExistingRestaurant() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let store = LocalTasteMapStore(context: container.mainContext)
+        let initial = RestaurantCandidate(
+            name: "旧名称", address: "旧地址", city: "上海",
+            latitude: 31.20, longitude: 121.40,
+            appleMapItemIdentifier: "apple-provider-refresh",
+            phone: "+86 21 5555 0000",
+            websiteURL: URL(string: "https://old.example")
+        )
+        let saved = try store.addToWantToGo(candidate: initial, among: [])
+        let refreshed = RestaurantCandidate(
+            name: "真实新名称", address: "真实新地址", city: "上海",
+            latitude: 31.21, longitude: 121.41,
+            appleMapItemIdentifier: "apple-provider-refresh",
+            phone: "+86 21 5555 1111",
+            websiteURL: URL(string: "https://new.example"),
+            categoryHints: [MKPointOfInterestCategory.cafe.rawValue]
+        )
+
+        let result = try store.addToWantToGo(candidate: refreshed, among: [saved])
+        let record = try JSONDecoder().decode(
+            RestaurantJSONContractV1.self,
+            from: try #require(result.remoteRecordData)
+        )
+
+        #expect(result.id == saved.id)
+        #expect(result.name == "真实新名称")
+        #expect(result.address == "真实新地址")
+        #expect(result.latitude == 31.21)
+        #expect(result.longitude == 121.41)
+        #expect(record.phone == "+86 21 5555 1111")
+        #expect(record.websiteUrl == "https://new.example")
+        #expect(record.tags == [MKPointOfInterestCategory.cafe.rawValue])
+        #expect(record.openingHours == nil)
+        #expect(try container.mainContext.fetch(FetchDescriptor<Restaurant>()).count == 1)
+    }
+
     @Test("Cross-provider fuzzy match merges external identities without duplicating Restaurant")
     func crossProviderIdentityMerge() throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -634,6 +1090,9 @@ private final class AcquisitionSearchSpy: RestaurantSearching, @unchecked Sendab
     var nearbyCenters: [RestaurantCoordinate] = []
     var returnsNoResults = false
     var returnsNoNearbyResults = false
+    var nearbyOverride: [RestaurantCandidate]?
+    var nearbyDelay: Duration?
+    var searchOverride: [RestaurantCandidate]?
 
     func search(query: String) async throws -> [RestaurantCandidate] {
         try await search(query: query, scope: .init())
@@ -642,6 +1101,7 @@ private final class AcquisitionSearchSpy: RestaurantSearching, @unchecked Sendab
     func search(query: String, scope: RestaurantSearchScope) async throws -> [RestaurantCandidate] {
         lastQuery = query
         lastScope = scope
+        if let searchOverride { return searchOverride }
         if returnsNoResults { return [] }
         let city = scope.city.isEmpty ? "杭州" : scope.city
         return [RestaurantCandidate(
@@ -657,6 +1117,8 @@ private final class AcquisitionSearchSpy: RestaurantSearching, @unchecked Sendab
     func nearby(center: RestaurantCoordinate, radiusMeters: Double) async throws -> [RestaurantCandidate] {
         nearbyRadius = radiusMeters
         nearbyCenters.append(center)
+        if let nearbyDelay { try await Task.sleep(for: nearbyDelay) }
+        if let nearbyOverride { return nearbyOverride }
         if returnsNoNearbyResults { return [] }
         return [RestaurantCandidate(
             name: "附近小馆",

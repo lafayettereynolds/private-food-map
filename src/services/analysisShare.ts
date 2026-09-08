@@ -5,6 +5,7 @@ import type { buildProfileInsights } from './profileInsights'
 import { buildCompanionDirectory, buildCompanionInsights } from './companionInsights'
 import { buildRecommendationSourceInsights, selectWorstRecommendationSource } from './recommendationSourceInsights'
 import { collectAnalysisVisuals, cuisineFallback, restaurantVisual } from './foodVisualResolver'
+import { buildTasteProfileSnapshot } from './tasteProfileSnapshot'
 
 type TasteProfile = ReturnType<typeof buildProfileInsights>['tasteProfile']
 
@@ -43,6 +44,7 @@ export function buildTasteProfileShareData(user: UserProfile, profile: TasteProf
   const preferred = profile.preferredCuisines.slice(0, 4)
   return {
     ...base(type, user, `${profile.validVisitCount}`),
+    privacy: { companionNameIncluded: false, spendIncluded: false, exactLocationIncluded: false },
     title: '我的口味档案',
     eyebrow: 'MY TASTE PROFILE',
     subtitle: `基于 ${profile.validVisitCount} 次真实到访生成`,
@@ -71,6 +73,7 @@ export function buildTasteProfileShareData(user: UserProfile, profile: TasteProf
       }
     }),
     heroCandidates: heroes,
+    tasteProfile: buildTasteProfileSnapshot(restaurants.filter((restaurant) => restaurant.status === 'visited'), visits),
   }
 }
 
@@ -198,7 +201,21 @@ export function filterAnalysisSharePrivacy(data: AnalysisShareData, options?: { 
     title: clean(data.title),
     subtitle: clean(data.subtitle),
     summary: clean(data.summary),
+    metrics: data.metrics.filter((item) => options?.includeSpend || !/消费|金额|预算|支付/.test(item.label)).map((item) => ({ ...item, label: clean(item.label), value: clean(item.value), note: item.note ? clean(item.note) : undefined })),
+    keywords: data.keywords.map(clean),
     insights: data.insights.map(clean),
+    posterFindings: data.posterFindings?.map(item => ({ ...item, title: clean(item.title), text: clean(item.text) })),
+    sourceResults: data.sourceResults ? { ...data.sourceResults,
+      best: data.sourceResults.best ? { ...data.sourceResults.best, name: clean(data.sourceResults.best.name) } : null,
+      worst: data.sourceResults.worst ? { ...data.sourceResults.worst, name: clean(data.sourceResults.worst.name) } : null,
+    } : undefined,
+    tasteProfile: data.tasteProfile ? {
+      ...data.tasteProfile,
+      spend: options?.includeSpend ? data.tasteProfile.spend : null,
+      spendCategories: options?.includeSpend ? data.tasteProfile.spendCategories : [],
+      priceRanges: options?.includeSpend ? data.tasteProfile.priceRanges : [],
+      companions: options?.includeCompanionName ? data.tasteProfile.companions : data.tasteProfile.companions.map((item, index) => ({ ...item, label: `饭搭子 ${index + 1}` })),
+    } : undefined,
     restaurants: data.restaurants.map((item) => ({ ...item, meta: clean(item.meta.replace(/(?:路|街|巷|号|弄)\s*\d+[\w\u4e00-\u9fff-]*/g, '附近')) })),
     privacy: {
       companionNameIncluded: Boolean(options?.includeCompanionName && data.privacy.companionNameIncluded),

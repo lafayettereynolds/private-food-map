@@ -10,7 +10,9 @@ import type {
   TasteMapImageDescriptor,
   TasteMapProfileDashboardViewModel,
 } from './TasteMapPlatform'
+import { isDiscoveryFeedActivityEligible } from './TasteMapDiscoveryPolicy'
 import { resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContract'
+import { recommendationHistoryReasons } from '../services/recommendationHistoryReasons'
 
 interface DebugFixtureRoot {
   profile: {
@@ -120,6 +122,15 @@ function fixtureUUID(value: number) {
 function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybridContentSnapshotDTO {
   const generatedAt = new Date().toISOString()
   const names = ['林夏', '周舟', '陈一碗', '江南胃', '阿岚', '西湖小柚', '陆小满', '一只饭团']
+  const historyReasons = (candidate: RestaurantSummary) => recommendationHistoryReasons(
+    { tags: candidate.tags, pricePerPerson: candidate.pricePerPerson ?? null },
+    profile.restaurants.filter((restaurant) => restaurant.id !== candidate.id).map((restaurant) => {
+      const visits = restaurant.visits.filter((visit) => !visit.deletedAt)
+      const ratings = visits.flatMap((visit) => visit.rating != null ? [visit.rating] : [])
+      return { tags: restaurant.tags, pricePerPerson: restaurant.pricePerPerson ?? null,
+        ratingCount: ratings.length, ratingSumOutOfFive: ratings.reduce((sum, rating) => sum + rating, 0), visitCount: visits.length }
+    }),
+  )
   const sourceUsers = profile.restaurants.slice(0, 12).map((restaurant, index) => ({
     id: `tm_demo_${index}`,
     name: names[index % names.length],
@@ -145,24 +156,25 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
       sourceUser: null,
       activityRating: null,
       activityVisitedAt: null,
-      interaction: {
-        activityID: null,
-        visitID: `demo-visit-${index}`,
-        authorID: sourceUser.id,
-        restaurantID: restaurant.id,
-      },
+      interaction: null,
       likedByViewer: index === 1,
       likeCount: 12 + index * 5,
       commentCount: 2 + index,
+      personalTastePercent: 88 - index,
       communityRating: {
         valueOutOfFive: restaurant.averageRating == null ? null : Math.max(0, restaurant.averageRating - 0.05),
         sampleCount: restaurant.averageRating == null ? 0 : 10 + index,
       },
-      reason: index % 2 === 0 ? '与你常吃的菜系很接近' : '同城高质量真实记录',
-      similarityPercent: 82 - index * 3,
-      sharedRestaurantCount: 6 + index,
-      uniqueVisitorCount: 18 + index * 4,
-      wantToGoCount: 9 + index,
+      reasons: [{
+        code: 'TASTE_TAG_MATCH',
+        text: `与你去过的「${profile.restaurants[(index + 1) % profile.restaurants.length]?.name ?? '历史高分餐厅'}」相似 ${88 - index}%`,
+      }, ...historyReasons(restaurant)].slice(0, 3),
+      reason: `与你去过的「${profile.restaurants[(index + 1) % profile.restaurants.length]?.name ?? '历史高分餐厅'}」相似 ${88 - index}%`,
+      similarityPercent: null,
+      sharedRestaurantCount: null,
+      trendWindowDays: null,
+      uniqueVisitorCount: null,
+      wantToGoCount: null,
       rank: index + 1,
     }
   })
@@ -177,9 +189,22 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
         : categoryDescriptor(profile.restaurants[index]),
     },
     sourceUser: sourceUsers[index],
+    activityImages: fixtureActivityAlbum(profile.restaurants[index], sourceUsers[index].id, `demo-visit-similar-${index}`, index),
     activityRating: [4.5, 4, 5, 4.5][index % 4] ?? 4.5,
     activityVisitedAt: profile.restaurants[index]?.latestVisitDate ?? generatedAt,
-    reason: `与这位用户有 ${item.sharedRestaurantCount ?? 0} 家共同到访`,
+    interaction: {
+      activityID: `similar-activity-${index}`,
+      visitID: `demo-visit-similar-${index}`,
+      authorID: sourceUsers[index].id,
+      restaurantID: item.restaurant.id,
+    },
+    reasons: [{ code: 'SIMILAR_USERS', text: `基于 ${6 + index} 家共同评分餐厅，你与这位用户的口味相似度为 ${82 - index * 3}%` },
+      { code: 'SOURCE_VISIT_RATING', text: `这位同味用户在本次到访给这家餐厅 ${([4.5, 4, 5, 4.5][index % 4] ?? 4.5) * 2}/10 分` },
+      ...historyReasons(profile.restaurants[index]).slice(0, 1)],
+    reason: `基于 ${6 + index} 家共同评分餐厅，你与这位用户的口味相似度为 ${82 - index * 3}%`,
+    similarityPercent: 82 - index * 3,
+    sharedRestaurantCount: 6 + index,
+    trendWindowDays: null,
     uniqueVisitorCount: null,
     wantToGoCount: null,
   }))
@@ -193,10 +218,22 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
         ? fixtureUGCDescriptor(profile.restaurants[index], sourceUsers[index].id, 'publicUGC', index)
         : categoryDescriptor(profile.restaurants[index]),
     },
-    reason: `最近 7 天有 ${item.uniqueVisitorCount ?? 0} 位用户到访`,
+    interaction: null,
+    reasons: [
+      { code: 'TRENDING_UNIQUE_USERS', text: `近 7 天有 ${18 + index * 4} 位用户到访` },
+      { code: 'RECENT_WANT_TO_GO', text: `近期有 ${9 + index} 位用户加入想吃` },
+    ],
+    reason: `近 7 天有 ${18 + index * 4} 位用户到访`,
     similarityPercent: null,
     sharedRestaurantCount: null,
+    trendWindowDays: 7,
+    uniqueVisitorCount: 18 + index * 4,
+    wantToGoCount: 9 + index,
   }))
+  // These are concrete public Visit ratings, not Restaurant averages. The last
+  // Visit intentionally has no rating so fixtures exercise the real exclusion
+  // rule without surfacing an unreliable card in Discovery.
+  const activityVisitRatings: Array<number | null> = [4.5, 4, 4.8, 4.3, null, 4.6, 4.5, 4.7, 3.9, null, 4.4, null]
   const activities: TasteMapHybridActivityItemDTO[] = discovery.map((item, index) => ({
     id: `hybrid-activity-${index}`,
     kind: index % 5 === 4 ? 'want_to_go' : 'visit',
@@ -209,13 +246,15 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
         : categoryDescriptor(profile.restaurants[index]),
     },
     visitID: index % 5 === 4 ? null : `demo-visit-${index}`,
+    activityImages: index % 5 === 4 ? undefined
+      : fixtureActivityAlbum(profile.restaurants[index], sourceUsers[index].id, `demo-visit-${index}`, index === 6 ? 4 : index),
     interaction: index % 5 === 4 ? null : {
       activityID: `hybrid-activity-${index}`,
       visitID: `demo-visit-${index}`,
       authorID: sourceUsers[index].id,
       restaurantID: item.restaurant.id,
     },
-    visitRating: index % 5 === 4 ? null : profile.restaurants[index]?.averageRating ?? null,
+    visitRating: index % 5 === 4 ? null : (activityVisitRatings[index] ?? null),
     note: index % 5 === 4 ? null : ['值得专程来吃，服务也很细致。', '今天最惊喜的是招牌菜。', '和朋友一起吃很舒服。', '会为了这道菜再来一次。'][index % 4],
     viewerState: item.viewerState,
     likedByViewer: index === 1,
@@ -248,7 +287,10 @@ function buildContent(profile: TasteMapProfileDashboardViewModel): TasteMapHybri
   return {
     generatedAt,
     discovery: { forYou: discovery, similarTaste, trending },
-    community: { following: activities.filter((item) => item.user.isFollowing), latest: activities },
+    community: {
+      following: activities.filter(isDiscoveryFeedActivityEligible).filter((item) => item.user.isFollowing),
+      latest: activities.filter(isDiscoveryFeedActivityEligible),
+    },
     lists,
   }
 }
@@ -262,7 +304,16 @@ function buildComments(content: TasteMapHybridContentSnapshotDTO): Record<string
     '服务很细致，整体体验不错。',
   ]
   const generatedAt = new Date(content.generatedAt).getTime()
-  return Object.fromEntries(content.discovery.forYou.flatMap((item, itemIndex) => {
+  const interactiveItems = [
+    ...content.discovery.forYou,
+    ...content.discovery.similarTaste,
+    ...content.discovery.trending,
+    ...content.community.latest,
+  ].filter((item, index, values) => {
+    const visitID = item.interaction?.visitID
+    return Boolean(visitID) && values.findIndex((candidate) => candidate.interaction?.visitID === visitID) === index
+  })
+  return Object.fromEntries(interactiveItems.flatMap((item, itemIndex) => {
     const visitID = item.interaction?.visitID
     if (!visitID) return []
     const comments = Array.from({ length: item.commentCount }, (_, commentIndex): TasteMapCommunityCommentDTO => ({
@@ -357,4 +408,16 @@ function fixtureUGCDescriptor(
     attributionRequired: false,
     accessibilityLabel: `${restaurant.name} 用户实拍`,
   }
+}
+
+/** Isolated layout albums: distinct bundled test artwork, never production Visit data. */
+function fixtureActivityAlbum(restaurant: RestaurantSummary, sourceOwnerID: string, visitID: string, index: number): TasteMapImageDescriptor[] {
+  const resources = ['chinese.png', 'japanese.png', 'hotpot-grill.png', 'western.png', 'cafe.png', 'mixed.png'].map((asset) => `/food-heroes/${asset}`)
+  resources.push('data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="#d9e9e6"/><text x="160" y="165" text-anchor="middle" font-size="36" fill="#244c43">QA PHOTO 7</text></svg>'))
+  const count = [1, 2, 4, 5, 6, 7, 0, 3][index] ?? 0
+  return resources.slice(0, count).map((resourceURL, slot) => ({
+    kind: 'activityPhoto', resourceURL, photoID: `debug-album-${visitID}-${slot}`,
+    restaurantID: restaurant.id, visitID, sourceOwnerID, visibility: 'public',
+    exportAllowed: false, attributionRequired: false, accessibilityLabel: `${restaurant.name} 隔离布局测试图 ${slot + 1}`,
+  }))
 }

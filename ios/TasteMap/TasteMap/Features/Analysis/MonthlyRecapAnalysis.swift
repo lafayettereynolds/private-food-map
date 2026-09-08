@@ -183,7 +183,7 @@ nonisolated struct MonthlyRecapInput: Sendable {
                     id: $0.id, restaurantID: identity.canonicalID(for: $0.restaurantId), visitedAt: $0.visitedAt,
                     rating: $0.rating, valueRating: $0.valueRating,
                     environmentRating: $0.environmentRating, serviceRating: $0.serviceRating,
-                    myActualSpend: $0.myActualSpend, note: $0.note,
+                    myActualSpend: $0.resolvedActualSpend, note: $0.note,
                     diningOccasionLabels: $0.diningOccasionDisplayTitles,
                     companionIDs: $0.companionIDs, companionNames: $0.companionNames,
                     recommendationSourceID: $0.recommendationSourceID,

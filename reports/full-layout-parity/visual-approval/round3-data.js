@@ -310,7 +310,7 @@ window.round3InitialState = {
     decision: "Legacy",
     regions: {
       Header: r3Pending("", "顶部身份区仍待决定。"),
-      "Social Metrics": r3Frozen("KEEP LEGACY", "被关注统一显示为粉丝。"),
+      "Social Metrics": r3Frozen("KEEP LEGACY", "follower 数值统一显示为粉丝。"),
       "Primary Actions": r3Frozen("KEEP LEGACY"),
       "Content Tabs": r3Frozen("KEEP LEGACY"),
       "Restaurant Evidence": r3Frozen("KEEP LEGACY", "用户头像居中，并与我的页面身份视觉保持一致。"),

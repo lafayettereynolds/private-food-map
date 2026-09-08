@@ -24,6 +24,53 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     await seedRestaurant(database, { user: 'tm_b', slug: 'wanted', status: 'wantToGo', minutesAgo: 5 })
   })
 
+  it.each(['latest', 'following'])('finds matching %s activities beyond the first 50 nonmatches and paginates the filtered set', async (scope) => {
+    await follow(database, 'tm_a', 'tm_b')
+    for (let index = 0; index < 55; index++) await seedVisit(database, { user: 'tm_b', slug: `skip-${index}`, visibility: 'public', minutesAgo: 10 + index })
+    for (let index = 0; index < 3; index++) {
+      await seedVisit(database, { user: 'tm_b', slug: `coffee-${index}`, visibility: 'public', minutesAgo: 100 + index })
+      await database.prepare('UPDATE restaurants SET tags_json = ? WHERE id = ?').bind('["咖啡"]', `restaurant-tm_b-coffee-${index}`).run()
+    }
+    const filters = encodeURIComponent(JSON.stringify({ types: ['咖啡'], minimumPublicScoreOutOfTen: 8, minimumPublicRatingUsers: 1 }))
+    const path = `/api/v1/community/feed?scope=${scope}&city=杭州&limit=2&filters=${filters}`
+    const first = await jsonAPI(database, 'tm_a', path)
+    expect(first.items.map(item => item.restaurant.name)).toEqual(['coffee-0', 'coffee-1'])
+    expect(first.appliedQuery.filters.types).toEqual(['咖啡'])
+    const second = await jsonAPI(database, 'tm_a', `${path}&cursor=${encodeURIComponent(first.nextCursor)}`)
+    expect(second.items.map(item => item.restaurant.name)).toEqual(['coffee-2'])
+    expect(second.nextCursor).toBeNull()
+    expect((await api(database, 'tm_a', `/api/v1/community/feed?scope=${scope}&city=杭州&cursor=${encodeURIComponent(first.nextCursor)}`)).status).toBe(400)
+  })
+
+  it('does not mistake 2001 unrelated photos for an absent public Restaurant photo', async () => {
+    await seedVisit(database, { user: 'tm_b', slug: 'without-activity-photo', visibility: 'public', minutesAgo: 10 })
+    await seedVisit(database, { user: 'tm_b', slug: 'photo-alias', visibility: 'public', minutesAgo: 12, rating: 1 })
+    await database.prepare("UPDATE restaurant_place_identities SET external_id = 'apple-without-activity-photo' WHERE restaurant_id = 'restaurant-tm_b-photo-alias'").run()
+    for (let index = 0; index < 2001; index++) await seedPhoto(database, 'visit-tm_b-public-new', 'public', `crowded-${index}`, 0)
+    await seedPhoto(database, 'visit-tm_b-photo-alias', 'public', 'late-public-photo', 99)
+    const filters = encodeURIComponent(JSON.stringify({ requireActualPhoto: true }))
+    const path = `/api/v1/community/feed?scope=latest&filters=${filters}`
+    const page = await jsonAPI(database, 'tm_a', path)
+    expect(page.items.find(item => item.restaurant.name === 'without-activity-photo').restaurant.photo.photoId).toBe('late-public-photo')
+    await database.prepare("UPDATE photos SET visibility = 'private' WHERE id = 'late-public-photo'").run()
+    expect((await jsonAPI(database, 'tm_a', path)).items.some(item => item.restaurant.name === 'without-activity-photo')).toBe(false)
+  })
+
+  it('removes actioned Visits from latest activity and public evidence, but does not hide merely reported content', async () => {
+    await database.prepare(`INSERT INTO content_reports (id, reporter_user_id, content_type, content_id, reason, request_id, request_fingerprint, status, created_at, updated_at)
+      VALUES ('moderated', 'tm_a', 'visit', 'visit-tm_b-public-new', 'spam', 'report-1', 'fingerprint', 'pending', ?, ?)`).bind(iso(), iso()).run()
+    expect((await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest')).items).toHaveLength(1)
+    await database.prepare("UPDATE content_reports SET status = 'actioned' WHERE id = 'moderated'").run()
+    expect((await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest')).items).toEqual([])
+  })
+
+  it('uses whole public Restaurant evidence instead of the selected high-rated activity', async () => {
+    await seedVisit(database, { user: 'tm_b', slug: 'alias-low', visibility: 'public', rating: 1, minutesAgo: 20 })
+    await database.prepare("UPDATE restaurant_place_identities SET external_id = 'apple-public-new' WHERE restaurant_id = 'restaurant-tm_b-alias-low'").run()
+    const filters = encodeURIComponent(JSON.stringify({ minimumPublicScoreOutOfTen: 8 }))
+    expect((await jsonAPI(database, 'tm_a', `/api/v1/community/feed?scope=latest&filters=${filters}`)).items).toEqual([])
+  })
+
   it('returns a strict public allowlist, viewer-dependent statistics, and public WantToGo content', async () => {
     const page = await jsonAPI(database, 'tm_a', '/api/v1/community/users/tm_b/content?section=visits')
     expect(page).toMatchObject({ apiVersion: 1, targetUserId: 'tm_b', section: 'visits' })
@@ -106,6 +153,95 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     expect(item.visit.note).toBe('edited without becoming newly visited')
   })
 
+  it('keeps sub-7.5 Visits in the user profile but excludes them from Discovery feeds', async () => {
+    await seedVisit(database, { user: 'tm_b', slug: 'unrated-record', rating: null, minutesAgo: 0 })
+    await seedVisit(database, { user: 'tm_b', slug: 'low-record', rating: 3.5, minutesAgo: 0 })
+    await seedVisit(database, { user: 'tm_b', slug: 'boundary-record', rating: 3.75, minutesAgo: 0 })
+    await follow(database, 'tm_a', 'tm_b')
+
+    const latest = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&limit=50')
+    const following = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=following&limit=50')
+    const profile = await jsonAPI(database, 'tm_a', '/api/v1/community/users/tm_b/content?section=visits&limit=50')
+
+    expect(latest.items.map((item) => item.restaurant.name)).not.toContain('unrated-record')
+    expect(latest.items.map((item) => item.restaurant.name)).not.toContain('low-record')
+    expect(latest.items.map((item) => item.restaurant.name)).toContain('boundary-record')
+    expect(following.items.map((item) => item.restaurant.name)).not.toContain('unrated-record')
+    expect(following.items.map((item) => item.restaurant.name)).not.toContain('low-record')
+    expect(following.items.map((item) => item.restaurant.name)).toContain('boundary-record')
+    expect(profile.items.find((item) => item.restaurant.name === 'unrated-record')?.visit.rating).toBeNull()
+    expect(profile.items.find((item) => item.restaurant.name === 'low-record')?.visit.rating).toBe(3.5)
+    expect(profile.statistics.visibleVisitCount).toBe(4)
+  })
+
+  it.each(['following', 'latest'])('queries an arbitrary city before pagination for %s, accepting 市 aliases', async (scope) => {
+    await follow(database, 'tm_a', 'tm_b')
+    for (let index = 0; index < 4; index += 1) {
+      await seedVisit(database, { user: 'tm_b', slug: `chengdu-${index}`, minutesAgo: 15 + index })
+      await database.prepare('UPDATE restaurants SET city = ? WHERE id = ?')
+        .bind(index % 2 ? '成都市' : '成都', `restaurant-tm_b-chengdu-${index}`).run()
+    }
+    const first = await jsonAPI(database, 'tm_a', `/api/v1/community/feed?scope=${scope}&city=成都&limit=2`)
+    expect(first.city).toBe('成都')
+    expect(first.items.map((item) => item.restaurant.name)).toEqual(['chengdu-0', 'chengdu-1'])
+    const second = await jsonAPI(database, 'tm_a', `/api/v1/community/feed?scope=${scope}&city=成都市&limit=2&cursor=${encodeURIComponent(first.nextCursor)}`)
+    expect(second.items.map((item) => item.restaurant.name)).toEqual(['chengdu-2', 'chengdu-3'])
+    expect(second.nextCursor).toBeNull()
+    expect(new Set([...first.items, ...second.items].map((item) => item.id)).size).toBe(4)
+    expect((await jsonAPI(database, 'tm_a', `/api/v1/community/feed?scope=${scope}&city=不存在的城市`)).items).toEqual([])
+  })
+
+  it('binds feed cursors to viewer, scope and normalized city, and keeps public-profile cursors separate', async () => {
+    await follow(database, 'tm_a', 'tm_b')
+    await seedVisit(database, { user: 'tm_b', slug: 'cursor-extra', minutesAgo: 9 })
+    const page = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&city=杭州&limit=1')
+    const cursor = encodeURIComponent(page.nextCursor)
+    for (const path of [
+      `/api/v1/community/feed?scope=latest&city=成都&cursor=${cursor}`,
+      `/api/v1/community/feed?scope=latest&cursor=${cursor}`,
+      `/api/v1/community/feed?scope=following&city=杭州&cursor=${cursor}`,
+      `/api/v1/community/users/tm_b/content?cursor=${cursor}`,
+    ]) expect((await api(database, 'tm_a', path)).status).toBe(400)
+    expect((await api(database, 'tm_c', `/api/v1/community/feed?scope=latest&city=杭州&cursor=${cursor}`)).status).toBe(400)
+    const oldCursor = encodeURIComponent(Buffer.from(JSON.stringify([iso(1), 'visit-old', now])).toString('base64url'))
+    expect((await api(database, 'tm_a', `/api/v1/community/feed?city=杭州&cursor=${oldCursor}`)).status).toBe(400)
+    expect((await api(database, 'tm_a', `/api/v1/community/feed?city=${'城'.repeat(81)}`)).status).toBe(400)
+  })
+
+  it.each(['following', 'latest'])('city filtering preserves visibility and immediate friendship revocation for %s', async (scope) => {
+    await follow(database, 'tm_a', 'tm_b')
+    const path = `/api/v1/community/feed?scope=${scope}&city=杭州市&limit=50`
+    expect((await jsonAPI(database, 'tm_a', path)).items.map((item) => item.restaurant.name)).toEqual(['public-new'])
+    await acceptFriendship(database, 'tm_a', 'tm_b')
+    expect((await jsonAPI(database, 'tm_a', path)).items.map((item) => item.restaurant.name)).toEqual(['public-new', 'friends-middle'])
+    await database.prepare("UPDATE friendships SET deleted_at = ?, status = 'removed' WHERE pair_user_a = 'tm_a' AND pair_user_b = 'tm_b'").bind(iso()).run()
+    expect((await jsonAPI(database, 'tm_a', path)).items.map((item) => item.restaurant.name)).toEqual(['public-new'])
+    if (scope === 'following') {
+      await database.prepare("UPDATE follows SET deleted_at = ? WHERE follower_id = 'tm_a'").bind(iso()).run()
+      expect((await jsonAPI(database, 'tm_a', path)).items).toEqual([])
+    }
+  })
+
+  it.each([['tm_a', 'tm_b'], ['tm_b', 'tm_a']])('rechecks both-direction blocks on a city continuation (%s blocks %s)', async (blocker, blocked) => {
+    await seedVisit(database, { user: 'tm_b', slug: 'blocked-next-page', minutesAgo: 9 })
+    const page = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&city=杭州&limit=1')
+    expect(page.nextCursor).toBeTypeOf('string')
+    await database.prepare('INSERT INTO user_blocks (id, blocker_user_id, blocked_user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .bind('city-block', blocker, blocked, iso(), iso()).run()
+    const next = await jsonAPI(database, 'tm_a', `/api/v1/community/feed?scope=latest&city=杭州&cursor=${encodeURIComponent(page.nextCursor)}`)
+    expect(next.items).toEqual([])
+    expect(next.nextCursor).toBeNull()
+  })
+
+  it('matches overseas case aliases without treating 州 or 区 as removable suffixes', async () => {
+    for (const [slug, city] of [['tokyo-city', 'Tokyo'], ['wenzhou-city', '温州'], ['wen-city', '温']]) {
+      await seedVisit(database, { user: 'tm_b', slug, minutesAgo: 10 })
+      await database.prepare('UPDATE restaurants SET city = ? WHERE id = ?').bind(city, `restaurant-tm_b-${slug}`).run()
+    }
+    expect((await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&city=TOKYO')).items.map((item) => item.restaurant.name)).toEqual(['tokyo-city'])
+    expect((await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&city=温州市')).items.map((item) => item.restaurant.name)).toEqual(['wenzhou-city'])
+  })
+
   it('keeps follow distinct from friendship: following grants discovery of public content but not friends-only content', async () => {
     await follow(database, 'tm_a', 'tm_b')
     let page = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=following')
@@ -154,6 +290,41 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     expect(JSON.stringify(page)).not.toContain('users/tm_b/photos')
   })
 
+  it('preserves more than four current-Visit photos in latest/following without city-thumbnail truncation', async () => {
+    const visitID = 'visit-tm_b-public-new'
+    for (let index = 0; index < 12; index += 1) await seedPhoto(database, visitID, 'public', `current-${index}`, index)
+    await seedPhoto(database, visitID, 'private', 'private-current', 0)
+    await seedPhoto(database, 'visit-tm_b-private-old', 'private', 'private-other', 0)
+    await seedPhoto(database, visitID, 'public', 'deleted-current', 0)
+    await database.prepare("UPDATE photos SET deleted_at = ? WHERE id = 'deleted-current'").bind(iso()).run()
+    await follow(database, 'tm_a', 'tm_b')
+    for (const scope of ['latest', 'following']) {
+      const page = await jsonAPI(database, 'tm_a', `/api/v1/community/feed?scope=${scope}`)
+      const item = page.items.find((value) => value.visit?.id === visitID)
+      expect(item.visit.photos.map((photo) => photo.photoId)).toEqual(Array.from({ length: 12 }, (_, index) => `current-${index}`))
+      expect(item.visit.photos.every((photo) => photo.visitId === visitID && photo.ownerUserId === 'tm_b' && photo.exportAllowed === false)).toBe(true)
+    }
+  })
+
+  it('uses true friendship for mixed-visibility photos of a public Visit and narrows its cache scope', async () => {
+    const visitID = 'visit-tm_b-public-new'
+    await follow(database, 'tm_a', 'tm_b')
+    await seedPhoto(database, visitID, 'public', 'album-public', 0)
+    await seedPhoto(database, visitID, 'friends', 'album-friends', 1)
+    await seedPhoto(database, visitID, 'private', 'album-private', 2)
+    for (const isFriend of [false, true, false]) {
+      if (isFriend) await acceptFriendship(database, 'tm_a', 'tm_b')
+      else await database.prepare("UPDATE friendships SET status = 'removed'").run()
+      for (const scope of ['latest', 'following']) {
+        const page = await jsonAPI(database, 'tm_a', `/api/v1/community/feed?scope=${scope}`)
+        const item = page.items.find((value) => value.visit?.id === visitID)
+        expect(item.visit.photos.map((photo) => photo.photoId)).toEqual(isFriend ? ['album-public', 'album-friends'] : ['album-public'])
+        expect(item.cacheScope).toBe(isFriend ? 'friends' : 'public')
+        expect(item.visit.photos.every((photo) => photo.exportAllowed === false)).toBe(true)
+      }
+    }
+  })
+
   it('uses authenticated identity, ignores a forged userId, and rejects unauthenticated access', async () => {
     const normal = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest')
     const forged = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest&userId=tm_b')
@@ -174,7 +345,8 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     expect(page.items).toHaveLength(30)
     // Engagement hydration adds two bounded aggregate statements regardless
     // of card count; the feed still avoids per-item queries.
-    expect(database.statementCount).toBeLessThanOrEqual(14)
+    // One further batch reads complete albums for this page, not one per card.
+    expect(database.statementCount).toBeLessThanOrEqual(15)
   })
 })
 
@@ -210,16 +382,16 @@ async function seedVisit(database, {
       iso(minutesAgo), iso(minutesAgo), visibility).run()
 }
 
-async function seedPhoto(database, visitID, visibility) {
+async function seedPhoto(database, visitID, visibility, photoID = `photo-${visitID}`, sortOrder = 0) {
   const visit = database.get('SELECT user_id, restaurant_id FROM visits WHERE id = ?', visitID)
   await database.prepare(`INSERT INTO photos (
     id, user_id, restaurant_id, visit_id, storage_provider, storage_key,
     thumbnail_storage_key, drive_account_id, drive_file_id, kind, mime_type,
     file_size, visibility, sync_status, sort_order, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, 'r2', ?, ?, '', '', 'visit', 'image/jpeg', 512, ?, 'synced', 0, ?, ?)`)
-    .bind(`photo-${visitID}`, visit.user_id, visit.restaurant_id, visitID,
-      `users/${visit.user_id}/photos/photo-${visitID}/display.jpg`,
-      `users/${visit.user_id}/photos/photo-${visitID}/thumbnail.jpg`, visibility, iso(), iso()).run()
+  ) VALUES (?, ?, ?, ?, 'r2', ?, ?, '', '', 'visit', 'image/jpeg', 512, ?, 'synced', ?, ?, ?)`)
+    .bind(photoID, visit.user_id, visit.restaurant_id, visitID,
+      `users/${visit.user_id}/photos/${photoID}/display.jpg`,
+      `users/${visit.user_id}/photos/${photoID}/thumbnail.jpg`, visibility, sortOrder, iso(), iso()).run()
 }
 
 async function acceptFriendship(database, requester, addressee) {

@@ -65,7 +65,7 @@ struct P1DTwoClientSyncTests {
         #expect(visitB.rating == 5)
         #expect(server.visitNote == "设备 A 云端编辑")
 
-        try storeA.delete(visitA)
+        #expect(try storeA.delete(visitA) == restaurantA.id)
         try await SyncEngine(context: contextA, api: server).synchronize()
         try await SyncEngine(context: contextB, api: server).synchronize()
 
@@ -74,12 +74,17 @@ struct P1DTwoClientSyncTests {
         #expect(try contextB.fetch(FetchDescriptor<SyncMutation>()).first?.state == .conflicted)
         #expect(server.visitCount == 0)
         #expect(server.visitTombstoneCount == 1)
+        #expect(restaurantA.deletedAt != nil && restaurantB.deletedAt != nil)
+        #expect(server.restaurantCount == 0)
+        #expect(server.restaurantTombstoneCount == 1)
 
         try await SyncEngine(context: contextB, api: server).synchronize()
         #expect(try contextB.fetch(FetchDescriptor<Restaurant>()).count == 1)
         #expect(try contextB.fetch(FetchDescriptor<Visit>()).count == 1)
         #expect(server.visitCount == 0)
 
+        // The final Visit already removed its Restaurant. A repeated delete
+        // must not manufacture another remote mutation or resurrect the graph.
         try storeA.delete(restaurantA)
         try await SyncEngine(context: contextA, api: server).synchronize()
         try await SyncEngine(context: contextB, api: server).synchronize()

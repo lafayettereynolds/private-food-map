@@ -2,11 +2,22 @@ import SwiftData
 import SwiftUI
 
 enum SocialHubSection: String, CaseIterable, Identifiable {
-    case search = "找人"
     case friends = "好友"
-    case requests = "请求"
-    case follows = "关注"
+    case following = "关注"
+    case followers = "粉丝"
+    case recommendations = "推荐"
     var id: Self { self }
+}
+
+nonisolated enum SocialRelationshipSectionPolicy {
+    static func mutualFriends(fromFollowers values: [SocialUserResultV1]) -> [SocialUserResultV1] {
+        values.filter(\.isFollowing)
+    }
+}
+
+private enum SocialRelationshipSectionError: Error {
+    case repeatedCursor
+    case pageLimitExceeded
 }
 
 struct SocialHubView: View {
@@ -24,14 +35,12 @@ struct SocialHubView: View {
     @State private var section: SocialHubSection
     @State private var query = ""
     @State private var items: [SocialUserResultV1] = []
-    @State private var secondaryItems: [SocialUserResultV1] = []
     @State private var nextCursor: String?
-    @State private var secondaryNextCursor: String?
     @State private var selectedUser: SocialUserResultV1?
     @State private var loading = false
     @State private var message: String?
     @State private var suggestions: [SocialSuggestionV1]
-    @State private var pendingFriendUserIDs: Set<String> = []
+    @State private var pendingFollowUserIDs: Set<String> = []
     @State private var isShowingCollaborationInbox = false
 
     var body: some View {
@@ -46,7 +55,7 @@ struct SocialHubView: View {
                 )
                 .padding()
                 Group {
-                    if section == .search { searchContent }
+                    if section == .recommendations { recommendationContent }
                     else { relationshipContent }
                 }
             }
@@ -62,7 +71,8 @@ struct SocialHubView: View {
                     safetyAPI: safetyAPI,
                     onChange: { changed in
                         replace(changed)
-                        selectedUser = changed
+                        // The presented profile owns its refreshed data. Keep the
+                        // sheet selection stable until the user dismisses it.
                     }
                 )
             }
@@ -103,7 +113,7 @@ struct SocialHubView: View {
         safetyAPI: (any ReleaseSafetyAPI)? = nil,
         photoAPI: (any PhotoBinaryAPI)? = nil,
         restaurantListAPI: (any RestaurantListAPI)? = nil,
-        initialSection: SocialHubSection = .search,
+        initialSection: SocialHubSection = .recommendations,
         initialSuggestions: [SocialSuggestionV1] = [],
         navigationTitle: String = "好友与关注",
         onClose: (() -> Void)? = nil
@@ -122,7 +132,7 @@ struct SocialHubView: View {
         _suggestions = State(initialValue: initialSuggestions)
     }
 
-    private var searchContent: some View {
+    private var recommendationContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -146,17 +156,17 @@ struct SocialHubView: View {
                 if suggestions.isEmpty {
                     TasteMapEmptyState(
                         title: "找到 Taste Map 用户",
-                        message: "输入至少 2 个字符；邮箱和 Apple 登录信息不能用于找人。",
+                        message: "也可以输入至少 2 个字符搜索用户；邮箱和 Apple 登录信息不能用于搜索。",
                         systemImage: "person.2.badge.plus",
                         presentation: .embedded,
                         accessibilityIdentifier: "social-search-guidance-state"
                     )
                 } else {
                     List {
-                        Section("可能认识的人") {
+                        Section("推荐给你") {
                             ForEach(suggestions) { suggestion in
                                 VStack(alignment: .leading, spacing: 4) {
-                                    row(suggestion.user, allowsFriendRequest: true)
+                                    row(suggestion.user, allowsFollow: true)
                                     if !suggestion.reasons.isEmpty {
                                         Text(suggestion.reasons.joined(separator: " · "))
                                             .font(.caption).foregroundStyle(.secondary)
@@ -173,28 +183,10 @@ struct SocialHubView: View {
 
     private var relationshipContent: some View {
         Group {
-            if section == .requests {
-                List {
-                    socialSection(
-                        "收到的请求", values: items, empty: "还没有收到好友请求",
-                        hasMore: nextCursor != nil, primary: true
-                    )
-                    socialSection(
-                        "已发送", values: secondaryItems, empty: "还没有等待中的请求",
-                        hasMore: secondaryNextCursor != nil, primary: false
-                    )
-                }
-            } else if section == .follows {
-                List {
-                    socialSection(
-                        "我关注的", values: items, empty: "还没有关注其他用户",
-                        hasMore: nextCursor != nil, primary: true
-                    )
-                    socialSection(
-                        "关注我的", values: secondaryItems, empty: "还没有人关注你",
-                        hasMore: secondaryNextCursor != nil, primary: false
-                    )
-                }
+            if section == .following {
+                resultList(emptyTitle: "还没有关注其他用户")
+            } else if section == .followers {
+                resultList(emptyTitle: "还没有粉丝")
             } else {
                 resultList(emptyTitle: "还没有好友")
             }
@@ -216,7 +208,7 @@ struct SocialHubView: View {
             )
         } else {
             List {
-                ForEach(items) { item in row(item, allowsFriendRequest: section == .search) }
+                ForEach(items) { item in row(item, allowsFollow: section == .recommendations) }
                 if nextCursor != nil {
                     Button("加载更多") { Task { await loadMore() } }
                         .frame(maxWidth: .infinity)
@@ -227,25 +219,7 @@ struct SocialHubView: View {
         }
     }
 
-    @ViewBuilder
-    private func socialSection(
-        _ title: String,
-        values: [SocialUserResultV1],
-        empty: String,
-        hasMore: Bool,
-        primary: Bool
-    ) -> some View {
-        Section(title) {
-            if values.isEmpty { Text(empty).foregroundStyle(.secondary) }
-            else { ForEach(values) { item in row(item) } }
-            if hasMore {
-                Button("加载更多") { Task { await loadMore(primary: primary) } }
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
-    private func row(_ item: SocialUserResultV1, allowsFriendRequest: Bool = false) -> some View {
+    private func row(_ item: SocialUserResultV1, allowsFollow: Bool = false) -> some View {
         HStack(spacing: 12) {
             Button { selectedUser = item } label: {
                 HStack(spacing: 12) {
@@ -261,67 +235,64 @@ struct SocialHubView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("social-user-\(item.profile.userId)")
-            if allowsFriendRequest && canRequestFriend(item) {
-                Button {
-                    Task { await requestFriend(item) }
-                } label: {
-                    if pendingFriendUserIDs.contains(item.id) {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("加好友", systemImage: "person.badge.plus")
-                    }
+            if allowsFollow && !item.isFollowing {
+                TasteMapCompactFollowButton(
+                    userName: item.profile.displayName,
+                    isPending: pendingFollowUserIDs.contains(item.id)
+                ) {
+                    Task { await follow(item) }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(pendingFriendUserIDs.contains(item.id))
-                .accessibilityLabel("添加好友 \(item.profile.displayName)")
+                .accessibilityIdentifier("social-follow-\(item.id)")
             } else {
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(item.friendshipState.title).font(.caption).foregroundStyle(.secondary)
-                    if item.isFollowing { Text("已关注").font(.caption2).foregroundStyle(Color.accentColor) }
+                    Text(relationshipLabel(for: item)).font(.caption).foregroundStyle(.secondary)
                 }
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
             }
         }
     }
 
-    private func canRequestFriend(_ item: SocialUserResultV1) -> Bool {
-        item.friendshipState == .none
-            || item.friendshipState == .rejected
-            || item.friendshipState == .removed
+    private func relationshipLabel(for item: SocialUserResultV1) -> String {
+        switch section {
+        case .friends: "互相关注"
+        case .following: "已关注"
+        case .followers: item.isFollowing ? "互相关注" : "粉丝"
+        case .recommendations: item.isFollowing ? "已关注" : "推荐"
+        }
     }
 
     @MainActor
-    private func requestFriend(_ item: SocialUserResultV1) async {
-        guard canRequestFriend(item), !pendingFriendUserIDs.contains(item.id) else { return }
-        pendingFriendUserIDs.insert(item.id)
-        defer { pendingFriendUserIDs.remove(item.id) }
+    private func follow(_ item: SocialUserResultV1) async {
+        guard !item.isFollowing, !pendingFollowUserIDs.contains(item.id) else { return }
+        pendingFollowUserIDs.insert(item.id)
+        defer { pendingFollowUserIDs.remove(item.id) }
 
         let store = LocalSocialStore(context: modelContext)
         let updated: SocialUserResultV1
         do {
-            let response = try await api.requestFriend(userID: item.id)
-            try store.upsertFriendship(response.friendship, currentUserID: currentUserID)
+            let response = try await api.setFollowing(true, userID: item.id)
+            if let follow = response.follow {
+                try store.upsertFollow(follow, currentUserID: currentUserID)
+            }
             updated = SocialUserResultV1(
                 profile: item.profile,
-                friendshipId: response.friendship.id,
-                friendshipState: response.friendship.state,
-                isFollowing: item.isFollowing
+                friendshipId: item.friendshipId,
+                friendshipState: item.friendshipState,
+                isFollowing: true
             )
         } catch where error is URLError {
-            _ = try? store.enqueueOptimisticFriendRequest(
-                currentUserID: currentUserID,
-                targetUserID: item.id
+            try? store.enqueueOptimisticFollow(
+                currentUserID: currentUserID, targetUserID: item.id, following: true
             )
             updated = SocialUserResultV1(
                 profile: item.profile,
-                friendshipId: nil,
-                friendshipState: .outgoingRequest,
-                isFollowing: item.isFollowing
+                friendshipId: item.friendshipId,
+                friendshipState: item.friendshipState,
+                isFollowing: true
             )
-            message = "好友请求已保存在本机，联网后会自动重试。"
+            message = "关注操作已保存在本机，联网后会自动重试。"
         } catch {
-            message = "好友请求未发送，请稍后重试。"
+            message = "关注状态没有改变，请稍后重试。"
             return
         }
         replace(updated)
@@ -335,11 +306,9 @@ struct SocialHubView: View {
     @MainActor
     private func loadSection() async {
         items = []
-        secondaryItems = []
         nextCursor = nil
-        secondaryNextCursor = nil
         message = nil
-        guard section != .search else {
+        guard section != .recommendations else {
             if let collaborationAPI {
                 if let page = try? await collaborationAPI.suggestions(cursor: nil, limit: 12) {
                     suggestions = page.items
@@ -354,36 +323,23 @@ struct SocialHubView: View {
         do {
             switch section {
             case .friends:
-                let page = try await api.friendships(scope: .friends, cursor: nil, limit: 20)
-                try store.reconcileCompleteFriendshipPage(
-                    page, scope: .friends, currentUserID: currentUserID
-                )
+                let page = try await mutualFollowPage(cursor: nil, store: store)
                 items = page.items; nextCursor = page.nextCursor
-            case .requests:
-                let incoming = try await api.friendships(scope: .incoming, cursor: nil, limit: 20)
-                let outgoing = try await api.friendships(scope: .outgoing, cursor: nil, limit: 20)
-                try store.reconcileCompleteFriendshipPage(
-                    incoming, scope: .incoming, currentUserID: currentUserID
-                )
-                try store.reconcileCompleteFriendshipPage(
-                    outgoing, scope: .outgoing, currentUserID: currentUserID
-                )
-                items = incoming.items; secondaryItems = outgoing.items
-                nextCursor = incoming.nextCursor
-                secondaryNextCursor = outgoing.nextCursor
-            case .follows:
+            case .following:
                 let following = try await api.follows(scope: .following, cursor: nil, limit: 20)
-                let followers = try await api.follows(scope: .followers, cursor: nil, limit: 20)
                 try store.cacheFollowPage(
                     following, scope: .following, currentUserID: currentUserID
                 )
+                items = following.items
+                nextCursor = following.nextCursor
+            case .followers:
+                let followers = try await api.follows(scope: .followers, cursor: nil, limit: 20)
                 try store.cacheFollowPage(
                     followers, scope: .followers, currentUserID: currentUserID
                 )
-                items = following.items; secondaryItems = followers.items
-                nextCursor = following.nextCursor
-                secondaryNextCursor = followers.nextCursor
-            case .search: break
+                items = followers.items
+                nextCursor = followers.nextCursor
+            case .recommendations: break
             }
         } catch {
             loadCached(for: section)
@@ -415,39 +371,21 @@ struct SocialHubView: View {
         }
     }
 
-    private func loadMore(primary: Bool = true) async {
-        if section == .search { await search(reset: false); return }
-        let cursor = primary ? nextCursor : secondaryNextCursor
+    private func loadMore() async {
+        if section == .recommendations { await search(reset: false); return }
+        let cursor = nextCursor
         guard let cursor else { return }
         let store = LocalSocialStore(context: modelContext)
         do {
             switch section {
             case .friends:
-                let page = try await api.friendships(scope: .friends, cursor: cursor, limit: 20)
-                try store.cache(page, currentUserID: currentUserID)
+                let page = try await mutualFollowPage(cursor: cursor, store: store)
                 items = deduplicated(items + page.items)
-                if page.nextCursor == nil {
-                    try store.reconcileFriendshipResults(
-                        items, scope: .friends, currentUserID: currentUserID
-                    )
-                }
                 nextCursor = page.nextCursor
-            case .requests:
-                let scope: FriendshipListScope = primary ? .incoming : .outgoing
-                let page = try await api.friendships(scope: scope, cursor: cursor, limit: 20)
-                try store.cache(page, currentUserID: currentUserID)
-                let combined = deduplicated((primary ? items : secondaryItems) + page.items)
-                if page.nextCursor == nil {
-                    try store.reconcileFriendshipResults(
-                        combined, scope: scope, currentUserID: currentUserID
-                    )
-                }
-                if primary { items = combined; nextCursor = page.nextCursor }
-                else { secondaryItems = combined; secondaryNextCursor = page.nextCursor }
-            case .follows:
-                let scope: FollowListScope = primary ? .following : .followers
+            case .following, .followers:
+                let scope: FollowListScope = section == .following ? .following : .followers
                 let page = try await api.follows(scope: scope, cursor: cursor, limit: 20)
-                let combined = deduplicated((primary ? items : secondaryItems) + page.items)
+                let combined = deduplicated(items + page.items)
                 if page.nextCursor == nil {
                     try store.cache(page, currentUserID: currentUserID)
                     try store.reconcileFollowResults(
@@ -458,9 +396,9 @@ struct SocialHubView: View {
                         page, scope: scope, currentUserID: currentUserID
                     )
                 }
-                if primary { items = combined; nextCursor = page.nextCursor }
-                else { secondaryItems = combined; secondaryNextCursor = page.nextCursor }
-            case .search: break
+                items = combined
+                nextCursor = page.nextCursor
+            case .recommendations: break
             }
         } catch { message = "加载更多失败，请稍后重试。" }
     }
@@ -480,20 +418,54 @@ struct SocialHubView: View {
         }
         switch section {
         case .friends:
-            items = friendships.filter { $0.perspectiveState == .friends }.compactMap {
-                let userID = $0.otherUserID
-                return result(userID: userID, state: .friends, following: follows.contains {
+            let followingUserIDs = Set(follows.filter {
+                $0.followerUserID == currentUserID && $0.deletedAt == nil
+            }.map(\.followedUserID))
+            items = follows.filter {
+                $0.followedUserID == currentUserID && $0.deletedAt == nil
+                    && followingUserIDs.contains($0.followerUserID)
+            }.compactMap { result(userID: $0.followerUserID, state: .friends, following: true) }
+        case .following:
+            items = follows.filter { $0.followerUserID == currentUserID && $0.deletedAt == nil }.compactMap { result(userID: $0.followedUserID, following: true) }
+        case .followers:
+            items = follows.filter { $0.followedUserID == currentUserID && $0.deletedAt == nil }.compactMap { follow in
+                let userID = follow.followerUserID
+                return result(userID: userID, following: follows.contains {
                     $0.followerUserID == currentUserID && $0.followedUserID == userID && $0.deletedAt == nil
                 })
             }
-        case .requests:
-            items = friendships.filter { $0.perspectiveState == .incomingRequest }.compactMap { result(userID: $0.otherUserID, state: .incomingRequest) }
-            secondaryItems = friendships.filter { $0.perspectiveState == .outgoingRequest }.compactMap { result(userID: $0.otherUserID, state: .outgoingRequest) }
-        case .follows:
-            items = follows.filter { $0.followerUserID == currentUserID && $0.deletedAt == nil }.compactMap { result(userID: $0.followedUserID, following: true) }
-            secondaryItems = follows.filter { $0.followedUserID == currentUserID && $0.deletedAt == nil }.compactMap { result(userID: $0.followerUserID) }
-        case .search: break
+        case .recommendations: break
         }
+    }
+
+    @MainActor
+    private func mutualFollowPage(
+        cursor initialCursor: String?,
+        store: LocalSocialStore
+    ) async throws -> SocialPageV1<SocialUserResultV1> {
+        var cursor = initialCursor
+        var seenCursors = Set<String>()
+        var followers: [SocialUserResultV1] = []
+        for _ in 0..<100 {
+            let page = try await api.follows(scope: .followers, cursor: cursor, limit: 20)
+            try store.cacheFollowPage(page, scope: .followers, currentUserID: currentUserID)
+            followers = deduplicated(followers + page.items)
+            guard let next = page.nextCursor else {
+                try store.reconcileFollowResults(
+                    followers, scope: .followers, currentUserID: currentUserID
+                )
+                return .init(
+                    apiVersion: page.apiVersion,
+                    items: SocialRelationshipSectionPolicy.mutualFriends(fromFollowers: followers),
+                    nextCursor: nil
+                )
+            }
+            guard seenCursors.insert(next).inserted else {
+                throw SocialRelationshipSectionError.repeatedCursor
+            }
+            cursor = next
+        }
+        throw SocialRelationshipSectionError.pageLimitExceeded
     }
 
     private func cachedResult(profile: CachedSocialProfile, store: LocalSocialStore) -> SocialUserResultV1 {
@@ -515,7 +487,6 @@ struct SocialHubView: View {
 
     private func replace(_ item: SocialUserResultV1) {
         items = items.map { $0.id == item.id ? item : $0 }
-        secondaryItems = secondaryItems.map { $0.id == item.id ? item : $0 }
     }
 
     private func deduplicated(_ values: [SocialUserResultV1]) -> [SocialUserResultV1] {
@@ -524,29 +495,48 @@ struct SocialHubView: View {
     }
 }
 
-struct SocialPublicProfileView: View {
-    private enum PublicProfileSection: Hashable {
-        case activity
-        case lists
-    }
+private enum PublicProfileDestination: String, Identifiable, Hashable {
+    case footprints, map
+    var id: String { rawValue }
+}
 
+struct SocialPublicProfileView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(SyncCoordinator.self) private var syncCoordinator
     @Query private var restaurants: [Restaurant]
     @State private var item: SocialUserResultV1
     @State private var context: SocialProfileContextV1?
+    @State private var loadingProfileContext = true
     @State private var processing = false
     @State private var message: String?
-    @State private var profileSection: PublicProfileSection = .activity
     @State private var contentSection: PublicContentSectionV1 = .visits
     @State private var contentItems: [PublicContentItemV1] = []
     @State private var contentStatistics: PublicContentStatisticsV1?
+    @State private var loadingStatistics = true
+    @State private var statisticsMessage: String?
+    @State private var followedByOwner: Bool?
+    @State private var loadingFollowDirection = true
+    @State private var followDirectionMessage: String?
+    @State private var destination: PublicProfileDestination?
     @State private var contentNextCursor: String?
     @State private var loadingContent = false
+    @State private var contentLoadRevision = 0
     @State private var contentMessage: String?
     @State private var showingContentCache = false
     @State private var selectedContent: PublicContentItemV1?
+    @State private var selectedVisitContent: PublicContentItemV1?
+    @State private var selectedListContent: PublicContentItemV1?
+    @State private var selectedRouletteRestaurantID: UUID?
     @State private var overview: PublicProfileOverviewV1?
+    @State private var loadingOverview = true
+    @State private var publicMapItems: [PublicContentItemV1] = []
+    @State private var loadingPublicMap = true
+    @State private var publicMapMessage: String?
+    @State private var publicMapShowingCache = false
+    @State private var selectedMapRestaurantID: UUID?
+    @State private var publicMapFitRequestID = UUID()
+    @State private var publicMapRenderState: RestaurantMapRenderState = .loading
     @State private var reportTarget: CommunityReportTarget?
     @State private var confirmingBlock = false
     let currentUserID: String
@@ -585,36 +575,16 @@ struct SocialPublicProfileView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     publicProfileHero
-                    if let overview { publicOverview(overview) }
-                    if communityAPI != nil || restaurantListAPI != nil {
-                        TasteMapSegmentedControl(
-                            selection: $profileSection,
-                            items: [
-                                .init(.activity, title: "动态"),
-                                .init(.lists, title: "食单"),
-                            ],
-                            accessibilityIdentifier: "public-profile-primary-section"
-                        )
+
+                    if communityAPI != nil {
+                        footprintEntries
                     }
-                    if profileSection == .activity, communityAPI != nil {
+
+                    if let restaurantListAPI {
                         publicEvidenceHeader(
-                            title: "TA 的餐桌",
-                            detail: "公开记录、想吃与食单共同构成这份真实餐饮档案。"
-                        )
-                        TasteMapSegmentedControl(
-                            selection: $contentSection,
-                            items: [
-                                .init(.visits, title: "到访"),
-                                .init(.wantToGo, title: "想吃"),
-                            ],
-                            accessibilityIdentifier: "public-profile-content-section"
-                        )
-                        publicContent
-                    }
-                    if profileSection == .lists, let restaurantListAPI {
-                        publicEvidenceHeader(
+                            eyebrow: "PUBLIC RESTAURANT LISTS",
                             title: "TA 的食单",
-                            detail: "只展示当前权限允许查看的公开或好友可见榜单。"
+                            detail: "只展示当前权限允许查看的真实食单。"
                         )
                         PublicRestaurantListsSection(
                             ownerUserID: item.profile.userId,
@@ -622,12 +592,19 @@ struct SocialPublicProfileView: View {
                             api: restaurantListAPI,
                             photoAPI: photoAPI
                         )
+                        .accessibilityIdentifier("public-profile-lists-section")
                     }
+
+                    if communityAPI != nil { publicFootprints }
                     if processing { ProgressView("处理中…") }
                     if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+            }
+            .refreshable {
+                await loadPage()
+                await loadContent(reset: true, preferCache: false)
             }
             .navigationTitle("公开主页")
             .navigationBarTitleDisplayMode(.inline)
@@ -655,14 +632,54 @@ struct SocialPublicProfileView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
             }
-            .task { await loadContext() }
-            .onChange(of: contentSection) { _, _ in Task { await loadContent(reset: true, preferCache: true) } }
-            .sheet(item: $selectedContent) { content in
+            .task { await loadPage() }
+            .task(id: contentSection) { await loadContent(reset: true, preferCache: true) }
+            .navigationDestination(item: $destination) { target in
+                switch target {
+                case .footprints: footprintDestination
+                case .map: publicMapDestination
+                }
+            }
+            .onChange(of: selectedMapRestaurantID) { _, restaurantID in
+                guard let restaurantID else { return }
+                selectedContent = publicMapContent(for: restaurantID)
+            }
+            .sheet(item: $selectedContent, onDismiss: { selectedMapRestaurantID = nil }) { content in
                 DiscoveryRestaurantDestination(
                     card: content.discoveryCard, restaurants: restaurants,
-                    onWantToGo: { addToWantToGo(content) }, photoAPI: photoAPI,
+                    onWantToGo: { addToWantToGo(content) },
+                    onViewerStateChange: { updateViewerState(globalKey: content.restaurant.globalKey, state: $0) },
+                    photoAPI: photoAPI,
                     entrySource: .publicProfile
                 )
+            }
+            .sheet(item: $selectedVisitContent) { content in
+                VisitEditorView(
+                    candidate: content.restaurant.discoveryProjection.restaurantCandidate,
+                    onVisitSaved: { _ in
+                        updateViewerState(globalKey: content.restaurant.globalKey, state: .visited)
+                        Task { await syncCoordinator.synchronizeNow() }
+                    }
+                )
+            }
+            .sheet(item: $selectedListContent) { content in
+                AddPlaceToListsSheet(
+                    place: content.restaurant.discoveryProjection,
+                    currentUserID: currentUserID
+                )
+            }
+            .sheet(isPresented: Binding(
+                get: { selectedRouletteRestaurantID != nil },
+                set: { if !$0 { selectedRouletteRestaurantID = nil } }
+            )) {
+                NavigationStack {
+                    RestaurantRouletteScreen(initialRestaurantID: selectedRouletteRestaurantID)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("完成") { selectedRouletteRestaurantID = nil }
+                            }
+                        }
+                }
             }
             .sheet(item: $reportTarget) { target in
                 if let safetyAPI { CommunityReportSheet(target: target, api: safetyAPI) }
@@ -679,14 +696,13 @@ struct SocialPublicProfileView: View {
     private var publicProfileHero: some View {
         VStack(alignment: .leading, spacing: 15) {
             publicIdentityHeader
-            HStack(spacing: 10) {
-                friendshipButtons
-                followButton
-                Spacer(minLength: 0)
+            if item.friendshipState != .friends {
+                HStack(spacing: 10) {
+                    friendshipButtons
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Divider()
-            publicMetricStrip
         }
         .padding(18)
         .background(
@@ -701,9 +717,13 @@ struct SocialPublicProfileView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func publicEvidenceHeader(title: String, detail: String) -> some View {
+    private func publicEvidenceHeader(
+        eyebrow: String,
+        title: String,
+        detail: String
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("PUBLIC DINING EVIDENCE")
+            Text(eyebrow)
                 .font(.caption2.weight(.bold))
                 .tracking(1.4)
                 .foregroundStyle(TasteMapCoreTheme.brand)
@@ -725,41 +745,278 @@ struct SocialPublicProfileView: View {
             Text("ID \(TasteMapPublicUserID.numeric(from: item.profile.userId))")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
-            if let city = item.profile.city {
-                Label(city, systemImage: "building.2")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                ProfileConnectionMetrics(
+                    followingCount: overview?.followingCount,
+                    followerCount: overview?.followerCount,
+                    isLoading: loadingOverview,
+                    identifierPrefix: "public-profile"
+                )
+                followButton
             }
+            if let followDirectionMessage {
+                Text(followDirectionMessage).font(.caption2).foregroundStyle(.secondary)
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { publicProfileMetadata }
+                VStack(alignment: .center, spacing: 5) { publicProfileMetadata }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .accessibilityIdentifier("public-profile-compact-header")
     }
 
     @ViewBuilder
-    private var publicMetricStrip: some View {
-        HStack(spacing: 0) {
-            publicMetric("关注", overview?.followingCount)
-            Divider().frame(height: 34)
-            publicMetric("粉丝", overview?.followerCount)
-            Divider().frame(height: 34)
-            publicMetric("去过", context?.profile.statistics.publicRestaurantCount)
-            Divider().frame(height: 34)
-            publicMetric("公开记录", context?.profile.statistics.publicVisitCount)
+    private var publicProfileMetadata: some View {
+        if let city = item.profile.city {
+            Label(city, systemImage: "building.2")
         }
-        .padding(.vertical, 2)
-        .accessibilityIdentifier("public-profile-metric-strip")
+        if let joinedAt = context?.profile.joinedAt,
+           let joinedDate = SyncRecordMapper.date(joinedAt) {
+            Label(
+                "加入于 \(TasteMapDisplayDate.yearMonth(joinedDate))",
+                systemImage: "calendar.badge.checkmark"
+            )
+            .accessibilityIdentifier("public-profile-joined-date")
+        } else if loadingProfileContext {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("正在读取加入时间")
+            }
+            .accessibilityIdentifier("public-profile-joined-date-loading")
+        } else {
+            Label("加入时间暂时无法加载", systemImage: "calendar.badge.exclamationmark")
+                .accessibilityIdentifier("public-profile-joined-date-unavailable")
+        }
     }
 
-    private func publicMetric(_ title: String, _ value: Int?) -> some View {
-        VStack(spacing: 3) {
-            Text(value.map(String.init) ?? "—")
-                .font(.subheadline.bold())
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+    private var footprintEntries: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                footprintEntry(.visited, count: contentStatistics?.visibleRestaurantCount, identifier: "visited") {
+                    contentSection = .visits
+                    destination = .footprints
+                }
+                footprintEntry(.wantToGo, count: contentStatistics?.visibleWantToGoCount, identifier: "want") {
+                    contentSection = .wantToGo
+                    destination = .footprints
+                }
+                Button { destination = .map } label: {
+                    Label("地图", systemImage: "map")
+                        .frame(maxWidth: .infinity, minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("public-profile-map-entry")
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(TasteMapCoreTheme.brandDeep)
+            if let statisticsMessage {
+                HStack {
+                    Text(statisticsMessage).font(.caption).foregroundStyle(.secondary)
+                    Button("重试") { Task { await loadStatistics() } }.font(.caption)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 38)
-        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("public-profile-footprint-entries")
+    }
+
+    private func footprintEntry(_ status: RestaurantStatus, count: Int?, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Label(status.title, systemImage: status.systemImage)
+                if let count { Text(count, format: .number).monospacedDigit() }
+                else if loadingStatistics { ProgressView().controlSize(.mini) }
+                else { Image(systemName: "exclamationmark.circle") }
+            }
+            .frame(maxWidth: .infinity, minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(count.map { "\(status.title) \($0) 家餐厅" } ?? "\(status.title)，数量\(loadingStatistics ? "正在加载" : "暂时无法加载")")
+        .accessibilityIdentifier("public-profile-\(identifier)-entry")
+    }
+
+    private var publicFootprintScopeItems: [TasteMapSegmentedControl<PublicContentSectionV1>.Item] {
+        [
+            .init(.visits, title: RestaurantStatus.visited.title, systemImage: RestaurantStatus.visited.systemImage),
+            .init(.wantToGo, title: RestaurantStatus.wantToGo.title, systemImage: RestaurantStatus.wantToGo.systemImage)
+        ]
+    }
+
+    private var footprintDestination: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                TasteMapSegmentedControl(
+                    selection: $contentSection,
+                    items: publicFootprintScopeItems,
+                    accessibilityIdentifier: "public-profile-content-section"
+                )
+                publicContent
+            }
+            .padding(16)
+            .accessibilityIdentifier("public-profile-activity-section")
+        }
+        .navigationTitle("TA 的味觉足迹")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await loadContent(reset: true, preferCache: false) }
+    }
+
+    private var publicMapDestination: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                publicMapSection(mapHeight: max(238, geometry.size.height - 150))
+                    .padding(16)
+            }
+        }
+        .navigationTitle("TA 的美食地图")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await loadPublicMapContent() }
+        .refreshable { await loadPublicMapContent() }
+    }
+
+    @ViewBuilder
+    private func publicMapSection(mapHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            publicEvidenceHeader(
+                eyebrow: "PUBLIC TASTE MAP",
+                title: "TA 的美食地图",
+                detail: "地图只使用当前权限允许查看的真实到访与想吃坐标。"
+            )
+
+            if loadingPublicMap && publicMapMarkers.isEmpty {
+                ProgressView("正在读取公开地图…")
+                    .frame(maxWidth: .infinity, minHeight: 150)
+            } else if publicMapMarkers.isEmpty {
+                TasteMapEmptyState(
+                    title: "TA 暂无可显示的公开地图",
+                    message: publicMapMessage ?? "公开记录中还没有带有效坐标的餐厅。",
+                    systemImage: "map",
+                    presentation: .embedded,
+                    accessibilityIdentifier: "public-profile-map-empty-state"
+                )
+                .frame(minHeight: 170)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ZStack(alignment: .topLeading) {
+                        RestaurantMapView(
+                            markers: publicMapMarkers,
+                            photosByID: [:],
+                            photoCoordinator: nil,
+                            photoAPI: photoAPI,
+                            userAvatarPreset: item.profile.avatarPresetId,
+                            userAvatarPhoto: nil,
+                            showsUserLocation: false,
+                            selectedRestaurantID: $selectedMapRestaurantID,
+                            fitRequestID: publicMapFitRequestID,
+                            locationRequestID: nil,
+                            onRenderStateChange: { publicMapRenderState = $0 },
+                            onViewportChange: { _ in }
+                        )
+                        .frame(height: mapHeight)
+                        .accessibilityIdentifier("public-profile-map")
+
+                        if publicMapShowingCache {
+                            Label("显示最近缓存", systemImage: "wifi.slash")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 6)
+                                .background(.regularMaterial, in: Capsule())
+                                .padding(10)
+                        }
+
+                        if case let .failed(mapError) = publicMapRenderState {
+                            Text(mapError)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(10)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .padding(10)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(TasteMapCoreTheme.border, lineWidth: 1)
+                    }
+
+                    Text("当前可见 \(publicMapMarkers.count) 家真实餐厅，点标记可查看餐厅。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let publicMapMessage {
+                        Text(publicMapMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("public-profile-map-section")
+    }
+
+    private var publicMapMarkers: [RestaurantMapMarkerPresentation] {
+        let groups = Dictionary(grouping: publicMapItems) { $0.restaurant.globalKey }
+        return groups.keys.sorted().compactMap { globalKey in
+            guard let values = groups[globalKey],
+                  let representative = values.first(where: { $0.kind == .visit }) ?? values.first else {
+                return nil
+            }
+            let restaurant = representative.restaurant
+            guard RestaurantMapCoordinatePolicy.isValid(
+                latitude: restaurant.latitude,
+                longitude: restaurant.longitude
+            ) else { return nil }
+            let visits = values.filter { $0.kind == .visit }
+            let ratings = visits.compactMap(\.visit?.rating).filter(\.isFinite)
+            let averageRating = ratings.isEmpty
+                ? nil
+                : ratings.reduce(0, +) / Double(ratings.count)
+            let photo = representative.restaurant.photo
+                ?? values.lazy.compactMap(\.restaurant.photo).first
+            let merchantImageURL = RestaurantImagePriorityPolicy.safeHTTPSURL(
+                restaurant.merchantImageUrl
+            )
+            return RestaurantMapMarkerPresentation(
+                id: stablePublicMapID(globalKey),
+                name: restaurant.name,
+                latitude: restaurant.latitude,
+                longitude: restaurant.longitude,
+                status: visits.isEmpty ? .wantToGo : .visited,
+                visual: .emoji(FoodCategoryEmojiResolver.resolve(
+                    name: restaurant.name,
+                    tags: restaurant.tags,
+                    preferredEmoji: restaurant.markerEmoji
+                )),
+                publicPhotoID: photo?.photoId,
+                fallbackMerchantImageURL: merchantImageURL,
+                allowsRemoteImages: true,
+                visitCount: visits.count,
+                averageRating: averageRating,
+                distanceKilometers: nil
+            )
+        }
+    }
+
+    private func publicMapContent(for restaurantID: UUID) -> PublicContentItemV1? {
+        publicMapItems.first { stablePublicMapID($0.restaurant.globalKey) == restaurantID }
+    }
+
+    private func stablePublicMapID(_ semanticID: String) -> UUID {
+        if let value = UUID(uuidString: semanticID) { return value }
+        var left: UInt64 = 0xcbf29ce484222325
+        var right: UInt64 = 0x84222325cbf29ce4
+        for byte in semanticID.utf8 {
+            left = (left ^ UInt64(byte)) &* 0x100000001b3
+            right = (right ^ UInt64(byte &+ 31)) &* 0x100000001b3
+        }
+        let hex = String(format: "%016llx%016llx", left, right)
+        let value = "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.dropFirst(20).prefix(12))"
+        return UUID(uuidString: value)!
     }
 
     @ViewBuilder
@@ -792,6 +1049,9 @@ struct SocialPublicProfileView: View {
                         item: content, photoAPI: photoAPI,
                         onOpenRestaurant: { selectedContent = content },
                         onOpenUser: {}, onWantToGo: { addToWantToGo(content) },
+                        onRecordVisit: { selectedVisitContent = content },
+                        onAddToList: { selectedListContent = content },
+                        onAddToRoulette: { addToRoulette(content) },
                         interactionAPI: interactionAPI,
                         safetyAPI: safetyAPI,
                         currentUserID: currentUserID,
@@ -819,67 +1079,96 @@ struct SocialPublicProfileView: View {
             Button("接受") { Task { await mutate(.accept) } }.buttonStyle(.borderedProminent)
             Button("拒绝") { Task { await mutate(.reject) } }.buttonStyle(.bordered)
         case .friends:
-            Button("解除好友", role: .destructive) { Task { await mutate(.remove) } }.buttonStyle(.bordered)
+            EmptyView()
         }
     }
 
     private var followButton: some View {
-        Button(item.isFollowing ? "已关注" : "关注") { Task { await toggleFollow() } }
-            .buttonStyle(.bordered).tint(item.isFollowing ? .secondary : .accentColor)
+        Button(PublicProfileFollowDirection.label(isFollowing: item.isFollowing, followedByOwner: followedByOwner)) {
+            Task { await toggleFollow() }
+        }
+        .buttonStyle(.plain)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(TasteMapCoreTheme.brandDeep)
+        .frame(minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+        .disabled(processing)
+        .accessibilityHint(loadingFollowDirection ? "正在刷新双方关注关系，仍可操作关注" : "切换对 TA 的关注状态")
+        .accessibilityIdentifier("public-profile-follow-action")
     }
 
-    private func publicOverview(_ overview: PublicProfileOverviewV1) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var publicFootprints: some View {
+        VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.regular) {
             publicEvidenceHeader(
-                title: "口味与餐厅证据",
-                detail: "共同想吃、口味印象与代表餐厅来自当前可见的真实数据。"
+                eyebrow: "TASTE FOOTPRINTS",
+                title: "TA 的味觉足迹",
+                detail: "只展示 TA 允许你查看的真实记录。"
             )
-            if overview.friendCount > 0 {
-                Label("好友 \(overview.friendCount)", systemImage: "person.2.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
-            }
-            if overview.commonWantToGoCount > 0 {
-                Label("你们有 \(overview.commonWantToGoCount) 家共同想吃", systemImage: "bookmark.fill")
-                    .font(.subheadline.weight(.semibold))
-            }
-            if !overview.tasteSummary.topTags.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("口味印象").font(.headline)
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 6) {
-                        ForEach(overview.tasteSummary.topTags, id: \.self) { tag in
-                            Text(tag).font(.caption).padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(Color.accentColor.opacity(0.1), in: Capsule())
-                        }
-                        }
-                    }
-                    .scrollIndicators(.hidden)
-                }
-            }
-            if !overview.representativeRestaurants.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("代表餐厅").font(.headline)
-                    ForEach(Array(overview.representativeRestaurants.prefix(3)), id: \.globalKey) { restaurant in
-                        Label(restaurant.name, systemImage: "fork.knife").font(.subheadline)
-                    }
-                }
-            }
-            if !overview.footprints.isEmpty {
-                Text(overview.footprints.prefix(3).map { "\($0.city) \($0.visitCount) 次" }.joined(separator: " · "))
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
+            TasteMapSegmentedControl(
+                selection: $contentSection,
+                items: publicFootprintScopeItems,
+                accessibilityIdentifier: "public-profile-home-content-section"
+            )
+            publicContent
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .tasteMapCoreCard(radius: 22)
-        .accessibilityIdentifier("public-profile-taste-evidence")
+        .accessibilityIdentifier("public-profile-home-footprints")
     }
 
     @MainActor
-    private func loadContext() async {
+    private func loadPage() async {
+        guard await loadContext() else { return }
+        async let overviewLoad: Void = loadOverview()
+        async let statisticsLoad: Void = loadStatistics()
+        async let directionLoad: Void = loadFollowDirection()
+        _ = await (overviewLoad, statisticsLoad, directionLoad)
+    }
+
+    @MainActor
+    private func loadStatistics() async {
+        guard let communityAPI else { loadingStatistics = false; return }
+        loadingStatistics = true
+        defer { loadingStatistics = false }
         do {
+            #if DEBUG
+            if TasteMapUITestFixtures.usesCommunityFixture {
+                contentStatistics = TasteMapUITestFixtures.communityPublicContent(userID: item.id, section: .visits).statistics
+                return
+            }
+            #endif
+            let page = try await communityAPI.publicContent(userID: item.id, section: .visits, cursor: nil, limit: 1)
+            contentStatistics = page.statistics
+            statisticsMessage = nil
+        } catch {
+            contentStatistics = nil
+            statisticsMessage = "可见餐厅数量暂时无法加载。"
+        }
+    }
+
+    @MainActor
+    private func loadFollowDirection() async {
+        loadingFollowDirection = true
+        defer { loadingFollowDirection = false }
+        do {
+            followedByOwner = try await PublicProfileFollowDirection.load(ownerUserID: item.id, api: api)
+            followDirectionMessage = nil
+        } catch {
+            followedByOwner = nil
+            followDirectionMessage = "对方关注状态暂时无法刷新。"
+        }
+    }
+
+    @MainActor
+    private func loadContext() async -> Bool {
+        loadingProfileContext = true
+        defer { loadingProfileContext = false }
+        do {
+            #if DEBUG
+            context = TasteMapUITestFixtures.usesCommunityFixture
+                ? TasteMapUITestFixtures.communityPublicProfileContext(userID: item.profile.userId)
+                : try await api.profileContext(userID: item.profile.userId)
+            #else
             context = try await api.profileContext(userID: item.profile.userId)
+            #endif
             if let relationship = context?.relationship {
                 let profile = context!.profile
                 let refreshed = SocialUserResultV1(
@@ -896,18 +1185,173 @@ struct SocialPublicProfileView: View {
                 try LocalSocialStore(context: modelContext).cache(
                     refreshed, currentUserID: currentUserID
                 )
+                let relationshipChanged = refreshed != item
                 item = refreshed
-                onChange(refreshed)
+                if relationshipChanged { onChange(refreshed) }
             }
-            await loadContent(reset: true, preferCache: true)
-            if let communityAPI { overview = try? await communityAPI.publicOverview(userID: item.profile.userId) }
+            return true
         } catch SyncAPIError.server(let status, _) where status == 403 || status == 404 {
+            contentLoadRevision += 1
             contentItems.removeAll()
+            publicMapItems.removeAll()
             try? LocalCommunityStore(context: modelContext)
                 .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
             try? LocalSocialStore(context: modelContext).invalidateProfile(item.profile.userId)
             dismiss()
-        } catch { message = "公开资料暂时无法刷新，当前显示缓存。" }
+            return false
+        } catch {
+            message = "公开资料暂时无法刷新；其他公开内容仍会继续加载。"
+            return true
+        }
+    }
+
+    @MainActor
+    private func loadOverview() async {
+        guard let communityAPI else {
+            loadingOverview = false
+            return
+        }
+        loadingOverview = true
+        defer { loadingOverview = false }
+        do {
+            #if DEBUG
+            if TasteMapUITestFixtures.usesCommunityFixture {
+                overview = TasteMapUITestFixtures.communityPublicOverview(userID: item.profile.userId)
+                return
+            }
+            #endif
+            overview = try await communityAPI.publicOverview(userID: item.profile.userId)
+        } catch {
+            overview = nil
+        }
+    }
+
+    @MainActor
+    private func loadPublicMapContent() async {
+        guard let communityAPI else {
+            loadingPublicMap = false
+            return
+        }
+        let cachedItems = cachedPublicMapItems()
+        if !cachedItems.isEmpty {
+            publicMapItems = cachedItems
+            publicMapShowingCache = true
+        }
+        loadingPublicMap = true
+        defer { loadingPublicMap = false }
+
+        var resolvedItems: [PublicContentItemV1] = []
+        var failedSectionCount = 0
+        for section in [PublicContentSectionV1.visits, .wantToGo] {
+            do {
+                let values = try await fetchAllPublicContent(
+                    api: communityAPI,
+                    section: section,
+                    maximumItemCount: 300
+                )
+                resolvedItems.append(contentsOf: values)
+                try LocalCommunityStore(context: modelContext).replace(
+                    items: values,
+                    currentUserID: currentUserID,
+                    routeKey: LocalCommunityStore.profileRoute(
+                        userID: item.profile.userId,
+                        section: section
+                    ),
+                    fetchedAt: .now
+                )
+            } catch {
+                failedSectionCount += 1
+                if let cached = try? LocalCommunityStore(context: modelContext).cached(
+                    currentUserID: currentUserID,
+                    routeKey: LocalCommunityStore.profileRoute(
+                        userID: item.profile.userId,
+                        section: section
+                    )
+                ) {
+                    resolvedItems.append(contentsOf: cached.items)
+                }
+            }
+        }
+
+        let uniqueItems = deduplicatedPublicContent(resolvedItems)
+        if !uniqueItems.isEmpty || failedSectionCount < 2 {
+            publicMapItems = uniqueItems
+            publicMapFitRequestID = UUID()
+        }
+        publicMapShowingCache = failedSectionCount > 0 && !publicMapItems.isEmpty
+        switch (failedSectionCount, publicMapItems.isEmpty) {
+        case (2, true):
+            publicMapMessage = "公开地图暂时无法加载，请稍后重试。"
+        case (1..., false):
+            publicMapMessage = "部分公开记录刷新失败，当前地图同时包含最近缓存。"
+        default:
+            publicMapMessage = nil
+        }
+    }
+
+    @MainActor
+    private func fetchAllPublicContent(
+        api: any CommunityAPI,
+        section: PublicContentSectionV1,
+        maximumItemCount: Int
+    ) async throws -> [PublicContentItemV1] {
+        var result: [PublicContentItemV1] = []
+        var cursor: String?
+        var seenCursors = Set<String>()
+        var pageCount = 0
+        repeat {
+            #if DEBUG
+            if TasteMapUITestFixtures.usesCommunityFixture {
+                return TasteMapUITestFixtures.communityPublicContent(
+                    userID: item.profile.userId,
+                    section: section
+                ).items
+            }
+            #endif
+            pageCount += 1
+            let page = try await api.publicContent(
+                userID: item.profile.userId,
+                section: section,
+                cursor: cursor,
+                limit: min(50, maximumItemCount - result.count)
+            )
+            var seenItems = Set(result.map(\.id))
+            result.append(contentsOf: page.items.filter { seenItems.insert($0.id).inserted })
+            guard result.count < maximumItemCount,
+                  pageCount < 20,
+                  let nextCursor = page.nextCursor,
+                  seenCursors.insert(nextCursor).inserted else {
+                cursor = nil
+                continue
+            }
+            cursor = nextCursor
+        } while cursor != nil
+        return result
+    }
+
+    @MainActor
+    private func cachedPublicMapItems() -> [PublicContentItemV1] {
+        let store = LocalCommunityStore(context: modelContext)
+        return deduplicatedPublicContent(
+            [PublicContentSectionV1.visits, .wantToGo].flatMap { section in
+                (try? store.cached(
+                    currentUserID: currentUserID,
+                    routeKey: LocalCommunityStore.profileRoute(
+                        userID: item.profile.userId,
+                        section: section
+                    )
+                )?.items) ?? []
+            }
+        )
+    }
+
+    private func deduplicatedPublicContent(
+        _ values: [PublicContentItemV1]
+    ) -> [PublicContentItemV1] {
+        var seen = Set<String>()
+        return values
+            .sorted { $0.eventAt > $1.eventAt }
+            .filter { seen.insert($0.id).inserted }
     }
 
     @MainActor
@@ -940,7 +1384,7 @@ struct SocialPublicProfileView: View {
                 LocalRestaurantListStore(context: modelContext)
                     .invalidate(ownerUserID: item.profile.userId, viewerUserID: currentUserID)
             }
-            await loadContext()
+            _ = await loadContext()
         } catch { message = "关系已变化，请刷新后重试。" }
     }
 
@@ -952,9 +1396,17 @@ struct SocialPublicProfileView: View {
             let response = try await api.setFollowing(next, userID: item.profile.userId)
             if let follow = response.follow { try LocalSocialStore(context: modelContext).upsertFollow(follow, currentUserID: currentUserID) }
             update(state: item.friendshipState, id: item.friendshipId, following: next)
+            if !next {
+                try? LocalCommunityStore(context: modelContext)
+                    .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
+            }
         } catch where error is URLError {
             try? LocalSocialStore(context: modelContext).enqueueOptimisticFollow(currentUserID: currentUserID, targetUserID: item.profile.userId, following: next)
             update(state: item.friendshipState, id: item.friendshipId, following: next)
+            if !next {
+                try? LocalCommunityStore(context: modelContext)
+                    .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
+            }
             message = "关注操作已保存在本机，联网后会自动重试。"
         } catch { message = "关注状态没有改变，请稍后重试。" }
     }
@@ -980,6 +1432,7 @@ struct SocialPublicProfileView: View {
     @MainActor
     private func blockCompletedLocally() {
         contentItems.removeAll()
+        publicMapItems.removeAll()
         try? LocalCommunityStore(context: modelContext)
             .invalidateOwner(item.profile.userId, currentUserID: currentUserID)
         try? LocalSocialStore(context: modelContext).invalidateProfile(item.profile.userId)
@@ -988,18 +1441,40 @@ struct SocialPublicProfileView: View {
 
     @MainActor
     private func loadContent(reset: Bool, preferCache: Bool) async {
-        guard let communityAPI, !loadingContent else { return }
-        let route = LocalCommunityStore.profileRoute(userID: item.profile.userId, section: contentSection)
+        guard let communityAPI else { return }
+        let section = contentSection
+        contentLoadRevision += 1
+        let revision = contentLoadRevision
+        let route = LocalCommunityStore.profileRoute(userID: item.profile.userId, section: section)
+        if reset {
+            contentItems = []
+            contentNextCursor = nil
+            contentMessage = nil
+            showingContentCache = false
+        }
         if reset && preferCache, let cached = try? LocalCommunityStore(context: modelContext)
             .cached(currentUserID: currentUserID, routeKey: route) {
             contentItems = cached.items
             showingContentCache = true
         }
-        loadingContent = true; defer { loadingContent = false }
+        loadingContent = true
+        defer { if revision == contentLoadRevision { loadingContent = false } }
         do {
+            #if DEBUG
+            let page = TasteMapUITestFixtures.usesCommunityFixture
+                ? TasteMapUITestFixtures.communityPublicContent(
+                    userID: item.profile.userId,
+                    section: section
+                )
+                : try await communityAPI.publicContent(
+                    userID: item.profile.userId, section: section, cursor: nil, limit: 20
+                )
+            #else
             let page = try await communityAPI.publicContent(
-                userID: item.profile.userId, section: contentSection, cursor: nil, limit: 20
+                userID: item.profile.userId, section: section, cursor: nil, limit: 20
             )
+            #endif
+            guard !Task.isCancelled, revision == contentLoadRevision, section == contentSection else { return }
             contentItems = page.items
             contentStatistics = page.statistics
             contentNextCursor = page.nextCursor
@@ -1009,7 +1484,16 @@ struct SocialPublicProfileView: View {
                 items: page.items, currentUserID: currentUserID, routeKey: route,
                 fetchedAt: CachedCommunityContent.date(page.generatedAt) ?? .now
             )
+        } catch SyncAPIError.server(let status, _) where status == 403 || status == 404 {
+            guard revision == contentLoadRevision, section == contentSection else { return }
+            contentItems = []
+            contentNextCursor = nil
+            contentStatistics = nil
+            showingContentCache = false
+            contentMessage = "这些记录已不再允许查看。"
+            try? LocalCommunityStore(context: modelContext).invalidateOwner(item.id, currentUserID: currentUserID)
         } catch {
+            guard !Task.isCancelled, revision == contentLoadRevision, section == contentSection else { return }
             if contentItems.isEmpty, let cached = try? LocalCommunityStore(context: modelContext)
                 .cached(currentUserID: currentUserID, routeKey: route) {
                 contentItems = cached.items; showingContentCache = true
@@ -1021,35 +1505,76 @@ struct SocialPublicProfileView: View {
     @MainActor
     private func loadMoreContent() async {
         guard let communityAPI, let cursor = contentNextCursor, !loadingContent else { return }
-        loadingContent = true; defer { loadingContent = false }
+        let section = contentSection
+        let revision = contentLoadRevision
+        loadingContent = true
+        defer { if revision == contentLoadRevision { loadingContent = false } }
         do {
             let page = try await communityAPI.publicContent(
-                userID: item.profile.userId, section: contentSection, cursor: cursor, limit: 20
+                userID: item.profile.userId, section: section, cursor: cursor, limit: 20
             )
+            guard !Task.isCancelled, revision == contentLoadRevision, section == contentSection else { return }
             var seen = Set(contentItems.map(\.id))
             contentItems.append(contentsOf: page.items.filter { seen.insert($0.id).inserted })
             contentNextCursor = page.nextCursor
             try LocalCommunityStore(context: modelContext).append(
                 items: page.items, currentUserID: currentUserID,
-                routeKey: LocalCommunityStore.profileRoute(userID: item.profile.userId, section: contentSection),
+                routeKey: LocalCommunityStore.profileRoute(userID: item.profile.userId, section: section),
                 fetchedAt: CachedCommunityContent.date(page.generatedAt) ?? .now
             )
-        } catch { contentMessage = "加载更多失败，请稍后重试。" }
+        } catch {
+            guard !Task.isCancelled, revision == contentLoadRevision, section == contentSection else { return }
+            contentMessage = "加载更多失败，请稍后重试。"
+        }
     }
 
     @MainActor
     private func addToWantToGo(_ content: PublicContentItemV1) {
         guard content.viewerState == .none else { return }
         do {
-            _ = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+            let restaurant = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
                 projection: content.restaurant.discoveryProjection,
-                among: restaurants,
+                among: ownedRestaurants,
                 currentUserID: currentUserID
             )
-            for index in contentItems.indices where contentItems[index].restaurant.globalKey == content.restaurant.globalKey {
-                contentItems[index].viewerState = .wantToGo
-            }
+            updateViewerState(
+                globalKey: content.restaurant.globalKey,
+                state: restaurant.status == .visited ? .visited : .wantToGo
+            )
+            Task { await syncCoordinator.synchronizeNow() }
         } catch { contentMessage = "暂时无法加入想吃，请稍后重试。" }
+    }
+
+    private var ownedRestaurants: [Restaurant] {
+        restaurants.filter { $0.ownerUserID == currentUserID && $0.deletedAt == nil }
+    }
+
+    @MainActor
+    private func addToRoulette(_ content: PublicContentItemV1) {
+        do {
+            let restaurant = try LocalDiscoveryStore(context: modelContext).addToWantToGo(
+                projection: content.restaurant.discoveryProjection,
+                among: ownedRestaurants,
+                currentUserID: currentUserID
+            )
+            updateViewerState(
+                globalKey: content.restaurant.globalKey,
+                state: restaurant.status == .visited ? .visited : .wantToGo
+            )
+            selectedRouletteRestaurantID = restaurant.id
+            Task { await syncCoordinator.synchronizeNow() }
+        } catch { contentMessage = "暂时无法加入轮盘，请稍后重试。" }
+    }
+
+    @MainActor
+    private func updateViewerState(globalKey: String, state: DiscoveryViewerRestaurantStateV1) {
+        // This is the viewer's status, never a mutation of the author's Visit.
+        for index in contentItems.indices where contentItems[index].restaurant.globalKey == globalKey {
+            contentItems[index].viewerState = state
+        }
+        try? LocalCommunityStore(context: modelContext).updateViewerState(
+            globalKey: globalKey, currentUserID: currentUserID, state: state
+        )
     }
 
     private func updateEngagement(contentID: String, engagement: CommunityEngagementSummaryV1) {

@@ -22,6 +22,7 @@ struct RestaurantUGCImageRecord: Equatable, Sendable {
     let createdAt: Date
     let markerPreferred: Bool
     let resourceURL: String
+    var photoKind: String? = nil
 }
 
 struct RestaurantUGCImageSelection: Equatable, Sendable {
@@ -97,7 +98,8 @@ enum RestaurantUGCImagePool {
     }
 
     private static func active(_ value: RestaurantUGCImageRecord) -> Bool {
-        value.moderationEligible && value.deletedAt == nil && value.binaryDeletedAt == nil
+        (value.photoKind.map { ["visit", "dish"].contains($0) } ?? (value.visitID?.isEmpty == false))
+            && value.moderationEligible && value.deletedAt == nil && value.binaryDeletedAt == nil
     }
 
     private static func isPublic(_ value: RestaurantUGCImageRecord) -> Bool {

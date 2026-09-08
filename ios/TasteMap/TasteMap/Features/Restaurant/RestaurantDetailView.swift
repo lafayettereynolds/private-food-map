@@ -24,6 +24,7 @@ struct RestaurantDetailView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @Environment(\.localAccountScope) private var accountScope
+    @Environment(NativeAuthServices.self) private var authServices
     @Environment(\.restaurantRouletteSession) private var rouletteSession
     @Query private var allVisits: [Visit]
     @Query private var allPhotos: [PhotoAsset]
@@ -94,10 +95,25 @@ struct RestaurantDetailView: View {
     }
 
     private var categoryVisualID: FoodCategoryVisualID {
-        let tags = restaurant.remoteRecordData.flatMap {
+        FoodCategoryVisualResolver.resolve(name: restaurant.name, tags: artworkTags)
+    }
+
+    private var artworkTags: [String] {
+        restaurant.remoteRecordData.flatMap {
             try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
         }?.tags ?? []
-        return FoodCategoryVisualResolver.resolve(name: restaurant.name, tags: tags)
+    }
+
+    private var publicContentPhotoID: String? {
+        guard let currentUserID else { return nil }
+        for key in metadata.globalIdentityKeys.sorted() {
+            if let reference = try? TasteMapHybridRestaurantReferenceResolver.resolve(
+                identifier: key, ownerUserID: currentUserID, context: modelContext
+            ), reference.projection.photo?.isActualDiningPhoto == true {
+                return reference.projection.photo?.photoId
+            }
+        }
+        return nil
     }
 
     private var ratingReferences: [RestaurantRatingReference] {
@@ -124,10 +140,12 @@ struct RestaurantDetailView: View {
                     RestaurantPhotoGallerySection(
                         restaurantID: restaurant.id,
                         photos: activePhotos,
-                        publicPhotoID: metadata.markerPhotoID,
-                        merchantImageURL: metadata.merchantImageURL,
+                        publicPhotoID: publicContentPhotoID,
+                        merchantImageURL: nil,
                         markerEmoji: metadata.markerEmoji,
                         categoryVisualID: categoryVisualID,
+                        foodLibraryArtwork: .init(name: restaurant.name, tags: artworkTags, categoryVisualID: categoryVisualID),
+                        photoAPI: authServices.photoAPI,
                         onSelect: { selectedPhoto = $0 },
                         onRetry: retryPhoto,
                         showsThumbnails: false
@@ -144,7 +162,6 @@ struct RestaurantDetailView: View {
                         canRecordVisit: canMutateRestaurant,
                         canMarkWantToGo: false,
                         canEdit: canMutateRestaurant,
-                        canDelete: canMutateRestaurant,
                         canAddToList: currentUserID != nil,
                         canAddToRoulette: currentUserID != nil,
                         isInRoulette: rouletteSession?.contains(restaurant.id) == true,
@@ -161,16 +178,13 @@ struct RestaurantDetailView: View {
                             }
                         },
                         onCopyName: { UIPasteboard.general.string = restaurant.name },
-                        onCopyAddress: { UIPasteboard.general.string = restaurant.address },
-                        onDelete: { isConfirmingRestaurantDeletion = true }
+                        onCopyAddress: { UIPasteboard.general.string = restaurant.address }
                     )
                 } business: {
-                    if metadata.hasBusinessInformation {
-                        RestaurantBusinessInformationSection(
-                            metadata: metadata,
-                            onCall: callRestaurant
-                        )
-                    }
+                    RestaurantBusinessInformationSection(
+                        metadata: metadata,
+                        onCall: callRestaurant
+                    )
                 } location: {
                     RestaurantLocationSection(
                         restaurant: restaurant,
@@ -189,7 +203,8 @@ struct RestaurantDetailView: View {
                         )
                     }
                 } personalOverview: {
-                    RestaurantDetailStatsSection(presentation: presentation)
+                    RestaurantDetailStatsSection(presentation: presentation,
+                        onDeleteRestaurant: canMutateRestaurant ? { isConfirmingRestaurantDeletion = true } : nil)
                 } history: {
                     RestaurantVisitHistorySection(
                         visits: presentation.activeVisits,
@@ -223,12 +238,6 @@ struct RestaurantDetailView: View {
                     }
                     .disabled(!canMutateRestaurant)
                 }
-                ToolbarItem(placement: .secondaryAction) {
-                    Button("删除餐厅", systemImage: "trash", role: .destructive) {
-                        isConfirmingRestaurantDeletion = true
-                    }
-                    .disabled(!canMutateRestaurant)
-                }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack {
@@ -256,7 +265,10 @@ struct RestaurantDetailView: View {
                 VisitEditorView(restaurant: restaurant)
             }
             .sheet(item: $editingVisit) { visit in
-                VisitEditorView(restaurant: restaurant, visit: visit)
+                VisitEditorView(restaurant: restaurant, visit: visit, onRestaurantDeleted: { _ in
+                    editingVisit = nil
+                    dismiss()
+                })
             }
             .sheet(isPresented: $isEditingRestaurant) {
                 RestaurantEditView(restaurant: restaurant)
@@ -296,7 +308,7 @@ struct RestaurantDetailView: View {
                 }
                 Button("取消", role: .cancel) { visitPendingDeletion = nil }
             } message: {
-                Text("只会删除这一条到访，不会影响这家餐厅的其他历史记录。")
+                Text(RestaurantDeletionPresentation.visitMessage(isLast: presentation.activeVisits.count == 1))
             }
             .confirmationDialog(
                 "删除这家餐厅？",
@@ -307,7 +319,7 @@ struct RestaurantDetailView: View {
                     .accessibilityIdentifier("restaurant-delete-confirm")
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("餐厅、到访、菜品和照片记录会先在本机标记删除，并按依赖顺序进入同步队列。其他设备同步后也不会把旧记录恢复。")
+                Text(RestaurantDeletionPresentation.restaurantMessage)
             }
             .alert("无法删除", isPresented: Binding(
                 get: { deleteError != nil },
@@ -366,10 +378,11 @@ struct RestaurantDetailView: View {
 
     private func delete(_ visit: Visit) {
         do {
-            try LocalTasteMapStore(context: modelContext).delete(
+            let deletedRestaurantID = try LocalTasteMapStore(context: modelContext).delete(
                 visit,
                 actorUserID: currentUserID
             )
+            if deletedRestaurantID != nil { dismiss() }
         } catch {
             deleteError = "这条到访记录没有删除成功。"
         }

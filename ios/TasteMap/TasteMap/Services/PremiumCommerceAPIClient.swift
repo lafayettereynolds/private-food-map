@@ -8,6 +8,7 @@ nonisolated struct PremiumCommerceConfigurationV1: Decodable, Equatable, Sendabl
 
     let apiVersion: Int
     let configured: Bool
+    var purchaseReady: Bool? = nil
     let appAccountToken: UUID
     let products: [ProductReference]
 }

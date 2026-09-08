@@ -33,6 +33,23 @@ for (const marker of [
   '/Users/lafayette',
   '--tastemap-hybrid-development',
   'TASTEMAP_VISUAL_QA_MODE',
+  'TASTEMAP_MAP_FRAME_DIAGNOSTICS',
+  'TASTEMAP_MAP_FRAME_SAMPLE',
+  'TASTEMAP_MAP_CAMERA_TRACE',
+  'TASTEMAP_RESTAURANT_ACQUISITION_UI_TEST',
+  'TASTEMAP_LOCATION_DIAGNOSTICS',
+  'TasteMapLocationTrace',
+  'DevelopmentPremiumOverride',
+  'TASTEMAP_SIGNUP_TRIAL_UI_TEST',
+  'tm_signup_trial_ui_fixture',
+  'SignupTrialUITestAPI',
+  'TASTEMAP_REFERRAL_UI_TEST',
+  'referral-qa-pending',
+  'setDevelopmentOverride',
+  'activateVisualQAFixture',
+  'tm_access_local_admin_smoke_not_a_real_account',
+  '/internal/premium',
+  '/api/v1/admin/memberships',
 ]) {
   assert.equal(wholeAppText.includes(marker), false, `Formal Release App contains forbidden test/development marker: ${marker}`)
 }

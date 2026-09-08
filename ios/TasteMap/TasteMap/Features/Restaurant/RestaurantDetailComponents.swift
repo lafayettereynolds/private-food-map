@@ -4,13 +4,18 @@ struct RestaurantDetailIdentityPresentation: Equatable {
     let name: String
     let address: String
     let city: String
+    let categories: [String]
     let status: RestaurantStatus?
 
     @MainActor
     init(restaurant: Restaurant) {
+        let record = restaurant.remoteRecordData.flatMap {
+            try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
+        }
         name = restaurant.name
         address = restaurant.address
         city = restaurant.city
+        categories = record?.tags.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? []
         status = restaurant.status
     }
 
@@ -21,6 +26,7 @@ struct RestaurantDetailIdentityPresentation: Equatable {
         name = projection.name
         address = projection.address
         city = projection.city
+        categories = projection.tags.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         switch viewerState {
         case .none: status = nil
         case .wantToGo: status = .wantToGo
@@ -28,10 +34,17 @@ struct RestaurantDetailIdentityPresentation: Equatable {
         }
     }
 
-    init(name: String, address: String, city: String, status: RestaurantStatus? = nil) {
+    init(
+        name: String,
+        address: String,
+        city: String,
+        categories: [String] = [],
+        status: RestaurantStatus? = nil
+    ) {
         self.name = name
         self.address = address
         self.city = city
+        self.categories = categories
         self.status = status
     }
 }
@@ -73,6 +86,14 @@ struct RestaurantDetailHeader: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if !identity.categories.isEmpty {
+                Label(identity.categories.prefix(3).joined(separator: " · "), systemImage: "fork.knife")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("restaurant-provider-categories")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
@@ -106,6 +127,7 @@ struct RestaurantPhotoGallerySection: View {
     let merchantImageURL: URL?
     let markerEmoji: String
     var categoryVisualID: FoodCategoryVisualID = .other
+    var foodLibraryArtwork: FoodLibraryArtworkDescriptor? = nil
     var photoAPI: (any PhotoBinaryAPI)? = nil
     let onSelect: (PhotoAsset) -> Void
     let onRetry: (PhotoAsset) -> Void
@@ -177,7 +199,8 @@ struct RestaurantPhotoGallerySection: View {
     private var imageCountLabel: String {
         if !photos.isEmpty { return "\(photos.count) 张" }
         if publicPhotoID != nil { return "公开图片" }
-        return merchantImageURL == nil ? "餐厅图标" : "商家图片"
+        if foodLibraryArtwork != nil { return "素材插画" }
+        return merchantImageURL == nil ? "暂无图片" : "商家图片"
     }
 
     private func hero(primaryPhoto: PhotoAsset?) -> some View {
@@ -185,7 +208,7 @@ struct RestaurantPhotoGallerySection: View {
             resolution: RestaurantImagePriorityPolicy.resolution(
                 localUserPhotoID: primaryPhoto?.id,
                 publicOrCachedPhotoID: publicPhotoID,
-                providerMerchantImageURL: nil as String?
+                providerMerchantImageURL: nil as URL?
             ),
             photosByID: Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) }),
             photoAPI: photoAPI,
@@ -195,6 +218,7 @@ struct RestaurantPhotoGallerySection: View {
             fallbackBackgroundColor: Color.accentColor.opacity(0.07),
             fallbackIconSize: 62,
             categoryVisualID: categoryVisualID,
+            foodLibraryArtwork: foodLibraryArtwork,
             accessibilityLabel: "餐厅主图"
         )
         .frame(maxWidth: .infinity)
@@ -372,15 +396,13 @@ struct RestaurantBusinessInformationSection: View {
                 .padding(.bottom, 8)
                 .accessibilityIdentifier("restaurant-business-information")
 
-            if let referencePrice = metadata.referencePrice {
-                informationRow(
-                    title: "参考人均",
-                    value: RestaurantDetailFormatting.referencePrice(referencePrice),
-                    systemImage: "yensign.circle.fill"
-                )
-                .accessibilityIdentifier("restaurant-reference-price")
-                dividerAfterReferencePrice
-            }
+            informationRow(
+                title: "参考人均",
+                value: metadata.referencePrice.map(RestaurantDetailFormatting.referencePrice) ?? "暂无参考人均",
+                systemImage: "yensign.circle.fill"
+            )
+            .accessibilityIdentifier("restaurant-reference-price")
+            Divider().padding(.leading, 36)
 
             if let phone = metadata.callablePhone {
                 Button(action: onCall) {
@@ -394,16 +416,21 @@ struct RestaurantBusinessInformationSection: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("拨打餐厅电话 \(phone)")
                 .accessibilityIdentifier("restaurant-call-phone")
-                dividerAfterPhone
+            } else {
+                informationRow(title: "电话", value: "暂无电话", systemImage: "phone.fill")
+                    .accessibilityIdentifier("restaurant-phone-unavailable")
             }
+            Divider().padding(.leading, 36)
 
-            if let openingHours = metadata.openingHours {
-                informationRow(title: "营业时间", value: openingHours, systemImage: "clock.fill")
-                    .accessibilityIdentifier("restaurant-opening-hours")
-                dividerAfterOpeningHours
-            }
+            informationRow(
+                title: "营业时间",
+                value: metadata.openingHours ?? "暂无营业时间",
+                systemImage: "clock.fill"
+            )
+            .accessibilityIdentifier("restaurant-opening-hours")
 
             if let longTermNote = metadata.longTermNote {
+                Divider().padding(.leading, 36)
                 informationRow(title: "我的长期备注", value: longTermNote, systemImage: "note.text")
                     .accessibilityIdentifier("restaurant-long-term-note")
             }
@@ -411,24 +438,6 @@ struct RestaurantBusinessInformationSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .tasteMapCoreCard(radius: 16)
-    }
-
-    @ViewBuilder private var dividerAfterPhone: some View {
-        if metadata.openingHours != nil || metadata.longTermNote != nil {
-            Divider().padding(.leading, 36)
-        }
-    }
-
-    @ViewBuilder private var dividerAfterOpeningHours: some View {
-        if metadata.longTermNote != nil {
-            Divider().padding(.leading, 36)
-        }
-    }
-
-    @ViewBuilder private var dividerAfterReferencePrice: some View {
-        if metadata.callablePhone != nil || metadata.openingHours != nil || metadata.longTermNote != nil {
-            Divider().padding(.leading, 36)
-        }
     }
 
     private func informationRow(
@@ -512,7 +521,9 @@ struct RestaurantExperienceSummarySection: View {
 }
 
 struct RestaurantRatingReferencesSection: View {
+    @Environment(PremiumEntitlementService.self) private var premium
     let references: [RestaurantRatingReference]
+    @State private var selectedReference: RestaurantRatingReference?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -521,35 +532,50 @@ struct RestaurantRatingReferencesSection: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 18) {
                     ForEach(references) { reference in
-                        VStack(spacing: 7) {
-                            ZStack {
-                                Circle()
-                                    .fill(TasteMapCoreTheme.surfaceSubtle)
-                                    .overlay {
-                                        Circle().stroke(TasteMapCoreTheme.brand.opacity(0.36), lineWidth: 2)
+                        let locked = reference.title == "同味评分" && premium.access(for: .similarTaste) != .allowed
+                        Button {
+                            if locked { premium.openPaywall(from: .feature(.similarTaste)) }
+                            else { selectedReference = reference }
+                        } label: {
+                            VStack(spacing: 7) {
+                                ZStack {
+                                    Circle()
+                                        .fill(TasteMapCoreTheme.surfaceSubtle)
+                                        .overlay {
+                                            Circle().stroke(TasteMapCoreTheme.brand.opacity(0.36), lineWidth: 2)
+                                        }
+                                    if locked { Image(systemName: "lock.fill") }
+                                    else { Text(String(format: "%.1f", reference.value))
+                                        .font(.title3.bold())
+                                        .foregroundStyle(TasteMapCoreTheme.brandDeep)
                                     }
-                                Text(String(format: "%.1f", reference.value))
-                                    .font(.title3.bold())
-                                    .foregroundStyle(TasteMapCoreTheme.brandDeep)
+                                }
+                                .frame(width: 70, height: 70)
+                                .overlay(alignment: .bottomTrailing) {
+                                    if !locked { Text("\(reference.sampleCount)")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.white)
+                                        .frame(width: 24, height: 24)
+                                        .background(TasteMapCoreTheme.brand, in: Circle())
+                                        .overlay { Circle().stroke(TasteMapCoreTheme.surface, lineWidth: 2) }
+                                        .accessibilityLabel("\(reference.sampleCount) 个样本")
+                                    }
+                                }
+                                .shadow(
+                                    color: selectedReference?.id == reference.id ? TasteMapCoreTheme.brand.opacity(0.18) : .clear,
+                                    radius: 5
+                                )
+                                Text(reference.title)
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
                             }
-                            .frame(width: 70, height: 70)
-                            .overlay(alignment: .bottomTrailing) {
-                                Text("\(reference.sampleCount)")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.white)
-                                    .frame(width: 24, height: 24)
-                                    .background(TasteMapCoreTheme.brand, in: Circle())
-                                    .overlay { Circle().stroke(TasteMapCoreTheme.surface, lineWidth: 2) }
-                                    .accessibilityLabel("\(reference.sampleCount) 个样本")
-                            }
-                            Text(reference.title)
-                                .font(.caption.weight(.semibold))
-                                .lineLimit(1)
                         }
+                        .buttonStyle(.plain)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(
-                            "\(reference.title)，评分 \(String(format: "%.1f", reference.value))，\(reference.sampleCount) 个样本"
+                            locked ? "同味评分，会员专享" : "\(reference.title)，评分 \(String(format: "%.1f", reference.value))，\(reference.sampleCount) 个样本"
                         )
+                        .accessibilityHint("轻点查看评分说明")
                     }
                 }
             }
@@ -559,6 +585,26 @@ struct RestaurantRatingReferencesSection: View {
         .padding(14)
         .tasteMapCoreCard(radius: 16)
         .accessibilityIdentifier("restaurant-rating-references")
+        .alert(item: $selectedReference) { reference in
+            Alert(
+                title: Text(reference.title),
+                message: Text(explanation(for: reference)),
+                dismissButton: .default(Text("知道了"))
+            )
+        }
+    }
+
+    private func explanation(for reference: RestaurantRatingReference) -> String {
+        if reference.title == "我的评分" {
+            return "基于你在这家餐厅的 \(reference.sampleCount) 次有效评分计算。"
+        }
+        if reference.title.contains("好友") {
+            return "基于 \(reference.sampleCount) 位好友对这家餐厅的有效评分计算。"
+        }
+        if reference.title.contains("同味") {
+            return "基于 \(reference.sampleCount) 位同味用户对这家餐厅的有效评分计算。"
+        }
+        return "基于 \(reference.sampleCount) 位用户对这家餐厅的有效评分计算。"
     }
 }
 
@@ -647,17 +693,28 @@ struct RestaurantLocationSection: View {
     }
 }
 
+enum RestaurantDeletionPresentation {
+    static let restaurantMessage = "将删除这家餐厅及其到访、菜品、照片等关联记录，并同步到其他设备。此操作不可撤销。"
+    static func visitMessage(isLast: Bool) -> String {
+        isLast ? "这是最后一次到访。删除后，这家餐厅及其菜品、照片等关联记录也会一起删除，并同步到其他设备。此操作不可撤销。"
+            : "只删除这次到访，保留这家餐厅和其他到访记录。"
+    }
+}
+
 struct RestaurantDetailStatsSection: View {
     let presentation: RestaurantDetailPresentation?
     let remoteMessage: String?
+    let onDeleteRestaurant: (() -> Void)?
 
-    init(presentation: RestaurantDetailPresentation) {
+    init(presentation: RestaurantDetailPresentation, onDeleteRestaurant: (() -> Void)? = nil) {
         self.presentation = presentation
+        self.onDeleteRestaurant = onDeleteRestaurant
         remoteMessage = nil
     }
 
     init(remoteMessage: String) {
         presentation = nil
+        onDeleteRestaurant = nil
         self.remoteMessage = remoteMessage
     }
 
@@ -668,8 +725,23 @@ struct RestaurantDetailStatsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("我的记录")
-                .font(.title3.bold())
+            HStack {
+                Text("我的到访概览")
+                    .font(.title3.bold())
+                Spacer()
+                if let onDeleteRestaurant {
+                    Button(role: .destructive, action: onDeleteRestaurant) {
+                        Image(systemName: "trash")
+                            .font(.system(size: TasteMapDesignTokens.Icon.standard))
+                            .frame(minWidth: TasteMapDesignTokens.Control.minimumHitTarget,
+                                   minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("删除餐厅")
+                    .accessibilityIdentifier("restaurant-action-delete")
+                }
+            }
 
             if let presentation {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
@@ -870,7 +942,7 @@ private struct RestaurantVisitHistoryRow: View {
                             .accessibilityIdentifier("visit-history-note")
                     }
 
-                    if let spend = visit.myActualSpend {
+                    if let spend = visit.resolvedActualSpend {
                         Label(
                             "我的实际消费 \(RestaurantDetailFormatting.currency(spend))",
                             systemImage: "wallet.bifold"

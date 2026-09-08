@@ -1,5 +1,15 @@
 import SwiftUI
 
+enum TasteMapRatingFilterOptions {
+    nonisolated static let thresholdsOutOfTen = (1...10).map(Double.init)
+    nonisolated static let discoveryThresholdsOutOfTen = (thresholdsOutOfTen + [7.5]).sorted()
+
+    nonisolated static func label(for score: Double) -> String {
+        let text = score.rounded() == score ? String(Int(score)) : String(format: "%.1f", score)
+        return score == 10 ? "10 分" : "\(text) 分以上"
+    }
+}
+
 struct TasteMapRatingInput: View {
     let dimension: RatingDimension
     @Binding var rating: Double?

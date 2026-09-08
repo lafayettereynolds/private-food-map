@@ -1,6 +1,7 @@
 import type { MembershipFeature } from './featurePolicy'
 
 export type PremiumSourceFeatureKey = MembershipFeature
+  | 'roulette_daily_limit'
   | 'profile_entry'
   | 'settings_entry'
   | 'visit_photo_limit'
@@ -28,6 +29,8 @@ export function trackPremiumEvent(detail: PremiumAnalyticsDetail) {
 }
 
 export const PREMIUM_SOURCE_COPY: Record<PremiumSourceFeatureKey, string> = {
+  roulette_daily_limit: '非会员每天可免费抽选 1 次，Premium 可继续抽选。',
+  dish_photos: '解锁菜品照片；菜名、评分、口味和价格仍可免费记录。',
   profile_entry: '查看完整会员能力与订阅方案。',
   settings_entry: '管理会员状态、订阅方案与恢复购买。',
   custom_avatar: '解锁自定义头像上传，预设头像仍可免费使用。',
@@ -39,7 +42,7 @@ export const PREMIUM_SOURCE_COPY: Record<PremiumSourceFeatureKey, string> = {
   advanced_recommendation_filters: '解锁推荐来源、适合场景和饭搭子等高级筛选。',
   monthly_review: '解锁完整月度回顾，重新看见这个月的味觉记忆。',
   annual_review: '解锁完整年度回顾与跨城市食味年鉴。',
-  visit_photo_limit: '免费版每次到访可上传 3 张，Premium 可上传 20 张。',
+  visit_photo_limit: '免费版每次到访可上传 2 张，Premium 可上传 20 张。',
   companion_recommendation: '解锁按饭搭子选择餐厅的能力。',
   spending_insights: '解锁消费结构、价格区间与长期趋势分析。',
 }

@@ -1,0 +1,5 @@
+.tm-not-interested { display: inline-flex; position: relative; }
+.tm-not-interested button { display: inline-flex; align-items: center; justify-content: center; width: var(--control-min-hit-target, 44px); min-width: var(--control-min-hit-target, 44px); min-height: var(--control-min-hit-target, 44px); padding: 0; border: 0; background: transparent; color: var(--color-text-secondary, #74838e); cursor: pointer; }
+.tm-not-interested button:disabled { opacity: .65; cursor: default; }
+.tm-not-interested.is-image-overlay { position: absolute; right: 8px; bottom: 8px; z-index: 2; }
+.tm-not-interested__error { position: absolute; z-index: 3; bottom: 100%; right: 0; width: 190px; padding: 8px; border-radius: var(--radius-md, 12px); background: var(--color-surface, white); color: var(--color-text-primary, #263847); font-size: 12px; }

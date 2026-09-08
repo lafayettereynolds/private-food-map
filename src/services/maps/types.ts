@@ -12,6 +12,8 @@ export interface PlaceResult {
   district: string
   longitude: number
   latitude: number
+  /** Provider-supplied POI hierarchy/tags. */
+  categoryHints: string[]
   merchantImageUrl: string | null
   phone: string | null
   openingHours: string | null
@@ -24,6 +26,7 @@ export interface ResolvedPlaceLocation extends Coordinates {
 }
 
 export interface PlaceSearchOptions {
+  page?: number
   center?: Coordinates
   timeoutMs?: number
   radiusMeters?: number

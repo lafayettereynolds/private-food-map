@@ -88,6 +88,79 @@ struct ReleaseSafetyTests {
         #expect(await files.remainingPaths().isEmpty)
     }
 
+    @Test("Local content clear preserves account profile, avatar, sync checkpoint and other accounts")
+    @MainActor
+    func localContentClearPreservesIdentityAndCloudBoundary() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let currentID = "tm_current"
+        let otherID = "tm_other"
+        let avatar = PhotoAsset(
+            ownerUserID: currentID,
+            kind: .avatar,
+            mimeType: "image/jpeg",
+            byteSize: 3,
+            localFileRelativePath: "originals/avatar.jpg"
+        )
+        let profile = UserProfile(
+            tasteMapUserID: currentID,
+            displayName: "Current",
+            avatarPhotoID: avatar.id.uuidString.lowercased()
+        )
+        let restaurant = Restaurant(
+            ownerUserID: currentID,
+            name: "Local", address: "Road", latitude: 30, longitude: 120
+        )
+        let visit = Visit(ownerUserID: currentID, restaurantId: restaurant.id)
+        let visitPhoto = PhotoAsset(
+            ownerUserID: currentID,
+            restaurantId: restaurant.id,
+            visitId: visit.id,
+            kind: .visit,
+            mimeType: "image/jpeg",
+            byteSize: 3,
+            localFileRelativePath: "originals/visit.jpg"
+        )
+        let otherRestaurant = Restaurant(
+            ownerUserID: otherID,
+            name: "Other", address: "Road", latitude: 31, longitude: 121
+        )
+        context.insert(profile)
+        context.insert(avatar)
+        context.insert(restaurant)
+        context.insert(visit)
+        context.insert(visitPhoto)
+        context.insert(otherRestaurant)
+        context.insert(SyncCheckpoint(ownerUserID: currentID, cursor: "42"))
+        context.insert(SyncMutation(
+            ownerUserID: currentID, entityType: .profile, entityID: currentID,
+            operation: .upsert, payload: Data("{}".utf8), baseVersion: 0
+        ))
+        context.insert(SyncMutation(
+            ownerUserID: currentID, entityType: .photo,
+            entityID: avatar.id.uuidString.lowercased(),
+            operation: .upsert, payload: Data("{}".utf8), baseVersion: 0
+        ))
+        context.insert(SyncMutation(
+            ownerUserID: currentID, entityType: .visit, entityID: visit.remoteID!,
+            operation: .upsert, payload: Data("{}".utf8), baseVersion: 0
+        ))
+        try context.save()
+        let files = MemoryPhotoFileStore(paths: ["originals/avatar.jpg", "originals/visit.jpg"])
+
+        let result = try await LocalAccountDataPurger(context: context, photoFileStore: files)
+            .clearCurrentAccountContent(userID: currentID)
+
+        #expect(result.deletedPhotoFileCount == 1)
+        #expect(try context.fetch(FetchDescriptor<UserProfile>()).map(\.tasteMapUserID) == [currentID])
+        #expect(try context.fetch(FetchDescriptor<PhotoAsset>()).map(\.kind) == [.avatar])
+        #expect(try context.fetch(FetchDescriptor<Restaurant>()).map(\.ownerUserID) == [otherID])
+        #expect(try context.fetch(FetchDescriptor<Visit>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<SyncCheckpoint>()).map(\.cursor) == ["42"])
+        #expect(Set(try context.fetch(FetchDescriptor<SyncMutation>()).map(\.entityType)) == [.profile, .photo])
+        #expect(await files.remainingPaths() == ["originals/avatar.jpg"])
+    }
+
     @Test("Moderation reason labels remain explicit and user-facing")
     func moderationReasons() {
         #expect(ModerationReasonV1.allCases.count == 7)

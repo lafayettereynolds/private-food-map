@@ -33,6 +33,34 @@ struct BackupImportFlowTests {
         #expect(try container.mainContext.fetchCount(FetchDescriptor<SyncMutation>()) == 2)
     }
 
+    @Test("A committed import tells the running app to refresh immediately")
+    func importBroadcastsLocalDataChange() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let coordinator = try await plannedCoordinator(
+            container: container,
+            fixture: .backupV1
+        )
+
+        await confirmation("Backup import refresh event", expectedCount: 1) { received in
+            let observer = NotificationCenter.default.addObserver(
+                forName: .tasteMapLocalDataDidChange,
+                object: nil,
+                queue: .main
+            ) { notification in
+                if notification.userInfo?["reason"] as? String == "backupImported" {
+                    received()
+                }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            coordinator.prepareFinalConfirmation()
+            coordinator.execute(currentUserIDAtConfirmation: userID)
+            await coordinator.waitForCurrentOperation()
+        }
+
+        #expect(coordinator.state == .completed)
+    }
+
     @Test("Legacy Web v4 completes local Restaurant and Visit import before cloud sync")
     func legacyLocalImport() async throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)

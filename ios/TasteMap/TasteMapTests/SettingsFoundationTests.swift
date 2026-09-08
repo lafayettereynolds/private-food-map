@@ -1,4 +1,5 @@
 import CoreLocation
+import AVFoundation
 import Foundation
 import Photos
 import Testing
@@ -143,13 +144,34 @@ struct SettingsFoundationTests {
         #expect(PHAuthorizationStatus.notDetermined.settingsPermissionState == .notDetermined)
     }
 
-    @Test("Open System Settings is offered only for states the app cannot repair directly")
+    @Test("Every decided permission can be adjusted including previously allowed permissions")
     func openSettingsAvailability() {
         #expect(SettingsPermissionState.denied.canOpenSystemSettings)
         #expect(SettingsPermissionState.restricted.canOpenSystemSettings)
         #expect(SettingsPermissionState.limited.canOpenSystemSettings)
-        #expect(!SettingsPermissionState.allowed.canOpenSystemSettings)
+        #expect(SettingsPermissionState.allowed.canOpenSystemSettings)
         #expect(!SettingsPermissionState.notDetermined.canOpenSystemSettings)
+    }
+
+    @Test("Camera settings share the same status semantics as the permissions bridge")
+    func cameraPermissionMapping() {
+        #expect(AVAuthorizationStatus.authorized.settingsPermissionState == .allowed)
+        #expect(AVAuthorizationStatus.denied.settingsPermissionState == .denied)
+        #expect(AVAuthorizationStatus.restricted.settingsPermissionState == .restricted)
+        #expect(AVAuthorizationStatus.notDetermined.settingsPermissionState == .notDetermined)
+    }
+
+    @MainActor
+    @Test("Settings shortcuts open only the requested profile fields while full edit retains all fields")
+    func profileEditorDestinations() {
+        #expect(ProfileEditorDestination.all.editsIdentity)
+        #expect(ProfileEditorDestination.all.editsVisibility)
+        #expect(ProfileEditorDestination.displayName.editsIdentity)
+        #expect(!ProfileEditorDestination.displayName.editsVisibility)
+        #expect(!ProfileEditorDestination.visibility.editsIdentity)
+        #expect(ProfileEditorDestination.visibility.editsVisibility)
+        #expect(ProfileEditorDestination.displayName.title == "修改显示名称")
+        #expect(ProfileEditorDestination.visibility.title == "主页可见范围")
     }
 
     @Test("Storage inspection is read-only and separates original, display, and thumbnail bytes")

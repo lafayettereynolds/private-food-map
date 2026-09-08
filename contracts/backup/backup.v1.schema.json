@@ -171,6 +171,12 @@
             { "type": "null" }
           ]
         },
+        "websiteUrl": {
+          "anyOf": [
+            { "type": "string", "maxLength": 2048, "pattern": "^https?://" },
+            { "type": "null" }
+          ]
+        },
         "openingHours": {
           "anyOf": [
             { "type": "string", "maxLength": 2000 },

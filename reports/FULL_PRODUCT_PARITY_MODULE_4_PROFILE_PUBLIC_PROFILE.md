@@ -26,7 +26,7 @@
 | 用户可见项 | 数据来源 | 口径 |
 | --- | --- | --- |
 | 关注 | `ProfileSocialStatisticsLoader` → 当前 Taste Map user 隔离的 Social API / cache | 当前用户正在关注的人数 |
-| 被关注 | 同上 | 正在关注当前用户的人数 |
+| 粉丝 | 同上 | 当前用户的粉丝人数 |
 | 去过 | 当前用户拥有、未删除、状态为 `visited` 的 `Restaurant` | Restaurant 维度，不用 Visit 次数冒充餐厅数 |
 | 想去 | 当前用户拥有、未删除、状态为 `wantToGo` 的 `Restaurant` | Restaurant 维度 |
 | 总消费 | 当前用户拥有且未删除的 `Visit.myActualSpend` | 只累计非 `nil` 实际消费；没有数据时显示 `—`，不生成假金额 |
@@ -38,7 +38,7 @@
 
 ### 3.1 本人 Profile
 
-Web / 已确认方向：头像、用户名、加入时间、编辑资料和 Premium 同属紧凑身份区；关注 / 被关注紧邻身份信息；业务统计为去过 / 想去 / 总消费；今天吃什么与我的口味档案并排；回味为三项同组；我的食单和发现与洞察保持后续层级。
+Web / 已确认方向：头像、用户名、加入时间、编辑资料和 Premium 同属紧凑身份区；关注 / 粉丝紧邻身份信息；业务统计为去过 / 想去 / 总消费；今天吃什么与我的口味档案并排；回味为三项同组；我的食单和发现与洞察保持后续层级。
 
 iOS before：身份卡和统计卡较高；社交统计在独立大卡；顶部业务统计仍包含到访次数和平均评分；主要入口、回味卡高度偏大，首屏密度低。
 
@@ -46,7 +46,7 @@ iOS after：
 
 - 身份区收紧为 64pt 头像 + 两行以内用户名 + 单行 bio + 城市 / 加入时间；
 - 编辑资料与 Premium 保持身份区操作；
-- 关注 / 被关注进入身份区底部同一级，好友和找人使用语义清楚的 icon-only action，并提供完整 VoiceOver label；
+- 关注 / 粉丝进入身份区底部同一级，社交页固定使用好友 / 关注 / 粉丝 / 推荐四个平级板块，并提供完整 VoiceOver label；
 - 顶部业务统计固定为去过 / 想去 / 总消费，并分别使用同组语义 icon；
 - 今天吃什么 / 我的口味档案恢复横向紧凑主入口关系；
 - 本月回顾 / 年度回顾 / 那年今日保持同一「回味」组；
@@ -63,7 +63,7 @@ iOS after：
 
 - 改为 80pt 头像与名称 / 城市 / bio 的紧凑横排 header；
 - 好友与关注动作紧接身份区；
-- 关注 / 被关注 / 去过 / 公开记录形成等宽横向 metric strip；
+- 关注 / 粉丝 / 去过 / 公开记录形成等宽横向 metric strip；
 - 数据尚未返回时固定保留结构并诚实显示 `—`，避免异步加载造成页面跳动，也不伪造数字；
 - 公开记录 / 想吃和公开食单继续复用原有 API、缓存、visibility 与用户隔离逻辑。
 
@@ -85,8 +85,8 @@ Premium badge 使用仓库 Web 正式历史资产的同一几何与配色重新�
 
 - 城市元数据使用 `building.2`，没有错误使用 GPS / current-location 图标；
 - 去过 / 想去 / 总消费作为同一统计组全部带语义 icon；
-- 关注 / 被关注作为同一连接组全部带语义 icon；
-- 好友 / 找人属于高频、紧凑系统动作，使用 icon-only，但有完整 VoiceOver label 和 36pt 可点击区域；
+- 关注 / 粉丝作为同一连接组全部带语义 icon；
+- 好友严格表示互相关注；推荐板块合并用户搜索与推荐候选，并保留完整 VoiceOver label 和足够点击区域；
 - 没有用无业务语义的 Food 图案冒充统计结论。
 
 ## 6. Visual evidence
@@ -106,7 +106,7 @@ Premium badge 使用仓库 Web 正式历史资产的同一几何与配色重新�
 | Check | Web / locked contract | iOS before | iOS after | Result |
 | --- | --- | --- | --- | --- |
 | Identity topology | 横向头像与资料 | 大卡、信息与社交分散 | compact identity + connections | PASS |
-| Social metrics | 关注 / 被关注靠近身份 | 独立完整社交管理卡 | 身份区同级 metric/action | PASS |
+| Social metrics | 关注 / 粉丝靠近身份 | 独立完整社交管理卡 | 身份区同级 metric/action | PASS |
 | Business statistics | 去过 / 想去 / 总消费 | 去过 / 到访 / 平均分 / 消费 | 三列同级真实口径 | PASS |
 | Primary actions | 两项并排 | 并排但卡片过高 | 74pt 紧凑横向卡 | PASS |
 | Memories | 三项同组 | 同组但过高 | 78pt 紧凑三列 | PASS |

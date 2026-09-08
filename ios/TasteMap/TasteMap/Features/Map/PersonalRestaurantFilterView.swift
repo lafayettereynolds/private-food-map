@@ -36,6 +36,8 @@ struct PersonalRestaurantFilterSheet: View {
     let focus: PersonalRestaurantFilterFocus
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(PremiumEntitlementService.self) private var premium
+    @State private var expandedGroups: Set<String> = []
     @State private var draft: PersonalRestaurantFilterState
 
     init(
@@ -90,6 +92,10 @@ struct PersonalRestaurantFilterSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("应用") {
+                        if premium.access(for: .advancedRecommendationFilters) != .allowed {
+                            draft.sourceID = nil
+                            draft.companionID = nil
+                        }
                         onApply(draft)
                         dismiss()
                     }
@@ -340,9 +346,28 @@ struct PersonalRestaurantFilterSheet: View {
         options: [PersonalFilterOption],
         identifier: String
     ) -> some View {
-        Picker(title, selection: optionalString(selection)) {
-            Text(allTitle).tag("")
-            ForEach(options) { Text($0.title).tag($0.id) }
+        let locked = premium.access(for: .advancedRecommendationFilters) != .allowed
+        return VStack(alignment: .leading) {
+            if locked { Label("会员专享", systemImage: "lock.fill").font(.caption) }
+            PersonalFilterChipGrid {
+                filterChip(allTitle, selected: !locked && selection.wrappedValue == nil, identifier: identifier + "-all") {
+                    if locked { premium.openPaywall(from: .feature(.advancedRecommendationFilters)) }
+                    else { selection.wrappedValue = nil }
+                }
+                ForEach(expandedGroups.contains(identifier) ? options : Array(options.prefix(6))) { option in
+                    filterChip(option.title, selected: !locked && selection.wrappedValue == option.id, identifier: identifier + option.id) {
+                        if locked { premium.openPaywall(from: .feature(.advancedRecommendationFilters)) }
+                        else { selection.wrappedValue = selection.wrappedValue == option.id ? nil : option.id }
+                    }
+                }
+                if options.count > 6 {
+                    Button(expandedGroups.contains(identifier) ? "收起" : "更多") {
+                        if locked { premium.openPaywall(from: .feature(.advancedRecommendationFilters)) }
+                        else if expandedGroups.contains(identifier) { expandedGroups.remove(identifier) }
+                        else { expandedGroups.insert(identifier) }
+                    }
+                }
+            }
         }
         .accessibilityIdentifier(identifier)
     }

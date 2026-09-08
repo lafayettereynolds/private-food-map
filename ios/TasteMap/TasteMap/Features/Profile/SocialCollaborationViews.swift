@@ -500,7 +500,16 @@ struct CompanionLinkManagerView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            friends = try await socialAPI.friendships(scope: .friends, cursor: nil, limit: 50).items
+            var all:[SocialUserResultV1]=[]
+            var cursor:String?
+            var seen=Set<String>()
+            repeat {
+                let page=try await socialAPI.follows(scope:.followers,cursor:cursor,limit:50)
+                all.append(contentsOf:page.items.filter(\.isFollowing))
+                cursor=page.nextCursor
+                if let cursor,!seen.insert(cursor).inserted { throw PremiumEntitlementAPIError.invalidResponse }
+            } while cursor != nil
+            friends=all
             incoming = try await collaborationAPI.companionLinks(scope: .incoming, cursor: nil, limit: 50).items
             outgoing = try await collaborationAPI.companionLinks(scope: .outgoing, cursor: nil, limit: 50).items
             active = try await collaborationAPI.companionLinks(scope: .active, cursor: nil, limit: 50).items

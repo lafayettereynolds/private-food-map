@@ -251,6 +251,12 @@ struct VisitDraft: Equatable {
     }
 
     var calculatedPricePerPerson: Decimal? {
+        if totalPrice == nil, paymentModeRawValue == "separate" || paymentModeRawValue == "other" {
+            guard var own = VisitSpendPolicy.valid(myActualSpend) else { return nil }
+            var reference = Decimal()
+            NSDecimalRound(&reference, &own, 0, .plain)
+            return reference
+        }
         guard let totalPrice, let partySize, partySize >= 1 else { return nil }
         var source = totalPrice / Decimal(partySize)
         var rounded = Decimal()
@@ -297,8 +303,8 @@ enum VisitDraftValidationError: LocalizedError, Equatable {
         case .invalidPartySize: "用餐人数必须是大于 0 的整数，或留空。"
         case .invalidSpend: "请输入正确的消费金额，或留空。"
         case .negativeSpend: "消费金额不能为负数。"
-        case .invalidTotalPrice: "请输入正确的整桌账单金额，或留空。"
-        case .negativeTotalPrice: "整桌账单不能为负数。"
+        case .invalidTotalPrice: "请输入正确的消费金额，或留空。"
+        case .negativeTotalPrice: "消费金额不能为负数。"
         case .invalidCompanions: "饭搭子资料没有完整对应，请重新选择。"
         }
     }

@@ -102,7 +102,10 @@ struct LocalDiscoveryStore {
                 id: value.id, mode: value.mode, viewerState: state, ratings: value.ratings,
                 reasons: value.reasons, sourceUser: value.sourceUser, activity: value.activity,
                 similarity: value.similarity,
-                trend: value.trend, cacheScope: value.cacheScope, rank: value.rank, score: value.score
+                trend: value.trend, cacheScope: value.cacheScope, rank: value.rank, score: value.score,
+                personalTastePercent: value.personalTastePercent,
+                calibratedLikeProbability: value.calibratedLikeProbability,
+                tasteEvidence: value.tasteEvidence
             )
             placement.contextData = try JSONEncoder().encode(updated)
         }
@@ -202,7 +205,8 @@ struct LocalDiscoveryStore {
             preferenceLevel: .normal, overallRating: nil, foodRating: nil,
             environmentRating: nil, serviceRating: nil, valueRating: nil,
             tags: projection.tags, longTermNote: "", pricePerPerson: projection.pricePerPerson,
-            phone: nil, openingHours: nil, markerType: .emoji, markerPhotoId: nil,
+            phone: projection.phone, websiteUrl: projection.websiteUrl,
+            openingHours: projection.openingHours, markerType: .emoji, markerPhotoId: nil,
             merchantImageUrl: projection.merchantImageUrl, markerEmoji: projection.markerEmoji,
             createdAt: ISO8601DateFormatter().string(from: restaurant.createdAt), updatedAt: date,
             deletedAt: nil
@@ -241,10 +245,15 @@ private extension DiscoveryCachedCardContext {
          sourceUser: DiscoveryPublicUserProjectionV1?, activity: DiscoveryActivityProjectionV1?,
          similarity: DiscoverySimilarityContextV1?,
          trend: DiscoveryTrendContextV1?, cacheScope: DiscoveryCacheScopeV1,
-         rank: Int, score: Double) {
+         rank: Int, score: Double, personalTastePercent: Int?,
+         calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO?,
+         tasteEvidence: TasteMapDiscoveryTasteEvidenceDTO?) {
         self.id = id; self.mode = mode; self.viewerState = viewerState; self.ratings = ratings
         self.reasons = reasons; self.sourceUser = sourceUser; self.activity = activity
         self.similarity = similarity
         self.trend = trend; self.cacheScope = cacheScope; self.rank = rank; self.score = score
+        self.personalTastePercent = personalTastePercent
+        self.calibratedLikeProbability = calibratedLikeProbability
+        self.tasteEvidence = tasteEvidence
     }
 }

@@ -1,69 +1,196 @@
-import { useEffect, useState } from 'react'
-import { Archive, BellRing, Camera, Check, ChevronRight, CircleHelp, Cloud, Database, Download, HardDrive, Info, KeyRound, LockKeyhole, LogOut, MapPin, RefreshCw, ShieldCheck, Sparkles, UserRound } from 'lucide-react'
-import type { TasteMapPermissionsStatusDTO, TasteMapPlatform, TasteMapPremiumProductDTO, TasteMapPremiumStatusDTO, TasteMapProfileDashboardViewModel, TasteMapSyncStatusDTO } from '../platform/TasteMapPlatform'
+import { useEffect, useRef, useState } from 'react'
+import { Archive, Camera, Check, ChevronRight, CircleHelp, Cloud, Database, Download, HardDrive, Image, Info, MapPin, RefreshCw, ShieldCheck, Sparkles, Trash2, UserRound } from 'lucide-react'
+import type { TasteMapNativeRouteRequest, TasteMapPermissionsStatusDTO, TasteMapPlatform, TasteMapPremiumProductDTO, TasteMapPremiumStatusDTO, TasteMapProfileDashboardViewModel, TasteMapSyncStatusDTO } from '../platform/TasteMapPlatform'
 import { PremiumBurgerBadge } from './PremiumBurgerBadge'
-import { HybridEntryRow, HybridPageHeader, HybridState } from './TasteMapHybridShared'
+import { TasteMapDirectoryPage } from './TasteMapDirectoryPage'
+import { TasteMapReferralPage } from './TasteMapReferralPage'
+import { HybridBackButton, HybridEntryRow, HybridPageHeader, HybridState } from './TasteMapHybridShared'
 
-export function TasteMapPremiumPage({ platform, onOpenStore }: { platform: TasteMapPlatform; onOpenStore?: () => void }) {
+export function TasteMapPremiumPage({ platform, onOpenStore, onBack }: { platform: TasteMapPlatform; onOpenStore?: () => void; onBack?: () => void }) {
   const [status, setStatus] = useState<TasteMapPremiumStatusDTO | null>(null)
   const [products, setProducts] = useState<TasteMapPremiumProductDTO[]>([])
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loadingProducts, setLoadingProducts] = useState(true)
+  const [reloadProducts, setReloadProducts] = useState(0)
+  const [trialEligible, setTrialEligible] = useState(false)
+  const [trialMessage, setTrialMessage] = useState<string | null>(null)
+  const sessionRevision = useRef(0)
+  const refreshSequence = useRef(0)
   useEffect(() => {
-    void Promise.all([
-      platform.premium.status().catch(() => ({ state: 'unavailable' as const, expiresAt: null })),
-      platform.premium.products().catch(() => []),
-    ]).then(([nextStatus, nextProducts]) => { setStatus(nextStatus); setProducts(nextProducts) })
-  }, [platform])
+    let active = true
+    let remove: (() => Promise<void>) | undefined
+    const refresh = () => {
+      const sequence = ++refreshSequence.current
+      setLoadingProducts(true)
+      void Promise.all([
+        platform.premium.status().catch(() => ({ state: 'unavailable' as const, expiresAt: null })),
+        platform.premium.products().catch(() => []),
+        platform.premium.trialEligibility().catch(() => ({ eligible: false, trialDays: 7 })),
+      ]).then(([nextStatus, nextProducts, trial]) => {
+        if (!active || sequence !== refreshSequence.current) return
+        setLoadingProducts(false)
+        setTrialEligible(trial.eligible && trial.trialDays === 7)
+        setStatus(nextStatus)
+        setProducts(nextProducts.filter((product) => product.period === 'monthly' || product.period === 'annual'))
+      })
+    }
+    refresh()
+    const expiryRefresh = window.setInterval(refresh, 60_000)
+    platform.events.subscribe((event) => {
+      if (event.name === 'auth.changed') { sessionRevision.current++; setTrialEligible(false); setTrialMessage(null); setBusy(false); setStatus(null); setProducts([]); setMessage(null); refreshSequence.current++; refresh(); return }
+      if (event.name === 'data.changed'
+        || (event.name === 'app.lifecycle' && (event.payload.state === 'foreground' || event.payload.state === 'resume'))) {
+        refresh()
+      }
+    }).then((subscription) => { remove = () => subscription.remove() }).catch(() => undefined)
+    return () => {
+      active = false
+      window.clearInterval(expiryRefresh)
+      sessionRevision.current++
+      void remove?.()
+    }
+  }, [platform, reloadProducts])
   const premiumAction = async (action: () => Promise<{ outcome: string; status: TasteMapPremiumStatusDTO }>, success: string) => {
+    const revision = sessionRevision.current
     setBusy(true); setMessage(null)
     try {
       const result = await action()
+      if (revision !== sessionRevision.current) return
+      refreshSequence.current++
       setStatus(result.status)
       setMessage(result.outcome === 'cancelled' ? '已取消，没有产生购买。' : result.outcome === 'pending' ? '购买正在等待 App Store 确认。' : success)
-    } catch { setMessage('App Store 暂时无法完成这个操作，请稍后再试。') }
-    finally { setBusy(false) }
+    } catch { if (revision === sessionRevision.current) setMessage('订阅服务暂时无法完成这个操作，请稍后再试。') }
+    finally { if (revision === sessionRevision.current) setBusy(false) }
+  }
+  const claimTrial = async () => {
+    if (busy) return
+    const revision = sessionRevision.current
+    setBusy(true); setTrialMessage(null)
+    try {
+      const result = await platform.premium.claimTrial()
+      if (revision !== sessionRevision.current) return
+      refreshSequence.current++
+      setStatus(result.status); setTrialEligible(false)
+      setTrialMessage(`领取成功，7 天 Premium 有效期至 ${new Date(result.expiresAt).toLocaleString('zh-CN')}`)
+    } catch (error) {
+      if (revision !== sessionRevision.current) return
+      setTrialMessage(error instanceof Error ? error.message : '领取暂时无法完成，请稍后重试。')
+      const eligibility = await platform.premium.trialEligibility().catch(() => ({ eligible: false }))
+      if (revision === sessionRevision.current) setTrialEligible(eligibility.eligible)
+    } finally { if (revision === sessionRevision.current) setBusy(false) }
   }
   return <main className="tm-hybrid-page tm-hybrid-premium">
-    <HybridPageHeader description="会员状态和商品价格始终由 StoreKit / server entitlement 决定。" eyebrow="TASTE MAP PREMIUM" title="Premium" />
-    {!status ? <HybridState kind="loading" message="正在读取正式会员权益。" title="确认会员状态" /> : status.state === 'premium' ? <section className="tm-hybrid-premium-active"><PremiumBurgerBadge /><small>Taste Map Premium</small><h2>已开通</h2><p>{status.expiresAt ? `有效期至 ${new Date(status.expiresAt).toLocaleDateString('zh-CN')}` : '当前权益有效'}</p><div><Benefit title="完整口味档案与高级分析" /><Benefit title="最佳饭搭子与谁最会种草" /><Benefit title="本月 / 年度回顾与五类分享海报" /><Benefit title="高级筛选与完整历史洞察" /></div><button disabled={busy} onClick={onOpenStore ?? (() => void premiumAction(() => platform.premium.manage(), '已打开 App Store 订阅管理。'))} type="button">管理会员<ChevronRight size={17} /></button><button disabled={busy} onClick={() => void premiumAction(() => platform.premium.restore(), '购买记录已恢复，会员状态已刷新。')} type="button">恢复购买</button>{message ? <p role="status">{message}</p> : null}</section> : <>
+    <HybridBackButton onBack={onBack} />
+    <HybridPageHeader description="解锁完整分析、饮食回顾和更多会员权益。" eyebrow="TASTE MAP PREMIUM" title="Premium" />
+    {trialEligible || trialMessage ? <section className="tm-hybrid-premium-purchase" aria-label="新用户 Premium 体验">
+      {trialEligible ? <><h3>免费体验 Premium 7 天</h3><p>无需订阅，不会自动续费</p><button disabled={busy} onClick={() => void claimTrial()} type="button">{busy ? '正在领取…' : '免费领取 7 天'}</button></> : null}
+      {trialMessage ? <p role="status">{trialMessage}</p> : null}
+    </section> : null}
+    {!status ? <HybridState kind="loading" message="正在读取正式会员权益。" title="确认会员状态" /> : status.state === 'premium' ? <section className="tm-hybrid-premium-active"><PremiumBurgerBadge /><small>Taste Map Premium</small><h2>已开通</h2><p>{status.statusText ?? (status.expiresAt ? `有效期至 ${new Date(status.expiresAt).toLocaleDateString('zh-CN')}` : '当前权益有效')}</p><div><Benefit title="完整口味档案与高级分析" /><Benefit title="最佳饭搭子与谁最会种草" /><Benefit title="本月 / 年度回顾与五类分享海报" /><Benefit title="高级筛选与完整历史洞察" /></div>{status.canManageSubscription === true ? <button disabled={busy} onClick={onOpenStore ?? (() => void premiumAction(() => platform.premium.manage(), '已打开 App Store 订阅管理。'))} type="button">管理订阅<ChevronRight size={17} /></button> : null}<button disabled={busy} onClick={() => void premiumAction(() => platform.premium.restore(), '购买记录已恢复，会员状态已刷新。')} type="button">恢复购买</button>{message ? <p role="status">{message}</p> : null}</section> : <>
       <section className="tm-hybrid-premium-hero"><PremiumBurgerBadge /><div><small>让长期记录更有价值</small><h2>把每一次吃饭，变成真正懂你的口味档案。</h2><p>解锁完整分析、回顾与高质量分享海报。真实价格只在 App Store 商品加载成功后展示。</p></div></section>
+      <section className="tm-hybrid-premium-purchase"><h3>开通 Premium</h3><p>{!products.length ? loadingProducts ? '正在获取 App Store 订阅方案…' : '暂时无法获取订阅方案，请检查网络后重试。' : '以下价格由 App Store 按你的地区和币种提供。'}</p>{!products.length && !loadingProducts ? <button disabled={busy} onClick={() => setReloadProducts((value) => value + 1)} type="button">重新加载订阅方案</button> : null}{products.map((product) => <button className="tm-hybrid-premium-plan" disabled={busy} key={product.id} onClick={() => void premiumAction(() => platform.premium.purchase(product.id), '购买已完成，会员状态已刷新。')} type="button"><Sparkles size={17} /><span>{product.period === 'annual' ? '开通年会员' : '开通月会员'}<small>{product.billingPeriodDescription}</small></span><strong>{product.displayPrice}</strong></button>)}<button disabled={busy} onClick={() => void premiumAction(() => platform.premium.restore(), '购买记录已恢复，会员状态已刷新。')} type="button">恢复购买</button>{message ? <p role="status">{message}</p> : null}</section>
       <section className="tm-hybrid-premium-benefits"><Benefit title="完整口味档案" detail="高频菜系、消费、城市、饭搭子、时间与代表餐厅。" /><Benefit title="关系与来源洞察" detail="最佳饭搭子、谁最会种草，以及真实结果证据。" /><Benefit title="月度 / 年度回顾" detail="从长期记录中看见口味变化和城市足迹。" /><Benefit title="五类分享海报" detail="统一 Analysis 视觉家族，9:16 高清导出。" /></section>
       <section className="tm-hybrid-premium-comparison"><h3>免费版与 Premium</h3><div><span>能力</span><span>免费版</span><span>Premium</span></div>{[['基础记录', '包含', '包含'], ['完整分析', '摘要', '完整'], ['回顾海报', '—', '包含'], ['高级筛选', '基础', '完整']].map((row) => <div key={row[0]}>{row.map((value) => <span key={value}>{value === '包含' ? <><Check size={13} />包含</> : value}</span>)}</div>)}</section>
-      <section className="tm-hybrid-premium-purchase"><h3>App Store 订阅</h3><p>{!products.length ? '当前 StoreKit 商品尚未加载；Taste Map 不会显示假价格或伪造购买成功。' : '以下价格由 App Store 按你的地区和币种提供。'}</p>{products.map((product) => <button disabled={busy} key={product.id} onClick={() => void premiumAction(() => platform.premium.purchase(product.id), '购买已完成，会员状态已刷新。')} type="button"><Sparkles size={17} /><span>{product.displayName}<small>{product.billingPeriodDescription}</small></span><strong>{product.displayPrice}</strong></button>)}<button disabled={busy} onClick={() => void premiumAction(() => platform.premium.restore(), '购买记录已恢复，会员状态已刷新。')} type="button">恢复购买</button>{message ? <p role="status">{message}</p> : null}</section>
+
     </>}
   </main>
 }
 
 function Benefit({ title, detail }: { title: string; detail?: string }) { return <article><span><Check size={16} /></span><div><strong>{title}</strong>{detail ? <small>{detail}</small> : null}</div></article> }
 
-export function TasteMapSettingsPage({ platform, profile, onOpenPremium, onOpenNativeSettings }: { platform: TasteMapPlatform; profile: TasteMapProfileDashboardViewModel; onOpenPremium?: () => void; onOpenNativeSettings?: () => void }) {
+export function TasteMapSettingsPage({ platform, profile, onOpenPremium, onOpenNativeSettings, onBack, onOpenReferral, onOpenDirectory }: { platform: TasteMapPlatform; profile: TasteMapProfileDashboardViewModel; onOpenPremium?: () => void; onOpenNativeSettings?: (request: TasteMapNativeRouteRequest) => void | Promise<unknown>; onBack?: () => void; onOpenReferral?:()=>void; onOpenDirectory?:()=>void }) {
+  const [showDirectory,setShowDirectory] = useState(false)
+  const [showReferral,setShowReferral] = useState(false)
   const [sync, setSync] = useState<TasteMapSyncStatusDTO | null>(null)
   const [permissions, setPermissions] = useState<TasteMapPermissionsStatusDTO | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const actionPending = useRef(false)
   useEffect(() => {
-    void platform.sync.status().then(setSync).catch(() => setSync({ state: 'unavailable', pendingMutationCount: 0, lastSuccessfulSyncAt: null, errorCode: null }))
-    void platform.permissions.status().then(setPermissions).catch(() => setPermissions(null))
+    let active = true
+    let refreshSequence = 0
+    let remove: (() => Promise<void>) | undefined
+    const refresh = () => {
+      const sequence = ++refreshSequence
+      void Promise.all([
+        platform.sync.status().catch(() => ({ state: 'unavailable' as const, pendingMutationCount: 0, lastSuccessfulSyncAt: null, errorCode: null })),
+        platform.permissions.status().catch(() => null),
+      ]).then(([nextSync, nextPermissions]) => {
+        if (!active || sequence !== refreshSequence) return
+        setSync(nextSync)
+        setPermissions(nextPermissions)
+      })
+    }
+    refresh()
+    platform.events.subscribe((event) => {
+      if (event.name === 'data.changed'
+        || (event.name === 'app.lifecycle' && (event.payload.state === 'foreground' || event.payload.state === 'resume'))) {
+        refresh()
+      }
+    }).then((subscription) => {
+      if (!active) void subscription.remove()
+      else remove = () => subscription.remove()
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      void remove?.()
+    }
   }, [platform])
-  const nativeSettings = onOpenNativeSettings ?? (() => void platform.navigation.openNative({ route: 'settingsNative' }))
   const perform = async (action: () => Promise<unknown>, success?: string) => {
+    if (actionPending.current) return
+    actionPending.current = true
     setBusy(true); setMessage(null)
     try { await action(); if (success) setMessage(success) }
     catch { setMessage('当前系统能力暂时不可用，请稍后再试。') }
-    finally { setBusy(false) }
+    finally { actionPending.current = false; setBusy(false) }
   }
+  const openNativeSettingsDetail = (route: TasteMapNativeRouteRequest['route'], identifier?: string) => {
+    void perform(() => onOpenNativeSettings
+      ? Promise.resolve(onOpenNativeSettings({ route, identifier }))
+      : platform.navigation.openNative({ route, identifier }))
+  }
+  const openPermission = (state: TasteMapPermissionsStatusDTO['location'] | undefined) => {
+    if (permissions?.canOpenSystemSettings && canAdjustSettingsPermission(state)) {
+      void perform(() => platform.permissions.openSystemSettings())
+    } else openNativeSettingsDetail('permissions')
+  }
+  const runSync = () => {
+    if (onOpenNativeSettings) openNativeSettingsDetail('dataBackup', 'sync')
+    else void perform(async () => {
+      const next = await platform.sync.run()
+      setSync(next)
+      setMessage(next.state === 'error' ? '同步未完成，请重试。' : next.state === 'offline'
+        ? '目前离线，记录仍保存在本机，联网后会继续同步。'
+        : next.state === 'syncing' ? '正在同步…' : next.state === 'unavailable'
+          ? '当前无法同步，请检查登录状态。' : '同步已完成。')
+    })
+  }
+  if (showReferral) return <TasteMapReferralPage platform={platform} onBack={()=>setShowReferral(false)}/>
+  if(showDirectory)return <TasteMapDirectoryPage platform={platform} onBack={()=>setShowDirectory(false)}/>
   return <main className="tm-hybrid-page tm-hybrid-settings">
+    <HybridBackButton onBack={onBack} />
     <HybridPageHeader description="账户、数据、同步、权限与系统信息。高风险操作继续由正式 Native service 承载。" eyebrow="SETTINGS" title="设置" />
-    <SettingsSection title="账户"><HybridEntryRow detail={profile.user.nickname} icon={<UserRound size={18} />} onClick={nativeSettings} title="账户与资料" value={profile.user.membershipTier === 'member' ? 'Premium' : '免费版'} /><HybridEntryRow detail="Taste Map ID、编辑资料与退出登录" icon={<KeyRound size={18} />} onClick={nativeSettings} title="账户安全" /></SettingsSection>
-    <SettingsSection title="数据与备份"><HybridEntryRow detail="Backup v1 不包含照片原图" icon={<Download size={18} />} onClick={() => void perform(() => platform.backup.openExport())} title="导出备份" /><HybridEntryRow detail="导入使用预检、dry run、明确确认和原子写入" icon={<Archive size={18} />} onClick={() => void perform(() => platform.backup.openImport())} title="导入数据" /><HybridEntryRow detail={`${profile.restaurants.length} 家餐厅 · ${profile.visits.length} 次到访`} icon={<Database size={18} />} title="本地数据概览" /></SettingsSection>
-    <SettingsSection title="同步"><HybridEntryRow detail={syncDescription(sync)} icon={<Cloud size={18} />} onClick={() => void perform(async () => setSync(await platform.sync.run()), '同步请求已完成。')} title="同步状态" value={sync?.state === 'idle' ? '正常' : sync?.state === 'syncing' ? '同步中' : sync?.state === 'error' ? '错误' : '查看'} />{sync?.pendingMutationCount ? <HybridEntryRow detail="等待安全上传的本地更改" icon={<RefreshCw size={18} />} title="待同步记录" value={`${sync.pendingMutationCount}`} /> : null}{sync?.pendingPhotoCount ? <HybridEntryRow detail="由现有 PhotoTransferCoordinator 处理" icon={<RefreshCw size={18} />} title="待上传照片" value={`${sync.pendingPhotoCount}`} /> : null}</SettingsSection>
-    <SettingsSection title="隐私与权限"><HybridEntryRow detail="资料、到访和食单可见范围" icon={<ShieldCheck size={18} />} onClick={nativeSettings} title="隐私" /><HybridEntryRow detail={permissionDescription(permissions?.location)} icon={<MapPin size={18} />} onClick={permissions?.canOpenSystemSettings ? () => void perform(() => platform.permissions.openSystemSettings()) : undefined} title="位置权限" value={permissionLabel(permissions?.location)} /><HybridEntryRow detail={cameraPermissionDescription(permissions?.camera)} icon={<Camera size={18} />} onClick={permissions?.canOpenSystemSettings ? () => void perform(() => platform.permissions.openSystemSettings()) : undefined} title="相机权限" value={permissionLabel(permissions?.camera)} /><HybridEntryRow detail={permissionDescription(permissions?.photoAddOnly, true)} icon={<BellRing size={18} />} onClick={permissions?.canOpenSystemSettings ? () => void perform(() => platform.permissions.openSystemSettings()) : undefined} title="照片权限" value={permissionLabel(permissions?.photoAddOnly)} /></SettingsSection>
-    <SettingsSection title="存储与 Premium"><HybridEntryRow detail="只清理可再生成缓存，不删除唯一原图或业务数据" icon={<HardDrive size={18} />} onClick={nativeSettings} title="存储" /><HybridEntryRow detail={profile.user.membershipTier === 'member' ? '查看当前权益与订阅管理' : '查看会员能力'} icon={<Sparkles size={18} />} onClick={onOpenPremium ?? (() => void platform.navigation.openHybrid({ surface: 'premium' }))} title="Premium" /></SettingsSection>
-    <SettingsSection title="帮助与关于"><HybridEntryRow detail="备份、同步、添加餐厅与定位说明" icon={<CircleHelp size={18} />} onClick={nativeSettings} title="使用帮助" /><HybridEntryRow detail="版本、Build 与已配置法律链接" icon={<Info size={18} />} onClick={nativeSettings} title="关于 Taste Map" /><HybridEntryRow detail="重新验证身份后由正式后端执行，不做本地假删除" icon={<LockKeyhole size={18} />} onClick={() => void perform(() => platform.account.openDelete())} title="删除账户" /></SettingsSection>
+    <SettingsSection title="账户"><HybridEntryRow disabled={busy} detail={`${profile.user.nickname} · Taste Map ID、资料与登录安全`} icon={<UserRound size={18} />} onClick={() => openNativeSettingsDetail('accountSettings')} title="账户与安全" value={profile.user.membershipTier === 'member' ? 'Premium' : '免费版'} /></SettingsSection>
+    <SettingsSection title="会员权益"><HybridEntryRow disabled={busy} detail={profile.user.membershipTier === 'member' ? '查看当前权益与订阅管理' : '查看会员能力'} icon={<Sparkles size={18} />} onClick={() => void perform(() => onOpenPremium ? Promise.resolve(onOpenPremium()) : platform.navigation.openHybrid({ surface: 'premium' }))} title="Premium" /></SettingsSection>
+    <SettingsSection title="邀请奖励"><HybridEntryRow title="邀请好友" detail="每成功邀请 1 位新用户，获得 30 天 Premium" icon={<UserRound size={18}/>} onClick={onOpenReferral??(()=>setShowReferral(true))}/></SettingsSection>
+    <SettingsSection title="私人资料"><HybridEntryRow title="饭搭子与推荐来源" detail="关联好友、设置私人头像与来源用户" icon={<UserRound size={18}/>} onClick={onOpenDirectory??(()=>setShowDirectory(true))}/></SettingsSection>
+    <SettingsSection title="数据与备份">
+      <HybridEntryRow disabled={busy} detail="Backup v1 不包含照片原图" icon={<Download size={18} />} onClick={() => onOpenNativeSettings ? openNativeSettingsDetail('dataBackup', 'export') : void perform(() => platform.backup.openExport())} title="导出备份" />
+      <HybridEntryRow disabled={busy} detail="先检查备份内容，再确认导入" icon={<Archive size={18} />} onClick={() => onOpenNativeSettings ? openNativeSettingsDetail('dataBackup', 'import') : void perform(() => platform.backup.openImport())} title="导入数据" />
+      <HybridEntryRow detail={`${profile.restaurants.length} 家餐厅 · ${profile.visits.length} 次到访`} icon={<Database size={18} />} title="本地数据概览" />
+      <HybridEntryRow disabled={busy} detail={platform.kind === 'native' ? '清除这台 iPhone，保留账号、个人资料和云端数据' : '仅 iPhone App 支持清除本机业务数据；浏览器图片缓存可在存储中管理'} icon={<Trash2 size={18} />} onClick={platform.kind === 'native' ? () => openNativeSettingsDetail('dataClear') : undefined} title="清除本机数据" />
+    </SettingsSection>
+    <SettingsSection title="同步"><HybridEntryRow disabled={busy || (!onOpenNativeSettings && (!sync || sync.state === 'syncing' || sync.state === 'unavailable'))} detail={syncDescription(sync)} icon={<Cloud size={18} />} onClick={runSync} title={onOpenNativeSettings ? '查看同步详情' : sync?.state === 'syncing' ? '正在同步…' : sync?.state === 'error' ? '重试同步' : '立即同步'} value={sync?.state === 'idle' ? '正常' : sync?.state === 'syncing' ? '同步中' : sync?.state === 'error' ? '错误' : undefined} />{sync?.pendingMutationCount ? <HybridEntryRow detail="等待上传的本地更改" icon={<RefreshCw size={18} />} title="待同步记录" value={`${sync.pendingMutationCount}`} /> : null}{sync?.pendingPhotoCount ? <HybridEntryRow detail="联网后继续上传" icon={<RefreshCw size={18} />} title="待上传照片" value={`${sync.pendingPhotoCount}`} /> : null}</SettingsSection>
+    <SettingsSection title="隐私与权限"><HybridEntryRow disabled={busy} detail="修改个人主页可见范围；到访和食单在各自记录中设置" icon={<ShieldCheck size={18} />} onClick={() => openNativeSettingsDetail('privacySettings')} title="隐私" /><HybridEntryRow disabled={busy} detail={permissionDescription(permissions?.location)} icon={<MapPin size={18} />} onClick={() => openPermission(permissions?.location)} title="位置权限" value={permissionLabel(permissions?.location)} /><HybridEntryRow disabled={busy} detail={cameraPermissionDescription(permissions?.camera)} icon={<Camera size={18} />} onClick={() => openPermission(permissions?.camera)} title="相机权限" value={permissionLabel(permissions?.camera)} /><HybridEntryRow disabled={busy} detail={permissionDescription(permissions?.photoAddOnly, true)} icon={<Image size={18} />} onClick={() => openPermission(permissions?.photoAddOnly)} title="照片权限" value={permissionLabel(permissions?.photoAddOnly)} /></SettingsSection>
+    <SettingsSection title="存储"><HybridEntryRow disabled={busy} detail="查看本地照片与临时文件占用" icon={<HardDrive size={18} />} onClick={() => openNativeSettingsDetail('storage')} title="存储" /></SettingsSection>
+    <SettingsSection title="帮助与关于"><HybridEntryRow disabled={busy} detail="备份、同步、添加餐厅与定位说明" icon={<CircleHelp size={18} />} onClick={() => openNativeSettingsDetail('helpSettings')} title="使用帮助" /><HybridEntryRow disabled={busy} detail="版本与法律信息" icon={<Info size={18} />} onClick={() => openNativeSettingsDetail('aboutSettings')} title="关于 Taste Map" /></SettingsSection>
     {message ? <p className="tm-hybrid-settings__message" role="status">{message}</p> : null}
-    <button className="tm-hybrid-settings__logout" disabled={busy} onClick={() => void platform.auth.logout()} type="button"><LogOut size={17} />退出登录</button>
   </main>
+}
+
+export function canAdjustSettingsPermission(value?: TasteMapPermissionsStatusDTO['location']) {
+  return value != null && value !== 'notDetermined'
 }
 
 function permissionLabel(value?: TasteMapPermissionsStatusDTO['location']) {

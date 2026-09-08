@@ -137,9 +137,12 @@ enum TasteMapUITestFixtures {
     }
 
     static var hybridRestaurantSearchService: any RestaurantSearching {
-        if usesAddImageReuseFixture || usesVisualQA { return AddImageReuseFixtureSearch() }
+        // Visual QA data may be synthetic, but an ordinary QA build must still
+        // exercise the real worldwide search chain. The deterministic
+        // Hangzhou-only provider is reserved for its explicit UI contract.
+        if usesAddImageReuseFixture { return AddImageReuseFixtureSearch() }
         if usesRestaurantAcquisitionFixture { return RestaurantAcquisitionFixtureSearch() }
-        return MapKitRestaurantSearchService()
+        return WorldwideRestaurantSearchService()
     }
 
     static func insertAddImageReuseCachedPhotoFixture(into container: ModelContainer) throws {
@@ -183,6 +186,10 @@ enum TasteMapUITestFixtures {
     }
 
     static var premiumOverride: DevelopmentPremiumOverride? {
+        if ProcessInfo.processInfo.environment["TASTEMAP_SIGNUP_TRIAL_UI_TEST"] == "1" { return nil }
+        if visualQAMode != nil,
+           let value = ProcessInfo.processInfo.environment[premiumEnvironmentKey],
+           let override = DevelopmentPremiumOverride(rawValue: value) { return override }
         if let visualQAMode {
             return visualQAMode == .free ? .free : .premium
         }
@@ -303,9 +310,12 @@ enum TasteMapUITestFixtures {
 
     static var profileSocialStatisticsOverride: ProfileSocialStatistics? {
         guard usesProfileFixture else { return nil }
-        return usesVisualQA
-            ? .init(friendCount: 24, followingCount: 48, followerCount: 73)
-            : .init(friendCount: 12, followingCount: 18, followerCount: 9)
+        if let visualQAMode {
+            return visualQAMode.usesRichLibrary
+                ? TasteMapVisualQAFixtures.socialStatistics
+                : .zero
+        }
+        return .init(friendCount: 12, followingCount: 18, followerCount: 9)
     }
 
     static var usesPhotoFixture: Bool {
@@ -391,6 +401,7 @@ enum TasteMapUITestFixtures {
             longTermNote: "适合周末在湖边慢慢吃。",
             pricePerPerson: 168,
             phone: "+86 571-1234-5678",
+            websiteUrl: "https://restaurant.example/menu",
             openingHours: "周一至周日 11:00–22:00",
             markerType: .emoji,
             markerPhotoId: nil,
@@ -1086,6 +1097,95 @@ enum TasteMapUITestFixtures {
         )
     }
 
+    /// Explicit UI-test-only public Profile response. Shipping Debug and
+    /// Release paths continue to use the authenticated server APIs.
+    static func communityPublicProfileContext(userID: String) -> SocialProfileContextV1 {
+        let items = communityPage(scope: .latest).items.filter { $0.user.userId == userID }
+        let user = items.first?.user ?? communityPage(scope: .latest).items[0].user
+        let visitItems = items.filter { $0.kind == .visit }
+        return SocialProfileContextV1(
+            apiVersion: 1,
+            profile: PublicUserProfileV1(
+                apiVersion: 1,
+                userId: user.userId,
+                displayName: user.displayName,
+                bio: user.bio,
+                city: user.city,
+                avatarPhotoId: user.avatarPhotoId,
+                avatarPresetId: user.avatarPresetId,
+                joinedAt: "2026-03-18T09:30:00.000Z",
+                statistics: PublicProfileStatisticsV1(
+                    publicRestaurantCount: Set(visitItems.map(\.restaurant.globalKey)).count,
+                    publicVisitCount: visitItems.count
+                )
+            ),
+            relationship: SocialRelationshipContextV1(
+                friendshipId: user.friendshipId,
+                friendshipState: user.friendshipState,
+                isFollowing: user.isFollowing
+            )
+        )
+    }
+
+    static func communityPublicContent(
+        userID: String,
+        section: PublicContentSectionV1
+    ) -> PublicProfileContentPageV1 {
+        let all = communityPage(scope: .latest).items.filter { $0.user.userId == userID }
+        let items = all.filter {
+            section == .visits ? $0.kind == .visit : $0.kind == .wantToGo
+        }
+        return PublicProfileContentPageV1(
+            apiVersion: 1,
+            targetUserId: userID,
+            section: section,
+            generatedAt: ISO8601DateFormatter().string(from: .now),
+            statistics: PublicContentStatisticsV1(
+                visibleRestaurantCount: Set(all.map(\.restaurant.globalKey)).count,
+                visibleVisitCount: all.filter { $0.kind == .visit }.count,
+                visibleWantToGoCount: all.filter { $0.kind == .wantToGo }.count
+            ),
+            items: items,
+            nextCursor: nil
+        )
+    }
+
+    static func communityPublicOverview(userID: String) -> PublicProfileOverviewV1 {
+        let all = communityPage(scope: .latest).items.filter { $0.user.userId == userID }
+        let restaurants = Array(Dictionary(
+            all.map { ($0.restaurant.globalKey, $0.restaurant) },
+            uniquingKeysWith: { first, _ in first }
+        ).values)
+        let visitItems = all.filter { $0.kind == .visit }
+        let ratings = visitItems.compactMap(\.visit?.rating)
+        let footprints = Dictionary(grouping: visitItems, by: \.restaurant.city)
+            .map { city, items in
+                PublicProfileFootprintV1(
+                    city: city,
+                    restaurantCount: Set(items.map(\.restaurant.globalKey)).count,
+                    visitCount: items.count
+                )
+            }
+            .sorted { $0.city < $1.city }
+        return PublicProfileOverviewV1(
+            apiVersion: 1,
+            targetUserId: userID,
+            friendCount: 3,
+            followingCount: 8,
+            followerCount: 5,
+            commonWantToGoCount: 0,
+            commonWantToGo: [],
+            representativeRestaurants: restaurants,
+            footprints: footprints,
+            tasteSummary: PublicProfileTasteSummaryV1(
+                topTags: Array(Set(restaurants.flatMap(\.tags))).sorted(),
+                averageRating: ratings.isEmpty ? nil : ratings.reduce(0, +) / Double(ratings.count),
+                ratedVisitCount: ratings.count,
+                summary: nil
+            )
+        )
+    }
+
     static func insertPhotoFailureFixture(into container: ModelContainer) throws {
         let context = container.mainContext
         let restaurant = try context.fetch(FetchDescriptor<Restaurant>())
@@ -1559,6 +1659,19 @@ private struct RestaurantAcquisitionFixtureSearch: RestaurantSearching {
     func search(query: String, scope: RestaurantSearchScope) async throws -> [RestaurantCandidate] {
         guard !query.localizedCaseInsensitiveContains("没有结果") else { return [] }
         let city = scope.city.isEmpty ? "杭州" : scope.city
+        // Synthetic pagination contract only, behind the explicit acquisition
+        // fixture gate. This is not evidence of live provider branch coverage.
+        if query == "分页测试拉面" {
+            return (1...24).map { index in
+                RestaurantCandidate(
+                    id: UUID(uuidString: String(format: "ac000024-0000-0000-0000-%012d", index))!,
+                    name: String(format: "分页测试拉面 · 测试分店 %02d", index),
+                    address: "\(city)测试路 \(index) 号", city: city, district: "测试区",
+                    latitude: 30.2741 + Double(index) * 0.0001, longitude: 120.1551,
+                    appleMapItemIdentifier: "apple-acquisition-pagination-\(index)"
+                )
+            }
+        }
         return [RestaurantCandidate(
             id: UUID(uuidString: "ac000002-0000-0000-0000-000000000002")!,
             name: "\(city) · \(query)",
@@ -1600,11 +1713,17 @@ private struct RestaurantAcquisitionFixtureSearch: RestaurantSearching {
 /// deliberately new and has no merchant photo.
 private struct AddImageReuseFixtureSearch: RestaurantSearching {
     func search(query: String) async throws -> [RestaurantCandidate] {
-        candidates(includeDistance: false)
+        RestaurantSearchRelevancePolicy.rankedMatches(
+            candidates(includeDistance: false),
+            query: query
+        )
     }
 
     func search(query: String, scope: RestaurantSearchScope) async throws -> [RestaurantCandidate] {
-        candidates(includeDistance: false)
+        RestaurantSearchRelevancePolicy.rankedMatches(
+            candidates(includeDistance: false),
+            query: query
+        )
     }
 
     func nearby(center: RestaurantCoordinate, radiusMeters: Double) async throws -> [RestaurantCandidate] {

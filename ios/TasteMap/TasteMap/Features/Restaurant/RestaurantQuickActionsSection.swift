@@ -32,7 +32,6 @@ struct RestaurantQuickActionsSection: View {
     let canRecordVisit: Bool
     let canMarkWantToGo: Bool
     let canEdit: Bool
-    let canDelete: Bool
     let canAddToList: Bool
     let canAddToRoulette: Bool
     var isInRoulette = false
@@ -44,7 +43,6 @@ struct RestaurantQuickActionsSection: View {
     let onAddToRoulette: () -> Void
     let onCopyName: () -> Void
     let onCopyAddress: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -93,10 +91,6 @@ struct RestaurantQuickActionsSection: View {
                         if !restaurantAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Button("复制地址", systemImage: "mappin.and.ellipse", action: onCopyAddress)
                                 .accessibilityIdentifier("restaurant-action-copy-address")
-                        }
-                        if canDelete {
-                            Button("删除餐厅", systemImage: "trash", role: .destructive, action: onDelete)
-                                .accessibilityIdentifier("restaurant-action-delete")
                         }
                     } label: {
                         circularActionLabel("更多", systemImage: "ellipsis")

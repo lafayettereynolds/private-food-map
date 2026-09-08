@@ -11,6 +11,7 @@ struct TasteMapSettingsView: View {
     let avatarPhoto: PhotoAsset?
     let logoutAction: SettingsLogoutAction
     var accountDeletedAction = SettingsAccountDeletedAction(perform: {})
+    var localDataClearedAction = SettingsLocalDataClearedAction(perform: { _ in })
     var releaseConfiguration: ReleaseConfiguration = .current()
     var permissionOverride: SettingsPermissionSnapshot?
     var storageOverride: SettingsStorageSnapshot?
@@ -47,12 +48,37 @@ struct TasteMapSettingsView: View {
                     )
                 } label: {
                     SettingsDestinationLabel(
-                        title: "账户",
+                        title: "账户与安全",
                         subtitle: authenticatedUser == nil ? "未登录" : (profile?.displayName ?? "已登录"),
                         systemImage: "person.crop.circle"
                     )
                 }
                 .accessibilityIdentifier("settings-account-entry")
+            }
+
+            Section("会员权益") {
+                NavigationLink {
+                    PremiumSettingsView(membershipStatusOverride: membershipStatusOverride)
+                } label: {
+                    SettingsDestinationLabel(
+                        title: "Taste Map Premium",
+                        subtitle: membershipStatus.settingsTitle,
+                        systemImage: "checkmark.seal"
+                    )
+                }
+                .accessibilityIdentifier("settings-premium-entry")
+            }
+
+            Section("邀请奖励") {
+                NavigationLink { ReferralPremiumView() } label: {
+                    SettingsDestinationLabel(title: "邀请好友", subtitle: "每成功邀请 1 位新用户，获得 30 天 Premium", systemImage: "person.badge.plus")
+                }.accessibilityIdentifier("settings-referral-entry")
+            }
+
+            Section("私人资料") {
+                NavigationLink { PrivateDirectorySettingsView() } label: {
+                    SettingsDestinationLabel(title:"饭搭子与推荐来源",subtitle:"关联好友、设置私人头像与来源用户",systemImage:"person.crop.circle.badge.checkmark")
+                }.accessibilityIdentifier("settings-directory-entry")
             }
 
             Section("数据与备份") {
@@ -70,6 +96,22 @@ struct TasteMapSettingsView: View {
                     )
                 }
                 .accessibilityIdentifier("settings-data-backup-entry")
+
+                if let userID = authenticatedUser?.id {
+                    NavigationLink {
+                        ClearLocalDataView(
+                            currentUserID: userID,
+                            completionAction: localDataClearedAction
+                        )
+                    } label: {
+                        SettingsDestinationLabel(
+                            title: "清除本机数据",
+                            subtitle: "保留账号、个人资料和云端数据",
+                            systemImage: "trash"
+                        )
+                    }
+                    .accessibilityIdentifier("settings-clear-local-data-entry")
+                }
             }
 
             Section("同步") {
@@ -129,19 +171,6 @@ struct TasteMapSettingsView: View {
                     )
                 }
                 .accessibilityIdentifier("settings-storage-entry")
-            }
-
-            Section("Premium") {
-                NavigationLink {
-                    PremiumSettingsView(membershipStatusOverride: membershipStatusOverride)
-                } label: {
-                    SettingsDestinationLabel(
-                        title: "Taste Map Premium",
-                        subtitle: membershipStatus.settingsTitle,
-                        systemImage: "checkmark.seal"
-                    )
-                }
-                .accessibilityIdentifier("settings-premium-entry")
             }
 
             Section("帮助") {
@@ -211,7 +240,7 @@ struct AccountSettingsView: View {
     let avatarPhoto: PhotoAsset?
     let logoutAction: SettingsLogoutAction
     let accountDeletedAction: SettingsAccountDeletedAction
-    @State private var isEditingProfile = false
+    @State private var profileEditor: ProfileEditorDestination?
     @State private var isConfirmingLogout = false
     @State private var isLoggingOut = false
     @State private var message: String?
@@ -253,13 +282,19 @@ struct AccountSettingsView: View {
             if let profile {
                 Section("个人资料") {
                     Button {
-                        isEditingProfile = true
+                        profileEditor = .all
                     } label: {
                         Label("编辑资料", systemImage: "person.crop.circle.badge.pencil")
                     }
                     .accessibilityIdentifier("settings-edit-profile")
-                    LabeledContent("显示名称", value: profile.displayName)
-                    LabeledContent("主页可见范围", value: profile.visibility.title)
+                    SettingsEditableRow(title: "显示名称", value: profile.displayName) {
+                        profileEditor = .displayName
+                    }
+                    .accessibilityIdentifier("settings-edit-display-name")
+                    SettingsEditableRow(title: "主页可见范围", value: profile.visibility.title) {
+                        profileEditor = .visibility
+                    }
+                    .accessibilityIdentifier("settings-edit-profile-visibility")
                 }
             }
 
@@ -301,11 +336,11 @@ struct AccountSettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .background(TasteMapCoreTheme.page)
-        .navigationTitle("账户")
+        .navigationTitle("账户与安全")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $isEditingProfile) {
+        .sheet(item: $profileEditor) { destination in
             if let profile {
-                ProfileEditorSheet(profile: profile, avatarPhoto: avatarPhoto)
+                ProfileEditorSheet(profile: profile, avatarPhoto: avatarPhoto, destination: destination)
             }
         }
         .alert("退出 Taste Map？", isPresented: $isConfirmingLogout) {
@@ -582,9 +617,10 @@ struct PrivacySettingsView: View {
         List {
             Section {
                 if let profile {
-                    LabeledContent("当前可见范围", value: profile.visibility.title)
-                    Button("修改个人主页可见范围") { isEditingProfile = true }
-                        .accessibilityIdentifier("settings-privacy-edit-profile")
+                    SettingsEditableRow(title: "主页可见范围", value: profile.visibility.title) {
+                        isEditingProfile = true
+                    }
+                    .accessibilityIdentifier("settings-privacy-edit-profile")
                 } else {
                     Text("登录后可管理个人主页可见范围。")
                         .foregroundStyle(.secondary)
@@ -592,7 +628,7 @@ struct PrivacySettingsView: View {
             } header: {
                 Text("个人主页")
             } footer: {
-                Text("这里只管理已经支持的个人主页可见范围，没有新增默认到访或榜单可见范围设置。")
+                Text("决定谁可以查看你的个人主页。到访和食单的可见范围分别在对应记录中修改。")
             }
 
             legalLinks
@@ -615,7 +651,7 @@ struct PrivacySettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isEditingProfile) {
             if let profile {
-                ProfileEditorSheet(profile: profile, avatarPhoto: avatarPhoto)
+                ProfileEditorSheet(profile: profile, avatarPhoto: avatarPhoto, destination: .visibility)
             }
         }
     }
@@ -688,6 +724,33 @@ struct PremiumSettingsView: View {
     private func manageSubscription() async {
         do { try await entitlementService.productsProvider.manageSubscription() }
         catch { message = error.localizedDescription }
+    }
+}
+
+/// Editable values are whole-row actions; factual status rows remain LabeledContent.
+struct SettingsEditableRow: View {
+    let title: String
+    let value: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: TasteMapDesignTokens.Spacing.small) {
+                Text(title).foregroundStyle(.primary)
+                Spacer()
+                Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+        .accessibilityHint("轻点修改")
     }
 }
 

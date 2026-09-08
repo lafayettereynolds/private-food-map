@@ -66,6 +66,63 @@ enum TasteMapDesignTokens {
         static let profile: CGFloat = 72
     }
 
+    /// Content-sized Discovery evidence and unframed social actions (React peers use --tm-*).
+    enum Activity {
+        static let restaurantActionDiameter: CGFloat = 40
+        static let reasonRadius = Spacing.compact
+        static let reasonGap: CGFloat = 6
+        static let reasonHorizontalInset: CGFloat = 6
+        static let reasonVerticalInset = Spacing.xxSmall
+        static let reasonFont = Font.caption2
+        static let socialCountFont = Font.caption.monospacedDigit()
+        static let socialCountGap = Spacing.compact
+        static let recommendationSignalDiameter: CGFloat = 58
+        static let recommendationMedalWidth: CGFloat = 62
+        static let recommendationMedalHeight: CGFloat = 70
+        static let recommendationSignalValueFont = Font.subheadline.weight(.semibold).monospacedDigit()
+        static let recommendationSignalLabelFont = Font.system(size: 8)
+        static let recommendationMatchStroke: CGFloat = 1.5
+        static let recommendationProbabilityStroke: CGFloat = 3
+        static let recommendationMatchDash: [CGFloat] = [3, 3]
+    }
+
+    /// Compact relationship action beside a user row; the hit area stays 44pt.
+    enum FollowAction {
+        static let minimumWidth: CGFloat = 64
+        static let visibleHeight: CGFloat = 30
+        static let horizontalPadding = Spacing.regular
+    }
+
+    /// The owner Dashboard's edit → statistics → first feature-pair rhythm.
+    /// Tighten surrounding whitespace without shrinking the statistic targets.
+    enum ProfileSummary {
+        static let identityGap = Spacing.small
+        static let statisticInset = Spacing.xSmall
+        static let statisticMinimumHeight = Control.minimumHitTarget
+        static let nextGap = Spacing.medium
+    }
+
+    /// Personal Restaurant circles stay legible above system POIs at every
+    /// city zoom. Beyond the approved regional overview, only the centered
+    /// visual shrinks further; the 44-point annotation target never changes.
+    enum MapRestaurantMarker {
+        static let minimumDiameter = 24.0
+        static let maximumDiameter = 28.0
+        static let unvisitedDiameterIncrease = 4.0
+        static let minimumSelectionIncrease = 2.0
+        static let maximumSelectionIncrease = 4.0
+        static let farScaleStartLatitudeDelta = 2.4
+        static let farScaleFullLatitudeDelta = 80.0
+        static let farMinimumDiameter = 10.0
+        static let farUnvisitedDiameterIncrease = 1.0
+        static let farSelectionIncrease = 1.0
+        // Content-only layers; never assign these offsets to map coordinates.
+        // The front circle remains centered on the geographic anchor.
+        static let stackBackOffsets = [
+            CGSize(width: -10, height: -8), CGSize(width: 8, height: -10),
+        ]
+    }
+
     /// One canonical geometry for the live-location avatar bubble used by
     /// both the Native SwiftUI map and the persistent Hybrid MapKit surface.
     enum MapLocationMarker {

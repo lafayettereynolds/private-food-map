@@ -23,10 +23,13 @@ import { QueueDurationPicker } from './QueueDurationPicker'
 import { StarRatingField } from './StarRating'
 import { VisitPhotoPicker } from './VisitPhotoPicker'
 import { VisitExtraFields } from './VisitExtraFields'
+import { VisitSpendFields } from './VisitSpendFields'
 import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import { createDefaultVisitExtraFields, type VisitExtraFieldsValue } from '../types/visitExtras'
 import type { AddRestaurantInput } from '../db/restaurants'
 import { mapService } from '../services/mapService'
+import { visitPhotoLimit } from '../services/featurePolicy'
+import { assertDishPhotoAccess, assertVisitPhotoAllowance, visitPhotoCount } from '../services/visitPhotoAllowance'
 import { calculatePricePerPerson, starToTenScore } from '../types/domain'
 import type {
   MarkerType,
@@ -41,6 +44,7 @@ import type {
 import { currentDateAndTime, localDateTimeToIso } from '../utils/date'
 import { CURRENT_USER_ID } from '../db/social'
 import { resolveExternalRestaurantLink, type ExternalLinkResolveResult } from '../services/externalRestaurantLink'
+import { calculateVisitPayment, visitReferencePrice } from '../services/visitSpend'
 import {
   TasteMapRestaurantAcquisitionResults,
   TasteMapRestaurantAcquisitionScaffold,
@@ -51,6 +55,7 @@ import {
 interface AddRestaurantModalProps {
   companionOptions: string[]
   friendOptions?: Array<{ id: string; nickname: string }>
+  canUploadDishPhotos?: boolean
   maxPhotos?: number
   photoUpgradeAvailable?: boolean
   existingRestaurantsByPoiId: Map<string, RestaurantSummary>
@@ -69,7 +74,7 @@ function splitValues(value: string) {
 export function AddRestaurantModal({
   companionOptions,
   friendOptions = [],
-  maxPhotos = 20,
+  maxPhotos = visitPhotoLimit('free'), canUploadDishPhotos = false,
   photoUpgradeAvailable = false,
   existingRestaurantsByPoiId,
   historyRestaurants,
@@ -138,6 +143,14 @@ export function AddRestaurantModal({
     }
     let active = true
     let completed = false
+    const visibilityChanged = () => {
+      if (document.visibilityState === 'hidden') {
+        active = false
+        setNearbyResults([])
+        setCurrentLocation(null)
+      } else setLocationAttempt((attempt) => attempt + 1)
+    }
+    document.addEventListener('visibilitychange', visibilityChanged)
     setLocatingCity(true)
     setNearbyLoading(true)
     setNearbyResults([])
@@ -165,7 +178,7 @@ export function AddRestaurantModal({
           setLocationLabel(detected.address || [detected.city, detected.district].filter(Boolean).join(' · '))
         }
         if (!active) return
-        setNearbyResults(nearby.slice(0, 8))
+        setNearbyResults(nearby)
         setNearbyError('')
         setNearbyMessage(nearby.length ? '' : '当前位置 3 公里内没有找到餐厅。')
       } catch (locationError) {
@@ -185,6 +198,7 @@ export function AddRestaurantModal({
     return () => {
       active = false
       window.clearTimeout(watchdog)
+      document.removeEventListener('visibilitychange', visibilityChanged)
     }
   }, [locationAttempt])
 
@@ -288,19 +302,23 @@ export function AddRestaurantModal({
       setError('用餐人数至少为 1 人。')
       return
     }
-    const isSeparatePayment = extraFields.paymentMode === 'separate'
+    const payment = calculateVisitPayment(numericPrice, extraFields.paymentMode, numericPartySize)
 
     setSaving(true)
     setError('')
     try {
+      if (status === 'visited') assertDishPhotoAccess({ photos, dishes }, canUploadDishPhotos)
+      if (status === 'visited') assertVisitPhotoAllowance({ photos, dishes }, maxPhotos)
       await onAdd({
         poi: selectedPoi,
         address,
         status,
-        tags: [],
+        // Category data must come from the selected provider result. Never
+        // manufacture cuisine tags merely to make the UI look complete.
+        tags: selectedPoi.categoryHints,
         pricePerPerson:
           status === 'visited'
-            ? calculatePricePerPerson(isSeparatePayment ? null : numericPrice, numericPartySize)
+            ? visitReferencePrice({ ...payment, paymentMode: extraFields.paymentMode, partySize: numericPartySize })
             : numericPrice,
         markerType,
         markerImageData,
@@ -312,8 +330,7 @@ export function AddRestaurantModal({
                 rating,
                 visibility: extraFields.visibility,
                 diningMode: extraFields.diningMode,
-                totalPrice: isSeparatePayment ? null : numericPrice,
-                myActualSpend: isSeparatePayment ? numericPrice : null,
+                ...payment,
                 paymentMode: extraFields.paymentMode,
                 partySize: numericPartySize,
                 queueDuration,
@@ -443,12 +460,11 @@ export function AddRestaurantModal({
               <h3>这次体验</h3>
               <StarRatingField onChange={setRating} value={rating} />
               <label className="field visit-feeling-field visit-note-primary"><span>笔记 <small>可选</small></span><textarea maxLength={1000} onChange={(event) => setFeeling(event.target.value)} placeholder="味道、氛围、当时的心情……想记多少都可以" rows={3} value={feeling} /></label>
-              <label className="field field-with-leading-icon">
-                <span>{extraFields.paymentMode === 'separate' ? '我的消费金额（元）' : '本次消费总价（元）'}</span>
-                <div><WalletCards size={16} /><input inputMode="decimal" min="0" onChange={(event) => setPrice(event.target.value)} placeholder="例如 193.50" step="0.01" type="number" value={price} /></div>
-                {extraFields.paymentMode !== 'separate' && calculatePricePerPerson(price ? Number(price) : null, Number(partySize)) !== null ? <small className="price-calculation">{partySize} 人 · 约 ¥{calculatePricePerPerson(Number(price), Number(partySize))}/人</small> : null}
-              </label>
               <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="primary" value={extraFields} />
+              <VisitSpendFields
+                onAmountChange={setPrice}
+                amount={price}
+              />
               <div className="field-grid visit-time-grid">
                 <label className="field field-with-leading-icon"><span>日期</span><div><CalendarClock size={16} /><input max="9999-12-31" onChange={(event) => setVisitDate(event.target.value)} required type="date" value={visitDate} /></div></label>
                 <label className="field"><span>时间</span><input onChange={(event) => setVisitTime(event.target.value)} required type="time" value={visitTime} /></label>
@@ -458,8 +474,8 @@ export function AddRestaurantModal({
                 <CompanionPicker onChange={updateCompanions} options={companionOptions} value={companions} />
               </div>
               <QueueDurationPicker onChange={setQueueDuration} value={queueDuration} />
-              <VisitPhotoPicker maxPhotos={maxPhotos} onChange={(nextPhotos) => setPhotos(nextPhotos)} photoIds={photos.map(() => null)} upgradeAvailable={photoUpgradeAvailable} value={photos} />
-              <DishEditor onChange={setDishes} value={dishes} />
+              <VisitPhotoPicker totalPhotoCount={visitPhotoCount({ photos, dishes })} maxPhotos={maxPhotos} onChange={(nextPhotos) => { assertVisitPhotoAllowance({ photos: nextPhotos, dishes }, maxPhotos); setPhotos(nextPhotos) }} photoIds={photos.map(() => null)} upgradeAvailable={photoUpgradeAvailable} value={photos} />
+              <DishEditor canUploadPhotos={canUploadDishPhotos} validatePhotoChange={(nextDishes) => assertVisitPhotoAllowance({ photos, dishes: nextDishes }, maxPhotos)} onChange={setDishes} value={dishes} />
               <VisitExtraFields friendOptions={friendOptions} onChange={setExtraFields} section="details" value={extraFields} />
             </div>
           ) : <div className="form-section want-to-go-details" data-record-section="want-to-go-form">
@@ -606,8 +622,14 @@ function SearchStep({
             state={nearbyLoading ? 'loading' : 'error'}
             title={nearbyLoading ? '正在取得新鲜位置' : '暂时无法取得精确位置'}
           /> : null}
-          {!nearbyLoading && !nearbyError && nearbyMessage ? <p className="tm-acquisition__inline-state">{nearbyMessage}</p> : null}
-          {!nearbyLoading ? <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={nearbyResults} /> : null}
+          {!nearbyLoading && !nearbyError && nearbyMessage ? <TasteMapRestaurantAcquisitionStatus
+            detail={nearbyMessage}
+            onRetry={onRetryLocation}
+            retryLabel="重新查找"
+            state="empty"
+            title="附近结果暂时为空"
+          /> : null}
+          {!nearbyLoading ? <PoiResultList existingRestaurantsByPoiId={existingRestaurantsByPoiId} onChoose={onChoose} onRecordExisting={onRecordExisting} results={nearbyResults} nearbySnapshot={nearbyResults} /> : null}
         </>}
         onOpenManual={onManualAdd}
         onOpenShare={() => setShareIngestionOpen((value) => !value)}
@@ -654,8 +676,9 @@ function PoiResultList({
   results,
   onChoose,
   onRecordExisting,
-}: Pick<SearchStepProps, 'existingRestaurantsByPoiId' | 'results' | 'onChoose' | 'onRecordExisting'>) {
-  return <TasteMapRestaurantAcquisitionResults items={results.map((poi) => {
+  nearbySnapshot,
+}: Pick<SearchStepProps, 'existingRestaurantsByPoiId' | 'results' | 'onChoose' | 'onRecordExisting'> & { nearbySnapshot?: object }) {
+  return <TasteMapRestaurantAcquisitionResults nearbySnapshot={nearbySnapshot} items={results.map((poi) => {
     const existingRestaurant = existingRestaurantsByPoiId.get(poi.amapPoiId)
     return {
       id: poi.amapPoiId,
@@ -720,6 +743,7 @@ function ManualRestaurantStep({
         district: resolved.district,
         longitude: resolved.longitude,
         latitude: resolved.latitude,
+        categoryHints: [],
         merchantImageUrl: null,
       })
     } catch (locationError) {

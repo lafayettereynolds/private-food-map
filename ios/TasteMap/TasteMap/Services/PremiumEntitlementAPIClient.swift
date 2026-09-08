@@ -3,12 +3,19 @@ import Foundation
 @MainActor
 protocol PremiumEntitlementAPI: Sendable {
     func entitlement() async throws -> PremiumEntitlementResponseV1
+    func trialEligibility() async throws -> PremiumTrialEligibility
+    func claimTrial() async throws -> PremiumTrialClaim
+}
+
+extension PremiumEntitlementAPI {
+    func trialEligibility() async throws -> PremiumTrialEligibility { throw PremiumEntitlementAPIError.invalidResponse }
+    func claimTrial() async throws -> PremiumTrialClaim { throw PremiumEntitlementAPIError.invalidResponse }
 }
 
 final class URLSessionPremiumEntitlementAPIClient: PremiumEntitlementAPI {
-    private let configuration: APIConfiguration
-    private let authorization: any SyncAuthorizationProviding
-    private let session: URLSession
+    let configuration: APIConfiguration
+    let authorization: any SyncAuthorizationProviding
+    let session: URLSession
     private let decoder = JSONDecoder()
 
     init(
@@ -22,7 +29,22 @@ final class URLSessionPremiumEntitlementAPIClient: PremiumEntitlementAPI {
     }
 
     func entitlement() async throws -> PremiumEntitlementResponseV1 {
-        var request = URLRequest(url: try configuration.url(for: "/api/v1/me/entitlements"))
+        let value: PremiumEntitlementResponseV1 = try await send(path: "/api/v1/me/entitlements")
+        guard value.apiVersion == PremiumEntitlementContract.apiVersion else { throw PremiumEntitlementAPIError.unsupportedVersion }
+        return value
+    }
+
+    func trialEligibility() async throws -> PremiumTrialEligibility {
+        try await send(path: "/api/v1/me/premium-trial-eligibility")
+    }
+
+    func claimTrial() async throws -> PremiumTrialClaim {
+        try await send(path: "/api/v1/me/premium-trial/claim", method: "POST")
+    }
+
+    private func send<Value: Decodable>(path: String, method: String = "GET") async throws -> Value {
+        var request = URLRequest(url: try configuration.url(for: path))
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         for (name, value) in try await authorization.headers() {
             request.setValue(value, forHTTPHeaderField: name)
@@ -46,11 +68,7 @@ final class URLSessionPremiumEntitlementAPIClient: PremiumEntitlementAPI {
                 message: body?["error"] as? String ?? "会员状态暂时无法确认。"
             )
         }
-        let value = try decoder.decode(PremiumEntitlementResponseV1.self, from: data)
-        guard value.apiVersion == PremiumEntitlementContract.apiVersion else {
-            throw PremiumEntitlementAPIError.unsupportedVersion
-        }
-        return value
+        return try decoder.decode(Value.self, from: data)
     }
 }
 

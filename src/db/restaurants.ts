@@ -20,11 +20,13 @@ import type {
   VisitDish,
   Visibility,
 } from '../types/domain'
-import { calculatePricePerPerson } from '../types/domain'
+import { visitReferencePrice } from '../services/visitSpend'
 import { syncQueueId } from '../types/sync'
 import { requestCloudSync } from '../services/syncEvents'
-import { createSharedMealInvitations } from './social'
+import { createSharedMealInvitations, CURRENT_USER_ID } from './social'
 import { ensureDiningCompanions } from './diningCompanions'
+import { visitPhotoLimit } from '../services/featurePolicy'
+import { assertDishPhotoAccess, assertVisitPhotoAllowance } from '../services/visitPhotoAllowance'
 
 export class DuplicateRestaurantError extends Error {
   constructor() {
@@ -114,6 +116,10 @@ export interface AddRestaurantInput {
 export async function addRestaurantFromPoi(
   input: AddRestaurantInput,
 ): Promise<Restaurant> {
+  if (input.initialVisit) {
+    assertDishPhotoAccess(input.initialVisit, (await db.users.get(CURRENT_USER_ID))?.membershipTier === 'member')
+    assertVisitPhotoAllowance(input.initialVisit, visitPhotoLimit((await db.users.get(CURRENT_USER_ID))?.membershipTier ?? 'free'))
+  }
   const now = new Date().toISOString()
   const existingRestaurant = await db.restaurants.where('amapPoiId').equals(input.poi.amapPoiId).first()
   if (existingRestaurant && !existingRestaurant.deletedAt) throw new DuplicateRestaurantError()
@@ -138,6 +144,7 @@ export async function addRestaurantFromPoi(
     longTermNote: '',
     pricePerPerson: input.pricePerPerson,
     phone: input.poi.phone ?? null,
+    websiteUrl: input.poi.websiteUrl ?? null,
     openingHours: input.poi.openingHours ?? null,
     markerType: input.markerType,
     markerImageData: input.markerImageData,
@@ -163,10 +170,7 @@ export async function addRestaurantFromPoi(
         totalPrice: input.initialVisit.totalPrice,
         myActualSpend: input.initialVisit.myActualSpend,
         paymentMode: input.initialVisit.paymentMode,
-        pricePerPerson: calculatePricePerPerson(
-          input.initialVisit.totalPrice,
-          Math.max(1, input.initialVisit.partySize, input.initialVisit.companions.length + 1),
-        ),
+        pricePerPerson: visitReferencePrice({ ...input.initialVisit, partySize: Math.max(1, input.initialVisit.partySize, input.initialVisit.companions.length + 1) }),
         partySize: Math.max(1, input.initialVisit.partySize, input.initialVisit.companions.length + 1),
         queueDuration: input.initialVisit.queueDuration,
         diningOccasions: [...new Set(input.initialVisit.diningOccasions)],
@@ -328,11 +332,13 @@ export interface AddVisitInput {
 }
 
 export async function addVisit(restaurantId: string, input: AddVisitInput) {
+  assertDishPhotoAccess(input, (await db.users.get(CURRENT_USER_ID))?.membershipTier === 'member')
+  assertVisitPhotoAllowance(input, visitPhotoLimit((await db.users.get(CURRENT_USER_ID))?.membershipTier ?? 'free'))
   const now = new Date().toISOString()
   const companions = normalizeCompanions(input.companions)
   const companionIds = (await ensureDiningCompanions(companions)).map((companion) => companion.id)
   const normalizedPartySize = Math.max(1, input.partySize, companions.length + 1)
-  const pricePerPerson = calculatePricePerPerson(input.totalPrice, normalizedPartySize)
+  const pricePerPerson = visitReferencePrice({ ...input, partySize: normalizedPartySize })
   const visit: Visit = {
     id: createId(),
     userId: 'owner',
@@ -417,16 +423,20 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
 }
 
 export async function updateVisit(id: string, input: AddVisitInput) {
+  const dishPhotosAllowed = (await db.users.get(CURRENT_USER_ID))?.membershipTier === 'member'
+  const photoLimit = visitPhotoLimit((await db.users.get(CURRENT_USER_ID))?.membershipTier ?? 'free')
   const now = new Date().toISOString()
   const companions = normalizeCompanions(input.companions)
   const companionIds = (await ensureDiningCompanions(companions)).map((companion) => companion.id)
   const normalizedPartySize = Math.max(1, input.partySize, companions.length + 1)
-  const pricePerPerson = calculatePricePerPerson(input.totalPrice, normalizedPartySize)
+  const pricePerPerson = visitReferencePrice({ ...input, partySize: normalizedPartySize })
   let updatedVisit: Visit | null = null
 
   await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
     const existingVisit = await db.visits.get(id)
     if (!existingVisit || existingVisit.deletedAt) throw new Error('没有找到要更新的到访记录。')
+    assertDishPhotoAccess(input, dishPhotosAllowed, existingVisit)
+    assertVisitPhotoAllowance(input, photoLimit, existingVisit)
     const restaurant = await db.restaurants.get(existingVisit.restaurantId)
     if (!restaurant || restaurant.deletedAt) throw new Error('没有找到这家餐厅。')
 
@@ -439,7 +449,11 @@ export async function updateVisit(id: string, input: AddVisitInput) {
       totalPrice: input.totalPrice,
       myActualSpend: input.myActualSpend,
       paymentMode: input.paymentMode,
-      pricePerPerson,
+      pricePerPerson: pricePerPerson ?? (
+        existingVisit.totalPrice === input.totalPrice && existingVisit.myActualSpend === input.myActualSpend
+        && existingVisit.partySize === normalizedPartySize && existingVisit.paymentMode === input.paymentMode
+          ? existingVisit.pricePerPerson : null
+      ),
       partySize: normalizedPartySize,
       queueDuration: input.queueDuration,
       diningOccasions: [...new Set(input.diningOccasions)],
@@ -528,24 +542,28 @@ export async function updateVisit(id: string, input: AddVisitInput) {
 export async function deleteVisit(id: string) {
   const now = new Date().toISOString()
   let restaurantId: string | null = null
+  let deletedRestaurantID: string | undefined
   await db.transaction('rw', db.restaurants, db.visits, db.photos, db.syncQueue, async () => {
     const visit = await db.visits.get(id)
     if (!visit || visit.deletedAt) throw new Error('没有找到要删除的到访记录。')
     const restaurant = await db.restaurants.get(visit.restaurantId)
     if (!restaurant || restaurant.deletedAt) throw new Error('没有找到这家餐厅。')
+    if (visit.userId !== CURRENT_USER_ID || restaurant.userId !== CURRENT_USER_ID) throw new Error('只能删除自己的到访记录。')
     restaurantId = restaurant.id
     await db.visits.put({ ...visit, deletedAt: now, updatedAt: now })
     const photoIDs = [...visit.photoIds, ...visit.dishes.map((dish) => dish.photoId)]
       .filter((photoID): photoID is string => Boolean(photoID))
     if (photoIDs.length) {
-      await db.photos.where('id').anyOf(photoIDs).modify({
-        localState: 'delete-pending',
-        updatedAt: now,
-        lastError: null,
-      })
+      const ownedPhotos = (await db.photos.where('id').anyOf(photoIDs).toArray()).filter((photo) => photo.userId === CURRENT_USER_ID && photo.restaurantId === restaurant.id)
+      await db.photos.bulkPut(ownedPhotos.map((photo) => ({ ...photo, localState: 'delete-pending' as const, updatedAt: now, lastError: null })))
     }
     const remaining = (await db.visits.where('restaurantId').equals(restaurant.id).toArray())
-      .filter((item) => !item.deletedAt && item.id !== id)
+      .filter((item) => !item.deletedAt && item.id !== id && item.userId === CURRENT_USER_ID)
+    if (!remaining.length) {
+      await deleteRestaurantInTransaction(restaurant.id, now)
+      deletedRestaurantID = restaurant.id
+      return
+    }
     const ratings = remaining.map((item) => item.rating).filter((rating): rating is StarRating => rating !== null)
     const averageRating = ratings.length ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length : null
     await db.restaurants.update(restaurant.id, {
@@ -559,16 +577,25 @@ export async function deleteVisit(id: string) {
   })
   requestCloudSync()
   if (!restaurantId) throw new Error('到访记录没有删除成功。')
-  return { restaurantId, visitId: id, updatedAt: now }
+  return { restaurantId, visitId: id, updatedAt: now, deletedRestaurantID }
 }
 
 export async function deleteRestaurant(id: string) {
   const now = new Date().toISOString()
   await db.transaction('rw', db.restaurants, db.visits, db.photos, db.syncQueue, async () => {
+    await deleteRestaurantInTransaction(id, now)
+  })
+  requestCloudSync()
+}
+
+// Both entry points commit the restaurant, visits, photos and sync tombstones
+// atomically. Never trigger a separate sync before the outer transaction commits.
+async function deleteRestaurantInTransaction(id: string, now: string) {
     const restaurant = await db.restaurants.get(id)
     if (!restaurant) return
-    const visits = await db.visits.where('restaurantId').equals(id).toArray()
-    const photos = await db.photos.where('restaurantId').equals(id).toArray()
+    if (restaurant.userId !== CURRENT_USER_ID) throw new Error('只能删除自己的餐厅。')
+    const visits = (await db.visits.where('restaurantId').equals(id).toArray()).filter((visit) => visit.userId === CURRENT_USER_ID)
+    const photos = (await db.photos.where('restaurantId').equals(id).toArray()).filter((photo) => photo.userId === CURRENT_USER_ID)
     await db.restaurants.update(id, { deletedAt: now, updatedAt: now })
     if (visits.length) {
       await db.visits.bulkPut(visits.map((visit) => ({ ...visit, deletedAt: now, updatedAt: now })))
@@ -595,6 +622,4 @@ export async function deleteRestaurant(id: string) {
         updatedAt: now,
       })),
     ])
-  })
-  requestCloudSync()
 }

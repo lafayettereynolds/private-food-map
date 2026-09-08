@@ -516,6 +516,38 @@
 			};
 			name = DebugQA;
 		};
+		A92000013080000000000001 /* DebugPrivatePreview */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = TasteMapShareExtension/TasteMapShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7G5J9MJX88;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TasteMapShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lafayette.tastemap.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG TASTEMAP_PRIVATE_PREVIEW $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TASTEMAP_APP_DISPLAY_NAME = "Taste Map";
+				TASTEMAP_APP_GROUP_IDENTIFIER = group.com.lafayette.tastemap;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = DebugPrivatePreview;
+		};
 		A91000023070000000000002 /* DebugQA */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -546,6 +578,37 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = DebugQA;
+		};
+		A92000023080000000000002 /* DebugPrivatePreview */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7G5J9MJX88;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG TASTEMAP_PRIVATE_PREVIEW $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = DebugPrivatePreview;
 		};
 		CEFC077F303FE86A006C2B3B /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -683,7 +746,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Taste Map uses your location to show nearby restaurants and your position on the map.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Taste Map uses the camera only when you choose to photograph a dining visit or dish.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Taste Map needs permission to save your taste profile poster to Photos.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Taste Map adds the dining analysis and memory posters you choose to save to your photo library.";
 				INFOPLIST_KEY_TasteMapAppGroupIdentifier = "$(TASTEMAP_APP_GROUP_IDENTIFIER)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -723,7 +786,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Taste Map uses your location to show nearby restaurants and your position on the map.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Taste Map uses the camera only when you choose to photograph a dining visit or dish.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Taste Map needs permission to save your taste profile poster to Photos.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Taste Map adds the dining analysis and memory posters you choose to save to your photo library.";
 				INFOPLIST_KEY_TasteMapAppGroupIdentifier = "$(TASTEMAP_APP_GROUP_IDENTIFIER)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -763,7 +826,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Taste Map uses your location to show nearby restaurants and your position on the map.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Taste Map uses the camera only when you choose to photograph a dining visit or dish.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Taste Map needs permission to save your taste profile poster to Photos.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Taste Map adds the dining analysis and memory posters you choose to save to your photo library.";
 				INFOPLIST_KEY_TasteMapAppGroupIdentifier = "$(TASTEMAP_APP_GROUP_IDENTIFIER)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -788,6 +851,47 @@
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = DebugQA;
+		};
+		A92000033080000000000003 /* DebugPrivatePreview */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TasteMap/TasteMap.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7G5J9MJX88;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Taste Map";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Taste Map uses your location to show nearby restaurants and your position on the map.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Taste Map uses the camera only when you choose to photograph a dining visit or dish.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Taste Map adds the dining analysis and memory posters you choose to save to your photo library.";
+				INFOPLIST_KEY_TasteMapAppGroupIdentifier = "$(TASTEMAP_APP_GROUP_IDENTIFIER)";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lafayette.tastemap;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG TASTEMAP_PRIVATE_PREVIEW $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TASTEMAP_APP_GROUP_IDENTIFIER = group.com.lafayette.tastemap;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = DebugPrivatePreview;
 		};
 		CEFC0785303FE86A006C2B3B /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -881,6 +985,7 @@
 			buildConfigurations = (
 				A900000C305000000000000C /* Debug */,
 				A91000013070000000000001 /* DebugQA */,
+				A92000013080000000000001 /* DebugPrivatePreview */,
 				A900000D305000000000000D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -891,6 +996,7 @@
 			buildConfigurations = (
 				CEFC077F303FE86A006C2B3B /* Debug */,
 				A91000023070000000000002 /* DebugQA */,
+				A92000023080000000000002 /* DebugPrivatePreview */,
 				CEFC0780303FE86A006C2B3B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -901,6 +1007,7 @@
 			buildConfigurations = (
 				CEFC0782303FE86A006C2B3B /* Debug */,
 				A91000033070000000000003 /* DebugQA */,
+				A92000033080000000000003 /* DebugPrivatePreview */,
 				CEFC0783303FE86A006C2B3B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;

@@ -6,6 +6,70 @@ import Testing
 @Suite("P0-B1 offline Sync Engine", .serialized)
 @MainActor
 struct SyncEngineTests {
+    @Test("Deleting a zero-visit Restaurant after repeated HTTP 500 retries stays deleted through pull")
+    func deleteAfterRepeatedUploadFailures() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let store = LocalTasteMapStore(context: context)
+        let restaurant = try store.restaurant(for: appleCandidate(), among: [])
+        restaurant.status = .visited
+        let record = try SyncRecordMapper.restaurantRecord(restaurant)
+        let upload = try #require(context.fetch(FetchDescriptor<SyncMutation>()).first)
+        upload.retryCount = 35
+        upload.lastError = "retryable:http_500"
+        upload.nextRetryAt = .distantFuture
+        let originalID = upload.mutationID
+        let originalPayload = upload.payload
+        try store.delete(restaurant)
+        let queue = SwiftDataSyncQueue(context: context)
+        let deletion = try #require(queue.allMutations().first { $0.operation == .delete })
+        #expect(deletion.mutationID != originalID)
+        #expect(try queue.nextReadyMutation() == nil)
+        #expect(RestaurantVisitStatePolicy.partition(restaurants: [restaurant], visits: []).visited.isEmpty)
+        try await SyncEngine(context: context, api: EchoSyncAPI(restaurantRecords: [record], restaurantVersion: 1)).synchronize()
+        #expect(restaurant.deletedAt != nil)
+        #expect(upload.mutationID == originalID)
+        #expect(upload.payload == originalPayload)
+        #expect(deletion.baseVersion == 1)
+        #expect(RestaurantVisitStatePolicy.partition(restaurants: [restaurant], visits: []).visited.isEmpty)
+    }
+
+    @Test("Deleting during an unacknowledged Restaurant upload retains a tombstone and a later delete")
+    func deleteDuringUpload() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let store = LocalTasteMapStore(context: context)
+        let restaurant = try store.restaurant(for: appleCandidate(), among: [])
+        let upload = try #require(context.fetch(FetchDescriptor<SyncMutation>()).first)
+        upload.state = .uploading
+        let uploadID = upload.mutationID
+        try store.delete(restaurant)
+        #expect(restaurant.deletedAt != nil)
+        let mutations = try context.fetch(FetchDescriptor<SyncMutation>())
+        #expect(mutations.contains { $0.mutationID == uploadID && $0.operation == .upsert })
+        #expect(mutations.contains { $0.operation == .delete && $0.entityID == restaurant.remoteID })
+        #expect(try context.fetch(FetchDescriptor<Restaurant>()).count == 1)
+    }
+
+    @Test("A newer pull cannot restore a Restaurant whose local delete is waiting for retry")
+    func pullPreservesPendingDelete() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let restaurant = syncedRestaurant()
+        context.insert(restaurant)
+        let serverRecord = try SyncRecordMapper.restaurantRecord(restaurant)
+        try LocalTasteMapStore(context: context).delete(restaurant)
+        let deletion = try #require(context.fetch(FetchDescriptor<SyncMutation>()).first)
+        deletion.nextRetryAt = Date.distantFuture
+        try context.save()
+        try await SyncEngine(context: context, api: EchoSyncAPI(restaurantRecords: [serverRecord], restaurantVersion: 2)).synchronize()
+        #expect(restaurant.deletedAt != nil)
+        #expect(restaurant.serverVersion == 2)
+        #expect(deletion.operation == .delete)
+        #expect(deletion.baseVersion == 2)
+        #expect(deletion.state == .queued)
+    }
+
     @Test("Local Restaurant and Visit push then pull with their relationship intact")
     func localCreatePushPullRoundTrip() async throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -240,6 +304,7 @@ struct SyncEngineTests {
 
 @MainActor
 private final class EchoSyncAPI: SyncAPI {
+    private let restaurantVersion: Int64
     private(set) var restaurantRecords: [RestaurantJSONContractV1]
     private(set) var visitRecords: [VisitSyncContractV1]
     private var tombstones: [SyncTombstoneV1]
@@ -248,11 +313,13 @@ private final class EchoSyncAPI: SyncAPI {
     init(
         restaurantRecords: [RestaurantJSONContractV1] = [],
         visitRecords: [VisitSyncContractV1] = [],
-        tombstones: [SyncTombstoneV1] = []
+        tombstones: [SyncTombstoneV1] = [],
+        restaurantVersion: Int64 = 1
     ) {
         self.restaurantRecords = restaurantRecords
         self.visitRecords = visitRecords
         self.tombstones = tombstones
+        self.restaurantVersion = restaurantVersion
     }
 
     func push(_ request: SyncPushRequestV1) async throws -> SyncPushResponseV1 {
@@ -281,7 +348,7 @@ private final class EchoSyncAPI: SyncAPI {
     }
 
     func pull(cursor: String, limit: Int) async throws -> SyncPullResponseV1 {
-        let restaurantEnvelopes = restaurantRecords.map { RestaurantSyncRecordEnvelopeV1(serverVersion: 1, record: $0) }
+        let restaurantEnvelopes = restaurantRecords.map { RestaurantSyncRecordEnvelopeV1(serverVersion: restaurantVersion, record: $0) }
         let visitEnvelopes = visitRecords.map { VisitSyncRecordEnvelopeV1(serverVersion: 1, record: $0) }
         return SyncPullResponseV1(
             apiVersion: 1,

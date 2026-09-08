@@ -25,7 +25,7 @@ describe('Premium feature policy', () => {
   })
 
   it('uses the agreed per-visit photo limits', () => {
-    expect(visitPhotoLimit('free')).toBe(3)
+    expect(visitPhotoLimit('free')).toBe(2)
     expect(visitPhotoLimit('member')).toBe(20)
   })
 })

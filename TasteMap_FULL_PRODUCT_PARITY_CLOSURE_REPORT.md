@@ -66,7 +66,7 @@ Production：未访问、未部署、未迁移、未写入
 | Photo | local-first、上传重试、公开范围与用户实拍 | picker、状态、gallery、缺图诚实 fallback | PhotoAsset / transfer coordinator 单一链路 | PASS |
 | Discovery | 关注/为你推荐/同味之选/最新/趋势五个一级 Tab | 居中标题、五项等宽、城市/筛选 compact | 每 Tab 使用正式数据源；无错误中间层 | PASS |
 | Community | Activity 自己的 optional rating、互动与公开边界 | 与 Discovery 同层，卡片密度和 action token 统一 | Activity rating 不再用 Restaurant aggregate 冒充 | PASS |
-| Profile / My | 当前用户身份、关注/被关注、去过/想去/总消费真实口径 | compact header、横排统计、主入口并排、回味/食单/洞察分组 | owner-scoped projection；Settings 是次级入口 | PASS |
+| Profile / My | 当前用户身份、关注/粉丝、去过/想去/总消费真实口径 | compact header、横排统计、主入口并排、回味/食单/洞察分组 | owner-scoped projection；Settings 是次级入口 | PASS |
 | Public Profile | 可见性与关系决定公开内容 | compact identity/stat topology、关系动作、公开记录/食单 | 不读取私有 Visit/消费；Restaurant 进入统一详情 | PASS |
 | Lists / Rankings | 本人和公开食单的排序、visibility、备注与 Restaurant identity | 紧凑列表和餐饮 fallback | local/public 权限分离，详情主体共享 | PASS |
 | Social | 搜索、好友/关注、请求与隐私边界 | 原生导航差异保留，正式入口顺序不重组产品 | 单一 social services / viewer-scoped cache | PASS |
@@ -160,7 +160,7 @@ Apple Maps-only Restaurant 继续使用 Taste Map UUID + provider identity，不
 本人 Profile 最终拓扑：
 
 - compact avatar / identity / join information / edit / Premium；
-- 关注 / 被关注；
+- 关注 / 粉丝；
 - 去过 / 想去 / 总消费；
 - 今天吃什么 + 我的口味档案并排；
 - 回味：本月回顾 / 年度回顾 / 那年今日；

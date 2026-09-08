@@ -25,9 +25,13 @@ nonisolated struct TasteMapRGBColor: Equatable, Sendable {
 nonisolated enum RestaurantScoreColorPolicy {
     static let unrated = TasteMapRGBColor(hex: 0x9ea3a0)
 
+    static func score(forFivePointRating rating: Double?) -> Double? {
+        guard let rating, rating.isFinite else { return nil }
+        return (rating * 20).rounded() / 10
+    }
+
     static func color(forFivePointRating rating: Double?) -> TasteMapRGBColor {
-        guard let rating, rating.isFinite else { return unrated }
-        return color(forTenPointScore: rating * 2)
+        color(forTenPointScore: score(forFivePointRating: rating))
     }
 
     static func color(forTenPointScore score: Double?) -> TasteMapRGBColor {

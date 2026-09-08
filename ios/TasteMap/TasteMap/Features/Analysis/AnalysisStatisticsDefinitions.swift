@@ -3,6 +3,53 @@ import Foundation
 /// P4-wide statistical semantics. Analysis modules may present the values differently,
 /// but they must all start from the same nullable fields and sample definitions.
 nonisolated enum AnalysisStatisticsDefinitions {
+    struct RecentComparison: Hashable, Sendable {
+        let currentStart: Date
+        let previousStart: Date
+        let currentVisitCount: Int
+        let previousVisitCount: Int
+        let currentRatedRestaurantCount: Int
+        let previousRatedRestaurantCount: Int
+        let frequencyAvailable: Bool
+        let scoreDeltaOutOfTen: Double?
+    }
+
+    static func recentComparison<T, ID: Hashable>(in values: [T], now: Date, calendar: Calendar,
+                                                 visitedAt: (T) -> Date, restaurantID: (T) -> ID,
+                                                 rating: (T) -> Double?) -> RecentComparison {
+        let currentStart = calendar.date(byAdding: .day, value: -90, to: now) ?? now
+        let previousStart = calendar.date(byAdding: .day, value: -90, to: currentStart) ?? currentStart
+        let current = values.filter { visitedAt($0) >= currentStart && visitedAt($0) <= now }
+        let previous = values.filter { visitedAt($0) >= previousStart && visitedAt($0) < currentStart }
+        let currentRatings = representativeRatings(in: current, restaurantID: restaurantID, rating: rating)
+        let previousRatings = representativeRatings(in: previous, restaurantID: restaurantID, rating: rating)
+        let ratingAvailable = currentRatings.count >= AnalysisSufficiencyThresholds.comparisonRatedRestaurants
+            && previousRatings.count >= AnalysisSufficiencyThresholds.comparisonRatedRestaurants
+        let frequencyAvailable = current.count >= AnalysisSufficiencyThresholds.frequencyVisits
+            && previous.count >= AnalysisSufficiencyThresholds.frequencyVisits
+            && Set(current.map(restaurantID)).count >= AnalysisSufficiencyThresholds.frequencyRestaurants
+            && Set(previous.map(restaurantID)).count >= AnalysisSufficiencyThresholds.frequencyRestaurants
+        return RecentComparison(currentStart: currentStart, previousStart: previousStart,
+            currentVisitCount: current.count, previousVisitCount: previous.count,
+            currentRatedRestaurantCount: currentRatings.count, previousRatedRestaurantCount: previousRatings.count,
+            frequencyAvailable: frequencyAvailable,
+            scoreDeltaOutOfTen: ratingAvailable ? (mean(currentRatings)! - mean(previousRatings)!) * 2 : nil)
+    }
+
+    /// Each distinct restaurant contributes one mean, regardless of repeat meals.
+    static func representativeRatings<T, ID: Hashable>(in values: [T], restaurantID: (T) -> ID, rating: (T) -> Double?) -> [Double] {
+        Dictionary(grouping: values, by: restaurantID).values.compactMap { group in
+            mean(group.compactMap(rating).filter { $0.isFinite && $0 >= 0.5 && $0 <= 5 })
+        }.sorted()
+    }
+
+    static func comparableMonthEnds(period: MonthlyPeriod, now: Date) -> (current: Date, previous: Date) {
+        guard period.contains(now) else { return (period.end, period.start) }
+        let calendar = period.calendar
+        let day = min(calendar.component(.day, from: now), calendar.range(of: .day, in: .month, for: period.previous.start)?.count ?? 28)
+        return (calendar.date(byAdding: .day, value: day, to: period.start) ?? period.end,
+                calendar.date(byAdding: .day, value: day, to: period.previous.start) ?? period.start)
+    }
     /// Overall restaurant/visit rating. Dimension ratings and Dish.rating are never substituted.
     static func overallRatings<T>(in values: [T], rating: (T) -> Double?) -> [Double] {
         values.compactMap(rating)
@@ -40,12 +87,16 @@ nonisolated enum AnalysisStatisticsDefinitions {
 /// Thresholds are intentionally centralized while remaining analysis-specific.
 /// A single Visit must not be promoted into a stable taste or relationship conclusion.
 nonisolated enum AnalysisSufficiencyThresholds {
+    static let frequencyVisits = 10
+    static let frequencyRestaurants = 5
+    static let frequencyShareChange = 0.15
+    static let comparisonRatedRestaurants = 5
     static let tasteProfile = (emerging: 3, established: 10)
     static let companion = (emerging: 3, established: 6)
     static let companionSpend = (emerging: 2, established: 6)
     static let monthly = (emerging: 3, established: 8)
     static let annual = (emerging: 4, established: 16)
-    static let recommendationSourceRankingRatedRestaurants = 6
+    static let recommendationSourceRankingRatedRestaurants = 5
     static let recommendationSourceAverageRatedRestaurants = 2
     static let recommendationSourceStableRatedRestaurants = 10
 }

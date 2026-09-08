@@ -50,6 +50,7 @@ export interface Restaurant {
   longTermNote: string
   pricePerPerson: number | null
   phone?: string | null
+  websiteUrl?: string | null
   openingHours?: string | null
   markerType: MarkerType
   markerImageData: string | null
@@ -282,6 +283,7 @@ export interface RestaurantSummary extends Restaurant {
   priceSource?: 'unknown' | 'manual' | 'visit_median'
   priceSampleCount?: number
   averageQueueMinutes: number | null
+  recommendationRank?: number
   recommendationScore?: number
   recommendationReason?: string
   isRecommendation?: boolean
@@ -338,8 +340,11 @@ export interface PoiSearchResult {
   district: string
   latitude: number
   longitude: number
+  /** Provider-supplied POI hierarchy/tags. Never inferred from the name. */
+  categoryHints: string[]
   merchantImageUrl: string | null
   phone?: string | null
+  websiteUrl?: string | null
   openingHours?: string | null
 }
 
@@ -349,6 +354,8 @@ export interface Coordinates {
 }
 
 export interface CommunityVisit {
+  personalTastePercent?: number | null
+  calibratedLikeProbability?: import('../contracts/recommendationSignal').CalibratedLikeProbability | null
   visit: Visit
   restaurant: Pick<Restaurant, 'id' | 'amapPoiId' | 'name' | 'address' | 'city' | 'latitude' | 'longitude' | 'merchantImageUrl' | 'phone' | 'openingHours' | 'pricePerPerson' | 'tags' | 'markerEmoji'>
   user: Pick<UserProfile, 'id' | 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId' | 'membershipTier'>

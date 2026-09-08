@@ -1,4 +1,3 @@
-import { IS_DEVELOPMENT } from '../config/appEnvironment'
 import type { Restaurant, RestaurantSummary, Visit } from '../types/domain'
 import { queueDurationApproximateMinutes } from '../types/domain'
 import { restaurantPriceInsight } from './priceIntelligence'
@@ -12,11 +11,11 @@ import { restaurantPriceInsight } from './priceIntelligence'
 export function buildRestaurantSummaries(
   restaurants: Restaurant[],
   visits: Visit[],
-  options: { development?: boolean } = {},
+  _options: { development?: boolean } = {},
 ): RestaurantSummary[] {
-  const development = options.development ?? IS_DEVELOPMENT
   const visitsByRestaurant = new Map<string, Visit[]>()
   for (const visit of visits) {
+    if (visit.deletedAt) continue
     const group = visitsByRestaurant.get(visit.restaurantId) ?? []
     group.push(visit)
     visitsByRestaurant.set(visit.restaurantId, group)
@@ -24,14 +23,8 @@ export function buildRestaurantSummaries(
   visitsByRestaurant.forEach((group) => group.sort((a, b) => b.visitedAt.localeCompare(a.visitedAt)))
 
   return restaurants.flatMap((restaurant) => {
-    const restaurantVisits = visitsByRestaurant.get(restaurant.id) ?? []
-    if (
-      development
-      && restaurant.status === 'visited'
-      && restaurantVisits.length === 0
-      && !restaurant.city.includes('杭州')
-    ) return []
-
+    if (restaurant.deletedAt) return []
+    const restaurantVisits = (visitsByRestaurant.get(restaurant.id) ?? []).filter((visit) => visit.userId === restaurant.userId)
     const ratedVisits = restaurantVisits.filter((visit) => visit.rating !== null)
     const priceInsight = restaurantPriceInsight(restaurant, restaurantVisits)
     const queuedVisits = restaurantVisits

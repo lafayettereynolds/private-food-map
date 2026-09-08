@@ -93,11 +93,11 @@ export function FriendsPage({
       if (!meal || !restaurant) return null
       return <article className="meal-invitation" key={participant.id}><div><strong>{inviter?.nickname ?? '好友'} 邀请你记录一次饭局</strong><p>{restaurant.name} · {new Date(meal.occurredAt).toLocaleString('zh-CN')}</p><span>接受后由你填写自己的评分、感受、照片和消费。</span></div><div><button className="primary-button" onClick={() => onAcceptMeal(participant, restaurant)} type="button"><Check size={14} /> 添加</button><button className="text-button" onClick={() => onDeclineMeal(participant)} type="button">忽略</button></div></article>
     })}</div></section> : null}
-    <section className="social-section"><h2>关注我的</h2>{followers.length ? <div className="friend-list">{followers.map((friendship) => {
+    <section className="social-section"><h2>粉丝</h2>{followers.length ? <div className="friend-list">{followers.map((friendship) => {
       const otherId = friendship.requesterId === currentUserId ? friendship.addresseeId : friendship.requesterId
       const isPendingIncoming = friendship.status === 'pending' && friendship.addresseeId === currentUserId
-      return <FriendRow actions={isPendingIncoming ? <><button aria-label="回关" onClick={() => mutate(friendship, 'accepted')} title="回关" type="button"><UserPlus size={15} /></button><button aria-label="移除关注者" onClick={() => mutate(friendship, 'rejected')} title="移除" type="button"><X size={15} /></button></> : <span className="relationship-status">互相关注</span>} key={friendship.id} onViewProfile={onViewProfile} user={userById.get(otherId)} />
-    })}</div> : <p className="inline-empty">还没有人关注你。</p>}</section>
+      return <FriendRow actions={isPendingIncoming ? <><button aria-label="回关" onClick={() => mutate(friendship, 'accepted')} title="回关" type="button"><UserPlus size={15} /></button><button aria-label="移除粉丝" onClick={() => mutate(friendship, 'rejected')} title="移除" type="button"><X size={15} /></button></> : <span className="relationship-status">互相关注</span>} key={friendship.id} onViewProfile={onViewProfile} user={userById.get(otherId)} />
+    })}</div> : <p className="inline-empty">还没有粉丝。</p>}</section>
     <section className="social-section"><h2>我关注的</h2>{following.length ? <div className="friend-list">{following.map((friendship) => {
       const otherId = friendship.requesterId === currentUserId ? friendship.addresseeId : friendship.requesterId
       return <FriendRow actions={<><span className="relationship-status">{friendship.status === 'accepted' ? '互相关注' : '已关注'}</span><button aria-label="取消关注" onClick={() => mutate(friendship, 'removed')} title="取消关注" type="button"><UserMinus size={15} /></button></>} key={friendship.id} onViewProfile={onViewProfile} user={userById.get(otherId)} />
@@ -106,15 +106,15 @@ export function FriendsPage({
 
   const discoveryContent = <section className="social-section people-discovery"><h2>搜索用户</h2><p>按显示名称或城市找到其他 Taste Map 用户。</p><label className="people-search"><Search size={16} /><input onChange={(event) => setQuery(event.target.value)} placeholder="至少输入 2 个字符" value={query} /></label>{!embedded || query.trim() ? <div className="friend-list">{results.length ? results.map((user) => {
     const existing = friendshipByUser.get(user.id)
-    return <FriendRow actions={existing && existing.status !== 'removed' && existing.status !== 'rejected' ? <span className="relationship-status">{existing.status === 'accepted' ? '互相关注' : existing.requesterId === currentUserId ? '已关注' : '关注你'}</span> : <button aria-label={`关注 ${user.nickname}`} onClick={() => requestFriend(user.id)} title="关注" type="button"><UserPlus size={15} /></button>} key={user.id} onViewProfile={onViewProfile} user={user} />
+    return <FriendRow actions={existing && existing.status !== 'removed' && existing.status !== 'rejected' ? <span className="relationship-status">{existing.status === 'accepted' ? '互相关注' : existing.requesterId === currentUserId ? '已关注' : '你的粉丝'}</span> : <button aria-label={`关注 ${user.nickname}`} onClick={() => requestFriend(user.id)} title="关注" type="button"><UserPlus size={15} /></button>} key={user.id} onViewProfile={onViewProfile} user={user} />
   }) : <p className="inline-empty">没有找到这个用户。</p>}</div> : <p className="people-discovery__hint">输入关键词后显示搜索结果。</p>}</section>
 
   const followingContent = <section className="social-section people-discovery"><h2>我关注的</h2><p>这些用户的新公开记录会出现在你的“关注”页面。</p><div className="friend-list">{followingUsers.length ? followingUsers.map(({ follow, user }) => <FriendRow actions={<span className="relationship-status">已关注</span>} key={follow.id} onViewProfile={onViewProfile} user={user} />) : followingFollows.length ? <p className="inline-empty">正在加载用户资料…</p> : <p className="inline-empty">还没有关注其他用户。</p>}</div></section>
-  const followersContent = <section className="social-section people-discovery"><h2>关注我的</h2><p>点击头像或昵称，可以查看对方的公开资料。</p><div className="friend-list">{followerUsers.length ? followerUsers.map(({ follow, user }) => <FriendRow actions={<span className="relationship-status">关注你</span>} key={follow.id} onViewProfile={onViewProfile} user={user} />) : followerFollows.length ? <p className="inline-empty">正在加载用户资料…</p> : <p className="inline-empty">还没有人关注你。</p>}</div></section>
+  const followersContent = <section className="social-section people-discovery"><h2>粉丝</h2><p>点击头像或昵称，可以查看粉丝的公开资料。</p><div className="friend-list">{followerUsers.length ? followerUsers.map(({ follow, user }) => <FriendRow actions={<span className="relationship-status">你的粉丝</span>} key={follow.id} onViewProfile={onViewProfile} user={user} />) : followerFollows.length ? <p className="inline-empty">正在加载用户资料…</p> : <p className="inline-empty">还没有粉丝。</p>}</div></section>
 
   return <section className={embedded ? 'profile-connections' : 'social-page friends-page'}>
     {!embedded ? <header className="social-page__heading"><div><span className="eyebrow">PEOPLE</span><h1>我的关注</h1><p>饭搭子仍可自由填写；互相关注后可以邀请共同饭局。</p></div><UsersRound size={28} /></header> : null}
-    {!embedded ? <div className="relationship-counts relationship-counts--profile"><div><strong>{followers.length}</strong><span>关注我的</span></div><div><strong>{following.length}</strong><span>我关注的</span></div></div> : null}
+    {!embedded ? <div className="relationship-counts relationship-counts--profile"><div><strong>{followers.length}</strong><span>粉丝</span></div><div><strong>{following.length}</strong><span>我关注的</span></div></div> : null}
     {embedded ? embeddedView === 'following' ? followingContent : embeddedView === 'followers' ? followersContent : discoveryContent : <>{connectionContent}{discoveryContent}</>}
   </section>
 }

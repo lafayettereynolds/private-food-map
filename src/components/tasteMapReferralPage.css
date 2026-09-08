@@ -1,0 +1,10 @@
+.tm-referral-code-form{display:grid;gap:var(--space-3,12px);padding:var(--space-4,16px)}
+.tm-referral-code-form label{font-size:14px;font-weight:650;color:var(--color-text-primary)}
+.tm-referral-code-form input{box-sizing:border-box;width:100%;min-width:0;min-height:48px;padding:12px;border:1px solid var(--color-divider);border-radius:var(--radius-md,12px);background:var(--color-background);color:var(--color-text-primary);font-size:16px;line-height:1.5;letter-spacing:normal}
+.tm-referral-code-form input::placeholder{color:var(--color-text-secondary);font-size:14px}
+.tm-referral-code-form input:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+.tm-referral-code-form p,.tm-referral-refresh p{margin:0;color:var(--color-text-secondary);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.tm-referral-code-form button{width:100%;min-height:44px;white-space:normal}
+.tm-referral-code-form .tm-referral-feedback{padding:12px;border-radius:var(--radius-md,12px);background:var(--color-primary-light);color:var(--color-primary-dark)}
+.tm-referral-refresh{display:grid;justify-items:start;gap:12px;margin-top:20px}
+.tm-referral-page .tm-hybrid-entry-row{overflow-wrap:anywhere}

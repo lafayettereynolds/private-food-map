@@ -203,6 +203,7 @@ nonisolated struct BackupRestaurantV1: Codable, Equatable, Sendable {
     let longTermNote: String
     let pricePerPerson: BackupMoneyV1?
     let phone: String?
+    var websiteUrl: String? = nil
     let openingHours: String?
     let markerType: BackupMarkerTypeV1
     let markerPhotoId: String?
@@ -537,7 +538,7 @@ extension BackupRestaurantV1 {
     private enum CodingKeys: String, CodingKey {
         case id, placeIdentities, name, address, city, latitude, longitude, status, preferenceLevel
         case overallRating, foodRating, environmentRating, serviceRating, valueRating, tags, longTermNote
-        case pricePerPerson, phone, openingHours, markerType, markerPhotoId, merchantImageUrl, markerEmoji
+        case pricePerPerson, phone, websiteUrl, openingHours, markerType, markerPhotoId, merchantImageUrl, markerEmoji
         case createdAt, updatedAt
     }
 
@@ -561,6 +562,7 @@ extension BackupRestaurantV1 {
         try values.encode(longTermNote, forKey: .longTermNote)
         try values.encode(pricePerPerson, forKey: .pricePerPerson)
         try values.encode(phone, forKey: .phone)
+        try values.encode(websiteUrl, forKey: .websiteUrl)
         try values.encode(openingHours, forKey: .openingHours)
         try values.encode(markerType, forKey: .markerType)
         try values.encode(markerPhotoId, forKey: .markerPhotoId)

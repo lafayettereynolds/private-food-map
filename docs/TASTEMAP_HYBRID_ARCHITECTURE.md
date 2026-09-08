@@ -39,7 +39,7 @@ The UI layer never imports Capacitor or native implementation details. Platform 
 | `src/platform/TasteMapBridgeProjection.ts` | Explicit DTO → shared Web presentation-model projection |
 | `src/hybrid/app/HybridAppShell.tsx` | Shared app shell, auth bootstrap, event subscription and persistent Hybrid/native route rendering |
 | `src/components/MyMapBrowsePage.tsx` | Canonical My Map / My List React page and shared `MapBrowseState` |
-| `src/components/MapView.tsx` | Browser-only Web map renderer, natural overlap and deterministic marker layering |
+| `src/components/MapView.tsx` | Browser-only Web map renderer, fixed circle anchors, natural city overlap, reversible wider-area Restaurant-image representatives and exact-coordinate member lists |
 | `src/components/NativeMapSurface.tsx` | Thin React declaration of the iOS map rectangle, filtered marker presentation and React-control exclusions |
 | `src/hybrid/routes/HybridRouteRegistry.ts` | Route readiness, hashes, deep-link parser and ownership declaration |
 | `ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift` | Persistent MapKit adapter that reuses `RestaurantMapView`; it does not create a second `MKMapView` implementation |
@@ -80,9 +80,108 @@ The v1 contract defines:
 
 Discovery engagement uses explicit interaction identity rather than a generic social destination. A visible Activity action carries the applicable `activityID`, authoritative `visitID`, `authorID`, and `restaurantID`; Like and Comment mutate/query the existing community interaction service by `visitID`, while WantToGo mutates the current user's Restaurant viewer state by `restaurantID`. Recommendation rows without an authoritative Activity/Visit target do not expose fake Like or Comment controls. Mutation responses return authoritative counts/state so optimistic UI can reconcile or roll back.
 
-Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `map.surface.update`, `map.viewport.changed`, `map.restaurant.selected`, `location.current`, and throttled `location.changed` delivery. `map.viewport` remains the owner-scoped data projection. `map.surface.update` is presentation-only: React sends the filtered marker DTOs, product-state descriptors, its viewport rectangle and small React-control exclusion rectangles; Native places the persistent MapKit surface and reports actual viewport/selection changes. It carries no credentials, persistence objects or write authority. Batch 2 adds typed owner-scoped Visit/Dish/photo writes, Restaurant acquisition, camera/photo-library input, StoreKit, Sync, permissions and data/account route actions without moving persistence, ownership, provider, entitlement or security policy into JavaScript. The viewport request carries bounds, zoom, scope, filters, sort/search state and an opaque request ID; the response contains lean owner-scoped marker/list DTOs plus stable unique-Restaurant totals for `去过 / 想吃 / 推荐`, and never serializes SwiftData entities. Scope totals are independent of bounds, filters and search so map gestures cannot make the primary labels jump; the active result's separate `totalCount` continues to describe the current query. Native-owned high-risk workflows keep their established Native screens/services behind specific typed methods; unsupported operations return `capability_unavailable` rather than pretending to succeed.
+The optional Discovery `calibratedLikeProbability` field is a backward-compatible future model-output channel, not a new recommendation producer. Its value is displayable only with explicit validated calibration, sufficient evidence, an approved positive-feedback definition/version, model/calibration versions, validation sample count and unexpired validity. Native remote/cache/bridge and shared React preserve the same fields. Existing `personalTastePercent` retains its wire name for compatibility but means a matching index, never a probability. Missing/invalid attestation uses the shared `口味匹配度` fallback; no current production model emits an approved calibrated probability, and neither Visit-count milestones nor the public 7.5 admission rule define liking. This contract does not change the recommendation snapshot, eligibility, routing or source of truth.
+
+Phase 2A formally implements runtime/auth status, Sign in with Apple, logout, Profile read, Restaurant read, Visit contract negotiation, selection haptics, typed navigation and event delivery in the shipping target. Phase 2B adds `map.viewport`, `map.surface.update`, `map.viewport.changed`, `map.restaurant.selected`, `location.current`, and throttled `location.changed` delivery. `map.viewport` remains the owner-scoped data projection. `map.surface.update` is presentation-only: React sends the filtered marker DTOs, product-state descriptors, its viewport rectangle and small React-control exclusion rectangles; Native places the persistent MapKit surface and reports actual viewport/selection changes. It carries no credentials, persistence objects or write authority. Batch 2 adds typed owner-scoped Visit/Dish/photo writes, Restaurant acquisition, camera/photo-library input, StoreKit, Sync, permissions and data/account route actions without moving persistence, ownership, provider, entitlement or security policy into JavaScript. The viewport request can carry bounds for bounded consumers, but the interactive My Map surface requests one full filtered result (capped at 300) and retains it while panning; the camera viewport is presentation state and never causes a marker-data replacement. The response contains lean owner-scoped marker/list DTOs plus stable unique-Restaurant totals for `去过 / 想吃 / 推荐`, and never serializes SwiftData entities. Scope totals are independent of bounds, filters and search so map gestures cannot make the primary labels jump; the active result's separate `totalCount` continues to describe the current query. Native-owned high-risk workflows keep their established Native screens/services behind specific typed methods; unsupported operations return `capability_unavailable` rather than pretending to succeed.
+
+### 3.1 Discovery query channel (2026-09-06, interface stage only)
+
+`discovery.page` is an additive bridge-v1 method negotiated by optional
+`supportedCapabilities.discoveryPage`; absence means unavailable. It accepts
+`mode`, requested `city` (empty delegates resolution to the server), `windowDays`
+(7, or 30 for Trending only), and an optional paired `cursor` / `snapshotID`.
+`forceRefresh` is first-page only. Native obtains the owner from the authenticated
+session, not JavaScript, then calls the existing real Discovery API with those
+inputs. No client-side filtering of the first twenty cards substitutes for a
+city query, and the new channel does not invoke provider fallback.
+
+The independent session coordinator binds the opaque server cursor to owner,
+mode, normalized requested city, server-resolved city, trend window and the
+accepted snapshot. Continuations pin resolved city and server `generatedAt`;
+the returned `items` accumulate accepted pages in server order, deduplicated by
+card ID, without reranking. `pagination` is `more` / `complete` / `unknown`, not
+a total count. Auth reset and per-mode query revisions reject late results;
+refresh invalidates pending append, and retries are not throttled. Public and
+friends-visible pages remain in session memory; this channel does not mutate
+legacy SwiftData placements or unsaved drafts. HTTP 401/403 clears every cached
+scope of the affected mode. Other failures preserve only the same query's last
+accepted snapshot and its cursor, with explicit structured freshness/issue.
+
+This is not a UI migration: `content.snapshot`, Shell/Map recommendation state,
+city/window controls and page controls still use their existing paths. The
+earlier legacy refresh channel retains its per-mode fresh/cached/unavailable/
+restricted statuses, force retry and isolated SwiftData read/write contexts.
+The page result declares `engagementState: unknown` and
+`interactionsAvailable: false`: the upstream page has no engagement counts, so
+the reused item DTO's old zero defaults must not appear as verified counts.
+Native page-target authorization, image authorization and authoritative social
+hydration must be connected before UI consumption. Browser exposes the typed
+method but advertises `discoveryPage: false` and rejects calls; it must not pair
+real server cards with its legacy local social mutations. Browser authenticated
+page production and the existing real social endpoints are a later bounded
+stage, not a claimed parity completion.
+
+### 3.2 Community city API (2026-09-06, source-only; not deployed)
+
+Formal `CommunityAPI.feed` accepts an explicit city for `following` and `latest`.
+The Worker applies its normalized city predicate before pagination, without
+changing visibility or qualified-Visit eligibility. Empty city remains all-city;
+it never selects GPS or Profile city. Feed cursors bind owner, scope and city;
+reusing another query's cursor or an old unbound cursor requires first-page
+refresh. Public-profile cursors retain their existing separate contract.
+
+The additive optional response `city` lets Native fail closed when a specified
+city reaches an older server that ignores it. Existing no-city callers and old
+DTOs remain readable. This source-only slice adds no bridge UI consumer, Native
+session overlay, cache write, route promotion or deployment. City-based Hybrid
+display still requires authorized session targets/images and social hydration;
+the unpublished friends-album HOLD remains unchanged. See
+`reports/COMMUNITY_CITY_API_VERTICAL_SLICE_2026_09_06.md` for exact separable hunks.
+
+### 3.3 Selected-city session presentation (2026-09-07)
+
+`discovery.cityPage`, negotiated separately by optional `discoveryCityPage`,
+accepts all five Discovery modes and a nonempty user-selected city. The optional
+7/30-day window and paired cursor/snapshot fields retain the existing semantics.
+It returns accumulated `discoveryItems` or `activityItems`, explicit pagination
+and freshness, and does not replace `content.snapshot` or Map's canonical For You
+snapshot. Native calls the real Discovery API for three modes and Community API
+for Following/Latest; it never substitutes GPS/Profile city or filters a default
+first page to impersonate a remote query.
+
+`TasteMapDiscoveryCitySession` owns bounded current-owner/current-mode city pages
+and their authorized Restaurant references, exact Activity targets and emitted
+photo descriptors in memory only. Query revisions, cursor scope, auth epoch and
+a ten-minute permission lifetime reject stale access; 401/403 revokes all city
+overlays and pending results. Detail, Record Visit, WantToGo, Roulette and private
+recommendation exclusions use these accepted references without creating a
+persistent Discovery placement. Photo downloads remain authenticated and
+revalidate the descriptor scope after awaiting. Restaurant-rating references
+retain actual Discovery aggregates. Community engagement is supplied by its
+existing response; Discovery has no authoritative engagement-read endpoint, so
+those results remain `unknown` and do not expose fake zero social counts.
+
+Only explicit DEBUG Visual QA uses an independent complete city test dataset:
+Hangzhou, Shanghai, Beijing and New York each have 36 defined mock items per mode,
+paged 20 then 16 through the same session coordinator. It does not enable network,
+read the default first-page cache, or write fixture Restaurants. The response
+marks `dataSource: debug_city_fixture`, and the shared UI must prominently say
+`模拟数据`. Release excludes the producer. Production remains `remote`; the
+Community city API source has not been deployed, so Following/Latest requests
+to an older server fail closed instead of displaying an unrestricted city feed.
+This is no route promotion or claim of production/phone acceptance.
 
 ## 4. Security and ownership boundary
+
+Premium Gift (2026-09-07) extends `premium.status` with optional `source`,
+`startedAt`, `statusText`, and `canManageSubscription`. Native's existing
+PremiumEntitlementService remains the access authority and projects these fields;
+React cannot infer access from a local profile tier or replace source precedence.
+The Browser adapter consumes the existing server membership service. Gift records
+are Taste Map user-scoped and independent of StoreKit records. Session generations
+reject stale entitlement responses even for A→B→A. Admin lives on the Worker,
+with real Bearer authentication and a server allowlist, outside the signed App UI.
+No route owner or product capability is changed.
 
 - The bridge exposes neither Apple identity/authorization tokens nor session refresh tokens.
 - Keychain remains native-only.
@@ -127,6 +226,12 @@ Profile → Restaurant and Map → Restaurant append one Hybrid history entry. H
 
 Deep links are parsed only for allowlisted `restaurant`, `profile`, `list`, and `activity` shapes, reject credentials/malformed identifiers, resolve to a typed route, and are handed to the declared owner. Production AASA/domain validation and public-link privacy remain separate native/backend release gates.
 
+Completed Hybrid editors use optional `navigation.openHybrid` command metadata `replaceCurrent`; it is not part of route identity and is absent on ordinary push commands. Native replaces the current history entry and folds an adjacent identical destination, so a restored editor cannot remain behind its saved Restaurant Detail. Browser Back starts immediately; applying a Native Back response waits for that Web history traversal (bounded when no prior entry exists), retains the latest-intent guard, and cannot be overwritten by the same traversal's later `popstate`. Correlated bridge acknowledgements remain adapter-local and Native-origin events retain their authority. This changes neither route ownership nor the persistent WebView.
+
+Secondary React pages share `PersistentPageNavigation` / `HybridBackButton` for their compact, scroll-persistent back chrome. The primitive owns the safe-area background and 44-point return target, but not navigation history or business state. Restaurant full-page consumers suppress the inner preview-card close; modal/card consumers retain their existing close. Browser document and nested overlay owners use the same primitive without introducing a second router. Native rollback keeps navigation chrome outside its `ScrollView`.
+
+Native presentation chrome has one owner, independently of route/data ownership. `TasteMapHybridNativeNavigationPolicy` identifies existing self-navigating Profile Edit, Restaurant Edit, acquisition-native, Restaurant Add-to-List, and Premium Store destinations; the generic Native host does not add another `NavigationStack` or exit to them. Body-only settings/system destinations retain the host navigation. Self-navigating authorization/missing-data fallbacks supply their own single exit. Profile editor variants use `TasteMapReturnButton` / shared React `PageBackIconButton` through `ModalShell` instead of duplicate Back + Cancel; save, draft disposal, pending-save dismissal locks, List completion and Premium cleanup remain owned by existing destination logic. This is presentation de-duplication, not a route-owner migration or new bridge capability.
+
 The Swift and TypeScript route registries are tested against the same ownership matrix. `HYBRID_INTEGRATED` means a route can run through the formal app target; it is not `HYBRID_PRIMARY`, and Release still launches current SwiftUI.
 
 Route existence is deliberately independent from primary-navigation membership. The route registry can contain `add` and every other owned surface while the exact bottom navigation remains only `map → discovery → profile` (`地图 → 发现 → 我的`). Add Restaurant is a real Hybrid route, but its sole root primary entry is the Map-owned floating `添加餐厅` CTA. It is forbidden to infer or generate bottom tabs from all registered routes.
@@ -170,15 +275,37 @@ Events queued before the Capacitor plugin attaches are delivered after attachmen
 
 The bridge controller also owns one persistent `TasteMapHybridMapSurfaceHost`. That host embeds the already-established SwiftUI `RestaurantMapView` / `MKMapView` presentation inside the persistent shell; it is not a second SwiftUI Map page and it never owns the page header, scopes, FilterBar, Add CTA, selection card, or bottom navigation. The host maps the React placeholder rectangle into controller coordinates, masks only the small React control rectangles and passes their hit tests back to the WebView. Hiding the Map for List or Restaurant Detail keeps the same MapKit instance alive, so center, zoom, bounds and annotation state survive the return path.
 
+Native map presentation is jointly gated by the accepted Hybrid Map route and the latest React visibility request. The runtime assigns a surface revision on receipt, before asynchronous session work, and the host ignores superseded updates. A hide takes effect on receipt; React also sends it directly from the layout transition rather than deferring it to a geometry animation frame. Native route changes independently hide the overlay on every non-Map destination. Early Map geometry can be prepared while hidden and becomes visible after Map route acceptance, preserving startup and return ordering without reloading or remounting either renderer. The existing public bridge DTO and route ownership remain unchanged.
+
 ## 9. Browser parity
 
 Browser and Capacitor reuse `ProfilePage`, `RestaurantPreviewCard`, `MyMapBrowsePage`, the canonical Restaurant Detail body, shared CSS/tokens, image policy and Web presentation models. Browser renders the map slot through `MapView.tsx` and its Web provider; iOS renders the same slot through the typed Native MapKit surface. This explicit engine exception does not permit the page chrome, content order, labels, filters, rating semantics, image priority or layout to fork.
 
 Add Restaurant follows the same rule at component level: Browser `AddRestaurantModal` and Hybrid `HybridAddRestaurantPage` compose the canonical `TasteMapRestaurantAcquisitionScaffold`, Search/City fields, Nearby state, and candidate-result renderer. Their adapters may differ for Web provider access versus typed Native location/share handoff, but they do not maintain parallel form markup or platform-specific visual CSS. All WKWebView acquisition inputs are at least `16px`, preserving native focus scale without weakening the viewport accessibility contract.
 
-The map product contract forbids numeric or food-count clusters at every zoom level. Every Restaurant remains an independent marker. Normal layout uses natural overlap without default offset, dispersion or spiderfy. Layer priority is deterministic: selected Restaurant → rating → visit count → stable Restaurant ID. The current-user avatar location marker is a separate layer and never participates in the Restaurant comparator. On Browser, a missing Web map SDK may degrade to the honest local neutral map shell. On iOS, a missing AMap Web credential is irrelevant: MapKit is the required formal engine, and a static Web fallback can never satisfy iOS pan/pinch acceptance.
+Nearby's existing v1 `candidates` field carries the complete accepted, distance-ordered 3 km snapshot, not a first-page truncation. The shared acquisition renderer expands it in local batches of 12 without GPS, another provider request, or a search cursor. The snapshot is owner/latest-request scoped before candidate registration and its UI batches reset on refresh, location or owner invalidation. Native rollback keeps the same complete-snapshot/local-expansion semantics. This compatible clarification adds no bridge method, DTO key, route-owner change, or claim of exhaustive provider recall.
+
+The latest map product contract shows Restaurant imagery without quantity numbers, count circles or numeric stack badges. City and street views retain individual Restaurants with natural overlap; wider-area groups retain a real member's Restaurant image, while exact-coordinate stacks expose their real member list. Browser and iOS retain different map engines while sharing these data and interaction semantics. Native MapKit keeps the annotation/hit frame fixed at `44 × 44pt` and scales only its centered visited inner circle from 28 points nearby to 24 points far away; including the existing 2-point white separation ring on both sides, its visible outer diameter is 28–32 points. Native selected emphasis adds only 2–4 points to the inner diameter and remains centered. Browser uses shared overall sizes of 32 px normal and 36 px selected on both mobile and desktop, without continuous diameter scaling. The whole normal marker, including its white ring, remains within roughly twice an ordinary nearby POI's visual size; rating/dashed rings and the neutral hairline remain, with weaker shadow. No free-slot displacement or bottom anchoring moves a circle away from its source coordinate.
+
+Both engines keep distinct Restaurant coordinates independently visible through city/street scale (`≤0.8°` latitude span), allowing natural overlap. Only exact latitude/longitude matches share a stack/list; the earlier 50 m proximity rule is superseded. Above `0.8°`, wider-area grouping progressively increases its collision radius to the full value at `2.4°`. A group retains its highest-priority real member's Restaurant image at that member's coordinate, never a quantity number, and tap zooms toward members. An exact-coordinate stack opens its complete real member list via the typed `map.restaurant.groupSelected` Hybrid event or Native rollback list. Labels use `此处` wording: no mall identity is inferred from proximity. Higher scores appear in front: personal ordering and the stable source-coordinate anchor follow rating → visit count → stable Restaurant ID; recommendation rank only breaks equal-rating ties. Selection temporarily changes foreground order without changing the wider-area representative. Original member coordinates never change, grouping reverses when zooming in, and pure pan preserves data, images, totals and ordering. These thresholds are scale controls, not administrative-boundary data. The root annotation frame never participates in size animation; QA geometry measures the actual visible circle center and outer diameter. The current-user avatar location marker retains its separate pointer anchor and never participates in the Restaurant comparator. On Browser, a missing Web map SDK may degrade to the honest local neutral map shell. On iOS, a missing AMap Web credential is irrelevant: MapKit is the required formal engine, and a static Web fallback can never satisfy iOS pan/pinch acceptance.
+
+Exact-coordinate stacks must render up to three genuine member visuals: the highest-priority front Restaurant plus at most two actual member-image/fallback layers, never empty outline plates or duplicated leader images. The front circle remains the geographic anchor; back layers use fixed local offsets `(-10, -8)` and `(8, -10)` within the composite, without changing independent annotation coordinates. Each layer consumes that member's canonical descriptor and ring semantics, and the complete member set remains accessible in the list. Asynchronous image completion must validate member/visual identity so reuse cannot show a previous stack's image.
+
+The later 2026-09-05 pending-destination override adds 4 points to `想吃 / 推荐` diameter without altering the visited baseline: Native normal outer diameter 32–36 points and selected at most 40, inside the same 44-point annotation. Browser keeps visited CSS border-box sizes 32/36 px and pending sizes 36/40 px, using a fixed 44 px anchor and the unchanged white ring. Real back members share this status policy; GPS distance never shrinks pending markers. MapKit receives the deterministic order through distinct `zPriority` values and a selected priority, not competing writes to annotation-root `CALayer.zPosition`. Pan acceptance includes actual compositor ordering and stable member/image identity. No DTO, ownership, engine or primary-route change is involved.
 
 `TasteMapBridgeProjection` is an anti-corruption layer for legacy Web presentation sentinels. It does not rewrite real user IDs in DTOs or native storage.
+
+### 9.0.1 2026-09-05/06 overnight scope, sizing and acquisition corrections
+
+These corrections do not change engines, route ownership, or the Native rollback boundary. `MyMapBrowsePage` owns independent visited/want/recommended query banks, shared with the List view of the same scope; Native rollback uses `PersonalRestaurantScopeQueries`. Switching scope restores its query without fitting the camera. An explicit filter/search change fits only when the matching current snapshot is accepted, and a later scope switch cancels an unapplied fit. Cache identity includes every supported advanced filter.
+
+Near/approved regional marker dimensions above remain the baseline through `2.4°` latitude span. Beyond that, shared logarithmic progress to `80°` shrinks Native inner diameter 24→10 points (visible outer 28→14) and Browser CSS border-box diameter 32→14 px. Pending and selection emphasis taper to 1 point. Anchor frames and source coordinates remain fixed; the grouping baseline is separate from visual diameter. The rejected 35 m / 24 px five-image flower experiment is not retained. Different coordinates overlap naturally; only strict coordinate matches use real-image stacks.
+
+Owner Profile summary composition shares compact 8 / 4 / 44 / 10 spacing and hit-target tokens across React Browser/Capacitor and Native owner previews. It does not change statistics calculations, typography or field order.
+
+Restaurant acquisition accepts bounded shorthand/alias matches and resolves provider completions into real candidates before display. Text search uses a fresh accepted GPS fix only when it matches the selected city. An expired previously accepted fix triggers the existing bounded precise-location refresh; failure falls back to city/name search, never a stale or city-center GPS substitute. With no prior accepted location/authorization, text search does not start a permission wait. Nearby separately enforces full accuracy and merges the 500 m POI supplement before the existing 3 km cutoff/distance sort. Synthetic acquisition GPS is paired only with the explicit synthetic-provider test gate, not ordinary QA or iPhone search.
+
+The v1 acquisition DTO adds optional `cursor` / `nextCursor` without changing existing callers. The UI treats the cursor as opaque; Native pages capture owner, query, city, accepted location, candidates and expiry. Native consumes each cursor once, clears pages on a new search, and checks owner plus generation after async work before registering candidates. Editing query/city invalidates old UI responses and next-page results. Browser uses provider pagination behind the same interface. Continued loading means more actually obtained/provider pages, not a promise of exhaustive chain-store coverage. Exact shop availability and physical iPhone position still require real-device verification.
 
 ### 9.1 Independent acceptance gates
 
@@ -192,11 +319,33 @@ One shared React/CSS tree prevents platform drift, but two hosts can still rende
 6. `FUNCTION / SEMANTIC`: interactions, data sources, states and return paths, including Native owner-scoped capability authority;
 7. `NEGATIVE CONTRACT`: forbidden topology, duplicate pages, semantic substitutions, no-op actions and silent capability loss are absent.
 
-An applicable failure keeps the surface out of `PASS`, even when the other gates pass. Objective topology is executable policy, not documentation alone. `hybrid/tests/HybridGlobalProductContract.test.ts` locks exact bottom-navigation count/order, the single Add primary entry, Map scopes, Discovery tabs, canonical Restaurant Detail ownership and negative patterns such as clusters, default marker separation, wrong Activity-rating semantics and paste-link primary acquisition. App Shell/navigation changes must run this suite.
+An applicable failure keeps the surface out of `PASS`, even when the other gates pass. Objective topology is executable policy, not documentation alone. `hybrid/tests/HybridGlobalProductContract.test.ts` locks exact bottom-navigation count/order, the single Add primary entry, Map scopes, Discovery tabs, canonical Restaurant Detail ownership and negative patterns such as fabricated cluster counts, default marker separation, wrong Activity-rating semantics and paste-link primary acquisition. App Shell/navigation changes must run this suite.
 
 Batch closure also performs a systemic source scan for platform-specific page forks, migration-state hiding (`readOnly`, `disabled`, `unavailable`, missing/no-op callbacks), route-to-tab generation and shared Browser/Capacitor errors. Permission-sensitive actions are emitted by typed Native capability DTOs; JavaScript does not infer ownership from a user ID string or visibility state.
 
+### Food-list read/share boundary (2026-09-06, first stage)
+
+The additive optional `listsRead` / `listShare` capabilities expose `lists.get` and `lists.createShareLink`. List Restaurant DTOs preserve the original optional coordinate and an optional `{ valueOutOfTen, source, sampleCount }` rating. The source is `viewer` only for that viewer's own Visit aggregate, or `public` only for a supplied public aggregate; the current List API has no public rating aggregate, so that missing value stays nil. Public detail uses the existing authenticated List API in pages of 50; Native/Browser keep owner/List/revision-scoped opaque continuation tokens, reject superseded responses, and invalidate unauthorized cached detail. The shared React detail merges real pages and retains the existing row information. Link creation reuses the formal public-sharing API with current-owner checks; only the returned validated opaque HTTPS URL reaches the system-share action.
+
+This is not food-list Map integration or a route-status promotion. My Map's gate, viewport, coordinates and events are unchanged. The legacy Browser CRUD handoff and Native rollback food-list Map/rating/share differences remain separate open work; anonymous share landing pages retain their deliberately privacy-reduced summary contract.
+
+### Analytics identity and shared-report boundary (2026-09-06)
+
+The optional `profile.analyticsIdentity` bundle supplies explicit `ownerUserID` / `recordOwnerID` proof for the existing presentation sentinel. The shared dataset accepts that mapping only when the bundle belongs to the actual profile user; it then filters records by the proved record owner before making report-local copies. Real DTO user IDs and native storage are not rewritten, and missing or mismatched proof never broadly authorizes the `owner` sentinel.
+
+Native reads the current owner's real DiningCompanion and RecommendationSource directories, including rename/delete revisions, and the existing `Visit.recommendationSourceID` association. Local IDs and existing remote aliases are stable identities; linked social-user IDs are not companion/source IDs. The projection is read-only: it adds no schema, API, Worker, synchronization or persistence write. Known-empty directories are `[]`; unavailable directories or association data are `null`. Browser supplies its real owner-scoped companion directory, but its current persisted Visit/DB model has no formal recommendation-source directory/link channel, so source analytics remain explicitly unavailable there. The lightweight bridge-core build also reports unavailable identity data rather than inventing model fixtures.
+
+Companion/source models preserve the Native P4-B/C identity and sample safeguards while adding the shared report's detailed evidence. Formal ID associations take precedence; legacy names resolve only when a known association is ID-less and the owner directory has one unambiguous active match. Source attribution is determined from full history once per Restaurant, so a later revisit or period selection cannot reassign its origin. Selected companion/source summaries and Restaurant evidence use that exact selection; separately labelled comparison sections may retain all eligible entities. The shared dataset excludes deleted, orphaned, invalid-date and future records against one report clock; displayed dates use the selected/device time zone. Report privacy metadata keeps companion identity and spending out of default public-share projection. This is an additive data boundary, not a route promotion or proof of installed-device acceptance.
+
 ## 10. Build and Release policy
+
+### Discovery city-search presentation boundary (2026-09-06, source integration)
+
+All five shared Discovery tabs use `TasteMapCitySearch`: arbitrary city input is allowed, and loaded cities are suggestions, never an allow-list. NFKC/whitespace and optional `市` aliases normalize query labels only; stored Restaurant cities and GPS coordinates are untouched. Selecting a city requests `discovery.cityPage` for the current mode. It must not filter the first local `content.snapshot` batch and present that as a complete city search. Explicit reset returns to the unchanged default snapshot, and the selected city survives switching among the five tabs.
+
+The React city-query controller is session-only. It immediately drops the previous selection, checks current authenticated ownership before and after requests, ignores superseded city/tab responses, and invalidates on authentication events. Continuation requires the same mode/city/window and paired opaque snapshot/cursor; returned items are cumulative. Failed append retains only the same owner's accepted page; failed replacement cannot resurrect an earlier city. Unknown engagement removes social count/actions rather than presenting fabricated zero counts. Query load/error/empty/retry/pagination states are explicit; client rating/sort filters are separate from the number of server results loaded.
+
+The formal Browser adapter still reports `capability_unavailable` for city pages until authoritative authentication, city data and social interactions are connected together. The legacy Browser Community input is not proof of that capability. Native target/photo authorization and production server availability must be verified separately before claiming physical-device completion; these source changes do not stage/install the App or authorize deploying unrelated held Worker changes.
 
 The production Hybrid bundle is created by `pnpm run hybrid:build`; the Debug evidence bundle by `pnpm run hybrid:build:debug`. Capacitor sync is followed by the deterministic local Swift-package configuration script because Capacitor regenerates its package manifest.
 
@@ -215,6 +364,8 @@ The Phase 1 internal shell remains a diagnostic host. Phase 2A adds Capacitor 8.
 ### Development companion app isolation
 
 The shared Xcode scheme `TasteMap QA` builds configuration `DebugQA` as the independently installable companion app `味图测试`. Its bundle identifier is `com.lafayette.tastemap.qa`; its Share Extension uses `com.lafayette.tastemap.qa.ShareExtension`; and both targets use `group.com.lafayette.tastemap.qa`. The private app keeps `com.lafayette.tastemap` and `group.com.lafayette.tastemap`. Never reuse the private identifiers for QA installation: the separate application sandbox, default Keychain access group and App Group are what prevent test login, local data and pending share imports from overwriting or leaking into Lafayette's private app. `DebugQA` is development-only, starts with the isolated rich product fixture, uses the badged `AppIconQA` asset, and is not a Release/App Store configuration.
+
+Physical-device private previews use the shared `Taste Map Private` scheme and `DebugPrivatePreview` configuration. That configuration preserves the private bundle identifier, App Group, official icon, Keychain session, SwiftData store and real network services, but fixes the root UI to the current Hybrid application. Plain `Debug` remains available for native regression testing and must never be used to overwrite the private phone installation. Neither private-preview nor QA installation may depend on a one-off launch argument to select the current UI.
 
 ## 11. Migration lifecycle
 
@@ -244,8 +395,19 @@ See `TASTEMAP_HYBRID_MIGRATION_STATUS.md` for the current route matrix.
 - Do not remove current SwiftUI rollback code without separate approval.
 - Do not create a new WebView per route or native handoff.
 - Do not pass tokens, authorization headers or cloud-provider credential code into the formal Hybrid React bundle.
-- Do not reintroduce clusters, default offset/spiderfy/dispersion, platform-specific Map page forks or a second Map/List query state.
+- Do not reintroduce marker quantity numbers, numeric stack badges, city/street proximity hiding, decorative aggregates, collision-avoidance offsets, free slots, bottom-anchored Restaurant circles, spiderfy/dispersion, platform-specific Map page forks or a second Map/List query state. Wider-area Restaurant-image groups split reversibly on zoom-in, and every exact-coordinate stack exposes its complete real Restaurant list.
 - Do not let React resolve private native paths or independently change the canonical Restaurant image source identity.
 - Do not begin a new route migration merely because Phase 2B infrastructure is ready.
 - Do not equate route registration with bottom-tab membership or add Add Restaurant as a fourth tab.
 - Do not infer Product correctness from Browser/Capacitor equality; Product Contract, visual reference, function and native data/security remain separate gates.
+
+
+## Referral Reward extension — 2026-09-07
+
+Settings now owns the additive detail route `settings/referrals` (`surface=settings, identifier=referrals`). Browser and Capacitor use `TasteMapReferralPage`, with the formal navigation stack handling the return path. Native-primary Settings has a matching `ReferralPremiumView`; the production root remains NATIVE_PRIMARY.
+
+Additive bridge-v1 methods `referrals.dashboard` and `referrals.prepareRegistration` carry only explicit DTOs and an invitation code. Native owns session credentials, account-scope checks, temporary registration hints and Apple exchange. No token crosses into React. Browser does not gain a new Apple sign-in implementation in this task; an unavailable real session is an explicit auth-required state, not a fixture identity.
+
+The Worker owns one-time registration attribution, five lifetime slots and a separate Premium Reward ledger. `referral_reward` is a fixed-term entitlement, projected by the existing authoritative service. Settlement runs on entitlement/dashboard reads and a five-minute scheduled handler; recorded Apple end time anchors queued rewards even if the next read is late. Successful Native sync refreshes authoritative Premium so the first valid Visit can unlock the reward without opening a paywall.
+
+The temporary invitation hint is not an entitlement: it lives only in Native memory for at most 24 hours and clears after successful sign-in or logout. Failed/cancelled sign-in may be retried. Reopen the original link or re-enter its code after an app restart. No post-registration attribution or JavaScript credential storage is added.

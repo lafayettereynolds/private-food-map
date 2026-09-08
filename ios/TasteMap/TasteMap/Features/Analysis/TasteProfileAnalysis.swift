@@ -243,7 +243,7 @@ nonisolated struct TasteProfileInput: Sendable {
                     valueRating: visit.valueRating,
                     environmentRating: visit.environmentRating,
                     serviceRating: visit.serviceRating,
-                    myActualSpend: visit.myActualSpend,
+                    myActualSpend: visit.resolvedActualSpend,
                     diningMode: visit.diningMode.rawValue,
                     diningOccasionLabels: visit.diningOccasionDisplayTitles,
                     diningOccasionText: visit.diningOccasionText,
@@ -320,6 +320,8 @@ nonisolated struct TastePreferenceRank: Identifiable, Hashable, Sendable {
     let repeatVisitCount: Int
     let averageRating: Double?
     let ratedVisitCount: Int
+    var ratedRestaurantCount: Int = 0
+    var observedSpanDays: Double = 0
 }
 
 nonisolated struct AnalysisFrequencyItem: Identifiable, Hashable, Sendable {
@@ -447,6 +449,8 @@ nonisolated struct TasteProfileAnalysis: Identifiable, Hashable, Sendable {
     let restaurants: [RepresentativeRestaurant]
     let dataNote: String
     let footer: String
+
+    var recentComparison: AnalysisStatisticsDefinitions.RecentComparison? = nil
 
     var hasAnyData: Bool { visitCount > 0 }
     var availableInsights: [AnalysisInsight] { insights.filter(\.isAvailable) }

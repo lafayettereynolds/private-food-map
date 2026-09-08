@@ -28,7 +28,8 @@ private struct CommunityPreviewStateView: View {
                     ForEach(items) { item in
                         PublicContentCard(
                             item: item, photoAPI: nil,
-                            onOpenRestaurant: {}, onOpenUser: {}, onWantToGo: {}
+                            onOpenRestaurant: {}, onOpenUser: {}, onWantToGo: {},
+                            onRecordVisit: {}, onAddToList: {}, onAddToRoulette: {}
                         )
                     }
                 }

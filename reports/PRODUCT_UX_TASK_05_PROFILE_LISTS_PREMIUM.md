@@ -17,9 +17,9 @@ No Restaurant/Visit/List/Premium data model, sync, authentication, Worker, D1, s
 - `去过` is the number of distinct visited Restaurants, not the number of Visits.
 - `想去` is the number of active Restaurants whose status is `wantToGo`.
 - `总消费` is the sum of non-`nil` `Visit.myActualSpend` values only; an unrecorded spend is not treated as zero-valued evidence.
-- `关注 / 被关注` continues to come from the paginated social API and deduplicates user identities.
+- `关注 / 粉丝` continues to come from the paginated social API and deduplicates user identities.
 - `我的榜单` remains the real `RestaurantList` product with create, edit, add/remove, reorder, visibility, restart persistence, and public presentation behavior.
-- `味觉足迹` is the Visit timeline. It is not another Restaurant list and is therefore not nested inside `我的食单`.
+- `味觉足迹` is the independent private food-action timeline. Its current contract merges Visits and active Want to Go saves, so it is not another Restaurant list and is not nested inside `我的食单`.
 - Premium entitlement state and purchase-provider behavior are unchanged. The approved hamburger badge remains the historical Premium identity asset.
 
 ## Step B — Profile topology restored
@@ -33,7 +33,7 @@ The logged-in Profile retains this product order:
 5. `回味`: `本月回顾 / 年度回顾 / 那年今日`.
 6. `我的食单`: the real `我的榜单` entry only.
 7. `发现与洞察`: `最佳饭搭子 / 谁最会种草`.
-8. `味觉足迹`: an independent Visit timeline entrance.
+8. `味觉足迹`: an independent Visit and Want to Go timeline entrance.
 9. Settings as a secondary system entrance.
 
 The former duplicated `去过的餐厅 / 想吃的餐厅 / 味觉足迹` card inside `我的食单` was removed. The top `去过` and `想去` statistics remain navigable, so the functionality was not deleted or hidden.

@@ -1,4 +1,5 @@
 import CoreLocation
+import CoreGraphics
 import Foundation
 
 enum RestaurantMapMarkerStatus: String, Equatable {
@@ -15,19 +16,25 @@ enum RestaurantMapMarkerStatus: String, Equatable {
     }
 }
 
-/// Restores the established Web distinction for saved-but-unvisited places:
-/// wanted Restaurants use a quiet dashed ring while visited/recommended
-/// Restaurants keep the score-colored solid ring.
+/// Restores the established Web distinction for places the viewer has not
+/// visited: wanted and recommended Restaurants share the quiet neutral dashed
+/// shell, while visited Restaurants keep the score-colored solid ring.
 enum RestaurantMapMarkerRingPolicy {
-    static let wantedOpacity = 0.82
-    static let wantedDashPattern = [3.0, 3.0]
+    static let unvisitedOpacity = 0.82
+    static let unvisitedDashPattern = [3.0, 3.0]
+    static let outerWhiteRingWidth = 2.0
+    static let outerHairlineWidth = 0.75
+
+    static func isUnvisited(status: RestaurantMapMarkerStatus) -> Bool {
+        status != .visited
+    }
 
     static func isDashed(status: RestaurantMapMarkerStatus) -> Bool {
-        status == .wantToGo
+        isUnvisited(status: status)
     }
 
     static func opacity(status: RestaurantMapMarkerStatus) -> Double {
-        isDashed(status: status) ? wantedOpacity : 1
+        isUnvisited(status: status) ? unvisitedOpacity : 1
     }
 }
 
@@ -46,6 +53,8 @@ struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
     let visual: RestaurantMapMarkerVisual
     let publicPhotoID: String?
     let fallbackMerchantImageURL: URL?
+    let allowsRemoteImages: Bool
+    let recommendationRank: Int?
     let visitCount: Int
     let averageRating: Double?
     let distanceKilometers: Double?
@@ -59,6 +68,8 @@ struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
         visual: RestaurantMapMarkerVisual,
         publicPhotoID: String? = nil,
         fallbackMerchantImageURL: URL? = nil,
+        allowsRemoteImages: Bool = false,
+        recommendationRank: Int? = nil,
         visitCount: Int,
         averageRating: Double?,
         distanceKilometers: Double?
@@ -71,18 +82,26 @@ struct RestaurantMapMarkerPresentation: Identifiable, Equatable {
         self.visual = visual
         self.publicPhotoID = publicPhotoID
         self.fallbackMerchantImageURL = fallbackMerchantImageURL
+        self.allowsRemoteImages = allowsRemoteImages
+        self.recommendationRank = recommendationRank
         self.visitCount = visitCount
         self.averageRating = averageRating
         self.distanceKilometers = distanceKilometers
     }
 
     var imageResolution: RestaurantImageResolution {
+        let localPhotoID: UUID?
         switch visual {
         case .photo(let id):
-            RestaurantImageResolution(sources: [.localUserPhoto(id)])
+            localPhotoID = id
         case .category, .emoji:
-            RestaurantImageResolution(sources: [])
+            localPhotoID = nil
         }
+        return RestaurantImagePriorityPolicy.resolution(
+            localUserPhotoID: localPhotoID,
+            publicOrCachedPhotoID: allowsRemoteImages ? publicPhotoID : nil,
+            providerMerchantImageURL: allowsRemoteImages ? fallbackMerchantImageURL : nil
+        )
     }
 }
 
@@ -163,18 +182,23 @@ enum RestaurantMapMarkerBuilder {
             let record = restaurant.remoteRecordData.flatMap {
                 try? JSONDecoder().decode(RestaurantJSONContractV1.self, from: $0)
             }
+            let usesOwnerEmoji = record?.markerType == .emoji
             let referencedMarkerPhoto = trimmed(record?.markerPhotoId).flatMap {
                 activePhotosByReference[$0.lowercased()]
             }.flatMap { photo in
                 photo.restaurantId == restaurant.id && photo.kind == .restaurantMarker ? photo : nil
             }
-            let localPhoto = referencedMarkerPhoto
-                ?? item.photo.flatMap { photo in
+            let localPhoto = usesOwnerEmoji ? nil : (
+                referencedMarkerPhoto ?? item.photo.flatMap { photo in
                     isActive(photo) && photo.restaurantId == restaurant.id ? photo : nil
                 }
+            )
             let visual: RestaurantMapMarkerVisual
             if let photoID = localPhoto?.id {
                 visual = .photo(photoID)
+            } else if usesOwnerEmoji,
+                      let emoji = RestaurantOwnerAvatarEmojiPolicy.normalized(record?.markerEmoji) {
+                visual = .emoji(emoji)
             } else {
                 visual = .emoji(FoodCategoryEmojiResolver.resolve(
                     name: restaurant.name,
@@ -191,7 +215,11 @@ enum RestaurantMapMarkerBuilder {
                 status: status(for: restaurant, segment: segment),
                 visual: visual,
                 publicPhotoID: nil,
-                fallbackMerchantImageURL: nil,
+                fallbackMerchantImageURL: usesOwnerEmoji
+                    ? nil
+                    : RestaurantImagePriorityPolicy.safeHTTPSURL(record?.merchantImageUrl),
+                allowsRemoteImages: !usesOwnerEmoji
+                    && RestaurantImagePriorityPolicy.safeHTTPSURL(record?.merchantImageUrl) != nil,
                 visitCount: item.visitCount,
                 averageRating: item.averageRating,
                 distanceKilometers: distanceKilometers(
@@ -246,10 +274,18 @@ enum RestaurantMapMarkerBuilder {
 
 /// One shared back-to-front contract for every Restaurant annotation.
 ///
-/// Coordinates are deliberately absent from this policy: natural overlap is
-/// retained at every zoom level. An unrated Restaurant is a distinct semantic
+/// Layer order never changes coordinates or moves markers to avoid overlap.
+/// Recommendation rank
+/// is used only for the shared For You projection; personal markers continue
+/// to use rating and visit count. An unrated Restaurant is a distinct semantic
 /// state below rated Restaurants, rather than a fabricated zero-star score.
 enum RestaurantMapMarkerLayerPolicy {
+    /// MapKit owns annotation compositing during camera updates. Distinct,
+    /// bounded priorities preserve our ordering inside that compositor too.
+    static func mapKitPriority(rank: Int, count: Int) -> Float {
+        100 + 800 * Float(max(0, rank)) / Float(max(count, rank) + 1)
+    }
+
     static func orderedBackToFront(
         _ markers: [RestaurantMapMarkerPresentation],
         selectedRestaurantID: UUID?
@@ -297,6 +333,19 @@ enum RestaurantMapMarkerLayerPolicy {
             break
         }
 
+        let leftRecommendationRank = positiveRank(left.recommendationRank)
+        let rightRecommendationRank = positiveRank(right.recommendationRank)
+        switch (leftRecommendationRank, rightRecommendationRank) {
+        case let (.some(left), .some(right)) where left != right:
+            return left > right
+        case (.none, .some):
+            return true
+        case (.some, .none):
+            return false
+        default:
+            break
+        }
+
         let leftVisitCount = max(0, left.visitCount)
         let rightVisitCount = max(0, right.visitCount)
         if leftVisitCount != rightVisitCount {
@@ -309,6 +358,199 @@ enum RestaurantMapMarkerLayerPolicy {
     private static func finiteRating(_ rating: Double?) -> Double? {
         guard let rating, rating.isFinite else { return nil }
         return rating
+    }
+
+    private static func positiveRank(_ rank: Int?) -> Int? {
+        guard let rank, rank > 0 else { return nil }
+        return rank
+    }
+}
+
+/// Mercator latitude span varies during north/south pans even at the same
+/// projected zoom. Advance marker sizing/grouping only when zoom or size changes.
+struct RestaurantMapMarkerViewportScale {
+    private var projectedSize: CGSize?
+    private var viewportSize: CGSize?
+    private var latitudeDelta: Double?
+    private(set) var revision = 0
+
+    mutating func resolve(latitudeDelta: Double, projectedSize: CGSize, viewportSize: CGSize) -> Double {
+        guard projectedSize.width > 0, projectedSize.height > 0,
+              viewportSize.width > 0, viewportSize.height > 0,
+              latitudeDelta.isFinite, latitudeDelta > 0 else { return self.latitudeDelta ?? latitudeDelta }
+        if let previous = self.projectedSize, self.viewportSize == viewportSize,
+           abs(previous.width - projectedSize.width) <= max(1, previous.width) * 0.000_001,
+           abs(previous.height - projectedSize.height) <= max(1, previous.height) * 0.000_001,
+           let previousLatitudeDelta = self.latitudeDelta {
+            return previousLatitudeDelta
+        }
+        self.projectedSize = projectedSize
+        self.viewportSize = viewportSize
+        self.latitudeDelta = latitudeDelta
+        revision += 1
+        return latitudeDelta
+    }
+}
+
+/// Size changes continuously around the exact geographic anchor. At wider
+/// regional scales, naturally overlapping Restaurants progressively yield
+/// to a real favorite representative; close city browsing keeps every marker.
+struct RestaurantMapMarkerDensityStyle: Equatable {
+    let zoomProgress: Double
+    var farZoomProgress: Double = 0
+
+    static let venue = Self(zoomProgress: 0)
+    static let city = Self(zoomProgress: 0.5)
+    static let region = Self(zoomProgress: 0.75)
+    static let world = Self(zoomProgress: 1, farZoomProgress: 1)
+    // Keep every Restaurant throughout city browsing. Only a much wider
+    // regional view progressively settles on real Restaurant representatives.
+    static let regionalAggregationMinimumLatitudeDelta = 0.8
+    static let regionalAggregationFullLatitudeDelta = 2.4
+
+    static func resolve(latitudeDelta: Double) -> Self {
+        let nearDelta = 0.008
+        let farDelta = 1.50
+        let finiteDelta = latitudeDelta.isFinite ? latitudeDelta : farDelta
+        let clampedDelta = min(farDelta, max(nearDelta, finiteDelta))
+        let progress = log(clampedDelta / nearDelta) / log(farDelta / nearDelta)
+        let tokens = TasteMapDesignTokens.MapRestaurantMarker.self
+        let farProgress = min(1, max(0, log(max(tokens.farScaleStartLatitudeDelta, finiteDelta)
+            / tokens.farScaleStartLatitudeDelta)
+            / log(tokens.farScaleFullLatitudeDelta / tokens.farScaleStartLatitudeDelta)))
+        return Self(zoomProgress: progress, farZoomProgress: farProgress)
+    }
+
+    /// A continuous overlap radius avoids replacing a whole city at one zoom
+    /// threshold. Nearby points merge first; wider groups form as we zoom out.
+    static func groupingProgress(latitudeDelta: Double) -> Double {
+        guard latitudeDelta.isFinite,
+              latitudeDelta > regionalAggregationMinimumLatitudeDelta else { return 0 }
+        return min(1, log(latitudeDelta / regionalAggregationMinimumLatitudeDelta)
+            / log(regionalAggregationFullLatitudeDelta / regionalAggregationMinimumLatitudeDelta))
+    }
+
+    var baseDiameter: Double {
+        let tokens = TasteMapDesignTokens.MapRestaurantMarker.self
+        let cityDiameter = tokens.maximumDiameter
+            - (tokens.maximumDiameter - tokens.minimumDiameter) * zoomProgress
+        return cityDiameter + (tokens.farMinimumDiameter - cityDiameter) * farZoomProgress
+    }
+
+    var selectionIncrease: Double {
+        let tokens = TasteMapDesignTokens.MapRestaurantMarker.self
+        let cityIncrease = tokens.maximumSelectionIncrease
+            - (tokens.maximumSelectionIncrease - tokens.minimumSelectionIncrease) * zoomProgress
+        return cityIncrease + (tokens.farSelectionIncrease - cityIncrease) * farZoomProgress
+    }
+
+    var unvisitedIncrease: Double {
+        let tokens = TasteMapDesignTokens.MapRestaurantMarker.self
+        return tokens.unvisitedDiameterIncrease
+            + (tokens.farUnvisitedDiameterIncrease - tokens.unvisitedDiameterIncrease) * farZoomProgress
+    }
+
+    var regionalGroupingDistance: CGFloat {
+        // Only controls when overlapping visuals consolidate. It must never
+        // be used as a displacement or a minimum distance between coordinates.
+        // Far-distance visual sizing must not change the approved grouping.
+        let tokens = TasteMapDesignTokens.MapRestaurantMarker.self
+        let cityDiameter = tokens.maximumDiameter
+            - (tokens.maximumDiameter - tokens.minimumDiameter) * zoomProgress
+        return CGFloat((cityDiameter * 1.14 + 7).rounded(.up))
+    }
+}
+
+/// Zoom-scaled geographic grouping for iOS MapKit. Screen points are projected
+/// exclusively from stored coordinates and compared by relative distance, so
+/// a pure pan cannot change membership. The first member is the same stable,
+/// highest-priority real Restaurant used by the marker layer policy.
+enum RestaurantMapRegionalGroupingPolicy {
+    /// Exact provider coordinates, not a guessed building/category match.
+    static func isCoincident(_ group: [RestaurantMapMarkerPresentation]) -> Bool {
+        guard let first = group.first else { return false }
+        return group.allSatisfy { $0.latitude == first.latitude && $0.longitude == first.longitude }
+    }
+
+    static func groups(
+        for markers: [RestaurantMapMarkerPresentation],
+        screenPoints: [UUID: CGPoint],
+        requiredCenterDistance: CGFloat,
+        latitudeDelta: Double
+    ) -> [[RestaurantMapMarkerPresentation]] {
+        // Original coordinates are immutable: overlap is natural, not a cue
+        // to move a Restaurant into an invented free slot. Wider zooms only
+        // change which real Restaurant represents each connected group.
+        let ordered = Array(RestaurantMapMarkerLayerPolicy.orderedBackToFront(
+            markers,
+            // Selection affects z-order, never which Restaurant represents a
+            // region. This keeps the favorite leader stable after returning
+            // from detail or repeatedly zooming the same area.
+            selectedRestaurantID: nil
+        ).reversed())
+        let progress = RestaurantMapMarkerDensityStyle.groupingProgress(latitudeDelta: latitudeDelta)
+        guard progress > 0 else {
+            var stacks: [[RestaurantMapMarkerPresentation]] = []
+            for marker in ordered {
+                if let index = stacks.firstIndex(where: { stack in
+                    guard let leader = stack.first else { return false }
+                    return isCoincident([leader, marker])
+                }) {
+                    stacks[index].append(marker)
+                } else {
+                    stacks.append([marker])
+                }
+            }
+            return stacks
+        }
+        let threshold = max(0, requiredCenterDistance) * progress
+
+        var remaining = Set(ordered.map(\.id))
+        var result: [[RestaurantMapMarkerPresentation]] = []
+        for seed in ordered where remaining.contains(seed.id) {
+            remaining.remove(seed.id)
+            var group = [seed]
+            var searchIndex = 0
+            while searchIndex < group.count {
+                let current = group[searchIndex]
+                for candidate in ordered where remaining.contains(candidate.id) {
+                    guard let currentPoint = screenPoints[current.id],
+                          let candidatePoint = screenPoints[candidate.id] else { continue }
+                    if hypot(
+                        currentPoint.x - candidatePoint.x,
+                        currentPoint.y - candidatePoint.y
+                    ) < threshold {
+                        remaining.remove(candidate.id)
+                        group.append(candidate)
+                    }
+                }
+                searchIndex += 1
+            }
+            result.append(group)
+        }
+        return result
+    }
+}
+
+/// Cache grouping identity without caching a second copy of Restaurant data.
+/// A photo, name or status can change while the map and membership stay still.
+struct RestaurantMapRegionalGroupingSnapshot {
+    private let memberIDsByRepresentativeID: [UUID: [UUID]]
+    let visibleRepresentativeIDs: Set<UUID>
+
+    init(groups: [[RestaurantMapMarkerPresentation]]) {
+        visibleRepresentativeIDs = Set(groups.compactMap { $0.first?.id })
+        memberIDsByRepresentativeID = Dictionary(uniqueKeysWithValues: groups.compactMap { group in
+            guard let representative = group.first, group.count > 1 else { return nil }
+            return (representative.id, group.map(\.id))
+        })
+    }
+
+    func members(
+        for representativeID: UUID,
+        resolve: (UUID) -> RestaurantMapMarkerPresentation?
+    ) -> [RestaurantMapMarkerPresentation]? {
+        memberIDsByRepresentativeID[representativeID]?.compactMap(resolve)
     }
 }
 
@@ -323,29 +565,20 @@ enum RestaurantMapCoordinatePolicy {
 }
 
 enum RestaurantMapMarkerMetrics {
-    static let baseDiameter = 44.0
-    static let selectionIncrease = 8.0
-
-    /// Keeps the existing Web rule: want-to-go markers scale from 1.28x nearby
-    /// to 0.78x at 30 km and beyond, using a logarithmic distance curve.
-    static func wantedScale(distanceKilometers: Double) -> Double {
-        guard distanceKilometers.isFinite, distanceKilometers >= 0 else { return 1 }
-        let progress = min(1, log1p(distanceKilometers) / log1p(30))
-        return 1.28 - progress * 0.5
-    }
+    static let baseDiameter = TasteMapDesignTokens.MapRestaurantMarker.maximumDiameter
+    static let selectionIncrease = TasteMapDesignTokens.MapRestaurantMarker.maximumSelectionIncrease
 
     static func diameter(
         status: RestaurantMapMarkerStatus,
         distanceKilometers: Double?,
-        isSelected: Bool
+        isSelected: Bool,
+        densityStyle: RestaurantMapMarkerDensityStyle = .venue
     ) -> Double {
-        let scale: Double
-        if status == .wantToGo, let distanceKilometers {
-            scale = wantedScale(distanceKilometers: distanceKilometers)
-        } else {
-            scale = 1
-        }
-        return baseDiameter * scale + (isSelected ? selectionIncrease : 0)
+        // Pending destinations stay slightly larger at every zoom, even without GPS.
+        // Distance is metadata, not a reason to shrink a place the user can try.
+        let emphasis = RestaurantMapMarkerRingPolicy.isUnvisited(status: status)
+            ? densityStyle.unvisitedIncrease : 0
+        return densityStyle.baseDiameter + emphasis + (isSelected ? densityStyle.selectionIncrease : 0)
     }
 }
 

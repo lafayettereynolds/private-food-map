@@ -106,6 +106,35 @@ struct LocalSocialStore {
         }
     }
 
+    /// A server-authorized Following feed is positive evidence for each author
+    /// it contains. Mirror those authors into the relationship cache so the
+    /// Profile count and offline following list cannot disagree with the feed.
+    /// This deliberately only upserts visible authors; an empty feed does not
+    /// mean the user follows nobody, so it never reconciles/deletes the tail.
+    func cacheFollowingFeedAuthors(
+        _ users: [PublicContentUserV1],
+        currentUserID: String
+    ) throws {
+        var seen = Set<String>()
+        for user in users where user.userId != currentUserID && seen.insert(user.userId).inserted {
+            try cache(user.socialResult.profile)
+            try upsertFollow(
+                .init(
+                    apiVersion: 1,
+                    id: "follow:\(currentUserID):\(user.userId)",
+                    followerUserId: currentUserID,
+                    followedUserId: user.userId,
+                    createdAt: SyncRecordMapper.dateString(.now),
+                    updatedAt: SyncRecordMapper.dateString(.now),
+                    deletedAt: nil,
+                    serverVersion: 0
+                ),
+                currentUserID: currentUserID
+            )
+        }
+        try context.save()
+    }
+
     func reconcileFollowResults(
         _ items: [SocialUserResultV1],
         scope: FollowListScope,

@@ -10,6 +10,7 @@ struct PermissionsSettingsView: View {
         location: .notDetermined,
         photoAddOnly: .notDetermined
     )
+    @State private var openSettingsError: String?
 
     var body: some View {
         List {
@@ -20,9 +21,17 @@ struct PermissionsSettingsView: View {
                     state: snapshot.location,
                     identifier: "settings-location-permission"
                 )
-                if snapshot.location.canOpenSystemSettings {
-                    openSettingsButton
-                }
+            }
+
+            Section("相机") {
+                permissionRow(
+                    title: "拍摄到访与菜品照片",
+                    subtitle: snapshot.camera == .notDetermined
+                        ? "只在你主动选择拍照时请求相机权限。"
+                        : "轻点可前往系统设置调整相机权限。",
+                    state: snapshot.camera,
+                    identifier: "settings-camera-permission"
+                )
             }
 
             Section("照片") {
@@ -46,9 +55,9 @@ struct PermissionsSettingsView: View {
                     state: snapshot.photoAddOnly,
                     identifier: "settings-photo-permission"
                 )
-                if snapshot.photoAddOnly.canOpenSystemSettings {
-                    openSettingsButton
-                }
+            }
+            if let openSettingsError {
+                Section { Text(openSettingsError).foregroundStyle(.red) }
             }
         }
         .scrollContentBackground(.hidden)
@@ -63,7 +72,7 @@ struct PermissionsSettingsView: View {
 
     private var locationDescription: String {
         switch snapshot.location {
-        case .allowed: "地图可在系统允许时显示你的位置。"
+        case .allowed: "地图可在系统允许时显示你的位置。轻点可调整定位与精确位置权限。"
         case .denied, .restricted: "地图仍可使用；如需定位，可前往系统设置调整。"
         case .notDetermined: "Taste Map 会在你使用定位功能时再请求，不会从此页面自动弹窗。"
         case .limited: "地图仅使用系统实际提供的定位范围。"
@@ -72,50 +81,43 @@ struct PermissionsSettingsView: View {
 
     private var photoDescription: String {
         switch snapshot.photoAddOnly {
-        case .allowed: "已允许 Taste Map 将你生成的分析海报添加到照片。"
+        case .allowed: "已允许保存分析海报。轻点可前往系统设置调整。"
         case .limited: "系统当前提供有限照片访问；可在系统设置中调整。"
         case .denied, .restricted: "无法直接保存海报到照片，但仍可使用系统分享。"
         case .notDetermined: "只有你主动保存海报时，Taste Map 才会请求添加照片权限。"
         }
     }
 
+    @ViewBuilder
     private func permissionRow(
         title: String,
         subtitle: String,
         state: SettingsPermissionState,
         identifier: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(state.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusColor(state))
+        if state.canOpenSystemSettings {
+            VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.xSmall) {
+                SettingsEditableRow(title: title, value: state.title, action: openSystemSettings)
+                    .accessibilityHint("前往系统设置调整权限")
+                    .accessibilityIdentifier(identifier)
+                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
             }
-            Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: TasteMapDesignTokens.Spacing.small) {
+                LabeledContent(title, value: state.title)
+                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(identifier)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title)，\(state.title)。\(subtitle)")
-        .accessibilityIdentifier(identifier)
     }
 
-    private var openSettingsButton: some View {
-        Button {
-            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-            UIApplication.shared.open(url)
-        } label: {
-            Label("前往系统设置", systemImage: "arrow.up.right.square")
-                .frame(minHeight: 44)
-        }
-        .accessibilityIdentifier("settings-open-system-settings")
-    }
-
-    private func statusColor(_ state: SettingsPermissionState) -> Color {
-        switch state {
-        case .allowed: .green
-        case .limited, .notDetermined: .orange
-        case .denied, .restricted: .red
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        Task { @MainActor in
+            if !(await UIApplication.shared.open(url)) {
+                openSettingsError = "暂时无法打开系统设置，请在 iPhone 设置中选择 Taste Map。"
+            }
         }
     }
 
@@ -214,11 +216,11 @@ struct HelpSettingsView: View {
             Section("餐厅与定位") {
                 helpRow(
                     "如何添加餐厅？",
-                    "使用底部的“添加餐厅”，可搜索、粘贴分享链接或手动填写。"
+                    "在地图页轻点“添加餐厅”，可搜索餐厅、查看附近或手动填写；外部链接通过系统分享发送到 Taste Map。"
                 )
                 helpRow(
                     "定位被拒绝怎么办？",
-                    "地图仍可使用。需要定位时，可在 Settings 的权限页前往系统设置调整。"
+                    "地图仍可使用。在“设置 → 权限”轻点定位权限，即可前往系统设置调整。"
                 )
             }
             if let supportURL {
@@ -279,15 +281,24 @@ struct AboutSettingsView: View {
                     .accessibilityIdentifier("settings-build-number")
             }
 
-            if releaseConfiguration.legalLinks.privacyPolicyURL != nil
-                || releaseConfiguration.legalLinks.termsOfServiceURL != nil {
-                Section("法律信息") {
-                    if let url = releaseConfiguration.legalLinks.privacyPolicyURL {
-                        Link("隐私政策", destination: url)
-                    }
-                    if let url = releaseConfiguration.legalLinks.termsOfServiceURL {
-                        Link("服务条款", destination: url)
-                    }
+            Section("法律信息") {
+                Link(destination: URL(string: "https://beian.miit.gov.cn/")!) {
+                    Text("备案号：浙ICP备2026070007号-1A")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: TasteMapDesignTokens.Control.minimumHitTarget,
+                            alignment: .leading
+                        )
+                }
+                .accessibilityHint("在系统浏览器中打开工信部备案查询页面")
+                .accessibilityIdentifier("settings-icp-registration-link")
+
+                if let url = releaseConfiguration.legalLinks.privacyPolicyURL {
+                    Link("隐私政策", destination: url)
+                }
+                if let url = releaseConfiguration.legalLinks.termsOfServiceURL {
+                    Link("服务条款", destination: url)
                 }
             }
 

@@ -84,6 +84,7 @@ struct BackupImportLocalSnapshotBuilder {
                     longTermNote: record.longTermNote,
                     pricePerPerson: record.pricePerPerson.map { Decimal($0) },
                     phone: record.phone,
+                    websiteURL: record.websiteUrl,
                     openingHours: record.openingHours,
                     markerType: record.markerType.rawValue,
                     markerPhotoSourceID: record.markerPhotoId,

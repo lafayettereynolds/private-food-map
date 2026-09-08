@@ -1,5 +1,6 @@
 import type { RestaurantSummary, UserProfile, Visit } from '../types/domain'
 import { CURRENT_USER_ID } from '../db/social'
+import { restaurantCity } from '../services/restaurantCity'
 import type {
   TasteMapProfileDashboardDTO,
   TasteMapProfileDashboardViewModel,
@@ -19,6 +20,8 @@ export function projectBridgeProfile(dto: TasteMapProfileDashboardDTO): TasteMap
     followerCount: dto.followerCount,
     followingCount: dto.followingCount,
     restaurantImages: Object.fromEntries(dto.restaurants.map((restaurant) => [restaurant.id, restaurant.image])),
+    analyticsIdentity: dto.analyticsIdentity?.ownerUserID === dto.user.id
+      ? { ...dto.analyticsIdentity, recordOwnerID: CURRENT_USER_ID } : null,
   }
 }
 
@@ -29,6 +32,8 @@ export function projectBridgeRestaurant(dto: TasteMapRestaurantDetailDTO): Taste
   return {
     restaurant,
     image: dto.restaurant.image,
+    contentImage: dto.restaurant.contentImage,
+    contentImageResolution: dto.restaurant.contentImageResolution,
     socialStats: dto.socialStats ?? null,
     viewerState: dto.viewerState,
     editableVisitIDs: dto.editableVisitIDs,
@@ -43,7 +48,11 @@ function projectUser(user: TasteMapUserDTO): UserProfile {
     email: null,
     bio: user.bio,
     city: user.city,
-    avatarImageData: null,
+    // This projection belongs to the Native adapter. Keep the opaque ID, but
+    // resolve its bytes through the authenticated Native resource handler,
+    // never through the Browser's unrelated Dexie / Drive photo store.
+    avatarImageData: user.avatarPhotoId
+      ? `tastemap-resource://photo/${encodeURIComponent(user.avatarPhotoId)}/display` : null,
     avatarPhotoId: user.avatarPhotoId,
     avatarPresetId: user.avatarPresetId,
     membershipTier: user.membershipTier,
@@ -58,7 +67,9 @@ function projectUser(user: TasteMapUserDTO): UserProfile {
 }
 
 function projectRestaurant(restaurant: TasteMapRestaurantDTO): RestaurantSummary {
-  const visits = restaurant.visits.map(projectVisit)
+  // Native children have already been owner-scoped and joined to this parent.
+  // Use its public identity; a local UUID (or differently cased UUID) is not it.
+  const visits = restaurant.visits.map((visit) => projectVisit({ ...visit, restaurantId: restaurant.id }))
   const imageURL = restaurant.image.kind === 'foodDiningFallback' || restaurant.image.kind === 'foodCategoryVisual' ? null : restaurant.image.resourceURL
   return {
     id: restaurant.id,
@@ -70,7 +81,7 @@ function projectRestaurant(restaurant: TasteMapRestaurantDTO): RestaurantSummary
     placeIdentities: [],
     name: restaurant.name,
     address: restaurant.address,
-    city: restaurant.city,
+    city: restaurantCity(restaurant.city, restaurant.address),
     latitude: restaurant.latitude,
     longitude: restaurant.longitude,
     status: restaurant.status,
@@ -84,12 +95,13 @@ function projectRestaurant(restaurant: TasteMapRestaurantDTO): RestaurantSummary
     longTermNote: '',
     pricePerPerson: restaurant.referencePrice,
     phone: restaurant.phone,
+    websiteUrl: restaurant.websiteUrl ?? null,
     openingHours: restaurant.openingHours,
-    markerType: imageURL ? 'image' : 'emoji',
+    markerType: restaurant.markerType ?? (imageURL ? 'image' : 'emoji'),
     markerImageData: imageURL,
     markerPhotoId: restaurant.image.kind === 'nativeResource' || restaurant.image.kind === 'publicOrCached' ? restaurant.image.photoID : null,
     merchantImageUrl: restaurant.image.kind === 'providerMerchant' ? restaurant.image.resourceURL : null,
-    markerEmoji: '',
+    markerEmoji: restaurant.markerEmoji ?? '',
     createdAt: restaurant.createdAt,
     updatedAt: restaurant.updatedAt,
     deletedAt: null,
@@ -115,7 +127,7 @@ function projectVisit(visit: TasteMapVisitDTO): Visit {
     diningMode: visit.diningMode,
     totalPrice: visit.totalPrice,
     myActualSpend: visit.myActualSpend,
-    paymentMode: visit.paymentMode,
+    paymentMode: visit.paymentMode ?? null,
     pricePerPerson: visit.pricePerPerson,
     partySize: visit.partySize,
     queueDuration: visit.queueDuration,

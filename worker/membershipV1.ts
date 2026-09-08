@@ -2,6 +2,13 @@ export const MEMBERSHIP_API_VERSION = 1 as const
 
 export type MembershipEntitlementSourceV1 =
   | 'app_store_monthly'
+  | 'app_store_annual'
+  | 'gift_annual'
+  | 'gift_lifetime'
+  | 'app_store_subscription'
+  | 'promotion'
+  | 'signup_trial'
+  | 'referral_reward'
   | 'app_store_yearly'
   | 'app_store_lifetime'
   | 'admin_grant'
@@ -38,6 +45,7 @@ export interface MembershipSelfResponseV1 {
     source: MembershipEntitlementSourceV1 | null
     kind: MembershipEntitlementKindV1
     startsAt: string | null
+    startedAt: string | null
     expiresAt: string | null
     isLifetime: boolean
     updatedAt: string | null
@@ -66,6 +74,7 @@ export function membershipSelfResponseV1(
       source,
       kind: effective.isPremium ? entitlementKind(source, effective.isLifetime) : 'unspecified',
       startsAt: effective.isPremium ? effective.startsAt : null,
+      startedAt: effective.isPremium ? effective.startsAt : null,
       expiresAt: effective.isPremium ? effective.expiresAt : null,
       isLifetime: effective.isPremium && effective.isLifetime,
       updatedAt,
@@ -78,9 +87,10 @@ function entitlementKind(
   source: MembershipEntitlementSourceV1 | null,
   isLifetime: boolean,
 ): MembershipEntitlementKindV1 {
-  if (isLifetime || source === 'app_store_lifetime' || source === 'development') return 'lifetime'
+  if (isLifetime || source === 'app_store_lifetime' || source === 'gift_lifetime' || source === 'development') return 'lifetime'
   if (source === 'app_store_monthly') return 'monthly_subscription'
-  if (source === 'app_store_yearly') return 'annual_subscription'
-  if (source === 'admin_grant' || source === 'promo' || source === 'redeem_code') return 'fixed_term'
+  if (source === 'app_store_yearly' || source === 'app_store_annual') return 'annual_subscription'
+  if (source === 'signup_trial' || source === 'gift_annual' || source === 'referral_reward') return 'fixed_term'
+  if (source === 'admin_grant' || source === 'promotion' || source === 'promo' || source === 'redeem_code') return 'fixed_term'
   return 'unspecified'
 }

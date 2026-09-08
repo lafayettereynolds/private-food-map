@@ -1,67 +1,89 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AddVisitModal } from '../../components/AddVisitModal'
 import type { AddVisitInput } from '../../db/restaurants'
-import type { RestaurantSummary, Visit } from '../../types/domain'
-import type { TasteMapPlatform, TasteMapVisitWriteDraftDTO } from '../../platform/TasteMapPlatform'
+import type { MembershipTier, RestaurantSummary, Visit } from '../../types/domain'
+import { visitPhotoLimit } from '../../services/featurePolicy'
+import type { TasteMapPlatform, TasteMapRestaurantDetailViewModel, TasteMapVisitWriteDraftDTO } from '../../platform/TasteMapPlatform'
+import { HybridBackButton, HybridState } from '../../components/TasteMapHybridShared'
+import { boundedVisitEditorRead, loadVisitEditorContext, type VisitEditorContext } from './visitEditorContext'
 
 interface HybridVisitEditorPageProps {
   platform: TasteMapPlatform
+  membershipTier?: MembershipTier
   restaurantID?: string
   visitID?: string
   restaurants: RestaurantSummary[]
   visits: Visit[]
+  sourceDetail?: TasteMapRestaurantDetailViewModel | null
   onClose: () => void
   onSaved: (restaurantID: string) => void
+  onRestaurantDeleted: (restaurantID: string) => void
 }
 
-export function HybridVisitEditorPage({ platform, restaurantID, visitID, restaurants, visits, onClose, onSaved }: HybridVisitEditorPageProps) {
-  const existingVisit = visitID ? visits.find((visit) => visit.id === visitID) ?? null : null
-  const initialRestaurant = restaurants.find((restaurant) => restaurant.id === (restaurantID ?? existingVisit?.restaurantId)) ?? null
-  const [restaurant, setRestaurant] = useState<RestaurantSummary | null>(initialRestaurant)
+export function HybridVisitEditorPage({ platform, membershipTier = 'free', restaurantID, visitID, restaurants, visits, sourceDetail, onClose, onSaved, onRestaurantDeleted }: HybridVisitEditorPageProps) {
+  const identity = `${visitID ? 'edit' : 'create'}:${visitID ?? restaurantID ?? ''}`
+  const [loaded, setLoaded] = useState<{ identity: string; context: VisitEditorContext } | null>(null)
   const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+  const latestInput = useRef({ restaurantID, visitID, restaurants, visits, sourceDetail })
+  latestInput.current = { restaurantID, visitID, restaurants, visits, sourceDetail }
   const companionOptions = useMemo(() => [...new Set(visits.flatMap((visit) => visit.companions))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [visits])
 
   useEffect(() => {
-    if (restaurant || !restaurantID) return
     let active = true
-    platform.restaurant.get(restaurantID).then((value) => {
-      if (active) setRestaurant(value.restaurant)
+    setError('')
+    setLoaded(null)
+    boundedVisitEditorRead(loadVisitEditorContext(platform, latestInput.current)).then((context) => {
+      if (active) setLoaded({ identity, context })
     }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : '无法读取餐厅。')
+      if (active) setError(reason instanceof Error ? reason.message : '无法读取到访记录，请重试。')
     })
     return () => { active = false }
-  }, [platform, restaurant, restaurantID])
+    // Snapshot refreshes must never replace an in-progress local editor draft.
+  }, [platform, identity, retry])
 
-  if (!restaurant) return <main className="tm-hybrid-state is-fatal"><h1>无法打开到访记录</h1><p>{error || '正在读取餐厅…'}</p><button onClick={onClose} type="button">返回</button></main>
+  if (loaded?.identity !== identity) return <main className="tm-hybrid-page" data-visit-editor-state={error ? 'error' : 'loading'}>
+    <HybridBackButton onBack={onClose} />
+    <HybridState kind={error ? 'error' : 'loading'} title={error ? '无法打开到访记录' : '正在读取到访记录'} message={error || '正在读取这次到访的原始内容…'} action={error ? <button onClick={() => setRetry((value) => value + 1)} type="button">重试</button> : undefined} />
+  </main>
+
+  const { restaurant, visit: existingVisit } = loaded.context
 
   return <AddVisitModal
+    key={identity}
     companionOptions={companionOptions}
     initialVisit={existingVisit ?? undefined}
-    maxPhotos={20}
+    maxPhotos={visitPhotoLimit(membershipTier)}
+    canUploadDishPhotos={membershipTier === 'member'}
     onClose={onClose}
     onDelete={existingVisit ? async () => {
       const result = await platform.visit.delete(existingVisit.id)
-      onSaved(result.restaurantID)
+      if (result.deletedRestaurantID) onRestaurantDeleted(result.deletedRestaurantID)
+      else onSaved(result.restaurantID)
     } : undefined}
     onSave={async (input) => {
       const result = await platform.visit.save({
         restaurantID: restaurant.id,
         visitID: existingVisit?.id ?? null,
         draft: visitWriteDraft(input),
+        ...(platform.kind === 'browser' ? { browserPhotoMaterial: {
+          photos: input.photos, photoIds: input.photoIds ?? [],
+          dishPhotos: input.dishes.map(({ id, imageData }) => ({ id, imageData })),
+        } } : {}),
       })
       if (result.photoWarning) window.alert(result.photoWarning)
       onSaved(result.restaurantID)
     }}
-    onPickNativePhotos={async (selectionLimit) => (await platform.photo.pick(selectionLimit)).photos.map((photo) => ({
+    onPickNativePhotos={platform.kind === 'native' ? async (selectionLimit) => (await platform.photo.pick(selectionLimit)).photos.map((photo) => ({
       source: photo.preview.resourceURL,
       photoID: photo.photoID,
-    }))}
-    onCaptureNativePhoto={async () => {
+    })) : undefined}
+    onCaptureNativePhoto={platform.kind === 'native' ? async () => {
       const photo = (await platform.photo.capture()).photos[0]
       return photo ? { source: photo.preview.resourceURL, photoID: photo.photoID } : null
-    }}
-    onRemoveNativePhoto={(photoID) => platform.photo.discard(photoID)}
-    photoUpgradeAvailable={false}
+    } : undefined}
+    onRemoveNativePhoto={platform.kind === 'native' ? (photoID) => platform.photo.discard(photoID) : undefined}
+    photoUpgradeAvailable={membershipTier !== 'member'}
     restaurant={restaurant}
   />
 }

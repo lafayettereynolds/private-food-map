@@ -1,5 +1,8 @@
+import Foundation
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
 import SwiftUI
 import UIKit
+#endif
 
 /// Stable product taxonomy for Restaurant fallback visuals.
 /// Raw values are a bridge contract; keep them in sync with FoodCategoryVisual.tsx.
@@ -120,6 +123,7 @@ enum FoodCategoryEmojiResolver {
     }
 }
 
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
 struct FoodCategoryVisual: View {
     let id: FoodCategoryVisualID
     var accessibilityLabel: String = "餐饮分类图示"
@@ -227,3 +231,4 @@ enum FoodCategoryVisualRenderer {
         return UIColor(red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255, blue: CGFloat(number & 255) / 255, alpha: 1)
     }
 }
+#endif

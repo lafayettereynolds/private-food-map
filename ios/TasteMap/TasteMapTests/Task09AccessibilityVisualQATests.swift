@@ -76,4 +76,44 @@ struct Task09AccessibilityVisualQATests {
         #expect(Set(coordinateKeys).count < markers.count)
         #expect(Dictionary(grouping: coordinateKeys, by: { $0 }).values.contains { $0.count > 1 })
     }
+
+    @Test("Rich demo uses one real social graph for Profile, following list, and Discovery authors")
+    @MainActor
+    func richDemoSocialGraphConsistency() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        context.insert(UserProfile(
+            tasteMapUserID: TasteMapVisualQAFixtures.userID,
+            displayName: "Lafayette · 丰富美食档案",
+            city: "杭州",
+            avatarPreset: .polarBear,
+            visibility: .public,
+            syncStatus: .synced
+        ))
+        try TasteMapVisualQAFixtures.insert(mode: .rich, into: container)
+
+        let expected = TasteMapVisualQAFixtures.socialStatistics
+        let statistics = ProfileSocialStatisticsLoader.cached(
+            context: context,
+            currentUserID: TasteMapVisualQAFixtures.userID
+        )
+        let service = try TasteMapHybridBridgeService(
+            container: container,
+            ownerUserID: TasteMapVisualQAFixtures.userID
+        )
+        let dashboard = try service.profileDashboard()
+        let store = LocalSocialStore(context: context)
+        let followedIDs = Set(try store.cachedFollows(currentUserID: TasteMapVisualQAFixtures.userID)
+            .filter { $0.deletedAt == nil && $0.followerUserID == TasteMapVisualQAFixtures.userID }
+            .map(\.followedUserID))
+        let followedProfiles = Set(try store.cachedProfiles()
+            .filter { followedIDs.contains($0.tasteMapUserID) }
+            .map(\.displayName))
+
+        #expect(statistics == expected)
+        #expect(dashboard.followingCount == expected.followingCount)
+        #expect(dashboard.followerCount == expected.followerCount)
+        #expect(followedIDs == Set(TasteMapVisualQAFixtures.socialFollowingUsers.map(\.userId)))
+        #expect(followedProfiles == Set(["林夏", "陈一碗", "阿岚", "陆小满"]))
+    }
 }

@@ -8,7 +8,7 @@ import type { MyMapSurfaceProps } from './MyMapBrowsePage'
  */
 export function BrowserMapSurface({
   active, cameraFitKey, currentCoordinates, currentUser, initialViewport,
-  onClearSelection, onSelect, onViewportChange, restaurants, selectedRestaurant,
+  onClearSelection, onSelect, onSelectGroup, onViewportChange, restaurants, scope, selectedRestaurant,
 }: MyMapSurfaceProps) {
   if (!active) return null
   return <MapView
@@ -18,8 +18,10 @@ export function BrowserMapSurface({
     initialViewport={initialViewport}
     onClearSelection={onClearSelection}
     onSelect={onSelect}
+    onSelectGroup={onSelectGroup}
     onViewportChange={onViewportChange}
     restaurants={restaurants}
     selectedRestaurant={selectedRestaurant}
+    unvisitedMarkerStyle={scope === 'recommended'}
   />
 }

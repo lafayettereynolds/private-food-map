@@ -6,6 +6,7 @@ import {
   HYBRID_BOTTOM_NAVIGATION,
   HYBRID_DISCOVERY_PRIMARY_TABS,
   HYBRID_ANALYTICS_MODES,
+  HYBRID_ANALYTICS_MODULES,
   HYBRID_LIST_SCOPES,
   HYBRID_MAP_PRIMARY_SCOPES,
   HYBRID_NATIVE_CAPABILITY_HANDOFFS,
@@ -19,6 +20,95 @@ import { HYBRID_ROUTE_REGISTRY } from '../../src/hybrid/routes/HybridRouteRegist
 const source = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8')
 
 describe('Hybrid global Product Contract', () => {
+  it('uses one compact centered follow action for Native recommendation and search rows', () => {
+    const social = source('../../ios/TasteMap/TasteMap/Features/Profile/SocialViews.swift')
+    const control = source('../../ios/TasteMap/TasteMap/Components/TasteMapCompactFollowButton.swift')
+    expect(social).toContain('row(suggestion.user, allowsFollow: true)')
+    expect(social).toContain('row(item, allowsFollow: section == .recommendations)')
+    expect(social).toContain('TasteMapCompactFollowButton(')
+    expect(social).not.toContain('Label("关注", systemImage: "person.badge.plus")')
+    expect(control).toContain('alignment: .center')
+    expect(control).toContain('TasteMapDesignTokens.Control.minimumHitTarget')
+    expect(control).toContain('.fixedSize(horizontal: true, vertical: false)')
+    expect(control).toContain('.disabled(isPending)')
+    expect(control).not.toContain('Spacer(')
+    expect(control).not.toContain('maxWidth: .infinity')
+  })
+  it('has one owner for profile-editor dismissal across host and editor variants', () => {
+    const profile = source('../../src/components/ProfilePage.tsx').split('function ProfileEditorModal')[1].split('export type AccountSettingsSection')[0]
+    expect(profile).toContain('dismissAction="back" dismissDisabled={saving}')
+    expect(profile).not.toContain('secondaryAction=')
+    const native = source('../../ios/TasteMap/TasteMap/Features/Profile/ProfileView.swift').split('struct ProfileEditorSheet: View')[1].split('#if DEBUG')[0]
+    expect(native).toContain('TasteMapReturnButton { dismiss() }')
+    expect(native).toContain('.accessibilityIdentifier("profile-back-button")')
+    expect(native).not.toContain('Button("取消")')
+    expect(native).toContain('.interactiveDismissDisabled(isSaving)')
+    const host = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRootView.swift')
+    expect(host).toContain('TasteMapHybridNativeNavigationPolicy.destinationOwnsNavigation(route.surface)')
+    expect(host).toContain('TasteMapHybridNativeDismissibleFailure(title: "无法编辑个人资料")')
+  })
+  it('keeps secondary-page back navigation in one persistent shared primitive', () => {
+    const shared = source('../../src/components/TasteMapHybridShared.tsx')
+    const css = source('../../src/components/tasteMapNavigation.css')
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const browser = source('../../src/App.tsx')
+    expect(shared).toContain('export function PersistentPageNavigation')
+    expect(shared).toContain('<PersistentPageNavigation>')
+    expect(css).toMatch(/\.tm-hybrid-page-navigation \{[^}]*position: sticky;/)
+    expect(css).toContain('--tm-safe-top')
+    expect(css).toContain('--control-min-hit-target')
+    expect(css).toContain('pointer-events: none')
+    expect(shell).toContain('<HybridBackButton onBack={() => void navigateBack()} />')
+    expect(shell).not.toContain('tm-hybrid-detail__back')
+    expect(shell).toContain('showCloseButton={false}')
+    expect(browser.match(/<HybridBackButton onBack=\{\(\) => set(?:SelectedId|StandaloneRestaurant)\(null\)\}/g)).toHaveLength(2)
+    for (const path of ['../../src/components/ProfilePage.tsx', '../../src/components/TasteFootprints.tsx']) {
+      expect(source(path)).toContain('<PersistentPageNavigation')
+    }
+  })
+  it('opens editable Discovery filter sheets on both React entry points instead of summaries or tab-gated placeholders', () => {
+    const hybrid = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
+    const browser = source('../../src/components/CommunityPage.tsx')
+    for (const implementation of [hybrid, browser]) {
+      expect(implementation).toContain('TasteMapFilterSheet')
+      expect(implementation).toContain('aria-haspopup="dialog"')
+      for (const label of ['筛选城市', '筛选排序', '筛选最低评分']) expect(implementation).toContain(`aria-label="${label}"`)
+      expect(implementation).not.toContain('tm-discovery-filter-summary')
+    }
+    expect(browser).not.toContain("if (mode !== 'for_you') return evidenceFeed")
+    expect(browser).toContain("score(item) >= ratingFilter")
+    expect(browser).toContain("sameCity(item.restaurant.city, city)")
+    expect(browser).toContain('item.visit.recommendationSourceType === sourceFilter')
+    expect(browser).toContain('.includes(companionFilter)')
+    expect(browser).toContain('aria-label="筛选适合场景"')
+    const shared = source('../../src/components/TasteMapDiscoveryShared.tsx')
+    expect(shared).toContain('<ModalShell title="筛选餐厅"')
+    expect(shared).toContain('onClick={onReset}')
+    expect(shared).toContain('onClick={onApply ?? onClose}')
+    expect(shared).toContain("onApply ? '应用' : '查看结果'")
+    expect(shared).toContain('onClick={onClose} type="button">取消')
+  })
+
+  it('keeps internal consumption calculations out of shared and Native Visit editors', () => {
+    const shared = source('../../src/components/VisitSpendFields.tsx')
+    const native = source('../../ios/TasteMap/TasteMap/Features/Visit/VisitEditorView.swift')
+    for (const implementation of [shared, native]) {
+      expect(implementation).not.toContain('尚未计入消费统计')
+      expect(implementation).not.toContain('计入总消费')
+      expect(implementation).not.toContain('参考人均')
+      expect(implementation).not.toContain('全额计入')
+      expect(implementation).not.toContain('历史支付金额')
+      expect(implementation).toContain('消费金额（元）')
+    }
+    for (const consumer of ['AddRestaurantModal', 'AddVisitModal']) {
+      expect(source(`../../src/components/${consumer}.tsx`)).toContain('<VisitSpendFields')
+    }
+  })
+
+  it('keeps comment inputs at the iOS-safe focus size', () => {
+    expect(source('../../src/styles/global.css')).toContain('.community-comment-panel form input { font-size: 16px; }')
+  })
+
   it('keeps route ownership independent from the exact three-item bottom navigation', () => {
     expect(HYBRID_ROUTE_REGISTRY.add).toBe('HYBRID_INTEGRATED')
     expect(HYBRID_BOTTOM_NAVIGATION).toEqual([
@@ -33,10 +123,46 @@ describe('Hybrid global Product Contract', () => {
   it('fills the mobile bottom edge and keeps the safe area inside the navigation surface', () => {
     const hybridCSS = source('../../src/hybrid/app/hybridShell.css')
     const browserCSS = source('../../src/styles/global.css')
-    expect(hybridCSS).toMatch(/\.tm-hybrid-bottom-nav \{[^}]*left:\s*0;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*height:\s*calc\(56px \+ var\(--tm-safe-bottom\)\);/)
+    expect(hybridCSS).toContain('--tm-bottom-navigation-content-height: 56px;')
+    expect(hybridCSS).toMatch(/\.tm-hybrid-bottom-nav \{[^}]*left:\s*0;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*height:\s*calc\(var\(--tm-bottom-navigation-content-height\) \+ var\(--tm-safe-bottom\)\);/)
+    expect(hybridCSS).toMatch(/\.tm-hybrid-detail \{[^}]*padding: 14px 14px calc\(var\(--tm-bottom-navigation-content-height\) \+ 14px\);/)
     expect(hybridCSS).toMatch(/\.tm-hybrid-bottom-nav \{[^}]*border:\s*0;[^}]*border-top:[^}]*border-radius:\s*0;/)
     expect(hybridCSS).not.toMatch(/\.tm-hybrid-bottom-nav \{[^}]*bottom:\s*max\(/)
     expect(browserCSS).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.bottom-navigation \{[^}]*left:\s*0;[^}]*bottom:\s*0;[^}]*width:\s*100vw;[^}]*border-radius:\s*0;/)
+  })
+
+  it('uses the active page canvas through the status-bar safe area without hidden-route leakage', () => {
+    const css = source('../../src/hybrid/app/hybridShell.css')
+    const browseCSS = source('../../src/components/tasteMapDiscoveryShared.css')
+    const acquisitionCSS = source('../../src/components/tasteMapRestaurantAcquisitionShared.css')
+    expect(css).toContain(':root:has(.tm-hybrid-shell[data-route="profile"])')
+    expect(css).toContain('--tm-shell-background: var(--color-surface);')
+    for (const route of ['map', 'discovery', 'activity', 'add']) {
+      expect(css).toContain(`:root:has(.tm-hybrid-shell[data-route="${route}"])`)
+    }
+    expect(css).toContain('--tm-shell-background: var(--tm-browse-chrome-background);')
+    expect(css).toContain('--tm-shell-background: var(--tm-acquisition-surface);')
+    expect(css).not.toContain(':root:has(.profile-page)')
+    expect(css).toContain(':root:has(.tm-hybrid-shell) body { background: var(--tm-shell-background); }')
+    expect(css).toMatch(/\.tm-hybrid-shell \{[^}]*padding:\s*var\(--tm-safe-top\)[^;]*;[^}]*background:\s*var\(--tm-shell-background\);/)
+    expect(browseCSS).toContain('--tm-browse-chrome-background: #f8fafc;')
+    expect(browseCSS).toContain('--tm-browse-chrome-background: #12191f;')
+    expect(browseCSS).not.toContain('rgba(248,250,252,')
+    expect(source('../../src/components/myMapBrowsePage.css')).not.toContain('rgba(18,25,31,')
+    expect(acquisitionCSS).toContain(':root { --tm-acquisition-surface: var(--color-surface, #fff); }')
+    expect(css).toContain('.tm-hybrid-add { padding: 0 0 92px; background: var(--tm-acquisition-surface); }')
+  })
+
+  it('suppresses browser-style long-press callouts outside editable fields', () => {
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const css = source('../../src/hybrid/app/hybridShell.css')
+    const host = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridCapacitorHost.swift')
+    expect(css).toMatch(/\.tm-hybrid-shell \{[^}]*-webkit-touch-callout:\s*none;[^}]*-webkit-user-select:\s*none;[^}]*user-select:\s*none;/)
+    expect(css).toMatch(/\.tm-hybrid-shell input,[\s\S]*?\[contenteditable="true"\] \{[^}]*-webkit-touch-callout:\s*default;[^}]*-webkit-user-select:\s*text;[^}]*user-select:\s*text;/)
+    expect(shell).toContain('onContextMenu={(event) => {')
+    expect(shell).toContain("closest('input, textarea, [contenteditable=\"true\"]')")
+    expect(shell).toContain('event.preventDefault()')
+    expect(host).toContain('webView.allowsLinkPreview = false')
   })
 
   it('keeps the owner Profile header open with one separator instead of nested card frames', () => {
@@ -44,6 +170,59 @@ describe('Hybrid global Product Contract', () => {
     expect(css).toMatch(/\.profile-dashboard--owner \{[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/)
     expect(css).toMatch(/\.profile-dashboard--owner \.profile-dashboard__hero \{[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--color-divider\);[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/)
     expect(css).not.toMatch(/\.profile-dashboard--owner \.profile-dashboard__hero \{[^}]*border:\s*1px/)
+  })
+
+  it('keeps phone, opening hours and directions in one balanced Restaurant Detail grid without a website item', () => {
+    const summary = source('../../src/components/RestaurantRecordSummary.tsx')
+    const css = source('../../src/styles/global.css')
+    expect(summary.match(/className="restaurant-contact-actions"/g)).toHaveLength(1)
+    expect(summary.indexOf('<Phone size={14}')).toBeLessThan(summary.indexOf('<Clock3 size={14}'))
+    expect(summary.indexOf('<Clock3 size={14}')).toBeLessThan(summary.indexOf('<Navigation size={14}'))
+    expect(summary).not.toContain('<Globe2')
+    expect(summary).not.toContain('暂无官网')
+    expect(summary).not.toContain('<small>官网</small>')
+    expect(css).toMatch(/\.restaurant-contact-actions \{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/)
+    expect(css).not.toMatch(/\.restaurant-contact-actions \{[^}]*flex-wrap:\s*wrap;/)
+  })
+
+  it('keeps Profile feature cards free of redundant trailing arrows', () => {
+    const profile = source('../../src/components/ProfilePage.tsx')
+    const css = source('../../src/styles/global.css')
+    const nativeProfile = source('../../ios/TasteMap/TasteMap/Features/Profile/ProfileView.swift')
+    expect(profile).not.toContain('ArrowRight')
+    const tasteCard = profile.slice(profile.indexOf('function TasteProfileSummary'), profile.indexOf('function ProfileDetailModal'))
+    expect(tasteCard).not.toContain('<ChevronRight')
+    const insightCards = profile.slice(profile.indexOf('className="profile-analytics-links"'), profile.indexOf('</ProfileSection> : null}', profile.indexOf('className="profile-analytics-links"')))
+    expect(insightCards).not.toContain('<ChevronRight')
+    expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.profile-analytics-links \{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/)
+    expect(css).not.toMatch(/\.profile-analytics-links \{[^}]*grid-template-columns:\s*1fr;/)
+    const nativeDashboardTile = nativeProfile.slice(nativeProfile.indexOf('private struct ProfileDashboardTile'), nativeProfile.indexOf('private struct ProfileCompactTile'))
+    expect(nativeDashboardTile).not.toContain('chevron.right')
+  })
+
+  it('keeps the Profile List card and all-lists entry in a non-overlapping vertical flow', () => {
+    const browserCSS = source('../../src/styles/global.css')
+    const hybridCSS = source('../../src/hybrid/app/hybridShell.css')
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const lists = source('../../src/components/TasteMapListsPage.tsx')
+    expect(browserCSS).toMatch(/\.restaurant-list-collection-grid > button:only-child \{[^}]*grid-column:\s*1 \/ -1;/)
+    expect(hybridCSS).toMatch(/\.profile-lists-hybrid-entry \{[^}]*margin:\s*8px 16px 18px;/)
+    expect(hybridCSS).not.toMatch(/\.profile-lists-hybrid-entry \{[^}]*margin:\s*-/)
+    expect(shell).toContain('<HybridProfileListsPreview')
+    expect(shell).toContain('lists={content.lists}')
+    expect(shell).toContain('content.lists.filter((item) => item.isOwnedByViewer).length')
+    expect(lists).toContain('.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))')
+    expect(lists).toContain('const previewLists = ownedLists.slice(0, 2)')
+  })
+
+  it('keeps add-to-List Restaurant rows circular and structurally separated', () => {
+    const component = source('../../src/components/RestaurantListsPanel.tsx')
+    const css = source('../../src/styles/global.css')
+    expect(component).toContain('className="restaurant-list-add-panel__copy"')
+    expect(component).toContain('className="restaurant-list-add-panel__action"')
+    expect(css).toMatch(/\.restaurant-list-add-panel > div > button \{[^}]*grid-template-columns:\s*42px minmax\(0, 1fr\) 28px;/)
+    expect(css).toMatch(/\.restaurant-list-add-panel > div > button > \.restaurant-avatar \{[^}]*width:\s*42px;[^}]*height:\s*42px;/)
+    expect(css).not.toContain('.restaurant-list-add-panel > div > button > span:not(.loading-spinner)')
   })
 
   it('places the public user ID directly under the account name and retires profile bios from product UI', () => {
@@ -59,6 +238,16 @@ describe('Hybrid global Product Contract', () => {
     expect(nativeProfile).not.toContain('.accessibilityIdentifier("profile-bio-text")')
     expect(nativeSocial).not.toContain('Text([item.profile.city, item.profile.bio]')
     expect(nativeSocial).not.toContain('Text(bio)')
+  })
+
+  it('never renders an inert account-deletion control on the iPhone Hybrid path', () => {
+    const profile = source('../../src/components/ProfilePage.tsx')
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    expect(profile).toContain('onDeleteAccount?: () => void')
+    expect(profile).toContain('onDeleteAccount ? <button onClick={onDeleteAccount}')
+    expect(profile).toContain('请在 Taste Map iPhone App 的账户与安全中完成身份验证后删除账户。')
+    expect(profile).not.toContain('<button disabled type="button">删除账号</button>')
+    expect(shell).toContain('onDeleteAccount={() => void platform.account.openDelete()}')
   })
 
   it('keeps exactly one Add Restaurant primary entry as the Map floating CTA', () => {
@@ -79,6 +268,11 @@ describe('Hybrid global Product Contract', () => {
     const shared = source('../../src/components/TasteMapRestaurantAcquisitionShared.tsx')
     const sharedCSS = source('../../src/components/tasteMapRestaurantAcquisitionShared.css')
     const hybridCSS = source('../../src/hybrid/app/hybridShell.css')
+    const browserAdapter = source('../../src/platform/TasteMapBrowserAdapter.ts')
+    const mapService = source('../../src/services/mapService.ts')
+    const searchRelevance = source('../../src/services/restaurantSearchRelevance.ts')
+    const nativeRuntime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
+    const nativeAcquisitionModel = source('../../ios/TasteMap/TasteMap/Features/Restaurant/RestaurantAcquisitionViewModel.swift')
     expect(HYBRID_RESTAURANT_ACQUISITION_CONTRACT).toEqual({
       capabilities: ['search', 'nearby', 'share', 'manual'],
       primaryPasteLink: false,
@@ -111,9 +305,23 @@ describe('Hybrid global Product Contract', () => {
       expect(consumer).not.toContain('附近搜索已完成')
     }
     expect(shared).not.toContain("'ready'")
+    expect(shared).toContain("'empty'")
     expect(hybrid).toContain("if (state === 'ready') return null")
+    expect(hybrid).toContain('state="empty"')
+    expect(hybrid).toContain('retryLabel="重新查找"')
+    expect(hybrid).toContain('cityEditedRef')
+    expect(hybrid).toContain('value.detectedCity')
+    expect(hybrid).toContain("replace(/市$/, '')")
+    expect(browserAdapter).toContain('resolveCoordinatesLocation(coordinates)')
+    expect(mapService).toContain('rankRestaurantSearchMatches(')
+    expect(browserAdapter).toContain('rankRestaurantSearchMatches(debugAcquisitionPOIs')
+    expect(searchRelevance).toContain('name.includes(compactQuery)')
+    expect(searchRelevance).toContain('address.includes(compactQuery)')
+    expect(nativeRuntime).toContain('RestaurantSearchRelevancePolicy.rankedMatches(')
+    expect(nativeAcquisitionModel).toContain('RestaurantSearchRelevancePolicy.rankedMatches(')
     expect(formalWeb).toContain('nearbyLoading || nearbyError')
     expect(formalWeb).toContain('当前位置 3 公里内没有找到餐厅。')
+    expect(formalWeb).toContain('state="empty"')
     expect(formalWeb).toContain('正在取得新鲜位置')
     expect(formalWeb).toContain('暂时无法取得精确位置')
     const nativeAcquisition = source('../../ios/TasteMap/TasteMap/Features/Restaurant/AddRestaurantView.swift')
@@ -157,7 +365,7 @@ describe('Hybrid global Product Contract', () => {
     const nativeMap = source('../../ios/TasteMap/TasteMap/Features/Map/MapHomeView.swift')
     expect(map).not.toContain('适合你')
     expect(map).toContain('tm-my-map__title-switch')
-    expect(map).toContain('count: scopeCounts[value]')
+    expect(map).toContain("count: value === 'recommended' && canonicalRecommendations ? canonicalRecommendations.length : scopeCounts[value]")
     expect(sharedTabs).toContain('tm-primary-tab-bar__count')
     expect(sharedTabs).toContain('${item.label}，${item.count} 家餐厅')
     expect(nativeTabs).toContain('item.count.map { "\\(item.title)，\\($0) 家餐厅" }')
@@ -192,6 +400,45 @@ describe('Hybrid global Product Contract', () => {
     ])
   })
 
+  it('keeps iOS Discovery chrome on the same visual tokens as My Map', () => {
+    const sharedCSS = source('../../src/components/tasteMapDiscoveryShared.css')
+    const mapCSS = source('../../src/components/myMapBrowsePage.css')
+    const shared = source('../../src/components/TasteMapDiscoveryShared.tsx')
+    const map = source('../../src/components/MyMapBrowsePage.tsx')
+    const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
+    for (const token of [
+      '--tm-browse-title-size', '--tm-browse-title-color', '--tm-browse-tab-height',
+      '--tm-browse-tab-size', '--tm-browse-tab-inactive', '--tm-browse-tab-active',
+      '--tm-browse-row-gap', '--tm-browse-indicator-height', '--tm-browse-indicator-bottom',
+      '--tm-browse-filter-height', '--tm-browse-filter-size', '--tm-browse-filter-icon-size',
+      '--tm-browse-filter-text',
+      '--tm-browse-divider', '--tm-browse-chrome-background',
+    ]) {
+      expect(sharedCSS).toContain(`${token}:`)
+      expect(sharedCSS).toContain(`var(${token})`)
+      if (!token.startsWith('--tm-browse-filter-')) expect(mapCSS).toContain(`var(${token})`)
+    }
+    expect(sharedCSS).toContain('--tm-browse-chrome-height: 145px')
+    expect(mapCSS).toContain('var(--tm-browse-chrome-height)')
+    expect(sharedCSS).toMatch(/\.tm-hybrid-page\.tm-hybrid-discovery \{[^}]*padding:\s*0 0 92px/)
+    expect(sharedCSS).toMatch(/\.tm-hybrid-discovery \.tm-primary-tab-bar \{[^}]*margin-top:\s*var\(--tm-browse-row-gap\)/)
+    expect(sharedCSS).toMatch(/\.tm-hybrid-discovery \.tm-discovery-page__filters \{[^}]*margin-top:\s*var\(--tm-browse-row-gap\)/)
+    expect(sharedCSS).toMatch(/\.tm-hybrid-discovery \.tm-discovery-page__header p \{[^}]*position:\s*absolute[^}]*width:\s*1px/)
+    expect(sharedCSS).toMatch(/\.tm-browse-filter-bar > button > svg,[^}]*width:\s*var\(--tm-browse-filter-icon-size\);[^}]*height:\s*var\(--tm-browse-filter-icon-size\)/)
+    expect(sharedCSS).toMatch(/@media \(max-width: 420px\)[\s\S]*?\.tm-primary-tab-bar button \{ font-size: var\(--tm-browse-tab-size\); \}/)
+    expect(sharedCSS).not.toMatch(/@media \(max-width: 420px\)[\s\S]*?\.tm-primary-tab-bar button \{ font-size: 11px; \}/)
+    expect(shared).toContain('className="tm-browse-filter-bar tm-shared-filter-bar"')
+    expect(map).toContain('className="tm-browse-filter-bar tm-map-filter-bar"')
+    expect(map).toContain('label="城市"')
+    expect(discovery).toContain('<TasteMapCitySearch city={selectedCity}')
+    expect(discovery).toContain("onChange={(value) => setCity(value || 'all')}")
+    expect(mapCSS).not.toMatch(/\.tm-map-filter-bar > (?:button|label)[^{]*\{/)
+    expect(discovery).not.toContain('<option value="all">全部城市</option>')
+    expect(mapCSS).toMatch(/\.tm-my-map__controls \{[^}]*border-bottom:\s*1px solid var\(--tm-browse-divider\)/)
+    expect(mapCSS).toMatch(/\.tm-my-map__stage \{[^}]*var\(--tm-browse-chrome-height\)/)
+    expect(mapCSS).toMatch(/@media \(max-width: 420px\)[\s\S]*?\.tm-my-map__title-switch \{ font-size: var\(--tm-browse-title-size\); \}/)
+  })
+
   it('uses one shared Discovery scaffold, FilterBar and Activity Card in formal Web and Hybrid', () => {
     const hybrid = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
     const formalWeb = source('../../src/components/CommunityPage.tsx')
@@ -221,17 +468,30 @@ describe('Hybrid global Product Contract', () => {
       : shared.indexOf(`data-activity-region="${region}"`))
     expect(cardOrder.every((index) => index >= 0)).toBe(true)
     expect(cardOrder).toEqual([...cardOrder].sort((left, right) => left - right))
-    expect(hybrid).toContain('tm-activity-card__recommendation-reason')
+    expect(hybrid).toContain('TasteMapRecommendationReasons')
     expect(hybrid).toContain('CommunityRatingSummary')
     expect(hybrid).not.toContain('tm-activity-card__source"><')
     expect(hybrid).not.toContain('aria-label="关注用户"')
     expect(hybrid).not.toMatch(/<Send\b/)
     expect(sharedCSS).toMatch(/\.tm-activity-card \{[^}]*border:\s*0[^}]*border-radius:\s*0/)
-    expect(sharedCSS).toMatch(/\.tm-activity-card__media \{[^}]*width:\s*min\(48%,\s*178px\)[^}]*aspect-ratio:\s*1/)
-    expect(sharedCSS).toMatch(/\.tm-activity-card__recommendation-reason \{[^}]*border:\s*0[^}]*border-top:/)
+    expect(sharedCSS).toContain('--tm-activity-photo-size: 178px')
+    expect(sharedCSS).toMatch(/\.tm-activity-card__media \{[^}]*width:\s*min\(48%,\s*var\(--tm-activity-photo-size\)\)[^}]*aspect-ratio:\s*1/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card\.is-activity > \.tm-activity-card__media\.has-multiple \{[^}]*aspect-ratio:\s*auto/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card__recommendation-reasons \{[^}]*flex-wrap:\s*wrap/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card__recommendation-reasons > li \{[^}]*width:\s*fit-content;[^}]*border:\s*0;[^}]*border-radius:/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card > footer \{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(0,\s*1fr\);/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card__social \{[^}]*justify-content:\s*flex-start;/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card__social button \{[^}]*min-width:\s*var\(--control-min-hit-target\);[^}]*min-height:\s*var\(--control-min-hit-target\);[^}]*border:\s*0;[^}]*border-radius:\s*0;/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card__recommendation-reasons > li::before \{ content: none; \}/)
+    expect(sharedCSS).not.toMatch(/\.tm-activity-card__body > ul \{[^}]*display:\s*grid/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card__restaurant-actions \{[^}]*justify-content:\s*flex-end;/)
+    expect(sharedCSS).toMatch(/\.tm-activity-card__restaurant-actions \.restaurant-quick-actions button \{[^}]*width:\s*40px;[^}]*height:\s*40px;/)
+    expect(sharedCSS).toMatch(/\.tm-hybrid-discovery \.tm-activity-card\.is-recommendation > footer \{[^}]*border-top:\s*0;/)
+    expect(sharedCSS).toMatch(/\.tm-hybrid-discovery \.tm-activity-card\.is-recommendation > footer \.tm-activity-card__social \{[^}]*margin-right:\s*auto;/)
+    expect(sharedCSS).toMatch(/\.tm-hybrid-discovery \.tm-activity-card\.is-recommendation > footer \.tm-activity-card__restaurant-actions \{[^}]*margin-left:\s*auto;/)
     expect(sharedCSS).toMatch(/\.tm-discovery-page__content \{[^}]*background:\s*var\(--color-surface/)
     expect(hybridCSS).toMatch(/\.tm-hybrid-discovery \.tm-hybrid-activity-feed \{[^}]*gap:\s*0/)
-    const nativeActivitySurface = nativeShared.match(/struct TasteMapActivityCard<[\s\S]*?\n}\n\nstruct TasteMapSectionHeader/)?.[0] ?? ''
+    const nativeActivitySurface = nativeShared.match(/struct TasteMapActivityCard<[\s\S]*?\n}/)?.[0] ?? ''
     expect(nativeActivitySurface).toContain('.overlay(alignment: .bottom) { Divider() }')
     expect(nativeActivitySurface).not.toContain('.tasteMapCoreCard(')
     expect(hybridCSS).not.toMatch(/tm-hybrid-discovery-card|tm-hybrid-activity-card|tm-hybrid-discovery-grid/)
@@ -260,10 +520,15 @@ describe('Hybrid global Product Contract', () => {
     const runtime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
     const service = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridBridgeService.swift')
     expect(shell).toContain('commitLocalRoute(nextRoute, setRoute)')
-    expect(shell).toContain('window.requestAnimationFrame(() => {')
+    const navigation = shell.slice(shell.indexOf('const navigate = useCallback'), shell.indexOf('const refreshReadyData'))
+    expect(navigation.indexOf('commitLocalRoute(nextRoute, setRoute)')).toBeLessThan(navigation.indexOf('void platform.navigation.openHybrid'))
+    expect(navigation).toContain('void platform.navigation.openHybrid')
+    expect(navigation).not.toContain('await platform.navigation')
+    expect(navigation).not.toContain('requestAnimationFrame')
+    expect(shell).toContain('if (revision !== navigationRevision.current) return')
     expect(shell).toContain('ownedRestaurantPreview(profile, route.id)')
     expect(shell).toContain('contentReady: false')
-    expect(shell.indexOf("setBootstrap({ state: 'ready', runtime, profile")).toBeLessThan(shell.indexOf('const content = await contentRequest'))
+    expect(shell.indexOf("setBootstrap({ state: 'ready', runtime, profile")).toBeLessThan(shell.indexOf('const result = await contentRequest'))
     expect(shell).toContain('profileWasActivated ? <div className="tm-hybrid-persistent-route"')
     expect(runtime).toContain('private var cachedBridgeService: TasteMapHybridBridgeService?')
     expect(runtime).toContain('private var cachedMapSurfaceResources: TasteMapHybridCachedMapSurfaceResources?')
@@ -272,11 +537,42 @@ describe('Hybrid global Product Contract', () => {
     expect(service).toContain('photosByVisitID')
   })
 
+  it('keeps data refresh and Visit saves out of account bootstrap, with recoverable failures', () => {
+    const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
+    const dataEvent = shell.slice(shell.indexOf("if (event.name === 'data.changed')"), shell.indexOf("if (event.name === 'app.lifecycle'"))
+    const saved = shell.slice(shell.indexOf('onSaved={(restaurantID)'), shell.indexOf('restaurantID={route.surface'))
+    for (const block of [dataEvent, saved]) {
+      expect(block).not.toContain('setGeneration')
+      expect(block).not.toContain("setBootstrap({ state: 'loading' })")
+    }
+    expect(shell).toContain('refreshHybridSnapshots(platform, {')
+    expect(shell).toContain('onProfile: (profile) => setBootstrap')
+    expect(shell).toContain('onContent: (content) => setBootstrap')
+    expect(saved).not.toContain('refreshReadyData().finally(')
+    expect(saved).toContain('const parentRoute = visitParentRoute.current')
+    expect(saved).toContain('void navigateBack()')
+    expect(saved).toContain('navigate(destination, true)')
+    expect(shell).toContain('if (replace) replaceLocalRoute(nextRoute, setRoute)')
+    expect(shell).toContain('else commitLocalRoute(nextRoute, setRoute)')
+    expect(shell).toContain('{ localTransition: true, replaceCurrent: replace }')
+    expect(shell).toContain('const traversed = beginHybridHistoryBack()')
+    expect(shell).toContain('Promise.all([platform.navigation.back({ localTransition: true }), traversed])')
+    expect(saved).not.toContain("navigate({ surface: 'restaurant'")
+    expect(shell).toContain('sequence !== snapshotRefreshSequence.current')
+    expect(shell).toContain('重试刷新')
+    expect(shell).not.toContain('<ShellState kind="loading" message={routeError')
+    const routeProjection = shell.slice(shell.indexOf('function platformRouteToHybrid'))
+    expect(routeProjection).not.toContain("if (route.surface === 'visitEdit'")
+  })
+
   it('does not repeat the current similar-taste category on every Restaurant card', () => {
     const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
-    expect(discovery).toContain("item.mode === 'trending' ? '近期趋势' : null")
+    expect(discovery).not.toContain('近期趋势')
+    expect(discovery).toContain("item.mode === 'trending' ? undefined : <CommunityRatingSummary")
     expect(discovery).not.toContain("item.mode === 'similar_taste' ? '同味推荐'")
-    expect(discovery).toContain("item.mode === 'similar_taste' ? '同味推荐依据'")
+    expect(discovery).toContain('TasteMapRecommendationReasons')
+    expect(source('../../src/components/TasteMapDiscoveryShared.tsx')).toContain('aria-label="推荐理由"')
+    expect(discovery).not.toContain('为什么适合你')
     expect(discovery).toContain('const similarTasteSource')
     expect(discovery).toContain('口味相似 {item.similarityPercent}%')
     expect(discovery).toContain('rating={item.activityRating}')
@@ -287,13 +583,16 @@ describe('Hybrid global Product Contract', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const shellStyles = source('../../src/hybrid/app/hybridShell.css')
     expect(HYBRID_PROFILE_OWNER_MODULES).toEqual([
-      '身份与 Premium', '关注 / 被关注', '去过 / 想去 / 总消费',
+      '身份与 Premium', '关注 / 粉丝', '去过 / 想去 / 总消费',
       '今天吃什么 / 我的口味档案', '回味', '我的食单', '发现与洞察',
       '右上角设置入口',
     ])
     expect(HYBRID_LIST_SCOPES).toEqual(['我的食单', '公开食单'])
     expect(HYBRID_ANALYTICS_MODES.map((item) => item[1])).toEqual([
       '我的口味档案', '最佳饭搭子', '谁最会种草', '本月回顾', '年度回顾',
+    ])
+    expect(HYBRID_ANALYTICS_MODULES).toEqual([
+      ['data', '数据'], ['poster', '画报'],
     ])
     expect(HYBRID_SETTINGS_SECTIONS).toEqual([
       '账户', '数据与备份', '同步', '隐私与权限', '存储与 Premium', '帮助与关于',
@@ -345,6 +644,35 @@ describe('Hybrid global Product Contract', () => {
     expect(shell).not.toMatch(/visit\.userId\s*===|CURRENT_USER_ID.*visit/)
   })
 
+  it('keeps the user-photo section free of duplicate Restaurant-level actions', () => {
+    const detail = source('../../src/components/RestaurantPreviewCard.tsx')
+    expect(detail).not.toContain('map-card__actions')
+    expect(detail).not.toContain('<ListPlus')
+    expect(detail).not.toContain('<Share2')
+    // Lafayette moved the only whole-Restaurant delete to the overview header;
+    // it must remain absent from the photo area and preserve ownership checks.
+    expect(detail.match(/<Trash2 /g)).toHaveLength(1)
+    const overview = detail.split('aria-label="我的到访概览"')[1].split('</header>')[0]
+    expect(overview).toContain('!readOnly && onDelete')
+    expect(overview).toContain('aria-label="删除餐厅"')
+    expect(overview).toContain('<Trash2 aria-hidden="true"')
+    expect(detail.match(/data-product-contract="visit-edit-entry"/g)).toHaveLength(1)
+  })
+
+  it('keeps Visit restaurant context unframed without removing its content or the named section divider', () => {
+    const editor = source('../../src/components/AddVisitModal.tsx')
+    const styles = source('../../src/styles/global.css')
+    const browser = source('../../src/App.tsx')
+    const hybrid = source('../../src/hybrid/app/HybridVisitEditorPage.tsx')
+    for (const consumer of [browser, hybrid]) expect(consumer).toContain('<AddVisitModal')
+    expect(editor).toContain('<RestaurantSummarySection')
+    expect(editor).toContain('className="is-form-summary is-unframed"')
+    expect(editor).toContain("initialVisit ? '修改这次到访' : '这次到访'")
+    expect(styles).toMatch(/\.restaurant-record-summary\.is-form-summary\.is-unframed\s*\{\s*border:\s*0;\s*\}/)
+    expect(styles).toMatch(/\.restaurant-record-form-divider::after\s*\{[^}]*height:\s*1px;/)
+    expect(styles).not.toMatch(/\.restaurant-record-summary[^{}]*\{[^}]*(?:display:\s*none|visibility:\s*hidden)/)
+  })
+
   it('keeps Browser and Capacitor on one direct-set editable rating component', () => {
     const browser = source('../../src/App.tsx')
     const hybrid = source('../../src/hybrid/app/HybridVisitEditorPage.tsx')
@@ -389,6 +717,9 @@ describe('Hybrid global Product Contract', () => {
     expect(discovery).toContain('platform.community.setLike')
     expect(discovery).toContain('platform.community.comments')
     expect(discovery).toContain('platform.community.addComment')
+    expect(discovery).not.toContain('data-community-safety-target')
+    expect(discovery).not.toContain('Ellipsis')
+    expect(discovery).not.toContain("route: 'socialNative', identifier: item.id")
     expect(discovery).not.toMatch(/openNative\(\{ route: 'visit'/)
     expect(discovery).not.toMatch(/aria-label=\{[^\n]*点赞[^\n]*openNative/)
     expect(discovery).not.toMatch(/aria-label="评论"[^\n]*openNative/)
@@ -410,9 +741,12 @@ describe('Hybrid global Product Contract', () => {
 
   it('keeps exactly three Discovery Restaurant actions without removing List elsewhere', () => {
     const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
+    const quickActions = source('../../src/components/RestaurantQuickActions.tsx')
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const platform = source('../../src/platform/TasteMapPlatform.ts')
-    for (const icon of ['Plus', 'Bookmark', 'Dices', 'SendIcon']) expect(discovery).toContain(icon)
+    expect(discovery).toContain('RestaurantQuickActions')
+    expect(discovery).toContain('SendIcon')
+    for (const icon of ['PlusAction', 'Bookmark', 'Dices']) expect(quickActions).toContain(icon)
     for (const removedIcon of ['NotebookPen', 'Share2']) expect(discovery).not.toContain(removedIcon)
     for (const removed of ['ListPlus', 'CirclePlus', 'BookmarkPlus', '食单 ', "route: 'restaurantAddToList'"]) {
       expect(discovery).not.toContain(removed)
@@ -481,19 +815,30 @@ describe('Hybrid global Product Contract', () => {
     expect(runtime).toContain('UIImagePickerController.isSourceTypeAvailable(.camera)')
     expect(settings).toContain('platform.backup.openExport()')
     expect(settings).toContain('platform.backup.openImport()')
-    expect(settings).toContain('platform.account.openDelete()')
+    expect(settings).toContain("openNativeSettingsDetail('accountSettings')")
+    expect(settings).not.toContain('platform.account.openDelete()')
     expect(settings).not.toMatch(/fake Product|fake product|isPremium\s*=\s*true/)
   })
 })
 
 describe('Hybrid forbidden Product patterns', () => {
-  it('forbids clusters and default separation while requiring food emoji fallback markers', () => {
+  it('keeps Restaurant marker centers geographically anchored instead of moving collisions into free slots', () => {
     const map = source('../../src/components/MapView.tsx')
+    const mapPriority = source('../../src/components/mapMarkerPriority.ts')
     const mapService = source('../../src/services/amap.ts')
     const nativeMap = source('../../ios/TasteMap/TasteMap/Features/Map/ClusteredRestaurantMapView.swift')
     const nativePresentation = source('../../ios/TasteMap/TasteMap/Features/Map/RestaurantMapPresentation.swift')
     const combined = `${map}\n${mapService}\n${nativeMap}\n${nativePresentation}`
-    expect(combined).not.toMatch(/MarkerCluster|createClusterData|spiderfy|collision dispersion|coordinateOffset|adjustedCoordinate|spreadCoordinate/i)
+    expect(combined).not.toMatch(/spiderfy|collision dispersion|adjustedCoordinate|spreadCoordinate/i)
+    expect(`${combined}\n${mapPriority}`).not.toMatch(/NonOverlappingOffsets|NonOverlapPolicy|firstAvailableOffset|setLayoutOffset/)
+    expect(map).not.toContain('.setOffset(')
+    expect(map).toContain('position: [restaurant.longitude, restaurant.latitude]')
+    expect(map).toContain("anchor: 'center'")
+    expect(map).toContain('offset: new AMap.Pixel(0, 0)')
+    expect(mapPriority).toContain('markerRegionalGroups')
+    expect(nativeMap).toContain('centerOffset = .zero')
+    expect(nativeMap).toContain('applyAnchoredMarkerVisibility')
+    expect(nativePresentation).toContain('RestaurantMapRegionalGroupingPolicy')
     expect(map).toContain('resolveRestaurantFoodEmoji')
     expect(nativeMap).toContain('emojiLabel')
     expect(nativePresentation).toContain('FoodCategoryEmojiResolver.resolve')
@@ -509,8 +854,9 @@ describe('Hybrid forbidden Product patterns', () => {
     expect(discovery).not.toMatch(/item\.restaurant\.(averageRating|scoreOutOfTen)/)
     expect(formalWeb).toContain('const activityRating = item.visit.rating')
     expect(formalWeb).not.toMatch(/activityRating=\{[^}]*item\.restaurant\.(averageRating|scoreOutOfTen)/)
-    expect(shared).toContain("variant === 'activity' && activityRating")
-    expect(shared).toContain('scoreColor(rating == null ? null : rating * 2)')
+    expect(shared).toContain('activityRating ? <div className="tm-activity-card__restaurant-row">')
+    expect(shared).toContain('const score = starToTenScore(rating)')
+    expect(shared).toContain('scoreColor(score)')
     expect(nativeShared).toContain('RestaurantScoreColorPolicy.color(forFivePointRating: rating)')
   })
 

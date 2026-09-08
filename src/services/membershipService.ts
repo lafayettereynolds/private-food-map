@@ -1,6 +1,6 @@
 import { SOCIAL_API_ENABLED, localTestHeaders } from '../config/appEnvironment'
 import { apiURL } from '../config/apiEnvironment'
-import type { MembershipAdminUser, MembershipSelfResponse } from '../types/membership'
+import type { MembershipSelfResponse } from '../types/membership'
 
 export const MEMBERSHIP_CHANGED_EVENT = 'taste-map:membership-changed'
 
@@ -35,35 +35,4 @@ export const MembershipService = {
     return result
   },
 
-  async searchUsers(query = ''): Promise<MembershipAdminUser[]> {
-    const result = await membershipFetch<{ users: MembershipAdminUser[] }>(`/api/admin/memberships?q=${encodeURIComponent(query.trim())}`)
-    return result.users
-  },
-
-  async grant(userId: string, duration: '1m' | '3m' | '6m' | '1y' | 'lifetime' | 'custom', expiresAt: string | null, note: string) {
-    const result = await membershipFetch('/api/admin/memberships', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'grant', userId, duration, expiresAt, note }),
-    })
-    notifyMembershipChanged()
-    return result
-  },
-
-  async update(entitlementId: string, expiresAt: string | null, isLifetime: boolean, note: string) {
-    const result = await membershipFetch('/api/admin/memberships', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'update', entitlementId, expiresAt, isLifetime, note }),
-    })
-    notifyMembershipChanged()
-    return result
-  },
-
-  async revoke(entitlementId: string, reason: string) {
-    const result = await membershipFetch('/api/admin/memberships', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'revoke', entitlementId, reason }),
-    })
-    notifyMembershipChanged()
-    return result
-  },
 }

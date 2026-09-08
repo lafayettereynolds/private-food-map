@@ -5,9 +5,11 @@ interface SyncedImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'sr
   source: string | null | undefined
   photoId?: string | null
   fallback?: ReactNode
+  /** Content covers may advance to the next authorized photo or local illustration. */
+  failureFallback?: ReactNode
 }
 
-export function SyncedImage({ source, photoId, fallback = null, ...props }: SyncedImageProps) {
+export function SyncedImage({ source, photoId, fallback = null, failureFallback, ...props }: SyncedImageProps) {
   const [resolvedSource, setResolvedSource] = useState<string | null>(() => (
     source && !source.startsWith('drive-photo:') ? source : null
   ))
@@ -30,7 +32,8 @@ export function SyncedImage({ source, photoId, fallback = null, ...props }: Sync
     return () => { active = false }
   }, [source, photoId, retryKey])
 
-  if (resolvedSource) return <img {...props} src={resolvedSource} />
+  if (failed && failureFallback !== undefined) return <>{failureFallback}</>
+  if (resolvedSource) return <img {...props} src={resolvedSource} onError={failureFallback === undefined ? props.onError : (event) => { setFailed(true); props.onError?.(event) }} />
   if (failed) {
     return (
       <span

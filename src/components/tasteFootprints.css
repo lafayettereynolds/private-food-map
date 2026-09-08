@@ -1,0 +1,8 @@
+.taste-footprint-cards { width: 100%; }
+.taste-footprint-cards__item { content-visibility: auto; contain-intrinsic-size: auto 440px; }
+.taste-footprint-cards .tm-activity-card { padding-inline: 0; }
+.taste-footprint-cards .tm-activity-card__user { min-width: 0; }
+.taste-footprint-cards .tm-activity-card__user > span { min-width: 0; }
+.taste-footprint-cards .tm-activity-card__user strong { white-space: normal; overflow-wrap: anywhere; }
+.taste-footprint-visibility { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--color-text-secondary); }
+.taste-footprint-cards .tm-activity-card__body p { overflow-wrap: anywhere; white-space: pre-wrap; }

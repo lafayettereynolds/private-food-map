@@ -26,7 +26,9 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
             configuration = nil
         }
         do {
-            configuration = try await commerceAPI.configuration()
+            let value = try await commerceAPI.configuration()
+            guard activeUserID == userID else { return }
+            configuration = value
             try await reconcileCurrentEntitlements()
         } catch {
             // Store commerce must never block sign-in or local-first usage.
@@ -40,11 +42,11 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     }
 
     func products() async throws -> [MembershipProduct] {
-        let configuration = try await loadConfiguration()
-        guard configuration.configured, !configuration.products.isEmpty else {
-            throw MembershipPurchaseError.notConfigured
-        }
-        let references = Dictionary(uniqueKeysWithValues: configuration.products.map { ($0.id, $0) })
+        // Product metadata is public; displaying prices must not depend on a Taste Map session.
+        let references: [String: MembershipProductPeriod] = [
+            "com.lafayette.tastemap.premium.monthly.v1": .monthly,
+            "com.lafayette.tastemap.premium.annual.v1": .annual,
+        ]
         return try await Product.products(for: Array(references.keys))
             .compactMap { product in
                 guard let reference = references[product.id] else { return nil }
@@ -53,7 +55,7 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
                     displayName: product.displayName,
                     valueDescription: product.description,
                     displayPrice: product.displayPrice,
-                    period: reference.period,
+                    period: reference,
                     billingPeriodDescription: Self.billingDescription(for: product.subscription?.subscriptionPeriod)
                 )
             }
@@ -61,7 +63,10 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     }
 
     func purchase(productID: String) async throws -> MembershipPurchaseResult {
-        let configuration = try await loadConfiguration()
+        let configuration = try await loadConfiguration(forceRefresh: true)
+        guard configuration.purchaseReady == true else {
+            throw MembershipPurchaseError.notConfigured
+        }
         guard configuration.products.contains(where: { $0.id == productID }) else {
             throw MembershipPurchaseError.productUnavailable
         }
@@ -107,10 +112,11 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
         }
     }
 
-    private func loadConfiguration() async throws -> PremiumCommerceConfigurationV1 {
-        if let configuration { return configuration }
-        guard activeUserID != nil else { throw MembershipPurchaseError.notConfigured }
+    private func loadConfiguration(forceRefresh: Bool = false) async throws -> PremiumCommerceConfigurationV1 {
+        if !forceRefresh, let configuration { return configuration }
+        guard let userID = activeUserID else { throw MembershipPurchaseError.notConfigured }
         let value = try await commerceAPI.configuration()
+        guard activeUserID == userID else { throw MembershipPurchaseError.notConfigured }
         configuration = value
         return value
     }

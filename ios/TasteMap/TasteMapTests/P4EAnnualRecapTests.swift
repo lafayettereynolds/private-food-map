@@ -185,6 +185,15 @@ final class P4EAnnualRecapTests: XCTestCase {
         XCTAssertTrue(report.tasteJourney.changeSummaries.allSatisfy { !$0.isEmpty })
     }
 
+    func testIncompleteYearNeverComparesWholeHalfYearsOrIncludesFutureVisits() {
+        let input = AnnualRecapPreviewFixtures.input()
+        let now = date(2026, 8, 28)
+        let period = AnnualPeriod(year: 2026, calendar: calendar)
+        let report = AnnualRecapAnalyzer.analyze(input, period: period, now: now)
+        XCTAssertTrue(report.tasteJourney.changeSummaries.isEmpty)
+        XCTAssertEqual(report.visitCount, input.visits.filter { $0.deletedAt == nil && period.contains($0.visitedAt) && $0.visitedAt <= now }.count)
+    }
+
     func testAnnualKeywordsCoverFactsAndSemanticDedupe() {
         let report = analyze(AnnualRecapPreviewFixtures.input())
         XCTAssertGreaterThanOrEqual(report.keywords.count, 3)

@@ -25,7 +25,8 @@ final class AppleSignInService: NSObject,
     }
 
     func signIn(presentationAnchor: ASPresentationAnchor) async throws -> AuthenticatedUserV1 {
-        let response = try await exchangeAppleCredential(presentationAnchor: presentationAnchor)
+        let response = try await exchangeAppleCredential(presentationAnchor: presentationAnchor, referralCode: ReferralInvitationStore.code)
+        ReferralInvitationStore.clear()
         return try await sessionManager.accept(response)
     }
 
@@ -49,7 +50,8 @@ final class AppleSignInService: NSObject,
     }
 
     private func exchangeAppleCredential(
-        presentationAnchor: ASPresentationAnchor
+        presentationAnchor: ASPresentationAnchor,
+        referralCode: String? = nil
     ) async throws -> AuthSessionResponseV1 {
         guard continuation == nil else { throw AppleSignInServiceError.signInAlreadyInProgress }
         let challenge = try await api.challenge()
@@ -78,7 +80,8 @@ final class AppleSignInService: NSObject,
             state: challenge.state,
             nonce: challenge.nonce,
             givenName: credential.fullName?.givenName,
-            familyName: credential.fullName?.familyName
+            familyName: credential.fullName?.familyName,
+            referralCode: referralCode
         )
     }
 

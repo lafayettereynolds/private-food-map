@@ -1,5 +1,6 @@
 import type { RestaurantSocialStats } from '../src/types/restaurantStats'
 import { findSimilarTasteUserIds, type TasteRatingSignal } from './tasteSimilarity'
+import { RECOMMENDATION_EVIDENCE_POLICY } from '../src/contracts/recommendationEvidencePolicy'
 
 interface TargetVisitRow {
   id: string
@@ -57,7 +58,7 @@ export async function readRestaurantSocialStats(database: D1Database, viewerId: 
     overallUserCount: publicVisitsByUser.size,
     friendAverageRating: averageUserRatings(friendVisits),
     friendUserCount: friendVisitsByUser.size,
-    similarTasteAverageRating: averageUserRatings(similarVisits),
+    similarTasteAverageRating: similarVisitsByUser.size >= RECOMMENDATION_EVIDENCE_POLICY.minimumAggregateUsers ? averageUserRatings(similarVisits) : null,
     similarTasteUserCount: similarVisitsByUser.size,
     repeatVisitRate: publicVisitsByUser.size ? Math.round((repeatVisitors / publicVisitsByUser.size) * 100) : null,
     repeatVisitorCount: repeatVisitors,

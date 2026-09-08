@@ -22,16 +22,19 @@ struct P4BDiningCompanionTests {
         #expect(one.behavioralPortrait.contains("只有一次"))
     }
 
-    @Test("Web-compatible sufficiency starts at three visits and stabilizes at six")
+    @Test("Companion evidence requires three visits/two restaurants then eight/four")
     func sufficiencyThresholds() {
         let two = analyze(input(sharedVisitCount: 2)).analyses[0]
         let three = analyze(input(sharedVisitCount: 3)).analyses[0]
         let five = analyze(input(sharedVisitCount: 5)).analyses[0]
         let six = analyze(input(sharedVisitCount: 6)).analyses[0]
+        let eight = analyze(input(sharedVisitCount: 8)).analyses[0]
         #expect(two.sufficiency == .insufficient)
         #expect(three.sufficiency == .emerging)
         #expect(five.sufficiency == .emerging)
-        #expect(six.sufficiency == .established)
+        #expect(six.sufficiency == .emerging)
+        #expect(eight.sufficiency == .established)
+        #expect(DiningCompanionPreviewFixtures.repeatedRestaurant.analyses[0].sufficiency == .insufficient)
     }
 
     @Test("Overview sorts by shared visit count, then recency, then stable identity")
@@ -201,8 +204,7 @@ struct P4BDiningCompanionTests {
     @Test("Exploration, cuisine, weekend and high-rating keywords come only from evidence")
     func keywordEvidencePatterns() {
         let familiar = DiningCompanionPreviewFixtures.repeatedRestaurant.analyses[0]
-        #expect(familiar.keywords.contains("常去熟店"))
-        #expect(familiar.keywords.contains { $0.hasSuffix("搭子") })
+        #expect(familiar.keywords.isEmpty)
 
         let source = input(companionCount: 1, sharedVisitCount: 4, includeDishes: false)
         let calendar = Calendar(identifier: .gregorian)
@@ -221,7 +223,8 @@ struct P4BDiningCompanionTests {
                 rating: .some(4.8)
             )
         }
-        let exploration = analyze(copy(source, visits: visits)).analyses[0]
+        let exploration = DiningCompanionAnalyzer.analyze(copy(source, visits: visits),
+            now: calendar.date(from: DateComponents(year: 2026, month: 8, day: 30))!, calendar: calendar).analyses[0]
         #expect(exploration.keywords.contains("探店型"))
         #expect(exploration.keywords.contains("周末饭友"))
         #expect(exploration.keywords.contains("高分组合"))

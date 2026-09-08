@@ -80,7 +80,7 @@ Settings 正式代码未重做。当前布局只允许后续因 bug、Accessibil
 
 ### 3.1 Profile — FUSE Candidate V2
 
-候选采用 Legacy compact dashboard topology，并完整保留 Premium、关注/被关注、去过/想去/总消费、今天吃什么、我的口味档案、三类回味、食单、最佳饭搭子、谁最会种草、Social、Sharing 和 Settings。
+候选采用 Legacy compact dashboard topology，并完整保留 Premium、关注/粉丝、去过/想去/总消费、今天吃什么、我的口味档案、三类回味、食单、最佳饭搭子、谁最会种草、Social、Sharing 和 Settings。
 
 - Candidate：[profile-fuse-v2.png](visual-approval/round-2/candidates/profile-fuse-v2.png)
 - 已冻结：Header、Settings，均为 `KEEP LEGACY / Frozen YES`。

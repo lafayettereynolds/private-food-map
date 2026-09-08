@@ -360,6 +360,7 @@ struct BackupExportMapper {
             longTermNote: try text(record.longTermNote, maximum: 20_000, entityType: .restaurant, id: id, field: "longTermNote"),
             pricePerPerson: try money(record.pricePerPerson, entityType: .restaurant, id: id, field: "pricePerPerson"),
             phone: try optionalText(record.phone, maximum: 100, entityType: .restaurant, id: id, field: "phone"),
+            websiteUrl: try optionalWebURL(record.websiteUrl, entityType: .restaurant, id: id, field: "websiteUrl"),
             openingHours: try optionalText(record.openingHours, maximum: 2_000, entityType: .restaurant, id: id, field: "openingHours"),
             markerType: record.markerType == .image ? .image : .emoji,
             markerPhotoId: try optionalID(record.markerPhotoId, entityType: .restaurant),
@@ -992,6 +993,21 @@ struct BackupExportMapper {
               components.scheme?.lowercased() == "https", components.host != nil,
               components.user == nil, components.password == nil else {
             throw invalidField(entityType, id: id, field: field, message: "URL 字段必须是无凭据的 HTTPS URL。")
+        }
+        return raw
+    }
+
+    private func optionalWebURL(
+        _ raw: String?,
+        entityType: BackupEntityTypeV1,
+        id: String,
+        field: String
+    ) throws -> String? {
+        guard let raw else { return nil }
+        guard raw.count <= 2_048, let components = URLComponents(string: raw),
+              let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              components.host != nil, components.user == nil, components.password == nil else {
+            throw invalidField(entityType, id: id, field: field, message: "官网字段必须是无凭据的 HTTP 或 HTTPS URL。")
         }
         return raw
     }

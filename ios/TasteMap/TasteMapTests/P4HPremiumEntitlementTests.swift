@@ -139,11 +139,25 @@ struct P4HPremiumEntitlementTests {
         #expect(PremiumFeatureRegistry.definition(for: .fullTasteProfile).posterProtected)
     }
 
-    @Test("Photo entitlement keeps the formal 3/20 limits")
+    @Test("Photo entitlement keeps the formal 2/20 limits")
     func photoLimits() {
-        #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .free) == 3)
+        #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .free) == 2)
         #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .premium) == 20)
-        #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .unknown) == 3)
+        #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .unknown) == 2)
+        #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .expired) == 2)
+        #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .loading) == 2)
+        #expect(PremiumFeatureAccessPolicy.visitPhotoLimit(membershipStatus: .gracePeriod) == 20)
+    }
+
+    @Test("Historical photos remain editable but cannot be used to add above entitlement")
+    func historicalPhotoAllowance() {
+        #expect(PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(existingCount: 3, newCount: 0, membershipStatus: .free))
+        #expect(PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(existingCount: 20, newCount: 0, membershipStatus: .expired))
+        #expect(!PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(existingCount: 2, newCount: 1, membershipStatus: .free))
+        #expect(!PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(existingCount: 3, newCount: 1, membershipStatus: .free))
+        #expect(PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(existingCount: 1, newCount: 1, membershipStatus: .free))
+        #expect(PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(existingCount: 19, newCount: 1, membershipStatus: .premium))
+        #expect(!PremiumFeatureAccessPolicy.permitsVisitPhotoAddition(existingCount: 20, newCount: 1, membershipStatus: .premium))
     }
 
     @Test("21-30 unconfigured Store provider has no fake products, price, purchase, or restore success")
@@ -178,8 +192,73 @@ struct P4HPremiumEntitlementTests {
         #expect(deviceTwo.membershipStatus == .free)
     }
 
+    @Test("Gift annual and lifetime use the same feature policy and hide Apple management")
+    func giftEntitlements() async throws {
+        for source in [PremiumEntitlementSource.giftAnnual, .giftLifetime] {
+            let api = SequencePremiumAPI(values: [.success(response(userID: "tm_a", state: .active, source: source,
+                kind: source == .giftLifetime ? .lifetime : .fixedTerm,
+                expiresAt: source == .giftLifetime ? nil : now.addingTimeInterval(86_400)))])
+            let service = service(api: api)
+            await service.activate(userID: "tm_a")
+            #expect(service.membershipStatus == .premium)
+            #expect(service.visitPhotoLimit == 20)
+            for feature in PremiumFeature.allCases { #expect(service.access(for: feature) == .allowed) }
+            #expect(service.snapshot?.source?.isAppStoreSubscription == false)
+            if source == .giftLifetime {
+                #expect(service.snapshot?.expiresAt == nil)
+                #expect(service.snapshot?.giftStatusText == "永久会员 · 由 Taste Map 赠送")
+            } else {
+                #expect(service.snapshot?.giftStatusText?.hasPrefix("赠送会员 · 有效期至 ") == true)
+                #expect(service.snapshot?.isUsable(at: now.addingTimeInterval(86_400)) == false)
+            }
+        }
+    }
+
+    @Test("Revoke Gift overrides cache and Apple restore failure cannot erase lifetime")
+    func giftRevokeAndEmptyRestore() async {
+        let api = SequencePremiumAPI(values: [
+            .success(response(userID: "tm_a", state: .active, source: .giftLifetime, kind: .lifetime)),
+            .success(response(userID: "tm_a", state: .free)),
+        ])
+        let service = service(api: api)
+        await service.activate(userID: "tm_a")
+        do { _ = try await service.productsProvider.restore() } catch { }
+        #expect(service.membershipStatus == .premium)
+        #expect(service.snapshot?.source == .giftLifetime)
+        await service.refresh()
+        #expect(service.membershipStatus == .free)
+        #expect(service.access(for: .annualRecap) == .denied)
+    }
+
+    @Test("A-to-B-to-A rejects late Gift responses from a previous login generation")
+    func giftAccountSwitchRace() async throws {
+        let api = SuspendedGiftAPI()
+        let cache = InMemoryPremiumEntitlementCache()
+        let service = service(api: api, cache: cache)
+        let firstA = Task { await service.activate(userID: "tm_a") }
+        while api.pending.count < 1 { await Task.yield() }
+        service.sessionDidEnd()
+        let b = Task { await service.activate(userID: "tm_b") }
+        while api.pending.count < 2 { await Task.yield() }
+        api.pending[1].resume(returning: response(userID: "tm_b", state: .free))
+        await b.value
+        #expect(service.membershipStatus == .free)
+        #expect(service.snapshot?.userID == "tm_b")
+        service.sessionDidEnd()
+        let secondA = Task { await service.activate(userID: "tm_a") }
+        while api.pending.count < 3 { await Task.yield() }
+        api.pending[2].resume(returning: response(userID: "tm_a", state: .free))
+        await secondA.value
+        api.pending[0].resume(returning: response(userID: "tm_a", state: .active, source: .giftLifetime, kind: .lifetime))
+        await firstA.value
+        #expect(service.membershipStatus == .free)
+        #expect(service.snapshot?.source == nil)
+        #expect(try cache.load(userID: "tm_a")?.isPremium == false)
+        #expect(!service.isRefreshing)
+    }
+
     private func service(
-        api: SequencePremiumAPI,
+        api: any PremiumEntitlementAPI,
         cache: any PremiumEntitlementCaching = InMemoryPremiumEntitlementCache()
     ) -> PremiumEntitlementService {
         PremiumEntitlementService(
@@ -243,4 +322,12 @@ private final class SequencePremiumAPI: PremiumEntitlementAPI, @unchecked Sendab
 private enum TestError: Error {
     case offline
     case noResponse
+}
+
+@MainActor
+private final class SuspendedGiftAPI: PremiumEntitlementAPI {
+    var pending: [CheckedContinuation<PremiumEntitlementResponseV1, Error>] = []
+    func entitlement() async throws -> PremiumEntitlementResponseV1 {
+        try await withCheckedThrowingContinuation { pending.append($0) }
+    }
 }

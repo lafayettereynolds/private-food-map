@@ -18,10 +18,17 @@ struct MapHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.restaurantRouletteSession) private var rouletteSession
     @StateObject private var locationPermission = LocationPermissionManager()
-    @State private var selectedSegment: RestaurantBrowseSegment = .visited
+    @State private var scopeQueries = PersonalRestaurantScopeQueries()
     @State private var browseMode: MapBrowseMode = .map
-    @State private var filterState = PersonalRestaurantFilterState(status: .visited)
-    @State private var browseQuery = ""
+    private var selectedSegment: RestaurantBrowseSegment { scopeQueries.scope }
+    private var filterState: PersonalRestaurantFilterState {
+        get { scopeQueries.current.filters }
+        nonmutating set { scopeQueries.current.filters = newValue; requestCameraFit() }
+    }
+    private var browseQuery: String {
+        get { scopeQueries.current.search }
+        nonmutating set { scopeQueries.current.search = newValue; requestCameraFit() }
+    }
     @State private var filterFocus: PersonalRestaurantFilterFocus?
     @State private var locationFilterMessage: String?
     @State private var selectedRestaurantID: UUID?
@@ -32,6 +39,7 @@ struct MapHomeView: View {
     @State private var locationRequestID: UUID?
     @State private var mapReloadID = UUID()
     @State private var mapRenderState: RestaurantMapRenderState = .loading
+    @State private var showsCompletedTasteDataProgress = false
 
     private let compactControlsHeight: CGFloat = 154
 
@@ -82,6 +90,18 @@ struct MapHomeView: View {
         )
         let personalItems = selectedSegment == .forYou ? [] : filterResult.items
         let displayedItems = RestaurantBrowseSearch.filter(personalItems, query: browseQuery)
+        let tasteDataProgress = TasteDataProgressPolicy.resolve(
+            activeRestaurantIDs: Set(owned.restaurants.filter { $0.deletedAt == nil }.map(\.id)),
+            visits: owned.visits.map {
+                TasteDataProgressVisit(
+                    restaurantID: $0.restaurantId,
+                    rating: $0.rating,
+                    isDeleted: $0.deletedAt != nil
+                )
+            }
+        )
+        let visibleTasteDataProgress = browseMode == .map
+            && (!tasteDataProgress.isComplete || showsCompletedTasteDataProgress)
 
         NavigationStack {
             ZStack(alignment: .top) {
@@ -89,13 +109,14 @@ struct MapHomeView: View {
                     mapContent(
                         items: displayedItems,
                         hasUnfilteredItems: !snapshot.items(for: selectedSegment).isEmpty,
-                        activeFilterCount: filterResult.activeFilterCount
+                        activeFilterCount: filterResult.activeFilterCount,
+                        tasteDataProgress: visibleTasteDataProgress ? tasteDataProgress : nil
                     )
                 } else {
                     RestaurantBrowseList(
                         segment: selectedSegment,
                         items: displayedItems,
-                        query: $browseQuery,
+                        query: Binding(get: { browseQuery }, set: { browseQuery = $0 }),
                         isFiltered: filterResult.activeFilterCount > 0,
                         onClearFilters: clearFilters,
                         onSelect: {
@@ -120,7 +141,7 @@ struct MapHomeView: View {
                 controls(
                     resultCount: displayedItems.count,
                     activeFilterCount: filterResult.activeFilterCount,
-                    options: snapshot.filterOptions,
+                    options: snapshot.filterOptions(for: selectedSegment),
                     scopeCounts: [
                         .visited: snapshot.visited.count,
                         .wantToGo: snapshot.wantToGo.count,
@@ -133,16 +154,15 @@ struct MapHomeView: View {
             .task {
                 locationPermission.requestWhenInUseAuthorizationIfNeeded()
             }
-            .onChange(of: selectedSegment) { _, segment in
-                switch segment {
-                case .visited: filterState.status = .visited
-                case .wantToGo: filterState.status = .wantToGo
-                case .forYou: break
-                }
-                requestCameraFit()
+            .task(id: "\(accountScope.ownerUserID ?? "local")|\(tasteDataProgress.ratedRestaurantCount)|\(browseMode.rawValue)") {
+                await updateCompletedTasteDataProgress(
+                    tasteDataProgress,
+                    ownerUserID: accountScope.ownerUserID
+                )
             }
-            .onChange(of: filterState) { _, _ in requestCameraFit() }
-            .onChange(of: browseQuery) { _, _ in requestCameraFit() }
+            .onChange(of: accountScope.ownerUserID) { _, _ in
+                scopeQueries = PersonalRestaurantScopeQueries()
+            }
             .onChange(of: browseMode) { _, mode in
                 if mode == .map { requestCameraFit() }
             }
@@ -189,7 +209,7 @@ struct MapHomeView: View {
             .sheet(item: $filterFocus) { focus in
                 PersonalRestaurantFilterSheet(
                     state: filterState,
-                    options: snapshot.filterOptions,
+                    options: snapshot.filterOptions(for: selectedSegment),
                     locationDenied: locationPermission.isDeniedOrRestricted,
                     hasCurrentLocation: locationPermission.currentLocation != nil,
                     focus: focus,
@@ -226,7 +246,10 @@ struct MapHomeView: View {
             .frame(maxWidth: .infinity, alignment: .center)
 
             TasteMapPrimaryTabBar(
-                selection: $selectedSegment,
+                selection: Binding(get: { selectedSegment }, set: {
+                    scopeQueries.scope = $0
+                    selectedRestaurantID = nil
+                }),
                 items: [
                     .init(.visited, title: "去过", count: scopeCounts[.visited], accessibilityIdentifier: "map-scope-visited"),
                     .init(.wantToGo, title: "想吃", count: scopeCounts[.wantToGo], accessibilityIdentifier: "map-scope-wantToGo"),
@@ -352,7 +375,7 @@ struct MapHomeView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(TasteMapCoreTheme.textSecondary)
                 .accessibilityHidden(true)
-            TextField("搜索餐厅", text: $browseQuery)
+            TextField("搜索餐厅", text: Binding(get: { browseQuery }, set: { browseQuery = $0 }))
                 .font(.caption)
                 .frame(width: 112)
                 .textInputAutocapitalization(.never)
@@ -400,7 +423,8 @@ struct MapHomeView: View {
     private func mapContent(
         items: [RestaurantBrowseItem],
         hasUnfilteredItems: Bool,
-        activeFilterCount: Int
+        activeFilterCount: Int,
+        tasteDataProgress: TasteDataProgressSnapshot?
     ) -> some View {
         let markers = RestaurantMapMarkerBuilder.build(
             items: items,
@@ -411,6 +435,8 @@ struct MapHomeView: View {
                 : locationPermission.currentLocation
         )
         let photosByID = Dictionary(uniqueKeysWithValues: scopedPhotos.map { ($0.id, $0) })
+        let topNoticeOffset: CGFloat = (tasteDataProgress == nil ? 0 : 30)
+            + (locationPermission.isDeniedOrRestricted ? 42 : 0)
 
         return ZStack(alignment: .top) {
             RestaurantMapView(
@@ -420,6 +446,7 @@ struct MapHomeView: View {
                 photoAPI: nil,
                 userAvatarPreset: activeProfile?.avatarPreset ?? .polarBear,
                 userAvatarPhoto: avatarPhoto,
+                showsUserLocation: true,
                 selectedRestaurantID: $selectedRestaurantID,
                 fitRequestID: cameraFitRequestID,
                 locationRequestID: locationRequestID,
@@ -430,26 +457,33 @@ struct MapHomeView: View {
             .ignoresSafeArea(edges: [.top, .bottom])
             .onChange(of: markers) { _, _ in requestCameraFit() }
 
-            if locationPermission.isDeniedOrRestricted {
-                Label("定位未开启，仍可浏览地图和餐厅列表", systemImage: "location.slash")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.top, compactControlsHeight + 8)
-            }
+            VStack(spacing: TasteMapDesignTokens.Spacing.small) {
+                if let tasteDataProgress {
+                    TasteDataProgressNotice(progress: tasteDataProgress)
+                }
 
-            if case .loading = mapRenderState, !items.isEmpty {
-                Label("正在加载地图", systemImage: "map")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.top, compactControlsHeight + (locationPermission.isDeniedOrRestricted ? 50 : 8))
-                    .accessibilityIdentifier("restaurant-map-loading")
+                if locationPermission.isDeniedOrRestricted {
+                    Label("定位未开启，仍可浏览地图和餐厅列表", systemImage: "location.slash")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                }
+
+                if case .loading = mapRenderState, !items.isEmpty {
+                    Label("正在加载地图", systemImage: "map")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .accessibilityIdentifier("restaurant-map-loading")
+                }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, TasteMapDesignTokens.Spacing.regular)
+            .padding(.top, compactControlsHeight + TasteMapDesignTokens.Spacing.small)
 
             if case let .failed(message) = mapRenderState {
                 VStack(spacing: 10) {
@@ -472,7 +506,7 @@ struct MapHomeView: View {
                         .stroke(TasteMapCoreTheme.border)
                 }
                 .padding(.horizontal, 32)
-                .padding(.top, compactControlsHeight + 34)
+                .padding(.top, compactControlsHeight + 34 + topNoticeOffset)
                 .accessibilityIdentifier("restaurant-map-error")
             } else if items.isEmpty {
                 VStack(spacing: 10) {
@@ -502,7 +536,7 @@ struct MapHomeView: View {
                 .padding(20)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .padding(.horizontal, 32)
-                .padding(.top, compactControlsHeight + 34)
+                .padding(.top, compactControlsHeight + 34 + topNoticeOffset)
             } else if markers.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "mappin.slash.circle")
@@ -517,7 +551,7 @@ struct MapHomeView: View {
                 .padding(20)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .padding(.horizontal, 32)
-                .padding(.top, compactControlsHeight + 34)
+                .padding(.top, compactControlsHeight + 34 + topNoticeOffset)
                 .accessibilityIdentifier("restaurant-map-no-coordinates")
             }
 
@@ -559,6 +593,35 @@ struct MapHomeView: View {
         requestCameraFit()
     }
 
+    private func updateCompletedTasteDataProgress(
+        _ progress: TasteDataProgressSnapshot,
+        ownerUserID: String?
+    ) async {
+        let storageKey = TasteDataProgressPolicy.completionStorageKey(ownerUserID: ownerUserID)
+        guard progress.isComplete else {
+            UserDefaults.standard.removeObject(forKey: storageKey)
+            showsCompletedTasteDataProgress = false
+            return
+        }
+        guard browseMode == .map else { return }
+        guard !UserDefaults.standard.bool(forKey: storageKey) else {
+            showsCompletedTasteDataProgress = false
+            return
+        }
+
+        showsCompletedTasteDataProgress = true
+        do {
+            try await Task.sleep(for: .seconds(6))
+        } catch {
+            return
+        }
+        guard !Task.isCancelled else { return }
+        UserDefaults.standard.set(true, forKey: storageKey)
+        withAnimation(.easeOut(duration: 0.2)) {
+            showsCompletedTasteDataProgress = false
+        }
+    }
+
     private func clearFilters() {
         filterState.resetKeepingStatus()
     }
@@ -595,11 +658,14 @@ struct MapHomeView: View {
             filterState = proposedState
             return
         }
+        let requestedScope = selectedSegment
         Task { @MainActor in
             do {
                 _ = try await locationPermission.requestCurrentLocation()
+                guard selectedSegment == requestedScope else { return }
                 filterState = proposedState
             } catch {
+                guard selectedSegment == requestedScope else { return }
                 var adjusted = proposedState
                 adjusted.distance = nil
                 filterState = adjusted
@@ -646,6 +712,103 @@ struct MapHomeView: View {
             }
         }
         .padding(.bottom, 12)
+    }
+}
+
+nonisolated struct TasteDataProgressVisit: Equatable, Sendable {
+    let restaurantID: UUID
+    let rating: Double?
+    let isDeleted: Bool
+}
+
+nonisolated struct TasteDataProgressSnapshot: Equatable, Sendable {
+    let ratedRestaurantCount: Int
+    let displayCount: Int
+    let target: Int
+    let remaining: Int
+    let message: String
+    let fraction: Double
+
+    var isComplete: Bool { ratedRestaurantCount >= 20 }
+}
+
+nonisolated enum TasteDataProgressPolicy {
+    static func resolve(
+        activeRestaurantIDs: Set<UUID>,
+        visits: [TasteDataProgressVisit]
+    ) -> TasteDataProgressSnapshot {
+        let ratedRestaurantIDs = Set(visits.compactMap { visit -> UUID? in
+            guard !visit.isDeleted,
+                  activeRestaurantIDs.contains(visit.restaurantID),
+                  isValidRating(visit.rating) else { return nil }
+            return visit.restaurantID
+        })
+        return resolve(ratedRestaurantCount: ratedRestaurantIDs.count)
+    }
+
+    static func resolve(ratedRestaurantCount value: Int) -> TasteDataProgressSnapshot {
+        let ratedRestaurantCount = max(0, value)
+        let displayCount = min(ratedRestaurantCount, 20)
+        let target: Int
+        switch ratedRestaurantCount {
+        case ...5: target = 5
+        case ...10: target = 10
+        case ...15: target = 15
+        default: target = 20
+        }
+        let remaining = max(0, target - displayCount)
+        let message: String
+        if remaining > 0 {
+            switch ratedRestaurantCount {
+            case ...5: message = "再评分 \(remaining) 家，开始形成你的口味判断"
+            case ...10: message = "再评分 \(remaining) 家，推荐和分析会更准确"
+            case ...15: message = "再评分 \(remaining) 家，口味分析会更完整"
+            default: message = "再评分 \(remaining) 家，口味判断会更稳定"
+            }
+        } else {
+            switch target {
+            case 5: message = "开始形成你的口味判断"
+            case 10: message = "推荐和分析正在变得更准确"
+            case 15: message = "口味分析正在变得更完整"
+            default: message = "口味数据已较稳定"
+            }
+        }
+        return TasteDataProgressSnapshot(
+            ratedRestaurantCount: ratedRestaurantCount,
+            displayCount: displayCount,
+            target: target,
+            remaining: remaining,
+            message: message,
+            fraction: Double(displayCount) / Double(target)
+        )
+    }
+
+    static func completionStorageKey(ownerUserID: String?) -> String {
+        let normalized = ownerUserID?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let owner = normalized.flatMap { $0.isEmpty ? nil : $0 } ?? "local"
+        return "taste-map.taste-data-progress.complete.\(owner)"
+    }
+
+    private static func isValidRating(_ value: Double?) -> Bool {
+        guard let value, value.isFinite, (0.5...5).contains(value) else { return false }
+        return (value * 2).rounded() == value * 2
+    }
+}
+
+private struct TasteDataProgressNotice: View {
+    let progress: TasteDataProgressSnapshot
+
+    var body: some View {
+        Text("（\(progress.displayCount) / \(progress.target) · \(progress.message)）")
+            .font(.caption2.monospacedDigit().weight(.bold))
+            .foregroundStyle(TasteMapCoreTheme.brand)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .shadow(color: TasteMapCoreTheme.surface.opacity(0.98), radius: 3)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("口味数据进度，\(progress.displayCount) / \(progress.target)，\(progress.message)")
+            .accessibilityIdentifier("taste-data-progress-notice")
     }
 }
 

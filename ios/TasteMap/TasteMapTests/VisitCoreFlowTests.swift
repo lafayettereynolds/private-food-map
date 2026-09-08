@@ -130,6 +130,43 @@ struct VisitCoreFlowTests {
         #expect(try context.fetch(FetchDescriptor<Visit>()).count == 1)
     }
 
+    @Test("Deleting the last Visit deletes Restaurant and queues its tombstone")
+    func deletingLastVisitRemovesVisitedMembership() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let restaurant = makeRestaurant()
+        let visit = Visit(restaurantId: restaurant.id, remoteID: "last-visit", serverVersion: 1, syncStatus: .synced)
+        context.insert(restaurant)
+        context.insert(visit)
+        try context.save()
+        #expect(RestaurantVisitStatePolicy.partition(restaurants: [restaurant], visits: [visit]).visited.count == 1)
+        let deletedRestaurantID = try LocalTasteMapStore(context: context).delete(visit)
+        #expect(deletedRestaurantID == restaurant.id)
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        let partition = RestaurantVisitStatePolicy.partition(restaurants: [restaurant], visits: remaining)
+        #expect(partition.visited.isEmpty)
+        #expect(partition.wantToGo.isEmpty)
+        #expect(restaurant.deletedAt != nil)
+        #expect(try context.fetch(FetchDescriptor<Restaurant>()).count == 1)
+        let reopened = ModelContext(container)
+        #expect(try reopened.fetch(FetchDescriptor<Restaurant>()).allSatisfy { $0.deletedAt != nil })
+        let deletes = try SwiftDataSyncQueue(context: reopened, ownerUserID: restaurant.ownerUserID).allMutations()
+        #expect(deletes.contains { $0.entityType == .visit && $0.operation == .delete && $0.entityID == "last-visit" })
+        #expect(deletes.contains { $0.entityType == .restaurant && $0.operation == .delete && $0.entityID == restaurant.remoteID })
+        #expect(RestaurantVisitStatePolicy.partition(
+            restaurants: try reopened.fetch(FetchDescriptor<Restaurant>()),
+            visits: try reopened.fetch(FetchDescriptor<Visit>())
+        ).visited.isEmpty)
+    }
+
+    @Test("Repeated Visits produce one visited Restaurant and stale zero-Visit status produces none")
+    func visitMembershipCountsRestaurantsNotVisits() {
+        let restaurant = makeRestaurant()
+        let visits = (0..<3).map { _ in Visit(restaurantId: restaurant.id) }
+        #expect(RestaurantVisitStatePolicy.partition(restaurants: [restaurant], visits: visits).visited.count == 1)
+        #expect(RestaurantVisitStatePolicy.partition(restaurants: [restaurant], visits: []).visited.isEmpty)
+    }
+
     @Test("Soft delete hides only the selected Visit and keeps Restaurant visited")
     func softDeleteAndStatistics() throws {
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -168,6 +205,7 @@ struct VisitCoreFlowTests {
         #expect(presentation.averageRating == 4.5)
         #expect(presentation.totalSpend == 100)
         #expect(restaurant.status == .visited)
+        #expect(restaurant.deletedAt == nil)
     }
 
     @Test("Offline create survives restart with its queued mutation and fields")
@@ -212,6 +250,38 @@ struct VisitCoreFlowTests {
         #expect(visit.myActualSpend == nil)
         #expect(visit.note == "离线记录")
         #expect(mutations.contains { $0.entityType == .visit && $0.entityID == visit.remoteID })
+    }
+
+    @Test("Restaurant deletion after failed uploads survives reopening the persistent store")
+    func restaurantDeleteSurvivesReopen() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TasteMapDeleteReopen-\(UUID().uuidString)")
+            .appendingPathExtension("store")
+        defer { removeStoreFiles(at: storeURL) }
+        let restaurantID: UUID
+        do {
+            let container = try persistentContainer(at: storeURL)
+            let context = container.mainContext
+            let restaurant = makeRestaurant()
+            restaurant.serverVersion = 0
+            restaurantID = restaurant.id
+            context.insert(restaurant)
+            let queue = SwiftDataSyncQueue(context: context, ownerUserID: restaurant.ownerUserID)
+            let upload = try queue.enqueueUpsert(entityType: .restaurant,
+                entityID: restaurant.remoteID!, baseVersion: 0,
+                payload: SyncRecordMapper.restaurantPayload(restaurant))
+            upload.retryCount = 35
+            upload.lastError = "retryable:http_500"
+            upload.nextRetryAt = .distantFuture
+            try LocalTasteMapStore(context: context).delete(restaurant)
+        }
+        let reopened = try persistentContainer(at: storeURL)
+        let restaurants = try reopened.mainContext.fetch(FetchDescriptor<Restaurant>())
+        let deleted = try #require(restaurants.first { $0.id == restaurantID })
+        #expect(deleted.deletedAt != nil)
+        #expect(RestaurantVisitStatePolicy.partition(restaurants: restaurants, visits: []).visited.isEmpty)
+        let mutations = try reopened.mainContext.fetch(FetchDescriptor<SyncMutation>())
+        #expect(mutations.contains { $0.operation == .delete && $0.entityID == deleted.remoteID })
     }
 
     @Test("Offline edit coalesces its Visit mutation and offline delete cannot affect another Visit")

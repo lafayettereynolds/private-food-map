@@ -1,0 +1,1 @@
+async function a(t,e,n=Date.now){if(!t)return null;const u=r=>n()-r.acquiredAt>=0&&n()-r.acquiredAt<=15e3;if(u(t))return t;try{const r=await e();return u(r)?r:null}catch{return null}}export{a as resolveRestaurantSearchLocation};

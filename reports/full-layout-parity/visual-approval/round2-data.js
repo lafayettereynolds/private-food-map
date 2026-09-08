@@ -17,7 +17,7 @@ window.round2Decisions = [
     ],
     fuseVisuals: [r2v("FUSE CANDIDATE — REAL IMPLEMENTATION", "Profile FUSE V2", R2_CANDIDATE + "profile-fuse-v2.png", "独立 preview branch 的 DEBUG SwiftUI 实现；Header/Settings 不再改动。")],
     legacyBase: ["Legacy compact Dashboard topology。", "Header 与 Settings 已由 Lafayette 标记 KEEP LEGACY / Frozen YES。"],
-    currentAdditions: ["Premium、关注 / 被关注、去过 / 想去 / 总消费。", "今天吃什么、我的口味档案、三类回味、食单、最佳饭搭子、谁最会种草。", "Current Social、Sharing、Settings 与安全边界。"],
+    currentAdditions: ["Premium、关注 / 粉丝、去过 / 想去 / 总消费。", "今天吃什么、我的口味档案、三类回味、食单、最佳饭搭子、谁最会种草。", "Current Social、Sharing、Settings 与安全边界。"],
     proposedFinal: ["冻结 Header → 社交关系 → 核心统计 → 核心入口 → 回味 → 食单 → 洞察 → 冻结 Settings。", "只继续迭代六个 Pending 区域。"],
     recommendation: "只审批六个 Pending 区域；Header 与 Settings 已冻结，不应在 V3 中重做。",
     regions: ["Header", "Social Metrics", "Main Statistics", "Core Entries", "Memory / 回味", "Lists", "Insights", "Settings"]

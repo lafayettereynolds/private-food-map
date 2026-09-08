@@ -26,7 +26,7 @@ struct CoreProductLayoutParityTests {
 
     @Test("Visited state uses the one canonical checkmark semantic")
     func visitedIconContract() {
-        #expect(RestaurantStatus.visited.systemImage == "checkmark")
+        #expect(RestaurantStatus.visited.systemImage == "checkmark.circle")
         #expect(RestaurantBrowseSegment.visited.systemImage == RestaurantStatus.visited.systemImage)
         #expect(RestaurantStatus.visited.systemImage != TasteMapFilterSemantic.visitCount.systemImage)
     }
@@ -97,5 +97,14 @@ struct CoreProductLayoutParityTests {
         #expect(statistics.visitCount == 20)
         #expect(statistics.averageRating == 4.25)
         #expect(statistics.totalSpend == 1_888)
+    }
+
+    @Test("Profile summary trims surrounding space but preserves 44-point statistic targets")
+    func profileSummaryDensityContract() {
+        #expect(TasteMapDesignTokens.ProfileSummary.identityGap == 8)
+        #expect(TasteMapDesignTokens.ProfileSummary.statisticInset == 4)
+        #expect(TasteMapDesignTokens.ProfileSummary.nextGap == 10)
+        #expect(TasteMapDesignTokens.ProfileSummary.statisticMinimumHeight == 44)
+        #expect(TasteMapDesignTokens.ProfileSummary.statisticMinimumHeight >= TasteMapDesignTokens.Control.minimumHitTarget)
     }
 }

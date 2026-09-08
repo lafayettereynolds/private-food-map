@@ -2,6 +2,8 @@
 
 Date: 2026-09-01
 
+Historical snapshot: privacy/API/SDK and permission statements below are superseded by the 2026-09-08 audit in `IOS_RELEASE_PRIVACY_MANIFEST_AUDIT_2026-09-08.md`. Do not use its old archive path or absence-of-UserDefaults/camera assertions as current Release evidence.
+
 Branch: `fix/product-ux-correction-8-tasks`
 
 Production access: **none**

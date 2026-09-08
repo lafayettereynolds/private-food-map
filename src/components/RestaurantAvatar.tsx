@@ -1,6 +1,7 @@
 import { scoreColor, type RestaurantSummary } from '../types/domain'
 import { resolveRestaurantFoodEmoji } from '../visuals/FoodCategoryVisualContract'
 import { SyncedImage } from './SyncedImage'
+import { restaurantAvatarSelection } from '../services/restaurantAvatarSelection'
 
 interface RestaurantAvatarProps {
   restaurant: RestaurantSummary
@@ -8,21 +9,21 @@ interface RestaurantAvatarProps {
 }
 
 export function RestaurantAvatar({ restaurant, size = 'small' }: RestaurantAvatarProps) {
-  // Merchant/provider artwork is not a user's Restaurant avatar. When the
-  // owner has not supplied a marker photo, use the themed food emoji instead.
-  const imageSource = restaurant.markerImageData
-  const useImage = restaurant.markerType === 'image' && (imageSource || restaurant.markerPhotoId)
+  const selected = restaurantAvatarSelection(restaurant)
+  const useImage = Boolean(selected)
   const fallback = <span>{resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji)}</span>
 
   return (
     <span
+      aria-label={`${restaurant.name} 餐厅头像${useImage ? '' : ` ${resolveRestaurantFoodEmoji(restaurant, restaurant.markerEmoji)}`}`}
       className={`restaurant-avatar restaurant-avatar--${size}`}
+      role="img"
       style={{ borderColor: scoreColor(restaurant.scoreOutOfTen) }}
     >
       {useImage ? (
-        <SyncedImage alt="" fallback={fallback} photoId={restaurant.markerPhotoId} source={imageSource} />
+        <SyncedImage alt="" fallback={fallback} failureFallback={fallback} photoId={selected?.photoId} source={selected?.source} />
       ) : (
-        fallback
+        <span aria-hidden="true">{fallback}</span>
       )}
     </span>
   )

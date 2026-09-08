@@ -1,5 +1,12 @@
 import Foundation
 
+enum DiscoveryContentAccessPolicy {
+    /// A refresh error or a populated cache cannot grant access to protected cards.
+    static func blocksCards(mode: DiscoveryModeV1, access: PremiumAccessDecision) -> Bool {
+        mode == .similarTaste && access != .allowed
+    }
+}
+
 enum DiscoveryBrowseSort: String, CaseIterable, Identifiable, Sendable {
     case recommended
     case nearest

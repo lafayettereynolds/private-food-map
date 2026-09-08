@@ -6,6 +6,7 @@ interface RestaurantQuickActionsProps {
   restaurantName: string
   visitedActive?: boolean
   wantActive?: boolean
+  wantPending?: boolean
   wheelActive?: boolean
   onRecordVisit?: () => void
   onToggleWant?: () => void
@@ -21,6 +22,7 @@ export function RestaurantQuickActions({
   restaurantName,
   visitedActive = false,
   wantActive = false,
+  wantPending = false,
   wheelActive = false,
   onRecordVisit,
   onToggleWant,
@@ -47,10 +49,11 @@ export function RestaurantQuickActions({
       onAction={onRecordVisit}
     /> : null}
     {onToggleWant || visitedActive ? <button
+      aria-busy={wantPending}
       aria-label={`${saveLabel} ${restaurantName}`}
       aria-pressed={savedActive}
       className={savedActive ? 'is-selected' : ''}
-      disabled={visitedActive}
+      disabled={visitedActive || wantPending}
       onClick={(event) => handleAction(event, onToggleWant)}
       title={saveLabel}
       type="button"

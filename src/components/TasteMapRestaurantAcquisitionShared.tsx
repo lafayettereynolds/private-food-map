@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Building2, ChevronRight, LoaderCircle, LocateFixed, Search, Share2, Store } from 'lucide-react'
 import './tasteMapRestaurantAcquisitionShared.css'
 
@@ -27,7 +27,7 @@ interface TasteMapRestaurantAcquisitionSearchProps {
 }
 
 interface TasteMapRestaurantAcquisitionStatusProps {
-  state: 'idle' | 'loading' | 'error'
+  state: 'idle' | 'loading' | 'error' | 'empty'
   title: string
   detail: string
   onRetry?: () => void
@@ -68,7 +68,7 @@ export function TasteMapRestaurantAcquisitionScaffold({
       {search}
     </section>
     <section className="tm-acquisition__section" data-acquisition-capability="nearby">
-      <header><span className="tm-acquisition__section-icon"><LocateFixed aria-hidden="true" size={17} /></span><span><strong>附近餐厅</strong><small>当前位置 3 公里内，按实际距离排序</small></span></header>
+      <header><span className="tm-acquisition__section-icon"><LocateFixed aria-hidden="true" size={17} /></span><span><strong>附近餐厅</strong><small>当前位置 3 公里内，按直线距离排序</small></span></header>
       {nearby}
     </section>
     <div className="tm-acquisition__secondary-actions">
@@ -154,12 +154,19 @@ export function TasteMapRestaurantAcquisitionStatus({
       ? <LoaderCircle aria-hidden="true" className="spin" size={17} />
       : <LocateFixed aria-hidden="true" size={17} />}</span>
     <span className="tm-acquisition-status__body"><strong>{title}</strong><small>{detail}</small></span>
-    {state === 'error' && onRetry ? <button onClick={onRetry} type="button">{retryLabel}</button> : null}
+    {(state === 'error' || state === 'empty') && onRetry ? <button onClick={onRetry} type="button">{retryLabel}</button> : null}
   </div>
 }
 
-export function TasteMapRestaurantAcquisitionResults({ items }: { items: TasteMapRestaurantAcquisitionResultItem[] }) {
-  return <div className="tm-acquisition-results" data-shared-acquisition-component="candidate-results">{items.map((item) => <button
+/** Nearby is one immutable, complete provider snapshot. Expanding it is local
+ * presentation only: no location/provider callback belongs in this control. */
+export function TasteMapRestaurantAcquisitionResults({ items, nearbySnapshot }: {
+  items: TasteMapRestaurantAcquisitionResultItem[]
+  nearbySnapshot?: object
+}) {
+  const [expanded, setExpanded] = useState<{ snapshot?: object; count: number }>({ count: 12 })
+  const visibleCount = nearbySnapshot ? Math.min(items.length, expanded.snapshot === nearbySnapshot ? expanded.count : 12) : items.length
+  return <><div className="tm-acquisition-results" data-shared-acquisition-component="candidate-results" data-nearby-total={nearbySnapshot ? items.length : undefined} data-nearby-visible={nearbySnapshot ? visibleCount : undefined}>{items.slice(0, visibleCount).map((item) => <button
     aria-label={`${item.actionLabel ?? '查看'} ${item.name}`}
     key={item.id}
     onClick={item.onOpen}
@@ -168,5 +175,9 @@ export function TasteMapRestaurantAcquisitionResults({ items }: { items: TasteMa
     <span className="tm-acquisition-result__image">{item.image}</span>
     <span className="tm-acquisition-result__body"><strong>{item.name}{item.badge ? <b>{item.badge}</b> : null}</strong><small>{item.meta}</small>{item.supportingText ? <em>{item.supportingText}</em> : null}</span>
     <span className="tm-acquisition-result__action">{item.actionLabel ?? '查看'}<ChevronRight aria-hidden="true" size={15} /></span>
-  </button>)}</div>
+  </button>)}</div>{nearbySnapshot && visibleCount < items.length ? <button
+    className="tm-acquisition-load-more"
+    onClick={() => setExpanded((previous) => ({ snapshot: nearbySnapshot, count: Math.min(items.length, (previous.snapshot === nearbySnapshot ? previous.count : 12) + 12) }))}
+    type="button"
+  >继续加载附近餐厅<span>（已显示 {visibleCount} / {items.length} 家）</span></button> : null}</>
 }

@@ -5,6 +5,7 @@ import { findMatchingRestaurant } from './restaurantIdentity'
 const applePlace: PlaceResult = {
   provider: 'apple_maps', externalId: 'apple-123', name: '同一家店', address: '中山路 1 号',
   city: '杭州', district: '上城', longitude: 120.16, latitude: 30.25,
+  categoryHints: ['餐厅'],
   merchantImageUrl: null, phone: null, openingHours: null,
 }
 

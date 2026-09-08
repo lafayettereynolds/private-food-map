@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { PremiumAccessBoundary } from './components/PremiumAccess'
+import { restaurantCityFilterOptions } from './services/restaurantCity'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Bookmark,
@@ -19,8 +22,9 @@ import { AddRestaurantModal } from './components/AddRestaurantModal'
 import { AddVisitModal } from './components/AddVisitModal'
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal'
 import { MapView } from './components/MapView'
-import { MyMapBrowsePage } from './components/MyMapBrowsePage'
+import { MapRestaurantGroupSheet, MyMapBrowsePage, resolveMapGroupRestaurants } from './components/MyMapBrowsePage'
 import { BrowserMapSurface } from './components/BrowserMapSurface'
+import { HybridBackButton } from './components/TasteMapHybridShared'
 import { RestaurantEditorModal } from './components/RestaurantEditorModal'
 import {
   RestaurantFilters,
@@ -40,7 +44,7 @@ import { RestaurantPreviewCard } from './components/RestaurantPreviewCard'
 import { SettingsModal } from './components/SettingsModal'
 import { CommunityPage } from './components/CommunityPage'
 import { FriendsPage } from './components/FriendsPage'
-import { ProfilePage } from './components/ProfilePage'
+import { AccountPrivacyPage, ProfilePage, type AccountSettingsSection } from './components/ProfilePage'
 import { RestaurantRoulette, type RouletteTemporaryCandidate } from './components/RestaurantRoulette'
 import { RouletteCandidateDock } from './components/RouletteCandidateDock'
 import { TasteFootprints } from './components/TasteFootprints'
@@ -58,6 +62,7 @@ import {
   addRestaurantFromPoi,
   addVisit,
   deleteRestaurant,
+  deleteVisit,
   updateRestaurantBasics,
   updateVisit,
   type AddRestaurantInput,
@@ -93,6 +98,10 @@ import type { TasteMapHybridListDTO, TasteMapProfileDashboardViewModel } from '.
 type ActiveList = RestaurantStatus | 'recommended' | 'footprints'
 type ActiveView = 'map' | 'community' | 'profile'
 const FRIEND_RECOMMENDATION_DISMISSALS_KEY = 'taste-map:friend-recommendations:dismissed'
+const EXPLICIT_TEST_DATA = IS_DEVELOPMENT && (() => {
+  const parameters = new URLSearchParams(window.location.search)
+  return parameters.get('testData') === '1' || parameters.get('testAccount') === 'free'
+})()
 
 function switchTestAccount(account: 'premium' | 'free') {
   const url = new URL(window.location.href)
@@ -104,7 +113,10 @@ function switchTestAccount(account: 'premium' | 'free') {
 export default function App() {
   const browserPlatform = useMemo(() => new TasteMapBrowserAdapter(), [])
   const restaurants = useLiveQuery(
-    () => db.restaurants.orderBy('createdAt').reverse().filter((restaurant) => !restaurant.deletedAt && restaurant.userId === CURRENT_USER_ID).toArray(),
+    () => db.restaurants.orderBy('createdAt').reverse().filter((restaurant) =>
+      !restaurant.deletedAt
+      && restaurant.userId === CURRENT_USER_ID
+      && (EXPLICIT_TEST_DATA || !restaurant.isTestData)).toArray(),
     [],
   )
   const visits = useLiveQuery(() => db.visits.filter((visit) => !visit.deletedAt && visit.userId === CURRENT_USER_ID).toArray(), [])
@@ -138,6 +150,7 @@ export default function App() {
   const [recommendationAnchorKey, setRecommendationAnchorKey] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedMapGroupIDs, setSelectedMapGroupIDs] = useState<string[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditor, setShowEditor] = useState(false)
   const [showAddVisit, setShowAddVisit] = useState(false)
@@ -145,6 +158,8 @@ export default function App() {
   const [acceptedMealParticipant, setAcceptedMealParticipant] = useState<SharedMealParticipant | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [settingsDataSection, setSettingsDataSection] = useState<'all' | 'sync' | 'storage' | 'export' | 'import'>('all')
+  const [settingsAccountSection, setSettingsAccountSection] = useState<AccountSettingsSection | null>(null)
   const [showRoulette, setShowRoulette] = useState(false)
   const [rouletteRestaurantIds, setRouletteRestaurantIds] = useState<string[]>([])
   const [rouletteTemporaryItems, setRouletteTemporaryItems] = useState<RouletteTemporaryCandidate[]>([])
@@ -222,8 +237,11 @@ export default function App() {
     [allVisits],
   )
   const cityOptions = useMemo(
-    () => [...new Set(allRestaurants.map((restaurant) => restaurant.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')),
-    [allRestaurants],
+    () => restaurantCityFilterOptions((activeList === 'recommended'
+      ? recommendations
+      : allRestaurants.filter((restaurant) => activeList === 'footprints' || restaurant.status === activeList))
+      .map((restaurant) => restaurant.city)),
+    [activeList, allRestaurants, recommendations],
   )
 
   const visitsByRestaurant = useMemo(() => {
@@ -241,6 +259,13 @@ export default function App() {
     () => buildRestaurantSummaries(allRestaurants, allVisits, { development: IS_DEVELOPMENT }),
     [allRestaurants, allVisits],
   )
+
+  useLayoutEffect(() => {
+    if (!currentUser || !restaurants || !visits) return
+    browserPlatform.acceptProfileSnapshot({
+      user: currentUser, restaurants: summaries, visits: allVisits, followingCount, followerCount,
+    })
+  }, [allVisits, browserPlatform, currentUser, followerCount, followingCount, restaurants, summaries, visits])
 
   const selectedRestaurant = summaries.find((item) => item.id === selectedId)
     ?? recommendations.find((item) => item.id === selectedId)
@@ -287,7 +312,7 @@ export default function App() {
       if (activeList !== 'recommended' && restaurant.status !== activeList) return false
       if (activeList === 'visited' && !matchesVisitCount(restaurant.visitCount, visitCountFilter)) return false
       if (activeList !== 'recommended' && scoreBandFilter.length > 0 && !scoreBandFilter.some((band) => band === scoreBandFromScore(restaurant.scoreOutOfTen))) return false
-      if (activeList !== 'recommended' && cityFilter !== 'all' && restaurant.city !== cityFilter) return false
+      if (activeList !== 'recommended' && cityFilter !== 'all' && !sameCity(restaurant.city, cityFilter)) return false
       const relatedVisits = visitsByRestaurant.get(restaurant.id) ?? []
       if (
         activeList === 'visited' &&
@@ -423,9 +448,12 @@ export default function App() {
   useEffect(() => {
     const parameters = new URLSearchParams(window.location.search)
     const requestedFromUrl = parameters.get('addSampleRestaurants') === '60'
-    if (!IS_DEVELOPMENT) return
+    // Demo records are a deliberate developer action, never an automatic
+    // consequence of launching a normal Debug build.
+    if (!IS_DEVELOPMENT || !requestedFromUrl) return
     if (requestedFromUrl) {
       parameters.delete('addSampleRestaurants')
+      parameters.set('testData', '1')
       const cleanUrl = `${window.location.pathname}${parameters.size ? `?${parameters}` : ''}${window.location.hash}`
       window.history.replaceState(null, '', cleanUrl)
     }
@@ -496,7 +524,7 @@ export default function App() {
     if (!needsLocation || (recommendationAnchorKey === anchorKey && recommendationCoordinates)) return
     let active = true
     setRecommendationLocationStatus('loading')
-    const selectedCityCandidates = cityFilter === 'all' ? recommendations : recommendations.filter((item) => item.city === cityFilter)
+    const selectedCityCandidates = cityFilter === 'all' ? recommendations : recommendations.filter((item) => sameCity(item.city, cityFilter))
     void mapService.detectCurrentLocation()
       .then((location) => {
         if (!active) return
@@ -590,6 +618,7 @@ export default function App() {
     if (!selectedRestaurant) return
     const name = selectedRestaurant.name
     await deleteRestaurant(selectedRestaurant.id)
+    setStandaloneRestaurant((current) => current?.id === selectedRestaurant.id ? null : current)
     setSelectedId(null)
     setShowDeleteConfirm(false)
     setToast(`${name} 已从地图中删除`)
@@ -616,6 +645,19 @@ export default function App() {
     setToast('到访记录已更新')
   }
 
+  async function handleDeleteVisit() {
+    if (!editingVisit) return
+    const result = await deleteVisit(editingVisit.id)
+    setShowAddVisit(false)
+    setEditingVisit(null)
+    if (result.deletedRestaurantID) {
+      setSelectedId(null)
+      setStandaloneRestaurant((current) => current?.id === result.deletedRestaurantID ? null : current)
+      setRouletteRestaurantIds((current) => current.filter((id) => id !== result.deletedRestaurantID))
+    }
+    setToast(result.deletedRestaurantID ? '最后一次到访及餐厅已删除' : '到访记录已删除')
+  }
+
   function openNewVisit() {
     setEditingVisit(null)
     setAcceptedMealParticipant(null)
@@ -639,6 +681,7 @@ export default function App() {
         district: '',
         latitude: restaurant.latitude,
         longitude: restaurant.longitude,
+        categoryHints: restaurant.tags,
         merchantImageUrl: restaurant.merchantImageUrl,
         phone: restaurant.phone ?? null,
         openingHours: restaurant.openingHours ?? null,
@@ -813,6 +856,7 @@ export default function App() {
         district: '',
         latitude: selectedRestaurant.latitude,
         longitude: selectedRestaurant.longitude,
+        categoryHints: selectedRestaurant.tags,
         merchantImageUrl: selectedRestaurant.merchantImageUrl,
         phone: selectedRestaurant.phone ?? null,
         openingHours: selectedRestaurant.openingHours ?? null,
@@ -852,6 +896,7 @@ export default function App() {
         district: '',
         latitude: restaurant.latitude,
         longitude: restaurant.longitude,
+        categoryHints: restaurant.tags,
         merchantImageUrl: restaurant.merchantImageUrl,
         phone: restaurant.phone ?? null,
         openingHours: restaurant.openingHours ?? null,
@@ -957,7 +1002,7 @@ export default function App() {
   /> : null
 
   return (
-    <main className="app-shell">
+    <PremiumAccessBoundary key={currentUser?.id ?? 'guest'} ownerID={currentUser?.id ?? 'guest'} platform={browserPlatform} revision={currentUser?.membershipTier ?? 'free'}><main className="app-shell">
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark"><img alt="" aria-hidden="true" src="/icons/taste-map-icon-192.png" /></span>
@@ -1001,7 +1046,7 @@ export default function App() {
           {showFilters ? filtersPanel : null}
 
           {activeList === 'footprints' ? (
-            <div className="restaurant-list footprints-list"><TasteFootprints onSelectRestaurant={handleListSelect} restaurants={summaries.filter((restaurant) => restaurant.status === 'visited')} user={currentUser} /></div>
+            <div className="restaurant-list footprints-list"><TasteFootprints onSelectRestaurant={handleListSelect} restaurants={summaries} visits={visits} user={currentUser} /></div>
           ) : <>
             <div className="list-result-line"><span>{activeList === 'visited' ? '去过' : activeList === 'wantToGo' ? '想去' : '根据你的口味推荐'}</span><strong>{visibleRestaurants.length} 家</strong></div>
             <RestaurantList
@@ -1028,12 +1073,13 @@ export default function App() {
         </aside>
 
         <section className="map-panel" aria-label="私人美食地图">
-          <MapView currentUser={currentUser} onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
+          <MapView currentUser={currentUser} onClearSelection={() => setSelectedId(null)} onSelect={handleSelect} onSelectGroup={setSelectedMapGroupIDs} restaurants={visibleRestaurants} selectedRestaurant={selectedRestaurant} />
+          {selectedMapGroupIDs.length ? createPortal(<MapRestaurantGroupSheet items={resolveMapGroupRestaurants(visibleRestaurants, selectedMapGroupIDs)} images={{}} scope={activeList === 'footprints' ? 'visited' : activeList} onClose={() => setSelectedMapGroupIDs([])} onOpen={(restaurant) => { setSelectedMapGroupIDs([]); handleSelect(restaurant) }} />, document.body) : null}
           {!isSidebarOpen && activeList !== 'footprints' ? <div className={`map-filter-control${showFilters ? ' is-open' : ''}`}>
             <button aria-expanded={showFilters} className={`map-filter-button${showFilters ? ' is-active' : ''}`} onClick={() => setShowFilters((current) => !current)} type="button"><SlidersHorizontal size={16} /><span>筛选</span>{activeFilterCount ? <b>{activeFilterCount}</b> : null}</button>
             {showFilters ? <div className="map-filters-popover">{filtersPanel}</div> : null}
           </div> : null}
-          {selectedRestaurant && !isSidebarOpen ? <RestaurantPreviewCard historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(selectedRestaurant.id)} onAddToRoulette={addSelectedRestaurantToRoulette} onAddToWant={() => void handleToggleDiscoveryWant(selectedRestaurant)} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
+          {selectedRestaurant && !isSidebarOpen ? <RestaurantPreviewCard historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(selectedRestaurant.id)} onAddToRoulette={addSelectedRestaurantToRoulette} onAddToWant={() => void handleToggleDiscoveryWant(selectedRestaurant)} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={selectedRestaurant.userId === CURRENT_USER_ID ? () => setShowDeleteConfirm(true) : undefined} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /> : null}
         </section>
         {!isSidebarOpen ? <CollectionTabs activeList={activeList} className="map-collection-tabs" counts={listCounts} onChoose={chooseList} /> : null}
         <button className="map-view-mode-toggle" onClick={toggleMapList} type="button">{isSidebarOpen ? <MapIcon size={17} /> : <List size={17} />}{isSidebarOpen ? '查看地图' : '查看列表'}</button>
@@ -1076,13 +1122,13 @@ export default function App() {
           visits={viewedProfile ? viewedProfile.restaurants.flatMap((restaurant) => restaurant.visits) : allVisits}
         />
       ) : (
-        <CommunityPage candidateRestaurantIds={rouletteRestaurantIds} mode={communityMode} onMarkVisited={(restaurant) => void openQuickVisit(restaurant)} onModeChange={setCommunityMode} onToggleCandidate={toggleRouletteRestaurant} onToggleWant={(restaurant) => void handleToggleDiscoveryWant(restaurant)} onViewProfile={(user) => void viewUserProfile(user)} restaurants={summaries} users={allUsers} />
+        <CommunityPage onAddRestaurant={() => setShowAddModal(true)} candidateRestaurantIds={rouletteRestaurantIds} mode={communityMode} onMarkVisited={(restaurant) => void openQuickVisit(restaurant)} onModeChange={setCommunityMode} onToggleCandidate={toggleRouletteRestaurant} onToggleWant={(restaurant) => void handleToggleDiscoveryWant(restaurant)} onViewProfile={(user) => void viewUserProfile(user)} restaurants={summaries} users={allUsers} />
       )}
 
-      {activeView === 'map' && selectedRestaurant && isSidebarOpen ? <section className="app-restaurant-detail" aria-label={`${selectedRestaurant.name} 餐厅详情`}><RestaurantPreviewCard historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(selectedRestaurant.id)} onAddToRoulette={addSelectedRestaurantToRoulette} onAddToWant={() => void handleToggleDiscoveryWant(selectedRestaurant)} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={() => setShowDeleteConfirm(true)} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /></section> : null}
-      {standaloneRestaurant ? <section className="app-restaurant-detail" aria-label={`${standaloneRestaurant.name} 餐厅详情`}><RestaurantPreviewCard historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(standaloneRestaurant.id)} onAddToRoulette={() => toggleRouletteRestaurant(standaloneRestaurant)} onAddToWant={() => void handleToggleDiscoveryWant(standaloneRestaurant)} onAddVisit={() => void openQuickVisit(standaloneRestaurant).then(() => setStandaloneRestaurant(null))} onClose={() => setStandaloneRestaurant(null)} onDelete={() => { setSelectedId(standaloneRestaurant.id); setShowDeleteConfirm(true) }} onEdit={() => { setSelectedId(standaloneRestaurant.id); setShowEditor(true) }} onEditVisit={(visit) => { setSelectedId(standaloneRestaurant.id); setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={() => void handleToggleDiscoveryWant(standaloneRestaurant)} restaurant={standaloneRestaurant} /></section> : null}
+      {activeView === 'map' && selectedRestaurant && isSidebarOpen ? <section className="app-restaurant-detail" aria-label={`${selectedRestaurant.name} 餐厅详情`}><HybridBackButton onBack={() => setSelectedId(null)} /><RestaurantPreviewCard showCloseButton={false} historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(selectedRestaurant.id)} onAddToRoulette={addSelectedRestaurantToRoulette} onAddToWant={() => void handleToggleDiscoveryWant(selectedRestaurant)} onAddVisit={openNewVisit} onClose={() => setSelectedId(null)} onDelete={selectedRestaurant.userId === CURRENT_USER_ID ? () => setShowDeleteConfirm(true) : undefined} onEdit={() => setShowEditor(true)} onEditVisit={(visit) => { setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={handleSaveRecommendation} restaurant={selectedRestaurant} /></section> : null}
+      {standaloneRestaurant ? <section className="app-restaurant-detail" aria-label={`${standaloneRestaurant.name} 餐厅详情`}><HybridBackButton onBack={() => setStandaloneRestaurant(null)} /><RestaurantPreviewCard showCloseButton={false} historyRestaurants={[...summaries, ...recommendations]} isInRoulette={rouletteRestaurantIds.includes(standaloneRestaurant.id)} onAddToRoulette={() => toggleRouletteRestaurant(standaloneRestaurant)} onAddToWant={() => void handleToggleDiscoveryWant(standaloneRestaurant)} onAddVisit={() => void openQuickVisit(standaloneRestaurant).then(() => setStandaloneRestaurant(null))} onClose={() => setStandaloneRestaurant(null)} onDelete={standaloneRestaurant.userId === CURRENT_USER_ID ? () => { setSelectedId(standaloneRestaurant.id); setShowDeleteConfirm(true) } : undefined} onEdit={() => { setSelectedId(standaloneRestaurant.id); setShowEditor(true) }} onEditVisit={(visit) => { setSelectedId(standaloneRestaurant.id); setEditingVisit(visit); setShowAddVisit(true) }} onSaveRecommendation={() => void handleToggleDiscoveryWant(standaloneRestaurant)} restaurant={standaloneRestaurant} /></section> : null}
 
-      {activeView === 'map' ? <RouletteCandidateDock
+      {activeView === 'map' || activeView === 'community' ? <RouletteCandidateDock
         candidates={rouletteCandidates}
         expanded={showRouletteCandidates}
         onClear={clearRouletteCandidates}
@@ -1097,20 +1143,30 @@ export default function App() {
         <button className={`bottom-navigation__profile${activeView === 'profile' && !viewedProfile ? ' is-active' : ''}`} onClick={() => { setViewedProfile(null); setActiveView('profile') }} type="button"><UserRound size={18} /><span>我的</span></button>
       </nav>
 
-      {showAddModal ? <AddRestaurantModal companionOptions={companionOptions} existingRestaurantsByPoiId={existingRestaurantsByPoiId} friendOptions={friendOptions} historyRestaurants={[...summaries, ...recommendations]} isRouletteCandidate={(poi) => rouletteTemporaryItems.some((item) => item.id === `temporary-poi-${poi.amapPoiId}`)} maxPhotos={visitPhotoLimit(currentUser?.membershipTier ?? 'free')} onAdd={handleAdd} onClose={() => setShowAddModal(false)} onRecordExisting={handleRecordExisting} onToggleRoulette={togglePoiRouletteCandidate} photoUpgradeAvailable={(currentUser?.membershipTier ?? 'free') !== 'member'} /> : null}
+      {showAddModal ? <AddRestaurantModal key={currentUser?.id ?? 'signed-out'} companionOptions={companionOptions} existingRestaurantsByPoiId={existingRestaurantsByPoiId} friendOptions={friendOptions} historyRestaurants={[...summaries, ...recommendations]} isRouletteCandidate={(poi) => rouletteTemporaryItems.some((item) => item.id === `temporary-poi-${poi.amapPoiId}`)} canUploadDishPhotos={currentUser?.membershipTier === 'member'} maxPhotos={visitPhotoLimit(currentUser?.membershipTier ?? 'free')} onAdd={handleAdd} onClose={() => setShowAddModal(false)} onRecordExisting={handleRecordExisting} onToggleRoulette={togglePoiRouletteCandidate} photoUpgradeAvailable={(currentUser?.membershipTier ?? 'free') !== 'member'} /> : null}
       {showEditor && selectedRestaurant ? <RestaurantEditorModal onClose={() => setShowEditor(false)} onSave={handleSave} restaurant={selectedRestaurant} /> : null}
-      {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} friendOptions={friendOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? acceptedMealParticipant?.id ?? 'new-visit'} maxPhotos={visitPhotoLimit(currentUser?.membershipTier ?? 'free')} onClose={() => { setShowAddVisit(false); setEditingVisit(null); setAcceptedMealParticipant(null) }} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} photoUpgradeAvailable={(currentUser?.membershipTier ?? 'free') !== 'member'} restaurant={selectedRestaurant} /> : null}
+      {showAddVisit && selectedRestaurant ? <AddVisitModal companionOptions={companionOptions} friendOptions={friendOptions} initialVisit={editingVisit ?? undefined} key={editingVisit?.id ?? acceptedMealParticipant?.id ?? 'new-visit'} canUploadDishPhotos={currentUser?.membershipTier === 'member'} maxPhotos={visitPhotoLimit(currentUser?.membershipTier ?? 'free')} onClose={() => { setShowAddVisit(false); setEditingVisit(null); setAcceptedMealParticipant(null) }} onDelete={editingVisit ? handleDeleteVisit : undefined} onSave={editingVisit ? handleUpdateVisit : handleAddVisit} photoUpgradeAvailable={(currentUser?.membershipTier ?? 'free') !== 'member'} restaurant={selectedRestaurant} /> : null}
       {showDeleteConfirm && selectedRestaurant ? <ConfirmDeleteModal onCancel={() => setShowDeleteConfirm(false)} onConfirm={handleDelete} restaurantName={selectedRestaurant.name} visitCount={selectedRestaurant.visitCount} /> : null}
-      {showSettings ? <SettingsModal membershipTier={currentUser?.membershipTier ?? 'free'} onClose={() => setShowSettings(false)} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} visitCount={allVisits.length} /> : null}
+      {showSettings ? <SettingsModal membershipTier={currentUser?.membershipTier ?? 'free'} onClose={() => { setShowSettings(false); setSettingsDataSection('all') }} onImported={(message) => { setSelectedId(null); setToast(message) }} restaurantCount={summaries.length} section={settingsDataSection} visitCount={allVisits.length} /> : null}
       <PremiumPaywallHost membershipTier={currentUser?.membershipTier ?? 'free'} />
-      {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={handleSelect} onSelectedRestaurantIdsChange={setRouletteRestaurantIds} onTemporaryItemsChange={setRouletteTemporaryItems} restaurants={rouletteRestaurantOptions} selectedRestaurantIds={rouletteRestaurantIds} temporaryItems={rouletteTemporaryItems} /> : null}
+      {showRoulette ? <RestaurantRoulette onClose={() => setShowRoulette(false)} onSelectRestaurant={(restaurant) => { setShowRoulette(false); handleSelect(restaurant) }} onSelectedRestaurantIdsChange={setRouletteRestaurantIds} onTemporaryItemsChange={setRouletteTemporaryItems} restaurants={rouletteRestaurantOptions} selectedRestaurantIds={rouletteRestaurantIds} temporaryItems={rouletteTemporaryItems} /> : null}
       {sharedAnalyticsMode && sharedAnalyticsProfile ? <section aria-label="数据分析" className="app-shared-surface-overlay"><button aria-label="关闭数据分析" className="app-shared-surface-overlay__close" onClick={() => { setSharedAnalyticsMode(null); setSharedAnalyticsProfile(null) }} type="button"><X size={18} />关闭</button><TasteMapAnalyticsPage initialMode={sharedAnalyticsMode} onOpenRestaurant={(restaurantID) => { const value = summaries.find((item) => item.id === restaurantID); if (value) { setSharedAnalyticsMode(null); setSharedAnalyticsProfile(null); setStandaloneRestaurant(value) } }} platform={browserPlatform} profile={sharedAnalyticsProfile} /></section> : null}
       {sharedLists ? <section aria-label="我的食单" className="app-shared-surface-overlay"><button aria-label="关闭我的食单" className="app-shared-surface-overlay__close" onClick={() => setSharedLists(null)} type="button"><X size={18} />关闭</button><TasteMapListsPage lists={sharedLists} onOpenRestaurant={(restaurantID) => { const value = summaries.find((item) => item.id === restaurantID); if (value) { setSharedLists(null); setStandaloneRestaurant(value) } }} platform={browserPlatform} /></section> : null}
-      {sharedSettingsProfile ? <section aria-label="设置" className="app-shared-surface-overlay"><button aria-label="关闭设置" className="app-shared-surface-overlay__close" onClick={() => setSharedSettingsProfile(null)} type="button"><X size={18} />关闭</button><TasteMapSettingsPage onOpenNativeSettings={() => setShowSettings(true)} onOpenPremium={() => setSharedPremiumOpen(true)} platform={browserPlatform} profile={sharedSettingsProfile} /></section> : null}
+      {sharedSettingsProfile ? <section aria-label="设置" className="app-shared-surface-overlay"><button aria-label="关闭设置" className="app-shared-surface-overlay__close" onClick={() => { setSharedSettingsProfile(null); setSettingsAccountSection(null) }} type="button"><X size={18} />关闭</button>{settingsAccountSection ? <AccountPrivacyPage onBack={() => setSettingsAccountSection(null)} onMapPrivacyChange={updateCurrentUserMapPrivacy} onOpenSettings={() => { setSettingsDataSection('all'); setShowSettings(true) }} onSave={updateCurrentUserProfile} section={settingsAccountSection} user={currentUser ?? sharedSettingsProfile.user} /> : <TasteMapSettingsPage onOpenNativeSettings={({ route, identifier }) => {
+        if (route === 'dataBackup' || route === 'storage') {
+          setSettingsDataSection(route === 'storage' ? 'storage' : identifier === 'sync' || identifier === 'export' || identifier === 'import' ? identifier : 'all')
+          setShowSettings(true)
+          return
+        }
+        const sections: Partial<Record<typeof route, AccountSettingsSection>> = { accountSettings: 'account', privacySettings: 'privacy', permissions: 'permissions', helpSettings: 'help', aboutSettings: 'about' }
+        const section = sections[route]
+        if (!section) throw new Error('当前浏览器不支持此操作。')
+        setSettingsAccountSection(section)
+      }} onOpenPremium={() => setSharedPremiumOpen(true)} platform={browserPlatform} profile={{ ...sharedSettingsProfile, user: currentUser ?? sharedSettingsProfile.user }} />}</section> : null}
       {sharedPremiumOpen ? <section aria-label="Premium" className="app-shared-surface-overlay"><button aria-label="关闭 Premium" className="app-shared-surface-overlay__close" onClick={() => setSharedPremiumOpen(false)} type="button"><X size={18} />关闭</button><TasteMapPremiumPage onOpenStore={() => openPremiumPaywall('settings_entry')} platform={browserPlatform} /></section> : null}
       <PublicRestaurantListRoute onSelectRestaurant={handleProfileListSelect} restaurants={summaries} />
       {toast ? <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div> : null}
-    </main>
+    </main></PremiumAccessBoundary>
   )
 }
 

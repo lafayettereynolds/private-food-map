@@ -15,6 +15,7 @@ interface SettingsModalProps {
   visitCount: number
   onClose: () => void
   onImported: (message: string) => void
+  section?: 'all' | 'sync' | 'storage' | 'export' | 'import'
 }
 
 export function SettingsModal({
@@ -23,6 +24,7 @@ export function SettingsModal({
   visitCount,
   onClose,
   onImported,
+  section = 'all',
 }: SettingsModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [exporting, setExporting] = useState(false)
@@ -110,18 +112,18 @@ export function SettingsModal({
 
   return (
     <ModalShell
-      description="备份或迁移保存在当前浏览器里的私人美食记录。"
+      description="管理保存在当前浏览器里的私人美食记录。"
       onClose={onClose}
       size="small"
-      title="数据与设置"
+      title={{ all: '数据与设置', sync: '同步', storage: '存储', export: '导出备份', import: '导入数据' }[section]}
     >
-      <button className="settings-membership-entry" onClick={() => openPremiumPaywall('settings_entry')} type="button">
+      {section === 'all' ? <button className="settings-membership-entry" onClick={() => openPremiumPaywall('settings_entry')} type="button">
         <span><Sparkles size={18} /></span>
         <div><strong>会员与订阅</strong><small>{membershipTier === 'member' ? '查看当前方案、权益与恢复购买' : '查看功能对比与订阅方案'}</small></div>
         <b>{membershipTier === 'member' ? '已开通' : '查看'}</b>
-      </button>
+      </button> : null}
       <div className="settings-summary"><Database size={20} /><div><strong>{restaurantCount} 家餐厅</strong><span>{visitCount} 条到访记录 · {ENVIRONMENT_LABEL} · {DATABASE_NAME}</span></div></div>
-      {CLOUD_SYNC_ENABLED && syncState.status === 'migrationRequired' ? (
+      {CLOUD_SYNC_ENABLED && (section === 'all' || section === 'sync') && syncState.status === 'migrationRequired' ? (
         <div className="cloud-migration-notice">
           <AlertTriangle size={19} />
           <div>
@@ -137,27 +139,27 @@ export function SettingsModal({
         </div>
       ) : null}
       <div className="data-setting-list">
-        <section>
+        {section === 'all' || section === 'sync' ? <section>
           <div><strong>云端同步</strong><p>{CLOUD_SYNC_ENABLED ? `通过 Cloudflare D1 同步餐厅、到访、评分、笔记和照片索引。${syncState.lastSuccessfulSyncAt ? ` 上次成功：${new Date(syncState.lastSuccessfulSyncAt).toLocaleString('zh-CN')}` : ''}` : '当前本地测试或预览环境不会连接正式 D1。'}</p></div>
           {CLOUD_SYNC_ENABLED ? <button className="secondary-button" disabled={syncState.status === 'syncing'} onClick={() => void syncData()} type="button">{syncState.status === 'syncing' ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />} 立即同步</button> : <span className="local-only-chip"><Cloud size={14} /> 仅本地</span>}
-        </section>
-        <section>
+        </section> : null}
+        {section === 'all' || section === 'storage' ? <section>
           <div><strong>本地图片缓存</strong><p>{formatStorageSize(cacheBytes)} · 只清理可重新生成的缓存，不删除业务数据或用户保存的唯一原图。</p></div>
           <button className="secondary-button" disabled={!cacheBytes} onClick={() => void clearPhotoCache()} type="button"><Trash2 size={15} /> 清除缓存</button>
-        </section>
-        <section>
+        </section> : null}
+        {section === 'all' || section === 'export' ? <section>
           <div><strong>导出完整备份</strong><p>包含餐厅、评分、到访历史、菜品、笔记和照片 metadata；Backup v1 不包含照片原图。</p></div>
           <button className="secondary-button" disabled={exporting} onClick={exportData} type="button">
             {exporting ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />} 导出
           </button>
-        </section>
-        <section>
+        </section> : null}
+        {section === 'all' || section === 'import' ? <section>
           <div><strong>导入 Taste Map 备份</strong><p>与当前数据合并，不会清空已有餐厅和到访记录。</p></div>
           <button className="secondary-button" disabled={importing} onClick={() => fileInputRef.current?.click()} type="button">
             {importing ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} 导入
           </button>
           <input accept="application/json,.json" className="visually-hidden" onChange={importData} ref={fileInputRef} type="file" />
-        </section>
+        </section> : null}
       </div>
       {message ? <p className="settings-success"><CheckCircle2 size={15} /> {message}</p> : null}
       {error ? <p className="form-error">{error}</p> : null}

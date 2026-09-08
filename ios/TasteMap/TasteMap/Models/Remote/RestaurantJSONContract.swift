@@ -79,6 +79,7 @@ struct RestaurantJSONContractV1: Codable, Equatable, Sendable {
     let longTermNote: String
     let pricePerPerson: Double?
     let phone: String?
+    let websiteUrl: String?
     let openingHours: String?
     let markerType: RestaurantMarkerTypeContract
     let markerPhotoId: String?
@@ -111,7 +112,7 @@ struct RestaurantJSONContractV1: Codable, Equatable, Sendable {
         case id, userId, placeIdentities, amapPoiId, name, address, city
         case latitude, longitude, status, preferenceLevel
         case overallRating, foodRating, environmentRating, serviceRating, valueRating
-        case tags, longTermNote, pricePerPerson, phone, openingHours, markerType
+        case tags, longTermNote, pricePerPerson, phone, websiteUrl, openingHours, markerType
         case markerPhotoId, merchantImageUrl, markerEmoji, createdAt, updatedAt
         case deletedAt, isTestData
     }
@@ -137,6 +138,7 @@ struct RestaurantJSONContractV1: Codable, Equatable, Sendable {
         longTermNote: String,
         pricePerPerson: Double?,
         phone: String?,
+        websiteUrl: String? = nil,
         openingHours: String?,
         markerType: RestaurantMarkerTypeContract,
         markerPhotoId: String?,
@@ -169,6 +171,7 @@ struct RestaurantJSONContractV1: Codable, Equatable, Sendable {
         self.longTermNote = longTermNote
         self.pricePerPerson = pricePerPerson
         self.phone = phone
+        self.websiteUrl = websiteUrl
         self.openingHours = openingHours
         self.markerType = markerType
         self.markerPhotoId = markerPhotoId
@@ -205,6 +208,7 @@ struct RestaurantJSONContractV1: Codable, Equatable, Sendable {
         longTermNote = try container.decode(String.self, forKey: .longTermNote)
         pricePerPerson = try container.decode(Double?.self, forKey: .pricePerPerson)
         phone = try container.decode(String?.self, forKey: .phone)
+        websiteUrl = try container.decodeIfPresent(String.self, forKey: .websiteUrl)
         openingHours = try container.decode(String?.self, forKey: .openingHours)
         markerType = try container.decode(RestaurantMarkerTypeContract.self, forKey: .markerType)
         markerPhotoId = try container.decode(String?.self, forKey: .markerPhotoId)
@@ -257,6 +261,7 @@ struct RestaurantJSONContractV1: Codable, Equatable, Sendable {
         try container.encode(longTermNote, forKey: .longTermNote)
         try container.encode(pricePerPerson, forKey: .pricePerPerson)
         try container.encode(phone, forKey: .phone)
+        try container.encodeIfPresent(websiteUrl, forKey: .websiteUrl)
         try container.encode(openingHours, forKey: .openingHours)
         try container.encode(markerType, forKey: .markerType)
         try container.encode(markerPhotoId, forKey: .markerPhotoId)

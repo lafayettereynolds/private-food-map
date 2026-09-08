@@ -99,6 +99,7 @@ final class TasteMapHybridBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(plugin)
         runtime.attach(plugin: plugin)
         if let webView = bridge?.webView {
+            webView.allowsLinkPreview = false
             let host = TasteMapHybridMapSurfaceHost(parent: self, webView: webView, runtime: runtime)
             mapSurfaceHost = host
             runtime.attach(mapSurfaceHost: host)
@@ -106,6 +107,11 @@ final class TasteMapHybridBridgeViewController: CAPBridgeViewController {
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        mapSurfaceHost?.layoutIfNeeded()
+    }
 }
 
 private final class TasteMapHybridResourceSchemeHandler: NSObject, WKURLSchemeHandler {

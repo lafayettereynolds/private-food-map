@@ -4,6 +4,7 @@ import type { DiningCompanion, RestaurantSummary, UserProfile, Visit } from '../
 import { buildCompanionShareData, buildRecommendationSourceShareData, filterAnalysisSharePrivacy } from './analysisShare'
 import { analysisPosterFilename, prepareAnalysisPoster, renderAnalysisPosterSvg } from './analysisPosterRenderer'
 import { collectAnalysisVisuals, cuisineFallback, restaurantVisual } from './foodVisualResolver'
+import { buildTasteProfileSnapshot } from './tasteProfileSnapshot'
 
 const visual = (label: string, restaurantId = label) => ({
   source: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg"><text>${label}</text></svg>`)}`,
@@ -60,11 +61,35 @@ function shareData(): AnalysisShareData {
     subtitle: '基于真实到访生成', summary: '偏爱安静、稳定而有记忆点的餐厅。', metrics: [{ label: '到访', value: '18' }],
     insights: ['日料是最稳定的高分菜系', '安静环境更容易获得高分'], keywords: ['日料', '安静'], restaurants,
     heroCandidates: [visual('hero-a', 'a'), visual('hero-b', 'b')], footer: 'Taste Map · 记录真实味觉记忆',
+    tasteProfile: {
+      periodLabel: '2025.01.01 – 2026.08.01', restaurantCount: 18, dishCount: 35, visitCount: 24,
+      spend: 8742, cityCount: 4, averageScoreOutOfTen: 8.4,
+      cuisines: [{ label: '意大利菜', value: 62, symbol: '🍕' }, { label: '日式料理', value: 38, symbol: '🍣' }],
+      preferences: [{ label: '偏咸', value: 68, symbol: '🧂' }, { label: '偏鲜', value: 62, symbol: '🍅' }],
+      spendCategories: [{ label: '正餐', value: 74, symbol: '🍲' }, { label: '咖啡 & 甜点', value: 26, symbol: '☕' }],
+      priceRanges: [{ label: '¥100 – ¥200', value: 70, symbol: '•' }, { label: '¥200 – ¥300', value: 30, symbol: '•' }],
+      cities: [{ label: '杭州', value: 12, symbol: '📍' }, { label: '上海', value: 6, symbol: '📍' }],
+      companions: [{ label: '一个人', value: 60, symbol: '👩🏻' }, { label: '朋友', value: 40, symbol: '👭' }],
+      diningTimes: [{ label: '早餐', value: 8, symbol: '☀️' }, { label: '午餐', value: 34, symbol: '🌤️' }, { label: '晚餐', value: 46, symbol: '🌇' }, { label: '夜宵', value: 12, symbol: '🌙' }],
+    },
     logoSource: '/icons/taste-map-icon-192.png', privacy: { companionNameIncluded: false, spendIncluded: false, exactLocationIncluded: false },
   }
 }
 
 describe('analysis share system', () => {
+  it('keeps cuisine, taste and scene signals separate while counting unrated visits', () => {
+    const place = { ...restaurant('r1'), tags: ['日料', '江景', '适合约会'] }
+    const record = { ...visit('v1', place.id), rating: null, valueTags: ['份量合适'], environmentTags: ['安静'], dishes: [{ id: 'dish-1', name: '香辣鱼', taste: '香辣鲜美', rating: null, price: null, imageData: null, photoId: null }] }
+    const snapshot = buildTasteProfileSnapshot([place], [record])
+
+    expect(snapshot.cuisines).toEqual([{ label: '日料', value: 100, symbol: '🍣' }])
+    expect(snapshot.preferences.some((item) => item.label === '偏辣')).toBe(true)
+    expect(snapshot.preferences.some((item) => item.label === '安静')).toBe(false)
+    expect(snapshot.preferences.some((item) => item.label === '份量合适')).toBe(false)
+    expect(snapshot.visitCount).toBe(1)
+    expect(snapshot.averageScoreOutOfTen).toBeNull()
+  })
+
   it('prioritizes visit photos over restaurant covers', () => {
     const value = collectAnalysisVisuals([restaurant('r1')], [visit('v1', 'r1', [visual('visit').source as string])], 'MONTHLY_REVIEW', '2026-08')
     expect(value[0].origin).toBe('visit')
@@ -105,6 +130,13 @@ describe('analysis share system', () => {
     const sourceUser = { ...user(), id: 'friend-1', nickname: '小王' }
     const restaurants = Array.from({ length: 6 }, (_, index) => restaurant(`source-restaurant-${index}`))
     const visits = restaurants.map((_, index) => recommendationVisit(index, sourceUser.id, '旧名字'))
+    // Pitfalls are relative to the owner's first-experience baseline. A lone
+    // source with six identical scores cannot be worse than its own baseline.
+    for (let index = 0; index < 6; index++) {
+      const id = `self-${index}`
+      restaurants.push(restaurant(id))
+      visits.push({ ...visit(`self-visit-${index}`, id), rating: 5 })
+    }
     const data = buildRecommendationSourceShareData(user(), restaurants, visits, [sourceUser])
 
     expect(data.metrics).toContainEqual({ label: '最坑', value: '小王' })
@@ -135,10 +167,11 @@ describe('analysis share system', () => {
     expect(`${safe.summary} ${safe.restaurants[0].meta}`).not.toMatch(/owner@example|private_123|¥388|18 号/)
   })
 
-  it('renders a clean 9:16 1080 by 1920 poster rather than a page screenshot', () => {
+  it('renders Taste Profile as the approved editorial 2:3 1080 by 1620 poster', () => {
     const data = shareData()
     const svg = renderAnalysisPosterSvg({ data, hero: data.heroCandidates[0].source, logo: null, restaurantImages: data.restaurants.map((item) => item.image.source), heroIndex: 0 })
-    expect(svg).toContain('width="1080" height="1920"')
+    expect(svg).toContain('width="1080" height="1620"')
+    for (const label of ['数据总览', '最常吃 TOP 3', '口味偏好', '口味发现', '消费分布', '人均消费区间', '城市足迹 TOP 5', '常见饭搭子', '用餐时间偏好']) expect(svg).toContain(label)
     expect(svg).not.toMatch(/button|scrollbar|overflow/)
   })
 

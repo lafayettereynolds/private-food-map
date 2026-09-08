@@ -60,7 +60,7 @@ struct ProfileListsMemoriesParityTests {
         #expect(PremiumFoodMotifContract.kinds.allSatisfy { FoodDiningVisualKind.allCases.contains($0) })
     }
 
-    @Test("Social statistics follow every cursor and deduplicate users")
+    @Test("Social statistics treat only mutual follows as friends and deduplicate users")
     func socialStatisticsPagination() async throws {
         let api = ProfileStatisticsSocialAPI()
         let container = try TasteMapPersistence.makeContainer(inMemory: true)
@@ -69,10 +69,10 @@ struct ProfileListsMemoriesParityTests {
             context: container.mainContext,
             currentUserID: "tm_a"
         )
-        #expect(result.friendCount == 3)
+        #expect(result.friendCount == 2)
         #expect(result.followingCount == 2)
         #expect(result.followerCount == 4)
-        #expect(api.friendPageRequests == 2)
+        #expect(api.friendPageRequests == 0)
     }
 
     @Test("Custom list cover accepts only the owner's uploaded public restaurant photo")
@@ -201,7 +201,12 @@ private final class ProfileStatisticsSocialAPI: SocialAPI {
     func follows(scope: FollowListScope, cursor: String?, limit: Int) async throws -> SocialPageV1<SocialUserResultV1> {
         switch scope {
         case .following: page([user("following-1"), user("following-2")], next: nil)
-        case .followers: page((1...4).map { user("follower-\($0)") }, next: nil)
+        case .followers: page([
+            user("follower-1", isFollowing: true),
+            user("follower-2"),
+            user("follower-3", isFollowing: true),
+            user("follower-4"),
+        ], next: nil)
         }
     }
 
@@ -211,13 +216,13 @@ private final class ProfileStatisticsSocialAPI: SocialAPI {
     func mutateFriendship(id: String, action: FriendshipMutationAction) async throws -> FriendshipMutationResponseV1 { throw StubError.unused }
     func setFollowing(_ following: Bool, userID: String) async throws -> FollowMutationResponseV1 { throw StubError.unused }
 
-    private func user(_ id: String) -> SocialUserResultV1 {
+    private func user(_ id: String, isFollowing: Bool = false) -> SocialUserResultV1 {
         .init(
             profile: .init(
                 userId: id, displayName: id, bio: nil, city: nil,
                 avatarPhotoId: nil, avatarPresetId: .otter
             ),
-            friendshipId: nil, friendshipState: .friends, isFollowing: false
+            friendshipId: nil, friendshipState: .none, isFollowing: isFollowing
         )
     }
 

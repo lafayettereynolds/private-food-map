@@ -16,12 +16,17 @@ import {
   type PublicContentViewerStateV1,
   type PublicProfileContentPageV1,
 } from '../src/contracts/communityContract'
+import { DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE } from '../src/contracts/discoveryContract'
 import type { ProfileAvatarPresetContract, ProfileVisibilityContract } from '../src/contracts/profileContract'
 import type { RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
+import { DISCOVERY_FILTER_TAXONOMY } from '../src/contracts/discoveryFilterTaxonomy'
+import { readDiscoveryQuery, matchesDiscoveryHardFilters, readPublicFilterStatistics, DISCOVERY_FILTER_CAPABILITIES,
+  DISCOVERY_PHOTO_SCAN_LIMIT, assertCompleteDiscoveryPhotos, DiscoveryQueryError } from './discoveryHardFilters'
 import { consumePublicAPIQuota } from './publicAPIRateLimit'
 import { engagementForVisits } from './communityInteractionsV1'
+import { communityCityKey, communityRestaurantCitySQL, decodeCommunityFeedCursor, encodeCommunityFeedCursor } from './communityCityQuery'
 import {
-  isActiveRestaurantUGCPhoto,
+  loadActivityPhotoPool,
   RestaurantUGCImagePool,
   resolveRestaurantVisualSelection,
   type RestaurantUGCPhotoRecord,
@@ -138,24 +143,29 @@ async function readFeed(database: D1Database, viewerId: string, url: URL): Promi
   const scope = (url.searchParams.get('scope') ?? 'following') as CommunityFeedScopeV1
   if (scope !== 'following' && scope !== 'latest') throw new CommunityV1RequestError('Community feed scope is invalid.', 400)
   const limit = pageLimit(url)
-  const cursor = decodeCursor(url.searchParams.get('cursor'))
+  const filtersQuery = readDiscoveryQuery(url, scope)
+  const requestedCity = url.searchParams.get('city') ?? ''
+  if (requestedCity.length > 80 || /[\u0000-\u001f\u007f]/u.test(requestedCity)) throw new CommunityV1RequestError('Community city is invalid.', 400)
+  const city = communityCityKey(requestedCity)
+  const queryScope = { viewerId, scope, city, query: filtersQuery.fingerprint }
+  let cursor: ReturnType<typeof decodeCommunityFeedCursor>
+  try { cursor = decodeCommunityFeedCursor(url.searchParams.get('cursor'), queryScope) }
+  catch { throw new CommunityV1RequestError('Community cursor does not match this city or feed. Refresh and retry.', 400) }
   const snapshot = cursor.snapshot ?? Date.now()
   const snapshotISO = new Date(snapshot).toISOString()
   const relationClause = scope === 'following' ? `AND (
     EXISTS (SELECT 1 FROM follows ff WHERE ff.follower_id = ? AND ff.followed_user_id = v.user_id AND ff.deleted_at IS NULL)
-    OR EXISTS (SELECT 1 FROM friendships fc WHERE fc.status = 'accepted' AND fc.deleted_at IS NULL AND (
-      (fc.requester_id = ? AND fc.addressee_id = v.user_id) OR
-      (fc.requester_id = v.user_id AND fc.addressee_id = ?)
-    ))
   )` : ''
   const bindings: unknown[] = [viewerId, viewerId, viewerId, viewerId, viewerId]
-  if (scope === 'following') bindings.push(viewerId, viewerId, viewerId)
-  bindings.push(snapshotISO, cursor.eventAt, cursor.eventAt, cursor.id, limit + 1)
+  if (scope === 'following') bindings.push(viewerId)
+  if (city) bindings.push(city)
+  bindings.push(snapshotISO)
   const query = `SELECT ${visitProjection}
     FROM visits v
-    JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+    JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
     JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
-    WHERE v.user_id <> ? AND v.deleted_at IS NULL AND (
+    WHERE v.user_id <> ? AND v.deleted_at IS NULL AND COALESCE(v.is_test_data, 0) = 0
+      AND v.rating <= 5 AND v.rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE} AND (
       (v.visibility = 'public' AND up.visibility = 'public') OR (
         v.visibility IN ('public', 'friends') AND up.visibility IN ('public', 'friends') AND
         EXISTS (SELECT 1 FROM friendships vf WHERE vf.status = 'accepted' AND vf.deleted_at IS NULL AND (
@@ -168,20 +178,54 @@ async function readFeed(database: D1Database, viewerId: string, url: URL): Promi
         (ub.blocker_user_id = ? AND ub.blocked_user_id = v.user_id) OR
         (ub.blocker_user_id = v.user_id AND ub.blocked_user_id = ?)
       )
-    ) ${relationClause}
+    ) AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.status = 'actioned' AND (
+      (cr.content_type = 'visit' AND cr.content_id = v.id) OR (cr.content_type = 'user' AND cr.content_id = v.user_id)))
+    ${relationClause}
+      ${city ? `AND ${communityRestaurantCitySQL} = ?` : ''}
       AND v.visited_at <= ?
       AND (v.visited_at < ? OR (v.visited_at = ? AND v.id > ?))
     ORDER BY v.visited_at DESC, v.id ASC LIMIT ?`
-  const rows = await database.prepare(query).bind(...bindings).all<ContentRow>()
-  const visible = rows.results.slice(0, limit)
-  const items = await hydrateVisits(database, viewerId, visible)
+  // Scan qualified activity rows until a full matching page plus lookahead is
+  // found. Filtering the previous LIMIT 20 hydration silently hid older matches.
+  const matched: Array<{ row: ContentRow; item: PublicContentItemV1 }> = []
+  let scanCursor = { eventAt: cursor.eventAt, id: cursor.id }
+  let scanned = 0
+  while (matched.length <= limit) {
+    const rows = await database.prepare(query).bind(...bindings, scanCursor.eventAt, scanCursor.eventAt, scanCursor.id, 50).all<ContentRow>()
+    if (!rows.results.length) break
+    scanned += rows.results.length
+    if (scanned > 5_000) throw new DiscoveryQueryError('This feed exceeds the supported filter scan capacity. Choose a city or narrow the query.', 503, 'discovery_capacity_exceeded')
+    const hydrated = await hydrateVisits(database, viewerId, rows.results)
+    const filters = filtersQuery.filters
+    const statistics = filters.minimumPublicRatingUsers !== null || filters.minimumPublicScoreOutOfTen !== null
+      ? await readPublicFilterStatistics(database, viewerId, rows.results.map(row => row.restaurant_id), snapshotISO)
+      : new Map<string, { score: number | null; users: number }>()
+    for (const [index, item] of hydrated.entries()) {
+      const row = rows.results[index]
+      const stats = statistics.get(row.restaurant_id)
+      if (matchesDiscoveryHardFilters({ ...item.restaurant,
+        publicScoreOutOfTen: stats?.score ?? null, publicRatingUsers: stats?.users ?? 0,
+        viewerState: item.viewerState, actualPhoto: !!item.restaurant.photo || !!item.visit?.photos.length,
+      }, filters)) matched.push({ row, item })
+      if (matched.length > limit) break
+    }
+    const tail = rows.results.at(-1)!
+    scanCursor = { eventAt: tail.visited_at, id: tail.visit_id }
+    if (rows.results.length < 50) break
+  }
+  const visible = matched.slice(0, limit)
+  const items = visible.map(entry => entry.item)
   return {
     apiVersion: COMMUNITY_API_VERSION,
     scope,
+    city,
+    filterCapabilities: DISCOVERY_FILTER_CAPABILITIES,
+    filterTaxonomy: DISCOVERY_FILTER_TAXONOMY,
+    appliedQuery: { filters: filtersQuery.filters, sort: filtersQuery.sort, preferences: filtersQuery.preferences },
     generatedAt: new Date(snapshot).toISOString(),
     items,
-    nextCursor: rows.results.length > limit && visible.length
-      ? encodeCursor(visible.at(-1)!.visited_at, visible.at(-1)!.visit_id, snapshot)
+    nextCursor: matched.length > limit && visible.length
+      ? encodeCommunityFeedCursor(visible.at(-1)!.row.visited_at, visible.at(-1)!.row.visit_id, snapshot, queryScope)
       : null,
   }
 }
@@ -214,7 +258,7 @@ async function readPublicContent(
   let tailID = ''
   if (section === 'visits') {
     const rows = await database.prepare(`SELECT ${visitProjection}
-      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
       JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
       WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}
         AND v.visited_at <= ? AND (v.visited_at < ? OR (v.visited_at = ? AND v.id > ?))
@@ -233,7 +277,7 @@ async function readPublicContent(
         up.city AS profile_city, up.avatar_photo_id AS profile_avatar_photo_id,
         up.avatar_preset_id AS profile_avatar_preset_id, up.visibility AS profile_visibility
       FROM restaurants r JOIN user_profiles up ON up.user_id = r.user_id AND up.deleted_at IS NULL
-      WHERE r.user_id = ? AND r.status = 'wantToGo' AND r.deleted_at IS NULL
+      WHERE r.user_id = ? AND r.status = 'wantToGo' AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
         AND r.updated_at <= ? AND (r.updated_at < ? OR (r.updated_at = ? AND r.id > ?))
       ORDER BY r.updated_at DESC, r.id ASC LIMIT ?`)
       .bind(targetUserId, snapshotISO, cursor.eventAt, cursor.eventAt, cursor.id, limit + 1).all<WantRow>()
@@ -276,14 +320,15 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
       WHERE requester_id = ? OR addressee_id = ?`).bind(viewerId, viewerId),
     database.prepare(`SELECT followed_user_id FROM follows WHERE follower_id = ? AND deleted_at IS NULL`).bind(viewerId),
     database.prepare(`SELECT id, status, name, address, city, latitude, longitude FROM restaurants
-      WHERE user_id = ? AND deleted_at IS NULL`).bind(viewerId),
+      WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_test_data, 0) = 0`).bind(viewerId),
     database.prepare(`SELECT i.restaurant_id, i.provider, i.external_id, i.is_primary
       FROM restaurant_place_identities i JOIN restaurants r ON r.id = i.restaurant_id
-      WHERE r.user_id = ? AND r.deleted_at IS NULL`).bind(viewerId),
+      WHERE r.user_id = ? AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0`).bind(viewerId),
   ])
   const identities = identityMap(identityResult.results as unknown as IdentityRow[])
   const cities = unique(rows.map((row) => row.city))
-  const photoResult = await database.prepare(`SELECT p.id, p.restaurant_id, p.visit_id, p.user_id,
+  const photoResult = await database.prepare(`SELECT p.id, p.restaurant_id, p.visit_id, p.user_id, p.kind,
+      p.storage_key, p.thumbnail_storage_key, p.sync_status,
       p.visibility, v.visibility AS visit_visibility, up.visibility AS profile_visibility,
       p.created_at, p.sort_order, r.marker_photo_id, p.deleted_at,
       CASE WHEN EXISTS (
@@ -296,8 +341,9 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
     FROM photos p LEFT JOIN visits v ON v.id = p.visit_id AND v.user_id = p.user_id
     JOIN restaurants r ON r.id = p.restaurant_id AND r.user_id = p.user_id
     JOIN user_profiles up ON up.user_id = p.user_id AND up.deleted_at IS NULL
-    WHERE p.deleted_at IS NULL AND (v.id IS NULL OR v.deleted_at IS NULL)
-      AND r.deleted_at IS NULL AND p.storage_provider = 'r2'
+    WHERE p.kind IN ('visit', 'dish')
+      AND p.deleted_at IS NULL AND (p.visit_id IS NULL OR (v.id IS NOT NULL AND v.deleted_at IS NULL))
+      AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0 AND p.storage_provider = 'r2'
       AND r.city IN (${placeholders(cities)})
       AND NOT EXISTS (
         SELECT 1 FROM user_blocks pub WHERE pub.deleted_at IS NULL AND (
@@ -311,17 +357,22 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
         )) OR
         (p.visibility = 'public' AND (v.id IS NULL OR v.visibility = 'public') AND up.visibility = 'public')
       )
-    ORDER BY p.sort_order ASC, p.created_at DESC, p.id ASC LIMIT 2000`)
+    AND p.sync_status = 'synced' AND LENGTH(TRIM(COALESCE(p.storage_key, ''))) > 0
+    AND LENGTH(TRIM(COALESCE(p.thumbnail_storage_key, ''))) > 0
+    AND (v.id IS NULL OR COALESCE(v.is_test_data, 0) = 0)
+    ORDER BY p.sort_order ASC, p.created_at DESC, p.id ASC LIMIT ${DISCOVERY_PHOTO_SCAN_LIMIT + 1}`)
     .bind(...cities, viewerId, viewerId, ...visitIDs).all<CommunityPhotoRow>()
   const photoRows = photoResult.results
+  assertCompleteDiscoveryPhotos(photoRows.length)
   const photoRestaurantIDs = unique(photoRows.map((photo) => photo.restaurant_id))
   const photoIdentityResult = photoRestaurantIDs.length
     ? await database.prepare(`SELECT restaurant_id, provider, external_id, is_primary
-        FROM restaurant_place_identities WHERE restaurant_id IN (${placeholders(photoRestaurantIDs)})`)
-      .bind(...photoRestaurantIDs).all<IdentityRow>()
+        FROM restaurant_place_identities WHERE restaurant_id IN (SELECT value FROM json_each(?))`)
+      .bind(JSON.stringify(photoRestaurantIDs)).all<IdentityRow>()
     : { results: [] as IdentityRow[] }
   const photoIdentities = identityMap(photoIdentityResult.results)
   const imagePool = new RestaurantUGCImagePool(photoRows)
+  const activityPool = await loadActivityPhotoPool(database, viewerId, visitIDs)
   const photoGlobalKeys = new Map(photoRows.map((photo) => [
     photo.restaurant_id,
     globalPlaceKey(photoIdentities.get(photo.restaurant_id) ?? [], photo),
@@ -334,7 +385,12 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
   )
   const engagements = await engagementForVisits(database, viewerId, visitIDs)
   return rows.map((row) => {
-    const scope: PublicContentCacheScopeV1 = row.visit_visibility === 'friends' || row.profile_visibility === 'friends' ? 'friends' : 'public'
+    // This pool's SQL already verified the viewer's current relationship. Photo
+    // visibility can be narrower than its public Visit and must narrow the cache.
+    const activityPhotos = activityPool.activityPhotos(row.visit_id, row.user_id, viewerId, true)
+    const scope: PublicContentCacheScopeV1 = row.visit_visibility === 'friends' || row.profile_visibility === 'friends'
+      || activityPhotos.some(({ photo }) => photo.visibility === 'friends' || photo.visit_visibility === 'friends' || photo.profile_visibility === 'friends')
+      ? 'friends' : 'public'
     const targetKey = globalPlaceKey(identities.get(row.restaurant_id) ?? [], row)
     const relatedRestaurantIDs = unique([row.restaurant_id, ...photoRows.filter((photo) => photoGlobalKeys.get(photo.restaurant_id) === targetKey).map((photo) => photo.restaurant_id)])
     const selectedPhoto = resolveRestaurantVisualSelection(imagePool, {
@@ -344,9 +400,7 @@ async function hydrateVisits(database: D1Database, viewerId: string, rows: Conte
       activityVisitID: row.visit_id,
       canSeeFriendsActivity: scope === 'friends',
     })
-    const visitPhotos = photoRows.filter((photo) => photo.visit_id === row.visit_id && isActiveRestaurantUGCPhoto(photo))
-      .map((photo) => publicContentPhoto({ sourceType: 'activityAuthorPhoto', photo, exportAllowed: photo.user_id === viewerId })!)
-      .slice(0, 4)
+    const visitPhotos = activityPhotos.map((photo) => publicContentPhoto(photo)!)
     const place = restaurantProjection(row, identities.get(row.restaurant_id) ?? [], publicContentPhoto(selectedPhoto))
     return {
       id: `visit:${row.visit_id}`,
@@ -383,10 +437,10 @@ async function hydrateWants(database: D1Database, viewerId: string, rows: WantRo
       WHERE requester_id = ? OR addressee_id = ?`).bind(viewerId, viewerId),
     database.prepare(`SELECT followed_user_id FROM follows WHERE follower_id = ? AND deleted_at IS NULL`).bind(viewerId),
     database.prepare(`SELECT id, status, name, address, city, latitude, longitude FROM restaurants
-      WHERE user_id = ? AND deleted_at IS NULL`).bind(viewerId),
+      WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_test_data, 0) = 0`).bind(viewerId),
     database.prepare(`SELECT i.restaurant_id, i.provider, i.external_id, i.is_primary
       FROM restaurant_place_identities i JOIN restaurants r ON r.id = i.restaurant_id
-      WHERE r.user_id = ? AND r.deleted_at IS NULL`).bind(viewerId),
+      WHERE r.user_id = ? AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0`).bind(viewerId),
   ])
   const identities = identityMap(identityResult.results as unknown as IdentityRow[])
   const friendships = friendshipMap(friendshipResult.results as unknown as FriendshipRow[], viewerId)
@@ -439,30 +493,30 @@ async function readPublicOverview(
           ORDER BY is_primary DESC, updated_at ASC LIMIT 1) AS matched_provider,
         (SELECT external_id FROM restaurant_place_identities i WHERE i.restaurant_id = restaurants.id
           ORDER BY is_primary DESC, updated_at ASC LIMIT 1) AS matched_external_id
-      FROM restaurants WHERE user_id = ? AND status = 'wantToGo' AND deleted_at IS NULL
+      FROM restaurants WHERE user_id = ? AND status = 'wantToGo' AND deleted_at IS NULL AND COALESCE(is_test_data, 0) = 0
       ORDER BY updated_at DESC, id ASC LIMIT 100`).bind(targetUserId),
     database.prepare(`SELECT i.provider, i.external_id FROM restaurants r
       JOIN restaurant_place_identities i ON i.restaurant_id = r.id
-      WHERE r.user_id = ? AND r.status = 'wantToGo' AND r.deleted_at IS NULL`)
+      WHERE r.user_id = ? AND r.status = 'wantToGo' AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0`)
       .bind(viewerId),
     database.prepare(`SELECT ${visitProjection}, COUNT(*) OVER (PARTITION BY v.restaurant_id) AS visit_count
-      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
       JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
       WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}
       ORDER BY visit_count DESC, v.visited_at DESC, v.id ASC LIMIT 6`).bind(targetUserId),
     database.prepare(`SELECT COALESCE(NULLIF(trim(r.city), ''), '未标注城市') AS city,
         COUNT(DISTINCT r.id) AS restaurant_count, COUNT(v.id) AS visit_count
-      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
       WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}
       GROUP BY COALESCE(NULLIF(trim(r.city), ''), '未标注城市')
       ORDER BY visit_count DESC, city ASC LIMIT 8`).bind(targetUserId),
     database.prepare(`SELECT r.tags_json FROM visits v
-      JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
       WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}`)
       .bind(targetUserId),
     database.prepare(`SELECT AVG(v.rating) AS average_rating,
         SUM(CASE WHEN v.rating IS NOT NULL THEN 1 ELSE 0 END) AS rated_count
-      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      FROM visits v JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
       WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}`).bind(targetUserId),
   ])
 
@@ -547,13 +601,15 @@ async function visibleStatistics(
   wantsVisible: boolean,
 ): Promise<PublicContentStatisticsV1> {
   const [visitResult, restaurantResult, wantResult] = await database.batch([
-    database.prepare(`SELECT COUNT(*) AS count FROM visits v WHERE v.user_id = ?
+    database.prepare(`SELECT COUNT(*) AS count FROM visits v
+      JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
+      WHERE v.user_id = ?
       AND v.deleted_at IS NULL AND ${visibilityClause}`).bind(targetUserId),
     database.prepare(`SELECT COUNT(DISTINCT v.restaurant_id) AS count FROM visits v
-      JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
       WHERE v.user_id = ? AND v.deleted_at IS NULL AND ${visibilityClause}`).bind(targetUserId),
     database.prepare(`SELECT COUNT(*) AS count FROM restaurants WHERE user_id = ?
-      AND status = 'wantToGo' AND deleted_at IS NULL AND ${wantsVisible ? '1 = 1' : '1 = 0'}`).bind(targetUserId),
+      AND status = 'wantToGo' AND deleted_at IS NULL AND COALESCE(is_test_data, 0) = 0 AND ${wantsVisible ? '1 = 1' : '1 = 0'}`).bind(targetUserId),
   ])
   return {
     visibleVisitCount: count(visitResult),
@@ -658,6 +714,7 @@ function publicContentPhoto(selection: RestaurantUGCPhotoSelection | null): Publ
   const photo = selection.photo
   return {
     photoId: photo.id,
+    photoKind: photo.kind ?? undefined,
     variant: 'thumbnail',
     sourceType: selection.sourceType === 'nonPublic' ? undefined : selection.sourceType,
     restaurantId: photo.restaurant_id,

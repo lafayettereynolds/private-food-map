@@ -309,6 +309,7 @@ private struct DishDraftRow: View {
 
 private struct DishFormSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(PremiumEntitlementService.self) private var premiumEntitlementService
 
     let photos: [PhotoAsset]
     let preparedPhotos: [PreparedLocalPhoto]
@@ -412,7 +413,11 @@ private struct DishFormSheet: View {
         id: UUID,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        Button { draft.photoID = draft.photoID == id ? nil : id } label: {
+        Button {
+            if draft.photoID == id { draft.photoID = nil }
+            else if premiumEntitlementService.access(for: .dishPhotos) == .allowed { draft.photoID = id }
+            else { premiumEntitlementService.openPaywall(from: .feature(.dishPhotos)) }
+        } label: {
             content()
                 .frame(width: 72, height: 66)
                 .clipShape(RoundedRectangle(cornerRadius: 12))

@@ -37,6 +37,9 @@ const forbiddenMarkers = [
   '/Users/lafayette',
   '--tastemap-hybrid-development',
   'TASTEMAP_VISUAL_QA_MODE',
+  'TASTEMAP_MAP_FRAME_DIAGNOSTICS',
+  'TASTEMAP_MAP_FRAME_SAMPLE',
+  'TASTEMAP_MAP_CAMERA_TRACE',
 ]
 
 for (const marker of forbiddenMarkers) {
