@@ -1,0 +1,9 @@
+{
+  "name": "fancy-fog-1341",
+  "compatibility_date": "2026-08-25",
+  "assets": {
+    "directory": "./public",
+    "html_handling": "none",
+    "not_found_handling": "none"
+  }
+}

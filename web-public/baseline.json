@@ -1,0 +1,12 @@
+{
+  "capturedAt": "2026-09-09",
+  "origin": "https://tastemap.cn",
+  "worker": "fancy-fog-1341",
+  "version": "f9d342db-afb5-4153-9085-8385dd725f01",
+  "sha256": {
+    "index.html": "bc3295a980ae60254bf88945b8ce1f146b6262281239bbe7e1c592bf719eceb1",
+    "privacy.html": "9d01e647c82f3e35da24709c0f9a11db21fea235f46c967bf30b49f1f2e4a67c",
+    "support.html": "e40f6efac6f1ebbf488645b3ca5f376c7919482ffadf563e5f172e5441734d59",
+    "styles.css": "80bbae36800395f06ea3776ed5d5d353f39079907335aefc4c8beb69130c7640"
+  }
+}

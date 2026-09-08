@@ -1,0 +1,60 @@
+:root{
+  --bg:#fbfaf7;
+  --card:#ffffff;
+  --text:#1f1f1f;
+  --muted:#6b6b6b;
+  --line:#e9e5dd;
+  --accent:#111111;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",Arial,sans-serif;
+  color:var(--text);
+  background:var(--bg);
+  line-height:1.7;
+}
+main{
+  max-width:820px;
+  margin:0 auto;
+  padding:56px 22px 80px;
+}
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:20px;
+  padding:32px;
+}
+h1{font-size:34px;line-height:1.25;margin:0 0 10px}
+h2{font-size:21px;margin:34px 0 10px}
+p,li{font-size:16px}
+.muted{color:var(--muted)}
+nav{margin:0 0 24px}
+nav a{
+  color:var(--text);
+  text-decoration:none;
+  margin-right:18px;
+  font-weight:600;
+}
+a{color:#2457c5}
+.notice{
+  background:#fff8e7;
+  border:1px solid #f0dfad;
+  border-radius:12px;
+  padding:14px 16px;
+}
+footer{
+  margin-top:28px;
+  color:var(--muted);
+  font-size:14px;
+}
+code{
+  background:#f3f2ef;
+  padding:2px 6px;
+  border-radius:6px;
+}
+@media (max-width:600px){
+  main{padding:28px 14px 52px}
+  .card{padding:22px}
+  h1{font-size:28px}
+}
