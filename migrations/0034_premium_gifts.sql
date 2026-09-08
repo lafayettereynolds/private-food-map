@@ -6,23 +6,23 @@ ALTER TABLE membership_entitlements ADD COLUMN updated_by_user_id TEXT;
 CREATE TRIGGER gift_entitlement_validate_insert BEFORE INSERT ON membership_entitlements
 WHEN NEW.source IN ('gift_annual', 'gift_lifetime')
 BEGIN
-  SELECT CASE WHEN NEW.created_by_user_id IS NULL OR NEW.starts_at IS NULL
+  SELECT (CASE WHEN NEW.created_by_user_id IS NULL OR NEW.starts_at IS NULL
     OR (NEW.source = 'gift_lifetime' AND (NEW.expires_at IS NOT NULL OR NEW.is_lifetime <> 1))
     OR (NEW.source = 'gift_annual' AND (NEW.expires_at IS NULL OR NEW.expires_at <= NEW.starts_at OR NEW.is_lifetime <> 0))
-    THEN RAISE(ABORT, 'invalid gift entitlement') END;
+    THEN RAISE(ABORT, 'invalid gift entitlement') END);
 END;
 
 CREATE TRIGGER gift_entitlement_validate_update BEFORE UPDATE ON membership_entitlements
 WHEN OLD.source IN ('gift_annual', 'gift_lifetime')
 BEGIN
-  SELECT CASE WHEN NEW.source <> OLD.source OR NEW.user_id <> OLD.user_id
+  SELECT (CASE WHEN NEW.source <> OLD.source OR NEW.user_id <> OLD.user_id
     OR NEW.starts_at <> OLD.starts_at OR NEW.created_at <> OLD.created_at
     OR NEW.created_by_user_id IS NOT OLD.created_by_user_id OR NEW.updated_by_user_id IS NULL
     OR (OLD.status = 'revoked' AND NEW.status <> 'revoked')
     OR (NEW.status = 'revoked' AND (NEW.revoked_at IS NULL OR NEW.revoked_by_user_id IS NULL))
     OR (NEW.source = 'gift_lifetime' AND (NEW.expires_at IS NOT NULL OR NEW.is_lifetime <> 1))
     OR (NEW.source = 'gift_annual' AND (NEW.expires_at IS NULL OR NEW.expires_at < OLD.expires_at OR NEW.is_lifetime <> 0))
-    THEN RAISE(ABORT, 'invalid gift mutation') END;
+    THEN RAISE(ABORT, 'invalid gift mutation') END);
 END;
 
 CREATE TRIGGER gift_entitlement_audit_insert AFTER INSERT ON membership_entitlements

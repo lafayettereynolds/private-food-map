@@ -3,12 +3,18 @@
   "name": "private-food-map",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-08-20",
+  "routes": [
+    { "pattern": "origin-api.tastemap.cn", "custom_domain": true },
+    { "pattern": "api.tastemap.cn", "custom_domain": true },
+    { "pattern": "tastemap.cn/.well-known/apple-app-site-association", "zone_name": "tastemap.cn" },
+    { "pattern": "tastemap.cn/invite/*", "zone_name": "tastemap.cn" }
+  ],
   "triggers": { "crons": ["*/5 * * * *"] },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/health", "/api/*", "/invite/*", "/.well-known/apple-app-site-association", "/internal/premium"]
+    "run_worker_first": ["/health", "/ready", "/api/*", "/invite/*", "/.well-known/apple-app-site-association", "/internal/premium"]
   },
   "d1_databases": [
     {

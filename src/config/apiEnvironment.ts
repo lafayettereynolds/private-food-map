@@ -1,4 +1,5 @@
 import { APP_ENVIRONMENT, type AppEnvironment } from './appEnvironment'
+import production from '../../ios/TasteMap/TasteMap/Configuration/ProductionEnvironment.json'
 
 interface APIEnvironmentValues {
   VITE_API_BASE_URL?: string
@@ -7,6 +8,9 @@ interface APIEnvironmentValues {
 }
 
 export function resolveAPIBaseURL(environment: AppEnvironment, values: APIEnvironmentValues) {
+  // Release uses the same checked-in resource as Native. Local .env files
+  // cannot redirect a production client to a development or staging server.
+  if (environment === 'production') return production.apiBaseURL
   const configured = (
     environment === 'development' ? values.VITE_API_DEV_BASE_URL : values.VITE_API_PROD_BASE_URL
   )?.trim() || values.VITE_API_BASE_URL?.trim() || ''

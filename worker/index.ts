@@ -625,8 +625,11 @@ const RESTAURANT_LIST_ITEM_UPSERT = `
 `
 
 import { premiumAdminPage } from './premiumAdminPage'
+import productionEnvironment from '../ios/TasteMap/TasteMap/Configuration/ProductionEnvironment.json'
+import { withProductionCORS } from './productionBoundary'
+import { productionReadiness } from './productionReadiness'
 
-export default {
+const worker = {
   async scheduled(_controller, env) { await settleAllPremiumRewards(env.DB) },
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
@@ -636,13 +639,21 @@ export default {
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       })
     }
+    if (url.pathname === '/ready' && request.method === 'GET') return productionReadiness(env)
     if (url.pathname.startsWith('/invite/') && request.method==='GET') return referralLandingPage(url.pathname.slice('/invite/'.length))
-    if (url.pathname === '/internal/premium' && request.method === 'GET') return premiumAdminPage()
+    if (url.pathname === '/internal/premium' && request.method === 'GET') {
+      const user = await authenticateAccessToken(request, env.DB)
+      if (!user) return json({ error: 'Authentication required' }, 401)
+      if (!(env.MEMBERSHIP_ADMIN_USER_IDS ?? '').split(',').map(id => id.trim()).includes(user.id)) {
+        return json({ error: 'Administrator required' }, 403)
+      }
+      return premiumAdminPage()
+    }
     if (url.pathname === '/.well-known/apple-app-site-association' && request.method === 'GET') {
       return new Response(JSON.stringify({
         applinks: {
           details: [{
-            appIDs: ['7G5J9MJX88.com.lafayette.tastemap'],
+            appIDs: [productionEnvironment.appleAppID],
             components: [{ '/': '/share/*', comment: 'Taste Map public sharing' }, { '/': '/invite/*', comment: 'Taste Map referral registration' }],
           }],
         },
@@ -669,7 +680,7 @@ export default {
         if (request.method !== 'GET') throw new RequestError('邀请只能在新账号注册时绑定。', 405)
         const user = await authenticateAccessToken(request, env.DB)
         if (!user) throw new RequestError('请先登录。',401)
-        return json(await referralDashboard(env.DB,user.id,url.origin))
+        return json(await referralDashboard(env.DB,user.id,env.APP_ENVIRONMENT === 'production' ? productionEnvironment.publicWebOrigin : url.origin))
       }
       if (url.pathname === '/api/v1/admin/referrals/revoke') {
         if (request.method !== 'POST') throw new RequestError('Method not allowed.',405)
@@ -882,7 +893,9 @@ export default {
         await ensureUserProfile(env.DB, viewer.id)
         return json(await resolveExternalPlaceRequest(env.DB, viewer.id, request))
       }
-      const viewer = await resolveViewer(request, env.DB)
+      const viewer = env.APP_ENVIRONMENT === 'production'
+        ? await resolveSyncViewer(request, env)
+        : await resolveViewer(request, env.DB)
       if (url.pathname === '/api/external-place/resolve' && request.method === 'POST') {
         return json(await resolveExternalPlaceRequest(env.DB, viewer.id, request))
       }
@@ -982,6 +995,11 @@ export default {
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
   },
+} satisfies ExportedHandler<Env>
+
+export default {
+  scheduled: worker.scheduled,
+  fetch: (request, env) => withProductionCORS(request, () => worker.fetch(request, env)),
 } satisfies ExportedHandler<Env>
 
 interface ExternalPlaceCandidate {
@@ -1736,6 +1754,12 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
       authenticatedAt: authenticated.authenticatedAt,
     }
   }
+  if (env.APP_ENVIRONMENT === 'production') {
+    if (env.SYNC_AUTH_MODE === 'development-test') {
+      throw new SyncV1RequestError('Development authentication is forbidden in Production.', 503)
+    }
+    throw new SyncV1RequestError('A verified Taste Map session is required.', 401)
+  }
   const hostname = new URL(request.url).hostname
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     const requestedUser = request.headers.get('X-Taste-Map-Test-User')?.trim() || 'owner'
@@ -1794,10 +1818,7 @@ function isMembershipAdmin(request: Request, env: Env, viewer: ViewerIdentity) {
   // Internal authority is always server configured; localhost/test identities cannot grant.
   if (viewer.authProvider === 'local' || viewer.testMembership) return false
   const ids = (env.MEMBERSHIP_ADMIN_USER_IDS ?? '').split(',').map((item) => item.trim()).filter(Boolean)
-  if (ids.includes(viewer.id)) return true
-  if (!viewer.email) return false
-  const allowed = (env.ADMIN_EMAILS ?? '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
-  return allowed.includes(viewer.email.toLowerCase())
+  return ids.includes(viewer.id)
 }
 
 function requireMembershipAdmin(request: Request, env: Env, viewer: ViewerIdentity) {
@@ -3086,6 +3107,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isSameOriginRequest(request: Request, url: URL) {
   const origin = request.headers.get('origin')
   if (!origin || origin === url.origin) return true
+  if (origin === productionEnvironment.publicWebOrigin &&
+      url.origin === productionEnvironment.apiBaseURL) return true
 
   // Vite's local proxy rewrites the request host to the Worker port while
   // preserving the browser Origin. Treat loopback-to-loopback traffic as the

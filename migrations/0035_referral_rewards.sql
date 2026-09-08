@@ -50,12 +50,12 @@ CREATE TABLE referral_audit_log (
   created_at TEXT NOT NULL
 );
 CREATE TRIGGER referral_immutable BEFORE UPDATE ON referrals BEGIN
-  SELECT CASE WHEN NEW.invitee_id<>OLD.invitee_id OR NEW.referrer_id<>OLD.referrer_id
+  SELECT (CASE WHEN NEW.invitee_id<>OLD.invitee_id OR NEW.referrer_id<>OLD.referrer_id
     OR NEW.code<>OLD.code OR NEW.bound_at<>OLD.bound_at
     OR (OLD.slot IS NOT NULL AND NEW.slot IS NOT OLD.slot)
     OR (OLD.status<>'pending' AND NEW.status NOT IN (OLD.status,'revoked'))
     OR (NEW.status='qualified' AND (NEW.slot IS NULL OR NEW.qualified_at IS NULL OR NEW.qualifying_visit_id IS NULL))
-    THEN RAISE(ABORT,'invalid referral transition') END;
+    THEN RAISE(ABORT,'invalid referral transition') END);
 END;
 CREATE TRIGGER referral_bound AFTER INSERT ON referrals BEGIN
   INSERT INTO referral_audit_log(invitee_id,user_id,action,actor,after_json,note,created_at)
@@ -81,11 +81,11 @@ CREATE TRIGGER reward_granted AFTER INSERT ON premium_rewards BEGIN
       json_object('days',NEW.days,'state',NEW.state,'grantedAt',NEW.granted_at),NEW.note,NEW.granted_at);
 END;
 CREATE TRIGGER reward_immutable BEFORE UPDATE ON premium_rewards BEGIN
-  SELECT CASE WHEN NEW.id<>OLD.id OR NEW.user_id<>OLD.user_id OR NEW.invitee_id<>OLD.invitee_id
+  SELECT (CASE WHEN NEW.id<>OLD.id OR NEW.user_id<>OLD.user_id OR NEW.invitee_id<>OLD.invitee_id
     OR NEW.days<>OLD.days OR NEW.role<>OLD.role OR NEW.granted_at<>OLD.granted_at
     OR (OLD.state<>'pending' AND NEW.state NOT IN (OLD.state,'revoked'))
     OR (NEW.state='active' AND (NEW.starts_at IS NULL OR NEW.expires_at IS NULL OR NEW.expires_at<=NEW.starts_at))
-    THEN RAISE(ABORT,'invalid reward transition') END;
+    THEN RAISE(ABORT,'invalid reward transition') END);
 END;
 CREATE TRIGGER reward_transition AFTER UPDATE ON premium_rewards WHEN NEW.state<>OLD.state BEGIN
   INSERT INTO referral_audit_log(invitee_id,user_id,reward_id,action,actor,before_json,after_json,note,created_at)

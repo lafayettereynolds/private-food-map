@@ -31,6 +31,18 @@ nonisolated struct APIConfiguration: Equatable, Sendable {
         bundle: Bundle = .main,
         processInfo: ProcessInfo = .processInfo
     ) -> APIConfiguration {
+#if !DEBUG
+        // This signed resource is also imported by Browser and Worker builds.
+        // Production must never take its endpoint from process/.env overrides.
+        guard let url = bundle.url(forResource: "ProductionEnvironment", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let values = try? JSONDecoder().decode([String: String].self, from: data),
+              let endpoint = values["apiBaseURL"] else {
+            return APIConfiguration(environment: .production, baseURL: nil)
+        }
+        return (try? resolve(environment: .production, values: [productionKey: endpoint]))
+            ?? APIConfiguration(environment: .production, baseURL: nil)
+#else
         let keys = [developmentKey, productionKey, fallbackKey]
         var values = bundledValues(bundle: bundle, keys: keys)
 #if DEBUG
@@ -49,6 +61,7 @@ nonisolated struct APIConfiguration: Equatable, Sendable {
         processInfo.environment.forEach { values[$0.key] = $0.value }
         return (try? resolve(environment: .current, values: values))
             ?? APIConfiguration(environment: .current, baseURL: nil)
+#endif
     }
 
     private static func bundledValues(bundle: Bundle, keys: [String]) -> [String: String] {
