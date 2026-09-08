@@ -8,7 +8,7 @@ STATUS: COMPLETE
 
 WHAT CHANGED: Protected tracked/index patches and untracked archive in `/Users/lafayette/Projects/tastemap-rc-resume-yKGy6yVt`. Reconstructed the exact pre-change product in a detached verification worktree, committed it as `bca94965d22b8c3ca43d29a179bb959e3e6c3191`, and fast-forwarded integration to that checkpoint without replacing working files. The temporary verification dependency symlink is removed from the following foundation commit; no dependency directory is deleted. Earlier history is preserved.
 
-TESTS: Baseline Vitest: 1,414 tests, 1,390 pass, 24 fail. Current: 1,421 tests, 1,398 pass, 23 fail. The migration fixture's obsolete last-file assertion was updated to 0037, with actual table/integrity assertions added. All other failing tests already fail in the protected baseline. A Swift package owner-isolation fixture also fails and crashes with out-of-range indexing in both trees. Baseline failure is not a release waiver.
+TESTS: Baseline Vitest: 1,414 tests, 1,390 pass, 24 fail. Current: 1,421 tests, 1,398 pass, 23 fail. The migration fixture's obsolete last-file assertion was updated to 0037, with actual table/integrity assertions added. All other failing tests already fail in the protected baseline. Swift package initially reproduced an owner-isolation fixture crash in both trees; after correcting eligible Visit fixtures, all 41 Swift package tests pass. Baseline failure is not a release waiver.
 
 PRODUCTION EVIDENCE: Not applicable.
 
@@ -106,4 +106,5 @@ No secrets, redemption codes, raw Production export or signed download URL belon
 - This is a **pre-cutover, development-signed verification archive**, not the final App Store RC. No upload or installation performed.
 - Browser fallback for Cloudflare dashboard inspection timed out; no DNS records changed through UI and no new credentials requested.
 - Remaining Vitest failure areas: global/map product contracts, Profile density, dismissal icon contract, Settings order, List viewer-rating projection, viewport ownership fixture, rating options, source-insight semantics, and remaining UI SSR contracts. Protected baseline/current JSON results are in the safety directory. Do not blindly replace assertions to make them green.
-- Swift package failure: `TasteMapHybridBridgeTests.testOwnerIsolationExcludesForeignRowsAndRelationships`, line 92 expects a restaurant list but obtains an empty list; later indexing crashes. Reproduced in original baseline. Investigate fixture eligibility versus owner projection before changing implementation.
+- Swift package fixture closure: actual shared `RestaurantVisitStatePolicy` requires an active Visit, not the historical stored visited flag. Added actual Visits to owner-isolation, shared projection and city-scope fixtures (including foreign/deleted negatives), and deleted the fixture Visit when exercising visited→want-to-go. Replaced unsafe indexing with XCTUnwrap. No shipping implementation or expected product behavior changed. All 41 tests pass; log `swift-tests-final.log` in the protected safety directory.
+- Final remote migration-list query reports **No migrations to apply**.

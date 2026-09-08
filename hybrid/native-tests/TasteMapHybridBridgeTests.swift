@@ -81,8 +81,15 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         let context = ModelContext(container)
         context.insert(UserProfile(tasteMapUserID: owner, displayName: "Owner A"))
         context.insert(UserProfile(tasteMapUserID: foreignOwner, displayName: "Owner B"))
-        context.insert(Restaurant(ownerUserID: owner, name: "Owner Restaurant", address: "A", latitude: 0, longitude: 0))
-        context.insert(Restaurant(ownerUserID: foreignOwner, name: "Foreign Restaurant", address: "B", latitude: 1, longitude: 1))
+        let ownerRestaurant = Restaurant(ownerUserID: owner, name: "Owner Restaurant", address: "A", latitude: 0, longitude: 0)
+        let foreignRestaurant = Restaurant(ownerUserID: foreignOwner, name: "Foreign Restaurant", address: "B", latitude: 1, longitude: 1)
+        context.insert(ownerRestaurant)
+        context.insert(foreignRestaurant)
+        // A visited Restaurant requires a real Visit under the current shared
+        // status policy. Keep both accounts eligible so exclusion proves owner
+        // isolation, not accidental filtering of an empty fixture.
+        context.insert(Visit(ownerUserID: owner, restaurantId: ownerRestaurant.id, rating: 4))
+        context.insert(Visit(ownerUserID: foreignOwner, restaurantId: foreignRestaurant.id, rating: 5))
         context.insert(CachedFollow(relationshipID: "foreign", currentUserID: foreignOwner, followerUserID: foreignOwner, followedUserID: owner))
         try context.save()
 
@@ -93,7 +100,8 @@ final class TasteMapHybridBridgeTests: XCTestCase {
         XCTAssertEqual(profile.followerCount, 0)
         XCTAssertEqual(profile.followingCount, 0)
         XCTAssertNil(try JSONEncoder().encode(profile).range(of: Data("Owner B".utf8)))
-        let detail = try service.restaurantDetail(id: profile.restaurants[0].id)
+        let visibleRestaurant = try XCTUnwrap(profile.restaurants.first)
+        let detail = try service.restaurantDetail(id: visibleRestaurant.id)
         XCTAssertEqual(detail.editableVisitIDs, detail.restaurant.visits.map(\.id))
         XCTAssertEqual(detail.viewerState, "visited")
         XCTAssertEqual(detail.capabilities, .owned)

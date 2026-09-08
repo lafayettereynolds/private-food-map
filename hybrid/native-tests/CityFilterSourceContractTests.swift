@@ -33,6 +33,11 @@ final class CityFilterSourceContractTests: XCTestCase {
         let deleted = Restaurant(ownerUserID: owner, name: "已删除北京店", address: "路6号", latitude: 39, longitude: 116, city: "北京")
         deleted.deletedAt = .now
         [shanghai, alias, hangzhou, wanted, foreign, deleted].forEach { context.insert($0) }
+        let hangzhouVisit = Visit(ownerUserID: owner, restaurantId: hangzhou.id, rating: 4)
+        context.insert(hangzhouVisit)
+        for restaurant in [shanghai, alias, foreign, deleted] {
+            context.insert(Visit(ownerUserID: restaurant.ownerUserID, restaurantId: restaurant.id, rating: 4))
+        }
         try context.save()
         var service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner)
         let visited = try service.mapViewport(request: request(.visited))
@@ -53,8 +58,10 @@ final class CityFilterSourceContractTests: XCTestCase {
         shanghai.city = "温州市"
         alias.deletedAt = .now
         hangzhou.status = .wantToGo
+        hangzhouVisit.deletedAt = .now
         let added = Restaurant(ownerUserID: owner, name: "新增纽约", address: "路7号", latitude: 40, longitude: -74, city: "New York")
         context.insert(added)
+        context.insert(Visit(ownerUserID: owner, restaurantId: added.id, rating: 4))
         try context.save()
         service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner)
         XCTAssertEqual(Set(try service.mapViewport(request: request(.visited)).options.cities), Set(["温州", "New York"]))

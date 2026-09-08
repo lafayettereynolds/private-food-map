@@ -22,6 +22,7 @@ final class BridgeSharedProjectionBoundaryTests: XCTestCase {
             city: "东京", status: .wantToGo)
         context.insert(UserProfile(tasteMapUserID: owner, displayName: "Owner"))
         [visited, duplicate, promoted, wanted].forEach { context.insert($0) }
+        context.insert(Visit(ownerUserID: owner, restaurantId: visited.id, rating: 4))
         context.insert(Visit(ownerUserID: owner, restaurantId: promoted.id, rating: nil))
         context.insert(Visit(ownerUserID: owner, restaurantId: wanted.id, rating: 4, deletedAt: .now))
         try context.save()
@@ -49,6 +50,7 @@ final class BridgeSharedProjectionBoundaryTests: XCTestCase {
         let restaurant = Restaurant(ownerUserID: owner, name: "Coffee", address: "A", latitude: 31, longitude: 121)
         context.insert(UserProfile(tasteMapUserID: owner, displayName: "Owner"))
         context.insert(restaurant)
+        context.insert(Visit(ownerUserID: owner, restaurantId: restaurant.id, rating: 4))
         try context.save()
         let service = try TasteMapHybridBridgeService(container: container, ownerUserID: owner,
             metadataByRestaurantID: [restaurant.id: TasteMapHybridRestaurantMetadata(markerType: "emoji", markerEmoji: "🍜")])
