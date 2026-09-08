@@ -49,7 +49,7 @@ describe('List truth and privacy projection', () => {
     mocks.items.mockResolvedValue([{ listId: 'own-list', restaurantId: 'owned', position: 0, note: '' }])
     const source = profile()
     source.restaurants = [{ id: 'owned', userId: 'owner', name: '自有餐厅', latitude: 30.123456, longitude: 120.654321,
-      scoreOutOfTen: 9, visits: [{ rating: 4.5, photos: [], photoIds: [] }], tags: [] }] as unknown as typeof source.restaurants
+      scoreOutOfTen: 9, visits: [{ rating: 4.5, photos: [], photoIds: [], dishes: [], visitedAt: '2026-08-01T12:00:00Z', deletedAt: null }], tags: [] }] as unknown as typeof source.restaurants
     const adapter = new TasteMapBrowserAdapter({ profile: async () => source })
     const own = await adapter.lists.get({ id: 'own-list' })
     expect(own.list.restaurants[0].rating).toEqual({ valueOutOfTen: 9, source: 'viewer', sampleCount: 1 })

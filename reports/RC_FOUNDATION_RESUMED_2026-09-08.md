@@ -108,3 +108,19 @@ No secrets, redemption codes, raw Production export or signed download URL belon
 - Remaining Vitest failure areas: global/map product contracts, Profile density, dismissal icon contract, Settings order, List viewer-rating projection, viewport ownership fixture, rating options, source-insight semantics, and remaining UI SSR contracts. Protected baseline/current JSON results are in the safety directory. Do not blindly replace assertions to make them green.
 - Swift package fixture closure: actual shared `RestaurantVisitStatePolicy` requires an active Visit, not the historical stored visited flag. Added actual Visits to owner-isolation, shared projection and city-scope fixtures (including foreign/deleted negatives), and deleted the fixture Visit when exercising visited→want-to-go. Replaced unsafe indexing with XCTUnwrap. No shipping implementation or expected product behavior changed. All 41 tests pass; log `swift-tests-final.log` in the protected safety directory.
 - Final remote migration-list query reports **No migrations to apply**.
+
+## PHASE: next regression step — List rating and Premium filter prerequisites
+
+STATUS: COMPLETE (bounded automated step, not final RC)
+
+WHAT CHANGED: Corrected the List rating fixture to include required empty dishes and Visit timestamps. Supplied explicit authoritative Premium status to the positive full-filter viewport test. Added free/unavailable negative cases for companion, recommendation-source name and source-type filters; all must reject before reading profile data. No production permissions, page layout, source implementation or bundled resources changed.
+
+TESTS: Both focused suites pass, 37/37. Typecheck passes. Full Vitest now 1,423 tests: 1,402 pass and 21 fail, down from 23 pre-existing failures. Protected evidence: `regression-next-tests.json` in the safety directory. Existing UI/source-insight contracts still require review against current product rules; no blanket assertion replacement.
+
+PRODUCTION EVIDENCE: No additional deployment or production data writes in this step.
+
+USER ACTION REQUIRED: None for this step; previously deferred credentials/device work remains deferred.
+
+BLOCKERS: Remaining 21 automated failures and previously recorded live release gates. Test-only corrections do not establish RC, visual or real StoreKit PASS.
+
+COMMIT: The regression commit containing this section.

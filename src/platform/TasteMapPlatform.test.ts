@@ -159,8 +159,20 @@ describe('TasteMapBrowserAdapter', () => {
     await expect(adapter.restaurant.get('missing')).rejects.toMatchObject({ code: 'restaurant_not_found' })
   })
 
+  it.each(['free', 'unavailable'] as const)('rejects premium Map filters when authoritative entitlement is %s', async (state) => {
+    const source = { profile: vi.fn(async () => browserProfile) }
+    const adapter = new TasteMapBrowserAdapter(source)
+    vi.spyOn(adapter.premium, 'status').mockResolvedValue({ state, expiresAt: null })
+    for (const filters of [{ companion: '小陈' }, { recommendationSource: '小陈推荐' }, { recommendationSourceType: 'friend' }] as const) {
+      await expect(adapter.map.viewport({ requestID: 'restricted', scope: 'visited', filters,
+        sort: 'rating', search: '', limit: 300 })).rejects.toMatchObject({ code: 'premium_filters_required' })
+    }
+    expect(source.profile).not.toHaveBeenCalled()
+  })
+
   it('uses the same owner-scoped viewport contract for Browser Map and List', async () => {
     const adapter = new TasteMapBrowserAdapter({ profile: async () => browserProfile })
+    vi.spyOn(adapter.premium, 'status').mockResolvedValue({ state: 'premium', expiresAt: null })
     const request: TasteMapMapBrowseRequest = {
       requestID: 'viewport-1', scope: 'visited', filters: {}, sort: 'rating', search: '', limit: 300,
     }
