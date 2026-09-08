@@ -58,7 +58,43 @@ describe('Settings action semantics', () => {
     expect(html).toContain('主页可见范围')
     expect(html).not.toContain('显示名称')
     expect(html).not.toContain('编辑资料')
-    expect(html).toContain('对应记录中修改')
+    expect(html).toContain('决定谁可以查看你的个人主页、味觉足迹和到访照片。食单仍单独设置。')
+    expect(html).not.toContain('对应记录中修改')
+
+    // Local canonical source contract only; this does not attest Production deployment.
+    const policy = source('../../web-public/public/privacy.html')
+    for (const text of [
+      '<h1>Taste Map 隐私政策</h1>',
+      'Apple MapKit：提供地图、地点搜索和导航等能力',
+      'Cloudflare Workers：处理账户认证、数据同步、内容访问控制和会员权益等请求',
+      'D1 保存相应结构化记录',
+      'R2 保存你选择上传的照片及缩略图',
+      'StoreKit 交易标识、原始交易标识、商品 ID、权益状态、有效期、撤销或退款状态以及交易环境',
+      'Apple App Store Server API 验证交易',
+      'App Store Server Notifications 以更新权益',
+      'Taste Map 不收集你的银行卡号或完整支付卡信息',
+      '普通删除记录的业务内容保留 30 天后进入清理',
+      '账户删除后的到访、餐厅、UGC 内容及私有头像也在 30 天后进入清理',
+      '已关闭账户的安全会话在撤销满 90 天后清理',
+      '举报记录在最后更新满 90 天后清理',
+      '推荐事件在记录或接收满 90 天后清理',
+      '账户关闭满 365 天后，相关业务记录、同步历史、删除任务记录和账户记录进入最终物理清理',
+      '必要的 Apple 交易及所有权证明保留至账户关闭及相关交易结束／最后更新均已满 365 天',
+      '最低限度的权益来源关系会保留到该奖励结束后 365 天',
+      '达到保留期限表示进入清理流程，不代表所有系统或备份在同一时刻完成删除',
+      '我的 → 设置 → 账户与安全 → 删除账户',
+      '按提示重新验证身份和确认',
+      '账户停用，已有会话失效，相关公开内容撤下',
+      'Apple 身份关联和邮箱会从账户记录中移除',
+      '只有待处理清单和重新查询的账户图片范围均为空时，照片清理才视为完成',
+      '失败或中断的任务保留可重试状态，不会以成功代替失败',
+    ]) expect(policy).toContain(text)
+    for (const placeholder of [
+      '上线前请在此处列出实际使用的供应商',
+      '上线前请确认实际路径并修改此处',
+      '如果 Taste Map 提供账号注册功能',
+      'Cloudflare Workers / D1 / R2 等实际使用服务',
+    ]) expect(policy).not.toContain(placeholder)
   })
 
   it('every browser detail preserves its requested destination', () => {

@@ -38,7 +38,7 @@ describe('iOS QA companion app isolation contract', () => {
     const fixtures = source('../../ios/TasteMap/TasteMap/App/TasteMapUITestFixtures.swift')
 
     expect(appRuntime).toMatch(/#if TASTEMAP_QA\s+TasteMapRuntimeConfiguration\(tier: \.visualQA\)/)
-    expect(hybridRuntime).toMatch(/#if DEBUG && \(TASTEMAP_QA \|\| TASTEMAP_PRIVATE_PREVIEW\)\s+return \.hybridDevelopment/)
+    expect(hybridRuntime).toMatch(/#if TASTEMAP_PRIVATE_PREVIEW \|\| \(DEBUG && TASTEMAP_QA\)\s+return \.hybridDevelopment\s+#elseif DEBUG\s+if ProcessInfo\.processInfo\.arguments\.contains\("--tastemap-hybrid-development"\) \{\s+return \.hybridDevelopment\s+\}\s+return \.nativePrimary\s+#else\s+return \.nativePrimary\s+#endif/)
     expect(fixtures).toMatch(/#if TASTEMAP_QA[\s\S]*?\?\? \.rich/)
   })
 
@@ -49,9 +49,19 @@ describe('iOS QA companion app isolation contract', () => {
     const appRuntime = source('../../ios/TasteMap/TasteMap/App/TasteMapRuntimeConfiguration.swift')
 
     expect(scheme).toContain('buildConfiguration = "DebugPrivatePreview"')
-    expect(project).toContain('SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG TASTEMAP_PRIVATE_PREVIEW $(inherited)";')
+    expect(project).toContain('SWIFT_ACTIVE_COMPILATION_CONDITIONS = "TASTEMAP_PRIVATE_PREVIEW $(inherited)";')
+    expect(project).not.toContain('SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG TASTEMAP_PRIVATE_PREVIEW $(inherited)";')
+    expect(scheme).toContain('buildForArchiving = "NO"')
+    expect(scheme).not.toContain('<ArchiveAction')
+    const releaseConfigurations = [...project.matchAll(/buildSettings = \{([^{}]*)\};\s+name = Release;/g)]
+    expect(releaseConfigurations).toHaveLength(5)
+    for (const [, settings] of releaseConfigurations) {
+      expect(settings).not.toMatch(/\b(?:DEBUG|TASTEMAP_PRIVATE_PREVIEW|TASTEMAP_QA)\b/)
+    }
+    const releaseScheme = source('../../ios/TasteMap/TasteMap.xcodeproj/xcshareddata/xcschemes/TasteMap.xcscheme')
+    expect(releaseScheme).toMatch(/<ArchiveAction\s+buildConfiguration = "Release"/)
     expect(project).toMatch(/DebugPrivatePreview[\s\S]*?ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;[\s\S]*?PRODUCT_BUNDLE_IDENTIFIER = com\.lafayette\.tastemap;[\s\S]*?TASTEMAP_APP_GROUP_IDENTIFIER = group\.com\.lafayette\.tastemap;/)
-    expect(hybridRuntime).toMatch(/#if DEBUG && \(TASTEMAP_QA \|\| TASTEMAP_PRIVATE_PREVIEW\)\s+return \.hybridDevelopment/)
+    expect(hybridRuntime).toMatch(/#if TASTEMAP_PRIVATE_PREVIEW \|\| \(DEBUG && TASTEMAP_QA\)\s+return \.hybridDevelopment/)
     expect(appRuntime).not.toContain('TASTEMAP_PRIVATE_PREVIEW')
   })
 })
