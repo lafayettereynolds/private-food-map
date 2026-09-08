@@ -192,6 +192,31 @@ describe('Native Auth V1', () => {
     const statusToken = `tm_delete_${'c'.repeat(48)}`
 
     const completed = await handleAccountDeletionV1(new Request(
+    const oldRestaurant = {...appleRestaurant, id: 'deleted-private-restaurant', userId: first.user.id}
+    await sync(database, first.session.accessToken, '/api/v1/sync/push', 'POST', {
+      apiVersion: 1, schemaVersion: 1,
+      mutations: [mutation('old-private-create', oldRestaurant.id, 0, oldRestaurant)],
+    })
+    const oldVisit = {...referralVisit,id:'deleted-private-visit',restaurantId:oldRestaurant.id,userId:first.user.id,visitedAt:NOW.toISOString()}
+    const visitPush = await sync(database,first.session.accessToken,'/api/v1/sync/push','POST',{
+      apiVersion:1,schemaVersion:1,mutations:[{...mutation('old-visit-create',oldVisit.id,0,oldVisit),entityType:'visit'}],
+    })
+    expect(visitPush.status).toBe(200)
+    await database.prepare(`INSERT INTO photos(id,user_id,restaurant_id,visit_id,storage_provider,drive_account_id,drive_file_id,kind,mime_type,file_size,visibility,sync_status,created_at,updated_at,storage_key)
+      VALUES('deleted-private-photo',?,?,?,'r2','','','visit','image/jpeg',1,'private','synced',?,?,?)`)
+      .bind(first.user.id,oldRestaurant.id,oldVisit.id,NOW.toISOString(),NOW.toISOString(),`users/${first.user.id}/photos/old/display.jpg`).run()
+    const referrer = await exchange(database,'old-referrer-token','old-referrer-subject')
+    await database.prepare("INSERT INTO referrals(invitee_id,referrer_id,code,bound_at,actor) VALUES(?,?,'fixture-code',?,'system')")
+      .bind(first.user.id,referrer.user.id,NOW.toISOString()).run()
+    await database.prepare("UPDATE referrals SET status='qualified',qualified_at=?,qualifying_visit_id=?,slot=1 WHERE invitee_id=?")
+      .bind(NOW.toISOString(),oldVisit.id,first.user.id).run()
+    expect(database.get('SELECT COUNT(*) AS n FROM premium_rewards WHERE user_id=?',first.user.id).n).toBe(1)
+    await database.prepare(`INSERT INTO membership_entitlements
+      (id,user_id,source,starts_at,is_lifetime,created_at,updated_at,created_by_user_id)
+      VALUES('retained-old-gift',?,'gift_lifetime',?,1,?,?,'admin')`)
+      .bind(first.user.id,NOW.toISOString(),NOW.toISOString(),NOW.toISOString()).run()
+    await database.prepare(`INSERT INTO membership_audit_log(id,actor_user_id,target_user_id,action,created_at)
+      VALUES('retained-old-audit','admin',?,'grant',?)`).bind(first.user.id,NOW.toISOString()).run()
       'https://dev.test/api/v1/account-deletion/confirm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -211,6 +236,22 @@ describe('Native Auth V1', () => {
     expect(database.get(`SELECT COUNT(*) AS count FROM users
       WHERE deleted_at IS NULL AND id IN (?, ?)`, first.user.id, returning.user.id).count).toBe(1)
   })
+    // Bounded old-account retention is not ownership transfer to the new user.
+    expect(database.get('SELECT deleted_at FROM restaurants WHERE id=?',oldRestaurant.id).deleted_at).toBeTruthy()
+    expect(database.get('SELECT deleted_at FROM visits WHERE id=?',oldVisit.id).deleted_at).toBeTruthy()
+    expect(database.get("SELECT deleted_at FROM photos WHERE id='deleted-private-photo'").deleted_at).toBeTruthy()
+    expect(database.get('SELECT user_id FROM membership_entitlements WHERE id=?','retained-old-gift').user_id).toBe(first.user.id)
+    expect(database.get('SELECT target_user_id FROM membership_audit_log WHERE id=?','retained-old-audit').target_user_id).toBe(first.user.id)
+    for (const table of ['restaurants','visits','photos','premium_rewards']) {
+      expect(database.get(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id=?`,returning.user.id).n).toBe(0)
+    }
+    expect(database.get("SELECT COUNT(*) AS n FROM membership_entitlements WHERE user_id=? AND source='gift_lifetime'",returning.user.id).n).toBe(0)
+    expect(database.get('SELECT COUNT(*) AS n FROM referrals WHERE invitee_id=? OR referrer_id=?',returning.user.id,returning.user.id).n).toBe(0)
+    const newPull=await sync(database,returning.session.accessToken,'/api/v1/sync/pull?schemaVersion=1&cursor=0','GET')
+    expect(newPull.status).toBe(200)
+    const newPayload=JSON.stringify(await newPull.json())
+    for (const oldID of [oldRestaurant.id,oldVisit.id,'deleted-private-photo']) expect(newPayload).not.toContain(oldID)
+    expect(database.get('SELECT COUNT(*) AS n FROM premium_rewards WHERE user_id=?',referrer.user.id).n).toBe(1)
 
   it('never enables the Development identity header in Production', async () => {
     const response = await worker.fetch(new Request(

@@ -1,5 +1,7 @@
 # Sign in with Apple credential revocation lifecycle closure
 
+2026-09-09 后继：Apple lifecycle 已独立提交 `d3ea340`；原 3 条 Worker deletion 失败已关闭且全 Worker 382/382 PASS。当前结果以 [Account deletion regression closure](ACCOUNT_DELETION_REGRESSION_CLOSURE_2026-09-09.md) 为准；本报告下文保留 9 月 8 日历史时点，不再代表当前 Apple lifecycle 仍失败。
+
 2026-09-08；项目 `/Users/lafayette/Projects/private-food-map-hybrid-final-integration`。
 范围仅认证撤销生命周期；此前 capability/entitlement、权限、Share Extension 审计结论保持不变。
 
