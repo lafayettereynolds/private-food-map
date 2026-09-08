@@ -54,7 +54,8 @@ describe('recommendation source insights', () => {
     const result = buildRecommendationSourceInsights(restaurants, [visit('1', 'r1', 4), visit('2', 'r1', 5), visit('3', 'r2', 2.5)])[0]
     expect(result.visitedRestaurantCount).toBe(2)
     expect(result.repeatRestaurantCount).toBe(1)
-    expect(result.averagePostVisitRating).toBe(7)
+    // First experience only: r1=8, r2=5; the repeat score 10 is not another sample.
+    expect(result.averagePostVisitRating).toBe(6.5)
   })
 
   it('does not allow tiny samples to become stable', () => {
@@ -87,12 +88,19 @@ describe('recommendation source insights', () => {
   })
 
   it('allows a platform source to be the worst source', () => {
-    const insights = buildRecommendationSourceInsights(restaurants, Array.from({ length: 6 }, (_, index) => visit(`p${index}`, `r${index + 1}`, 2, { type: 'xiaohongshu' })))
+    const insights = buildRecommendationSourceInsights(restaurants, [
+      ...Array.from({ length: 6 }, (_, index) => visit(`p${index}`, `r${index + 1}`, 2, { type: 'xiaohongshu' })),
+      ...Array.from({ length: 6 }, (_, index) => visit(`b${index}`, `r${index + 7}`, 5, { type: 'friend', text: 'baseline' })),
+    ])
+    expect(insights.find(item => item.label === '小红书')?.personalBaselineRating).toBe(7)
     expect(selectWorstRecommendationSource(insights)?.insight.label).toBe('小红书')
   })
 
   it('uses the latest linked user name without anonymizing it', () => {
-    const visits = Array.from({ length: 6 }, (_, index) => visit(`n${index}`, `r${index + 1}`, 2, { type: 'friend', userId: 'u-source', text: '旧名字' }))
+    const visits = [
+      ...Array.from({ length: 6 }, (_, index) => visit(`n${index}`, `r${index + 1}`, 2, { type: 'friend', userId: 'u-source', text: '旧名字' })),
+      ...Array.from({ length: 6 }, (_, index) => visit(`b${index}`, `r${index + 7}`, 5, { type: 'xiaohongshu' })),
+    ]
     const first = buildRecommendationSourceInsights(restaurants, visits, new Map([['u-source', '小王']]))
     const renamed = buildRecommendationSourceInsights(restaurants, visits, new Map([['u-source', '王同学']]))
     expect(selectWorstRecommendationSource(first)?.insight.label).toBe('小王')
@@ -100,7 +108,11 @@ describe('recommendation source insights', () => {
   })
 
   it('returns no worst result when every source is below the minimum sample', () => {
-    const insights = buildRecommendationSourceInsights(restaurants, Array.from({ length: 5 }, (_, index) => visit(`e${index}`, `r${index + 1}`, 1)))
+    const insights = buildRecommendationSourceInsights(restaurants, [
+      ...Array.from({ length: 4 }, (_, index) => visit(`e${index}`, `r${index + 1}`, 1, { type: 'friend', userId: 'u-source' })),
+      ...Array.from({ length: 4 }, (_, index) => visit(`b${index}`, `r${index + 5}`, 5, { type: 'xiaohongshu' })),
+    ])
+    expect(insights.every(item => item.ratedRestaurantCount === 4)).toBe(true)
     expect(selectWorstRecommendationSource(insights)).toBeNull()
   })
 

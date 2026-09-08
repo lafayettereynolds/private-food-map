@@ -64,7 +64,7 @@ describe('Phase 2B Hybrid Map product contract', () => {
     const nativeHost = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridMapSurface.swift')
     const nativeRuntime = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
     expect(shell).toContain('mapWasActivated ? <MyMapBrowsePage')
-    expect(shell).toContain("active={route.surface === 'map'}")
+    expect(shell).toContain("active={route.surface === 'map' && !premiumLayerOpen}")
     expect(shell).toContain("navigate({ surface: 'restaurant', id: restaurantID })")
     expect(nativeSurface).toContain('markers: visible ? restaurants.map')
     expect(nativeHost).toContain('guard request.visible else')
@@ -283,7 +283,7 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(nativeMap).toContain('RestaurantScoreColorPolicy.color(forFivePointRating: rating)')
   })
 
-  it('projects Map recommendations from the exact same canonical For You snapshot as Discovery', () => {
+  it('keeps canonical Map recommendations intact while Discovery queries its selected city', () => {
     const shell = source('../../src/hybrid/app/HybridAppShell.tsx')
     const page = source('../../src/components/MyMapBrowsePage.tsx')
     const discovery = source('../../src/hybrid/app/HybridDiscoveryPage.tsx')
@@ -293,7 +293,11 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(page).toContain("canonicalRecommendations && scope === 'recommended'")
     expect(page).toContain('projectForYouRecommendationsToMap(canonicalRecommendations')
     expect(page).toContain('recommended: canonicalRecommendations.length')
-    expect(discovery).toContain('canonicalForYouRecommendations(content.discovery.forYou)')
+    // Discovery's selected-city feed is a separate authorized query; it must
+    // never replace the canonical content snapshot used by Map.
+    expect(discovery).toContain('const forYouSource = cityDiscovery')
+    expect(discovery).toContain('platform.discovery.cityPage(query)')
+    expect(discovery).not.toContain('content.discovery.forYou =')
     expect(recommendationSnapshot).toContain('items.filter(isDiscoveryPlacementEligible)')
     expect(recommendationSnapshot).toContain('const key = item.restaurant.id.toLocaleLowerCase()')
   })

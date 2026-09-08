@@ -16,7 +16,7 @@ describe('Settings action semantics', () => {
     const settings = source('../../ios/TasteMap/TasteMap/Features/Settings/TasteMapSettingsView.swift')
     const root = settings.slice(0, settings.indexOf('struct AccountSettingsView'))
     const headings = [...root.matchAll(/Section\("([^\"]+)"\)/g)].map((match) => match[1])
-    expect(headings).toEqual(['账户', '会员权益', '数据与备份', '同步', '隐私', '权限', '存储', '帮助', '关于'])
+    expect(headings).toEqual(['账户', '会员权益', '邀请奖励', '私人资料', '数据与备份', '同步', '隐私', '权限', '存储', '帮助', '关于'])
     expect(root.match(/accessibilityIdentifier\("settings-premium-entry"\)/g)).toHaveLength(1)
     expect(root).not.toContain('Section("Premium")')
     expect(root).toContain('PremiumSettingsView(membershipStatusOverride: membershipStatusOverride)')

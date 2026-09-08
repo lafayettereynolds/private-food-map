@@ -9,9 +9,10 @@ import type {
 import type { RestaurantSummary, UserProfile, Visit } from '../../types/domain'
 import { HybridAddRestaurantPage } from './HybridAddRestaurantPage'
 import { analysisDataShareText, TasteMapAnalyticsPage } from '../../components/TasteMapAnalyticsPage'
-import { HybridDiscoveryPage } from './HybridDiscoveryPage'
+import { HybridDiscoveryPage, RecommendationCard } from './HybridDiscoveryPage'
 import { HybridProfileListsPreview, TasteMapListsPage } from '../../components/TasteMapListsPage'
 import { TasteMapPremiumPage, TasteMapSettingsPage } from '../../components/TasteMapPremiumSettingsPages'
+import { PremiumAccessContext } from '../../components/PremiumAccess'
 import { ProfilePage } from '../../components/ProfilePage'
 import { TasteFootprintPreview, TasteFootprints } from '../../components/TasteFootprints'
 import { RestaurantRoulette } from '../../components/RestaurantRoulette'
@@ -65,6 +66,13 @@ const platform = {
   auth: { logout: async () => undefined },
 } as unknown as TasteMapPlatform
 
+function renderRecommendation(item: TasteMapHybridContentSnapshotDTO['discovery']['forYou'][number]) {
+  return renderToStaticMarkup(<RecommendationCard item={item} platform={platform}
+    engagement={item} viewerState={item.viewerState} likePending={false} wantPending={false} wheelActive={false}
+    onOpenRestaurant={() => undefined} onLike={() => undefined} onComment={() => undefined}
+    onRecordVisit={() => undefined} onToggleWant={() => undefined} onOpenRoulette={() => undefined} />)
+}
+
 describe('Hybrid remaining product UI contract', () => {
   it('places one owner-only restaurant trash icon in the visit overview, never over the hero', () => {
     const restaurant = profile.restaurants[0]
@@ -116,7 +124,9 @@ describe('Hybrid remaining product UI contract', () => {
   it('uses a concise CTA under the Taste Profile entry instead of previewing cuisine data', () => {
     const owner = renderToStaticMarkup(<ProfilePage restaurants={profile.restaurants} user={profile.user} visits={profile.visits} />)
     const tasteEntry = owner.match(/profile-quick-card profile-quick-card--taste[\s\S]*?<\/button>/)?.[0] ?? ''
-    expect(tasteEntry).toContain('<strong>我的口味档案</strong><small>看看我爱吃什么</small>')
+    expect(tasteEntry).toContain('我的口味档案')
+    expect(tasteEntry).toContain('<small>看看我爱吃什么</small>')
+    expect(tasteEntry).toContain('会员专享')
     expect(tasteEntry).not.toContain('<em>')
     expect(tasteEntry).not.toContain('西餐')
   })
@@ -256,7 +266,10 @@ describe('Hybrid remaining product UI contract', () => {
   })
 
   it('keeps Discovery at one five-tab product level and labels uncalibrated matching honestly', () => {
-    const html = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
+    const page = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
+    expect(page).toContain('正在整理发现内容')
+    expect(page).not.toContain('data-product-contract="activity-card"')
+    const html = page + renderRecommendation(content.discovery.forYou[0])
     for (const label of ['关注', '为你推荐', '同味之选', '最新', '趋势']) expect(html).toContain(label)
     expect(html).toContain('口味匹配度 88%')
     expect(html).not.toContain('喜欢度')
@@ -274,9 +287,7 @@ describe('Hybrid remaining product UI contract', () => {
   it('retains a neutral matching signal when the heuristic percentage increases', () => {
     const stronger = structuredClone(content) as TasteMapHybridContentSnapshotDTO
     stronger.discovery.forYou[0].personalTastePercent = 96
-    const html = renderToStaticMarkup(
-      <HybridDiscoveryPage content={stronger} onOpenRestaurant={() => undefined} platform={platform} />,
-    )
+    const html = renderRecommendation(stronger.discovery.forYou[0])
     expect(html).toContain('aria-label="口味匹配度 96%，查看说明"')
     expect(html).toContain('data-recommendation-signal="match"')
     expect(html).toContain('--tm-taste-prediction-progress:96%')
@@ -320,7 +331,7 @@ describe('Hybrid remaining product UI contract', () => {
   })
 
   it('locks the approved high-density feed-card topology and separates rating semantics', () => {
-    const html = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
+    const html = renderRecommendation(content.discovery.forYou[0])
     const regions = [
       'restaurant-name-address-context',
       'visit-rating',
@@ -366,9 +377,7 @@ describe('Hybrid remaining product UI contract', () => {
   it('shows only the rating badge when the similar-taste user is already identified', () => {
     const similarTasteContent = structuredClone(content) as TasteMapHybridContentSnapshotDTO
     similarTasteContent.discovery.forYou = [similarTasteContent.discovery.similarTaste[0]]
-    const html = renderToStaticMarkup(
-      <HybridDiscoveryPage content={similarTasteContent} onOpenRestaurant={() => undefined} platform={platform} />,
-    )
+    const html = renderRecommendation(similarTasteContent.discovery.forYou[0])
     const similarRating = html.match(/class="tm-activity-card__similar-rating">([\s\S]*?)<\/span><\/div>/)?.[1] ?? ''
     expect(similarRating).toContain('tm-activity-rating-badge')
     expect(similarRating).not.toContain('<small>')
@@ -386,20 +395,14 @@ describe('Hybrid remaining product UI contract', () => {
     const omittedOptionals = structuredClone(content) as TasteMapHybridContentSnapshotDTO
     const item = omittedOptionals.discovery.forYou[0] as unknown as Record<string, unknown>
     for (const key of ['activityRating', 'similarityPercent', 'sharedRestaurantCount', 'uniqueVisitorCount']) delete item[key]
-    expect(() => renderToStaticMarkup(
-      <HybridDiscoveryPage content={omittedOptionals} onOpenRestaurant={() => undefined} platform={platform} />,
-    )).not.toThrow()
-    expect(renderToStaticMarkup(
-      <HybridDiscoveryPage content={omittedOptionals} onOpenRestaurant={() => undefined} platform={platform} />,
-    )).toContain(' aria-label="口味匹配度 88%，查看说明"')
+    expect(() => renderRecommendation(omittedOptionals.discovery.forYou[0])).not.toThrow()
+    expect(renderRecommendation(omittedOptionals.discovery.forYou[0])).toContain(' aria-label="口味匹配度 88%，查看说明"')
   })
 
   it('only exposes Like and Comment when the recommendation carries a concrete Visit identity', () => {
     const systemRecommendation = structuredClone(content) as TasteMapHybridContentSnapshotDTO
     systemRecommendation.discovery.forYou[0].interaction = null
-    const html = renderToStaticMarkup(
-      <HybridDiscoveryPage content={systemRecommendation} onOpenRestaurant={() => undefined} platform={platform} />,
-    )
+    const html = renderRecommendation(systemRecommendation.discovery.forYou[0])
     expect(html).not.toContain('aria-label="点赞"')
     expect(html).not.toContain('aria-label="评论"')
     expect(html).toContain('aria-label="分享餐厅 ')
@@ -488,7 +491,7 @@ describe('Hybrid remaining product UI contract', () => {
   })
 
   it('uses the five approved Analytics names and readable full-report data anatomy', () => {
-    const html = renderToStaticMarkup(<TasteMapAnalyticsPage onOpenRestaurant={() => undefined} platform={platform} profile={profile} />)
+    const html = renderToStaticMarkup(<PremiumAccessContext.Provider value={true}><TasteMapAnalyticsPage onOpenRestaurant={() => undefined} platform={platform} profile={profile} /></PremiumAccessContext.Provider>)
     for (const label of ['我的口味档案', '最佳饭搭子', '谁最会种草', '本月回顾', '年度回顾']) expect(html).toContain(label)
     expect(html).toContain('aria-label="分析模块"')
     expect(html).toContain('数据</button>')
@@ -524,24 +527,36 @@ describe('Hybrid remaining product UI contract', () => {
     expect(html).toContain('tabindex="0"')
   })
 
+  it.each([false, null])('does not expose a monthly report when Premium access is %s', (access) => {
+    const html = renderToStaticMarkup(<PremiumAccessContext.Provider value={access}><TasteMapAnalyticsPage initialMode="monthly" onOpenRestaurant={() => undefined} platform={platform} profile={profile} singleReport /></PremiumAccessContext.Provider>)
+    expect(html).toContain('会员专享')
+    expect(html).toContain('查看会员权益')
+    expect(html).not.toContain('data-explore-page="M01"')
+    expect(html).not.toContain('生成本月回忆海报')
+    expect(html).not.toContain('tm-hybrid-premium-plan')
+  })
+
   it('opens a Profile Analytics entry as one dedicated report', () => {
-    const html = renderToStaticMarkup(<TasteMapAnalyticsPage initialMode="monthly" onOpenRestaurant={() => undefined} platform={platform} profile={profile} singleReport />)
+    const html = renderToStaticMarkup(<PremiumAccessContext.Provider value={true}><TasteMapAnalyticsPage initialMode="monthly" onOpenRestaurant={() => undefined} platform={platform} profile={profile} singleReport /></PremiumAccessContext.Provider>)
     expect(html).toContain('data-report-presentation="dedicated"')
-    expect(html).toContain('class="tm-analysis-data__intro"')
-    expect(html).toContain('aria-label="选择历史周期"')
-    expect(html).toContain('<h1 tabindex="-1">本月回顾</h1>')
+    expect(html).toContain('data-explore-page="M01"')
+    expect(html).toContain('切换历史周期')
+    expect(html).toContain('<h1>本月回顾</h1>')
     expect(html.match(/<h1[^>]*>本月回顾<\/h1>/g)).toHaveLength(1)
     expect(html).not.toContain('class="tm-hybrid-page-header"')
     expect(html).not.toContain('<h1>数据分析</h1>')
-    expect(html).toContain('aria-label="分析模块"')
-    expect(html).toContain('aria-label="选择数据或画报"')
+    expect(html).toContain('生成本月回忆海报')
+    expect(html).toContain('翻一翻这个月')
     expect(html).not.toContain('aria-label="分析类型"')
     expect(html).not.toContain('class="tm-hybrid-analysis-tabs"')
   })
 
   it('keeps Premium factual and Settings actions in the native service boundary', () => {
     const premium = renderToStaticMarkup(<TasteMapPremiumPage platform={platform} />)
-    expect(premium).toContain('商品价格始终由 StoreKit')
+    expect(premium).toContain('确认会员状态')
+    expect(premium).toContain('正在读取正式会员权益。')
+    expect(premium).not.toContain('恢复购买')
+    expect(premium).not.toContain('tm-hybrid-premium-plan')
     expect(premium).not.toMatch(/¥\s*\d/)
     const settings = renderToStaticMarkup(<TasteMapSettingsPage platform={{ ...platform, kind: 'native' }} profile={profile} />)
     expect(settings).toContain('账户与安全')

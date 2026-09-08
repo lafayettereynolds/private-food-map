@@ -19,7 +19,7 @@ describe('compact owner Profile statistics template', () => {
         visits={populated ? fixture.restaurants.flatMap((restaurant) => restaurant.visits) as unknown as Visit[] : []}
       />)
       const statistics = html.match(/class="profile-dashboard__counts profile-dashboard__counts--primary">([\s\S]*?)<\/div>/)?.[1] ?? ''
-      expect([...statistics.matchAll(/<small>([^<]*)<\/small>/g)].map((match) => match[1])).toEqual(['去过', '想去', '总消费'])
+      expect([...statistics.matchAll(/<small>([^<]*)<\/small>/g)].map((match) => match[1])).toEqual(['去过', '想吃', '总消费'])
       expect(statistics.match(/<button /g)).toHaveLength(3)
       expect(statistics).toContain('class="is-currency"')
       expect(statistics).toContain('data-tastemap-semantic-icon="visited"')

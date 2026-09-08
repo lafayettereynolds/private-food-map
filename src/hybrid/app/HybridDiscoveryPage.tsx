@@ -46,6 +46,7 @@ import { starToTenScore } from '../../types/domain'
 import { TasteMapCitySearch } from '../../components/TasteMapCitySearch'
 import { DiscoveryQueryPanel } from '../../components/DiscoveryQueryPanel'
 import { normalizeDiscoveryFilters } from '../../contracts/discoveryFilters'
+import { DISCOVERY_RATING_FILTER_THRESHOLDS, minimumRatingFilterLabel } from '../../utils/ratingFilterOptions'
 import { normalizeDiscoverySessionPreferences, type DiscoverySessionPreferences } from '../../contracts/discoverySessionPreferences'
 import { createDiscoveryCityQuerySession, discoveryCityQueryKey, type CityQueryState } from '../../components/discoveryCityQuerySession'
 
@@ -339,7 +340,7 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
         onChange={value => { setRecordStateExplicit(true); setHardFilters(current => ({ ...current, viewerStates: value ? [value as 'none' | 'visited' | 'want_to_go'] : [] })) }} />
       <TasteMapFilterSelect presentation="dialog" icon={<Star aria-hidden="true" size={14} />} label="大家评分" value={String(filters.minimumPublicScoreOutOfTen ?? '')}
         active={filters.minimumPublicScoreOutOfTen !== null}
-        options={[{ value: '', label: '大家评分' }, ...[1, 2, 3, 4, 5, 6, 7, 7.5, 8, 9, 10].map(value => ({ value: String(value), label: `大家评分 ≥ ${value}` }))]}
+        options={[{ value: '', label: '大家评分' }, ...DISCOVERY_RATING_FILTER_THRESHOLDS.map(value => ({ value: String(value), label: minimumRatingFilterLabel(value) }))]}
         onChange={value => setHardFilters(current => ({ ...current, minimumPublicScoreOutOfTen: value ? Number(value) : null }))} />
       <TasteMapFilterSelect presentation="dialog" icon={<Users aria-hidden="true" size={14} />} label="评价人数" value={String(filters.minimumPublicRatingUsers ?? '')}
         active={filters.minimumPublicRatingUsers !== null}
@@ -484,7 +485,7 @@ function DiscoveryEvidence({ item }: { item: TasteMapHybridDiscoveryItemDTO }) {
   return <TasteMapRecommendationReasons className={`is-${item.mode.replace(/_/g, '-')}`} evidence={item.mode} reasons={reasons} />
 }
 
-function RecommendationCard({ item, platform, onOpenRestaurant, engagement, viewerState, likePending, wantPending, wheelActive, onLike, onComment, onRecordVisit, onToggleWant, onOpenRoulette }: {
+export function RecommendationCard({ item, platform, onOpenRestaurant, engagement, viewerState, likePending, wantPending, wheelActive, onLike, onComment, onRecordVisit, onToggleWant, onOpenRoulette }: {
   item: TasteMapHybridDiscoveryItemDTO
   platform: TasteMapPlatform
   onOpenRestaurant: (id: string) => void

@@ -6,7 +6,6 @@ import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import type { RestaurantSocialStats } from '../types/restaurantStats'
 import { resolveVisitActualSpend } from '../services/visitSpend'
 import type { TasteMapPlatform, TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
-import { RecommendationNotInterested } from './RecommendationNotInterested'
 
 interface RestaurantPreviewCardProps {
   restaurant: RestaurantSummary
@@ -57,7 +56,6 @@ export function RestaurantPreviewCard({
   isInRoulette = false,
   onAddToWant,
   onEditAvatar,
-  recommendationPlatform,
   onDelete,
   viewerStatus,
   readOnly = false,
@@ -87,7 +85,6 @@ export function RestaurantPreviewCard({
         className="is-detail-card"
         historyRestaurants={historyRestaurants}
         onEditAvatar={onEditAvatar}
-        imageTrailingAction={recommendationPlatform ? <RecommendationNotInterested platform={recommendationPlatform} restaurantID={restaurant.id} restaurantName={restaurant.name} overlay /> : undefined}
         remoteStatsEnabled={remoteStatsEnabled}
         restaurant={restaurant}
         socialStats={socialStats}
