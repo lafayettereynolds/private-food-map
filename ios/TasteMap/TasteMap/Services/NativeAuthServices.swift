@@ -25,16 +25,20 @@ final class NativeAuthServices {
     let appleSignIn: AppleSignInService
     let recommendationPreferenceSync: RecommendationPreferenceSync
     @ObservationIgnored private var preferenceObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var appleObservers: AppleCredentialObservers?
+    @ObservationIgnored var credentialInvalidationHandler: (() -> Void)?
+    private var scopeGeneration = UUID()
     private var recommendationSyncSuspendedForVisualQA = false
 
     init(
         configuration: APIConfiguration,
         session: URLSession = .shared,
         credentialStore: any AuthCredentialStoring = KeychainCredentialStore(),
-        socialOutboxFileURL: URL? = nil
+        socialOutboxFileURL: URL? = nil,
+        appleState: @escaping @Sendable (String) async throws -> AppleCredentialStatus = AppleCredentialStateProvider.state
     ) {
         let authAPI = URLSessionAuthAPIClient(configuration: configuration, session: session)
-        let sessionManager = AuthSessionManager(api: authAPI, credentialStore: credentialStore)
+        let sessionManager = AuthSessionManager(api: authAPI, credentialStore: credentialStore, appleState: appleState)
         self.authAPI = authAPI
         self.sessionManager = sessionManager
         syncAPI = URLSessionSyncAPIClient(
@@ -117,17 +121,34 @@ final class NativeAuthServices {
                 Task { @MainActor [weak self] in self?.retryRecommendationPreferences() }
             })
         }
+        appleObservers = AppleCredentialObservers { [weak self] in
+            Task { @MainActor [weak self] in await self?.refreshAppleCredential() }
+        }
+    }
+
+    func refreshAppleCredential() async {
+        guard !recommendationSyncSuspendedForVisualQA else { return }
+        let origin = scopeGeneration
+        let invalidated = await sessionManager.validateAppleCredential()
+        guard invalidated, scopeGeneration == origin else { return }
+        endLocalAccountSession()
+        credentialInvalidationHandler?()
     }
 
     @discardableResult
     func restoreLocalAccountScope() async -> AuthenticatedUserV1? {
+        let origin = scopeGeneration
+        await refreshAppleCredential()
+        guard scopeGeneration == origin else { return nil }
         let user = await sessionManager.restoredUser()
+        guard scopeGeneration == origin else { return nil }
         localAccountScope = user.map { .authenticated($0.id) } ?? .guest
         retryRecommendationPreferences()
         return user
     }
 
     func activateLocalAccount(_ user: AuthenticatedUserV1) {
+        if localAccountScope != .authenticated(user.id) { scopeGeneration = UUID() }
         recommendationSyncSuspendedForVisualQA = false
         localAccountScope = .authenticated(user.id)
         retryRecommendationPreferences()
@@ -150,6 +171,7 @@ final class NativeAuthServices {
     }
 
     func endLocalAccountSession() {
+        scopeGeneration = UUID()
         ReferralInvitationStore.clear()
         localAccountScope = .guest
     }

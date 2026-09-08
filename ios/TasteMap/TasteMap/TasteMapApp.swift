@@ -232,7 +232,7 @@ struct TasteMapApp: App {
 #else
         let hybridSearchService: any RestaurantSearching = WorldwideRestaurantSearchService()
 #endif
-        hybridRuntime = TasteMapHybridRuntime(
+        let builtHybridRuntime = TasteMapHybridRuntime(
             mode: TasteMapHybridRuntimeConfiguration.current,
             container: container,
             authServices: authServices,
@@ -250,6 +250,10 @@ struct TasteMapApp: App {
                 .environment(nativeAuthServices)
                 .environment(syncCoordinator)
                 .environment(premiumEntitlementService)
+        hybridRuntime = builtHybridRuntime
+        authServices.credentialInvalidationHandler = { [weak builtHybridRuntime] in
+            builtHybridRuntime?.appleCredentialDidInvalidate()
+        }
                 .environment(hybridRuntime)
                 .environment(\.photoTransferCoordinator, photoTransferCoordinator)
         }

@@ -30,6 +30,7 @@ nonisolated struct AuthSessionResponseV1: Codable, Equatable, Sendable {
 }
 
 nonisolated struct AuthCredential: Codable, Equatable, Sendable {
+    var appleUserIdentifier: String? = nil
     let user: AuthenticatedUserV1
     let accessToken: String
     let accessTokenExpiresAt: Date

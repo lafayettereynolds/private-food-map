@@ -26,6 +26,8 @@ struct ContentView: View {
     var body: some View {
         @Bindable var premiumEntitlementService = premiumEntitlementService
         rootView
+            // Drop private presentation state on logout/revocation, not data.
+            .id(authServices.localAccountScope.authenticatedUserID)
             .tint(TasteMapCoreTheme.brand)
             .environment(\.localAccountScope, authServices.localAccountScope)
             .task {

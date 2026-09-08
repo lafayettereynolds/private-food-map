@@ -2487,6 +2487,19 @@ final class TasteMapHybridRuntime {
         premiumEntitlementService.sessionDidEnd()
         syncCoordinator.sessionDidEnd()
         invalidateBridgeReadCaches()
+    /// Revocation has already cleared the authoritative credential. Reuse only
+    /// the in-memory logout context cleanup, never Account Delete/data purging.
+    func appleCredentialDidInvalidate() {
+        acquisitionNearbyGeneration += 1
+        pendingAcquisitionCandidates.removeAll(keepingCapacity: false)
+        pendingPhotoSelections.removeAll(keepingCapacity: false)
+        premiumEntitlementService.sessionDidEnd()
+        syncCoordinator.sessionDidEnd()
+        invalidateBridgeReadCaches()
+        resetToCurrentProfileIfNeeded()
+        emit(.authChanged, payload: TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil))
+    }
+
         resetToCurrentProfileIfNeeded()
         let session = TasteMapHybridAuthStateDTO(state: "signedOut", userID: nil, displayName: nil)
         emit(.authChanged, payload: session)

@@ -25,9 +25,9 @@ final class AppleSignInService: NSObject,
     }
 
     func signIn(presentationAnchor: ASPresentationAnchor) async throws -> AuthenticatedUserV1 {
-        let response = try await exchangeAppleCredential(presentationAnchor: presentationAnchor, referralCode: ReferralInvitationStore.code)
+        let (response, appleUser) = try await exchangeAppleCredential(presentationAnchor: presentationAnchor, referralCode: ReferralInvitationStore.code)
         ReferralInvitationStore.clear()
-        return try await sessionManager.accept(response)
+        return try await sessionManager.accept(response, appleUserIdentifier: appleUser)
     }
 
     /// Performs a fresh Apple authorization without allowing a different
@@ -36,7 +36,7 @@ final class AppleSignInService: NSObject,
         expectedUserID: String,
         presentationAnchor: ASPresentationAnchor
     ) async throws -> AuthenticatedUserV1 {
-        let response = try await exchangeAppleCredential(presentationAnchor: presentationAnchor)
+        let (response, appleUser) = try await exchangeAppleCredential(presentationAnchor: presentationAnchor)
         guard response.user.id == expectedUserID else {
             // Exchange creates an isolated server session. Revoke it before
             // returning the mismatch and never persist it to Keychain.
@@ -46,13 +46,13 @@ final class AppleSignInService: NSObject,
             )
             throw AppleSignInServiceError.accountMismatch
         }
-        return try await sessionManager.accept(response)
+        return try await sessionManager.accept(response, appleUserIdentifier: appleUser)
     }
 
     private func exchangeAppleCredential(
         presentationAnchor: ASPresentationAnchor,
         referralCode: String? = nil
-    ) async throws -> AuthSessionResponseV1 {
+    ) async throws -> (AuthSessionResponseV1, String) {
         guard continuation == nil else { throw AppleSignInServiceError.signInAlreadyInProgress }
         let challenge = try await api.challenge()
         let provider = ASAuthorizationAppleIDProvider()
@@ -71,11 +71,11 @@ final class AppleSignInService: NSObject,
             controller.performRequests()
         }
         guard credential.state == challenge.state else { throw AppleSignInServiceError.stateMismatch }
-        guard let identityTokenData = credential.identityToken,
+        guard !credential.user.isEmpty, let identityTokenData = credential.identityToken,
               let identityToken = String(data: identityTokenData, encoding: .utf8) else {
             throw AppleSignInServiceError.missingCredential
         }
-        return try await api.exchangeAppleToken(
+        let response = try await api.exchangeAppleToken(
             identityToken: identityToken,
             state: challenge.state,
             nonce: challenge.nonce,
@@ -83,6 +83,7 @@ final class AppleSignInService: NSObject,
             familyName: credential.fullName?.familyName,
             referralCode: referralCode
         )
+        return (response, credential.user)
     }
 
     func authorizationController(
