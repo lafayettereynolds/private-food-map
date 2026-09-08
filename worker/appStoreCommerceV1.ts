@@ -1,3 +1,4 @@
+import { verifyAppleSignedData, AppleSignedDataError, type AppleStoreEnvironment } from './appleSignedData.ts'
 export const APP_STORE_COMMERCE_API_VERSION = 1 as const
 
 const APP_STORE_PRODUCTION_API = 'https://api.storekit.apple.com'
@@ -7,6 +8,7 @@ const APP_STORE_SUBSCRIPTION_TYPE = 'Auto-Renewable Subscription'
 
 export interface AppStoreCommerceEnvironment {
   APP_ENVIRONMENT?: 'development' | 'production'
+  APP_STORE_APP_APPLE_ID?: string
   APP_STORE_BUNDLE_ID?: string
   APP_STORE_MONTHLY_PRODUCT_ID?: string
   APP_STORE_YEARLY_PRODUCT_ID?: string
@@ -20,7 +22,7 @@ interface AppStoreTransactionInfoResponse {
   signedTransactionInfo?: string
 }
 
-interface AppStoreTransactionPayload {
+export interface AppStoreTransactionPayload {
   transactionId?: string
   originalTransactionId?: string
   bundleId?: string
@@ -43,7 +45,11 @@ interface AppStoreNotificationPayload {
   notificationUUID?: string
   notificationType?: string
   subtype?: string
+  summary?: { environment?: string }
+  appData?: { environment?: string }
   data?: {
+    environment?: string
+    bundleId?: string
     signedTransactionInfo?: string
   }
 }
@@ -58,6 +64,7 @@ interface AppStoreTransactionRow {
   expires_at: string | null
   revocation_at: string | null
   verified_at: string
+  environment: AppleStoreEnvironment
 }
 
 interface AppStoreAccountRow {
@@ -84,6 +91,7 @@ export async function handleAppStoreCommerceV1(
   userId: string,
   environment: AppStoreCommerceEnvironment,
   appleFetch: typeof fetch = fetch,
+  sessionId?: string,
 ) {
   const url = new URL(request.url)
   if (url.pathname === '/api/v1/storekit/config' && request.method === 'GET') {
@@ -106,9 +114,15 @@ export async function handleAppStoreCommerceV1(
     if (!/^\d{1,32}$/.test(transactionId)) {
       throw commerceError('交易标识无效。', 400, 'invalid_transaction_id')
     }
-    const result = await verifyAndReconcileTransaction(
-      database, userId, transactionId, environment, appleFetch,
-    )
+    if (body && 'environment' in body) throw commerceError('交易环境只能由 Apple 签名确定。', 400, 'untrusted_environment')
+    const signed = typeof body?.signedTransactionInfo === 'string' ? body.signedTransactionInfo : undefined
+    const verified = await fetchVerifiedTransaction(transactionId, environment, appleFetch, signed)
+    const result = await reconcileVerifiedTransaction(database, userId, verified, environment)
+    if (sessionId) {
+      const changed = await database.prepare("UPDATE auth_sessions SET store_environment=? WHERE id=? AND user_id=? AND revoked_at IS NULL")
+        .bind(verified.environment, sessionId, userId).run()
+      if (changed.meta.changes !== 1) throw commerceError('登录状态已改变。', 401, 'session_changed')
+    }
     return { apiVersion: APP_STORE_COMMERCE_API_VERSION, ...result }
   }
 
@@ -134,43 +148,36 @@ export async function handleAppStoreServerNotificationV1(
     throw commerceError('StoreKit notification payload is missing.', 400, 'missing_signed_payload')
   }
 
-  // The decoded notification is routing evidence only. No entitlement decision
-  // trusts it. The transaction is fetched again from Apple's authenticated API.
-  const notification = decodeJWSPayload<AppStoreNotificationPayload>(signedPayload)
-  const nested = notification.data?.signedTransactionInfo
-  const hintedTransaction = nested ? decodeJWSPayload<AppStoreTransactionPayload>(nested) : null
-  const transactionId = hintedTransaction?.transactionId?.trim() ?? ''
+  const notification = await verifiedPayload<AppStoreNotificationPayload>(signedPayload, 'notification', environment)
+  const storeEnvironment = (notification.data ?? notification.summary ?? notification.appData)?.environment as AppleStoreEnvironment
   const notificationUUID = notification.notificationUUID?.trim() ?? ''
-  if (!/^\d{1,32}$/.test(transactionId) || !isSafeIdentifier(notificationUUID)) {
-    throw commerceError('StoreKit notification does not identify a transaction.', 400, 'invalid_notification')
+  if (!isSafeIdentifier(notificationUUID)) throw commerceError('通知标识无效。', 400, 'invalid_notification')
+  const digest = await sha256(signedPayload)
+  const existing = await database.prepare('SELECT signed_payload_digest FROM app_store_notification_events_v2 WHERE environment=? AND notification_uuid=?')
+    .bind(storeEnvironment, notificationUUID).first<{signed_payload_digest:string}>()
+  if (existing) {
+    if (existing.signed_payload_digest !== digest) throw commerceError('通知标识冲突。',409,'notification_conflict')
+    return { apiVersion: 1, duplicate: true }
   }
-
-  const existing = await database.prepare(
-    'SELECT notification_uuid FROM app_store_notification_events WHERE notification_uuid = ?',
-  ).bind(notificationUUID).first()
-  if (existing) return { apiVersion: APP_STORE_COMMERCE_API_VERSION, duplicate: true }
-
-  const verified = await fetchVerifiedTransaction(transactionId, environment, appleFetch)
-  const account = await database.prepare(
-    'SELECT user_id, app_account_token FROM app_store_accounts WHERE app_account_token = ?',
-  ).bind(normalizeUUID(verified.appAccountToken ?? '')).first<AppStoreAccountRow>()
-  if (!account) {
-    // Never auto-claim an App Store purchase to an arbitrary or first user.
-    return { apiVersion: APP_STORE_COMMERCE_API_VERSION, accepted: true, linked: false }
+  let disposition: 'test'|'ignored'|'unlinked'|'reconciled' = notification.notificationType === 'TEST' ? 'test' : 'ignored'
+  let transactionId: string | null = null
+  let result = {}
+  if (notification.data?.signedTransactionInfo) {
+    const nested = await verifiedPayload<AppStoreTransactionPayload>(notification.data.signedTransactionInfo, 'transaction', environment)
+    if (nested.environment !== storeEnvironment) throw commerceError('通知交易环境不匹配。',409,'apple_environment_mismatch')
+    transactionId = nested.transactionId ?? ''
+    const verified = await fetchVerifiedTransaction(transactionId, environment, appleFetch, notification.data.signedTransactionInfo)
+    const account = await database.prepare('SELECT user_id, app_account_token FROM app_store_accounts WHERE app_account_token=?')
+      .bind(normalizeUUID(verified.appAccountToken ?? '')).first<AppStoreAccountRow>()
+    disposition = account ? 'reconciled' : 'unlinked'
+    if (account) result = await reconcileVerifiedTransaction(database, account.user_id, verified, environment)
   }
-  const result = await reconcileVerifiedTransaction(database, account.user_id, verified, environment)
-  await database.prepare(`INSERT INTO app_store_notification_events (
-    notification_uuid, notification_type, subtype, transaction_id, signed_payload_digest, processed_at
-  ) VALUES (?, ?, ?, ?, ?, ?)`)
-    .bind(
-      notificationUUID,
-      safeText(notification.notificationType, 80) || 'UNKNOWN',
-      safeText(notification.subtype, 80) || null,
-      transactionId,
-      await sha256(signedPayload),
-      new Date().toISOString(),
-    ).run()
-  return { apiVersion: APP_STORE_COMMERCE_API_VERSION, accepted: true, linked: true, ...result }
+  await database.prepare(`INSERT INTO app_store_notification_events_v2
+    (environment,notification_uuid,notification_type,subtype,transaction_id,signed_payload_digest,disposition,processed_at)
+    VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(environment,notification_uuid) DO NOTHING`)
+    .bind(storeEnvironment,notificationUUID,safeText(notification.notificationType,80)||'UNKNOWN',
+      safeText(notification.subtype,80)||null,transactionId,digest,disposition,new Date().toISOString()).run()
+  return {apiVersion:1,accepted:true,linked:disposition==='reconciled',disposition,...result}
 }
 
 export async function verifyAndReconcileTransaction(
@@ -184,36 +191,42 @@ export async function verifyAndReconcileTransaction(
   return reconcileVerifiedTransaction(database, userId, transaction, environment)
 }
 
+async function verifiedPayload<T>(signed: string, kind: 'transaction'|'notification', env: AppStoreCommerceEnvironment): Promise<T> {
+  try { return await verifyAppleSignedData(signed,kind,env) as T }
+  catch (error) {
+    if (error instanceof AppleSignedDataError) throw commerceError('Apple 签名验证未通过。',error.status,error.code)
+    throw commerceError('Apple 签名验证未通过。',400,'apple_signature_verification_failed')
+  }
+}
+
 export async function fetchVerifiedTransaction(
-  transactionId: string,
-  environment: AppStoreCommerceEnvironment,
-  appleFetch: typeof fetch,
+  transactionId: string, environment: AppStoreCommerceEnvironment, appleFetch: typeof fetch,
+  signedTransactionInfo?: string,
 ) {
   const configuration = requireServerConfiguration(environment)
+  if (!/^\d{1,32}$/.test(transactionId)) throw commerceError('交易标识无效。',400,'invalid_transaction_id')
+  const supplied = signedTransactionInfo ? await verifiedPayload<AppStoreTransactionPayload>(signedTransactionInfo,'transaction',environment) : null
+  if (supplied && supplied.transactionId !== transactionId) throw commerceError('交易标识不匹配。',409,'transaction_mismatch')
+  const targets: AppleStoreEnvironment[] = supplied ? [supplied.environment as AppleStoreEnvironment] : ['Production','Sandbox']
   const token = await createAppStoreServerJWT(configuration)
-  const baseURL = configuration.apiEnvironment === 'sandbox'
-    ? APP_STORE_SANDBOX_API
-    : APP_STORE_PRODUCTION_API
-  const response = await appleFetch(
-    `${baseURL}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
-    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
-  )
-  if (response.status === 404) {
-    throw commerceError('Apple 没有找到这笔交易。', 404, 'apple_transaction_not_found')
+  for (const [index, target] of targets.entries()) {
+    const base = target === 'Sandbox' ? APP_STORE_SANDBOX_API : APP_STORE_PRODUCTION_API
+    const response = await appleFetch(`${base}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
+      {headers:{Authorization:`Bearer ${token}`,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(15000)})
+    if (!response.ok) {
+      const error = await response.json().catch(()=>null) as {errorCode?:number}|null
+      if (response.status===404 && error?.errorCode===4040010 && index===0 && targets.length===2) continue
+      if (response.status===404 && error?.errorCode===4040010) throw commerceError('Apple 没有找到这笔交易。',404,'apple_transaction_not_found')
+      throw commerceError('Apple 交易验证暂时不可用。',503,'apple_verification_unavailable')
+    }
+    const result = await response.json() as AppStoreTransactionInfoResponse
+    if (!result.signedTransactionInfo) throw commerceError('Apple 响应不完整。',502,'invalid_apple_response')
+    const transaction = await verifiedPayload<AppStoreTransactionPayload>(result.signedTransactionInfo,'transaction',environment)
+    validateAppleTransaction(transaction,{...configuration,apiEnvironment:target==='Sandbox'?'sandbox':'production'})
+    if (transaction.transactionId!==transactionId) throw commerceError('Apple 返回了不匹配的交易。',409,'transaction_mismatch')
+    return {...transaction,signedTransactionInfo:result.signedTransactionInfo}
   }
-  if (!response.ok) {
-    throw commerceError('Apple 交易验证暂时不可用。', 503, 'apple_verification_unavailable')
-  }
-  const result = await response.json() as AppStoreTransactionInfoResponse
-  if (!result.signedTransactionInfo) {
-    throw commerceError('Apple 交易验证响应不完整。', 502, 'invalid_apple_response')
-  }
-  const transaction = decodeJWSPayload<AppStoreTransactionPayload>(result.signedTransactionInfo)
-  validateAppleTransaction(transaction, configuration)
-  if (transaction.transactionId !== transactionId) {
-    throw commerceError('Apple 返回了不匹配的交易。', 409, 'transaction_mismatch')
-  }
-  return { ...transaction, signedTransactionInfo: result.signedTransactionInfo }
+  throw commerceError('Apple 没有找到这笔交易。',404,'apple_transaction_not_found')
 }
 
 async function reconcileVerifiedTransaction(
@@ -231,29 +244,65 @@ async function reconcileVerifiedTransaction(
 
   const originalTransactionId = transaction.originalTransactionId as string
   const existingOwner = await database.prepare(`SELECT original_transaction_id, user_id, app_account_token
-    FROM app_store_subscription_owners WHERE original_transaction_id = ?`)
-    .bind(originalTransactionId).first<AppStoreOwnerRow>()
+    FROM app_store_owners_v2 WHERE environment = ? AND original_transaction_id = ?`)
+    .bind(transaction.environment, originalTransactionId).first<AppStoreOwnerRow>()
   if (existingOwner &&
       (existingOwner.user_id !== userId || existingOwner.app_account_token !== account.app_account_token)) {
     throw commerceError('这组 App Store 订阅已关联其他 Taste Map 账户。', 409, 'subscription_owner_conflict')
   }
 
-  const now = new Date().toISOString()
-  await database.prepare(`INSERT INTO app_store_subscription_owners (
-    original_transaction_id, user_id, app_account_token, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?)
-  ON CONFLICT(original_transaction_id) DO UPDATE SET updated_at = excluded.updated_at
-  WHERE app_store_subscription_owners.user_id = excluded.user_id
-    AND app_store_subscription_owners.app_account_token = excluded.app_account_token`)
-    .bind(originalTransactionId, userId, account.app_account_token, now, now).run()
+  // An Apple offer code is a bearer credential. Sandbox Premium also requires
+  // an operator-assigned, qualified reward for this authenticated Taste Map user.
+  let sandboxAssignment: { assignment_id: string } | null = null
+  if (transaction.environment === 'Sandbox' && transaction.offerType === 3) {
+    if (environment.APP_ENVIRONMENT !== 'development') {
+      throw commerceError('Sandbox Offer 不允许进入 Production。', 403, 'sandbox_offer_forbidden')
+    }
+    sandboxAssignment = await database.prepare(`SELECT a.assignment_id FROM sandbox_offer_assignments a
+      JOIN premium_rewards p ON p.id=a.reward_id JOIN referrals r ON r.invitee_id=p.invitee_id
+      WHERE a.user_id=? AND p.user_id=a.user_id AND a.offer_identifier=? AND a.environment='Sandbox'
+        AND ((a.state IN ('assigned','failed') AND r.status='qualified' AND p.state='active' AND a.assigned_at<=?)
+          OR (a.state='redeemed' AND a.original_transaction_id=?))
+      ORDER BY a.assigned_at LIMIT 1`)
+      .bind(userId, transaction.offerIdentifier ?? '', millisecondsISO(transaction.purchaseDate), originalTransactionId)
+      .first<{ assignment_id: string }>()
+    if (!sandboxAssignment || transaction.revocationDate != null) {
+      // A revoked transaction from an already-linked subscription must still
+      // revoke Apple access, so do not block reconciliation of known owners.
+      if (!existingOwner || transaction.revocationDate == null) {
+        throw commerceError('此 Sandbox Offer 未分配给当前账户或奖励已失效。', 403, 'sandbox_offer_assignment_mismatch')
+      }
+    }
+  }
 
-  await database.prepare(`INSERT INTO app_store_transactions (
+  if (sandboxAssignment && transaction.revocationDate == null) {
+    await database.prepare(`UPDATE sandbox_offer_assignments SET original_transaction_id=?
+      WHERE assignment_id=? AND user_id=? AND (original_transaction_id IS NULL OR original_transaction_id=?)`)
+      .bind(originalTransactionId,sandboxAssignment.assignment_id,userId,originalTransactionId).run()
+    const reservation = await database.prepare('SELECT original_transaction_id FROM sandbox_offer_assignments WHERE assignment_id=?')
+      .bind(sandboxAssignment.assignment_id).first<{original_transaction_id:string}>()
+    if (reservation?.original_transaction_id !== originalTransactionId) {
+      throw commerceError('此 Offer 已关联另一组订阅。',409,'sandbox_offer_already_redeemed')
+    }
+  }
+
+  const now = new Date().toISOString()
+  const ownerWrite = await database.prepare(`INSERT INTO app_store_owners_v2 (
+    environment, original_transaction_id, user_id, app_account_token, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT(environment, original_transaction_id) DO UPDATE SET updated_at = excluded.updated_at
+  WHERE app_store_owners_v2.user_id = excluded.user_id
+    AND app_store_owners_v2.app_account_token = excluded.app_account_token`)
+    .bind(transaction.environment, originalTransactionId, userId, account.app_account_token, now, now).run()
+  if (ownerWrite.meta.changes !== 1) throw commerceError('订阅账户归属冲突。',409,'subscription_owner_conflict')
+
+  const transactionWrite = await database.prepare(`INSERT INTO app_store_transactions_v2 (
     transaction_id, original_transaction_id, user_id, app_account_token, product_id, environment,
     purchase_at, original_purchase_at, expires_at, revocation_at, revocation_reason,
     ownership_type, transaction_reason, signed_transaction_digest, verification_source,
     verified_at, created_at, updated_at
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'app_store_server_api', ?, ?, ?)
-  ON CONFLICT(transaction_id) DO UPDATE SET
+  ON CONFLICT(environment, transaction_id) DO UPDATE SET
     expires_at = excluded.expires_at,
     revocation_at = excluded.revocation_at,
     revocation_reason = excluded.revocation_reason,
@@ -263,8 +312,10 @@ async function reconcileVerifiedTransaction(
     verification_source = excluded.verification_source,
     verified_at = excluded.verified_at,
     updated_at = excluded.updated_at
-  WHERE app_store_transactions.user_id = excluded.user_id
-    AND app_store_transactions.original_transaction_id = excluded.original_transaction_id`)
+  WHERE app_store_transactions_v2.user_id = excluded.user_id
+    AND app_store_transactions_v2.app_account_token = excluded.app_account_token
+    AND app_store_transactions_v2.product_id = excluded.product_id
+    AND app_store_transactions_v2.original_transaction_id = excluded.original_transaction_id`)
     .bind(
       transaction.transactionId,
       originalTransactionId,
@@ -284,10 +335,20 @@ async function reconcileVerifiedTransaction(
       now,
       now,
     ).run()
+  if (transactionWrite.meta.changes !== 1) throw commerceError('交易不可变身份冲突。',409,'transaction_owner_conflict')
+  await database.prepare(`INSERT INTO app_store_verification_audit(environment,transaction_id,original_transaction_id,user_id,signed_transaction_digest,verified_at)
+    VALUES(?,?,?,?,?,?)`).bind(transaction.environment,transaction.transactionId,originalTransactionId,userId,await sha256(transaction.signedTransactionInfo),now).run()
 
-  await reconcileMembershipProjection(database, userId, originalTransactionId, configuration)
+  await reconcileMembershipProjection(database, userId, originalTransactionId, configuration, transaction.environment as AppleStoreEnvironment)
+  if (sandboxAssignment && transaction.revocationDate == null) {
+    await database.prepare(`UPDATE sandbox_offer_assignments SET state='redeemed',
+      transaction_id=COALESCE(transaction_id,?), original_transaction_id=COALESCE(original_transaction_id,?),
+      redeemed_at=COALESCE(redeemed_at,?) WHERE assignment_id=? AND user_id=?`)
+      .bind(transaction.transactionId,originalTransactionId,now,sandboxAssignment.assignment_id,userId).run()
+  }
   return {
     reconciled: true,
+    environment: transaction.environment,
     transactionId: transaction.transactionId as string,
     originalTransactionId,
   }
@@ -298,12 +359,16 @@ async function reconcileMembershipProjection(
   userId: string,
   originalTransactionId: string,
   configuration: ReturnType<typeof requireCatalogConfiguration>,
+  storeEnvironment: AppleStoreEnvironment,
+  attempt = 0,
 ) {
+  const audit = await database.prepare(`SELECT COALESCE(MAX(id),0) AS revision FROM app_store_verification_audit
+    WHERE environment=? AND original_transaction_id=?`).bind(storeEnvironment,originalTransactionId).first<{revision:number}>()
   const result = await database.prepare(`SELECT transaction_id, original_transaction_id, user_id,
-      product_id, purchase_at, original_purchase_at, expires_at, revocation_at, verified_at
-    FROM app_store_transactions WHERE original_transaction_id = ? AND user_id = ?
+      product_id, purchase_at, original_purchase_at, expires_at, revocation_at, verified_at, environment
+    FROM app_store_transactions_v2 WHERE environment = ? AND original_transaction_id = ? AND user_id = ?
     ORDER BY COALESCE(expires_at, purchase_at) DESC, purchase_at DESC`)
-    .bind(originalTransactionId, userId).all<AppStoreTransactionRow>()
+    .bind(storeEnvironment, originalTransactionId, userId).all<AppStoreTransactionRow>()
   if (result.results.length === 0) return
 
   const nowMilliseconds = Date.now()
@@ -319,17 +384,20 @@ async function reconcileMembershipProjection(
   const startsAt = current.original_purchase_at ?? current.purchase_at
   const expiresAt = usable[0]?.expires_at ?? current.expires_at
   const metadata = JSON.stringify({
+    environment: storeEnvironment,
     originalTransactionId,
     latestTransactionId: current.transaction_id,
     productId: current.product_id,
     verificationSource: 'app_store_server_api',
   })
   const entitlementId = `app-store:${originalTransactionId}`
+  const table = storeEnvironment === 'Sandbox' ? 'sandbox_membership_entitlements' : 'membership_entitlements'
   const now = new Date().toISOString()
-  await database.prepare(`INSERT INTO membership_entitlements (
+  const projection = await database.prepare(`INSERT INTO ${table} (
     id, user_id, source, starts_at, expires_at, is_lifetime, status, note, metadata_json,
     created_by_user_id, created_at, updated_at, revoked_at, revoked_by_user_id
-  ) VALUES (?, ?, ?, ?, ?, 0, ?, '', ?, NULL, ?, ?, ?, NULL)
+  ) SELECT ?, ?, ?, ?, ?, 0, ?, '', ?, NULL, ?, ?, ?, NULL
+  WHERE (SELECT COALESCE(MAX(id),0) FROM app_store_verification_audit WHERE environment=? AND original_transaction_id=?)=?
   ON CONFLICT(id) DO UPDATE SET
     source = excluded.source,
     starts_at = excluded.starts_at,
@@ -339,22 +407,25 @@ async function reconcileMembershipProjection(
     updated_at = excluded.updated_at,
     revoked_at = excluded.revoked_at,
     revoked_by_user_id = NULL
-  WHERE membership_entitlements.user_id = excluded.user_id`)
+  WHERE ${table}.user_id = excluded.user_id`)
     .bind(
       entitlementId, userId, source, startsAt, expiresAt, status, metadata, now, now,
       status === 'revoked' ? now : null,
+      storeEnvironment, originalTransactionId, audit?.revision ?? 0,
     ).run()
-  await refreshUserMembershipTier(database, userId)
+  if (projection.meta.changes !== 1) {
+    if (attempt >= 2) throw commerceError('会员状态正在更新，请重试。',503,'entitlement_projection_busy')
+    return reconcileMembershipProjection(database,userId,originalTransactionId,configuration,storeEnvironment,attempt+1)
+  }
+  if (storeEnvironment === 'Production') await refreshUserMembershipTier(database, userId)
 }
 
 async function refreshUserMembershipTier(database: D1Database, userId: string) {
   const now = new Date().toISOString()
-  const active = await database.prepare(`SELECT id FROM membership_entitlements
+  await database.prepare(`UPDATE users SET membership_tier = CASE WHEN EXISTS(SELECT id FROM membership_entitlements
     WHERE user_id = ? AND status = 'active' AND starts_at <= ?
       AND (is_lifetime = 1 OR (expires_at IS NOT NULL AND expires_at > ?))
-    LIMIT 1`).bind(userId, now, now).first()
-  await database.prepare('UPDATE users SET membership_tier = ?, updated_at = ? WHERE id = ?')
-    .bind(active ? 'member' : 'free', now, userId).run()
+    LIMIT 1) THEN 'member' ELSE 'free' END, updated_at = ? WHERE id = ?`).bind(userId,now,now,now,userId).run()
 }
 
 async function ensureAppStoreAccount(database: D1Database, userId: string) {
@@ -413,16 +484,18 @@ function requireServerConfiguration(environment: AppStoreCommerceEnvironment) {
       (apiEnvironment !== 'sandbox' && apiEnvironment !== 'production')) {
     throw commerceError('App Store Server API 尚未安全配置。', 503, 'app_store_server_not_configured')
   }
+  if (!Number.isSafeInteger(Number(environment.APP_STORE_APP_APPLE_ID)) || Number(environment.APP_STORE_APP_APPLE_ID) <= 0) {
+    throw commerceError('App Store Apple ID 尚未配置。',503,'app_store_apple_id_not_configured')
+  }
   if (environment.APP_ENVIRONMENT !== 'development' && environment.APP_ENVIRONMENT !== 'production') {
     throw commerceError('Worker 发布环境尚未明确配置。', 503, 'app_environment_not_configured')
   }
-  if (environment.APP_ENVIRONMENT === 'development' && apiEnvironment !== 'sandbox') {
-    throw commerceError('Development 只能验证 Sandbox 交易。', 503, 'unsafe_store_environment')
-  }
-  if (environment.APP_ENVIRONMENT === 'production' && apiEnvironment !== 'production') {
-    throw commerceError('Production 只能验证 Production 交易。', 503, 'unsafe_store_environment')
-  }
   return { ...catalog, issuerId, keyId, privateKey, apiEnvironment }
+}
+
+export async function checkStoreKitInfrastructure(environment: AppStoreCommerceEnvironment) {
+  try { await createAppStoreServerJWT(requireServerConfiguration(environment)); return true }
+  catch { return false }
 }
 
 function validateAppleTransaction(
@@ -476,18 +549,6 @@ async function createAppStoreServerJWT(
   return `${signingInput}.${base64URL(new Uint8Array(signature))}`
 }
 
-function decodeJWSPayload<T>(value: string): T {
-  const parts = value.split('.')
-  if (parts.length !== 3 || parts.some((item) => !item)) {
-    throw commerceError('签名数据格式无效。', 400, 'invalid_jws')
-  }
-  try {
-    return JSON.parse(new TextDecoder().decode(base64URLBytes(parts[1]))) as T
-  } catch {
-    throw commerceError('签名数据内容无效。', 400, 'invalid_jws_payload')
-  }
-}
-
 function pemBytes(value: string) {
   const normalized = value.replace(/\\n/g, '\n')
   const base64 = normalized
@@ -503,12 +564,6 @@ function base64URL(value: string | Uint8Array) {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
   return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
-}
-
-function base64URLBytes(value: string) {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
 }
 
 async function sha256(value: string) {

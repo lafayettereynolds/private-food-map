@@ -8,6 +8,7 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     private let commerceAPI: any PremiumCommerceAPI
     private var configuration: PremiumCommerceConfigurationV1?
     private var activeUserID: String?
+    private var sessionGeneration = UUID()
     private var updatesTask: Task<Void, Never>?
 
     init(commerceAPI: any PremiumCommerceAPI) {
@@ -22,12 +23,14 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
         let userID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !userID.isEmpty else { return }
         if activeUserID != userID {
+            sessionGeneration = UUID()
             activeUserID = userID
             configuration = nil
         }
+        let generation = sessionGeneration
         do {
             let value = try await commerceAPI.configuration()
-            guard activeUserID == userID else { return }
+            guard activeUserID == userID, sessionGeneration == generation else { return }
             configuration = value
             try await reconcileCurrentEntitlements()
         } catch {
@@ -37,6 +40,7 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
 
     func sessionDidEnd(userID: String?) async {
         guard userID == nil || activeUserID == userID else { return }
+        sessionGeneration = UUID()
         activeUserID = nil
         configuration = nil
     }
@@ -63,6 +67,7 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     }
 
     func purchase(productID: String) async throws -> MembershipPurchaseResult {
+        let generation = sessionGeneration
         let configuration = try await loadConfiguration(forceRefresh: true)
         guard configuration.purchaseReady == true else {
             throw MembershipPurchaseError.notConfigured
@@ -73,10 +78,12 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
         guard let product = try await Product.products(for: [productID]).first else {
             throw MembershipPurchaseError.productUnavailable
         }
+        guard activeUserID != nil, sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
         switch try await product.purchase(options: [.appAccountToken(configuration.appAccountToken)]) {
         case .success(let verification):
+            guard activeUserID != nil, sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
             let transaction = try Self.verified(verification)
-            try await reconcileAndFinish(transaction)
+            try await reconcileAndFinish(transaction, signedTransactionInfo: verification.jwsRepresentation)
             return .init(transactionID: String(transaction.id), requiresEntitlementRefresh: true, outcome: .completed)
         case .pending:
             return .init(transactionID: nil, requiresEntitlementRefresh: false, outcome: .pending)
@@ -88,7 +95,10 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     }
 
     func restore() async throws -> MembershipPurchaseResult {
+        let generation = sessionGeneration
+        guard activeUserID != nil else { throw MembershipPurchaseError.notConfigured }
         try await AppStore.sync()
+        guard activeUserID != nil, sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
         let count = try await reconcileCurrentEntitlements()
         guard count > 0 else { throw MembershipPurchaseError.restoreUnavailable }
         return .init(transactionID: nil, requiresEntitlementRefresh: true, outcome: .completed)
@@ -107,7 +117,7 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
             for await verification in Transaction.updates {
                 guard !Task.isCancelled, let self else { return }
                 guard case .verified(let transaction) = verification else { continue }
-                try? await self.reconcileAndFinish(transaction)
+                try? await self.reconcileAndFinish(transaction, signedTransactionInfo: verification.jwsRepresentation)
             }
         }
     }
@@ -115,8 +125,9 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     private func loadConfiguration(forceRefresh: Bool = false) async throws -> PremiumCommerceConfigurationV1 {
         if !forceRefresh, let configuration { return configuration }
         guard let userID = activeUserID else { throw MembershipPurchaseError.notConfigured }
+        let generation = sessionGeneration
         let value = try await commerceAPI.configuration()
-        guard activeUserID == userID else { throw MembershipPurchaseError.notConfigured }
+        guard activeUserID == userID, sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
         configuration = value
         return value
     }
@@ -124,20 +135,25 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     @discardableResult
     private func reconcileCurrentEntitlements() async throws -> Int {
         guard activeUserID != nil else { return 0 }
+        let generation = sessionGeneration
         var count = 0
         for await verification in Transaction.currentEntitlements {
+            guard sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
             let transaction = try Self.verified(verification)
-            try await reconcileAndFinish(transaction)
+            try await reconcileAndFinish(transaction, signedTransactionInfo: verification.jwsRepresentation)
             count += 1
         }
         return count
     }
 
-    private func reconcileAndFinish(_ transaction: Transaction) async throws {
-        guard activeUserID != nil else { return }
-        _ = try await commerceAPI.reconcile(transactionID: transaction.id)
+    private func reconcileAndFinish(_ transaction: Transaction, signedTransactionInfo: String) async throws {
+        guard let userID = activeUserID else { throw MembershipPurchaseError.notConfigured }
+        let generation = sessionGeneration
+        _ = try await commerceAPI.reconcile(transactionID: transaction.id, signedTransactionInfo: signedTransactionInfo)
+        guard activeUserID == userID, sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
         await transaction.finish()
-        NotificationCenter.default.post(name: .tasteMapPremiumEntitlementChanged, object: activeUserID)
+        guard activeUserID == userID, sessionGeneration == generation else { return }
+        NotificationCenter.default.post(name: .tasteMapPremiumEntitlementChanged, object: userID)
     }
 
     private nonisolated static func verified<T>(_ result: VerificationResult<T>) throws -> T {

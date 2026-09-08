@@ -50,6 +50,36 @@ struct Task08PremiumCommerceTests {
         #expect(api.catalogCalls == 2) // Purchase rechecks the server instead of using stale readiness.
     }
 
+    @Test("a suspended purchase cannot cross an A-B-A session switch")
+    func purchaseSessionGeneration() async throws {
+        let api = SuspendedCatalogProbe()
+        let provider = StoreKitMembershipPurchaseProvider(commerceAPI: api)
+        await provider.activate(userID: "A")
+        api.holdNext = true
+        let purchase = Task { try await provider.purchase(productID: "com.lafayette.tastemap.premium.monthly.v1") }
+        while api.pending == nil { await Task.yield() }
+        await provider.sessionDidEnd(userID: "A")
+        await provider.activate(userID: "B")
+        await provider.activate(userID: "A")
+        api.pending?.resume(returning: api.value)
+        api.pending = nil
+        do { _ = try await purchase.value; Issue.record("Stale purchase crossed the account switch") }
+        catch { #expect(error as? MembershipPurchaseError == .notConfigured) }
+    }
+
+    @Test("signed-out restore fails before opening StoreKit sync")
+    func restoreRequiresSession() async {
+        let provider = StoreKitMembershipPurchaseProvider(commerceAPI: CatalogProbe())
+        do { _ = try await provider.restore(); Issue.record("Restore accepted a signed-out session") }
+        catch { #expect(error as? MembershipPurchaseError == .notConfigured) }
+    }
+
+    @Test("development authentication and Premium caches cannot reuse Production Keychain entries")
+    func environmentCacheIsolation() {
+        #expect(KeychainCredentialStore.defaultService == "com.lafayette.tastemap.auth.development")
+        #expect(KeychainPremiumEntitlementCache.defaultService == "com.lafayette.tastemap.premium-cache.development")
+    }
+
     @Test("purchase outcomes distinguish completed, pending, and cancellation")
     func purchaseOutcomes() {
         let values: [MembershipPurchaseOutcome] = [.completed, .pending, .userCancelled]
@@ -154,7 +184,25 @@ private final class CatalogProbe: PremiumCommerceAPI {
             .init(id: "com.lafayette.tastemap.premium.monthly.v1", period: .monthly)
         ])
     }
-    func reconcile(transactionID: UInt64) async throws -> PremiumCommerceReconciliationV1 {
+    func reconcile(transactionID: UInt64, signedTransactionInfo: String?) async throws -> PremiumCommerceReconciliationV1 {
+        throw MembershipPurchaseError.notConfigured
+    }
+}
+
+@MainActor
+private final class SuspendedCatalogProbe: PremiumCommerceAPI {
+    var holdNext = false
+    var pending: CheckedContinuation<PremiumCommerceConfigurationV1, Never>?
+    var value: PremiumCommerceConfigurationV1 {
+        .init(apiVersion: 1, configured: true, purchaseReady: true, appAccountToken: UUID(), products: [
+            .init(id: "com.lafayette.tastemap.premium.monthly.v1", period: .monthly)
+        ])
+    }
+    func configuration() async throws -> PremiumCommerceConfigurationV1 {
+        if holdNext { holdNext = false; return await withCheckedContinuation { pending = $0 } }
+        return value
+    }
+    func reconcile(transactionID: UInt64, signedTransactionInfo: String?) async throws -> PremiumCommerceReconciliationV1 {
         throw MembershipPurchaseError.notConfigured
     }
 }

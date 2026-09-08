@@ -5,7 +5,7 @@ nonisolated enum TasteMapAppEnvironment: String, Codable, Sendable {
     case production
 
     static var current: Self {
-#if DEBUG
+#if DEBUG || TASTEMAP_SANDBOX_BUILD
         .development
 #else
         .production
@@ -31,7 +31,13 @@ nonisolated struct APIConfiguration: Equatable, Sendable {
         bundle: Bundle = .main,
         processInfo: ProcessInfo = .processInfo
     ) -> APIConfiguration {
-#if !DEBUG
+#if TASTEMAP_SANDBOX_BUILD
+        // A separately named Release configuration for TestFlight Sandbox only.
+        // Compiled only into the dedicated Sandbox artifact; no runtime override.
+        let endpoint = "https://api-dev.tastemap.cn"
+        return (try? resolve(environment: .development, values: [developmentKey: endpoint]))
+            ?? APIConfiguration(environment: .development, baseURL: nil)
+#elseif !DEBUG
         // This signed resource is also imported by Browser and Worker builds.
         // Production must never take its endpoint from process/.env overrides.
         guard let url = bundle.url(forResource: "ProductionEnvironment", withExtension: "json"),

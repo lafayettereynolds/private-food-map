@@ -70,7 +70,7 @@ struct TasteMapApp: App {
             let resetPersistentOfflineFixture = TasteMapUITestFixtures.requestsPersistentFixtureReset
             let persistenceConfigurationName = usePersistentOfflineFixture
                 ? TasteMapUITestFixtures.persistentConfigurationName
-                : "TasteMap"
+                : (TasteMapAppEnvironment.current == .development ? "TasteMapDevelopment" : "TasteMap")
             let persistenceStorageURL = usePersistentOfflineFixture
                 ? TasteMapUITestFixtures.persistentStoreURL
                 : nil
@@ -87,7 +87,7 @@ struct TasteMapApp: App {
             let useOnThisDayFixture = false
             let usePersistentOfflineFixture = false
             let resetPersistentOfflineFixture = false
-            let persistenceConfigurationName = "TasteMap"
+            let persistenceConfigurationName = TasteMapAppEnvironment.current == .development ? "TasteMapDevelopment" : "TasteMap"
             let persistenceStorageURL: URL? = nil
             #endif
             container = try TasteMapPersistence.makeContainer(
@@ -159,8 +159,16 @@ struct TasteMapApp: App {
         let trialUIFixture = ProcessInfo.processInfo.environment["TASTEMAP_SIGNUP_TRIAL_UI_TEST"] == "1"
         if trialUIFixture { entitlementAPI = SignupTrialUITestAPI() }
 #endif
+        #if DEBUG
+        let premiumCache: any PremiumEntitlementCaching = runtime.isolatesPersistentState
+            ? InMemoryPremiumEntitlementCache()
+            : KeychainPremiumEntitlementCache(service: "com.lafayette.tastemap.premium-cache.development")
+        #else
+        let premiumCache: any PremiumEntitlementCaching = KeychainPremiumEntitlementCache()
+        #endif
         let premiumService = PremiumEntitlementService(
             api: entitlementAPI,
+            cache: premiumCache,
             purchaseProvider: StoreKitMembershipPurchaseProvider(
                 commerceAPI: authServices.premiumCommerceAPI
             ),

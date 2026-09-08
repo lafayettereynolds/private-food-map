@@ -164,6 +164,42 @@ export async function verifyRedemption(db, ledger, id, transactionID, environmen
     return { state: 'redeemed', evidence: 'verified_sandbox_offer_transaction' }
   })
 }
+export function serverAssignmentSQL(db, ledger, id) {
+  const row = db.prepare(`SELECT c.id,c.user_id,c.reward_id,c.assigned_at,c.state,b.offer_identifier
+    FROM codes c JOIN batches b ON b.id=c.batch_id WHERE c.id=?`).get(id)
+  if (!row || row.state !== 'assigned' || !row.offer_identifier) fail()
+  const reward = eligibleReward(ledger,row.reward_id)
+  if (reward.user_id !== row.user_id) fail()
+  const q = x => "'" + String(x).replaceAll("'", "''") + "'"
+  // All values are assignment metadata. The actual code is never selected.
+  return `INSERT INTO sandbox_offer_assignments(assignment_id,user_id,reward_id,offer_identifier,assigned_at)
+    SELECT ${q(row.id)},${q(row.user_id)},${q(row.reward_id)},${q(row.offer_identifier)},${q(row.assigned_at)}
+    WHERE EXISTS(SELECT 1 FROM premium_rewards p JOIN referrals r ON r.invitee_id=p.invitee_id
+      WHERE p.id=${q(row.reward_id)} AND p.user_id=${q(row.user_id)} AND p.state='active' AND r.status='qualified')
+    ON CONFLICT(assignment_id) DO NOTHING;
+    SELECT COUNT(*) AS assignment_matches FROM sandbox_offer_assignments WHERE assignment_id=${q(row.id)}
+      AND user_id=${q(row.user_id)} AND reward_id=${q(row.reward_id)} AND offer_identifier=${q(row.offer_identifier)};`
+}
+
+export function syncServerRedemption(db, ledger, id) {
+  const row = db.prepare('SELECT c.id,c.user_id,c.state,c.reward_id,b.offer_identifier FROM codes c JOIN batches b ON b.id=c.batch_id WHERE c.id=?').get(id)
+  if (!row || !['assigned','failed','redeemed'].includes(row.state)) fail()
+  const verified = ledger.prepare(`SELECT a.transaction_id,a.user_id,a.state,a.reward_id,a.offer_identifier,t.environment,t.verification_source
+    FROM sandbox_offer_assignments a JOIN app_store_transactions_v2 t ON t.transaction_id=a.transaction_id AND t.environment='Sandbox'
+      AND t.user_id=a.user_id AND t.original_transaction_id=a.original_transaction_id
+    WHERE a.assignment_id=?`).get(id)
+  if (!verified || verified.user_id!==row.user_id || verified.reward_id!==row.reward_id ||
+      verified.offer_identifier!==row.offer_identifier || verified.state!=='redeemed' ||
+      verified.environment!=='Sandbox' || verified.verification_source!=='app_store_server_api') fail()
+  if (row.state==='redeemed') return {state:'redeemed',duplicate:true}
+  return atomic(db,()=>{
+    db.prepare("UPDATE codes SET state='redeemed',transaction_id=?,changed_at=? WHERE id=? AND state IN('assigned','failed')")
+      .run(verified.transaction_id,iso(),id)
+    audit(db,id,'redeemed:authoritative_sandbox_server_ledger')
+    return {state:'redeemed',evidence:'authoritative_sandbox_server_ledger'}
+  })
+}
+
 export function summary(db) {
   return db.prepare(`SELECT b.id AS batchID,b.offer_key AS offerKey,
     CASE WHEN b.source_name GLOB 'OfferCodeOneTimeUseCodes_[0-9]*.csv' THEN b.source_name ELSE 'imported-csv' END AS sourceFile,
@@ -191,6 +227,26 @@ export function gitGuard(db) {
   return { gitSafe: true, trackedFilesChecked: tracked.length, stagedFilesChecked: staged.length }
 }
 
+function assertSandboxTarget() {
+  const config=JSON.parse(fs.readFileSync(path.join(ROOT,'wrangler.development.jsonc'),'utf8'))
+  if(config.name!=='private-food-map-development' || config.vars.APP_ENVIRONMENT!=='development' ||
+    config.vars.APP_STORE_API_ENVIRONMENT!=='sandbox' || config.d1_databases[0].database_id!=='b1ddde34-c459-49bb-b9d1-7a41303ccb2d') fail()
+}
+function refreshLedger() {
+  assertSandboxTarget()
+  const sql=path.join(PRIVATE,`${randomUUID()}.snapshot.sql`), next=path.join(PRIVATE,`${randomUUID()}.snapshot.sqlite`)
+  let target
+  try {
+    execFileSync('pnpm',['exec','wrangler','d1','export','food-map-db-development','--remote','--config','wrangler.development.jsonc','--output',sql],{cwd:ROOT,stdio:'pipe'})
+    target=new DatabaseSync(next);target.exec(fs.readFileSync(sql,'utf8'));target.close();target=null
+    fs.chmodSync(next,0o600);fs.renameSync(next,path.join(PRIVATE,'sandbox-ledger.sqlite'))
+    return {refreshed:true,environment:'sandbox'}
+  } finally {
+    target?.close()
+    for(const file of [sql,next]) if(fs.existsSync(file)) fs.unlinkSync(file)
+  }
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2)
   const at = args.indexOf('--environment')
@@ -200,18 +256,30 @@ async function main() {
   let ledger
   try {
     let result
-    if (command === 'import') result = args.map(f => importCSV(db, f))
+    if (command === 'refresh-ledger') result = refreshLedger()
+    else if (command === 'import') result = args.map(f => importCSV(db, f))
     else if (command === 'status') result = summary(db)
     else if (command === 'map') result = mapBatch(db, ...args)
     else if (command === 'fail') result = markFailed(db, ...args)
     else if (command === 'git-guard') result = gitGuard(db)
-    else if (['assign', 'handoff', 'verify'].includes(command)) {
+    else if (['assign', 'handoff', 'verify', 'publish', 'sync-redemption'].includes(command)) {
       const [ledgerFile, id, transactionID, configFile] = args
       if (!ledgerFile || !path.resolve(ledgerFile).startsWith(PRIVATE + path.sep) || !fs.existsSync(ledgerFile) ||
           !fs.realpathSync(ledgerFile).startsWith(fs.realpathSync(PRIVATE) + path.sep)) fail()
       ledger = new DatabaseSync(ledgerFile, { readOnly: true })
       if (command === 'assign') result = assign(db, ledger, id)
       else if (command === 'handoff') result = handoff(db, ledger, id)
+      else if (command === 'sync-redemption') result = syncServerRedemption(db,ledger,id)
+      else if (command === 'publish') {
+        assertSandboxTarget()
+        const target=path.join(PRIVATE,`${id}.assignment.sql`)
+        fs.writeFileSync(target,serverAssignmentSQL(db,ledger,id),{flag:'wx',mode:0o600})
+        try {
+          const response=JSON.parse(execFileSync('pnpm',['exec','wrangler','d1','execute','food-map-db-development','--remote','--config','wrangler.development.jsonc','--file',target,'--json'],{cwd:ROOT,stdio:'pipe'}).toString())
+          if (!response.some(r=>r.success && r.results?.some(row=>row.assignment_matches===1))) fail()
+          result={published:true,assignmentID:id,environment:'sandbox'}
+        } finally { fs.unlinkSync(target) }
+      }
       else {
         if (!path.resolve(configFile ?? '').startsWith(PRIVATE + path.sep)) fail()
         const configuration = JSON.parse(fs.readFileSync(configFile, 'utf8'))

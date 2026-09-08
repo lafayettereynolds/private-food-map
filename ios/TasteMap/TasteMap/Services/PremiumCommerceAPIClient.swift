@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 nonisolated struct PremiumCommerceConfigurationV1: Decodable, Equatable, Sendable {
     struct ProductReference: Decodable, Equatable, Sendable {
@@ -23,10 +24,11 @@ nonisolated struct PremiumCommerceReconciliationV1: Decodable, Equatable, Sendab
 @MainActor
 protocol PremiumCommerceAPI: Sendable {
     func configuration() async throws -> PremiumCommerceConfigurationV1
-    func reconcile(transactionID: UInt64) async throws -> PremiumCommerceReconciliationV1
+    func reconcile(transactionID: UInt64, signedTransactionInfo: String?) async throws -> PremiumCommerceReconciliationV1
 }
 
 final class URLSessionPremiumCommerceAPIClient: PremiumCommerceAPI {
+    private let logger = Logger(subsystem: "com.lafayette.tastemap", category: "StoreKitVerification")
     private let configuration: APIConfiguration
     private let authorization: any SyncAuthorizationProviding
     private let session: URLSession
@@ -46,12 +48,24 @@ final class URLSessionPremiumCommerceAPIClient: PremiumCommerceAPI {
         try await send(path: "/api/v1/storekit/config", method: "GET", body: nil)
     }
 
-    func reconcile(transactionID: UInt64) async throws -> PremiumCommerceReconciliationV1 {
-        try await send(
-            path: "/api/v1/storekit/transactions/reconcile",
-            method: "POST",
-            body: try JSONSerialization.data(withJSONObject: ["transactionId": String(transactionID)])
-        )
+    func reconcile(transactionID: UInt64, signedTransactionInfo: String? = nil) async throws -> PremiumCommerceReconciliationV1 {
+        var payload = ["transactionId": String(transactionID)]
+        if let signedTransactionInfo { payload["signedTransactionInfo"] = signedTransactionInfo }
+        // Phase-only diagnostics: never log JWS, transaction/account identifiers,
+        // authorization headers or raw server responses.
+        logger.notice("reconcile_started signed_proof=\(signedTransactionInfo != nil, privacy: .public)")
+        do {
+            let result: PremiumCommerceReconciliationV1 = try await send(
+                path: "/api/v1/storekit/transactions/reconcile",
+                method: "POST",
+                body: try JSONSerialization.data(withJSONObject: payload)
+            )
+            logger.notice("reconcile_completed authoritative=\(result.reconciled, privacy: .public)")
+            return result
+        } catch {
+            logger.error("reconcile_failed")
+            throw error
+        }
     }
 
     private func send<Response: Decodable>(path: String, method: String, body: Data?) async throws -> Response {

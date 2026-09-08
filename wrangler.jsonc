@@ -3,6 +3,7 @@
   "name": "private-food-map",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
   "routes": [
     { "pattern": "origin-api.tastemap.cn", "custom_domain": true },
     { "pattern": "api.tastemap.cn", "custom_domain": true },

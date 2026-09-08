@@ -135,6 +135,7 @@ interface Env {
   APP_STORE_ISSUER_ID?: string
   APP_STORE_KEY_ID?: string
   APP_STORE_PRIVATE_KEY?: string
+  APP_STORE_APP_APPLE_ID?: string
   PUBLIC_SHARE_ORIGIN?: string
 }
 
@@ -642,12 +643,21 @@ const worker = {
     if (url.pathname === '/ready' && request.method === 'GET') return productionReadiness(env)
     if (url.pathname.startsWith('/invite/') && request.method==='GET') return referralLandingPage(url.pathname.slice('/invite/'.length))
     if (url.pathname === '/internal/premium' && request.method === 'GET') {
-      const user = await authenticateAccessToken(request, env.DB)
-      if (!user) return json({ error: 'Authentication required' }, 401)
-      if (!(env.MEMBERSHIP_ADMIN_USER_IDS ?? '').split(',').map(id => id.trim()).includes(user.id)) {
-        return json({ error: 'Administrator required' }, 403)
+      try {
+        const user = await authenticateAccessToken(request, env.DB)
+        if (!user) return json({ error: 'Authentication required' }, 401)
+        if (!(env.MEMBERSHIP_ADMIN_USER_IDS ?? '').split(',').map(id => id.trim()).includes(user.id)) {
+          return json({ error: 'Administrator required' }, 403)
+        }
+        return premiumAdminPage()
+      } catch (error) {
+        // This HTML route precedes the API catch boundary. Reject invalid or
+        // expired sessions as JSON without leaking infrastructure exceptions.
+        if (error instanceof AuthV1RequestError) {
+          return json({ error: 'Authentication required', code: error.code }, error.status)
+        }
+        return json({ error: 'Administrator authentication unavailable' }, 503)
       }
-      return premiumAdminPage()
     }
     if (url.pathname === '/.well-known/apple-app-site-association' && request.method === 'GET') {
       return new Response(JSON.stringify({
@@ -737,7 +747,7 @@ const worker = {
       if (url.pathname.startsWith('/api/v1/storekit/')) {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
-        return json(await handleAppStoreCommerceV1(request, env.DB, viewer.id, env))
+        return json(await handleAppStoreCommerceV1(request, env.DB, viewer.id, env, fetch, viewer.sessionId))
       }
       const publicShareMatch = url.pathname.match(/^\/api\/public\/shares\/([A-Za-z0-9_-]+)$/)
       if (publicShareMatch) {
@@ -1708,6 +1718,8 @@ interface ViewerIdentity {
   authSubject: string | null
   testMembership?: 'premium' | 'free'
   authenticatedAt?: string
+  sessionId?: string
+  storeEnvironment?: 'Sandbox' | 'Production'
 }
 
 async function resolveViewer(request: Request, database: D1Database): Promise<ViewerIdentity> {
@@ -1752,6 +1764,8 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
       authProvider: 'apple',
       authSubject: null,
       authenticatedAt: authenticated.authenticatedAt,
+      sessionId: authenticated.sessionId,
+      storeEnvironment: authenticated.storeEnvironment,
     }
   }
   if (env.APP_ENVIRONMENT === 'production') {
@@ -1825,9 +1839,10 @@ function requireMembershipAdmin(request: Request, env: Env, viewer: ViewerIdenti
   if (!isMembershipAdmin(request, env, viewer)) throw new RequestError('没有会员管理权限。', 403)
 }
 
-export async function readEffectiveMembership(database: D1Database, userId: string) {
-  await settlePremiumRewards(database,userId)
-  const result = await database.prepare(`SELECT * FROM membership_entitlements
+export async function readEffectiveMembership(database: D1Database, userId: string, storeEnvironment: 'Sandbox' | 'Production' = 'Production') {
+  if (storeEnvironment === 'Production') await settlePremiumRewards(database,userId)
+  const table = storeEnvironment === 'Sandbox' ? 'sandbox_membership_entitlements' : 'membership_entitlements'
+  const result = await database.prepare(`SELECT * FROM ${table}
     WHERE user_id = ? ORDER BY created_at DESC`).bind(userId).all<MembershipEntitlementRow>()
   const entitlements = result.results.map(rowToMembershipEntitlement)
   const now = Date.now()
@@ -1879,7 +1894,7 @@ async function readViewerMembership(database: D1Database, viewer: ViewerIdentity
   if (viewer.testMembership === 'free') {
     return { isPremium: false, source: null, startsAt: null, expiresAt: null, isLifetime: false, entitlements: [] }
   }
-  return readEffectiveMembership(database, viewer.id)
+  return readEffectiveMembership(database, viewer.id, viewer.storeEnvironment)
 }
 
 async function searchMembershipUsers(database: D1Database, query: string) {

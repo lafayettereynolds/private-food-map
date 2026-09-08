@@ -3,6 +3,7 @@
   "name": "private-food-map-development",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
   "routes": [
@@ -27,7 +28,7 @@
   ],
   "vars": {
     "APP_ENVIRONMENT": "development",
-    "SYNC_AUTH_MODE": "development-test",
+    "SYNC_AUTH_MODE": "cloudflare-access",
     "APPLE_CLIENT_IDS": "com.lafayette.tastemap",
     "APP_STORE_BUNDLE_ID": "com.lafayette.tastemap",
     "APP_STORE_MONTHLY_PRODUCT_ID": "com.lafayette.tastemap.premium.monthly.v1",

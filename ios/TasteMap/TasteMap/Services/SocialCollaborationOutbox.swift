@@ -35,7 +35,7 @@ final class SocialCollaborationOutbox {
                 for: .applicationSupportDirectory, in: .userDomainMask,
                 appropriateFor: nil, create: true
             )) ?? fileManager.temporaryDirectory
-            directory = root.appendingPathComponent("TasteMap/SocialOutbox", isDirectory: true)
+            directory = root.appendingPathComponent(TasteMapAppEnvironment.current == .development ? "TasteMapDevelopment/SocialOutbox" : "TasteMap/SocialOutbox", isDirectory: true)
             fileURL = directory.appendingPathComponent("shared-meal-invitations-v1.json")
         }
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)

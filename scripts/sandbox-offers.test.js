@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { openInventory, parseCodes, importCSV, mapBatch, assign, handoff, markFailed, verifyRedemption, summary } from './sandbox-offers.mjs'
+import { openInventory, parseCodes, importCSV, mapBatch, assign, handoff, markFailed, verifyRedemption, summary, serverAssignmentSQL, syncServerRedemption } from './sandbox-offers.mjs'
 import { applyAllMigrations } from '../worker/testSupport/migrations.js'
 import { registrationReferral, qualifyReferral, settlePremiumRewards } from '../worker/referralsV1'
 
@@ -97,6 +97,27 @@ describe('private Sandbox offer inventory', () => {
     s.ledger.exec("UPDATE premium_rewards SET state='revoked',revoked_at=changed_at WHERE role='invitee'")
     expect(()=>assign(s.db,s.ledger,'referral:b:invitee')).toThrow()
   })
+  it('publishes only qualified owner metadata and syncs only verified Sandbox server receipts',async()=>{
+    const s=setup();await s.qualify();mapBatch(s.db,s.imported.batchID,'invitee','test-offer')
+    const a=assign(s.db,s.ledger,'referral:b:invitee')
+    const sql=serverAssignmentSQL(s.db,s.ledger,a.assignmentID)
+    for(const row of s.db.prepare('SELECT secret FROM codes').all()) expect(sql).not.toContain(row.secret)
+    s.ledger.exec(sql)
+    expect(()=>syncServerRedemption(s.db,s.ledger,a.assignmentID)).toThrow()
+    const now=new Date().toISOString(), token='11111111-1111-4111-8111-111111111111'
+    s.ledger.prepare('INSERT INTO app_store_accounts VALUES(?,?,?,?)').run('b',token,now,now)
+    s.ledger.prepare("INSERT INTO app_store_owners_v2(environment,original_transaction_id,user_id,app_account_token,created_at,updated_at) VALUES('Production',?,?,?,?,?)").run('900','b',token,now,now)
+    s.ledger.prepare(`INSERT INTO app_store_transactions_v2(transaction_id,original_transaction_id,user_id,app_account_token,product_id,environment,purchase_at,signed_transaction_digest,verification_source,verified_at,created_at,updated_at)
+      VALUES('100','900','b',?,'test-product','Production',?,'test-digest','app_store_server_api',?,?,?)`).run(token,now,now,now,now)
+    s.ledger.prepare("UPDATE sandbox_offer_assignments SET state='redeemed',transaction_id='100',original_transaction_id='900' WHERE assignment_id=?").run(a.assignmentID)
+    expect(()=>syncServerRedemption(s.db,s.ledger,a.assignmentID)).toThrow()
+    s.ledger.exec("INSERT INTO app_store_owners_v2 SELECT 'Sandbox',original_transaction_id,user_id,app_account_token,created_at,updated_at FROM app_store_owners_v2 WHERE environment='Production'")
+    s.ledger.exec("UPDATE app_store_transactions_v2 SET environment='Sandbox'")
+    expect(syncServerRedemption(s.db,s.ledger,a.assignmentID).state).toBe('redeemed')
+    expect(syncServerRedemption(s.db,s.ledger,a.assignmentID).duplicate).toBe(true)
+    expect(summary(s.db)[0].redeemed).toBe(1)
+  })
+
   it('verifies Sandbox, owner, offer and transaction; rejects production and replay',async()=>{
     const s=setup();await s.qualify();mapBatch(s.db,s.imported.batchID,'invitee','test-offer')
     const a=assign(s.db,s.ledger,'referral:b:invitee')

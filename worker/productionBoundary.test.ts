@@ -3,6 +3,17 @@ import { withProductionCORS } from './productionBoundary'
 import worker from './index'
 
 describe('production authentication and origin boundary', () => {
+  it.each(['Bearer invalid', 'Basic invalid'])(
+    'rejects malformed Admin authorization as 401 JSON: %s', async authorization => {
+      const database = new Proxy({}, { get: () => { throw Error('Invalid token touched DB') } })
+      const response = await worker.fetch(new Request('https://origin-api.tastemap.cn/internal/premium', {
+        headers: { Authorization: authorization },
+      }), { APP_ENVIRONMENT: 'production', DB: database } as never)
+      expect(response.status).toBe(401)
+      expect(response.headers.get('content-type')).toContain('application/json')
+      expect(await response.json()).toEqual({ error: 'Authentication required', code: 'invalid_access_token' })
+    },
+  )
   it('allows the formal Browser preflight without a wildcard', async () => {
     const next = vi.fn()
     const response = await withProductionCORS(new Request('https://api.tastemap.cn/api/v1/sync/pull', {

@@ -29,6 +29,8 @@ for (const marker of [
   'X-Taste-Map-Test-User',
   '__TASTEMAP_UI_TEST_RUNTIME',
   'api-dev.tastemap.cn',
+  'TasteMapSandboxAPIBaseURL',
+  'premium-sandbox-catalog',
   'BEGIN PRIVATE KEY',
   '/Users/lafayette',
   '--tastemap-hybrid-development',

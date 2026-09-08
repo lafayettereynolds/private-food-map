@@ -24,6 +24,7 @@ export interface AuthenticatedUser {
   email: string | null
   sessionId?: string
   authenticatedAt?: string
+  storeEnvironment?: 'Sandbox' | 'Production'
 }
 
 interface AuthDependencies {
@@ -75,6 +76,7 @@ interface SessionRow {
   refresh_generation: number
   revoked_at: string | null
   created_at: string
+  store_environment?: 'Sandbox' | 'Production'
 }
 
 interface HistoryRow {
@@ -130,7 +132,7 @@ export async function authenticateAccessToken(request: Request, database: D1Data
   }
   await database.prepare('UPDATE auth_sessions SET last_used_at = ? WHERE id = ?')
     .bind(now.toISOString(), row.id).run()
-  return { id: row.user_id, email: row.email, sessionId: row.id, authenticatedAt: row.created_at }
+  return { id: row.user_id, email: row.email, sessionId: row.id, authenticatedAt: row.created_at, storeEnvironment: row.store_environment === 'Sandbox' ? 'Sandbox' : 'Production' }
 }
 
 async function createChallenge(database: D1Database, now: Date): Promise<AuthChallengeResponseV1> {

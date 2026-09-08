@@ -8,7 +8,8 @@ nonisolated protocol PremiumEntitlementCaching: Sendable {
 }
 
 nonisolated struct KeychainPremiumEntitlementCache: PremiumEntitlementCaching, Sendable {
-    static let defaultService = "com.lafayette.tastemap.premium-cache"
+    static let defaultService = TasteMapAppEnvironment.current == .development
+        ? "com.lafayette.tastemap.premium-cache.development" : "com.lafayette.tastemap.premium-cache"
     let service: String
 
     init(service: String = Self.defaultService) {

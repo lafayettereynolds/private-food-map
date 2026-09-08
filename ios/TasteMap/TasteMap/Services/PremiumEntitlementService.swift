@@ -67,7 +67,8 @@ final class PremiumEntitlementService {
 
 #if DEBUG
     var developmentOverrideAvailable: Bool {
-        DevelopmentPremiumOverridePolicy.isAvailable(buildIsDebug: true, environment: environment)
+        TasteMapRuntimeConfiguration.current.tier != .developmentE2E &&
+            DevelopmentPremiumOverridePolicy.isAvailable(buildIsDebug: true, environment: environment)
     }
 #endif
 

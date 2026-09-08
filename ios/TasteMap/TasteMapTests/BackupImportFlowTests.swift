@@ -262,7 +262,9 @@ struct BackupImportFlowTests {
         coordinator.readAndPreflight(data: input.data, fileName: input.fileName)
         await coordinator.waitForCurrentOperation()
         #expect(coordinator.state == .preflightReady)
-        #expect(coordinator.preflightRun?.result.blockingCount == 0)
+        let blocking = coordinator.preflightRun?.result.issues.filter { $0.severity == .blocking }
+            .map { "\($0.code):\($0.field ?? "")" } ?? []
+        #expect(coordinator.preflightRun?.result.blockingCount == 0, "\(blocking)")
         coordinator.generatePlan()
         await coordinator.waitForCurrentOperation()
         return coordinator

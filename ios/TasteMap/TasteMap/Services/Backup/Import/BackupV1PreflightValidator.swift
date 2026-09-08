@@ -23,7 +23,7 @@ nonisolated struct BackupV1PreflightValidator {
             tombstones: normalizedTombstoneCount(envelope.tombstones)
         )
 
-        issues += validateIntegrity(envelope)
+        issues += validateIntegrity(envelope, root: root)
         issues += validateMetadataCounts(envelope)
         issues += validateRelationships(envelope)
         issues += validateTombstones(envelope)
@@ -77,10 +77,15 @@ nonisolated struct BackupV1PreflightValidator {
         )
     }
 
-    private func validateIntegrity(_ envelope: BackupEnvelopeV1) -> [BackupImportIssue] {
+    private func validateIntegrity(_ envelope: BackupEnvelopeV1, root: [String: Any]) -> [BackupImportIssue] {
         do {
+            // Hash the supplied payload, not a re-encoded DTO which can insert
+            // optional keys (e.g. websiteUrl:null) absent from older v1 files.
+            // Shape/type validation remains independent and fail-closed.
+            var payload = root
+            payload.removeValue(forKey: "integrity")
             let canonical = try BackupCanonicalJSONV1.canonicalString(
-                for: envelope.integrityPayload
+                forJSONObject: payload
             )
             let actual = BackupCanonicalJSONV1.sha256Hex(of: canonical)
             guard actual == envelope.integrity.digest else {
@@ -465,9 +470,9 @@ private nonisolated struct BackupV1ShapeValidator {
         let allowed: Set<String>
         let maximumStringBytes: [String: Int]
 
-        init(_ keys: [String], maximumStringBytes: [String: Int] = [:]) {
+        init(_ keys: [String], optionalKeys: [String] = [], maximumStringBytes: [String: Int] = [:]) {
             required = Set(keys)
-            allowed = Set(keys)
+            allowed = Set(keys).union(optionalKeys)
             self.maximumStringBytes = maximumStringBytes
         }
     }
@@ -624,6 +629,18 @@ private nonisolated struct BackupV1ShapeValidator {
             ))
         }
         for (field, value) in object where field.lowercased().contains("url") {
+            if field == "websiteUrl", schema.allowed.contains(field) {
+                if value is NSNull { continue }
+                if let string = value as? String, let url = URLComponents(string: string),
+                   ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                   let host = url.host, !host.isEmpty, url.user == nil, url.password == nil { continue }
+                issues.append(shapeIssue(
+                    code: "schema_website_url_invalid", title: "官网 URL 无效",
+                    explanation: "官网必须是无凭据的 HTTP 或 HTTPS URL。",
+                    entityType: path, sourceReference: safeReference(object["id"]), field: field
+                ))
+                continue
+            }
             guard let string = value as? String, !string.hasPrefix("https://") else { continue }
             issues.append(shapeIssue(
                 code: "schema_https_required", title: "URL 必须使用 HTTPS",
@@ -714,9 +731,10 @@ private nonisolated struct BackupV1ShapeValidator {
             "openingHours", "markerType", "markerPhotoId", "merchantImageUrl", "markerEmoji",
             "createdAt", "updatedAt",
         ],
+        optionalKeys: ["websiteUrl"],
         maximumStringBytes: [
             "name": 200, "address": 1_000, "city": 200, "longTermNote": 20_000,
-            "phone": 100, "openingHours": 2_000, "merchantImageUrl": 2_048,
+            "phone": 100, "websiteUrl": 2_048, "openingHours": 2_000, "merchantImageUrl": 2_048,
             "markerEmoji": 32,
         ]
     )

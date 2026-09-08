@@ -10,6 +10,30 @@ struct BackupImportPreflightTests {
     private let reader = BackupImportFileReader()
     private let service = BackupImportPreflightService()
 
+    @Test("Backup v1 optional website metadata follows the existing HTTP/HTTPS contract")
+    func websiteMetadataContract() async throws {
+        for website: Any in [NSNull(), "https://restaurant.example/menu", "http://restaurant.example/menu"] {
+            var root = try fixtureObject("backup.v1.full.valid")
+            var entities = try requiredDictionary(root["entities"])
+            var restaurants = try #require(entities["restaurants"] as? [[String: Any]])
+            restaurants[0]["websiteUrl"] = website
+            entities["restaurants"] = restaurants
+            root["entities"] = entities
+            let result = try await preflight(data: recanonicalized(root)).result
+            #expect(result.blockingCount == 0)
+        }
+        for website in ["javascript:alert(1)", "file:///private/data", "https://name:password@restaurant.example", "https://"] {
+            var root = try fixtureObject("backup.v1.full.valid")
+            var entities = try requiredDictionary(root["entities"])
+            var restaurants = try #require(entities["restaurants"] as? [[String: Any]])
+            restaurants[0]["websiteUrl"] = website
+            entities["restaurants"] = restaurants
+            root["entities"] = entities
+            let result = try await preflight(data: recanonicalized(root)).result
+            #expect(result.issues.contains { $0.code == "schema_website_url_invalid" && $0.field == "websiteUrl" })
+        }
+    }
+
     @Test("Valid full and minimal Backup v1 files pass deterministic preflight")
     func validBackupV1Fixtures() async throws {
         let full = try await preflightFixture("backup.v1.full.valid")
@@ -386,9 +410,9 @@ struct BackupImportPreflightTests {
         var integrity = try requiredDictionary(root["integrity"])
         integrity["digest"] = String(repeating: "0", count: 64)
         root["integrity"] = integrity
-        let temporary = jsonData(root)
-        let envelope = try JSONDecoder().decode(BackupEnvelopeV1.self, from: temporary)
-        let canonical = try BackupCanonicalJSONV1.canonicalString(for: envelope.integrityPayload)
+        var payload = root
+        payload.removeValue(forKey: "integrity")
+        let canonical = try BackupCanonicalJSONV1.canonicalString(forJSONObject: payload)
         integrity["digest"] = BackupCanonicalJSONV1.sha256Hex(of: canonical)
         root["integrity"] = integrity
         return jsonData(root)
