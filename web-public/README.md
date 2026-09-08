@@ -2,7 +2,9 @@
 
 Recovered byte-for-byte from the four public HTTPS resources on 2026-09-09 after original local repositories, worktrees, archive paths, histories and Cloudflare deployment metadata did not yield a recoverable source directory. This is a newly adopted source, not a claim to have recovered the historical project.
 
-Source: `web-public/public/`. No compilation or dependency installation is required. `baseline.json` records the original public resource hashes and Cloudflare version. Keep index.html, support.html and styles.css unchanged when applying this privacy patch.
+Source: `web-public/public/`. No compilation or dependency installation is required. Baseline commit: `9882cfe`. The `_redirects` file preserves the production version metadata’s `/ /index.html 200` mapping.
+
+`baseline.json` records the original public resource hashes and Cloudflare version. Keep index.html, support.html and styles.css unchanged when applying this privacy patch.
 
 Cloudflare Worker: `fancy-fog-1341`; existing custom domain `tastemap.cn`. API Worker `private-food-map` and its more-specific invitation / AASA routes must remain unchanged. No D1, R2, secret or account credential belongs in this site.
 
@@ -23,6 +25,8 @@ Rollback before a later deployment removes historical versions:
 pnpm exec wrangler rollback f9d342db-afb5-4153-9085-8385dd725f01 --config web-public/wrangler.jsonc
 ```
 
-Alternatively build a rollback source tree with `git archive <baseline-commit> web-public` and deploy that config. Do not deploy from a temporary downloaded HTML copy. Rollback is website-only, never a database restore.
+Alternatively build a rollback source tree with `git archive 9882cfe web-public` and deploy that config. Do not deploy from a temporary downloaded HTML copy. Rollback is website-only, never a database restore.
 
 Core UI / page template: existing public static-page template and styles preserved. Food/dining visual components: none. No iOS or Hybrid renderer changes.
+
+When restoring baseline commit 9882cfe, retain the verified `_redirects` mapping `/ /index.html 200` from the current source; that metadata-derived file was recovered immediately after the byte baseline commit.
