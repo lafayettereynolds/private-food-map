@@ -96,3 +96,14 @@ COMMIT: Foundation delta containing this report.
 - TESTFLIGHT READINESS: NOT READY.
 
 No secrets, redemption codes, raw Production export or signed download URL belong in this report or Git.
+
+## Final automated artifact checkpoint
+
+- Implementation commit: `a39cdaa` (parent: preserved baseline `bca9496`).
+- Archive: `/Users/lafayette/Projects/tastemap-rc-resume-yKGy6yVt/PreCutover-Release.xcarchive`.
+- Archive succeeded; archived app passes deep/strict codesign verification, formal-stage byte comparison and existing formal purity scanner (55 app files, 26 Web files).
+- Archived executable SHA-256: `c6330c907babb039545561472e9a89db1e522144d51df9aae3c17960ade2e422`.
+- This is a **pre-cutover, development-signed verification archive**, not the final App Store RC. No upload or installation performed.
+- Browser fallback for Cloudflare dashboard inspection timed out; no DNS records changed through UI and no new credentials requested.
+- Remaining Vitest failure areas: global/map product contracts, Profile density, dismissal icon contract, Settings order, List viewer-rating projection, viewport ownership fixture, rating options, source-insight semantics, and remaining UI SSR contracts. Protected baseline/current JSON results are in the safety directory. Do not blindly replace assertions to make them green.
+- Swift package failure: `TasteMapHybridBridgeTests.testOwnerIsolationExcludesForeignRowsAndRelationships`, line 92 expects a restaurant list but obtains an empty list; later indexing crashes. Reproduced in original baseline. Investigate fixture eligibility versus owner projection before changing implementation.
