@@ -30,7 +30,7 @@ describe('Private recommendation preference sync V1', () => {
   it('rejects production test headers instead of creating a private preference identity', async () => {
     const response = await worker.fetch(new Request(`https://api.example.test${root}pull?apiVersion=1`, {
       headers: { 'X-Taste-Map-Test-User': 'tm_a' },
-    }), { DB: db, ASSETS: { fetch: () => new Response() }, APP_ENVIRONMENT: 'production', SYNC_AUTH_MODE: 'cloudflare-access' })
+    }), { DB: db, PHOTO_STORAGE: {list: async()=>({objects:[],truncated:false}),delete:async()=>{}}, ASSETS: { fetch: () => new Response() }, APP_ENVIRONMENT: 'production', SYNC_AUTH_MODE: 'cloudflare-access' })
     expect(response.status).toBe(401)
   })
 
@@ -38,7 +38,7 @@ describe('Private recommendation preference sync V1', () => {
     const response = await worker.fetch(new Request(`https://development.example.test${root}push`, {
       method: 'POST', headers: { 'X-Taste-Map-Test-User': 'tm_b', 'X-Taste-Map-Preference-Owner': 'tm_a', 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiVersion: 1, events: [sample()] }),
-    }), { DB: db, ASSETS: { fetch: () => new Response() }, APP_ENVIRONMENT: 'development', SYNC_AUTH_MODE: 'development-test' })
+    }), { DB: db, PHOTO_STORAGE: {list: async()=>({objects:[],truncated:false}),delete:async()=>{}}, ASSETS: { fetch: () => new Response() }, APP_ENVIRONMENT: 'development', SYNC_AUTH_MODE: 'development-test' })
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ code: 'account_changed' })
     expect((await pulled(db, 'tm_b')).events).toEqual([])
@@ -164,7 +164,7 @@ function api(db, owner, path, method = 'GET', body) {
   if (owner) headers.set('X-Taste-Map-Test-User', owner)
   if (owner && path === `${root}push`) headers.set('X-Taste-Map-Preference-Owner', owner)
   return worker.fetch(new Request(`https://development.example.test${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), {
-    DB: db, ASSETS: { fetch: () => new Response() }, APP_ENVIRONMENT: 'development', SYNC_AUTH_MODE: 'development-test',
+    DB: db, PHOTO_STORAGE: {list: async()=>({objects:[],truncated:false}),delete:async()=>{}}, ASSETS: { fetch: () => new Response() }, APP_ENVIRONMENT: 'development', SYNC_AUTH_MODE: 'development-test',
   })
 }
 class SQLiteD1Database {

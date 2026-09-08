@@ -8,7 +8,7 @@ describe('Worker integration migration fixture', () => {
     const sqlite = new DatabaseSync(':memory:')
     sqlite.exec('PRAGMA foreign_keys = ON')
     const files = migrationFiles()
-    for (const file of files.slice(0, -1)) sqlite.exec(readFileSync(`migrations/${file}`, 'utf8'))
+    for (const file of files.slice(0, files.indexOf('0038_storekit_environment_isolation.sql'))) sqlite.exec(readFileSync(`migrations/${file}`, 'utf8'))
     for (const user of ['sandbox_only', 'mixed']) {
       sqlite.prepare(`INSERT INTO users(id,auth_provider,nickname,membership_tier,created_at,updated_at)
         VALUES(?,'apple',?,'member','2020-01-01','2020-01-01')`).run(user,user)
@@ -27,7 +27,7 @@ describe('Worker integration migration fixture', () => {
       VALUES('gift','mixed','gift','2020-01-01',1,'2020','2020')`)
     const retained = sqlite.prepare("SELECT * FROM membership_entitlements WHERE id IN ('gift','app-store:p1') ORDER BY id").all()
     const legacy = sqlite.prepare('SELECT * FROM app_store_transactions ORDER BY transaction_id').all()
-    sqlite.exec(readFileSync(`migrations/${files.at(-1)}`, 'utf8'))
+    sqlite.exec(readFileSync('migrations/0038_storekit_environment_isolation.sql', 'utf8'))
     expect(sqlite.prepare('SELECT * FROM membership_entitlements ORDER BY id').all()).toEqual(retained)
     expect(sqlite.prepare('SELECT id FROM sandbox_membership_entitlements ORDER BY id').all().map(x=>x.id)).toEqual(['app-store:s1','app-store:s2'])
     expect(sqlite.prepare('SELECT * FROM app_store_transactions ORDER BY transaction_id').all()).toEqual(legacy)
@@ -48,7 +48,7 @@ describe('Worker integration migration fixture', () => {
     const applied = applyAllMigrations(sqlite)
 
     expect(applied).toEqual(migrationFiles())
-    expect(applied.at(-1)).toBe('0038_storekit_environment_isolation.sql')
+    expect(applied.at(-1)).toBe('0040_privacy_retention.sql')
     for (const table of ['referrals', 'premium_rewards', 'referral_audit_log',
       'private_directory_profiles', 'recommendation_preference_events',
       'app_store_owners_v2', 'app_store_transactions_v2', 'app_store_notification_events_v2', 'sandbox_membership_entitlements', 'sandbox_offer_assignments']) {

@@ -6,6 +6,8 @@ import type {
 } from '../src/contracts/releaseSafetyV1'
 import { RELEASE_SAFETY_API_VERSION } from '../src/contracts/releaseSafetyV1'
 
+import { PRIVACY_RETENTION } from './privacyRetentionPolicy'
+
 const FRESH_AUTH_WINDOW_MS = 10 * 60 * 1000
 
 export interface AccountDeletionEnvironmentV1 {
@@ -121,15 +123,17 @@ async function confirmDeletion(
 
   const jobID = `delete_${crypto.randomUUID()}`
   const timestamp = now.toISOString()
-  await environment.DB.prepare(`INSERT INTO account_deletion_jobs (
+  await environment.DB.prepare(`INSERT OR IGNORE INTO account_deletion_jobs (
     id, user_id, request_id, request_fingerprint, status_token_hash, status,
     requested_at, updated_at
   ) VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?)`).bind(
     jobID, userID, payload.requestId, fingerprint, tokenHash, timestamp, timestamp,
   ).run()
-  job = await environment.DB.prepare('SELECT * FROM account_deletion_jobs WHERE id = ?')
-    .bind(jobID).first<JobRow>()
+  job = await environment.DB.prepare('SELECT * FROM account_deletion_jobs WHERE user_id=? AND request_id=?')
+    .bind(userID,payload.requestId).first<JobRow>()
   if (!job) throw requestError('删除任务没有创建成功。', 500, 'job_creation_failed')
+  if (job.request_fingerprint !== fingerprint || job.status_token_hash !== tokenHash) throw requestError('重复删除请求的内容不一致。',409,'idempotency_conflict')
+  if (job.id !== jobID) return contract(job)
   return processJob(environment, job, now)
 }
 
@@ -138,42 +142,81 @@ async function processJob(
   job: JobRow,
   now: Date,
 ): Promise<AccountDeletionJobV1> {
+  const lease = crypto.randomUUID()
+  const claim = await environment.DB.prepare(`UPDATE account_deletion_jobs SET cleanup_lease=?,cleanup_lease_until=?
+    WHERE id=? AND status<>'completed' AND (cleanup_lease_until IS NULL OR cleanup_lease_until<=?)`)
+    .bind(lease,new Date(now.getTime()+PRIVACY_RETENTION.leaseSeconds*1000).toISOString(),job.id,now.toISOString()).run()
+  if (!claim.meta.changes) {
+    const current = await environment.DB.prepare('SELECT * FROM account_deletion_jobs WHERE id=?').bind(job.id).first<JobRow>()
+    if (!current) throw requestError('删除任务不存在。',404,'job_missing')
+    return contract(current)
+  }
   try {
     if (job.status === 'confirmed' || job.status === 'failed' || job.status === 'deleting_data') {
       await deleteD1Data(environment.DB, job, now)
     }
-    const remaining = await environment.DB.prepare(`SELECT storage_key FROM account_deletion_objects
-      WHERE job_id = ? AND status <> 'deleted' ORDER BY storage_key LIMIT 1000`)
-      .bind(job.id).all<StorageKeyRow>()
-    if (remaining.results.length) {
-      if (!environment.PHOTO_STORAGE) throw requestError('照片存储暂不可用。', 503, 'photo_storage_unavailable')
-      await environment.DB.prepare(`UPDATE account_deletion_jobs SET status = 'deleting_objects',
-        updated_at = ?, last_error_code = NULL WHERE id = ?`).bind(now.toISOString(), job.id).run()
-      for (const row of remaining.results) {
-        try {
-          await environment.PHOTO_STORAGE.delete(row.storage_key)
-          await environment.DB.prepare(`UPDATE account_deletion_objects SET status = 'deleted',
-            updated_at = ?, last_error_code = NULL WHERE job_id = ? AND storage_key = ?`)
-            .bind(now.toISOString(), job.id, row.storage_key).run()
-        } catch {
-          await environment.DB.prepare(`UPDATE account_deletion_objects SET status = 'failed',
-            retry_count = retry_count + 1, updated_at = ?, last_error_code = 'r2_delete_failed'
-            WHERE job_id = ? AND storage_key = ?`).bind(now.toISOString(), job.id, row.storage_key).run()
-          throw requestError('照片删除暂未完成，可以安全重试。', 503, 'r2_delete_failed')
-        }
-      }
-    }
+    await cleanAccountObjects(environment, job, now)
     await finishDeletion(environment.DB, job, now)
   } catch (error) {
     const code = error instanceof AccountDeletionV1Error ? error.code : 'deletion_failed'
     await environment.DB.prepare(`UPDATE account_deletion_jobs SET status = 'failed',
       retry_count = retry_count + 1, updated_at = ?, last_error_code = ? WHERE id = ?`)
       .bind(now.toISOString(), code, job.id).run()
+  } finally {
+    await environment.DB.prepare('UPDATE account_deletion_jobs SET cleanup_lease=NULL,cleanup_lease_until=NULL WHERE id=? AND cleanup_lease=?').bind(job.id,lease).run()
   }
   const current = await environment.DB.prepare('SELECT * FROM account_deletion_jobs WHERE id = ?')
     .bind(job.id).first<JobRow>()
   if (!current) throw requestError('删除任务无法读取。', 500, 'job_missing')
   return contract(current)
+}
+
+export async function resumeAccountDeletions(environment: AccountDeletionEnvironmentV1, now = new Date()) {
+  const jobs = await environment.DB.prepare(`SELECT * FROM account_deletion_jobs WHERE status IN
+    ('confirmed','deleting_data','deleting_objects','failed') ORDER BY updated_at LIMIT ?`)
+    .bind(PRIVACY_RETENTION.jobBatch).all<JobRow>()
+  for (const job of jobs.results) await processJob(environment, job, now)
+}
+
+/** Owner-prefix listing also catches uploads whose metadata commit failed. No bucket-wide scan. */
+async function cleanAccountObjects(environment: AccountDeletionEnvironmentV1, job: JobRow, now: Date) {
+  if (!/^[A-Za-z0-9_-]+$/.test(job.user_id)) throw requestError('Invalid object owner.', 409, 'invalid_object_owner')
+  const prefix = `users/${job.user_id}/photos/`
+  const bucket = environment.PHOTO_STORAGE
+  if (!bucket) throw requestError('照片存储暂不可用。', 503, 'photo_storage_unavailable')
+  await environment.DB.prepare("UPDATE account_deletion_jobs SET status='deleting_objects', updated_at=? WHERE id=?")
+    .bind(now.toISOString(), job.id).run()
+  let pages = 0
+  for (;;) {
+    if (++pages > PRIVACY_RETENTION.maxObjectPages) throw requestError('Cleanup continuation required.', 503, 'cleanup_continuation')
+    const batch = await environment.DB.prepare(`SELECT storage_key FROM account_deletion_objects
+      WHERE job_id=? AND status<>'deleted' ORDER BY storage_key LIMIT ?`)
+      .bind(job.id, PRIVACY_RETENTION.objectBatch).all<StorageKeyRow>()
+    if (!batch.results.length) break
+    const keys = batch.results.map(row => row.storage_key)
+    if (keys.some(key => !key.startsWith(prefix))) throw requestError('Object owner mismatch.', 409, 'object_owner_mismatch')
+    try { await bucket.delete(keys) }
+    catch { throw requestError('照片删除暂未完成，可以安全重试。', 503, 'r2_delete_failed') }
+    // Delete is idempotent; if acknowledgement fails the same keys are safe to retry.
+    await environment.DB.prepare(`UPDATE account_deletion_objects SET status='deleted', updated_at=?, last_error_code=NULL
+      WHERE job_id=? AND storage_key IN (${keys.map(() => '?').join(',')})`).bind(now.toISOString(), job.id, ...keys).run()
+  }
+  let cursor: string | undefined
+  do {
+    if (++pages > PRIVACY_RETENTION.maxObjectPages) throw requestError('Cleanup continuation required.', 503, 'cleanup_continuation')
+    const page = await bucket.list({ prefix, cursor, limit: PRIVACY_RETENTION.objectBatch })
+    const keys = page.objects.map(object => object.key)
+    if (keys.some(key => !key.startsWith(prefix))) throw requestError('Object owner mismatch.', 409, 'object_owner_mismatch')
+    try { if (keys.length) await bucket.delete(keys) }
+    catch { throw requestError('照片删除暂未完成，可以安全重试。', 503, 'r2_delete_failed') }
+    if (page.truncated && (!page.cursor || page.cursor === cursor)) throw requestError('Invalid R2 continuation.', 503, 'invalid_r2_cursor')
+    cursor = page.truncated ? page.cursor : undefined
+  } while (cursor)
+  // A short page is not proof of completion. Fresh prefix listing must be empty.
+  const proof = await bucket.list({ prefix, limit: 1 })
+  const pending = await environment.DB.prepare("SELECT COUNT(*) AS count FROM account_deletion_objects WHERE job_id=? AND status<>'deleted'")
+    .bind(job.id).first<CountRow>()
+  if (proof.objects.length || proof.truncated || pending?.count) throw requestError('照片删除尚未完成。', 503, 'objects_remaining')
 }
 
 async function deleteD1Data(database: D1Database, job: JobRow, now: Date) {
@@ -183,15 +226,15 @@ async function deleteD1Data(database: D1Database, job: JobRow, now: Date) {
     confirmed_at = COALESCE(confirmed_at, ?), updated_at = ?, last_error_code = NULL WHERE id = ?`)
     .bind(timestamp, timestamp, job.id).run()
 
-  const keys = await database.prepare(`SELECT storage_key FROM (
-      SELECT storage_key AS storage_key FROM photos WHERE user_id = ? AND COALESCE(storage_key, '') <> ''
-      UNION SELECT thumbnail_storage_key FROM photos WHERE user_id = ? AND COALESCE(thumbnail_storage_key, '') <> ''
-    )`).bind(userID, userID).all<StorageKeyRow>()
-  if (keys.results.length) {
-    await database.batch(keys.results.map((row) => database.prepare(`INSERT OR IGNORE INTO account_deletion_objects (
-      job_id, storage_key, status, updated_at
-    ) VALUES (?, ?, 'pending', ?)`).bind(job.id, row.storage_key, timestamp)))
-  }
+  await database.batch([
+    database.prepare("UPDATE users SET deleted_at=COALESCE(deleted_at,?), updated_at=? WHERE id=?").bind(timestamp, timestamp, userID),
+    database.prepare("UPDATE user_profiles SET visibility='private',deleted_at=COALESCE(deleted_at,?),updated_at=? WHERE user_id=?").bind(timestamp,timestamp,userID),
+    database.prepare("UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,?), revoke_reason='account_deleted', updated_at=? WHERE user_id=?").bind(timestamp, timestamp, userID),
+  ])
+  await database.prepare(`INSERT OR IGNORE INTO account_deletion_objects(job_id,storage_key,status,updated_at)
+    SELECT ?,storage_key,'pending',? FROM photos WHERE user_id=? AND COALESCE(storage_key,'')<>''
+    UNION SELECT ?,thumbnail_storage_key,'pending',? FROM photos WHERE user_id=? AND COALESCE(thumbnail_storage_key,'')<>''`)
+    .bind(job.id,timestamp,userID,job.id,timestamp,userID).run()
 
   const statements = [
     database.prepare('DELETE FROM recommendation_preference_events WHERE user_id = ?').bind(userID),
@@ -232,7 +275,7 @@ async function finishDeletion(database: D1Database, job: JobRow, now: Date) {
     database.prepare(`UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?),
       revoke_reason = COALESCE(revoke_reason, 'account_deleted'), updated_at = ? WHERE user_id = ?`).bind(timestamp, timestamp, userID),
     database.prepare(`UPDATE users SET auth_subject = NULL, email = NULL, nickname = 'Deleted user',
-      bio = '', city = '', avatar_photo_id = NULL, deleted_at = COALESCE(deleted_at, ?), updated_at = ?
+      bio = '', city = '', avatar_photo_id = NULL, avatar_image_data = NULL, deleted_at = COALESCE(deleted_at, ?), updated_at = ?
       WHERE id = ?`).bind(timestamp, timestamp, userID),
     database.prepare(`UPDATE account_deletion_jobs SET status = 'completed', completed_at = ?,
       updated_at = ?, last_error_code = NULL WHERE id = ?`).bind(timestamp, timestamp, job.id),

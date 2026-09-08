@@ -295,7 +295,7 @@ function bearerRequest(token) {
 }
 
 function environment(database) {
-  return { DB: database, APPLE_CLIENT_IDS: AUDIENCE }
+  return { DB: database, PHOTO_STORAGE: {list: async()=>({objects:[],truncated:false}),delete:async()=>{}}, APPLE_CLIENT_IDS: AUDIENCE }
 }
 
 function mutation(mutationId, entityId, baseVersion, payload) {

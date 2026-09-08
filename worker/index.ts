@@ -1,3 +1,5 @@
+import { resumeAccountDeletions } from './accountDeletionV1'
+import { runPrivacyRetention } from './privacyRetentionV1'
 import { signupTrialEligibility, claimSignupTrial } from './signupTrialV1'
 import { referralDashboard, qualifyReferral, settlePremiumRewards, settleAllPremiumRewards, revokeReferral } from './referralsV1'
 import { referralLandingPage } from './referralLandingPage'
@@ -120,6 +122,7 @@ import {
 } from './moderationV1'
 
 interface Env {
+  PRIVACY_RETENTION_ENABLED?: string
   DB: D1Database
   ASSETS: Fetcher
   PHOTO_STORAGE?: R2Bucket
@@ -631,7 +634,18 @@ import { withProductionCORS } from './productionBoundary'
 import { productionReadiness } from './productionReadiness'
 
 const worker = {
-  async scheduled(_controller, env) { await settleAllPremiumRewards(env.DB) },
+  async scheduled(controller, env) {
+    try {
+      await settleAllPremiumRewards(env.DB)
+    } finally {
+      if (env.PRIVACY_RETENTION_ENABLED === 'true') {
+        const now = new Date(controller.scheduledTime)
+        await resumeAccountDeletions(env, now)
+        // Reuse the existing five-minute cron, with one daily retention pass.
+        if (now.getUTCHours() === 18 && now.getUTCMinutes() === 0) await runPrivacyRetention(env.DB, env.PHOTO_STORAGE, now)
+      }
+    }
+  },
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
     // Public liveness probe: never touch authentication, data bindings, or SPA assets.

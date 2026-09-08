@@ -54,7 +54,7 @@ describe('Release safety V1 integration', () => {
     const body = { apiVersion: 1, requestId: crypto.randomUUID(), statusToken, confirmation: 'DELETE' }
     const failed = await jsonAPI(database, bucket, 'tm_a', '/api/v1/account-deletion/confirm', 'POST', body)
     expect(failed).toMatchObject({ status: 'failed', retryable: true, errorCode: 'r2_delete_failed' })
-    expect(database.get("SELECT deleted_at FROM users WHERE id = 'tm_a'").deleted_at).toBeNull()
+    expect(database.get("SELECT deleted_at FROM users WHERE id = 'tm_a'").deleted_at).toBeTruthy()
 
     const retried = await jsonAPI(database, bucket, '', '/api/v1/account-deletion/retry', 'POST', {}, statusToken)
     expect(retried).toMatchObject({ status: 'completed', retryable: false, errorCode: null })
@@ -170,10 +170,11 @@ function makeDatabase() {
 }
 
 class MemoryR2Bucket {
+  async list() { return {objects: [], truncated: false} }
   constructor() { this.deleted = []; this.failuresRemaining = 0 }
   async delete(key) {
     if (this.failuresRemaining > 0) { this.failuresRemaining -= 1; throw new Error('injected R2 failure') }
-    this.deleted.push(key)
+    this.deleted.push(...(Array.isArray(key) ? key : [key]))
   }
 }
 
