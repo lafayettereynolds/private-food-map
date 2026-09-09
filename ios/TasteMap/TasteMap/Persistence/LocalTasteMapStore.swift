@@ -3,6 +3,11 @@ import SwiftData
 
 @MainActor
 struct LocalTasteMapStore {
+    private func profileVisitVisibility(_ owner: String) throws -> VisitVisibility {
+        let profile = try context.fetch(FetchDescriptor<UserProfile>()).first { $0.tasteMapUserID == owner && $0.deletedAt == nil }
+        return VisitVisibility(rawValue: profile?.visibility.rawValue ?? "private") ?? .private
+    }
+
     let context: ModelContext
 
     func restaurant(
@@ -185,7 +190,7 @@ struct LocalTasteMapStore {
             totalPrice: draft.totalPrice,
             pricePerPerson: draft.calculatedPricePerPerson,
             diningMode: draft.diningMode,
-            visibility: draft.visibility,
+            visibility: try profileVisitVisibility(ownerUserID),
             paymentMode: draft.paymentMode,
             queueDuration: draft.queueDuration,
             diningOccasions: draft.diningOccasions,
@@ -280,7 +285,7 @@ struct LocalTasteMapStore {
         visit.totalPrice = draft.totalPrice
         visit.pricePerPerson = draft.calculatedPricePerPerson ?? preservedReference
         visit.diningMode = draft.diningMode
-        visit.visibility = draft.visibility
+        visit.visibility = try profileVisitVisibility(visit.ownerUserID)
         visit.paymentModeRawValue = draft.paymentModeRawValue
         visit.queueDurationRawValue = draft.queueDurationRawValue
         visit.diningOccasionRawValues = draft.diningOccasionRawValues

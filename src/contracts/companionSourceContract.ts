@@ -37,8 +37,8 @@ export function decodeDiningCompanionSyncContract(value: unknown): DiningCompani
   if (!isRecord(value) || value.schemaVersion !== 1 ||
     !isBoundedNonBlank(value.id, 200) || !isBoundedNonBlank(value.userId, 200) ||
     !isBoundedNonBlank(value.displayName, 100) ||
-    !isNullableBoundedString(value.linkedTasteMapUserId, 200) ||
-    !isDate(value.createdAt) || !isDate(value.updatedAt) || !isNullableDate(value.deletedAt)) {
+    !isNullableBoundedString(value.linkedTasteMapUserId ?? null, 200) ||
+    !isDate(value.createdAt) || !isDate(value.updatedAt) || !isNullableDate(value.deletedAt ?? null)) {
     throw new Error('Dining companion sync contract is invalid.')
   }
   return {
@@ -46,10 +46,10 @@ export function decodeDiningCompanionSyncContract(value: unknown): DiningCompani
     id: value.id,
     userId: value.userId,
     displayName: normalizedDisplayName(value.displayName),
-    linkedTasteMapUserId: normalizedNullable(value.linkedTasteMapUserId),
+    linkedTasteMapUserId: normalizedNullable(value.linkedTasteMapUserId ?? null),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    deletedAt: value.deletedAt,
+    deletedAt: typeof value.deletedAt === 'string' ? value.deletedAt : null,
   }
 }
 
@@ -58,8 +58,8 @@ export function decodeRecommendationSourceSyncContract(value: unknown): Recommen
     !isBoundedNonBlank(value.id, 200) || !isBoundedNonBlank(value.userId, 200) ||
     !isBoundedNonBlank(value.displayName, 160) ||
     !RECOMMENDATION_SOURCE_TYPES.includes(value.sourceType as RecommendationSourceContractType) ||
-    !isNullableBoundedString(value.linkedTasteMapUserId, 200) ||
-    !isDate(value.createdAt) || !isDate(value.updatedAt) || !isNullableDate(value.deletedAt)) {
+    !isNullableBoundedString(value.linkedTasteMapUserId ?? null, 200) ||
+    !isDate(value.createdAt) || !isDate(value.updatedAt) || !isNullableDate(value.deletedAt ?? null)) {
     throw new Error('Recommendation source sync contract is invalid.')
   }
   return {
@@ -68,10 +68,10 @@ export function decodeRecommendationSourceSyncContract(value: unknown): Recommen
     userId: value.userId,
     displayName: normalizedDisplayName(value.displayName),
     sourceType: value.sourceType as RecommendationSourceContractType,
-    linkedTasteMapUserId: normalizedNullable(value.linkedTasteMapUserId),
+    linkedTasteMapUserId: normalizedNullable(value.linkedTasteMapUserId ?? null),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    deletedAt: value.deletedAt,
+    deletedAt: typeof value.deletedAt === 'string' ? value.deletedAt : null,
   }
 }
 

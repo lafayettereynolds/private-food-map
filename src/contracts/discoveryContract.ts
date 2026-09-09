@@ -150,6 +150,7 @@ export interface DiscoveryCardV1 {
   score: number
   /** History-derived matching index, never a calibrated probability. */
   personalTastePercent?: number | null
+  predictedLiking?: import('./predictedLiking').PredictedLiking | null
   calibratedLikeProbability?: import('./recommendationSignal').CalibratedLikeProbability | null
 }
 

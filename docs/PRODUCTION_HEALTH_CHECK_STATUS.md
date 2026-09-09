@@ -1,6 +1,10 @@
 # Production health check — 2026-09-08
 
-Status: local fix and tests PASS; Production rollout BLOCKED, original version restored.
+LATEST: CURRENT PRODUCTION BASELINE `dd0369b9-26c1-4fe7-a23b-9a56f5887661` is formally ADOPTED / PASS. Previous verified baseline / rollback reference: `87b45679-2bc8-4f4b-b0a4-c82b65c155e9`. Retained verified evidence: health200JSON, core ready200JSON, unauthenticated sync401JSON, API.TASTEMAP.CN/D1/R2 PASS, original28 assets byte/hash parity PASS. Formal client Base URL remains https://api.tastemap.cn with no origin fallback. Production Sandbox Offers remain rejected with403 sandbox_offer_forbidden (expected security boundary). [Current baseline and approved real-device plan](../reports/PRODUCTION_BASELINE_ADOPTION_2026-09-08.md) supersedes historical notices below. No deployment, DNS or endpoint change in this status update.
+
+CURRENT DECISION: retain candidate ede1474e and its verified code-identical secrets successor f8dd5e0f. Health and 28/28 asset parity PASS; formal baseline adoption is still blocked. The historical restore/build-package request below is superseded, not a current instruction. See [current audit](../reports/PRODUCTION_BASELINE_AUDIT_2026-09-08.md).
+
+Historical status of the first attempt: local fix and tests PASS; rollout blocked, original version restored. **Superseded live-state observation:** another deployment subsequently published `ede1474e-cbaa-4e98-b75c-413af8ccc427`; health now passes. See `PRODUCTION_ASSETS_RECOVERY_2026-09-08.md` for the follow-up, 28-file static parity evidence, and baseline conflict. The old version below is not the current live version anymore.
 
 ## Scope and local files
 

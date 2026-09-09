@@ -145,3 +145,9 @@ The route registry is not a bottom-navigation registry. The route registry may c
 Any change to `HybridAppShell`, bottom navigation, root routes, global CTA or root tab composition must run the global Hybrid Product Contract suite in addition to route and bridge tests.
 
 When a durable Hybrid architecture decision changes, update both Hybrid documents and add focused TypeScript/Swift contract coverage. Build success alone is not acceptance: verify Browser behavior, fixed-Simulator Capacitor behavior, back navigation, safe areas, offline local boot, structured error states, performance, and Release purity.
+
+## Mandatory embedded-extension identity gate before device install / Final RC
+
+Before installing any Taste Map build with extensions, run `scripts/verify-ios-embedded-identity.py` against the final signed `.app`, with the expected `--build`, `--bundle-id`, and (for a development device install) `--device-udid`. It must PASS for the main app and every embedded `.appex`; a main-app-only codesign check is insufficient. The gate checks plist identity/executable/versions, NSExtension, embedding, signing team, provisioning and entitlements/App Group compatibility. Unknown extension identifiers require an explicit audit before adding them to the allowlist.
+
+Never pass `INFOPLIST_FILE` as a global xcodebuild override: it overrides extension targets too. Assign a custom identity plist only in the intended app target configuration. Never patch a signed artifact's plist after building. This extension gate supplements (does not replace) source/artifact fingerprint, renderer, resource parity and secret/purity gates. Device identity and actual renderer must be verified again after installation before smoke.

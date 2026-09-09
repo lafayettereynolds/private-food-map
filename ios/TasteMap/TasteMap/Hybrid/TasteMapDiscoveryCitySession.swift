@@ -141,7 +141,10 @@ final class TasteMapDiscoveryCitySession {
         active(ownerUserID: ownerUserID).contains { snapshot in
             let descriptors = snapshot.source.discoveryItems.flatMap { [$0.restaurant.image] + ($0.activityImages ?? []) }
                 + snapshot.source.activityItems.flatMap { [$0.restaurant.image] + ($0.activityImages ?? []) }
+            let avatars = snapshot.source.activityItems.compactMap { $0.user.avatarPhotoID }
+                + snapshot.source.discoveryItems.compactMap { $0.sourceUser?.avatarPhotoID }
             return descriptors.contains { $0.photoID?.caseInsensitiveCompare(id) == .orderedSame }
+                || avatars.contains { $0.caseInsensitiveCompare(id) == .orderedSame }
         }
     }
     func engagement(_ visitID: String, ownerUserID: String) -> CommunityEngagementSummaryV1? {

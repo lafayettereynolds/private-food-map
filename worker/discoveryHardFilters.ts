@@ -8,13 +8,14 @@ import {
 import { LEGACY_AMOUNT_CURRENCY, resolveRecordedMoney } from '../src/contracts/legacyMoney'
 
 export const DISCOVERY_FILTER_CAPABILITIES: DiscoveryFilterCapabilities = {
+  predictedLiking: true, tasteMatch: true,
   cuisines: true, types: true, publicScore: true, publicRatingUsers: true,
   viewerStates: true, actualPhoto: true,
   distanceReferenceSources: ['device_location', 'user_selected_point'],
   price: { bases: ['reference_per_person'], currencies: [LEGACY_AMOUNT_CURRENCY] },
 }
 export const DISCOVERY_QUERY_SORTS = {
-  for_you: ['recommended', 'taste', 'public_rating', 'distance'],
+  for_you: ['recommended', 'taste', 'predicted_liking', 'public_rating', 'distance'],
   similar_taste: ['recommended', 'similar_rating', 'distance'],
   trending: ['trend'], latest: ['latest'], following: ['latest'],
 } as const
@@ -38,6 +39,9 @@ export function readDiscoveryQuery(url: URL, mode: keyof typeof DISCOVERY_QUERY_
     preferences = normalizeDiscoverySessionPreferences(parse('preferences'))
   } catch (error) { throw new DiscoveryQueryError(error instanceof Error ? error.message : 'Invalid filters.') }
   const issues = discoveryFilterCapabilityIssues(filters, DISCOVERY_FILTER_CAPABILITIES)
+  if (mode !== 'for_you' && (filters.minimumPredictedLikingOutOfTen != null || filters.minimumTasteMatchPercent != null)) {
+    throw new DiscoveryQueryError('Personal prediction filters require For You.', 400, 'unsupported_discovery_filter')
+  }
   if (issues.length) throw new DiscoveryQueryError(`Unsupported filter: ${issues.map(issue => issue.field).join(', ')}.`, 400, 'unsupported_discovery_filter')
   const personalized = mode === 'for_you' || mode === 'similar_taste'
   if (!personalized && JSON.stringify(preferences) !== JSON.stringify(normalizeDiscoverySessionPreferences(DEFAULT_DISCOVERY_SESSION_PREFERENCES))) {

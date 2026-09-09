@@ -5,6 +5,7 @@ import { resolveFoodCategoryVisualID } from '../visuals/FoodCategoryVisualContra
 import { RestaurantFoodEmoji } from '../visuals/RestaurantFoodEmoji'
 import { FoodLibraryArtwork } from '../visuals/FoodLibraryArtwork'
 import { resolvedImageDescriptor } from './TasteMapImageResolution'
+import { PHOTO_DELETED_EVENT, photoWasDeleted } from '../services/photoDeletionEvents'
 import './tasteMapNavigation.css'
 import './tasteMapHybridShared.css'
 
@@ -34,8 +35,18 @@ export function HybridRestaurantImage({ image, resolution, name, tags, appearanc
   const plan = useMemo(() => resolution ?? compatibilityResolution(image, name), [image, name, resolution])
   const identity = useMemo(() => JSON.stringify(plan), [plan])
   const [sourceIndex, setSourceIndex] = useState(0)
+  const [, refreshDeleted] = useState(0)
+  useEffect(() => {
+    const changed = () => {
+      if (!plan.sources.some(source => 'photoID' in source && photoWasDeleted(source.photoID))) return
+      setSourceIndex(0)
+      refreshDeleted(value => value + 1)
+    }
+    window.addEventListener(PHOTO_DELETED_EVENT, changed)
+    return () => window.removeEventListener(PHOTO_DELETED_EVENT, changed)
+  }, [plan])
   useEffect(() => setSourceIndex(0), [identity])
-  const selected = resolvedImageDescriptor(plan, sourceIndex)
+  const selected = resolvedImageDescriptor({ ...plan, sources: plan.sources.filter(source => !('photoID' in source) || !photoWasDeleted(source.photoID)) }, sourceIndex)
   if (appearance === 'content' && (selected.kind === 'foodCategoryVisual' || selected.kind === 'foodDiningFallback')) {
     return <FoodLibraryArtwork categoryVisualID={selected.kind === 'foodCategoryVisual' ? selected.categoryVisualID : undefined} className={className} name={name} tags={tags} />
   }

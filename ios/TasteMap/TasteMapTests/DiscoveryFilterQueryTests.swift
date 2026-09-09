@@ -6,6 +6,23 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct DiscoveryFilterQueryTests {
+    @Test func personalPredictionAndMatchRemainDistinctThroughBridgeAndServerEcho() throws {
+        let values = try filters(#"{"minimumPredictedLikingOutOfTen":8,"minimumTasteMatchPercent":90}"#)
+        let query = try TasteMapDiscoveryAppliedQuery.normalized(mode: "for_you", filters: values, sort: "predicted_liking", preferences: nil)
+        #expect(query.filters.minimumPredictedLikingOutOfTen == 8)
+        #expect(query.filters.minimumTasteMatchPercent == 90)
+        #expect(!query.isDefault(mode: "for_you"))
+        let encoded = try JSONEncoder().encode(values)
+        #expect(try JSONDecoder().decode(TasteMapDiscoveryFilters.self, from: encoded) == values)
+        #expect(throws: TasteMapHybridBridgeErrorDTO.self) { try query.verify(nil, mode: "for_you") }
+        #expect(throws: TasteMapHybridBridgeErrorDTO.self) {
+            try TasteMapDiscoveryAppliedQuery.normalized(mode: "latest", filters: values, sort: nil, preferences: nil)
+        }
+        for raw in [#"{"minimumPredictedLikingOutOfTen":11}"#, #"{"minimumTasteMatchPercent":101}"#] {
+            #expect(throws: TasteMapHybridBridgeErrorDTO.self) { try filters(raw) }
+        }
+    }
+
     @Test func explicitAllViewerStatesRemainDistinctFromUnspecifiedLegacyDefaults() throws {
         let all = try filters(#"{"viewerStates":[]}"#)
         let explicit = try TasteMapDiscoveryAppliedQuery.normalized(mode: "for_you", filters: all, sort: nil, preferences: nil)

@@ -41,6 +41,8 @@ public struct TasteMapDiscoveryFilters: Codable, Equatable, Sendable {
     public var types: [String] = []
     public var priceRange: Price? = nil
     public var minimumPublicScoreOutOfTen: Double? = nil
+    public var minimumPredictedLikingOutOfTen: Double? = nil
+    public var minimumTasteMatchPercent: Double? = nil
     public var minimumPublicRatingUsers: Int? = nil
     public var viewerStates: [String] = []
     public var viewerStatesWereSpecified = false
@@ -49,7 +51,7 @@ public struct TasteMapDiscoveryFilters: Codable, Equatable, Sendable {
 
     public init() {}
     private enum CodingKeys: String, CodingKey {
-        case cuisines, types, priceRange, minimumPublicScoreOutOfTen, minimumPublicRatingUsers, viewerStates, requireActualPhoto, distance
+        case cuisines, types, priceRange, minimumPublicScoreOutOfTen, minimumPublicRatingUsers, viewerStates, requireActualPhoto, distance, minimumPredictedLikingOutOfTen, minimumTasteMatchPercent
     }
     public func encode(to encoder: Encoder) throws {
         var data = encoder.container(keyedBy: CodingKeys.self)
@@ -57,6 +59,8 @@ public struct TasteMapDiscoveryFilters: Codable, Equatable, Sendable {
         try data.encode(types, forKey: .types)
         try data.encode(priceRange, forKey: .priceRange)
         try data.encode(minimumPublicScoreOutOfTen, forKey: .minimumPublicScoreOutOfTen)
+        try data.encodeIfPresent(minimumPredictedLikingOutOfTen, forKey: .minimumPredictedLikingOutOfTen)
+        try data.encodeIfPresent(minimumTasteMatchPercent, forKey: .minimumTasteMatchPercent)
         try data.encode(minimumPublicRatingUsers, forKey: .minimumPublicRatingUsers)
         if viewerStatesWereSpecified || !viewerStates.isEmpty { try data.encode(viewerStates, forKey: .viewerStates) }
         try data.encode(requireActualPhoto, forKey: .requireActualPhoto)
@@ -64,7 +68,9 @@ public struct TasteMapDiscoveryFilters: Codable, Equatable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let raw = try TasteMapHybridJSONValue(from: decoder)
-        let fields = try DiscoveryQueryValidation.object(raw, keys: ["cuisines", "types", "priceRange", "minimumPublicScoreOutOfTen", "minimumPublicRatingUsers", "viewerStates", "requireActualPhoto", "distance"])
+        let fields = try DiscoveryQueryValidation.object(raw, keys: ["cuisines", "types", "priceRange", "minimumPublicScoreOutOfTen", "minimumPublicRatingUsers", "viewerStates", "requireActualPhoto", "distance", "minimumPredictedLikingOutOfTen", "minimumTasteMatchPercent"])
+        minimumPredictedLikingOutOfTen = try DiscoveryQueryValidation.optionalNumber(fields["minimumPredictedLikingOutOfTen"], range: 0...10)
+        minimumTasteMatchPercent = try DiscoveryQueryValidation.optionalNumber(fields["minimumTasteMatchPercent"], range: 0...100)
         cuisines = try DiscoveryQueryValidation.selection(fields["cuisines"], allowed: Self.cuisineTaxonomy)
         types = try DiscoveryQueryValidation.selection(fields["types"], allowed: Self.typeTaxonomy)
         viewerStates = try DiscoveryQueryValidation.selection(fields["viewerStates"], allowed: ["none", "want_to_go", "visited"])
@@ -144,13 +150,16 @@ public struct TasteMapDiscoveryAppliedQuery: Codable, Equatable, Sendable {
     static func normalized(mode: String, filters: TasteMapDiscoveryFilters?, sort: String?, preferences: TasteMapDiscoverySessionPreferences?) throws -> Self {
         let allowed: [String]
         switch mode {
-        case "for_you": allowed = ["recommended", "taste", "public_rating", "distance"]
+        case "for_you": allowed = ["recommended", "taste", "predicted_liking", "public_rating", "distance"]
         case "similar_taste": allowed = ["recommended", "similar_rating", "distance"]
         case "trending": allowed = ["trend"]
         case "following", "latest": allowed = ["latest"]
         default: throw DiscoveryQueryValidation.invalid()
         }
         let filters = filters ?? .init(); let preferences = preferences ?? .init()
+        guard mode == "for_you" || (filters.minimumPredictedLikingOutOfTen == nil && filters.minimumTasteMatchPercent == nil) else {
+            throw DiscoveryQueryValidation.unsupported()
+        }
         let sort = sort ?? allowed[0]
         guard allowed.contains(sort), sort != "distance" || filters.distance != nil else { throw DiscoveryQueryValidation.invalid() }
         guard ["for_you", "similar_taste"].contains(mode) || preferences == .init() else {

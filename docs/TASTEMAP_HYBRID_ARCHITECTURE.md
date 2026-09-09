@@ -50,6 +50,18 @@ The UI layer never imports Capacitor or native implementation details. Platform 
 
 ## 3. `TasteMapNative.v1`
 
+2026-09-09 personal-filter increment: optional `predictedLiking` carries a
+historical weighted-rating estimate and real sample counts, separately from
+`personalTastePercent` and the future calibrated-probability channel. Native
+remote/cache/bridge DTOs preserve the optional object without recomputing it in
+React. `minimumPredictedLikingOutOfTen`, `minimumTasteMatchPercent` and
+`predicted_liking` sorting extend the existing Discovery query; Native verifies
+the server's applied-query echo and rejects an old server that ignores them.
+Only For You supports these filters. No auth, persistence, route-default or
+permission change is implied. Worker computes from existing owner aggregates,
+without a new D1 query or cross-owner cache. Deployment/runtime acceptance remains
+an integration gate.
+
 All native calls use one Capacitor plugin method, `TasteMapNative.invoke`, with a typed envelope:
 
 ```json
@@ -271,6 +283,16 @@ Events queued before the Capacitor plugin attaches are delivered after attachmen
 
 ## 8. Persistent WebView
 
+2026-09-09 account-restore correction: the Hybrid SwiftUI host keeps a stable
+presentation identity while Native rollback retains its per-account root identity.
+The runtime-owned UIKit controller must not be detached by a SwiftUI identity
+replacement during asynchronous credential restoration. Account invalidation still
+clears Native session/cache/navigation state and emits the existing `auth.changed`;
+React immediately unmounts account content and clears transient selections, drafts
+and navigation acknowledgements. Persistent records and mutation IDs are untouched.
+This changes neither renderer defaults nor route ownership. See the 0902 recovery
+report for physical-device display verification and the separate server-500 blocker.
+
 `TasteMapHybridRuntime` owns one lazily created `TasteMapHybridBridgeViewController` for the lifetime of the app runtime. Native presentations do not recreate it, and returning to Hybrid restores the same controller and React state. Route changes and lifecycle events are messages, not WebView reloads. The controller identity is exposed internally for regression verification only.
 
 The bridge controller also owns one persistent `TasteMapHybridMapSurfaceHost`. That host embeds the already-established SwiftUI `RestaurantMapView` / `MKMapView` presentation inside the persistent shell; it is not a second SwiftUI Map page and it never owns the page header, scopes, FilterBar, Add CTA, selection card, or bottom navigation. The host maps the React placeholder rectangle into controller coordinates, masks only the small React control rectangles and passes their hit tests back to the WebView. Hiding the Map for List or Restaurant Detail keeps the same MapKit instance alive, so center, zoom, bounds and annotation state survive the return path.
@@ -369,6 +391,21 @@ Physical-device private previews use the shared `Taste Map Private` scheme and `
 
 ## 11. Migration lifecycle
 
+### Authorized Final Integration cutover — 2026-09-09
+
+Lafayette's FINAL INTEGRATION execution approval supersedes the historical
+Native-primary default for the new candidate. Release now selects HYBRID_PRIMARY
+and the persistent shared React root; RootTabView remains the Native rollback.
+Native MapKit and typed capability handoffs are unchanged. Ordinary Universal
+Links are forwarded to the existing typed route parser; Referral remains closed.
+
+The Internal candidate uses Release plus Configuration/ReleaseInternal.xcconfig:
+TASTEMAP_INTERNAL_BUILD selects the existing Development account/API environment
+only. It does not enable DEBUG, Visual QA, private-preview switches, fixture auth,
+or Sandbox-only Premium UI. Ordinary Release retains its Production endpoint.
+Both use signed local Web resources. This is source cutover authorization, not
+evidence of a new real-device smoke, Final RC acceptance or TestFlight upload.
+
 Each route advances independently:
 
 `NATIVE_PRIMARY → HYBRID_POC → HYBRID_READY → HYBRID_INTEGRATED → HYBRID_PRIMARY → NATIVE_ROLLBACK → RETIRED_AFTER_MIGRATION`
@@ -411,3 +448,23 @@ Additive bridge-v1 methods `referrals.dashboard` and `referrals.prepareRegistrat
 The Worker owns one-time registration attribution, five lifetime slots and a separate Premium Reward ledger. `referral_reward` is a fixed-term entitlement, projected by the existing authoritative service. Settlement runs on entitlement/dashboard reads and a five-minute scheduled handler; recorded Apple end time anchors queued rewards even if the next read is late. Successful Native sync refreshes authoritative Premium so the first valid Visit can unlock the reward without opening a paywall.
 
 The temporary invitation hint is not an entitlement: it lives only in Native memory for at most 24 hours and clears after successful sign-in or logout. Failed/cancelled sign-in may be retried. Reopen the original link or re-enter its code after an app restart. No post-registration attribution or JavaScript credential storage is added.
+
+
+## 2026-09-08 — First TestFlight Referral visibility hold
+Lafayette defers the real two-account Referral E2E to internal beta follow-up. The first TestFlight hides Settings invitation entry and rejects direct invitation routes/registration preparation in Browser, Hybrid and Native rollback. Reuse the existing signed ProductionEnvironment.json product configuration, referralAvailable=false, without Debug/URL/local-storage overrides. Worker independently blocks invitation landing/dashboard and new-registration referral attribution; existing entitlements, qualification/settlement implementation, admin permissions, Offer mappings and inventory remain retained. No unverified invitation allocation or code consumption. This is release product visibility, not a new remote flag platform; reopening requires a reviewed config/build/deploy after real E2E PASS.
+Core UI Settings rows and existing unavailable state remain canonical; Food/Dining visuals and page templates are unchanged. Do Not Regress: all entry paths, native bridge, stale saved invite code and server attribution must remain closed together. Normal StoreKit evidence remains PASS. Referral E2E is non-blocking only while this closure is effective. Real core smoke and visual/map approval still precede any HYBRID_PRIMARY cutover.
+
+### 2026-09-08 current-city Discovery correction
+The existing location.current DTO gains optional detectedCity, resolved by the
+Native location service from the same authorized fix. The Native canonical
+Discovery city uses this recent, owner-bound fix ahead of profile/history fallback.
+React initializes default Discovery scope from it without overwriting a manual
+selection. No new API, client geocoder, persistent location store or route promotion.
+
+### 2026-09-09 Discovery read-cost candidate (local only)
+The canonical content snapshot primes For You only. Same Taste and Trending use
+their existing owner/city-bound page request when selected; no hidden-mode
+prefetch or new shared cross-user TTL cache is introduced. Map still consumes the
+same canonical For You snapshot. Candidate-first Worker reads and a single
+Visit window ordering are local optimization candidates, not a deployment or
+physical-device acceptance. See reports/DISCOVERY_D1_COST_OPTIMIZATION_20260909.md.

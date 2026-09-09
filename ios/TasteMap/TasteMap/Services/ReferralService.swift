@@ -30,12 +30,19 @@ nonisolated struct ReferralDashboardV1: Codable, Sendable {
 /// A temporary registration hint, never an entitlement or device-bound attribution.
 @MainActor
 enum ReferralInvitationStore {
+    static var isAvailable: Bool {
+        guard let url = Bundle.main.url(forResource: "ProductionEnvironment", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let values = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return values["referralAvailable"] as? Bool == true
+    }
     private static var value: (code: String, received: Date)?
     static var code: String? {
-        guard let value, Date.now.timeIntervalSince(value.received) < 86_400 else { return nil }
+        guard isAvailable, let value, Date.now.timeIntervalSince(value.received) < 86_400 else { return nil }
         return value.code
     }
     static func prepare(_ input: String) throws {
+        guard isAvailable else { throw PremiumEntitlementAPIError.server(status: 403, message: "邀请功能暂未开放。") }
         let code = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard code.range(of: "^[a-f0-9]{24}$", options: .regularExpression) != nil else {
             throw PremiumEntitlementAPIError.server(status: 400, message: "请输入完整的 24 位邀请码。")
@@ -54,6 +61,7 @@ enum ReferralInvitationStore {
 
 extension URLSessionPremiumEntitlementAPIClient {
     func referralDashboard(userID: String) async throws -> ReferralDashboardV1 {
+        guard ReferralInvitationStore.isAvailable else { throw PremiumEntitlementAPIError.server(status: 403, message: "邀请功能暂未开放。") }
 #if DEBUG
         if TasteMapUITestFixtures.usesVisualQA && ProcessInfo.processInfo.environment["TASTEMAP_REFERRAL_UI_TEST"] == "1" {
             return .visualQA(userID: userID)

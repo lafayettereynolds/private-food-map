@@ -19,6 +19,14 @@ struct TasteMapApp: App {
     private let automaticServicesEnabled: Bool
 
     init() {
+        // Device console pipes are otherwise block-buffered in Release.
+        setbuf(stdout, nil)
+        // Non-sensitive signed-artifact identity for physical-device acceptance.
+        let bundle = Bundle.main
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        let commit = bundle.object(forInfoDictionaryKey: "TasteMapSourceCommit") as? String ?? "unrecorded"
+        let fingerprint = bundle.object(forInfoDictionaryKey: "TasteMapSourceFingerprint") as? String ?? "unrecorded"
+        DeviceAcceptanceLog.record("TasteMapBuildIdentity build=\(build) commit=\(commit) source=\(fingerprint) renderer=\(TasteMapHybridRuntimeConfiguration.current.rawValue) referralAvailable=\(ReferralInvitationStore.isAvailable)")
         let runtime = TasteMapRuntimeConfiguration.current
         // Backup exports live in their own protected temporary directory. A
         // bounded startup cleanup removes only files created by that subsystem.
@@ -26,10 +34,21 @@ struct TasteMapApp: App {
             try? BackupExportTemporaryFileStore().cleanup()
         }
         #if DEBUG
-        let credentialStore: any AuthCredentialStoring = runtime.isolatesPersistentState
-            ? IsolatedAuthCredentialStore()
-            : KeychainCredentialStore()
-        let networkSession = TasteMapTestRuntimeResources.networkSession(for: runtime)
+        let photoDeleteQA = PhotoDeleteQASessionFixture.enabled
+        let credentialStore: any AuthCredentialStoring
+        if photoDeleteQA {
+            credentialStore = try! PhotoDeleteQASessionFixture.credentialStore()
+        } else if runtime.isolatesPersistentState {
+            credentialStore = IsolatedAuthCredentialStore()
+        } else {
+            credentialStore = KeychainCredentialStore()
+        }
+        let networkSession = photoDeleteQA ? PhotoDeleteQASessionFixture.session()
+            : TasteMapTestRuntimeResources.networkSession(for: runtime)
+        let authConfiguration = photoDeleteQA ? try! PhotoDeleteQASessionFixture.configuration() : APIConfiguration.current()
+        let appleState: @Sendable (String) async throws -> AppleCredentialStatus = photoDeleteQA
+            ? { $0 == PhotoDeleteQATestService.appleIdentifier ? .authorized : .notFound }
+            : AppleCredentialStateProvider.state
         let socialOutboxFileURL = runtime.isolatesPersistentState
             ? TasteMapTestRuntimeResources.temporaryRoot(component: "social-outbox")
                 .appendingPathComponent("shared-meal-invitations-v1.json")
@@ -37,18 +56,22 @@ struct TasteMapApp: App {
         #else
         let credentialStore: any AuthCredentialStoring = KeychainCredentialStore()
         let networkSession = URLSession.shared
+        let photoDeleteQA = false
+        let authConfiguration = APIConfiguration.current()
+        let appleState = AppleCredentialStateProvider.state
         let socialOutboxFileURL: URL? = nil
         #endif
         let authServices = NativeAuthServices(
-            configuration: .current(),
+            configuration: authConfiguration,
             session: networkSession,
             credentialStore: credentialStore,
-            socialOutboxFileURL: socialOutboxFileURL
+            socialOutboxFileURL: socialOutboxFileURL,
+            appleState: appleState
         )
         // Isolated UI/unit runtimes intentionally have no persisted credential.
         // Resolve that state to the explicit signed-out workspace so fixtures
         // can exercise local mutations without ever reading the real Keychain.
-        if runtime.isolatesPersistentState {
+        if runtime.isolatesPersistentState && !photoDeleteQA {
             authServices.endLocalAccountSession()
         }
         let container: ModelContainer
@@ -71,7 +94,7 @@ struct TasteMapApp: App {
             let persistenceConfigurationName = usePersistentOfflineFixture
                 ? TasteMapUITestFixtures.persistentConfigurationName
                 : (TasteMapAppEnvironment.current == .development ? "TasteMapDevelopment" : "TasteMap")
-            let persistenceStorageURL = usePersistentOfflineFixture
+            let persistenceStorageURL = photoDeleteQA ? try PhotoDeleteQASessionFixture.storageURL() : usePersistentOfflineFixture
                 ? TasteMapUITestFixtures.persistentStoreURL
                 : nil
             #else
@@ -91,22 +114,30 @@ struct TasteMapApp: App {
             let persistenceStorageURL: URL? = nil
             #endif
             container = try TasteMapPersistence.makeContainer(
-                inMemory: (runtime.isolatesPersistentState && !usePersistentOfflineFixture)
+                inMemory: !photoDeleteQA && ((runtime.isolatesPersistentState && !usePersistentOfflineFixture)
                     || useRestaurantDetailFixture || useDiscoveryFixture || useCommunityFixture
                     || useAnalysisFixture || useRestaurantAcquisitionFixture || useF2ABrowsingFixture
                     || useF2BFiltersFixture || useModule8MapClusterFixture || useOnThisDayFixture
-                    || useVisualQA,
+                    || useVisualQA),
                 configurationName: persistenceConfigurationName,
                 storageURL: persistenceStorageURL
             )
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=storage event=container_open name=\(persistenceConfigurationName) apiEnvironment=\(authConfiguration.environment.rawValue)")
             #if DEBUG
             if let visualQAMode = TasteMapUITestFixtures.visualQAMode {
-                try TasteMapUITestFixtures.insertProfileFixture(into: container)
-                try TasteMapVisualQAFixtures.insert(mode: visualQAMode, into: container)
+                if try !photoDeleteQA || container.mainContext.fetchCount(FetchDescriptor<Restaurant>()) == 0 {
+                    try TasteMapUITestFixtures.insertProfileFixture(into: container)
+                    try TasteMapVisualQAFixtures.insert(mode: visualQAMode, into: container)
+                }
                 if TasteMapUITestFixtures.usesAddImageReuseFixture {
                     try TasteMapUITestFixtures.insertAddImageReuseCachedPhotoFixture(into: container)
                 }
-                authServices.activateVisualQAFixture(userID: TasteMapVisualQAFixtures.userID)
+                if photoDeleteQA {
+                    try PhotoDeleteQASessionFixture.registerPhotos(in: container)
+                    // Leave .restoring: the normal session resolver establishes scope.
+                } else {
+                    authServices.activateVisualQAFixture(userID: TasteMapVisualQAFixtures.userID)
+                }
             }
             if useRestaurantDetailFixture {
                 try TasteMapUITestFixtures.insertRestaurantDetailFixture(into: container)
@@ -242,18 +273,30 @@ struct TasteMapApp: App {
             photoTransferCoordinator: transferCoordinator,
             restaurantSearchService: hybridSearchService
         )
-    }
-
-    var body: some Scene {
-        WindowGroup {
-            ContentView(automaticServicesEnabled: automaticServicesEnabled)
-                .environment(nativeAuthServices)
-                .environment(syncCoordinator)
-                .environment(premiumEntitlementService)
         hybridRuntime = builtHybridRuntime
         authServices.credentialInvalidationHandler = { [weak builtHybridRuntime] in
             builtHybridRuntime?.appleCredentialDidInvalidate()
         }
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            Group {
+#if DEBUG
+                if PhotoDeleteQASessionFixture.enabled {
+                    PhotoDeleteQASessionBootstrap(auth: nativeAuthServices) {
+                        ContentView(automaticServicesEnabled: false)
+                    }
+                } else {
+                    ContentView(automaticServicesEnabled: automaticServicesEnabled)
+                }
+#else
+                ContentView(automaticServicesEnabled: automaticServicesEnabled)
+#endif
+            }
+                .environment(nativeAuthServices)
+                .environment(syncCoordinator)
+                .environment(premiumEntitlementService)
                 .environment(hybridRuntime)
                 .environment(\.photoTransferCoordinator, photoTransferCoordinator)
         }

@@ -1,6 +1,9 @@
+import { restaurantCategoryLabels } from '../../utils/restaurantCategoryLabels'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { usePremiumAccess } from '../../components/PremiumAccess'
+import { UserAvatar } from '../../components/UserAvatar'
 import { LockKeyhole } from 'lucide-react'
+import { TasteMapPredictedLiking } from '../../components/TasteMapPredictedLiking'
 import {
   Heart, MapPin, Star, Users, Image, CircleCheck,
   MessageCircle, Send as SendIcon, SlidersHorizontal, Store,
@@ -44,6 +47,7 @@ import { RecommendationNotInterested, useRecommendationPreferences } from '../..
 import { CommunityCommentList } from '../../components/CommunityCommentList'
 import { starToTenScore } from '../../types/domain'
 import { TasteMapCitySearch } from '../../components/TasteMapCitySearch'
+import { usesCanonicalForYou } from '../../components/discoveryDefaultScope'
 import { DiscoveryQueryPanel } from '../../components/DiscoveryQueryPanel'
 import { normalizeDiscoveryFilters } from '../../contracts/discoveryFilters'
 import { DISCOVERY_RATING_FILTER_THRESHOLDS, minimumRatingFilterLabel } from '../../utils/ratingFilterOptions'
@@ -88,6 +92,17 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
     return () => { current = false; window.clearTimeout(timeout) }
   }, [platform, profile?.user.id, profile?.user.membershipTier, active, tab, entitlementRevision])
   const [city, setCity] = useState('all')
+  const [detectedCity, setDetectedCity] = useState('')
+  useEffect(() => {
+    if (!active || city !== 'all') return
+    let current = true
+    void platform.location.current().then(value => {
+      if (!current || !value.detectedCity?.trim()) return
+      setDetectedCity(value.detectedCity.trim())
+      onRetry?.()
+    }).catch(() => undefined)
+    return () => { current = false }
+  }, [platform, profile?.user.id, active, city])
   const [sorts, setSorts] = useState<Record<string, NonNullable<TasteMapDiscoveryCityPageRequest['sort']>>>({})
   const [windows, setWindows] = useState<Record<string, 7 | 30>>({})
   const [sessionPreferences, setSessionPreferences] = useState<Record<string, DiscoverySessionPreferences>>({})
@@ -111,12 +126,15 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
   const scrollPosition = useRef(0)
   const recommendationPreferences = useRecommendationPreferences(platform)
   const cityMode: TasteMapDiscoveryCityPageRequest['mode'] = tab === 'forYou' ? 'for_you' : tab === 'similarTaste' ? 'similar_taste' : tab
-  const selectedCity = city === 'all' ? profile?.user.city?.trim() ?? '' : city
+  const selectedCity = city === 'all' ? detectedCity || content.discovery.refreshStatus?.for_you?.city || profile?.user.city?.trim() || '' : city
   const personalized = tab === 'forYou' || tab === 'similarTaste'
   const sort = sorts[tab] ?? (tab === 'trending' ? 'trend' : tab === 'latest' || tab === 'following' ? 'latest' : 'recommended')
   const windowDays = windows[tab] ?? 7
   const preferences = useMemo(() => sessionPreferences[tab] ?? normalizeDiscoverySessionPreferences(), [sessionPreferences, tab])
-  const filters = useMemo(() => ({ ...hardFilters, viewerStates: recordStateExplicit ? hardFilters.viewerStates : personalized ? ['none' as const] : [] }), [hardFilters, recordStateExplicit, personalized])
+  const filters = useMemo(() => ({ ...hardFilters, minimumPublicScoreOutOfTen: null, minimumPublicRatingUsers: null,
+    minimumPredictedLikingOutOfTen: tab === 'forYou' ? hardFilters.minimumPredictedLikingOutOfTen : null,
+    minimumTasteMatchPercent: tab === 'forYou' ? hardFilters.minimumTasteMatchPercent : null,
+    viewerStates: recordStateExplicit ? hardFilters.viewerStates : personalized ? ['none' as const] : [] }), [hardFilters, recordStateExplicit, personalized, tab])
   const query = useMemo(() => ({ mode: cityMode, city: selectedCity, windowDays, sort, filters, ...(personalized ? { preferences } : {}) }), [cityMode, selectedCity, windowDays, sort, filters, personalized, preferences])
   const [cityState, setCityState] = useState<CityQueryState<TasteMapDiscoveryCityPageDTO>>({ key: null, page: null, loading: false, appending: false, error: null })
   const citySession = useMemo(() => createDiscoveryCityQuerySession<TasteMapDiscoveryCityPageRequest & { windowDays: 7 | 30 }, TasteMapDiscoveryCityPageDTO>({
@@ -126,23 +144,26 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
     owner: async () => { const session = await platform.auth.sessionStatus(); return session.state === 'authenticated' ? session.userID : null },
     publish: setCityState,
   }), [platform])
-  const cityKey = discoveryCityQueryKey(query)
+  const canonicalScope = usesCanonicalForYou(city === 'all', query)
+  const cityKey = canonicalScope ? null : discoveryCityQueryKey(query)
   const cityPage = cityKey && cityState.key === cityKey ? cityState.page : null
-  const cityLoading = Boolean(cityKey && (cityState.key !== cityKey || cityState.loading))
+  const cityLoading = canonicalScope ? loading && !content.discovery.forYou.length : Boolean(cityKey && (cityState.key !== cityKey || cityState.loading))
   const feedbackKey = recommendationPreferences.ready ? JSON.stringify([recommendationPreferences.ownerID, recommendationPreferences.excludedIDs, recommendationPreferences.intentFeedback]) : null
   const previousFeedbackKey = useRef<string | null>(null)
   useEffect(() => {
     const previous = previousFeedbackKey.current
     previousFeedbackKey.current = feedbackKey
-    if (feedbackKey && previous && previous !== feedbackKey && cityMode === 'for_you') void citySession.retry()
-  }, [feedbackKey, cityMode, citySession])
+    if (feedbackKey && previous && previous !== feedbackKey && cityMode === 'for_you') {
+      if (canonicalScope) onRetry?.(); else void citySession.retry()
+    }
+  }, [feedbackKey, cityMode, citySession, canonicalScope, onRetry])
   useEffect(() => {
     // Local optimistic state from the default feed must not shadow a newly
     // hydrated city response for the same Restaurant / Visit.
     setViewerStates({}); setEngagement({}); setCommentContext(null)
-    void citySession.select(query)
+    void citySession.select(canonicalScope ? null : query)
     return () => citySession.invalidate()
-  }, [citySession, selectedCity, query])
+  }, [citySession, selectedCity, query, canonicalScope])
   useEffect(() => {
     let cancelled = false
     const subscription = platform.events.subscribe((event) => {
@@ -150,20 +171,24 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
       // The optimistic refresh can precede the server acknowledgement. Requery
       // after sync as well, so the ranked page uses the persisted feedback.
       if (event.name === 'data.changed' && event.payload.reason === 'recommendationPreferenceSynced') {
-        if (cityMode === 'for_you') void citySession.retry()
+        if (cityMode === 'for_you') { if (canonicalScope) onRetry?.(); else void citySession.retry() }
+        return
+      }
+      if (event.name === 'data.changed' && event.payload.reason === 'syncCompleted') {
+        if (!canonicalScope) void citySession.refreshAutomatically()
         return
       }
       if (event.name !== 'auth.changed') return
       citySession.invalidate()
       setViewerStates({}); setEngagement({}); setCommentContext(null)
       // Never carry the previous account's private query or editor context over.
-      setCity('all'); setSorts({}); setWindows({}); setSessionPreferences({}); setHardFilters(normalizeDiscoveryFilters()); setRecordStateExplicit(false)
+      setCity('all'); setDetectedCity(''); setSorts({}); setWindows({}); setSessionPreferences({}); setHardFilters(normalizeDiscoveryFilters()); setRecordStateExplicit(false)
       setFiltersOpen(false); setTab('forYou'); setComments([]); setCommentText('')
       commentRequestSequence.current += 1
       scrollPosition.current = 0
     })
     return () => { cancelled = true; void subscription.then((value) => value.remove()).catch(() => undefined) }
-  }, [platform, citySession, selectedCity, cityMode])
+  }, [platform, citySession, selectedCity, cityMode, canonicalScope, onRetry])
 
   useEffect(() => {
     if (!active) {
@@ -198,7 +223,7 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
   }, [content])
   const cityDiscovery = useMemo(() => cityPage?.discoveryItems.map((item) => cityPage.engagementState === 'known' && cityPage.interactionsAvailable ? item : { ...item, interaction: null }) ?? [], [cityPage])
   const cityActivity = useMemo(() => cityPage?.activityItems.map((item) => cityPage.engagementState === 'known' && cityPage.interactionsAvailable ? item : { ...item, interaction: null }) ?? [], [cityPage])
-  const forYouSource = cityDiscovery
+  const forYouSource = canonicalScope ? content.discovery.forYou : cityDiscovery
   const canonicalForYou = useMemo(
     () => !recommendationPreferences.ready ? [] : forYouSource.filter(item => !recommendationIsDismissed(item.restaurant, recommendationPreferences)),
     [forYouSource, recommendationPreferences.excludedIDs, recommendationPreferences.intentFeedback, recommendationPreferences.ready],
@@ -206,17 +231,17 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
   const discovery = tab === 'forYou' ? canonicalForYou : cityDiscovery
   const activity = cityActivity
   const discoveryMode = tab === 'forYou' ? 'for_you' : tab === 'similarTaste' ? 'similar_taste' : tab === 'trending' ? 'trending' : null
-  const refreshStatus = cityPage?.refreshStatus
-  const evidenceAvailability = cityPage?.evidenceAvailability
-  const currentReadError = cityState.error ?? refreshStatus?.issue?.message
-  const retryCurrentCity = () => void citySession.retry()
+  const refreshStatus = canonicalScope ? content.discovery.refreshStatus?.for_you : cityPage?.refreshStatus
+  const evidenceAvailability = canonicalScope ? content.discovery.evidenceAvailability?.for_you : cityPage?.evidenceAvailability
+  const currentReadError = (canonicalScope ? loadError : cityState.error) ?? refreshStatus?.issue?.message
+  const retryCurrentCity = () => { if (canonicalScope) onRetry?.(); else void citySession.retry() }
   const citySource = tab === 'following' || tab === 'latest' ? activity.map((item) => item.restaurant.city) : discovery.map((item) => item.restaurant.city)
   const cities = useMemo(() => [...new Set(citySource.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [citySource])
   // Filters and ranking are applied to the full qualified server candidate set,
   // never to the already-loaded first page.
   const visibleDiscovery = useMemo(() => discovery.filter(isDiscoveryPlacementEligible), [discovery])
   const visibleActivity = useMemo(() => activity.filter(isDiscoveryFeedActivityEligible), [activity])
-  const activeFilterCount = Number(filters.cuisines.length > 0) + Number(filters.types.length > 0) + Number(filters.minimumPublicScoreOutOfTen != null) + Number(filters.minimumPublicRatingUsers != null) + Number(filters.requireActualPhoto) + Number(filters.distance != null) + Number(filters.viewerStates.length > 0)
+  const activeFilterCount = Number(filters.cuisines.length > 0) + Number(filters.types.length > 0) + Number(filters.minimumPredictedLikingOutOfTen != null) + Number(filters.minimumTasteMatchPercent != null) + Number(filters.requireActualPhoto) + Number(filters.distance != null) + Number(filters.viewerStates.length > 0)
   const changeCity = (value: string) => {
     if (value === selectedCity) return
     setCity(value || 'all')
@@ -229,8 +254,8 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
     ...(filters.priceRange ? [{ label: `参考人均 ¥${filters.priceRange.minimum}–${filters.priceRange.maximumExclusive ?? '不限'}`, clear: () => setHardFilters(current => ({ ...current, priceRange: null })) }] : []),
     ...filters.cuisines.map(value => ({ label: value, clear: () => setHardFilters(current => ({ ...current, cuisines: current.cuisines.filter(item => item !== value) })) })),
     ...filters.types.map(value => ({ label: value, clear: () => setHardFilters(current => ({ ...current, types: current.types.filter(item => item !== value) })) })),
-    ...(filters.minimumPublicScoreOutOfTen == null ? [] : [{ label: `大家评分 ≥ ${filters.minimumPublicScoreOutOfTen}`, clear: () => setHardFilters(current => ({ ...current, minimumPublicScoreOutOfTen: null })) }]),
-    ...(filters.minimumPublicRatingUsers == null ? [] : [{ label: `评价人数 ≥ ${filters.minimumPublicRatingUsers}`, clear: () => setHardFilters(current => ({ ...current, minimumPublicRatingUsers: null })) }]),
+    ...(filters.minimumPredictedLikingOutOfTen == null ? [] : [{ label: `预计喜欢度 ≥ ${filters.minimumPredictedLikingOutOfTen} 分`, clear: () => setHardFilters(current => ({ ...current, minimumPredictedLikingOutOfTen: null })) }]),
+    ...(filters.minimumTasteMatchPercent == null ? [] : [{ label: `口味匹配度 ≥ ${filters.minimumTasteMatchPercent}%`, clear: () => setHardFilters(current => ({ ...current, minimumTasteMatchPercent: null })) }]),
     ...(filters.requireActualPhoto ? [{ label: '有实拍', clear: () => setHardFilters(current => ({ ...current, requireActualPhoto: false })) }] : []),
     ...(filters.distance ? [{ label: `${filters.distance.maximumMeters} 米以内`, clear: () => {
       setHardFilters(current => ({ ...current, distance: null }))
@@ -338,14 +363,16 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
         active={filters.viewerStates.length > 0}
         options={[{ value: '', label: '全部状态' }, { value: 'none', label: '未去过' }, { value: 'visited', label: '去过' }, { value: 'want_to_go', label: '想吃' }]}
         onChange={value => { setRecordStateExplicit(true); setHardFilters(current => ({ ...current, viewerStates: value ? [value as 'none' | 'visited' | 'want_to_go'] : [] })) }} />
-      <TasteMapFilterSelect presentation="dialog" icon={<Star aria-hidden="true" size={14} />} label="大家评分" value={String(filters.minimumPublicScoreOutOfTen ?? '')}
-        active={filters.minimumPublicScoreOutOfTen !== null}
-        options={[{ value: '', label: '大家评分' }, ...DISCOVERY_RATING_FILTER_THRESHOLDS.map(value => ({ value: String(value), label: minimumRatingFilterLabel(value) }))]}
-        onChange={value => setHardFilters(current => ({ ...current, minimumPublicScoreOutOfTen: value ? Number(value) : null }))} />
-      <TasteMapFilterSelect presentation="dialog" icon={<Users aria-hidden="true" size={14} />} label="评价人数" value={String(filters.minimumPublicRatingUsers ?? '')}
-        active={filters.minimumPublicRatingUsers !== null}
-        options={[{ value: '', label: '评价人数' }, ...[3, 5, 10, 30].map(value => ({ value: String(value), label: `至少 ${value} 人评价` }))]}
-        onChange={value => setHardFilters(current => ({ ...current, minimumPublicRatingUsers: value ? Number(value) : null }))} />
+      {tab === 'forYou' ? <>
+        <TasteMapFilterSelect presentation="dialog" icon={<Star aria-hidden="true" size={14} />} label="预计喜欢度" value={String(filters.minimumPredictedLikingOutOfTen ?? '')}
+          active={filters.minimumPredictedLikingOutOfTen != null}
+          options={[{ value: '', label: '预计喜欢度' }, ...DISCOVERY_RATING_FILTER_THRESHOLDS.map(value => ({ value: String(value), label: minimumRatingFilterLabel(value) }))]}
+          onChange={value => setHardFilters(current => ({ ...current, minimumPredictedLikingOutOfTen: value ? Number(value) : null }))} />
+        <TasteMapFilterSelect presentation="dialog" icon={<Users aria-hidden="true" size={14} />} label="口味匹配度" value={String(filters.minimumTasteMatchPercent ?? '')}
+          active={filters.minimumTasteMatchPercent != null}
+          options={[{ value: '', label: '口味匹配度' }, ...[10,20,30,40,50,60,70,80,90,100].map(value => ({ value: String(value), label: `${value}% 以上` }))]}
+          onChange={value => setHardFilters(current => ({ ...current, minimumTasteMatchPercent: value ? Number(value) : null }))} />
+      </> : null}
       <TasteMapFilterSelect presentation="dialog" icon={<Image aria-hidden="true" size={14} />} label="实拍照片" value={filters.requireActualPhoto ? 'yes' : ''}
         active={filters.requireActualPhoto} options={[{ value: '', label: '实拍照片' }, { value: 'yes', label: '仅有实拍' }]}
         onChange={value => setHardFilters(current => ({ ...current, requireActualPhoto: value === 'yes' }))} />
@@ -362,6 +389,8 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
       tab={tab}
       tabs={tabs.map(item => item.value === 'similarTaste' && !premiumVisible ? { ...item, icon: <LockKeyhole aria-label="会员专享" size={12} /> } : item)}
     >
+      {currentReadError && (discoveryMode ? visibleDiscovery.length : visibleActivity.length) > 0 && tab !== 'similarTaste'
+        ? <div role="status" className="tm-discovery-city-pagination"><p>{currentReadError} 正在显示上次缓存。</p><button onClick={retryCurrentCity} type="button">重试</button></div> : null}
       {tab === 'similarTaste' && entitlement === 'loading'
         ? <HybridState kind="loading" title="正在确认同味权益" message="会员权限与推荐证据会分别核对。" />
         : tab === 'similarTaste' && entitlement === 'unavailable'
@@ -417,7 +446,7 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
             : tab === 'similarTaste'
               ? <DiscoveryAvailabilityState membership={entitlement === 'premium' ? 'member' : undefined} evidence={evidenceAvailability} onPremium={onOpenPremium} onRecord={onAddRestaurant} onCity={openFilters} onForYou={() => setTab('forYou')} onRetry={retryCurrentCity} />
               : <HybridState kind="empty" message={tab === 'trending' ? '当前城市在近期窗口内还没有足够的真实热度样本。' : '当前城市暂未生成可展示的推荐。可以补充真实到访与评分，或切换城市；会员权限不能替代缺失的证据。'} title={tab === 'trending' ? '趋势样本还不够' : '暂未找到合适的推荐'} action={tab === 'forYou' ? <div className="tm-discovery-availability-actions">{onAddRestaurant ? <button type="button" onClick={onAddRestaurant}>补充到访与评分</button> : null}<button type="button" onClick={openFilters}>切换城市</button></div> : undefined} />}
-      {cityPage && !cityLoading ? <div className="tm-discovery-city-pagination" aria-live="polite">
+      {cityPage && !cityLoading && !currentReadError ? <div className="tm-discovery-city-pagination" aria-live="polite">
         {currentReadError ? <p role="alert">{currentReadError}</p> : null}
         <small>{cityPage.resolvedCity || selectedCity} · 已加载 {cityPage.discoveryItems.length + cityPage.activityItems.length} 条{cityPage.pagination === 'complete' ? ' · 本次查询已加载完' : ''}</small>
         {cityPage.pagination === 'more' && cityPage.nextCursor && cityPage.snapshotID ? <button type="button" disabled={cityState.appending} onClick={() => void citySession.more()}>{cityState.appending ? '正在加载…' : currentReadError ? '重试加载更多' : '继续加载'}</button> : null}
@@ -500,8 +529,8 @@ export function RecommendationCard({ item, platform, onOpenRestaurant, engagemen
       : item.mode === 'for_you'
         ? <TasteMapRecommendationSignal input={item} />
         : item.mode === 'trending' ? undefined : <CommunityRatingSummary item={item} />}
-    body={reasons.length ? <DiscoveryEvidence item={item} /> : null}
-    header={similarTasteSource ? <><button aria-label={`查看同味来源用户 ${similarTasteSource.name}`} className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: similarTasteSource.id })} type="button"><span className="tm-hybrid-avatar-seed">{similarTasteSource.name.slice(0, 1)}</span><span><strong>{similarTasteSource.name}</strong><small>{item.activityVisitedAt ? `${formatEventTime(item.activityVisitedAt)} · 公开到访` : '与你口味相近'}</small></span></button>{item.similarityPercent != null ? <span className="similarity-pill">口味相似 {item.similarityPercent}%</span> : null}</> : undefined}
+    body={<>{item.mode === 'for_you' ? <TasteMapPredictedLiking value={item.predictedLiking} /> : null}{reasons.length ? <DiscoveryEvidence item={item} /> : null}</>}
+    header={similarTasteSource ? <><button aria-label={`查看同味来源用户 ${similarTasteSource.name}`} className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: similarTasteSource.id })} type="button"><ActivityAvatar user={similarTasteSource} /><span><strong>{similarTasteSource.name}</strong><small>{item.activityVisitedAt ? `${formatEventTime(item.activityVisitedAt)} · 公开到访` : '与你口味相近'}</small></span></button>{item.similarityPercent != null ? <span className="similarity-pill">口味相似 {item.similarityPercent}%</span> : null}</> : undefined}
     mediaCount={item.mode === 'similar_taste' ? item.activityImages?.length : 1}
     media={item.mode === 'similar_taste'
       ? <TasteMapActivityMedia name={item.restaurant.name} onOpen={() => onOpenRestaurant(item.restaurant.id)} images={(item.activityImages?.length ? item.activityImages : [undefined]).map((image, index) => <HybridRestaurantContentImage key={index} activityImage={image} restaurant={item.restaurant} />)} />
@@ -528,6 +557,12 @@ export function RecommendationCard({ item, platform, onOpenRestaurant, engagemen
   />
 }
 
+function ActivityAvatar({ user }: { user: TasteMapHybridActivityItemDTO['user'] }) {
+  return <span className="tm-hybrid-avatar-seed"><UserAvatar alt="" avatarPresetId={user.avatarPresetID}
+    avatarPhotoId={user.avatarPhotoID} avatarImageData={user.avatarPhotoID
+      ? `tastemap-resource://public-photo/${encodeURIComponent(user.avatarPhotoID)}/display` : null} /></span>
+}
+
 function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerState, likePending, wantPending, wheelActive, onLike, onComment, onRecordVisit, onToggleWant, onOpenRoulette }: {
   item: TasteMapHybridActivityItemDTO
   platform: TasteMapPlatform
@@ -537,7 +572,7 @@ function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerStat
   return <TasteMapActivityCardFrame
     activityRating={item.kind === 'visit' ? <TasteMapActivityRatingBadge rating={item.visitRating} /> : undefined}
     body={item.note ? <p>“{item.note}”</p> : undefined}
-    header={<button className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.user.id })} type="button"><span className="tm-hybrid-avatar-seed">{item.user.name.slice(0, 1)}</span><span><strong>{item.user.name}</strong><small>{formatEventTime(item.eventAt)} · {item.kind === 'visit' ? '公开到访' : '加入想吃'}</small></span></button>}
+    header={<button className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.user.id })} type="button"><ActivityAvatar user={item.user} /><span><strong>{item.user.name}</strong><small>{formatEventTime(item.eventAt)} · {item.kind === 'visit' ? '公开到访' : '加入想吃'}</small></span></button>}
     mediaCount={item.activityImages?.length}
     media={<TasteMapActivityMedia name={item.restaurant.name} onOpen={() => onOpenRestaurant(item.restaurant.id)} images={(item.activityImages?.length ? item.activityImages : [undefined]).map((image, index) => <HybridRestaurantContentImage key={index} activityImage={image} restaurant={item.restaurant} />)} />}
     onOpen={() => onOpenRestaurant(item.restaurant.id)}
@@ -569,7 +604,7 @@ function CommunityRatingSummary({ item }: { item: TasteMapHybridDiscoveryItemDTO
 
 function RestaurantIdentity({ item, onOpenRestaurant }: { item: TasteMapHybridDiscoveryItemDTO | TasteMapHybridActivityItemDTO; onOpenRestaurant: (id: string) => void }) {
   const restaurant = item.restaurant
-  const metadata = [restaurant.tags.slice(0, 2).join(' · '), restaurant.referencePrice != null ? `约 ¥${Math.round(restaurant.referencePrice)}/人` : ''].filter(Boolean).join(' · ')
+  const metadata = [restaurantCategoryLabels(restaurant.tags).slice(0, 2).join(' · '), restaurant.referencePrice != null ? `约 ¥${Math.round(restaurant.referencePrice)}/人` : ''].filter(Boolean).join(' · ')
   return <button aria-label={`查看餐厅 ${restaurant.name}`} className="tm-activity-card__restaurant-identity" onClick={() => onOpenRestaurant(restaurant.id)} title="查看餐厅信息" type="button"><span className="tm-activity-card__restaurant-copy"><strong>{restaurant.name}</strong>{metadata ? <em>{metadata}</em> : null}<small><MapPin aria-hidden="true" size={12} /><span>{restaurant.city} · {restaurant.address}</span><span aria-hidden="true" className="tm-activity-card__restaurant-detail-icon"><Store size={13} /></span></small></span></button>
 }
 

@@ -6,6 +6,30 @@ import Testing
 @Suite("P3-A User Profile foundation", .serialized)
 @MainActor
 struct P3AProfileTests {
+    @Test("Homepage visibility propagates to only the owner's footprint and queues once")
+    func linkedFootprintVisibility() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let profile = UserProfile(tasteMapUserID: "tm_scope", displayName: "Owner")
+        profile.visibility = .public
+        let restaurant = Restaurant(ownerUserID: "tm_scope", name: "Owned", address: "", latitude: 0, longitude: 0, remoteID: "restaurant_scope")
+        let visit = Visit(ownerUserID: "tm_scope", restaurantId: restaurant.id, rating: 4.5)
+        let other = Visit(ownerUserID: "tm_other", restaurantId: restaurant.id, rating: 4.5)
+        context.insert(profile); context.insert(restaurant); context.insert(visit); context.insert(other)
+        try context.save()
+        let store = LocalUserProfileStore(context: context)
+        #expect(try store.synchronizeFootprintVisibility(profile) == 1)
+        #expect(visit.visibility == .public)
+        #expect(other.visibility == .private)
+        #expect(try store.synchronizeFootprintVisibility(profile) == 0)
+        profile.visibility = .friends
+        #expect(try store.synchronizeFootprintVisibility(profile) == 1)
+        #expect(visit.visibility == .friends)
+        profile.visibility = .private
+        #expect(try store.synchronizeFootprintVisibility(profile) == 1)
+        #expect(visit.visibility == .private)
+    }
+
     @Test("Numeric public user ID stays aligned with the Web projection")
     func numericPublicUserID() {
         #expect(TasteMapPublicUserID.numeric(from: "tm_contract") == "395932615433")

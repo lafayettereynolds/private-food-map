@@ -262,6 +262,29 @@ struct MapBrowsingParityTests {
         }
     }
 
+    @Test("A retained Hybrid descriptor cannot select a deleted owner photo on Personal Map")
+    func retainedDeletedPhotoFallsBack() {
+        let restaurant = makeRestaurant(98, name: "日式食堂", status: .visited)
+        let image = photo(398, restaurant: restaurant, kind: .visit, remoteID: "retained-photo")
+        let descriptor = TasteMapHybridImageDescriptor(kind: .ownerPhoto,
+            photoID: image.remoteID, categoryVisualID: FoodCategoryVisualID.japaneseKorean.rawValue,
+            accessibilityLabel: "本人实拍")
+        let retained = [image.id: image]
+        func resolve() -> RestaurantMapMarkerVisual {
+            TasteMapHybridMapMarkerVisualPolicy.resolve(descriptor, fallbackEmoji: "🍣",
+                restaurantName: restaurant.name, photosByID: retained)
+        }
+        #expect(resolve() == .photo(image.id))
+        image.deletedAt = .now
+        #expect(resolve() == .emoji("🍣"))
+        image.deletedAt = nil
+        image.binaryDeletedAt = .now
+        #expect(resolve() == .emoji("🍣"))
+        image.binaryDeletedAt = nil
+        image.uploadState = .deleted
+        #expect(resolve() == .emoji("🍣"))
+    }
+
     @Test("Owner avatar glyphs survive both map projections without moving the restaurant")
     func explicitOwnerAvatarIsNotFoodCategorySanitized() throws {
         let restaurant = makeRestaurant(42, name: "川正元麻辣香锅", status: .visited)

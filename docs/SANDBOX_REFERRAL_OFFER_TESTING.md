@@ -1,5 +1,13 @@
 # Sandbox referral Offer Code testing
 
+## Adopted mapping and test boundary — 2026-09-08
+
+VERIFIED mappings: 580777 → invitee14; 580852 → Reward1; 580833 → Reward2; 580908 → Reward3; 580853 → Reward4; 580922 → Reward5. Mapping gate PASS. Retained inventory evidence:60 unused codes in ignored private Sandbox inventory; no code values are published here.
+
+The user authorizes a separate Sandbox build, private-food-map-development and Sandbox inventory only for invitee14 and Reward1 real-device acceptance. Required chain: Apple Sandbox redemption → verified Apple transaction → Sandbox server verification → Taste Map account binding → authoritative entitlement → Premium UI refresh. No Production entitlement/reward-ledger writes. Rewards2–5 need automated mapping/allocation/idempotency/isolation coverage, not real code consumption.
+
+Production baseline dd0369b9 is ADOPTED. Its sandbox_offer_forbidden403 is expected and must remain. Formal candidate2026090801 stays on https://api.tastemap.cn, no origin fallback or test-server default. No codes in the formal client, Production inventory or Debug verification bypass. Separate-path authorization does not mean a Sandbox build or real redemption has passed. Both real Offer gates remain USER ACTION REQUIRED. See [current baseline report](../reports/PRODUCTION_BASELINE_ADOPTION_2026-09-08.md); conflicting earlier mapping/approval notices below are historical.
+
 ## Scope and current gate
 
 This is a local internal-operator test tool, not a shipping reward-delivery channel.
@@ -46,15 +54,18 @@ Run from the repository with Node 24+ and pnpm. `sandbox:offers` enables Node's
 TypeScript transform to reuse the authoritative commerce verifier.
 Place a trusted local **Sandbox/development** SQLite referral ledger snapshot
 inside the private directory before assignment. The CLI opens it read-only and
-does not connect to or modify remote D1. Do not supply a Production snapshot.
+uses the Development D1 only for the explicit refresh-ledger/publish commands. Do not supply a Production snapshot.
 Refresh this snapshot after qualification, reward settlement or revocation.
 
 ```sh
+pnpm run sandbox:offers refresh-ledger --environment sandbox
 pnpm run sandbox:offers status --environment sandbox
 pnpm run sandbox:offers import --environment sandbox /absolute/path/to/download.csv
 pnpm run sandbox:offers map --environment sandbox BATCH_UUID invitee 'EXACT_APPLE_OFFER_REFERENCE'
 pnpm run sandbox:offers assign --environment sandbox .private/sandbox-offer-codes/sandbox-ledger.sqlite REWARD_ID
+pnpm run sandbox:offers publish --environment sandbox .private/sandbox-offer-codes/sandbox-ledger.sqlite ASSIGNMENT_UUID
 pnpm run sandbox:offers handoff --environment sandbox .private/sandbox-offer-codes/sandbox-ledger.sqlite ASSIGNMENT_UUID
+pnpm run sandbox:offers sync-redemption --environment sandbox .private/sandbox-offer-codes/sandbox-ledger.sqlite ASSIGNMENT_UUID
 pnpm run sandbox:offers fail --environment sandbox ASSIGNMENT_UUID cancelled
 pnpm run sandbox:offers verify --environment sandbox .private/sandbox-offer-codes/sandbox-ledger.sqlite ASSIGNMENT_UUID TRANSACTION_ID .private/sandbox-offer-codes/apple-sandbox.json
 pnpm run sandbox:offers git-guard --environment sandbox
@@ -118,9 +129,7 @@ Use the existing Native transaction listener/restore flow and authoritative serv
 to reconcile. The inventory verifier only marks inventory; it never grants Premium.
 
 This task did not consume a real code or complete an Apple Sandbox redemption.
-All real inventory remains unused. Mapping confirmation, a Sandbox test ledger,
-Apple server credentials and an authenticated Sandbox-device transaction are still
-required. Mock-verifier tests are not Apple redemption results.
+All real inventory remains unused. Apple server credentials and the Development ledger snapshot are prepared. Mapping confirmation, qualified real test accounts, and authenticated Sandbox-device transactions are still required. Mock-verifier tests are not Apple redemption results.
 
 The new tool and inventory are outside Worker/App import graphs and shipping
 resources. No UI route, Premium bypass, debug entitlement, bundled redemption
@@ -140,3 +149,13 @@ value, production inventory or StoreKit product is added by this change.
   This is a scan of existing artifacts, not a new Release build or device test.
 - Real Apple Sandbox redemption: **not run / awaiting prerequisites**. No actual
   Apple code was marked redeemed based on a simulated transaction.
+
+## 2026-09-08 server admission and device preparation
+
+Development migration `0038_sandbox_offer_assignments.sql` stores assignment metadata only, never redemption codes. Publish each assignment before private handoff. Server reconciliation requires the authenticated owner, matching Apple offer identifier and Sandbox environment, and uses a compare-and-set original transaction binding to reject concurrent reuse. Refresh the private ledger after an actual transaction, then sync-redemption; this cannot force a redeemed state without server-verified evidence. Existing Apple subscriptions remain independent of later referral reward changes.
+
+Sandbox credentials are configured in Worker secrets. No new key is needed. Normal Production verification remains strict; it does not fall back to Sandbox after HTTP 401. The dedicated `TasteMap Sandbox TestFlight` scheme archives `ReleaseSandbox` against the independent Development backend. This is a test artifact, not the build to submit for public release. Normal `TasteMap` Release retains Production routing.
+
+On device, Apple documents Settings → Developer → Sandbox Apple Account → Manage → Initiate Transaction → Offer Codes. Use Sandbox controls, not the production gift-card redemption screen. Codes are bearer values at Apple: the server prevents an unassigned Taste Map account from obtaining the entitlement, but cannot prevent someone entering a shared code in Apple's UI. Apple transaction evidence identifies the offer, not an individual code. Missing appAccountToken remains a blocking verification result.
+
+Latest automated coverage: 48 server/operator tests and 36 iOS tests passed. Real transactions and real UI confirmation remain pending. See `reports/STOREKIT_SANDBOX_E2E_2026-09-08.md` for the acceptance boundary.

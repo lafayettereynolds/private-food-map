@@ -156,7 +156,8 @@ async function readFeed(database: D1Database, viewerId: string, url: URL): Promi
   const relationClause = scope === 'following' ? `AND (
     EXISTS (SELECT 1 FROM follows ff WHERE ff.follower_id = ? AND ff.followed_user_id = v.user_id AND ff.deleted_at IS NULL)
   )` : ''
-  const bindings: unknown[] = [viewerId, viewerId, viewerId, viewerId, viewerId]
+  const bindings: unknown[] = [viewerId, viewerId, viewerId, viewerId]
+  if (scope === 'following') bindings.unshift(viewerId)
   if (scope === 'following') bindings.push(viewerId)
   if (city) bindings.push(city)
   bindings.push(snapshotISO)
@@ -164,7 +165,7 @@ async function readFeed(database: D1Database, viewerId: string, url: URL): Promi
     FROM visits v
     JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
     JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
-    WHERE v.user_id <> ? AND v.deleted_at IS NULL AND COALESCE(v.is_test_data, 0) = 0
+    WHERE ${scope === 'following' ? 'v.user_id <> ? AND' : ''} v.deleted_at IS NULL AND COALESCE(v.is_test_data, 0) = 0
       AND v.rating <= 5 AND v.rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE} AND (
       (v.visibility = 'public' AND up.visibility = 'public') OR (
         v.visibility IN ('public', 'friends') AND up.visibility IN ('public', 'friends') AND

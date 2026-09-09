@@ -1,0 +1,4 @@
+// Apply only with -configuration Release. No DEBUG, QA, or Sandbox product UI.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) TASTEMAP_INTERNAL_BUILD
+TASTEMAP_DISTRIBUTION_CHANNEL = internal
+TASTEMAP_EXPECTED_API_BASE_URL = https:/$()/api-dev.tastemap.cn

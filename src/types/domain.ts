@@ -172,6 +172,8 @@ export interface Photo {
   updatedAt: string
   deletedAt: string | null
   localState: 'synced' | 'delete-pending'
+  /** Local durable binary cleanup progress; never makes the photo visible. */
+  deletedStorageKeys?: string[]
   lastError: string | null
 }
 

@@ -35,6 +35,71 @@ const PULL_ID_BATCH_SIZE = 50
 const CHANGE_LOG_TABLE = 'sync_change_log_v6'
 const RECEIPT_TABLE = 'sync_mutation_receipts_v6'
 
+/** Bounded, owner-scoped, read-only authoritative snapshot for an explicit
+ * accept-server decision. Never uses the version cached in a conflict receipt. */
+export async function handleSyncConflictSnapshot(database: D1Database, viewerId: string, request: Request) {
+  const url = new URL(request.url)
+  const entityType = url.searchParams.get('entityType')
+  const entityId = url.searchParams.get('entityId')
+  if (entityType === 'visitDish' && entityId && entityId.length <= 200) {
+    const rows = await database.prepare(`SELECT a.*,
+      r.server_version restaurant_version, r.deleted_at restaurant_deleted,
+      v.server_version visit_version, v.deleted_at visit_deleted,
+      d.server_version dish_version, d.deleted_at dish_deleted
+      FROM visit_dishes a
+      JOIN restaurants r ON r.id=a.restaurant_id AND r.user_id=a.user_id
+      JOIN visits v ON v.id=a.visit_id AND v.user_id=a.user_id AND v.restaurant_id=a.restaurant_id
+      JOIN dishes d ON d.id=a.dish_id AND d.user_id=a.user_id AND d.restaurant_id=a.restaurant_id
+      WHERE a.id=? AND a.user_id=?`).bind(entityId, viewerId).all<SyncVisitDishRow & {
+        restaurant_version: number; restaurant_deleted: string | null;
+        visit_version: number; visit_deleted: string | null;
+        dish_version: number; dish_deleted: string | null;
+      }>()
+    const row = rows.results[0]
+    if (!row) throw new SyncV1RequestError('Association or owned parent was not found.', 404)
+    if (row.deleted_at || row.restaurant_deleted || row.visit_deleted || row.dish_deleted ||
+        row.server_version <= 0 || row.restaurant_version <= 0 || row.visit_version <= 0 || row.dish_version <= 0 ||
+        row.id !== `legacy:${row.dish_id}:${row.visit_id}`) {
+      throw new SyncV1RequestError('Association is not an active legacy canonical target.', 409)
+    }
+    return { apiVersion: SYNC_API_VERSION, entityType, entityId, visit: null, restaurantList: null,
+      restaurantListItems: [], visitDish: { serverVersion: row.server_version, record: rowToVisitDish(row) },
+      associationParents: { restaurantVersion: row.restaurant_version, visitVersion: row.visit_version, dishVersion: row.dish_version },
+    }
+  }
+  if (!entityId || entityId.length > 200 || (entityType !== 'visit' && entityType !== 'restaurantList')) {
+    throw new SyncV1RequestError('Unsupported conflict snapshot target.', 400)
+  }
+  const table = entityType === 'visit' ? 'visits' : 'restaurant_lists'
+  const statements = [database.prepare(`SELECT * FROM ${table} WHERE id = ? AND user_id = ?`)
+    .bind(entityId, viewerId)]
+  if (entityType === 'restaurantList') statements.push(database.prepare(`SELECT * FROM restaurant_list_items
+    WHERE user_id = ? AND list_id = ? ORDER BY position, id LIMIT 201`).bind(viewerId, entityId))
+  // D1 batch is transactional: the list metadata and its complete membership
+  // must come from one database snapshot, not two interleaved reads.
+  const rows = await database.batch<SyncVisitRow | SyncRestaurantListRow | SyncRestaurantListItemRow>(statements)
+  const row = rows[0].results[0] as SyncVisitRow | SyncRestaurantListRow | undefined
+  if (!row) throw new SyncV1RequestError('Conflict entity was not found.', 404)
+  if (row.deleted_at) throw new SyncV1RequestError('Conflict entity has been deleted.', 409)
+  const result = { apiVersion: SYNC_API_VERSION, entityType, entityId,
+    visit: entityType === 'visit' ? { serverVersion: row.server_version, record: rowToVisit(row as SyncVisitRow) } : null,
+    restaurantList: entityType === 'restaurantList' ? { serverVersion: row.server_version, record: rowToRestaurantList(row as SyncRestaurantListRow) } : null,
+    restaurantListItems: [] as Array<{ serverVersion: number; record: RestaurantListItemSyncContractV1 }>,
+  }
+  if (entityType === 'restaurantList') {
+    const items = rows[1] as D1Result<SyncRestaurantListItemRow>
+    if (items.results.length > 200) throw new SyncV1RequestError('List snapshot requires pagination; no partial resolution allowed.', 409)
+    const ids = [...new Set(items.results.filter(item => !item.restaurant_snapshot_json).map(item => item.restaurant_id))]
+    const parents = await readSyncEntityRows(database, viewerId, { restaurant: ids })
+    const identities = await readPlaceIdentitiesForRestaurants(database, viewerId, ids)
+    result.restaurantListItems = items.results.map(item => ({ serverVersion: item.server_version,
+      record: rowToRestaurantListItem(item, parents.get('restaurant')?.get(item.restaurant_id) as SyncRestaurantRow | undefined,
+        identities.get(item.restaurant_id) ?? []),
+    }))
+  }
+  return result
+}
+
 interface VersionedEntityRow {
   id: string
   user_id: string
@@ -344,6 +409,12 @@ export async function handleSyncV1Pull(
   const tombstones = [] as SyncPullResponseV1['tombstones']
   for (const change of latestInPage.values()) {
     const row = pageRows.get(change.entity_type)?.get(change.entity_id)
+    if (!row && change.entity_type === 'photo' && change.operation === 'delete') {
+      const fence = await database.prepare('SELECT deleted_at FROM photo_deletion_fences WHERE user_id = ? AND photo_id = ?')
+        .bind(viewerId, change.entity_id).first<{ deleted_at: string }>()
+      if (fence) tombstones.push(tombstone(change, fence.deleted_at))
+      continue
+    }
     if (!row || row.server_version !== change.server_version) continue
     if (change.operation === 'delete' || row.deleted_at) {
       tombstones.push(tombstone(change, row.deleted_at))
@@ -638,6 +709,9 @@ async function applyMutation(
   if (current && current.user_id !== viewerId) {
     throw new SyncV1RequestError('The authenticated user does not own this entity.', 403)
   }
+  if (!current && mutation.entityType === 'photo' && mutation.operation === 'delete' && mutation.baseVersion === 0) {
+    return deleteNeverSyncedPhoto(database, viewerId, mutation, fingerprint)
+  }
   if (mutation.entityType === 'profile') {
     if (mutation.entityId !== viewerId) {
       throw new SyncV1RequestError('A Profile entity must belong to the authenticated Taste Map user.', 403)
@@ -820,6 +894,31 @@ async function applyMutation(
 
   const latest = await readEntityVersion(database, mutation.entityType, mutation.entityId)
   return recordConflict(database, viewerId, mutation, fingerprint, latest?.server_version ?? 0, 'server_version_mismatch')
+}
+
+async function deleteNeverSyncedPhoto(database: D1Database, viewerId: string, mutation: SyncMutationV1, fingerprint: string) {
+  const now = new Date().toISOString()
+  await database.batch([
+    database.prepare(`INSERT INTO photo_deletion_fences(user_id, photo_id, deleted_at)
+      SELECT ?, ?, ? WHERE NOT EXISTS(SELECT 1 FROM photos WHERE id = ?)
+      ON CONFLICT(user_id, photo_id) DO NOTHING`)
+      .bind(viewerId, mutation.entityId, now, mutation.entityId),
+    database.prepare(`INSERT OR IGNORE INTO ${CHANGE_LOG_TABLE}
+      (user_id, entity_type, entity_id, operation, server_version, mutation_id, changed_at)
+      SELECT ?, 'photo', ?, 'delete', 1, ?, deleted_at FROM photo_deletion_fences
+      WHERE user_id = ? AND photo_id = ?`)
+      .bind(viewerId, mutation.entityId, mutation.mutationId, viewerId, mutation.entityId),
+    database.prepare(`INSERT OR IGNORE INTO ${RECEIPT_TABLE}
+      (user_id, mutation_id, request_fingerprint, entity_type, entity_id, operation,
+       status, server_version, revision, conflict_reason, processed_at)
+      SELECT ?, ?, ?, 'photo', ?, 'delete', 'applied', 1, revision, NULL, ?
+      FROM ${CHANGE_LOG_TABLE} WHERE user_id = ? AND mutation_id = ?`)
+      .bind(viewerId, mutation.mutationId, fingerprint, mutation.entityId, now, viewerId, mutation.mutationId),
+  ])
+  const receipt = await readReceipt(database, viewerId, mutation.mutationId)
+  if (receipt) return acknowledgement(receipt, fingerprint, false)
+  const current = await readEntityVersion(database, 'photo', mutation.entityId)
+  return recordConflict(database, viewerId, mutation, fingerprint, current?.server_version ?? 0, 'server_version_mismatch')
 }
 
 function conflictForMutation(current: VersionedEntityRow | null, mutation: SyncMutationV1) {
@@ -1396,9 +1495,9 @@ function photoMutationStatements(
     sort_order, visibility, sync_status, created_at, updated_at, deleted_at,
     server_version, last_mutation_id
   ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?, NULL, ?, ?
-  WHERE ? IS NULL OR EXISTS (
+  WHERE NOT EXISTS (SELECT 1 FROM photo_deletion_fences WHERE user_id = ? AND photo_id = ?) AND (? IS NULL OR EXISTS (
     SELECT 1 FROM photos WHERE id = ? AND user_id = ? AND visit_id = ? AND deleted_at IS NULL
-  ) OR (SELECT COUNT(*) FROM photos WHERE user_id = ? AND visit_id = ? AND deleted_at IS NULL) < ?
+  ) OR (SELECT COUNT(*) FROM photos WHERE user_id = ? AND visit_id = ? AND deleted_at IS NULL) < ?)
   ON CONFLICT(id) DO UPDATE SET
     restaurant_id = excluded.restaurant_id, visit_id = excluded.visit_id,
     dish_id = excluded.dish_id, storage_provider = excluded.storage_provider,
@@ -1416,7 +1515,7 @@ function photoMutationStatements(
       photo.storageKey, photo.thumbnailStorageKey, photo.kind, photo.fileName,
       photo.mimeType, photo.byteSize, photo.width, photo.height, photo.sortOrder,
       photo.visibility, photo.createdAt, photo.updatedAt, nextVersion,
-      mutation.mutationId, photo.visitId, mutation.entityId, viewerId, photo.visitId,
+      mutation.mutationId, viewerId, mutation.entityId, photo.visitId, mutation.entityId, viewerId, photo.visitId,
       viewerId, photo.visitId, visitPhotoLimit, viewerId, mutation.baseVersion,
     )
   return finalMutationStatements(
@@ -1447,6 +1546,9 @@ function dishProjectionStatement(database: D1Database, viewerId: string, dishId:
 
 function photoProjectionStatements(database: D1Database, viewerId: string, photoId: string) {
   return [
+    database.prepare(`INSERT INTO photo_deletion_fences(user_id, photo_id, deleted_at)
+      SELECT user_id, id, deleted_at FROM photos WHERE user_id = ? AND id = ? AND deleted_at IS NOT NULL
+      ON CONFLICT(user_id, photo_id) DO NOTHING`).bind(viewerId, photoId),
     database.prepare(`UPDATE visits SET photo_ids_json = COALESCE((
       SELECT json_group_array(id) FROM (
         SELECT id FROM photos WHERE user_id = ? AND visit_id = visits.id

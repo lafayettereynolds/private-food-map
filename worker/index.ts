@@ -1,5 +1,6 @@
 import { resumeAccountDeletions } from './accountDeletionV1'
 import { runPrivacyRetention } from './privacyRetentionV1'
+import { referralAvailable } from '../src/config/referralAvailability'
 import { signupTrialEligibility, claimSignupTrial } from './signupTrialV1'
 import { referralDashboard, qualifyReferral, settlePremiumRewards, settleAllPremiumRewards, revokeReferral } from './referralsV1'
 import { referralLandingPage } from './referralLandingPage'
@@ -57,6 +58,7 @@ import {
 import {
   handleSyncV1Pull,
   handleSyncV1Push,
+  handleSyncConflictSnapshot,
   recordUnversionedSyncChanges,
   SyncV1RequestError,
   type SyncV1PullObservation,
@@ -68,6 +70,7 @@ import {
 } from './authV1'
 import {
   handlePhotoBinaryV1,
+  resumePhotoBinaryDeletions,
   PhotoBinaryV1Error,
 } from './photoBinaryV1'
 import {
@@ -638,6 +641,8 @@ const worker = {
     try {
       await settleAllPremiumRewards(env.DB)
     } finally {
+      await resumePhotoBinaryDeletions(env, new Date(controller.scheduledTime))
+        .catch(() => console.error('Photo binary deletion reconciliation remains pending.'))
       if (env.PRIVACY_RETENTION_ENABLED === 'true') {
         const now = new Date(controller.scheduledTime)
         await resumeAccountDeletions(env, now)
@@ -655,6 +660,7 @@ const worker = {
       })
     }
     if (url.pathname === '/ready' && request.method === 'GET') return productionReadiness(env)
+    if (url.pathname.startsWith('/invite/') && !referralAvailable()) return new Response('邀请功能暂未开放。', {status:404,headers:{'Cache-Control':'no-store'}})
     if (url.pathname.startsWith('/invite/') && request.method==='GET') return referralLandingPage(url.pathname.slice('/invite/'.length))
     if (url.pathname === '/internal/premium' && request.method === 'GET') {
       try {
@@ -701,6 +707,7 @@ const worker = {
         return json(await handleAuthV1Request(request, env))
       }
       if (url.pathname === '/api/v1/referrals') {
+        if (!referralAvailable()) return json({error:'邀请功能暂未开放。',code:'referral_unavailable'},403)
         if (request.method !== 'GET') throw new RequestError('邀请只能在新账号注册时绑定。', 405)
         const user = await authenticateAccessToken(request, env.DB)
         if (!user) throw new RequestError('请先登录。',401)
@@ -775,6 +782,10 @@ const worker = {
       const publicRestaurantMatch = url.pathname.match(/^\/api\/public\/restaurants\/([a-f0-9]{24})$/)
       if (publicRestaurantMatch && request.method === 'GET') {
         return json(await readPublicRestaurant(env.DB, publicRestaurantMatch[1]))
+      }
+      if (url.pathname === '/api/v1/sync/conflict-snapshot' && request.method === 'GET') {
+        const viewer = await resolveSyncViewer(request, env)
+        return json(await handleSyncConflictSnapshot(env.DB, viewer.id, request))
       }
       if (url.pathname === '/api/v1/sync/pull' && request.method === 'GET') {
         const requestStartedAt = performance.now()

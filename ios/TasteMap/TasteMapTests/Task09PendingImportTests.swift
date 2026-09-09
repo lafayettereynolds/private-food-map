@@ -4,6 +4,23 @@ import Testing
 
 @Suite("Task 09 pending Share Extension imports")
 struct Task09PendingImportTests {
+    @Test("Presented share survives as a draft without reopening on every launch")
+    func presentedDraft() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = PendingRestaurantImportStore(directoryURL: directory)
+        let item = try store.enqueue(text: "餐厅草稿", url: nil)
+        #expect(try store.awaitingPresentation().count == 1)
+        try store.markPresented(id: item.id)
+        let relaunched = PendingRestaurantImportStore(directoryURL: directory)
+        #expect(try relaunched.awaitingPresentation().isEmpty)
+        #expect(try relaunched.pending().first?.sharedText == "餐厅草稿")
+        _ = try relaunched.enqueue(text: "餐厅草稿", url: nil)
+        #expect(try relaunched.awaitingPresentation().count == 1)
+        try relaunched.consume(id: item.id)
+        #expect(try relaunched.pending().isEmpty)
+    }
+
     @Test("URL/text is normalized, atomically queued, and duplicate share is idempotent")
     func duplicateImport() throws {
         let directory = FileManager.default.temporaryDirectory

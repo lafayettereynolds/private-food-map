@@ -10,7 +10,8 @@ enum DiscoveryContentAccessPolicy {
 enum DiscoveryBrowseSort: String, CaseIterable, Identifiable, Sendable {
     case recommended
     case nearest
-    case highestRated
+    case predictedLiking
+    case tasteMatch
 
     var id: String { rawValue }
 
@@ -18,7 +19,8 @@ enum DiscoveryBrowseSort: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .recommended: "综合推荐"
         case .nearest: "距离最近"
-        case .highestRated: "评分最高"
+        case .predictedLiking: "预计喜欢度优先"
+        case .tasteMatch: "口味匹配优先"
         }
     }
 }
@@ -26,12 +28,14 @@ enum DiscoveryBrowseSort: String, CaseIterable, Identifiable, Sendable {
 struct DiscoveryBrowseFilters: Equatable, Sendable {
     var sort: DiscoveryBrowseSort = .recommended
     var maximumDistanceKilometers: Double?
-    var minimumRating: Double?
+    var minimumPredictedLikingOutOfTen: Double?
+    var minimumTasteMatchPercent: Double?
 
     nonisolated var activeCount: Int {
         (sort == .recommended ? 0 : 1) +
             (maximumDistanceKilometers == nil ? 0 : 1) +
-            (minimumRating == nil ? 0 : 1)
+            (minimumPredictedLikingOutOfTen == nil ? 0 : 1) +
+            (minimumTasteMatchPercent == nil ? 0 : 1)
     }
 
     nonisolated var needsDistanceAnchor: Bool {
@@ -67,8 +71,12 @@ enum DiscoveryBrowseResolver {
         }
 
         let filtered = cards.filter { card in
-            if let minimumRating = filters.minimumRating,
-               (card.ratings.community.value ?? -1) < minimumRating {
+            if let minimum = filters.minimumPredictedLikingOutOfTen,
+               (card.displayablePredictedLiking ?? -1) < minimum {
+                return false
+            }
+            if let minimum = filters.minimumTasteMatchPercent,
+               Double(card.personalTastePercent ?? -1) < minimum {
                 return false
             }
             if let maximumDistance = filters.maximumDistanceKilometers,
@@ -83,11 +91,17 @@ enum DiscoveryBrowseResolver {
         switch filters.sort {
         case .recommended:
             sorted = filtered.sorted(by: serverRank)
-        case .highestRated:
+        case .predictedLiking:
             sorted = filtered.sorted { left, right in
-                let leftRating = left.ratings.community.value ?? -1
-                let rightRating = right.ratings.community.value ?? -1
+                let leftRating = left.displayablePredictedLiking ?? -1
+                let rightRating = right.displayablePredictedLiking ?? -1
                 return leftRating == rightRating ? serverRank(left, right) : leftRating > rightRating
+            }
+        case .tasteMatch:
+            sorted = filtered.sorted { left, right in
+                let lhs = left.personalTastePercent ?? -1
+                let rhs = right.personalTastePercent ?? -1
+                return lhs == rhs ? serverRank(left, right) : lhs > rhs
             }
         case .nearest:
             guard let anchor else {
@@ -136,6 +150,15 @@ enum DiscoveryBrowseResolver {
 }
 
 extension DiscoveryCardV1 {
+    nonisolated var displayablePredictedLiking: Double? {
+        guard let prediction = predictedLiking,
+              prediction.method == "owner_history_weighted_rating_v1",
+              prediction.ratedRestaurantCount > 0,
+              let score = prediction.scoreOutOfTen, score.isFinite,
+              (0...10).contains(score) else { return nil }
+        return score
+    }
+
     var displayableSimilarity: DiscoverySimilarityContextV1? {
         guard let similarity, similarity.sharedRestaurantCount >= 3 else { return nil }
         return similarity

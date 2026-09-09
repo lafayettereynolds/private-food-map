@@ -26,8 +26,13 @@ struct ContentView: View {
     var body: some View {
         @Bindable var premiumEntitlementService = premiumEntitlementService
         rootView
-            // Drop private presentation state on logout/revocation, not data.
-            .id(authServices.localAccountScope.authenticatedUserID)
+            // Native view state resets per account. Hybrid owns a persistent
+            // UIKit host and clears account presentation through auth.changed;
+            // changing its SwiftUI identity during restore detaches that host.
+            .id(TasteMapRootPresentationIdentity.value(
+                mode: hybridRuntime.mode,
+                ownerID: authServices.localAccountScope.authenticatedUserID
+            ))
             .tint(TasteMapCoreTheme.brand)
             .environment(\.localAccountScope, authServices.localAccountScope)
             .task {
@@ -67,15 +72,11 @@ struct ContentView: View {
 
     @ViewBuilder
     private var rootView: some View {
-#if DEBUG
-        if hybridRuntime.mode == .hybridDevelopment {
-            TasteMapHybridDevelopmentRootView()
-        } else {
+        if hybridRuntime.mode == .nativePrimary {
             RootTabView()
+        } else {
+            TasteMapHybridRootView()
         }
-#else
-        RootTabView()
-#endif
     }
 
     @MainActor
@@ -100,5 +101,11 @@ struct ContentView: View {
             // Keep the status credential in Keychain. A later launch can safely
             // retry the local-only completion without resurrecting server data.
         }
+    }
+}
+
+enum TasteMapRootPresentationIdentity {
+    static func value(mode: TasteMapHybridRuntimeMode, ownerID: String?) -> String? {
+        mode == .nativePrimary ? ownerID : "persistent-hybrid-root"
     }
 }

@@ -1,12 +1,12 @@
 import type { ChangeEventHandler, ReactNode } from 'react'
-import { Clock3, Images, MapPin, Navigation, Pencil, Phone } from 'lucide-react'
+import { Clock3, MapPin, Navigation, Pencil, Phone } from 'lucide-react'
 import { mapService } from '../services/mapService'
 import { STATUS_META, type RestaurantSummary } from '../types/domain'
 import { RestaurantContentImage } from './RestaurantContentImage'
 import { visitActivityMedia } from './activityMedia'
 import type { TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
 import { RestaurantSocialStatsPanel, type PersonalRatingOverride } from './RestaurantSocialStatsPanel'
-import { SyncedImage } from './SyncedImage'
+import { RestaurantUserPhotos } from './RestaurantUserPhotos'
 import { RestaurantQuickActions } from './RestaurantQuickActions'
 import type { RestaurantSocialStats } from '../types/restaurantStats'
 
@@ -72,7 +72,6 @@ export function RestaurantSummarySection({
       ...visit.dishes.map((dish) => ({ source: dish.imageData || '', photoId: dish.photoId })),
     ])),
   ])
-  const userPhotos = allUserPhotos.slice(0, 4)
   return <section className={`restaurant-record-summary${className ? ` ${className}` : ''}`} data-record-section="restaurant-summary">
     <section className="restaurant-detail-header" aria-label="餐厅信息摘要" data-summary-module="restaurant-facts">
       <div className="restaurant-detail-gallery" aria-label="餐厅图片">
@@ -132,12 +131,7 @@ export function RestaurantSummarySection({
       socialStats={socialStats}
     />
 
-    <section className="restaurant-user-photos" aria-label="用户实拍" data-summary-module="user-photos">
-      <header><strong><Images size={14} /> 用户实拍</strong><span>{allUserPhotos.length ? `${allUserPhotos.length} 张` : '暂无实拍'}</span></header>
-      {userPhotos.length
-        ? <div>{userPhotos.map((photo, index) => <span key={`${photo.photoId ?? photo.source}-${index}`}><SyncedImage alt={`${restaurant.name} 用户实拍 ${index + 1}`} loading="lazy" photoId={photo.photoId} source={photo.source} /></span>)}</div>
-        : <p>暂时还没有用户分享的照片。</p>}
-    </section>
+    <RestaurantUserPhotos restaurantID={restaurant.id} restaurantName={restaurant.name} photos={allUserPhotos} />
   </section>
 }
 

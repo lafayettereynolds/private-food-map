@@ -177,7 +177,9 @@ async function performSync({ allowInitialUpload = false }: { allowInitialUpload?
         }
         for (const photo of merged.photos) {
           const current = await db.photos.get(photo.id)
-          if (!current || current.updatedAt <= photo.updatedAt) await db.photos.put(photo)
+          // Preserve a deletion committed while the cloud request was in flight.
+          if (current?.deletedAt || current?.localState === 'delete-pending') continue
+          if (!current || photo.deletedAt || current.updatedAt <= photo.updatedAt) await db.photos.put(photo)
         }
         for (const user of merged.users) {
           const current = await db.users.get(user.id)

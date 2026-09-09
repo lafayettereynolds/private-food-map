@@ -8,6 +8,12 @@ import {
 const at = '2026-08-28T08:00:00.000Z'
 
 describe('P2-F private directory JSON contracts', () => {
+  it('accepts Swift synthesized optional omissions as null, without accepting invalid links', () => {
+    const value = { schemaVersion: 1, id: 'companion', userId: 'tm_owner', displayName: 'Name', createdAt: at, updatedAt: at }
+    expect(decodeDiningCompanionSyncContract(value)).toMatchObject({ linkedTasteMapUserId: null, deletedAt: null })
+    expect(() => decodeDiningCompanionSyncContract({ ...value, linkedTasteMapUserId: 12 })).toThrow()
+  })
+
   it('normalizes Unicode compatibility forms and whitespace conservatively', () => {
     expect(normalizedPrivateDirectoryName('  大学\u3000室友  Ａlex  ')).toBe('大学 室友 Alex')
     expect(normalizedPrivateDirectoryName('Alex')).not.toBe(normalizedPrivateDirectoryName('alex'))

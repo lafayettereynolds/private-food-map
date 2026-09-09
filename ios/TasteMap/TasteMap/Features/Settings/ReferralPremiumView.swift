@@ -8,6 +8,10 @@ struct ReferralPremiumView: View {
     @State private var loading = false
 
     var body: some View {
+        if ReferralInvitationStore.isAvailable { availableBody } else { Text("邀请功能暂未开放。") }
+    }
+
+    private var availableBody: some View {
         List {
             if let dashboard {
                 Section("我的邀请") {

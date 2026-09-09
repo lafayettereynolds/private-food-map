@@ -14,7 +14,7 @@ struct PhotoAssetImageView: View {
     var body: some View {
         ZStack {
             Color(uiColor: .secondarySystemBackground)
-            if let image {
+            if let image, photo.deletedAt == nil {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
@@ -39,6 +39,7 @@ struct PhotoAssetImageView: View {
         }
         .clipped()
         .task(id: cacheIdentity) {
+            guard photo.deletedAt == nil else { image = nil; return }
             guard let coordinator else {
                 previewPlaceholder = true
                 return
@@ -129,6 +130,17 @@ struct PhotoGalleryViewer: View {
     let photos: [PhotoAsset]
     @State private var selection: UUID
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.localAccountScope) private var accountScope
+    @Environment(\.photoTransferCoordinator) private var coordinator
+    @State private var confirmingDelete = false
+    @State private var deletionError: String?
+    @State private var deleting = false
+
+    private var visiblePhotos: [PhotoAsset] { photos.filter { $0.deletedAt == nil } }
+    private var ownedSelection: PhotoAsset? {
+        guard case .authenticated(let owner) = accountScope else { return nil }
+        return visiblePhotos.first { $0.id == selection && $0.ownerUserID == owner }
+    }
 
     init(photos: [PhotoAsset], selectedID: UUID) {
         self.photos = photos
@@ -138,7 +150,7 @@ struct PhotoGalleryViewer: View {
     var body: some View {
         NavigationStack {
             TabView(selection: $selection) {
-                ForEach(photos) { photo in
+                ForEach(visiblePhotos) { photo in
                     PhotoAssetImageView(photo: photo, variant: .display, contentMode: .fit)
                         .background(.black)
                         .tag(photo.id)
@@ -149,15 +161,42 @@ struct PhotoGalleryViewer: View {
             .navigationTitle(positionText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    if ownedSelection != nil && coordinator != nil {
+                        Menu {
+                            Button("删除照片", role: .destructive) { confirmingDelete = true }
+                        } label: { Image(systemName: "ellipsis").accessibilityLabel("照片更多操作") }
+                        .disabled(deleting)
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
                 }
             }
+            .confirmationDialog("删除这张照片？", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button("删除照片", role: .destructive) {
+                    guard let photo = ownedSelection, let coordinator else { return }
+                    deleting = true
+                    Task { @MainActor in
+                        defer { deleting = false }
+                        do {
+                            try await coordinator.delete(photo)
+                            if let next = visiblePhotos.first { selection = next.id } else { dismiss() }
+                        } catch { deletionError = "照片未能删除，请重试。" }
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("将从 Taste Map 中删除，不会删除系统相册中的原照片。")
+            }
+            .alert("照片删除失败", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
+                Button("好", role: .cancel) { deletionError = nil }
+            } message: { Text(deletionError ?? "") }
         }
     }
 
     private var positionText: String {
-        guard let index = photos.firstIndex(where: { $0.id == selection }) else { return "照片" }
-        return "\(index + 1) / \(photos.count)"
+        guard let index = visiblePhotos.firstIndex(where: { $0.id == selection }) else { return "照片" }
+        return "\(index + 1) / \(visiblePhotos.count)"
     }
 }

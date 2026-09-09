@@ -96,6 +96,87 @@ struct SyncPresentation: Equatable, Sendable {
 @Observable
 final class SyncCoordinator {
     private(set) var presentation: SyncPresentation = .signedOut
+    private(set) var isReviewingConflicts = false
+    @ObservationIgnored private var conflictReviewGeneration = UUID()
+    @ObservationIgnored private var conflictActionInProgress = false
+
+    struct Conflict: Identifiable {
+        let id: UUID
+        let entityType: SyncEntityType
+        let entityID: String
+        let baseVersion: Int64
+    }
+
+    var hasLegacyAssociationResolutions: Bool {
+        guard let owner = currentOwnerUserID, isAuthenticated else { return false }
+        let engine = SyncEngine(context: context, api: api, ownerUserID: owner)
+        return ((try? scopedQueue().allMutations()) ?? []).contains {
+            (try? engine.legacyAssociationTarget(mutationID: $0.mutationID)) != nil
+        }
+    }
+
+    /// Exclusive, explicit review. Do not rearm, replay, or reset any other work.
+    func beginConflictReview() throws -> [Conflict] {
+        guard syncTask == nil, isAuthenticated, !conflictActionInProgress, let owner = currentOwnerUserID else {
+            throw SyncEngineError.conflictResolutionUnavailable
+        }
+        isReviewingConflicts = true
+        retryTask?.cancel()
+        retryTask = nil
+        networkDebounceTask?.cancel()
+        networkDebounceTask = nil
+        conflictReviewGeneration = UUID()
+        let engine = SyncEngine(context: context, api: api, ownerUserID: owner)
+        return try scopedQueue().allMutations().filter {
+            ($0.state == .conflicted && $0.operation == .upsert &&
+            ($0.entityType == .visit || $0.entityType == .restaurantList)) ||
+            (try? engine.legacyAssociationTarget(mutationID: $0.mutationID)) != nil
+        }.map { Conflict(id: $0.mutationID, entityType: $0.entityType, entityID: $0.entityID, baseVersion: $0.baseVersion) }
+    }
+
+    func endConflictReview() {
+        conflictReviewGeneration = UUID()
+        isReviewingConflicts = false
+        // Deliberately do not start a normal sync pass when review closes.
+    }
+
+    func previewConflict(_ conflict: Conflict) async throws -> SyncConflictSnapshotV1 {
+        guard isReviewingConflicts, !conflictActionInProgress, let owner = currentOwnerUserID else {
+            throw SyncEngineError.conflictResolutionUnavailable
+        }
+        let generation = conflictReviewGeneration
+        conflictActionInProgress = true
+        defer { conflictActionInProgress = false }
+        guard try scopedQueue().allMutations().contains(where: {
+            $0.mutationID == conflict.id && $0.entityID == conflict.entityID &&
+            $0.entityType == conflict.entityType && ($0.state == .conflicted || $0.entityType == .visitDish)
+        }) else { throw SyncEngineError.conflictResolutionUnavailable }
+        let targetID = conflict.entityType == .visitDish
+            ? try SyncEngine(context: context, api: api, ownerUserID: owner).legacyAssociationTarget(mutationID: conflict.id)
+            : conflict.entityID
+        let snapshot = try await api.conflictSnapshot(entityType: conflict.entityType, entityID: targetID)
+        guard isReviewingConflicts, generation == conflictReviewGeneration, currentOwnerUserID == owner,
+              snapshot.entityId == targetID, snapshot.entityType == conflict.entityType,
+              (snapshot.visitDish?.record.userId ?? snapshot.visit?.record.userId ?? snapshot.restaurantList?.record.userId) == owner else {
+            throw SyncEngineError.conflictSnapshotChanged
+        }
+        return snapshot
+    }
+
+    func acceptServerVersion(_ conflict: Conflict, approvedSnapshot: SyncConflictSnapshotV1) async throws {
+        guard isReviewingConflicts, !conflictActionInProgress, syncTask == nil,
+              let owner = currentOwnerUserID else { throw SyncEngineError.conflictResolutionUnavailable }
+        let generation = conflictReviewGeneration
+        conflictActionInProgress = true
+        defer { conflictActionInProgress = false; refreshPresentation() }
+        try await SyncEngine(context: context, api: api, ownerUserID: owner).acceptServerVersion(
+            mutationID: conflict.id, approvedSnapshot: approvedSnapshot,
+            decisionIsCurrent: { [weak self] in
+                self?.isReviewingConflicts == true && self?.conflictReviewGeneration == generation &&
+                self?.currentOwnerUserID == owner && self?.isAuthenticated == true
+            }
+        )
+    }
 
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let api: any SyncAPI
@@ -105,6 +186,7 @@ final class SyncCoordinator {
     @ObservationIgnored private let automaticSyncInterval: TimeInterval
     @ObservationIgnored private let networkRecoveryDelay: Duration
     @ObservationIgnored private let retryBaseDelay: TimeInterval
+    @ObservationIgnored private let conflictReviewOnly: Bool
     @ObservationIgnored private var mutationObserver: NSObjectProtocol?
     @ObservationIgnored private var photoTransferObserver: NSObjectProtocol?
     @ObservationIgnored private var syncTask: Task<Void, Never>?
@@ -135,6 +217,11 @@ final class SyncCoordinator {
         automaticSyncInterval = 15
         networkRecoveryDelay = .milliseconds(350)
         retryBaseDelay = 5
+#if DEBUG || TASTEMAP_PRIVATE_PREVIEW
+        conflictReviewOnly = ProcessInfo.processInfo.arguments.contains("--tastemap-sync-conflict-review-only")
+#else
+        conflictReviewOnly = false
+#endif
     }
 
     init(
@@ -145,7 +232,8 @@ final class SyncCoordinator {
         now: @escaping @MainActor () -> Date = { .now },
         automaticSyncInterval: TimeInterval = 0,
         networkRecoveryDelay: Duration = .zero,
-        retryBaseDelay: TimeInterval = 0.01
+        retryBaseDelay: TimeInterval = 0.01,
+        conflictReviewOnly: Bool = false
     ) {
         self.context = context
         self.api = api
@@ -157,11 +245,21 @@ final class SyncCoordinator {
         self.automaticSyncInterval = automaticSyncInterval
         self.networkRecoveryDelay = networkRecoveryDelay
         self.retryBaseDelay = retryBaseDelay
+        self.conflictReviewOnly = conflictReviewOnly
     }
 
     func start() {
         guard !isStarted else { return }
         isStarted = true
+        if conflictReviewOnly {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                currentOwnerUserID = await authenticatedUserIDProvider()
+                isAuthenticated = currentOwnerUserID != nil
+                refreshPresentation()
+            }
+            return
+        }
         recoverInterruptedQueue()
 
         mutationObserver = NotificationCenter.default.addObserver(
@@ -205,6 +303,7 @@ final class SyncCoordinator {
             currentOwnerUserID = await authenticatedUserIDProvider()
         }
         if currentOwnerUserID != previousOwnerUserID {
+            endConflictReview()
             lastFailureDisposition = nil
             lastFailureDiagnostic = nil
             consecutiveRetryableFailures = 0
@@ -214,6 +313,7 @@ final class SyncCoordinator {
             refreshPresentation()
             return
         }
+        if conflictReviewOnly { refreshPresentation(); return }
         NotificationCenter.default.post(name: .tasteMapAuthSessionAvailable, object: nil)
         do {
             let queue = SwiftDataSyncQueue(context: context, ownerUserID: currentOwnerUserID)
@@ -226,6 +326,7 @@ final class SyncCoordinator {
     }
 
     func sessionDidEnd() {
+        endConflictReview()
         isAuthenticated = false
         currentOwnerUserID = nil
         lastFailureDisposition = nil
@@ -240,6 +341,7 @@ final class SyncCoordinator {
     }
 
     func retryNow() async {
+        guard !conflictReviewOnly && !isReviewingConflicts && !conflictActionInProgress else { return }
         NotificationCenter.default.post(name: .tasteMapManualSyncRetryRequested, object: nil)
         await requestSync(trigger: .manual, forceRetry: true)
     }
@@ -252,6 +354,10 @@ final class SyncCoordinator {
         isNetworkAvailable = isAvailable
         networkDebounceTask?.cancel()
         networkDebounceTask = nil
+        if conflictReviewOnly || isReviewingConflicts || conflictActionInProgress {
+            refreshPresentation()
+            return
+        }
         if !isAvailable {
             retryTask?.cancel()
             retryTask = nil
@@ -317,6 +423,7 @@ final class SyncCoordinator {
     }
 
     private func requestSync(trigger: SyncTrigger, forceRetry: Bool = false) async {
+        guard !conflictReviewOnly && !isReviewingConflicts && !conflictActionInProgress else { return }
         if let runningTask = syncTask {
             if trigger == .localMutation || forceRetry {
                 rerunAfterCurrentPass = true
@@ -392,6 +499,8 @@ final class SyncCoordinator {
     }
 
     private func performSinglePass(trigger: SyncTrigger) async -> Bool {
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=sync event=pass_start")
+        defer { DeviceAcceptanceLog.record("TasteMapDiagnostic category=sync event=pass_end") }
         syncDebug("Sync requested: \(trigger.rawValue)")
         let startedAt = Date()
         do {

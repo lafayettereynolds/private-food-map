@@ -1,3 +1,4 @@
+import { referralAvailable } from '../src/config/referralAvailability'
 import type {
   AppleTokenExchangeRequestV1,
   AuthChallengeResponseV1,
@@ -157,6 +158,7 @@ async function exchangeAppleToken(
   verifier: typeof verifyAppleIdentityToken,
 ): Promise<AuthSessionResponseV1> {
   const payload = await readJSON<AppleTokenExchangeRequestV1>(request)
+  if (payload.referralCode && !referralAvailable()) throw new AuthV1RequestError('邀请功能暂未开放。', 403, 'referral_unavailable')
   requireVersion(payload.apiVersion)
   if (!isOpaqueToken(payload.state, 'tm_state_') || !isOpaqueToken(payload.nonce, 'tm_nonce_') || typeof payload.identityToken !== 'string') {
     throw badRequest('Apple token exchange payload is invalid.', 'invalid_exchange_payload')

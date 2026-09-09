@@ -180,7 +180,7 @@ struct SwiftDataSyncQueue {
 
     func allMutations() throws -> [SyncMutation] {
         try context.fetch(FetchDescriptor<SyncMutation>()).filter {
-            $0.ownerUserID == ownerUserID
+            $0.ownerUserID == ownerUserID && $0.state != .resolved
         }
     }
 

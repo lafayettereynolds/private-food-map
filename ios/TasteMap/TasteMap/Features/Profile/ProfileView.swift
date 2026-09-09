@@ -1180,7 +1180,7 @@ struct ProfileEditorSheet: View {
                         },
                         accessibilityIdentifier: "profile-visibility"
                     )
-                    Text("公开资料只包含头像、显示名称、城市和基于公开到访计算的统计。")
+                    Text("个人主页、味觉足迹和到访照片使用同一可见范围；食单单独设置。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                   }

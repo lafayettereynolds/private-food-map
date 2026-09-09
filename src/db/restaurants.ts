@@ -165,7 +165,7 @@ export async function addRestaurantFromPoi(
         restaurantId,
         visitedAt: input.initialVisit.visitedAt,
         rating: input.initialVisit.rating,
-        visibility: input.initialVisit.visibility,
+        visibility: await currentFootprintVisibility(),
         diningMode: input.initialVisit.diningMode,
         totalPrice: input.initialVisit.totalPrice,
         myActualSpend: input.initialVisit.myActualSpend,
@@ -204,7 +204,7 @@ export async function addRestaurantFromPoi(
     : null
 
   try {
-    await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+    await db.transaction('rw', db.users, db.restaurants, db.visits, db.syncQueue, async () => {
       await db.restaurants.put(restaurant)
       if (visit) await db.visits.add(visit)
       await db.syncQueue.put({
@@ -331,6 +331,11 @@ export interface AddVisitInput {
   pendingNativePhotos?: Array<{ photoID: string; dishDraftID: string | null }>
 }
 
+async function currentFootprintVisibility(): Promise<Visibility> {
+  const user = await db.users.get(CURRENT_USER_ID)
+  return user?.mapSharingEnabled ? user.mapVisibility : 'private'
+}
+
 export async function addVisit(restaurantId: string, input: AddVisitInput) {
   assertDishPhotoAccess(input, (await db.users.get(CURRENT_USER_ID))?.membershipTier === 'member')
   assertVisitPhotoAllowance(input, visitPhotoLimit((await db.users.get(CURRENT_USER_ID))?.membershipTier ?? 'free'))
@@ -345,7 +350,7 @@ export async function addVisit(restaurantId: string, input: AddVisitInput) {
     restaurantId,
     visitedAt: input.visitedAt,
     rating: input.rating,
-    visibility: input.visibility,
+    visibility: await currentFootprintVisibility(),
     diningMode: input.diningMode,
     totalPrice: input.totalPrice,
     myActualSpend: input.myActualSpend,
@@ -432,7 +437,7 @@ export async function updateVisit(id: string, input: AddVisitInput) {
   const pricePerPerson = visitReferencePrice({ ...input, partySize: normalizedPartySize })
   let updatedVisit: Visit | null = null
 
-  await db.transaction('rw', db.restaurants, db.visits, db.syncQueue, async () => {
+  await db.transaction('rw', db.users, db.restaurants, db.visits, db.syncQueue, async () => {
     const existingVisit = await db.visits.get(id)
     if (!existingVisit || existingVisit.deletedAt) throw new Error('没有找到要更新的到访记录。')
     assertDishPhotoAccess(input, dishPhotosAllowed, existingVisit)
@@ -444,7 +449,7 @@ export async function updateVisit(id: string, input: AddVisitInput) {
       ...existingVisit,
       visitedAt: input.visitedAt,
       rating: input.rating,
-      visibility: input.visibility,
+      visibility: await currentFootprintVisibility(),
       diningMode: input.diningMode,
       totalPrice: input.totalPrice,
       myActualSpend: input.myActualSpend,

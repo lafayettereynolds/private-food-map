@@ -6,6 +6,109 @@ import Testing
 @Suite("P2-A Dish and Photo foundation")
 @MainActor
 struct P2ADishPhotoTests {
+    @Test("Photo tombstones dominate active pull records with and without a queued delete", arguments: [true, false])
+    func photoDeleteDominatesPull(pendingDelete: Bool) async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let photo = PhotoAsset(kind: .avatar, storageProvider: .r2,
+            storageKey: "owner/photo/display.jpg", mimeType: "image/jpeg", byteSize: 10,
+            remoteID: UUID().uuidString.lowercased(), serverVersion: 1, syncStatus: .synced)
+        context.insert(photo)
+        photo.updatedAt = Date(timeIntervalSince1970: 4_070_908_800) // Future server clock cannot revive a local delete.
+        let active = try SyncRecordMapper.photoRecord(photo, restaurantRemoteID: nil,
+            visitRemoteID: nil, dishRemoteID: nil)
+        photo.updatedAt = .now
+        photo.deletedAt = .now
+        let tombstoneDate = photo.deletedAt
+        photo.uploadState = .deleted
+        if pendingDelete {
+            let mutation = try SwiftDataSyncQueue(context: context).enqueueDelete(
+                entityType: .photo, entityID: active.id, baseVersion: 1)
+            mutation.nextRetryAt = .distantFuture
+        }
+        try context.save()
+        let api = RichRecordSyncAPI()
+        api.seedPhoto(active, version: 2)
+        try await SyncEngine(context: context, api: api).synchronize()
+        #expect(photo.deletedAt == tombstoneDate)
+        #expect(photo.uploadState == .deleted)
+        #expect(photo.serverVersion == 2)
+        let mutations = try SwiftDataSyncQueue(context: context).allMutations()
+        if pendingDelete {
+            #expect(mutations.count == 1)
+            #expect(mutations.first?.operation == .delete)
+            #expect(mutations.first?.state == .queued)
+            #expect(mutations.first?.baseVersion == 2)
+        }
+    }
+
+    @Test("Server photo deletion hides active local content and clears stale photo mutations", arguments: [true, false])
+    func remoteDeleteWins(tombstoneEnvelope: Bool) async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let photo = PhotoAsset(kind: .avatar, storageProvider: .r2,
+            storageKey: "owner/photo/display.jpg", mimeType: "image/jpeg", byteSize: 10,
+            remoteID: UUID().uuidString.lowercased(), serverVersion: 1, syncStatus: .synced)
+        context.insert(photo)
+        photo.deletedAt = .now
+        let record = try SyncRecordMapper.photoRecord(photo, restaurantRemoteID: nil, visitRemoteID: nil, dishRemoteID: nil)
+        photo.deletedAt = nil
+        let stale = try SwiftDataSyncQueue(context: context).enqueueDelete(entityType: .photo, entityID: record.id, baseVersion: 1)
+        stale.nextRetryAt = .distantFuture
+        try context.save()
+        let api = RichRecordSyncAPI()
+        if tombstoneEnvelope {
+            api.tombstones = [SyncTombstoneV1(entityType: .photo, entityId: record.id, serverVersion: 2, deletedAt: record.deletedAt!)]
+        } else { api.seedPhoto(record, version: 2) }
+        try await SyncEngine(context: context, api: api).synchronize()
+        #expect(photo.deletedAt != nil)
+        #expect(photo.uploadState == .deleted)
+        #expect(photo.syncStatus == .synced)
+        #expect(try SwiftDataSyncQueue(context: context).allMutations().isEmpty)
+    }
+
+    @Test("Pending photo deletion survives process restart without removing its tombstone")
+    func pendingDeleteRestart() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("pending-delete.store")
+        let id = UUID()
+        do {
+            let container = try TasteMapPersistence.makeContainer(storageURL: url)
+            let photo = PhotoAsset(id: id, kind: .avatar, mimeType: "image/jpeg", byteSize: 10,
+                remoteID: id.uuidString.lowercased(), serverVersion: 1, syncStatus: .synced)
+            container.mainContext.insert(photo)
+            try LocalDishPhotoStore(context: container.mainContext, photoFiles: LocalPhotoFileStore(rootURL: directory)).delete(photo)
+        }
+        let restored = try TasteMapPersistence.makeContainer(storageURL: url)
+        let photo = try #require(restored.mainContext.fetch(FetchDescriptor<PhotoAsset>()).first)
+        #expect(photo.id == id)
+        #expect(photo.deletedAt != nil)
+        #expect(photo.uploadState == .deleted)
+        #expect(try SwiftDataSyncQueue(context: restored.mainContext).allMutations().contains { $0.entityType == .photo && $0.operation == .delete })
+    }
+
+    @Test("Never-uploaded deletion queues a stable delete ID and late upload errors cannot revive it")
+    func neverUploadedDeletion() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let photo = PhotoAsset(kind: .avatar, mimeType: "image/jpeg", byteSize: 1)
+        context.insert(photo)
+        let store = LocalDishPhotoStore(context: context, photoFiles: try LocalPhotoFileStore(rootURL: directory))
+        try store.delete(photo)
+        try store.delete(photo)
+        try store.markUploadFailed(photo, reason: "late upload timeout")
+        let mutations = try SwiftDataSyncQueue(context: context).allMutations()
+        #expect(photo.deletedAt != nil)
+        #expect(photo.uploadState == .deleted)
+        #expect(photo.remoteID == photo.id.uuidString.lowercased())
+        #expect(mutations.count == 1)
+        #expect(mutations.first?.operation == .delete)
+        #expect(mutations.first?.baseVersion == 0)
+    }
+
     @Test("Dish JSON preserves nullable fields and rejects invalid data")
     func dishContract() throws {
         let record = try DishSyncContractV1(
@@ -298,6 +401,11 @@ struct P2ADishPhotoTests {
 
 @MainActor
 private final class RichRecordSyncAPI: SyncAPI {
+    var tombstones: [SyncTombstoneV1] = []
+    func seedPhoto(_ record: PhotoSyncContractV1, version: Int64) {
+        photos[record.id] = PhotoSyncRecordEnvelopeV1(serverVersion: version, record: record)
+        revision = version
+    }
     var pushOrder: [SyncEntityType] = []
     private var restaurants: [String: RestaurantSyncRecordEnvelopeV1] = [:]
     private var visits: [String: VisitSyncRecordEnvelopeV1] = [:]
@@ -353,7 +461,7 @@ private final class RichRecordSyncAPI: SyncAPI {
             dishes: includeRecords ? Array(dishes.values) : [],
             visitDishes: includeRecords ? Array(visitDishes.values) : [],
             photos: includeRecords ? Array(photos.values) : [],
-            tombstones: [],
+            tombstones: includeRecords ? tombstones : [],
             nextCursor: String(revision),
             hasMore: false,
             serverTime: "2026-08-27T08:00:00.000Z"

@@ -16,6 +16,19 @@ function currency(value: number) {
   return Math.round(value * 100) / 100
 }
 
+/** Read-only history label; omitted Native optional fields equal explicit null. */
+export function visitSpendLabel(visit: VisitSpendSource & { pricePerPerson?: number | null }) {
+  const actual = resolveVisitActualSpend(visit)
+  const total = validMoney(visit.totalPrice)
+  const reference = validMoney(visit.pricePerPerson)
+  if (actual !== null) {
+    return `我的消费 ¥${actual}${total !== null && total !== actual ? ` · 整桌 ¥${total}` : ''}`
+  }
+  return total !== null
+    ? `整桌 ¥${total}${reference !== null ? ` · ¥${reference}/人` : ''}`
+    : '未记价格'
+}
+
 /**
  * Returns what this user actually paid for one Visit.
  *

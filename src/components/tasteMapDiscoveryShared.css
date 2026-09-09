@@ -135,6 +135,7 @@ body:has(.wheel-candidate-bar) .tm-discovery-page__content { padding-bottom: cal
 .tm-recommendation-ribbon text { font-family: inherit; font-variant-numeric: tabular-nums; }
 .tm-activity-card__taste-prediction:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .tm-recommendation-signal-explanation { display: block; margin-top: 7px; color: var(--color-text-secondary); font-size: var(--tm-evidence-text-size); line-height: 1.5; }
+.tm-predicted-liking { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--color-primary-dark); font: inherit; font-size: var(--tm-evidence-text-size); text-align: left; }
 .tm-activity-card__similar-rating { margin-left: auto; display: inline-flex; align-items: center; gap: 9px; }
 .tm-activity-card__visit-rating { display: inline-flex; align-items: center; gap: 4px; color: #be7153; font-size: 10px; font-weight: 790; white-space: nowrap; }
 .tm-activity-rating-badge { width: 46px; height: 46px; flex: 0 0 46px; border: 1.5px solid var(--tm-activity-rating-color); border-radius: 50%; display: inline-grid; place-items: center; color: var(--tm-activity-rating-color); background: color-mix(in srgb, var(--tm-activity-rating-color) 4%, white); font-variant-numeric: tabular-nums; }

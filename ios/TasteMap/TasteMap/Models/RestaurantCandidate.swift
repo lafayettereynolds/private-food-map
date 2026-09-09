@@ -91,8 +91,14 @@ struct RestaurantCandidate: Identifiable, Hashable, Sendable {
         self.phone = Self.normalizedOptional(phone)
         self.websiteURL = Self.normalizedWebURL(websiteURL)
         self.openingHours = Self.normalizedOptional(openingHours)
-        self.categoryHints = Array(Set(categoryHints.map {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.categoryHints = Self.categoryLabels(categoryHints)
+    }
+
+    static func categoryLabels(_ values: [String]) -> [String] {
+        let labels = ["MKPOICategoryRestaurant": "餐厅", "MKPOICategoryCafe": "咖啡馆", "MKPOICategoryBakery": "烘焙", "MKPOICategoryBrewery": "精酿啤酒", "MKPOICategoryWinery": "酒庄", "MKPOICategoryFoodMarket": "食品市场"]
+        return Array(Set(values.map { value in
+            let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return labels[text] ?? (text.hasPrefix("MKPOICategory") ? "" : text)
         }.filter { !$0.isEmpty })).sorted()
     }
 

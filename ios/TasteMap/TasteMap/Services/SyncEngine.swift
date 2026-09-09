@@ -9,6 +9,8 @@ enum SyncEngineError: Error, Equatable {
     case cursorDidNotAdvance
     case pullPageLimitReached
     case ownershipMismatch
+    case conflictResolutionUnavailable
+    case conflictSnapshotChanged
 }
 
 enum SyncStage: String, Equatable, Sendable {
@@ -66,6 +68,202 @@ final class SyncEngine {
             try await pullChanges()
         }
         engineDebug("Sync pass completed")
+    }
+
+    /// Explicit user decision only. This operation never runs the sync pass,
+    /// pushes a mutation, advances the pull cursor, or drains unrelated work.
+    func acceptServerVersion(
+        mutationID: UUID,
+        approvedSnapshot: SyncConflictSnapshotV1,
+        decisionIsCurrent: @MainActor () -> Bool = { true }
+    ) async throws {
+        guard !context.hasChanges else { throw SyncEngineError.conflictResolutionUnavailable }
+        guard let mutation = try context.fetch(FetchDescriptor<SyncMutation>()).first(where: {
+            $0.mutationID == mutationID && $0.ownerUserID == ownerUserID
+        }) else { throw SyncEngineError.ownershipMismatch }
+        if mutation.state == .resolved { return }
+        if mutation.entityType == .visitDish {
+            try await canonicalizeLegacyAssociation(mutation, approvedSnapshot: approvedSnapshot,
+                                                     decisionIsCurrent: decisionIsCurrent)
+            return
+        }
+        guard mutation.state == .conflicted, mutation.operation == .upsert,
+              mutation.entityType == .visit || mutation.entityType == .restaurantList else {
+            throw SyncEngineError.conflictResolutionUnavailable
+        }
+        let originalPayload = mutation.payload
+        let snapshot = try await api.conflictSnapshot(entityType: mutation.entityType, entityID: mutation.entityID)
+        guard let expectedServerVersion = approvedSnapshot.serverVersion,
+              expectedServerVersion > 0,
+              try snapshot.approvalData() == approvedSnapshot.approvalData() else {
+            throw SyncEngineError.conflictSnapshotChanged
+        }
+        // Re-check after suspension: an account/local edit must not be overwritten.
+        guard decisionIsCurrent(), !context.hasChanges, mutation.ownerUserID == ownerUserID,
+              mutation.payload == originalPayload, mutation.state == .conflicted,
+              snapshot.apiVersion == SyncV1Contract.apiVersion,
+              snapshot.entityId == mutation.entityID, snapshot.entityType == mutation.entityType else {
+            throw SyncEngineError.conflictSnapshotChanged
+        }
+        let competing = try queue.allMutations().contains {
+            $0.mutationID != mutationID && $0.entityType == mutation.entityType && $0.entityID == mutation.entityID
+        }
+        guard !competing else { throw SyncEngineError.conflictResolutionUnavailable }
+        do {
+            switch mutation.entityType {
+            case .visit:
+                guard let envelope = snapshot.visit, snapshot.restaurantList == nil,
+                      snapshot.restaurantListItems.isEmpty,
+                      envelope.serverVersion == expectedServerVersion,
+                      envelope.record.id == mutation.entityID,
+                      envelope.record.userId == ownerUserID, envelope.record.deletedAt == nil,
+                      let visit = try visits().first(where: { $0.remoteID == mutation.entityID }),
+                      let restaurant = try restaurants().first(where: { $0.remoteID == envelope.record.restaurantId }),
+                      visit.restaurantId == restaurant.id else { throw SyncEngineError.conflictSnapshotChanged }
+                update(visit, from: envelope.record, restaurantID: restaurant.id,
+                       companionIDs: envelope.record.companionIds, companionNames: envelope.record.companions,
+                       recommendationSourceID: envelope.record.recommendationSourceId,
+                       serverVersion: envelope.serverVersion)
+            case .restaurantList:
+                guard let envelope = snapshot.restaurantList, snapshot.visit == nil,
+                      envelope.serverVersion == expectedServerVersion,
+                      envelope.record.id == mutation.entityID, envelope.record.userId == ownerUserID,
+                      envelope.record.deletedAt == nil,
+                      let list = try restaurantLists().first(where: { $0.remoteID == mutation.entityID }) else {
+                    throw SyncEngineError.conflictSnapshotChanged
+                }
+                let items = try restaurantListItems().filter { $0.listRemoteID == mutation.entityID }
+                let serverIDs = Set(snapshot.restaurantListItems.map { $0.record.id })
+                guard serverIDs.count == snapshot.restaurantListItems.count,
+                      items.allSatisfy({ $0.remoteID != nil && $0.serverVersion > 0 }),
+                      snapshot.restaurantListItems.allSatisfy({ $0.record.userId == ownerUserID && $0.record.listId == mutation.entityID }),
+                      snapshot.restaurantListItems.allSatisfy({ serverItem in
+                          serverItem.serverVersion > 0 && !items.contains(where: {
+                              $0.remoteID == serverItem.record.id && $0.serverVersion > serverItem.serverVersion
+                          })
+                      }),
+                      !(try queue.allMutations()).contains(where: { candidate in
+                          candidate.entityType == .restaurantListItem &&
+                          (serverIDs.contains(candidate.entityID) || items.contains(where: { $0.remoteID == candidate.entityID }))
+                      }) else { throw SyncEngineError.conflictResolutionUnavailable }
+                let audit = try JSONEncoder().encode(envelope.record)
+                update(list, from: envelope.record, serverVersion: envelope.serverVersion, snapshot: audit)
+                for item in items where !serverIDs.contains(item.remoteID ?? "") {
+                    item.deletedAt = now()
+                    item.syncStatus = .synced
+                }
+                for item in snapshot.restaurantListItems { try applyRestaurantListItem(item) }
+                try refreshListSummary(list)
+            default: throw SyncEngineError.conflictResolutionUnavailable
+            }
+            mutation.resolution = "accept_server"
+            mutation.resolvedAt = now()
+            mutation.resolvedServerVersion = expectedServerVersion
+            mutation.resolutionSnapshot = try snapshot.approvalData()
+            mutation.state = .resolved
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    /// Reuse the existing legacy server ID and remoteID mapping, never invent an alias.
+    /// Only a proven, already-pulled canonical peer is offered for explicit review.
+    func legacyAssociationTarget(mutationID: UUID) throws -> String {
+        guard let mutation = try queue.allMutations().first(where: { $0.mutationID == mutationID }),
+              mutation.entityType == .visitDish, mutation.operation == .upsert, mutation.baseVersion == 0,
+              let local = try visitDishes().first(where: { $0.remoteID == mutation.entityID }),
+              local.deletedAt == nil, local.serverVersion == 0,
+              let visit = try visits().first(where: { $0.id == local.visitId }),
+              let dish = try dishes().first(where: { $0.id == local.dishId }),
+              let visitID = visit.remoteID, let dishID = dish.remoteID else {
+            throw SyncEngineError.conflictResolutionUnavailable
+        }
+        let canonicalID = "legacy:\(dishID):\(visitID)"
+        let peers = try visitDishes().filter { $0.id != local.id && $0.remoteID == canonicalID &&
+            $0.visitId == local.visitId && $0.dishId == local.dishId && $0.restaurantId == local.restaurantId &&
+            $0.deletedAt == nil && $0.serverVersion > 0 }
+        guard peers.count == 1 else { throw SyncEngineError.conflictResolutionUnavailable }
+        return canonicalID
+    }
+
+    private func canonicalizeLegacyAssociation(
+        _ mutation: SyncMutation, approvedSnapshot: SyncConflictSnapshotV1,
+        decisionIsCurrent: @MainActor () -> Bool
+    ) async throws {
+        let originalPayload = mutation.payload
+        let canonicalID = try legacyAssociationTarget(mutationID: mutation.mutationID)
+        let snapshot = try await api.conflictSnapshot(entityType: .visitDish, entityID: canonicalID)
+        guard decisionIsCurrent(), !context.hasChanges, mutation.payload == originalPayload,
+              try legacyAssociationTarget(mutationID: mutation.mutationID) == canonicalID,
+              try snapshot.approvalData() == approvedSnapshot.approvalData(),
+              snapshot.apiVersion == SyncV1Contract.apiVersion, snapshot.entityType == .visitDish,
+              snapshot.entityId == canonicalID, snapshot.visit == nil, snapshot.restaurantList == nil,
+              snapshot.restaurantListItems.isEmpty, let envelope = snapshot.visitDish,
+              let parents = snapshot.associationParents, envelope.serverVersion > 0,
+              let payload = mutation.payload,
+              let local = try visitDishes().first(where: { $0.remoteID == mutation.entityID }),
+              let canonical = try visitDishes().first(where: { $0.remoteID == canonicalID }),
+              let restaurant = try restaurants().first(where: { $0.id == local.restaurantId }),
+              let visit = try visits().first(where: { $0.id == local.visitId }),
+              let dish = try dishes().first(where: { $0.id == local.dishId }) else {
+            throw SyncEngineError.conflictSnapshotChanged
+        }
+        let record = envelope.record
+        let intended = try JSONDecoder().decode(VisitDishSyncContractV1.self, from: payload)
+        func sameRelationship(_ a: VisitDishSyncContractV1, _ b: VisitDishSyncContractV1) -> Bool {
+            a.schemaVersion == b.schemaVersion && a.userId == b.userId && a.restaurantId == b.restaurantId &&
+            a.visitId == b.visitId && a.dishId == b.dishId && a.sortOrder == b.sortOrder &&
+            SyncRecordMapper.date(a.createdAt) == SyncRecordMapper.date(b.createdAt) &&
+            SyncRecordMapper.date(a.updatedAt) == SyncRecordMapper.date(b.updatedAt) &&
+            a.deletedAt == nil && b.deletedAt == nil
+        }
+        guard record.id == canonicalID, record.userId == ownerUserID, intended.id == mutation.entityID,
+              sameRelationship(intended, record),
+              restaurant.remoteID == record.restaurantId, visit.remoteID == record.visitId,
+              dish.remoteID == record.dishId, visit.restaurantId == restaurant.id, dish.restaurantId == restaurant.id,
+              restaurant.deletedAt == nil, visit.deletedAt == nil, dish.deletedAt == nil,
+              restaurant.serverVersion > 0, visit.serverVersion > 0, dish.serverVersion > 0,
+              parents.restaurantVersion >= restaurant.serverVersion, parents.visitVersion >= visit.serverVersion,
+              parents.dishVersion >= dish.serverVersion, canonical.serverVersion <= envelope.serverVersion,
+              local.sortOrder == record.sortOrder, canonical.sortOrder == record.sortOrder,
+              try visitDishes().filter({ $0.visitId == local.visitId && $0.dishId == local.dishId }).count == 2 else {
+            throw SyncEngineError.conflictSnapshotChanged
+        }
+        let actual = try JSONDecoder().decode(VisitDishSyncContractV1.self, from: SyncRecordMapper.visitDishPayload(
+            local, restaurantRemoteID: record.restaurantId, visitRemoteID: record.visitId, dishRemoteID: record.dishId))
+        let canonicalPayload = try SyncRecordMapper.visitDishPayload(
+            canonical, restaurantRemoteID: record.restaurantId, visitRemoteID: record.visitId, dishRemoteID: record.dishId)
+        let canonicalRecord = try JSONDecoder().decode(VisitDishSyncContractV1.self, from: canonicalPayload)
+        guard sameRelationship(actual, intended), sameRelationship(canonicalRecord, record), !(try queue.allMutations()).contains(where: {
+            $0.mutationID != mutation.mutationID &&
+            (($0.entityType == .visitDish && [mutation.entityID, canonicalID].contains($0.entityID)) ||
+             ($0.entityType == .restaurant && $0.entityID == record.restaurantId) ||
+             ($0.entityType == .visit && $0.entityID == record.visitId) ||
+             ($0.entityType == .dish && $0.entityID == record.dishId))
+        }) else { throw SyncEngineError.conflictResolutionUnavailable }
+        // VisitDish has no child foreign-key consumers. Keep the original local UUID;
+        // retire only its proven redundant pulled representation, with its ID in audit.
+        guard var audit = try JSONSerialization.jsonObject(with: snapshot.approvalData()) as? [String: Any] else {
+            throw SyncEngineError.conflictSnapshotChanged
+        }
+        audit["retainedLocalID"] = local.id.uuidString.lowercased()
+        audit["redundantLocalID"] = canonical.id.uuidString.lowercased()
+        audit["redundantLocalSnapshot"] = try JSONSerialization.jsonObject(with: canonicalPayload)
+        let auditData = try JSONSerialization.data(withJSONObject: audit, options: [.sortedKeys])
+        do {
+            local.remoteID = canonicalID
+            update(local, from: record, restaurantID: restaurant.id, visitID: visit.id, dishID: dish.id,
+                   serverVersion: envelope.serverVersion, snapshot: try JSONEncoder().encode(record))
+            context.delete(canonical)
+            mutation.resolution = "canonicalized"
+            mutation.resolvedAt = now()
+            mutation.resolvedServerVersion = envelope.serverVersion
+            mutation.resolutionSnapshot = auditData
+            mutation.state = .resolved
+            try context.save()
+        } catch { context.rollback(); throw error }
     }
 
     private func perform(
@@ -844,6 +1042,42 @@ final class SyncEngine {
     private func applyPhoto(_ envelope: PhotoSyncRecordEnvelopeV1) throws {
         let record = envelope.record
         try validateOwner(record.userId)
+        // A photo deletion is irreversible locally. Handle it before resolving
+        // parents: a deleted Visit/Dish may no longer have a local mapping.
+        if let photo = try photos().first(where: { $0.remoteID == record.id }),
+           photo.deletedAt != nil || record.deletedAt != nil {
+            guard envelope.serverVersion >= photo.serverVersion else { return }
+            photo.remoteRecordData = try JSONEncoder().encode(record)
+            photo.serverVersion = max(photo.serverVersion, envelope.serverVersion)
+            photo.deletedAt = photo.deletedAt ?? record.deletedAt.flatMap(SyncRecordMapper.date)
+            photo.uploadState = .deleted
+            if record.deletedAt != nil {
+                photo.syncStatus = .synced
+                photo.lastSyncedAt = now()
+                try queue.removeMutations(entityType: .photo, entityID: record.id)
+            } else {
+                let deletions = try queue.allMutations().filter {
+                    $0.entityType == .photo && $0.entityID == record.id && $0.operation == .delete
+                }
+                var needsDeletion = deletions.isEmpty
+                for deletion in deletions {
+                    if deletion.state == .queued && deletion.retryCount == 0 {
+                        deletion.baseVersion = photo.serverVersion
+                    } else if deletion.state == .conflicted && deletion.lastError == "server_version_mismatch" {
+                        // A received conflict is definitive, unlike a lost
+                        // response. Use a new idempotency ID after re-reading.
+                        context.delete(deletion)
+                        needsDeletion = true
+                    }
+                }
+                if needsDeletion {
+                    try queue.enqueueDelete(entityType: .photo, entityID: record.id,
+                        baseVersion: photo.serverVersion, timestamp: photo.updatedAt)
+                    photo.syncStatus = .pending
+                }
+            }
+            return
+        }
         let restaurantID = try record.restaurantId.map { remoteID in
             guard let restaurant = try restaurants().first(where: { $0.remoteID == remoteID }) else {
                 throw SyncEngineError.missingRestaurantMapping
@@ -1122,11 +1356,13 @@ final class SyncEngine {
             association.syncStatus = .synced
         case .photo:
             guard let photo = try photos().first(where: { $0.remoteID == tombstone.entityId }) else { return }
-            photo.deletedAt = deletedAt
+            guard tombstone.serverVersion >= photo.serverVersion else { return }
+            photo.deletedAt = photo.deletedAt ?? deletedAt
             photo.serverVersion = tombstone.serverVersion
             photo.lastSyncedAt = now()
             photo.uploadState = .deleted
             photo.syncStatus = .synced
+            try queue.removeMutations(entityType: .photo, entityID: tombstone.entityId)
         case .companion:
             guard let companion = try companions().first(where: { $0.remoteID == tombstone.entityId }) else { return }
             companion.deletedAt = deletedAt

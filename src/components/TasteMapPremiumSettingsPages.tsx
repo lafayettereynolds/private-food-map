@@ -1,3 +1,4 @@
+import { referralAvailable } from '../config/referralAvailability'
 import { useEffect, useRef, useState } from 'react'
 import { Archive, Camera, Check, ChevronRight, CircleHelp, Cloud, Database, Download, HardDrive, Image, Info, MapPin, RefreshCw, ShieldCheck, Sparkles, Trash2, UserRound } from 'lucide-react'
 import type { TasteMapNativeRouteRequest, TasteMapPermissionsStatusDTO, TasteMapPlatform, TasteMapPremiumProductDTO, TasteMapPremiumStatusDTO, TasteMapProfileDashboardViewModel, TasteMapSyncStatusDTO } from '../platform/TasteMapPlatform'
@@ -156,7 +157,7 @@ export function TasteMapSettingsPage({ platform, profile, onOpenPremium, onOpenN
     } else openNativeSettingsDetail('permissions')
   }
   const runSync = () => {
-    if (onOpenNativeSettings) openNativeSettingsDetail('dataBackup', 'sync')
+    if (onOpenNativeSettings || (platform.kind === 'native' && (sync?.conflictCount ?? 0) > 0) || (platform.kind === 'native' && (sync?.pendingMutationCount ?? 0) > 0)) openNativeSettingsDetail('dataBackup', 'sync')
     else void perform(async () => {
       const next = await platform.sync.run()
       setSync(next)
@@ -166,14 +167,14 @@ export function TasteMapSettingsPage({ platform, profile, onOpenPremium, onOpenN
           ? '当前无法同步，请检查登录状态。' : '同步已完成。')
     })
   }
-  if (showReferral) return <TasteMapReferralPage platform={platform} onBack={()=>setShowReferral(false)}/>
+  if (showReferral && referralAvailable()) return <TasteMapReferralPage platform={platform} onBack={()=>setShowReferral(false)}/>
   if(showDirectory)return <TasteMapDirectoryPage platform={platform} onBack={()=>setShowDirectory(false)}/>
   return <main className="tm-hybrid-page tm-hybrid-settings">
     <HybridBackButton onBack={onBack} />
     <HybridPageHeader description="账户、数据、同步、权限与系统信息。高风险操作继续由正式 Native service 承载。" eyebrow="SETTINGS" title="设置" />
     <SettingsSection title="账户"><HybridEntryRow disabled={busy} detail={`${profile.user.nickname} · Taste Map ID、资料与登录安全`} icon={<UserRound size={18} />} onClick={() => openNativeSettingsDetail('accountSettings')} title="账户与安全" value={profile.user.membershipTier === 'member' ? 'Premium' : '免费版'} /></SettingsSection>
     <SettingsSection title="会员权益"><HybridEntryRow disabled={busy} detail={profile.user.membershipTier === 'member' ? '查看当前权益与订阅管理' : '查看会员能力'} icon={<Sparkles size={18} />} onClick={() => void perform(() => onOpenPremium ? Promise.resolve(onOpenPremium()) : platform.navigation.openHybrid({ surface: 'premium' }))} title="Premium" /></SettingsSection>
-    <SettingsSection title="邀请奖励"><HybridEntryRow title="邀请好友" detail="每成功邀请 1 位新用户，获得 30 天 Premium" icon={<UserRound size={18}/>} onClick={onOpenReferral??(()=>setShowReferral(true))}/></SettingsSection>
+    {referralAvailable() ? <SettingsSection title="邀请奖励"><HybridEntryRow title="邀请好友" detail="每成功邀请 1 位新用户，获得 30 天 Premium" icon={<UserRound size={18}/>} onClick={onOpenReferral??(()=>setShowReferral(true))}/></SettingsSection> : null}
     <SettingsSection title="私人资料"><HybridEntryRow title="饭搭子与推荐来源" detail="关联好友、设置私人头像与来源用户" icon={<UserRound size={18}/>} onClick={onOpenDirectory??(()=>setShowDirectory(true))}/></SettingsSection>
     <SettingsSection title="数据与备份">
       <HybridEntryRow disabled={busy} detail="Backup v1 不包含照片原图" icon={<Download size={18} />} onClick={() => onOpenNativeSettings ? openNativeSettingsDetail('dataBackup', 'export') : void perform(() => platform.backup.openExport())} title="导出备份" />
@@ -181,8 +182,8 @@ export function TasteMapSettingsPage({ platform, profile, onOpenPremium, onOpenN
       <HybridEntryRow detail={`${profile.restaurants.length} 家餐厅 · ${profile.visits.length} 次到访`} icon={<Database size={18} />} title="本地数据概览" />
       <HybridEntryRow disabled={busy} detail={platform.kind === 'native' ? '清除这台 iPhone，保留账号、个人资料和云端数据' : '仅 iPhone App 支持清除本机业务数据；浏览器图片缓存可在存储中管理'} icon={<Trash2 size={18} />} onClick={platform.kind === 'native' ? () => openNativeSettingsDetail('dataClear') : undefined} title="清除本机数据" />
     </SettingsSection>
-    <SettingsSection title="同步"><HybridEntryRow disabled={busy || (!onOpenNativeSettings && (!sync || sync.state === 'syncing' || sync.state === 'unavailable'))} detail={syncDescription(sync)} icon={<Cloud size={18} />} onClick={runSync} title={onOpenNativeSettings ? '查看同步详情' : sync?.state === 'syncing' ? '正在同步…' : sync?.state === 'error' ? '重试同步' : '立即同步'} value={sync?.state === 'idle' ? '正常' : sync?.state === 'syncing' ? '同步中' : sync?.state === 'error' ? '错误' : undefined} />{sync?.pendingMutationCount ? <HybridEntryRow detail="等待上传的本地更改" icon={<RefreshCw size={18} />} title="待同步记录" value={`${sync.pendingMutationCount}`} /> : null}{sync?.pendingPhotoCount ? <HybridEntryRow detail="联网后继续上传" icon={<RefreshCw size={18} />} title="待上传照片" value={`${sync.pendingPhotoCount}`} /> : null}</SettingsSection>
-    <SettingsSection title="隐私与权限"><HybridEntryRow disabled={busy} detail="修改个人主页可见范围；到访和食单在各自记录中设置" icon={<ShieldCheck size={18} />} onClick={() => openNativeSettingsDetail('privacySettings')} title="隐私" /><HybridEntryRow disabled={busy} detail={permissionDescription(permissions?.location)} icon={<MapPin size={18} />} onClick={() => openPermission(permissions?.location)} title="位置权限" value={permissionLabel(permissions?.location)} /><HybridEntryRow disabled={busy} detail={cameraPermissionDescription(permissions?.camera)} icon={<Camera size={18} />} onClick={() => openPermission(permissions?.camera)} title="相机权限" value={permissionLabel(permissions?.camera)} /><HybridEntryRow disabled={busy} detail={permissionDescription(permissions?.photoAddOnly, true)} icon={<Image size={18} />} onClick={() => openPermission(permissions?.photoAddOnly)} title="照片权限" value={permissionLabel(permissions?.photoAddOnly)} /></SettingsSection>
+    <SettingsSection title="同步"><HybridEntryRow disabled={busy || (!onOpenNativeSettings && (!sync || sync.state === 'syncing' || sync.state === 'unavailable'))} detail={syncDescription(sync)} icon={<Cloud size={18} />} onClick={runSync} title={platform.kind === 'native' && (sync?.conflictCount ?? 0) > 0 ? '处理同步冲突' : onOpenNativeSettings || (platform.kind === 'native' && (sync?.pendingMutationCount ?? 0) > 0) ? '查看同步详情' : sync?.state === 'syncing' ? '正在同步…' : sync?.state === 'error' ? '重试同步' : '立即同步'} value={sync?.state === 'idle' ? '正常' : sync?.state === 'syncing' ? '同步中' : sync?.state === 'error' ? '错误' : undefined} />{sync?.pendingMutationCount ? <HybridEntryRow detail="等待上传的本地更改" icon={<RefreshCw size={18} />} title="待同步记录" value={`${sync.pendingMutationCount}`} /> : null}{sync?.pendingPhotoCount ? <HybridEntryRow detail="联网后继续上传" icon={<RefreshCw size={18} />} title="待上传照片" value={`${sync.pendingPhotoCount}`} /> : null}</SettingsSection>
+    <SettingsSection title="隐私与权限"><HybridEntryRow disabled={busy} detail="个人主页、味觉足迹与到访照片同步；食单单独设置" icon={<ShieldCheck size={18} />} onClick={() => openNativeSettingsDetail('privacySettings')} title="隐私" /><HybridEntryRow disabled={busy} detail={permissionDescription(permissions?.location)} icon={<MapPin size={18} />} onClick={() => openPermission(permissions?.location)} title="位置权限" value={permissionLabel(permissions?.location)} /><HybridEntryRow disabled={busy} detail={cameraPermissionDescription(permissions?.camera)} icon={<Camera size={18} />} onClick={() => openPermission(permissions?.camera)} title="相机权限" value={permissionLabel(permissions?.camera)} /><HybridEntryRow disabled={busy} detail={permissionDescription(permissions?.photoAddOnly, true)} icon={<Image size={18} />} onClick={() => openPermission(permissions?.photoAddOnly)} title="照片权限" value={permissionLabel(permissions?.photoAddOnly)} /></SettingsSection>
     <SettingsSection title="存储"><HybridEntryRow disabled={busy} detail="查看本地照片与临时文件占用" icon={<HardDrive size={18} />} onClick={() => openNativeSettingsDetail('storage')} title="存储" /></SettingsSection>
     <SettingsSection title="帮助与关于"><HybridEntryRow disabled={busy} detail="备份、同步、添加餐厅与定位说明" icon={<CircleHelp size={18} />} onClick={() => openNativeSettingsDetail('helpSettings')} title="使用帮助" /><HybridEntryRow disabled={busy} detail="版本与法律信息" icon={<Info size={18} />} onClick={() => openNativeSettingsDetail('aboutSettings')} title="关于 Taste Map" /></SettingsSection>
     {message ? <p className="tm-hybrid-settings__message" role="status">{message}</p> : null}

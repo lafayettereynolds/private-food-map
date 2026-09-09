@@ -53,7 +53,7 @@ async function handlePhotoBinaryRequest(
   if (!bucket) throw new PhotoBinaryV1Error('Photo storage is not configured for this environment.', 503)
   if (!PHOTO_ID_PATTERN.test(photoId)) throw new PhotoBinaryV1Error('Photo ID is invalid.', 400)
 
-  if (request.method === 'PUT') return uploadPhotoVariant(request, bucket, viewerId, photoId)
+  if (request.method === 'PUT') return uploadPhotoVariant(request, env.DB, bucket, viewerId, photoId)
   if (request.method === 'GET') return downloadPhotoVariant(request, env.DB, bucket, viewerId, photoId)
   if (request.method === 'DELETE') return deletePhotoObjects(env.DB, bucket, viewerId, photoId)
   throw new PhotoBinaryV1Error('Photo content method is not supported.', 405)
@@ -61,6 +61,7 @@ async function handlePhotoBinaryRequest(
 
 async function uploadPhotoVariant(
   request: Request,
+  database: D1Database,
   bucket: R2Bucket,
   viewerId: string,
   photoId: string,
@@ -82,6 +83,10 @@ async function uploadPhotoVariant(
   const actualHash = await sha256(data)
   if (actualHash !== expectedHash) throw new PhotoBinaryV1Error('Photo checksum does not match the payload.', 400)
 
+  if ((await ownedPhoto(database, viewerId, photoId))?.deleted_at || await hasDeletionFence(database, viewerId, photoId)) {
+    throw new PhotoBinaryV1Error('Deleted photos cannot be uploaded again.', 409)
+  }
+
   const key = objectKey(viewerId, photoId, variant, contentType)
   const existing = await bucket.head(key)
   if (existing) {
@@ -95,6 +100,18 @@ async function uploadPhotoVariant(
     httpMetadata: { contentType, cacheControl: 'private, max-age=0, no-store' },
     customMetadata: { owner: viewerId, photoId, variant, sha256: actualHash },
   })
+  // A metadata delete can win while R2 PUT is in flight. Never acknowledge that
+  // late upload as active, and remove its exact owner-scoped object.
+  try {
+    if ((await ownedPhoto(database, viewerId, photoId))?.deleted_at || await hasDeletionFence(database, viewerId, photoId)) {
+      throw new PhotoBinaryV1Error('Deleted photos cannot be uploaded again.', 409)
+    }
+  } catch (error) {
+    // Fail closed if D1 cannot confirm eligibility after the PUT. A retained
+    // deletion fence also lets the periodic sweeper recover an R2 failure here.
+    await bucket.delete(key)
+    throw error
+  }
   return uploadResponse(photoId, variant, key, contentType, data.byteLength, actualHash, false)
 }
 
@@ -130,14 +147,27 @@ async function deletePhotoObjects(
   photoId: string,
 ): Promise<Response> {
   const photo = await ownedPhoto(database, viewerId, photoId)
+  if (photo && photo.storage_provider !== 'r2') {
+    throw new PhotoBinaryV1Error('This photo uses a different storage provider.', 409)
+  }
   if (photo && !photo.deleted_at) {
     throw new PhotoBinaryV1Error('Photo metadata must be tombstoned before binary cleanup.', 409)
   }
-  const keys = photo
-    ? [photo.storage_key, photo.thumbnail_storage_key].filter((key): key is string => Boolean(key))
-    : defaultObjectKeys(viewerId, photoId)
+  await database.prepare(`INSERT INTO photo_deletion_fences (user_id, photo_id, deleted_at)
+    VALUES (?, ?, ?) ON CONFLICT(user_id, photo_id) DO NOTHING`)
+    .bind(viewerId, photoId, new Date().toISOString()).run()
+  const keys = [...defaultObjectKeys(viewerId, photoId),
+    ...(photo ? [photo.storage_key, photo.thumbnail_storage_key].filter((key): key is string => Boolean(key)) : [])]
   const ownedKeys = keys.filter((key) => key.startsWith(`${ownerPrefix(viewerId)}/photos/${photoId}/`))
-  if (ownedKeys.length > 0) await bucket.delete(ownedKeys)
+  // R2 object absence is durable per-object progress, including after a lost
+  // response or Worker restart. A failed HEAD/DELETE must propagate; never mark
+  // a partial original/thumbnail cleanup successful or redo absent objects.
+  for (const key of new Set(ownedKeys)) {
+    if (await bucket.head(key)) await bucket.delete(key)
+  }
+  for (const key of new Set(ownedKeys)) {
+    if (await bucket.head(key)) throw new PhotoBinaryV1Error('Photo cleanup is not complete; retry required.', 503)
+  }
   return Response.json({ apiVersion: API_VERSION, photoId, deleted: true })
 }
 
@@ -147,6 +177,31 @@ function readVariant(request: Request): PhotoVariant {
     throw new PhotoBinaryV1Error('Photo variant is invalid.', 400)
   }
   return value
+}
+
+async function hasDeletionFence(database: D1Database, viewerId: string, photoId: string) {
+  return Boolean(await database.prepare('SELECT photo_id FROM photo_deletion_fences WHERE user_id = ? AND photo_id = ?')
+    .bind(viewerId, photoId).first())
+}
+
+/** Bounded, fair reconciliation of late PUTs, including crashed/offline clients. */
+export async function resumePhotoBinaryDeletions(env: PhotoBinaryV1Env, now = new Date()) {
+  if (!env.PHOTO_STORAGE) return
+  const rows = await env.DB.prepare(`SELECT user_id, photo_id FROM photo_deletion_fences
+    ORDER BY checked_at, user_id, photo_id LIMIT 50`).all<{ user_id: string; photo_id: string }>()
+  for (const row of rows.results ?? []) {
+    try {
+      await deletePhotoObjects(env.DB, env.PHOTO_STORAGE, row.user_id, row.photo_id)
+    } catch {
+      // Still fenced and hidden; later cron passes retry without trusting a
+      // partially completed original/thumbnail deletion.
+    } finally {
+      // Rotate even failed objects so one unavailable key cannot starve others.
+      // Never remove the fence, including after successful binary cleanup.
+      await env.DB.prepare('UPDATE photo_deletion_fences SET checked_at = ? WHERE user_id = ? AND photo_id = ?')
+        .bind(now.toISOString(), row.user_id, row.photo_id).run()
+    }
+  }
 }
 
 function objectKey(viewerId: string, photoId: string, variant: PhotoVariant, contentType: string) {
@@ -168,9 +223,11 @@ function isOwnedObjectKey(key: string, viewerId: string, photoId: string, varian
 }
 
 async function ownedPhoto(database: D1Database, viewerId: string, photoId: string) {
-  return database.prepare(`SELECT id, user_id, storage_provider, storage_key, thumbnail_storage_key, deleted_at
-    FROM photos WHERE id = ? AND user_id = ? LIMIT 1`)
-    .bind(photoId, viewerId).first<OwnedPhotoRow>()
+  const photo = await database.prepare(`SELECT id, user_id, storage_provider, storage_key, thumbnail_storage_key, deleted_at
+    FROM photos WHERE id = ? LIMIT 1`)
+    .bind(photoId).first<OwnedPhotoRow>()
+  if (photo && photo.user_id !== viewerId) throw new PhotoBinaryV1Error('Photo was not found.', 404)
+  return photo
 }
 
 async function readablePhoto(database: D1Database, viewerId: string, photoId: string) {

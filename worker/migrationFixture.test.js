@@ -48,7 +48,12 @@ describe('Worker integration migration fixture', () => {
     const applied = applyAllMigrations(sqlite)
 
     expect(applied).toEqual(migrationFiles())
-    expect(applied.at(-1)).toBe('0040_privacy_retention.sql')
+    expect(applied.at(-2)).toBe('0041_discovery_candidate_indexes.sql')
+    expect(applied.at(-1)).toBe('0042_photo_deletion_fences.sql')
+    expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='photo_deletion_fences'").get()?.name).toBe('photo_deletion_fences')
+    for (const name of ['idx_restaurants_discovery_trimmed_city', 'idx_visits_discovery_candidate', 'idx_wants_discovery_candidate']) {
+      expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name=?").get(name)?.name).toBe(name)
+    }
     for (const table of ['referrals', 'premium_rewards', 'referral_audit_log',
       'private_directory_profiles', 'recommendation_preference_events',
       'app_store_owners_v2', 'app_store_transactions_v2', 'app_store_notification_events_v2', 'sandbox_membership_entitlements', 'sandbox_offer_assignments']) {

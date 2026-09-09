@@ -6,6 +6,7 @@ import worker from './index'
 import {
   handleSyncV1Pull,
   handleSyncV1Push,
+  handleSyncConflictSnapshot,
   recordUnversionedSyncChanges,
   SyncV1RequestError,
 } from './syncV1'
@@ -13,6 +14,138 @@ import { ensureUserProfile, readPublicProfile } from './profileV1'
 import { applyAllMigrations } from './testSupport/migrations.js'
 
 describe('Worker Sync API V1 integration', () => {
+  it('never-uploaded photo delete has an idempotent receipt and a cross-device tombstone', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'user-a')
+    const remove = deletion('never-uploaded-delete', 'photo', 'never-uploaded-photo', 0)
+    const first = await push(database, 'user-a', remove)
+    expect(first.acknowledgements[0]).toMatchObject({ status: 'applied', serverVersion: 1 })
+    expect((await push(database, 'user-a', remove)).acknowledgements[0].duplicate).toBe(true)
+    const secondClient = await pull(database, 'user-a', '0')
+    expect(secondClient.tombstones).toContainEqual(expect.objectContaining({ entityType: 'photo', entityId: 'never-uploaded-photo', serverVersion: 1 }))
+    expect((await pull(database, 'user-b', '0')).tombstones).toEqual([])
+    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE id = ?', 'never-uploaded-photo').count).toBe(0)
+  })
+  it('a deletion fence prevents first metadata creation after a never-synced binary delete', async () => {
+    const database = makeDatabase()
+    const owner = 'user-a'
+    await ensureUser(database, owner)
+    await push(database, owner, mutation('fence-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = visitPayload('fence-v', appleFixture.id, owner)
+    await push(database, owner, mutation('fence-v', 'visit', visit.id, 0, visit))
+    const photo = { ...photoPayload('fence-p', appleFixture.id, visit.id, null, owner), kind: 'visit' }
+    await database.prepare('INSERT INTO photo_deletion_fences(user_id,photo_id,deleted_at) VALUES (?,?,?)')
+      .bind(owner, photo.id, '2026-09-09').run()
+    const result = await push(database, owner, mutation('fence-late-metadata', 'photo', photo.id, 0, photo))
+    expect(result.acknowledgements[0].status).toBe('conflict')
+    expect(database.get('SELECT COUNT(*) AS count FROM photos WHERE id = ?', photo.id).count).toBe(0)
+  })
+  it('photo delete reaches an offline second client and stale writes cannot resurrect it', async () => {
+    const database = makeDatabase()
+    const owner = 'user-a'
+    await push(database, owner, mutation('delete-e2e-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = visitPayload('delete-e2e-v', appleFixture.id, owner)
+    await push(database, owner, mutation('delete-e2e-v', 'visit', visit.id, 0, visit))
+    const photo = { ...photoPayload('delete-e2e-p', appleFixture.id, visit.id, null, owner), kind: 'visit' }
+    await push(database, owner, mutation('delete-e2e-p', 'photo', photo.id, 0, photo))
+    const deviceB = await pull(database, owner, '0')
+    expect(deviceB.photos.some(item => item.record.id === photo.id)).toBe(true)
+    const remove = deletion('delete-e2e-remove', 'photo', photo.id, 1)
+    expect((await push(database, owner, remove)).acknowledgements[0].status).toBe('applied')
+    expect((await push(database, owner, remove)).acknowledgements[0].duplicate).toBe(true)
+    const reconnect = await pull(database, owner, deviceB.nextCursor)
+    expect(reconnect.tombstones).toContainEqual(expect.objectContaining({ entityType: 'photo', entityId: photo.id }))
+    const stale = { ...photo, updatedAt: '2099-01-01T00:00:00.000Z' }
+    for (const version of [1, 2]) {
+      expect((await push(database, owner, mutation(`delete-e2e-stale-${version}`, 'photo', photo.id, version, stale))).acknowledgements[0].status).toBe('conflict')
+    }
+    expect((await pull(database, owner, '0')).photos.some(item => item.record.id === photo.id)).toBe(false)
+    expect(database.get('SELECT deleted_at FROM photos WHERE id = ?', photo.id).deleted_at).toBeTruthy()
+    expect(database.get('SELECT deleted_at FROM visits WHERE id = ?', visit.id).deleted_at).toBeNull()
+    expect(JSON.parse(database.get('SELECT photo_ids_json FROM visits WHERE id = ?', visit.id).photo_ids_json)).not.toContain(photo.id)
+    await expect(push(database, 'user-b', deletion('delete-e2e-foreign', 'photo', photo.id, 2))).rejects.toMatchObject({ status: 403 })
+  })
+  it.each(['active', 'foreign', 'visit-deleted', 'dish-deleted', 'restaurant-deleted', 'wrong-parent-owner'])(
+    'legacy canonical snapshot enforces parents and does not write: %s', async scenario => {
+      const database = makeDatabase()
+      await push(database, 'user-a', mutation('canonical-r', 'restaurant', appleFixture.id, 0, appleFixture))
+      const visit = visitPayload('canonical-v', appleFixture.id, 'user-a')
+      await push(database, 'user-a', mutation('canonical-v', 'visit', visit.id, 0, visit))
+      const dish = dishPayload('canonical-d', appleFixture.id, visit.id, 'user-a')
+      await push(database, 'user-a', mutation('canonical-d', 'dish', dish.id, 0, dish))
+      const canonical = `legacy:${dish.id}:${visit.id}`
+      if (scenario.endsWith('-deleted')) {
+        const table = { 'visit-deleted': 'visits', 'dish-deleted': 'dishes', 'restaurant-deleted': 'restaurants' }[scenario]
+        database.sqlite.prepare(`UPDATE ${table} SET deleted_at='2026-09-09T00:00:00Z'`).run()
+      }
+      if (scenario === 'wrong-parent-owner') {
+        await ensureUser(database, 'user-b')
+        database.sqlite.prepare("UPDATE dishes SET user_id='user-b'").run()
+      }
+      const before = database.get('SELECT total_changes() n').n
+      const request = new Request(`https://dev.test/api/v1/sync/conflict-snapshot?entityType=visitDish&entityId=${encodeURIComponent(canonical)}`)
+      const action = () => handleSyncConflictSnapshot(database, scenario === 'foreign' ? 'user-b' : 'user-a', request)
+      if (scenario === 'active') {
+        const result = await action()
+        expect(result).toMatchObject({ entityId: canonical, visitDish: { serverVersion: 1, record: { id: canonical, userId: 'user-a', visitId: visit.id, dishId: dish.id } },
+          associationParents: { restaurantVersion: 1, visitVersion: 1, dishVersion: 1 } })
+        expect(await action()).toEqual(result)
+      } else await expect(action()).rejects.toMatchObject({ status: scenario === 'foreign' || scenario === 'wrong-parent-owner' ? 404 : 409 })
+      expect(database.get('SELECT total_changes() n').n).toBe(before)
+      expect(database.get('SELECT COUNT(*) n FROM visit_dishes').n).toBe(1)
+    })
+
+  it('authenticates the conflict-snapshot route and rejects missing or foreign identity', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('route-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = visitPayload('route-v', appleFixture.id, 'user-a')
+    await push(database, 'user-a', mutation('route-v', 'visit', visit.id, 0, visit))
+    const env = { DB: database, ASSETS: { fetch: () => new Response('not used') },
+      APP_ENVIRONMENT: 'development', SYNC_AUTH_MODE: 'development-test' }
+    const url = `https://development.example.test/api/v1/sync/conflict-snapshot?entityType=visit&entityId=${visit.id}`
+    expect((await worker.fetch(new Request(url), env)).status).toBe(401)
+    expect((await worker.fetch(new Request(url, { headers: { 'X-Taste-Map-Test-User': 'user-b' } }), env)).status).toBe(404)
+    const result = await worker.fetch(new Request(url, { headers: { 'X-Taste-Map-Test-User': 'user-a' } }), env)
+    expect(result.status).toBe(200)
+    expect(await result.json()).toMatchObject({ entityType: 'visit', entityId: visit.id, visit: { serverVersion: 1 } })
+  })
+
+  it('reads current owner-scoped conflict versions and values without writing a receipt or entity', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('snapshot-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = visitPayload('snapshot-v', appleFixture.id, 'user-a')
+    await push(database, 'user-a', mutation('snapshot-v', 'visit', visit.id, 0, visit))
+    database.sqlite.prepare(`UPDATE visits SET server_version=7,visibility='public',party_size_optional=2,
+      price_per_person=71,my_actual_spend=141 WHERE id=?`).run(visit.id)
+    const before = database.get('SELECT total_changes() n').n
+    const request = new Request(`https://dev.test/api/v1/sync/conflict-snapshot?entityType=visit&entityId=${visit.id}`)
+    expect(await handleSyncConflictSnapshot(database, 'user-a', request)).toMatchObject({
+      visit: { serverVersion: 7, record: { userId: 'user-a', visibility: 'public', partySize: 2, pricePerPerson: 71, myActualSpend: 141 } },
+      restaurantListItems: [],
+    })
+    await expect(handleSyncConflictSnapshot(database, 'user-b', request)).rejects.toMatchObject({ status: 404 })
+    expect(database.get('SELECT total_changes() n').n).toBe(before)
+    database.sqlite.prepare('UPDATE visits SET deleted_at=? WHERE id=?').run('2026-09-09T00:00:00Z',visit.id)
+    await expect(handleSyncConflictSnapshot(database, 'user-a', request)).rejects.toMatchObject({ status: 409 })
+  })
+
+  it('returns authoritative list membership and ordering without changing the list or its items', async () => {
+    const database = makeDatabase()
+    await push(database, 'user-a', mutation('list-snapshot-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const time = '2026-09-09T00:00:00Z'
+    database.sqlite.prepare(`INSERT INTO restaurant_lists(id,user_id,title,description,visibility,is_ranked,created_at,updated_at,server_version)
+      VALUES('snapshot-list','user-a','全球十佳','','public',0,?,?,5)`).run(time,time)
+    database.sqlite.prepare(`INSERT INTO restaurant_list_items(id,list_id,user_id,restaurant_id,position,note,created_at,updated_at,server_version)
+      VALUES('snapshot-item','snapshot-list','user-a',?,2,'',?,?,3)`).run(appleFixture.id,time,time)
+    const before = database.get('SELECT total_changes() n').n
+    const request = new Request('https://dev.test/api/v1/sync/conflict-snapshot?entityType=restaurantList&entityId=snapshot-list')
+    const result = await handleSyncConflictSnapshot(database, 'user-a', request)
+    expect(result.restaurantList).toMatchObject({ serverVersion: 5, record: { id: 'snapshot-list',userId: 'user-a',title:'全球十佳',visibility:'public' } })
+    expect(result.restaurantListItems).toHaveLength(1)
+    expect(result.restaurantListItems[0]).toMatchObject({ serverVersion: 3,record:{id:'snapshot-item',listId:'snapshot-list',userId:'user-a',position:2} })
+    expect(database.get('SELECT total_changes() n').n).toBe(before)
+    await expect(handleSyncConflictSnapshot(database,'user-b',request)).rejects.toMatchObject({status:404})
+  })
   it('rejects new free dish photos even below quota and preserves Premium-era photos', async () => {
     const database=makeDatabase();await ensureUser(database,'user-a')
     await push(database,'user-a',mutation('dish-gate-r','restaurant',appleFixture.id,0,appleFixture))
@@ -897,6 +1030,9 @@ function sourcePayload(id, claimedUser, displayName, sourceType = 'other') {
 }
 
 async function push(database, viewerId, ...mutations) {
+  // Direct-handler fixtures mirror the authenticated user row the real router
+  // establishes before allowing Sync API access.
+  await ensureUser(database, viewerId)
   const request = new Request('http://localhost/api/v1/sync/push', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ apiVersion: 1, schemaVersion: 1, mutations }),

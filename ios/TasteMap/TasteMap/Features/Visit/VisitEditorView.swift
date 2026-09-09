@@ -755,18 +755,10 @@ struct VisitEditorView: View {
 
     private var privacySection: some View {
         Section {
-            Picker("可见性", selection: $draft.visibility) {
-                ForEach(VisitVisibility.allCases) { visibility in
-                    Label(visibility.title, systemImage: visibility.systemImage).tag(visibility)
-                }
-            }
-            .accessibilityIdentifier("visit-editor-visibility")
-            LabeledContent("当前范围") {
-                Text(draft.visibility.detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
+            LabeledContent("可见范围", value: profiles.first(where: { $0.tasteMapUserID == currentUserID && $0.deletedAt == nil })?.visibility.title ?? "仅自己")
+            Text("跟随设置中的主页可见范围，到访和附带照片同步。")
+                .font(.caption).foregroundStyle(.secondary)
+
         } header: {
             Text("隐私")
         } footer: {
@@ -851,13 +843,13 @@ struct VisitEditorView: View {
                             restaurantID: restaurantID,
                             visitID: savedVisit.id,
                             sortOrder: visibleVisitPhotos.count + offset,
-                            visibility: PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private,
+                            visibility: PhotoVisibility(rawValue: profiles.first(where: { $0.tasteMapUserID == currentUserID && $0.deletedAt == nil })?.visibility.rawValue ?? "private") ?? .private,
                             queueForUpload: true
                         )
                         savedPhotos.append(photo)
                     }
                     for photo in savedPhotos where photo.visitId == savedVisit.id {
-                        photo.visibility = PhotoVisibility(rawValue: validatedDraft.visibility.rawValue) ?? .private
+                        photo.visibility = PhotoVisibility(rawValue: profiles.first(where: { $0.tasteMapUserID == currentUserID && $0.deletedAt == nil })?.visibility.rawValue ?? "private") ?? .private
                         photo.updatedAt = .now
                         let selectedDraft = dishDrafts.first { $0.photoID == photo.id }
                         try photoCoordinator.setDishRelationship(
@@ -930,7 +922,7 @@ struct VisitEditorView: View {
                             restaurantID: restaurant.id,
                             visitID: visit.id,
                             sortOrder: visibleVisitPhotos.count,
-                            visibility: PhotoVisibility(rawValue: draft.visibility.rawValue) ?? .private,
+                            visibility: PhotoVisibility(rawValue: profiles.first(where: { $0.tasteMapUserID == currentUserID && $0.deletedAt == nil })?.visibility.rawValue ?? "private") ?? .private,
                             queueForUpload: false,
                             draftSessionID: photoDraftSessionID
                         )
@@ -965,7 +957,7 @@ struct VisitEditorView: View {
                         restaurantID: restaurant.id,
                         visitID: visit.id,
                         sortOrder: visibleVisitPhotos.count,
-                        visibility: PhotoVisibility(rawValue: draft.visibility.rawValue) ?? .private,
+                        visibility: PhotoVisibility(rawValue: profiles.first(where: { $0.tasteMapUserID == currentUserID && $0.deletedAt == nil })?.visibility.rawValue ?? "private") ?? .private,
                         queueForUpload: false,
                         draftSessionID: photoDraftSessionID
                     )

@@ -1,4 +1,5 @@
 import type { RestaurantSummary } from '../types/domain'
+import { predictLiking } from '../contracts/predictedLiking'
 
 export interface PersonalTastePrediction {
   score: number | null
@@ -20,34 +21,19 @@ export function predictPersonalTasteScore(target: RestaurantSummary, history: Re
     return { score: null, ratedRestaurantCount: 0, ratedVisitCount: 0, matchedRestaurantCount: 0, description: '记录更多评分后生成' }
   }
 
-  const targetTags = normalizedTags(target.tags)
-  const targetPrice = finiteNumber(target.averagePricePerPerson) ?? finiteNumber(target.pricePerPerson)
-  const weighted = ratedHistory.map((restaurant) => {
-    const tagSimilarity = jaccard(targetTags, normalizedTags(restaurant.tags))
-    const historyPrice = finiteNumber(restaurant.averagePricePerPerson) ?? finiteNumber(restaurant.pricePerPerson)
-    const priceSimilarity = targetPrice !== null && historyPrice !== null
-      ? Math.max(0, 1 - Math.abs(targetPrice - historyPrice) / Math.max(160, targetPrice, historyPrice))
-      : 0
-    const sameCity = Boolean(target.city && target.city === restaurant.city)
-    const isMatch = tagSimilarity > 0 || priceSimilarity >= 0.65 || sameCity
-    const visitCount = finiteNumber(restaurant.visitCount) ?? restaurant.visits.length
-    const weight = 0.35 + tagSimilarity * 1.2 + priceSimilarity * 0.3 + (sameCity ? 0.15 : 0) + Math.min(visitCount, 4) * 0.04
-    const ratedVisits = restaurant.visits.filter((visit) => !visit.deletedAt && visit.rating !== null).length
-    return { score: restaurant.scoreOutOfTen as number, weight, isMatch, ratedVisits }
-  })
-  const strongest = weighted.filter((item) => item.isMatch)
-  const samples = strongest.length ? strongest : weighted
-  const ratedVisitCount = samples.reduce((sum, item) => sum + item.ratedVisits, 0)
-  const weightTotal = samples.reduce((sum, item) => sum + item.weight, 0)
-  const score = samples.reduce((sum, item) => sum + item.score * item.weight, 0) / weightTotal
-  const matchedRestaurantCount = strongest.length
+  const evidence = (restaurant: RestaurantSummary) => ({ id: restaurantKey(restaurant), tags: restaurant.tags, city: restaurant.city,
+    price: finiteNumber(restaurant.averagePricePerPerson) ?? finiteNumber(restaurant.pricePerPerson), scoreOutOfTen: restaurant.scoreOutOfTen,
+    visitCount: finiteNumber(restaurant.visitCount) ?? restaurant.visits.length,
+    ratedVisitCount: restaurant.visits.filter(visit => !visit.deletedAt && visit.rating !== null).length })
+  const prediction = predictLiking(evidence(target), ratedHistory.map(evidence))
+  const { ratedVisitCount, matchedRestaurantCount } = prediction
   const description = matchedRestaurantCount
     ? `基于 ${ratedVisitCount} 条历史评分与 ${matchedRestaurantCount} 家相近餐厅推算`
     : `基于 ${ratedVisitCount} 条历史评分习惯推算`
 
   return {
-    score: round1(Math.min(10, Math.max(1, score))),
-    ratedRestaurantCount: samples.length,
+    score: prediction.scoreOutOfTen,
+    ratedRestaurantCount: prediction.ratedRestaurantCount,
     ratedVisitCount,
     matchedRestaurantCount,
     description,
@@ -56,20 +42,6 @@ export function predictPersonalTasteScore(target: RestaurantSummary, history: Re
 
 function restaurantKey(restaurant: RestaurantSummary) {
   return restaurant.amapPoiId || restaurant.id
-}
-
-function normalizedTags(tags: string[]) {
-  return new Set(tags.map((tag) => tag.trim().toLocaleLowerCase('zh-CN')).filter(Boolean))
-}
-
-function jaccard(left: Set<string>, right: Set<string>) {
-  if (!left.size || !right.size) return 0
-  const intersection = [...left].filter((tag) => right.has(tag)).length
-  return intersection / new Set([...left, ...right]).size
-}
-
-function round1(value: number) {
-  return Math.round(value * 10) / 10
 }
 
 function finiteNumber(value: number | null | undefined) {

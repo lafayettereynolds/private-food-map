@@ -1,0 +1,230 @@
+{
+  "worker": "private-food-map",
+  "candidateVersion": "dd0369b9-26c1-4fe7-a23b-9a56f5887661",
+  "observedLiveVersion": "dd0369b9-26c1-4fe7-a23b-9a56f5887661",
+  "previousLiveVersion": "87b45679-2bc8-4f4b-b0a4-c82b65c155e9",
+  "currentWorkerSHA256": "a3af88bf140f08d875c330efef1002b9852fa4a605f9a54d7748c322ae149f14",
+  "coreReadiness": "PASS",
+  "behaviorPurity": "PASS",
+  "giftAdminReadiness": "NON-BLOCKING",
+  "currentReport": "PRODUCTION_BASELINE_ADOPTION_2026-09-08.md",
+  "sourceCommit": "e03f0495e4655235251e31e225f4c6852aefd978",
+  "workerSHA256": "a3af88bf140f08d875c330efef1002b9852fa4a605f9a54d7748c322ae149f14",
+  "successorCodeParity": true,
+  "publicAssetFilesMatched": 28,
+  "publicAssetFilesCompared": 28,
+  "historicalRollbackReference": "29c76424-037c-418d-b607-7a3d07ed6f1d",
+  "restoreRequested": false,
+  "formalBaselineAdopted": true,
+  "auditStatus": "CURRENT_PRODUCTION_BASELINE_ADOPTED",
+  "strictPurityStatus": "SUPERSEDED_BY_BEHAVIOR_AUDIT",
+  "productionRegressionStatus": "PASS",
+  "cutoverGate": "CLOSED",
+  "finalRC": "NOT YET",
+  "auditedOn": "2026-09-08",
+  "adoptedBaselineVersion": "dd0369b9-26c1-4fe7-a23b-9a56f5887661",
+  "observedLiveVersionAdoption": "ADOPTED",
+  "baselineMatchesObservedLiveVersion": true,
+  "baselineDeploymentTime": "2026-09-08T07:42:43.072015Z",
+  "observedLiveDeploymentTime": "2026-09-08T07:42:43.072015Z",
+  "evidenceCommit": "3ad22a00d9a675a5793ff74cc42756864f1152f3",
+  "deploymentSource": "/Users/lafayette/Projects/private-food-map-storekit-production-deploy",
+  "staticAssetHashSet": [
+    {
+      "path": "/assets/HybridAppShell-BO1XQjTZ.css",
+      "sha256": "bd2e8d86e1a2befa7e2cdba2a040dd32e1c24cdce62d28dabb294d04aa74c4ca"
+    },
+    {
+      "path": "/assets/HybridAppShell-TW4GAm3e.js",
+      "sha256": "8ebb2352b37d502d01e8537709d6d0493b33d0fffd115db76d97de21b6f4657b"
+    },
+    {
+      "path": "/assets/index-DIfmPhId.js",
+      "sha256": "f293a64e928bb3aaef56b759c57cbc138b590c5b4e8e8be731514d14c024bae3"
+    },
+    {
+      "path": "/assets/index-DXqlPWjd.css",
+      "sha256": "9463e8b9b4765e0ae746aaab49ae682fd50bb4e623facef38f92b5d411352f97"
+    },
+    {
+      "path": "/assets/restaurantSearchLocation-DOhbVvf1.js",
+      "sha256": "42c1cbf79feffa551e0a2419498a2f1490ba2b8422b909b4911aa430e186d40d"
+    },
+    {
+      "path": "/food-heroes/cafe.png",
+      "sha256": "309c5b6d3b353645bfc80617331e3a6617cdac9e268110fbcb6271368542766a"
+    },
+    {
+      "path": "/food-heroes/chinese.png",
+      "sha256": "f85957a35bbd2e73f2fcc3aec9ef99b3fd05a6be48d258b561bacfca1f689564"
+    },
+    {
+      "path": "/food-heroes/hotpot-grill.png",
+      "sha256": "25fa59df4717e656aa4042080a49e5857fa280d098c9bd0a40b693e992e64ce7"
+    },
+    {
+      "path": "/food-heroes/japanese.png",
+      "sha256": "b24538d47356474916f8fde28605d24d9c11f176a0a867ffb18e29bd1730a9dc"
+    },
+    {
+      "path": "/food-heroes/mixed.png",
+      "sha256": "8550db1f7af74c37d410aefa1e46de2d746225805329308bc02390e65a6750f5"
+    },
+    {
+      "path": "/food-heroes/western.png",
+      "sha256": "20de585793719ac264219b370314a6d060648f5b7c3a831764e22ff7d9e8dd1a"
+    },
+    {
+      "path": "/food-library/asian.png",
+      "sha256": "09774ea4cb99f74c9ce29b0ed22691bb37df941e7c8339684bc8eafdb7b2c588"
+    },
+    {
+      "path": "/food-library/catalog.json",
+      "sha256": "09093a475e551344640c177982cb0c5dc303d15b768c4d9ae621435b9d9b5b35"
+    },
+    {
+      "path": "/food-library/drinks-desserts.png",
+      "sha256": "7ec5a8c782c9d1d51df3ccb67811e449f02777845860f3dc1229a5b09fc8ba3e"
+    },
+    {
+      "path": "/food-library/general.png",
+      "sha256": "c66c92a423fb7381185330274ecf1c8b34c6566d7ef1414e4c7d7cef9b227081"
+    },
+    {
+      "path": "/food-library/global.png",
+      "sha256": "e27a8b9e4bc662fe33728a2d3c489c225f631268116a5149b719dd6c407f8a61"
+    },
+    {
+      "path": "/food-library/japanese-korean.png",
+      "sha256": "d21f76ca5c6066f3ae1e16c52219f02d3a86fdaa932f6f1261115a9c719e314f"
+    },
+    {
+      "path": "/food-library/southeast-asian.png",
+      "sha256": "1b067c6602557e8453de67515c77c085f36d95fca6e33719cb6cdc16623c7459"
+    },
+    {
+      "path": "/food-library/western.png",
+      "sha256": "8c2a9624c004b2f29d9ed2ca19b2f250dfc40de641ceaebfae5b972b72b6a8bb"
+    },
+    {
+      "path": "/icons/taste-map-icon-180.png",
+      "sha256": "f2de09cab6045f87669819ed8aa2b16d74727f120b5eb48132a2889fd01965c1"
+    },
+    {
+      "path": "/icons/taste-map-icon-192.png",
+      "sha256": "bebc1dd53ecee477ec0e4c43d3b469fc33684d29e1e75510b90a985429e4599f"
+    },
+    {
+      "path": "/icons/taste-map-icon-32.png",
+      "sha256": "83459c299049762671cf85ec18a82639b941c4311dc16ab21bd2bef27a0bedee"
+    },
+    {
+      "path": "/icons/taste-map-icon-512.png",
+      "sha256": "7169d717a295883d17d8d6db21996d02a7f084f49980a4d2761a820af8a7016f"
+    },
+    {
+      "path": "/icons/taste-map.ico",
+      "sha256": "6e040d22ed45df7f3d1eb8ee6027b2cdacdb2a1dbf87c21cf96d147b7bfb70c2"
+    },
+    {
+      "path": "/index.html",
+      "sha256": "6bf9ed4c65eaba789c1e2380f2a7b6ba2079b84c540e38a90d00fb1f647a4cfe"
+    },
+    {
+      "path": "/manifest.webmanifest",
+      "sha256": "0cf4ce8e0c136cfecb0402fe8c772ae6c8ae413fa02a81303fbb79f4853eb5f3"
+    },
+    {
+      "path": "/map-markers/treasure-chest.png",
+      "sha256": "081811cf56788cedb7d83c98be677ecf694a87770340c6b1bdd55af6e530213a"
+    },
+    {
+      "path": "/taste-map-avatar-presets.png",
+      "sha256": "85ae2852d2e10d83ec32108fd9ac36a924462b9c8c57f24c73b40e339e594fa8"
+    }
+  ],
+  "bindings": {
+    "DB": {
+      "name": "food-map-db",
+      "id": "064f6607-5464-4530-bc58-5f7d1e02f09f"
+    },
+    "PHOTO_STORAGE": "taste-map-photos"
+  },
+  "variableNames": [
+    "APP_ENVIRONMENT",
+    "APPLE_CLIENT_IDS",
+    "APP_STORE_API_ENVIRONMENT",
+    "APP_STORE_APP_APPLE_ID",
+    "APP_STORE_BUNDLE_ID",
+    "APP_STORE_MONTHLY_PRODUCT_ID",
+    "APP_STORE_YEARLY_PRODUCT_ID",
+    "SYNC_AUTH_MODE"
+  ],
+  "secretNames": [
+    "APP_STORE_ISSUER_ID",
+    "APP_STORE_KEY_ID",
+    "APP_STORE_PRIVATE_KEY"
+  ],
+  "customDomains": [
+    "api.tastemap.cn",
+    "origin-api.tastemap.cn"
+  ],
+  "routes": [
+    "tastemap.cn/invite/*",
+    "tastemap.cn/.well-known/apple-app-site-association"
+  ],
+  "productionBaseURL": "https://api.tastemap.cn",
+  "notifications": "PASS",
+  "sandboxTestNotification": "PASS",
+  "signedPayloadVerification": "PASS",
+  "uuidIdempotency": "PASS",
+  "malformedJWSHandling": "PASS: 400 JSON",
+  "sandboxOfferMapping": "PASS",
+  "focusedTests": "50/50 PASS",
+  "gitGuard": "PASS: 2034 tracked/unignored files, 0 staged",
+  "migrationRows": 40,
+  "preCutoverDeviceBuild": "2026090801: existing formal candidate for path A only; not Final RC",
+  "storeKitRealDevice": "PASS: frozen normal single-account Sandbox purchase/restore evidence",
+  "realDeviceCoreSmoke": "USER ACTION REQUIRED",
+  "productionMutationsThisTurn": false,
+  "currentProductionBaseline": "dd0369b9-26c1-4fe7-a23b-9a56f5887661",
+  "rollbackReference": "87b45679-2bc8-4f4b-b0a4-c82b65c155e9",
+  "productionBaseline": "PASS",
+  "productionPurity": "PASS",
+  "productionSandboxOfferIsolation": "PASS",
+  "sandboxOfferMappingVerification": "VERIFIED",
+  "sandboxOfferMappings": {
+    "580777": "invitee_14d",
+    "580833": "referrer_2",
+    "580852": "referrer_1",
+    "580853": "referrer_4",
+    "580908": "referrer_3",
+    "580922": "referrer_5"
+  },
+  "sandboxDeviceBuild": "SEPARATE BUILD AUTHORIZED; real-device acceptance pending",
+  "normalStoreKitRealDevice": "PASS",
+  "invitee14DRealSandbox": "DEFERRED TO TESTFLIGHT INTERNAL BETA",
+  "reward1RealSandbox": "DEFERRED TO TESTFLIGHT INTERNAL BETA",
+  "reward2To5": "DEFERRED TO TESTFLIGHT INTERNAL BETA",
+  "referralFirstTestFlightVisibility": "FAIL: new signed artifact and installed-runtime verification pending",
+  "sandboxOfferE2E": "NON-BLOCKING FOR FIRST TESTFLIGHT once referral visibility is verified DISABLED",
+  "frozenStoreKitReconciliation": "FROZEN_STOREKIT_RECONCILIATION_2026-09-08.md",
+  "finalVisualMapAcceptance": "USER ACTION REQUIRED",
+  "hybridPrimary": "NOT YET",
+  "testFlightReadiness": "NOT READY",
+  "testPaths": {
+    "A": {
+      "build": "2026090801",
+      "baseURL": "https://api.tastemap.cn",
+      "scope": "Normal StoreKit and real-device critical smoke; no origin fallback"
+    },
+    "B": {
+      "worker": "private-food-map-development",
+      "baseURL": "https://api-dev.tastemap.cn",
+      "scope": "Separate Sandbox build: invitee 14D and Reward 1 only",
+      "productionLedgerWrites": false,
+      "rewards2to5RealConsumptionRequired": false
+    }
+  },
+  "statusEvidence": "User adoption confirmation; existing verified Production evidence retained, no new live acceptance claimed by this documentation update"
+}

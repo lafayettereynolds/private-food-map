@@ -4,7 +4,7 @@ import { formatVisitDateTime } from '../utils/date'
 import { SyncedImage } from './SyncedImage'
 import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import type { RestaurantSocialStats } from '../types/restaurantStats'
-import { resolveVisitActualSpend } from '../services/visitSpend'
+import { resolveVisitActualSpend, visitSpendLabel } from '../services/visitSpend'
 import type { TasteMapPlatform, TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
 
 interface RestaurantPreviewCardProps {
@@ -149,17 +149,6 @@ export function RestaurantPreviewCard({
       ) : null}
     </article>
   )
-}
-
-function visitSpendLabel(visit: Visit) {
-  const actual = resolveVisitActualSpend(visit)
-  if (actual !== null) {
-    const total = visit.totalPrice !== null && visit.totalPrice !== actual ? ` · 整桌 ¥${visit.totalPrice}` : ''
-    return `我的消费 ¥${actual}${total}`
-  }
-  return visit.totalPrice !== null
-    ? `整桌 ¥${visit.totalPrice}${visit.pricePerPerson !== null ? ` · ¥${visit.pricePerPerson}/人` : ''}`
-    : '未记价格'
 }
 
 function buildOverviewFacets(visits: Visit[]) {

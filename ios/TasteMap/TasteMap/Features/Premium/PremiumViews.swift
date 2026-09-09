@@ -106,6 +106,17 @@ struct PremiumPaywallView: View {
     @State private var actionInProgress = false
     @State private var message: String?
     @State private var productsLoaded = false
+#if TASTEMAP_SANDBOX_BUILD
+    @State private var sandboxCatalogRequested = false
+#endif
+
+    private var showsProductCatalog: Bool {
+#if TASTEMAP_SANDBOX_BUILD
+        if sandboxCatalogRequested { return true }
+#endif
+        return entitlementService.membershipStatus != .premium &&
+            entitlementService.membershipStatus != .gracePeriod
+    }
 
     var body: some View {
         NavigationStack {
@@ -114,11 +125,10 @@ struct PremiumPaywallView: View {
                     hero
                     statusSummary
                     trialSection
-                    if entitlementService.membershipStatus == .premium ||
-                        entitlementService.membershipStatus == .gracePeriod {
-                        activeMemberActions
-                    } else {
+                    if showsProductCatalog {
                         productSection
+                    } else {
+                        activeMemberActions
                     }
                     benefits
                     comparison
@@ -299,7 +309,17 @@ struct PremiumPaywallView: View {
     @ViewBuilder
     private var productSection: some View {
         VStack(alignment: .leading, spacing: 14) {
+#if TASTEMAP_SANDBOX_BUILD
+            if sandboxCatalogRequested {
+                Text("Sandbox 订阅测试").font(.headline)
+                Text("保留现有赠送权益。以下操作使用真实 StoreKit 测试交易，并由测试服务器验单。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("开通方案").font(.headline)
+            }
+#else
             Text("开通方案").font(.headline)
+#endif
             Text("价格只会由 App Store 按你的地区和币种提供。")
                 .font(.caption).foregroundStyle(.secondary)
             if isLoadingProducts {
@@ -385,6 +405,15 @@ struct PremiumPaywallView: View {
     @ViewBuilder
     private var activeMemberActions: some View {
         VStack(spacing: 12) {
+#if TASTEMAP_SANDBOX_BUILD
+            Button("Sandbox 订阅测试") {
+                sandboxCatalogRequested = true
+                Task { await loadProductsIfNeeded() }
+            }
+            .frame(minHeight: TasteMapDesignTokens.Control.minimumHitTarget)
+            .disabled(actionInProgress)
+            .accessibilityIdentifier("premium-sandbox-catalog")
+#endif
             if entitlementService.snapshot?.source?.isAppStoreSubscription == true,
                entitlementService.productsProvider.capabilities.contains(.manageSubscription) {
                 Button("管理 App Store 订阅") { Task { await manageSubscription() } }
@@ -469,9 +498,7 @@ struct PremiumPaywallView: View {
 
     @MainActor
     private func loadProductsIfNeeded() async {
-        guard !productsLoaded,
-              entitlementService.membershipStatus != .premium,
-              entitlementService.membershipStatus != .gracePeriod else { return }
+        guard !productsLoaded, showsProductCatalog else { return }
         productsLoaded = true
         isLoadingProducts = true
         defer { isLoadingProducts = false }

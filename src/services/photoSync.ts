@@ -8,6 +8,34 @@ import { CLOUD_SYNC_REQUEST_EVENT, requestCloudSync } from './syncEvents'
 import { DATABASE_NAME } from '../config/appEnvironment'
 import { CURRENT_USER_ID } from '../db/social'
 import { activeWebPhotoStorageProvider, photoStorageProviderFor } from './photoStorage'
+import { notifyPhotoDeleted } from './photoDeletionEvents'
+
+export async function deleteOwnPhoto(photoID: string) {
+  const now = new Date().toISOString()
+  await db.transaction('rw', db.photos, db.visits, db.restaurants, db.syncQueue, async () => {
+    const photo = await db.photos.get(photoID)
+    if (!photo || photo.userId !== CURRENT_USER_ID) throw new Error('只能删除自己上传的照片。')
+    if (photo.deletedAt || photo.localState === 'delete-pending') return
+    await db.photos.update(photoID, { deletedAt: now, localState: 'delete-pending', syncStatus: 'delete-pending', updatedAt: now, lastError: null })
+    for (const visit of await db.visits.filter(v => v.userId === CURRENT_USER_ID && !v.deletedAt).toArray()) {
+      if (!visit.photoIds.includes(photoID) && !visit.dishes.some(d => d.photoId === photoID)) continue
+      const retained = Array.from({ length: Math.max(visit.photoIds.length, visit.photos.length) }, (_, index) => ({
+        id: visit.photoIds[index] ?? null, source: visit.photos[index] ?? drivePhotoReference(visit.photoIds[index]!),
+      })).filter(p => p.id !== photoID)
+      await db.visits.update(visit.id, { photoIds: retained.map(p => p.id), photos: retained.map(p => p.source),
+        dishes: visit.dishes.map(d => d.photoId === photoID ? { ...d, photoId: null, imageData: null } : d), updatedAt: now })
+      await queueVisit(visit.id, now)
+    }
+    for (const restaurant of await db.restaurants.filter(r => r.userId === CURRENT_USER_ID && r.markerPhotoId === photoID).toArray()) {
+      await db.restaurants.update(restaurant.id, { markerPhotoId: null, markerImageData: null, updatedAt: now })
+      await queueRestaurant(restaurant.id, now)
+    }
+  })
+  notifyPhotoDeleted(photoID)
+  await removeCachedPhoto(photoID)
+  requestCloudSync()
+  schedulePhotoSync(100)
+}
 
 export interface PhotoSyncState {
   status: 'idle' | 'syncing' | 'synced' | 'error'
@@ -190,7 +218,7 @@ async function collectPendingPhotos(): Promise<PendingPhoto[]> {
 }
 
 async function collectPendingDeletes() {
-  return db.photos.where('localState').equals('delete-pending').filter((photo) => !photo.deletedAt).toArray()
+  return db.photos.where('localState').equals('delete-pending').filter((photo) => photo.userId === CURRENT_USER_ID).toArray()
 }
 
 async function uploadPendingPhoto(pending: PendingPhoto, driveAccountId: string) {
@@ -300,14 +328,24 @@ async function saveUploadedPhoto(pending: PendingPhoto, photo: Photo) {
   })
 }
 
-async function deletePendingPhoto(photo: Photo) {
+export async function deletePendingPhoto(photo: Photo) {
+  const current = await db.photos.get(photo.id)
+  if (!current || current.userId !== CURRENT_USER_ID) throw new Error('只能删除自己上传的照片。')
+  if (current.localState !== 'delete-pending') return
+  photo = current
   const account = getGoogleDriveState()
   if (account.accountId !== photo.driveAccountId) {
     throw new Error('当前 Google Drive 账号与这张照片不一致，暂未删除原图。')
   }
   const provider = photoStorageProviderFor(photo)
-  await provider.delete(photo.storageKey || photo.driveFileId)
-  if (photo.thumbnailStorageKey) await provider.delete(photo.thumbnailStorageKey).catch(() => undefined)
+  const completed = new Set(photo.deletedStorageKeys ?? [])
+  const keys = new Set([photo.storageKey || photo.driveFileId, photo.thumbnailStorageKey].filter((key): key is string => Boolean(key)))
+  for (const key of keys) {
+    if (completed.has(key)) continue
+    await provider.delete(key)
+    completed.add(key)
+    await db.photos.update(photo.id, { deletedStorageKeys: [...completed] })
+  }
   const now = new Date().toISOString()
   await db.photos.update(photo.id, { deletedAt: now, updatedAt: now, localState: 'synced', syncStatus: 'synced', lastError: null })
   await removeCachedPhoto(photo.id)

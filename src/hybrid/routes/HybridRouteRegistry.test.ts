@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { HYBRID_ROUTE_REGISTRY, parseTasteMapDeepLink, routeFromLocation, routeFromStartupLocation, routeHash } from './HybridRouteRegistry'
 
 describe('HybridRouteRegistry', () => {
-  it('marks Batch 1 surfaces and the Batch 2 Visit editor as HYBRID_INTEGRATED', () => {
+  it('marks Batch 1 surfaces and the Batch 2 Visit editor as HYBRID_PRIMARY', () => {
     const migrated = ['map', 'profile', 'restaurant', 'discovery', 'activity', 'add', 'lists', 'publicList', 'roulette', 'analytics', 'premium', 'settings'] as const
-    migrated.forEach((surface) => expect(HYBRID_ROUTE_REGISTRY[surface]).toBe('HYBRID_INTEGRATED'))
-    expect(HYBRID_ROUTE_REGISTRY.visit).toBe('HYBRID_INTEGRATED')
-    expect(HYBRID_ROUTE_REGISTRY.visitEdit).toBe('HYBRID_INTEGRATED')
+    migrated.forEach((surface) => expect(HYBRID_ROUTE_REGISTRY[surface]).toBe('HYBRID_PRIMARY'))
+    expect(HYBRID_ROUTE_REGISTRY.visit).toBe('HYBRID_PRIMARY')
+    expect(HYBRID_ROUTE_REGISTRY.visitEdit).toBe('HYBRID_PRIMARY')
   })
 
   it('round-trips ready routes and keeps empty or invalid paths at Map', () => {

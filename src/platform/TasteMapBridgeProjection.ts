@@ -37,6 +37,7 @@ export function projectBridgeRestaurant(dto: TasteMapRestaurantDetailDTO): Taste
     socialStats: dto.socialStats ?? null,
     viewerState: dto.viewerState,
     editableVisitIDs: dto.editableVisitIDs,
+    deletablePhotoIDs: dto.deletablePhotoIDs ?? [],
     capabilities: dto.capabilities,
   }
 }

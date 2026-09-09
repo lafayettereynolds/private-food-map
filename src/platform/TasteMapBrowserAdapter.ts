@@ -102,6 +102,7 @@ const browserCapabilities: TasteMapCapabilityRegistry = {
 export class TasteMapBrowserAdapter implements TasteMapPlatform {
   directory = browserPrivateDirectory()
   referrals = { dashboard: async (): Promise<import('../contracts/referralsV1').ReferralDashboardV1> => {
+    if (!referralAvailable()) throw new TasteMapPlatformError('邀请功能暂未开放。','capability_unavailable',false)
     const response = await fetch('/api/v1/referrals', {credentials:'same-origin',cache:'no-store'})
     if (!response.ok) throw new TasteMapPlatformError('请在 iPhone App 登录后查看邀请奖励。','auth_required',true)
     return response.json()
@@ -226,6 +227,8 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
         socialStats,
         viewerState: restaurant.status === 'visited' ? 'visited' as const : 'want_to_go' as const,
         editableVisitIDs: restaurant.visits.map((visit) => visit.id),
+        deletablePhotoIDs: this.dataSource instanceof IndexedDBTasteMapDataSource && !debugFixture
+          ? (await db.photos.filter(photo => photo.userId === CURRENT_USER_ID && photo.restaurantId === id && !photo.deletedAt && photo.localState !== 'delete-pending').toArray()).map(photo => photo.id) : [],
         capabilities: ownedRestaurantCapabilities(),
       }
     },
@@ -569,7 +572,13 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
   photo = {
     pick: async () => capabilityUnavailable('photoPicker'),
     capture: async () => capabilityUnavailable('photoPicker'),
-    discard: async () => capabilityUnavailable('photoPicker'),
+    discard: async (photoID: string) => {
+      // Build-time boundary: Drive/Browser credentials must never enter the
+      // signed Hybrid bundle. Its native adapter owns persisted photo deletion.
+      if (import.meta.env.VITE_HYBRID_SHELL === 'true') throw new Error('iOS 照片删除需要 Native 平台。')
+      await (await import('../services/photoSync')).deleteOwnPhoto(photoID)
+      this.profilePromise = null
+    },
     retry: async () => capabilityUnavailable('photoPicker'),
   }
   premium = {
@@ -1201,3 +1210,4 @@ function debugAcquisitionPOIs(city: string): import('../types/domain').PoiSearch
     merchantImageUrl: null, phone: null, openingHours: null,
   }))
 }
+import { referralAvailable } from '../config/referralAvailability'

@@ -62,6 +62,28 @@ describe('Discovery API V1 integration', () => {
     expect(none.items.every(item => item.viewerState === 'none')).toBe(true)
   })
 
+  it('filters predicted personal rating and match separately before pagination, never public score', async () => {
+    const path = '/api/v1/discovery/for-you?city=杭州'
+    const base = await jsonAPI(database, 'tm_a', path + '&limit=50')
+    expect(base.items.length).toBeGreaterThan(0)
+    const highPublic = base.items.find(item => item.restaurant.name === 'bob-pick')
+    expect(highPublic.ratings.community.value).toBe(5)
+    expect(highPublic.predictedLiking.scoreOutOfTen).toBe(8)
+    expect(highPublic.predictedLiking.ratedRestaurantCount).toBe(5)
+    const filter = { minimumPredictedLikingOutOfTen: 8, minimumTasteMatchPercent: 0 }
+    const page = await jsonAPI(database, 'tm_a', path + '&limit=1&sort=predicted_liking&filters=' + encodeURIComponent(JSON.stringify(filter)))
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0].predictedLiking.scoreOutOfTen).toBeGreaterThanOrEqual(8)
+    expect(page.items[0].personalTastePercent).not.toBeNull()
+    expect(page.appliedQuery.filters.minimumTasteMatchPercent).toBe(0)
+    const tooHigh = await jsonAPI(database, 'tm_a', path + '&filters=' + encodeURIComponent(JSON.stringify({ minimumPredictedLikingOutOfTen: 9 })))
+    expect(tooHigh.items).toEqual([])
+    // Another owner's ratings cannot change this viewer's predicted score.
+    await database.prepare("UPDATE visits SET rating=4 WHERE user_id='tm_c'").run()
+    const repeated = await jsonAPI(database, 'tm_a', path + '&limit=50')
+    expect(repeated.items.find(item => item.restaurant.name === 'bob-pick').predictedLiking).toEqual(highPublic.predictedLiking)
+  })
+
   it.each(['for-you', 'similar-taste', 'trending'])('hard filters merged candidates before %s qualification and pagination', async (mode) => {
     const filters = encodeURIComponent(JSON.stringify({ cuisines: ['日料'], minimumPublicScoreOutOfTen: 9, minimumPublicRatingUsers: 1, viewerStates: ['none'] }))
     const page = await jsonAPI(database, 'tm_a', `/api/v1/discovery/${mode}?city=杭州&limit=1&filters=${filters}`)

@@ -1,3 +1,4 @@
+import { referralAvailable } from '../config/referralAvailability'
 import { useEffect, useState } from 'react'
 import type { TasteMapPlatform } from '../platform/TasteMapPlatform'
 import { referralStatusLabel, type ReferralDashboardV1 } from '../contracts/referralsV1'
@@ -6,6 +7,10 @@ import { Gift, Share2, Users } from 'lucide-react'
 import './tasteMapReferralPage.css'
 
 export function TasteMapReferralPage({platform,onBack}:{platform:TasteMapPlatform;onBack:()=>void}) {
+  if (!referralAvailable()) return <main className="tm-hybrid-page"><HybridBackButton onBack={onBack}/><HybridState kind="empty" title="暂未开放" message="请返回设置。"/></main>
+  return <AvailableReferralPage platform={platform} onBack={onBack}/>
+}
+function AvailableReferralPage({platform,onBack}:{platform:TasteMapPlatform;onBack:()=>void}) {
   const [data,setData]=useState<ReferralDashboardV1|null>(null)
   const [error,setError]=useState<string|null>(null)
   const [revision,setRevision]=useState(0)

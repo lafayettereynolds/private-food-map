@@ -375,8 +375,9 @@ enum TasteMapHybridMapMarkerVisualPolicy {
     ) -> RestaurantMapMarkerVisual {
         let matchingPhoto = image.photoID.flatMap { reference in
             photosByID.values.first {
-                $0.id.uuidString.caseInsensitiveCompare(reference) == .orderedSame
-                    || $0.remoteID?.caseInsensitiveCompare(reference) == .orderedSame
+                $0.deletedAt == nil && $0.binaryDeletedAt == nil && $0.uploadState != .deleted &&
+                    ($0.id.uuidString.caseInsensitiveCompare(reference) == .orderedSame
+                    || $0.remoteID?.caseInsensitiveCompare(reference) == .orderedSame)
             }
         }
         let emoji = RestaurantMapMarkerVisual.emoji(

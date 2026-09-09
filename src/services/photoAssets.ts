@@ -14,6 +14,9 @@ export async function resolvePhotoSource(source: string | null | undefined, expl
   const photoId = explicitPhotoId ?? photoIdFromReference(source)
   if (!photoId) return source || null
 
+  const photo = await db.photos.get(photoId)
+  if (!photo || photo.deletedAt || photo.localState === 'delete-pending' || photo.syncStatus === 'delete-pending') return null
+
   const existingUrl = objectUrls.get(photoId)
   if (existingUrl) {
     void touchCache(photoId)
@@ -22,13 +25,13 @@ export async function resolvePhotoSource(source: string | null | undefined, expl
 
   const cached = await db.photoCache.get(photoId)
   if (cached) {
+    const current = await db.photos.get(photoId)
+    if (!current || current.deletedAt || current.localState === 'delete-pending' || current.syncStatus === 'delete-pending') return null
     const url = rememberObjectUrl(photoId, cached.blob)
     void touchCache(photoId)
     return url
   }
 
-  const photo = await db.photos.get(photoId)
-  if (!photo || photo.deletedAt) return null
   const account = getGoogleDriveState()
   if (account.status !== 'connected') throw new Error('Google Drive 未连接，请在设置中重新连接。')
   if (photo.driveAccountId && account.accountId !== photo.driveAccountId) {
@@ -38,7 +41,14 @@ export async function resolvePhotoSource(source: string | null | undefined, expl
   const provider = photoStorageProviderFor(photo)
   if (!provider.isAvailable()) throw new Error('当前图片存储服务不可用，请稍后重试。')
   const blob = await provider.download(photo.thumbnailStorageKey || photo.storageKey || photo.driveFileId)
+  const current = await db.photos.get(photoId)
+  if (!current || current.deletedAt || current.localState === 'delete-pending' || current.syncStatus === 'delete-pending') return null
   await cachePhotoBlob(photoId, blob)
+  const afterCache = await db.photos.get(photoId)
+  if (!afterCache || afterCache.deletedAt || afterCache.localState === 'delete-pending' || afterCache.syncStatus === 'delete-pending') {
+    await removeCachedPhoto(photoId)
+    return null
+  }
   return rememberObjectUrl(photoId, blob)
 }
 

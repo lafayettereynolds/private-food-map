@@ -1,5 +1,6 @@
+import * as referralPolicy from '../src/config/referralAvailability'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import appleRestaurant from '../contracts/fixtures/restaurant.v1.valid.json'
 import referralVisit from '../contracts/fixtures/visit.v1.valid.json'
 import worker from './index'
@@ -17,6 +18,7 @@ const NOW = new Date('2026-08-27T10:00:00.000Z')
 const AUDIENCE = 'com.lafayette.tastemap'
 
 describe('Native Auth V1', () => {
+  afterEach(() => vi.restoreAllMocks())
   beforeAll(() => {
     vi.useFakeTimers()
     vi.setSystemTime(NOW)
@@ -60,6 +62,7 @@ describe('Native Auth V1', () => {
   })
 
   it('binds referral only inside new Apple registration, never on existing-account sign-in',async()=>{
+    vi.spyOn(referralPolicy, 'referralAvailable').mockReturnValue(true)
     const database=makeDatabase()
     const inviter=await exchange(database,'referrer-token','referrer-subject')
     const code='1234567890abcdef12345678'
@@ -189,9 +192,6 @@ describe('Native Auth V1', () => {
   it('creates a new Taste Map user when the same Apple identity returns after completed deletion', async () => {
     const database = makeDatabase()
     const first = await exchange(database, 'apple-token-before-delete', 'apple-returning-subject')
-    const statusToken = `tm_delete_${'c'.repeat(48)}`
-
-    const completed = await handleAccountDeletionV1(new Request(
     const oldRestaurant = {...appleRestaurant, id: 'deleted-private-restaurant', userId: first.user.id}
     await sync(database, first.session.accessToken, '/api/v1/sync/push', 'POST', {
       apiVersion: 1, schemaVersion: 1,
@@ -217,6 +217,9 @@ describe('Native Auth V1', () => {
       .bind(first.user.id,NOW.toISOString(),NOW.toISOString(),NOW.toISOString()).run()
     await database.prepare(`INSERT INTO membership_audit_log(id,actor_user_id,target_user_id,action,created_at)
       VALUES('retained-old-audit','admin',?,'grant',?)`).bind(first.user.id,NOW.toISOString()).run()
+    const statusToken = `tm_delete_${'c'.repeat(48)}`
+
+    const completed = await handleAccountDeletionV1(new Request(
       'https://dev.test/api/v1/account-deletion/confirm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -233,9 +236,6 @@ describe('Native Auth V1', () => {
 
     const returning = await exchange(database, 'apple-token-after-delete', 'apple-returning-subject')
     expect(returning.user.id).not.toBe(first.user.id)
-    expect(database.get(`SELECT COUNT(*) AS count FROM users
-      WHERE deleted_at IS NULL AND id IN (?, ?)`, first.user.id, returning.user.id).count).toBe(1)
-  })
     // Bounded old-account retention is not ownership transfer to the new user.
     expect(database.get('SELECT deleted_at FROM restaurants WHERE id=?',oldRestaurant.id).deleted_at).toBeTruthy()
     expect(database.get('SELECT deleted_at FROM visits WHERE id=?',oldVisit.id).deleted_at).toBeTruthy()
@@ -252,6 +252,9 @@ describe('Native Auth V1', () => {
     const newPayload=JSON.stringify(await newPull.json())
     for (const oldID of [oldRestaurant.id,oldVisit.id,'deleted-private-photo']) expect(newPayload).not.toContain(oldID)
     expect(database.get('SELECT COUNT(*) AS n FROM premium_rewards WHERE user_id=?',referrer.user.id).n).toBe(1)
+    expect(database.get(`SELECT COUNT(*) AS count FROM users
+      WHERE deleted_at IS NULL AND id IN (?, ?)`, first.user.id, returning.user.id).count).toBe(1)
+  })
 
   it('never enables the Development identity header in Production', async () => {
     const response = await worker.fetch(new Request(

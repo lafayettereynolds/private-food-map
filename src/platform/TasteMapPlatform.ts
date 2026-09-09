@@ -262,6 +262,8 @@ export interface TasteMapAnalyticsIdentityDTO {
 }
 
 export interface TasteMapRestaurantDetailDTO {
+  /** Authoritative current-owner photo deletion capability; absent means denied. */
+  deletablePhotoIDs?: string[]
   restaurant: TasteMapRestaurantDTO
   /** Native/Browser-owned aggregate ratings for this exact Restaurant identity. */
   socialStats?: RestaurantSocialStats | null
@@ -294,6 +296,7 @@ export interface TasteMapProfileDashboardViewModel {
 }
 
 export interface TasteMapRestaurantDetailViewModel {
+  deletablePhotoIDs?: string[]
   restaurant: RestaurantSummary
   image: TasteMapImageDescriptor
   contentImage?: TasteMapImageDescriptor
@@ -512,6 +515,7 @@ export interface TasteMapHybridDiscoveryItemDTO {
   }
   /** History-derived matching index, never a calibrated probability. */
   personalTastePercent?: number | null
+  predictedLiking?: import('../contracts/predictedLiking').PredictedLiking | null
   calibratedLikeProbability?: import('../contracts/recommendationSignal').CalibratedLikeProbability | null
   reasons: TasteMapHybridDiscoveryReasonDTO[]
   /** Backward-compatible first reason for older locally staged bundles. */
@@ -608,7 +612,7 @@ export interface TasteMapDiscoveryPageRequest {
   /** First-page only. Invalidates any pending continuation. */
   forceRefresh?: boolean
   filters?: import('../contracts/discoveryFilters').NormalizedDiscoveryFilters
-  sort?: 'recommended' | 'taste' | 'public_rating' | 'distance' | 'similar_rating' | 'trend'
+  sort?: 'recommended' | 'taste' | 'predicted_liking' | 'public_rating' | 'distance' | 'similar_rating' | 'trend'
   preferences?: import('../contracts/discoverySessionPreferences').DiscoverySessionPreferences
 }
 
@@ -620,7 +624,7 @@ export interface TasteMapDiscoveryCityPageRequest {
   snapshotID?: string
   forceRefresh?: boolean
   filters?: import('../contracts/discoveryFilters').NormalizedDiscoveryFilters
-  sort?: 'recommended' | 'taste' | 'public_rating' | 'distance' | 'similar_rating' | 'trend' | 'latest'
+  sort?: 'recommended' | 'taste' | 'predicted_liking' | 'public_rating' | 'distance' | 'similar_rating' | 'trend' | 'latest'
   preferences?: import('../contracts/discoverySessionPreferences').DiscoverySessionPreferences
 }
 
@@ -726,6 +730,8 @@ export interface TasteMapLocationDTO {
   horizontalAccuracy: number
   accuracyMode: 'full' | 'reduced'
   authorizationStatus: 'allowed' | 'denied' | 'notDetermined' | 'restricted'
+  /** City reverse-geocoded from this authorized fix, never the Profile city. */
+  detectedCity?: string | null
 }
 
 export interface TasteMapAcquisitionCandidateDTO {

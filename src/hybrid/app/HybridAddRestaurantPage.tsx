@@ -80,6 +80,7 @@ export function HybridAddRestaurantPage({ platform, onOpenRestaurant, onBack }: 
       .then((value) => {
         if (requestID !== shareRequestRef.current) return
         setShareResult(value); setShareState('ready')
+        if (value.sharedImportFingerprint) setShareOpen(true)
       })
       .catch(() => { if (requestID === shareRequestRef.current) setShareState('error') })
   }, [platform])

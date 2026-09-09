@@ -3937,6 +3937,127 @@ final class TasteMapUITests: XCTestCase {
     }
 
     @MainActor
+    func testHybridPhotoDeleteControlMapListMap() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich", "TASTEMAP_PHOTO_DELETE_QA_SESSION": "1",
+            "TASTEMAP_PHOTO_DELETE_QA_RUN": UUID().uuidString]
+        app.launch()
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.buttons["地图"].waitForExistence(timeout: 20))
+        web.buttons["地图"].tap()
+        let toList = web.buttons["切换到我的列表"]
+        XCTAssertTrue(toList.waitForExistence(timeout: 15))
+        XCTAssertTrue(toList.isHittable)
+        XCTAssertFalse(web.staticTexts["发现与食单暂未更新，请重试。"].exists)
+        keepScreenshot(named: "Photo QA Control Map", of: app)
+        toList.tap()
+        let toMap = web.buttons["切换到我的地图"]
+        XCTAssertTrue(toMap.waitForExistence(timeout: 10))
+        XCTAssertTrue(toMap.isHittable)
+        keepScreenshot(named: "Photo QA Control List", of: app)
+        toMap.tap()
+        XCTAssertTrue(toList.waitForExistence(timeout: 10))
+        XCTAssertTrue(toList.isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["hybrid-mapkit-restaurant-map"].waitForExistence(timeout: 10))
+        keepScreenshot(named: "Photo QA Control Map Return", of: app)
+    }
+
+    @MainActor
+    func testHybridPhotoDeleteOwnerLocalFirstRuntime() throws {
+        let app = XCUIApplication()
+        func reveal(_ element: XCUIElement) {
+            for _ in 0..<12 {
+                if element.exists && element.isHittable && element.frame.maxY < app.frame.maxY - 92 { return }
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.56))
+                    .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.22)))
+            }
+            XCTAssertTrue(element.isHittable)
+        }
+        // Isolated per-run disk fixture permits a genuine process-restart check.
+        app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]
+        app.launchEnvironment = ["TASTEMAP_VISUAL_QA_MODE": "rich", "TASTEMAP_PHOTO_DELETE_QA_SESSION": "1",
+            "TASTEMAP_PHOTO_DELETE_QA_RUN": UUID().uuidString]
+        app.launch()
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 20))
+        XCTAssertTrue(web.buttons["我的"].waitForExistence(timeout: 15))
+        let profileReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: web.buttons["我的"])
+        XCTAssertEqual(XCTWaiter.wait(for: [profileReady], timeout: 15), .completed)
+        web.buttons["我的"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let visited = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "去过")).firstMatch
+        XCTAssertTrue(visited.waitForExistence(timeout: 15))
+        visited.tap()
+        let restaurant = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "野火烧鸟 5")).firstMatch
+        reveal(restaurant)
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 10))
+        restaurant.tap()
+        let photo = web.buttons["查看野火烧鸟 5用户实拍 1"]
+        reveal(photo)
+        XCTAssertTrue(photo.waitForExistence(timeout: 10))
+        keepScreenshot(named: "Photo Delete Capacitor Detail Before", of: app)
+        // WKWebView exposes nested AX WebViews on iOS 26.5. Verify deletion
+        // does not add a surface relative to this settled detail hierarchy.
+        let detailWebViewCount = app.webViews.count
+        photo.tap()
+        let more = web.buttons["照片更多操作"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        more.tap()
+        web.buttons["删除照片"].tap()
+        XCTAssertTrue(web.staticTexts["删除这张照片？"].waitForExistence(timeout: 5))
+        XCTAssertTrue(web.staticTexts["将从 Taste Map 中删除，不会删除系统相册中的原照片。"].exists)
+        keepScreenshot(named: "Photo Delete Capacitor Owner Confirmation", of: app)
+        web.buttons["确认删除"].tap()
+        let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: photo)
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 10), .completed)
+        XCTAssertFalse(web.buttons["照片更多操作"].exists)
+        XCTAssertTrue(web.buttons["返回上一页"].exists)
+        XCTAssertEqual(app.webViews.count, detailWebViewCount)
+        keepScreenshot(named: "Photo Delete Capacitor Immediately Hidden", of: app)
+        web.buttons["返回上一页"].tap()
+        XCTAssertTrue(visited.waitForExistence(timeout: 10))
+        visited.tap()
+        reveal(restaurant)
+        XCTAssertTrue(restaurant.waitForExistence(timeout: 10))
+        restaurant.tap()
+        let empty = web.staticTexts["暂时还没有用户分享的照片。"]
+        reveal(empty)
+        XCTAssertTrue(empty.waitForExistence(timeout: 10))
+        XCTAssertFalse(photo.exists)
+        XCTAssertEqual(app.webViews.count, detailWebViewCount)
+        keepScreenshot(named: "Photo Delete Capacitor Detail Reopened", of: app)
+        // A fresh process/WebView must read the disk tombstone, not the JS Set.
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(web.buttons["我的"].waitForExistence(timeout: 20))
+        web.buttons["我的"].tap()
+        XCTAssertTrue(visited.waitForExistence(timeout: 10))
+        visited.tap()
+        reveal(restaurant)
+        restaurant.tap()
+        reveal(empty)
+        XCTAssertTrue(empty.waitForExistence(timeout: 10))
+        XCTAssertFalse(photo.exists)
+        keepScreenshot(named: "Photo Delete Capacitor Process Restart Tombstone", of: app)
+        web.buttons["返回上一页"].tap()
+        web.buttons["地图"].tap()
+        let toList = web.buttons["切换到我的列表"]
+        XCTAssertTrue(toList.waitForExistence(timeout: 10))
+        keepScreenshot(named: "Photo Delete Personal Map After Restart", of: app)
+        XCTAssertFalse(web.staticTexts["发现与食单暂未更新，请重试。"].exists)
+        XCTAssertTrue(toList.isHittable)
+        toList.tap()
+        let toMap = web.buttons["切换到我的地图"]
+        XCTAssertTrue(toMap.waitForExistence(timeout: 10))
+        XCTAssertTrue(toMap.isHittable)
+        keepScreenshot(named: "Photo Delete Personal List After Restart", of: app)
+        toMap.tap()
+        XCTAssertTrue(toList.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["hybrid-mapkit-restaurant-map"].waitForExistence(timeout: 10))
+        keepScreenshot(named: "Photo Delete Personal Map List Map Return", of: app)
+    }
+
+    @MainActor
     func testHybridProfileUsesFansTerminology() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--tastemap-hybrid-development", "-AppleInterfaceStyle", "Light"]

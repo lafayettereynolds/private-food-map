@@ -85,6 +85,36 @@ Do not regress: Same Taste must not select the recommendation-hero card variant;
 
 ## Source of Truth
 
+### 2026-09-09 — Independent personal recommendation filters
+
+Lafayette explicitly requires two independent concepts: **预计喜欢度** (the
+system's estimated personal rating) and **口味匹配度** (the existing matching
+index). The existing historical-rating estimator is reused with a 0–10 display
+unit; it is not an actual submitted rating and must never be relabelled as a
+calibrated probability. The existing estimator's weighting and output floor are
+retained. Missing owner history remains unavailable/积累中, never public rating
+or the match percentage as a replacement. Calibrated liking probability remains
+a separate unproduced future channel, subject to its existing attestation gates.
+
+For You's quick filters, full sheet, sorting and selected-condition labels use
+these independent values. Remove public-score/reviewer-count controls and public
+rating sort from the shared current Discovery UI. Retain Restaurant Detail's
+public rating facts and individual activity rating semantics; old API fields may
+remain for backwards compatibility, but cannot remain invisible active conditions
+in the new UI. Personal thresholds are applied before server pagination, bound
+to the accepted owner/city/query and not carried into non-personal feed queries.
+Browser's legacy local feed only filters its actually obtained scope; it is not
+proof of complete server-city pagination.
+
+Reuse Core FilterBar/FilterSelect/ModalShell and the Discovery card template.
+Forecast methodology is progressive disclosure, not persistent calculation copy.
+Food imagery and existing match badge artwork are unchanged. Do Not Regress:
+independent thresholds, high public score failing a personal threshold, missing
+evidence, owner isolation, reset, tab return, source/staged/built/runtime identity.
+This supersedes earlier public-score quick-filter requirements, not recommendation
+eligibility or default ranking. Source implementation does not imply deployed
+Development support or physical-device acceptance.
+
 When sources differ, use this priority order:
 
 1. Lafayette's latest explicit design or product override.
@@ -978,3 +1008,42 @@ Do Not Regress: visible locked entry is not permission to render paid results. D
 ### 2026-09-08 — Premium subscription purchase visibility
 
 For the reported missing purchase actions/prices, place Monthly/Annual subscription actions before the long benefits/comparison content in shared React and Native rollback paywalls. Preserve the existing hero, trial, entitlement and return-layer semantics. Product metadata comes from StoreKit independently of Taste Map authentication; display Product.displayPrice and never substitute hardcoded CNY prices when another storefront or an error is returned. Loading/empty states retain an explicit explanation and retry action. Core spacing and minimum touch targets apply; keep plan name/renewal text distinct from price. Existing legacy Browser paywall keeps its plan-first flow. Do Not Regress: no dev.* StoreKit fixture attached to the formal TasteMap Run scheme, no fabricated prices or paid entitlement, and no purchase before authenticated server readiness.
+
+
+## 2026-09-08 — First TestFlight Referral visibility hold
+Lafayette defers the real two-account Referral E2E to internal beta follow-up. The first TestFlight hides Settings invitation entry and rejects direct invitation routes/registration preparation in Browser, Hybrid and Native rollback. Reuse the existing signed ProductionEnvironment.json product configuration, referralAvailable=false, without Debug/URL/local-storage overrides. Worker independently blocks invitation landing/dashboard and new-registration referral attribution; existing entitlements, qualification/settlement implementation, admin permissions, Offer mappings and inventory remain retained. No unverified invitation allocation or code consumption. This is release product visibility, not a new remote flag platform; reopening requires a reviewed config/build/deploy after real E2E PASS.
+Core UI Settings rows and existing unavailable state remain canonical; Food/Dining visuals and page templates are unchanged. Do Not Regress: all entry paths, native bridge, stale saved invite code and server attribution must remain closed together. Normal StoreKit evidence remains PASS. Referral E2E is non-blocking only while this closure is effective. Real core smoke and visual/map approval still precede any HYBRID_PRIMARY cutover.
+
+- **2026-09-08 Discovery current-city default (Lafayette):** Discovery's five tabs
+  default to the city reverse-geocoded from the current authorized location.
+  An empty Profile city must not prevent filter Apply. Manual city selection wins
+  over late location results; changing tabs retains that selection. Unavailable
+  location may retain the existing resolved browsing city or allow manual input,
+  but must never be described as a successful current-position fix. Default For
+  You and Map recommendations consume the same canonical snapshot; explicit
+  city/filter/sort queries remain independent full server queries. Validation
+  feedback stays beside the shared sticky Apply controls. No privacy change to
+  Latest or owner history is implied. Do Not Regress: empty profile, location
+  failure, delayed location after manual selection, reset and account switch.
+
+- **2026-09-08 homepage/footprint visibility linkage (Lafayette confirmed):**
+  Settings' 仅自己 / 好友 / 公开 controls the owner's homepage, historical and new
+  Visits in 味觉足迹, and attached Visit/Dish photos together. Lafayette explicitly
+  authorized applying the current public setting to the existing24 Visits and
+  their attached content. Supersedes independent Visit visibility controls and
+  copy saying homepage changes exclude Visits. Keep List visibility separate.
+  Synchronize legacy Visit/Photo visibility fields through the ordinary owner-scoped
+  mutation queue; never move records between owners, change ratings/notes/times,
+  or relax another viewer's profile/friendship/block/photo authorization. Latest
+  includes one's own qualified public Visits; existing score/city filters remain.
+  Do Not Regress: all three settings, historical records, attached photos,
+  repeated reconciliation, another owner, tombstones, offline/pending sync,
+  profile downgrade and public-photo permission checks.
+
+### 2026-09-08 — Ordinary launch and retained share drafts
+
+Ordinary cold launch defaults to Map. A newly received external share may open Add Restaurant once; presentation is distinct from saving/consuming the draft. An already presented unsaved share must not repeatedly redirect subsequent launches. Keep its payload available through Add Restaurant until saved or expired. Explicitly sharing it again may present it again. Do not delete user Restaurant/Visit data to repair startup routing.
+
+### 2026-09-08 — Discovery failure presentation and provider labels
+
+Provider enum identifiers such as MKPOICategoryRestaurant are not product copy. Translate known category metadata, retain actual cuisine tags and omit unknown provider enum identifiers. Discovery displays one current-scope failure; cached results are labelled as cached, query failures never become empty-results success. Avoid a repeated global/per-tab/pagination error stack. Automatic failed refreshes back off, while explicit retry remains available.

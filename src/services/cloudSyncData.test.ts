@@ -4,6 +4,19 @@ import type { CloudSnapshot } from '../types/cloudSync'
 import { activeCounts, mergeCloudData, toCloudPhoto, toCloudRestaurant, toCloudVisit } from './cloudSyncData'
 
 describe('cloud sync data', () => {
+  it.each(['pending', 'tombstone'])('preserves local %s deletion against newer active server data', state => {
+    const local = makePhoto({ deletedAt: state === 'tombstone' ? '2026-09-09' : null, localState: 'delete-pending' })
+    const remote = toCloudPhoto(makePhoto({ updatedAt: '2099-01-01' }))
+    expect(mergeCloudData([], [], [local], snapshot({ photos: [remote] })).photos[0]).toEqual(local)
+  })
+  it('remote deletion dominates even a newer active local timestamp', () => {
+    const local = makePhoto({ updatedAt: '2099-01-01' })
+    const remote = toCloudPhoto(makePhoto({ deletedAt: '2026-09-09' }))
+    expect(mergeCloudData([], [], [local], snapshot({ photos: [remote] })).photos[0].deletedAt).toBe('2026-09-09')
+  })
+  it('keeps deletion progress local and out of the cloud photo contract', () => {
+    expect(toCloudPhoto(makePhoto({ deletedStorageKeys: ['original'] }))).not.toHaveProperty('deletedStorageKeys')
+  })
   it('never sends local photos or image data to D1', () => {
     const restaurant = makeRestaurant({ markerImageData: 'data:image/png;base64,secret' })
     const visit = makeVisit({ photos: ['data:image/jpeg;base64,secret'] })

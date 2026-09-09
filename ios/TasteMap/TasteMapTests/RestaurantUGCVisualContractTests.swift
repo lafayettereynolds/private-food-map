@@ -86,6 +86,33 @@ struct RestaurantUGCVisualContractTests {
         ) == nil)
     }
 
+    @Test("Deleting owner photos exhausts Personal Map to category, never another user's public UGC")
+    func deletedOwnerFallbackIsSurfaceScoped() {
+        let first = record(id: "owner", owner: "tm_viewer", visibility: "private")
+        let remaining = record(id: "remaining", owner: "tm_viewer", visibility: "private")
+        let foreign = record(id: "public", owner: "tm_other", visibility: "public")
+        let deletedFirst = record(id: "owner", owner: "tm_viewer", visibility: "private", deletedAt: .now)
+        let deletedRemaining = record(id: "remaining", owner: "tm_viewer", visibility: "private", deletedAt: .now)
+        let snapshots = [[first, remaining, foreign], [deletedFirst, remaining, foreign], [deletedFirst, deletedRemaining, foreign]]
+        let expectedIDs: [String?] = ["owner", "remaining", nil]
+        // Repeated reads represent Map/List/Detail return projections, not a device smoke claim.
+        for (records, expectedID) in zip(snapshots, expectedIDs) {
+            for _ in 0..<3 {
+                let map = RestaurantUGCImagePool.resolve(surface: .map, records: records,
+                    currentOwnerID: "tm_viewer", restaurantID: "restaurant")
+                #expect(map?.record.photoID == expectedID)
+                #expect(map?.record.ownerUserID != "tm_other")
+            }
+        }
+        // A nil photo selection delegates to the established category renderer.
+        for surface in [RestaurantVisualSurface.search, .nearby, .detail, .forYou, .trending] {
+            let result = RestaurantUGCImagePool.resolve(surface: surface, records: snapshots[2],
+                currentOwnerID: "tm_viewer", restaurantID: "restaurant")
+            #expect(result?.record.photoID == "public")
+            #expect(result?.exportAllowed == false)
+        }
+    }
+
     private func record(
         id: String, owner: String, visibility: String, deletedAt: Date? = nil
     ) -> RestaurantUGCImageRecord {

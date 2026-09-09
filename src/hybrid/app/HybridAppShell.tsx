@@ -124,10 +124,23 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       if (!active) return
       if (event.name === 'auth.changed') {
         pendingRestaurantDeletion.current = null
+        pendingHybridNavigation.current = null
+        ++navigationRevision.current
         ++snapshotRefreshSequence.current
         readyRef.current = false
+        setBootstrap({ state: 'loading' })
         setRestaurant(null)
+        setResolvedRestaurantRequestID(null)
+        setRouteError(null)
+        setAvatarEditorOpen(false)
+        setPremiumLayerOpen(false)
+        setRouletteRestaurantIDs([])
+        setRouletteExternalRestaurants([])
+        setRouletteTemporaryItems([])
+        setRouletteSession({ rotation: 0, winnerId: null })
+        setShowRouletteCandidates(false)
         restaurantDetailCache.current.clear()
+        deletedRestaurantRoutes.current.clear()
         visitParentRoute.current = null
         setGeneration((value) => value + 1)
       }
@@ -156,6 +169,15 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
       }
       if (event.name === 'app.lifecycle' && (event.payload.state === 'foreground' || event.payload.state === 'resume')) {
         refreshSnapshot()
+      }
+      if (event.name === 'shareExtension.received') {
+        const next = platformRouteToHybrid(event.payload.target.route)
+        if (next?.surface === 'add') {
+          pendingHybridNavigation.current = null
+          ++navigationRevision.current
+          currentRouteRef.current = next
+          if (window.location.hash !== routeHash(next)) commitLocalRoute(next, setRoute)
+        }
       }
       if (event.name === 'navigation.route' || event.name === 'deepLink.received') {
         const next = platformRouteToHybrid(event.payload.route)
@@ -471,7 +493,7 @@ export function HybridAppShell({ platform: injectedPlatform }: { platform?: Tast
     }}
   >
     {!online ? <div className="tm-hybrid-shell__offline" role="status"><CloudOff aria-hidden="true" size={15} />离线模式 · 正在使用本地数据</div> : null}
-    {refreshError ? <div className="tm-hybrid-shell__offline" role="status"><span>{refreshError}</span><button onClick={() => void refreshReadyData(true)} type="button">重试刷新</button></div> : null}
+    {refreshError && route.surface !== 'discovery' && route.surface !== 'activity' ? <div className="tm-hybrid-shell__offline" role="status"><span>{refreshError}</span><button onClick={() => void refreshReadyData(true)} type="button">重试刷新</button></div> : null}
     {mapWasActivated ? <MyMapBrowsePage
       MapSurface={NativeMapSurface}
       active={route.surface === 'map' && !premiumLayerOpen}

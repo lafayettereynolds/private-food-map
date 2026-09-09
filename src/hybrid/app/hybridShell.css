@@ -73,6 +73,9 @@ body { margin: 0; overscroll-behavior-y: none; }
   font-size: 12px;
 }
 
+.tm-hybrid-shell__offline > span { min-width: 0; overflow-wrap: anywhere; }
+.tm-hybrid-shell__offline > button { flex-shrink: 0; white-space: nowrap; min-height: 44px; }
+
 .tm-hybrid-detail {
   box-sizing: border-box;
   width: min(760px, 100%);

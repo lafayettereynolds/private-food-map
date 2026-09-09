@@ -322,8 +322,24 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             socialStats: try socialStats(for: restaurant),
             viewerState: restaurant.status == "visited" ? "visited" : "want_to_go",
             editableVisitIDs: restaurant.visits.map(\.id),
-            capabilities: .owned
+            capabilities: .owned,
+            deletablePhotoIDs: try deletablePhotoIDs(for: restaurant.id)
         )
+    }
+
+    private func deletablePhotoIDs(for restaurantID: String) throws -> [String] {
+#if TASTEMAP_HYBRID_BRIDGE_CORE
+        return []
+#else
+        guard let local = try context.fetch(FetchDescriptor<Restaurant>()).first(where: {
+            $0.ownerUserID == ownerUserID && $0.deletedAt == nil &&
+                ($0.id.uuidString.caseInsensitiveCompare(restaurantID) == .orderedSame ||
+                 $0.remoteID?.caseInsensitiveCompare(restaurantID) == .orderedSame)
+        }) else { return [] }
+        return try context.fetch(FetchDescriptor<PhotoAsset>()).filter {
+            $0.ownerUserID == ownerUserID && $0.restaurantId == local.id && $0.deletedAt == nil
+        }.flatMap { [$0.id.uuidString.lowercased(), $0.remoteID].compactMap { $0 } }
+#endif
     }
 
 #if !TASTEMAP_HYBRID_BRIDGE_CORE
@@ -341,7 +357,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             latitude: value.latitude,
             longitude: value.longitude,
             status: status,
-            tags: value.tags,
+            tags: RestaurantCandidate.categoryLabels(value.tags),
             phone: value.phone,
             websiteUrl: value.websiteUrl,
             openingHours: value.openingHours,
@@ -988,7 +1004,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             let content = index == 0 ? original : replacingImage(
                 original,
                 with: index.isMultiple(of: 2)
-                    ? debugCategoryDescriptor(name: value.name, tags: value.tags, seed: value.id)
+                    ? debugCategoryDescriptor(name: value.name, tags: RestaurantCandidate.categoryLabels(value.tags), seed: value.id)
                     : debugUGCDescriptor(value: value, ownerID: person(index, city: value.city).id, kind: .publicUGC)
             )
             let referenceName = restaurants[(index + 1) % restaurants.count].name
@@ -1117,7 +1133,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     ) -> TasteMapHybridContentRestaurantDTO {
         TasteMapHybridContentRestaurantDTO(
             id: value.id, name: value.name, address: value.address, city: value.city,
-            latitude: value.latitude, longitude: value.longitude, tags: value.tags,
+            latitude: value.latitude, longitude: value.longitude, tags: RestaurantCandidate.categoryLabels(value.tags),
             referencePrice: value.referencePrice, image: image
         )
     }
@@ -1148,7 +1164,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         kind: TasteMapHybridImageKind
     ) -> TasteMapHybridImageDescriptor {
         guard let resourceURL = value.contentImage?.resourceURL, let photoID = value.contentImage?.photoID else {
-            return debugCategoryDescriptor(name: value.name, tags: value.tags, seed: value.id)
+            return debugCategoryDescriptor(name: value.name, tags: RestaurantCandidate.categoryLabels(value.tags), seed: value.id)
         }
         let visitID: String?
         switch kind {
@@ -1174,9 +1190,9 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     private func contentRestaurant(_ value: TasteMapHybridRestaurantDTO) -> TasteMapHybridContentRestaurantDTO {
         TasteMapHybridContentRestaurantDTO(
             id: value.id, name: value.name, address: value.address, city: value.city,
-            latitude: value.latitude, longitude: value.longitude, tags: value.tags,
+            latitude: value.latitude, longitude: value.longitude, tags: RestaurantCandidate.categoryLabels(value.tags),
             referencePrice: value.referencePrice,
-            image: value.contentImage ?? categoryDescriptor(name: value.name, tags: value.tags, seed: value.id),
+            image: value.contentImage ?? categoryDescriptor(name: value.name, tags: RestaurantCandidate.categoryLabels(value.tags), seed: value.id),
             contentImageResolution: value.contentImageResolution
         )
     }
@@ -1195,7 +1211,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             latitude: value.latitude,
             longitude: value.longitude,
             status: item.viewerState == "visited" ? "visited" : "wantToGo",
-            tags: value.tags,
+            tags: RestaurantCandidate.categoryLabels(value.tags),
             phone: nil,
             openingHours: nil,
             referencePrice: value.referencePrice,
@@ -1216,7 +1232,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     private func contentRestaurant(_ value: DiscoveryRestaurantProjectionV1) -> TasteMapHybridContentRestaurantDTO {
         TasteMapHybridContentRestaurantDTO(
             id: value.globalKey, name: value.name, address: value.address, city: value.city,
-            latitude: value.latitude, longitude: value.longitude, tags: value.tags,
+            latitude: value.latitude, longitude: value.longitude, tags: RestaurantCandidate.categoryLabels(value.tags),
             referencePrice: value.pricePerPerson,
             image: publicUGCOrCategoryDescriptor(photo: value.photo, seed: value.globalKey, name: value.name, tags: value.tags)
         )
@@ -1296,6 +1312,10 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 && !filters.requireActualPhoto
                 && (filters.minimumPublicScoreOutOfTen ?? 0) <= 8.5
                 && (filters.minimumPublicRatingUsers ?? 0) <= 8
+                // This older isolated fixture has match=88 but no historical
+                // predicted-rating producer. Missing predictions never pass a bound.
+                && filters.minimumPredictedLikingOutOfTen == nil
+                && (filters.minimumTasteMatchPercent.map { mode == "for_you" && $0 <= 88 } ?? true)
                 && (filters.distance.map { distance(index) <= $0.maximumMeters } ?? true)
         }.sorted { left, right in
             // All other supported scores/timestamps already tie or follow index
@@ -1389,6 +1409,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 sampleCount: value.ratings.community.sampleCount
             ),
             personalTastePercent: value.personalTastePercent,
+            predictedLiking: value.predictedLiking,
             calibratedLikeProbability: value.calibratedLikeProbability,
             reasons: value.reasons.map { .init(code: $0.code, text: $0.text, evidence: $0.evidence) },
             reason: value.reasons.first?.text ?? "来自 Taste Map 的真实记录",
@@ -1723,7 +1744,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
                 )
                 : nil
             let persistedMetadata = TasteMapHybridRestaurantMetadata(
-                tags: contract?.tags ?? [],
+                tags: RestaurantCandidate.categoryLabels(contract?.tags ?? []),
                 phone: contract?.phone,
                 websiteUrl: contract?.websiteUrl,
                 openingHours: contract?.openingHours,
@@ -1771,7 +1792,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             )
             : nil
         let persistedMetadata = TasteMapHybridRestaurantMetadata(
-            tags: contract?.tags ?? [],
+            tags: RestaurantCandidate.categoryLabels(contract?.tags ?? []),
             phone: contract?.phone,
             websiteUrl: contract?.websiteUrl,
             openingHours: contract?.openingHours,
@@ -1812,7 +1833,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             latitude: restaurant.latitude,
             longitude: restaurant.longitude,
             status: status.rawValue,
-            tags: metadata.tags,
+            tags: RestaurantCandidate.categoryLabels(metadata.tags),
             phone: metadata.phone,
             websiteUrl: metadata.websiteUrl,
             openingHours: metadata.openingHours,
@@ -1988,7 +2009,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         if usesOwnerEmoji {
             return categoryDescriptor(
                 name: restaurant.name,
-                tags: metadata.tags,
+                tags: RestaurantCandidate.categoryLabels(metadata.tags),
                 seed: restaurant.id.uuidString.lowercased(),
                 preferredEmoji: metadata.markerEmoji
             )
@@ -2039,7 +2060,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         case .foodDiningFallback:
             return debugCategoryDescriptor(
                 name: restaurant.name,
-                tags: metadata.tags,
+                tags: RestaurantCandidate.categoryLabels(metadata.tags),
                 seed: restaurant.id.uuidString.lowercased()
             )
         }
@@ -2048,7 +2069,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
     private func contentImageResolution(
         restaurant: Restaurant, metadata: TasteMapHybridRestaurantMetadata, activeVisitIDs: Set<UUID>
     ) -> TasteMapHybridImageResolutionDTO {
-        let fallback = categoryDescriptor(name: restaurant.name, tags: metadata.tags,
+        let fallback = categoryDescriptor(name: restaurant.name, tags: RestaurantCandidate.categoryLabels(metadata.tags),
                                           seed: restaurant.remoteID ?? restaurant.id.uuidString.lowercased())
 #if TASTEMAP_HYBRID_BRIDGE_CORE
         return .init(sources: [], fallback: fallback)

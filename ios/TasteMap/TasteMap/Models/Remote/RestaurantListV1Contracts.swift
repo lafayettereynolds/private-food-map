@@ -28,6 +28,27 @@ struct RestaurantListPlaceContractV1: Codable, Equatable, Identifiable, Sendable
 
     var id: String { globalKey }
 
+    private enum CodingKeys: String, CodingKey {
+        case globalKey, restaurantId, placeIdentities, name, address, city, latitude, longitude
+        case markerPhotoId, merchantImageUrl, markerEmoji
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(globalKey, forKey: .globalKey)
+        try values.encode(restaurantId, forKey: .restaurantId)
+        try values.encode(placeIdentities, forKey: .placeIdentities)
+        try values.encode(name, forKey: .name)
+        try values.encode(address, forKey: .address)
+        try values.encode(city, forKey: .city)
+        try values.encode(latitude, forKey: .latitude)
+        try values.encode(longitude, forKey: .longitude)
+        // The shared wire contract requires explicit null, not an omitted key.
+        try values.encode(markerPhotoId, forKey: .markerPhotoId)
+        try values.encode(merchantImageUrl, forKey: .merchantImageUrl)
+        try values.encode(markerEmoji, forKey: .markerEmoji)
+    }
+
     init(
         globalKey: String,
         restaurantId: String,
@@ -75,6 +96,27 @@ struct RestaurantListSyncContractV1: Codable, Equatable, Sendable {
     let createdAt: String
     let updatedAt: String
     let deletedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, userId, title, description, visibility, isRanked, coverMode
+        case customCoverPhotoId, createdAt, updatedAt, deletedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(schemaVersion, forKey: .schemaVersion)
+        try values.encode(id, forKey: .id)
+        try values.encode(userId, forKey: .userId)
+        try values.encode(title, forKey: .title)
+        try values.encode(description, forKey: .description)
+        try values.encode(visibility, forKey: .visibility)
+        try values.encode(isRanked, forKey: .isRanked)
+        try values.encode(coverMode, forKey: .coverMode)
+        try values.encode(customCoverPhotoId, forKey: .customCoverPhotoId)
+        try values.encode(createdAt, forKey: .createdAt)
+        try values.encode(updatedAt, forKey: .updatedAt)
+        try values.encode(deletedAt, forKey: .deletedAt)
+    }
 
     init(
         schemaVersion: Int = SyncV1Contract.schemaVersion,
@@ -126,6 +168,27 @@ struct RestaurantListItemSyncContractV1: Codable, Equatable, Sendable {
     let createdAt: String
     let updatedAt: String
     let deletedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, userId, listId, restaurantId, restaurantGlobalKey, position, note
+        case restaurant, createdAt, updatedAt, deletedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(schemaVersion, forKey: .schemaVersion)
+        try values.encode(id, forKey: .id)
+        try values.encode(userId, forKey: .userId)
+        try values.encode(listId, forKey: .listId)
+        try values.encode(restaurantId, forKey: .restaurantId)
+        try values.encode(restaurantGlobalKey, forKey: .restaurantGlobalKey)
+        try values.encode(position, forKey: .position)
+        try values.encode(note, forKey: .note)
+        try values.encode(restaurant, forKey: .restaurant)
+        try values.encode(createdAt, forKey: .createdAt)
+        try values.encode(updatedAt, forKey: .updatedAt)
+        try values.encode(deletedAt, forKey: .deletedAt)
+    }
 
     init(
         schemaVersion: Int = SyncV1Contract.schemaVersion,

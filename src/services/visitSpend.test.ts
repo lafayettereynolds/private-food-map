@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { inferredActualSpend, resolveVisitActualSpend, summarizeVisitSpend } from './visitSpend'
+import { inferredActualSpend, resolveVisitActualSpend, summarizeVisitSpend, visitSpendLabel } from './visitSpend'
 
 describe('visit spend', () => {
+  it('renders omitted and null Native amounts as unrecorded, without mutating the input', () => {
+    const omitted = Object.freeze({ partySize: 1 })
+    expect(visitSpendLabel(omitted)).toBe('未记价格')
+    expect(visitSpendLabel({ totalPrice: null, myActualSpend: null, pricePerPerson: null, partySize: 1 })).toBe('未记价格')
+    expect(omitted).toEqual({ partySize: 1 })
+  })
+
+  it('preserves zero, explicit personal payment and table/reference semantics', () => {
+    expect(visitSpendLabel({ totalPrice: 0, partySize: 1 })).toBe('我的消费 ¥0')
+    expect(visitSpendLabel({ paymentMode: 'treated' })).toBe('我的消费 ¥0')
+    expect(visitSpendLabel({ myActualSpend: 35 })).toBe('我的消费 ¥35')
+    expect(visitSpendLabel({ totalPrice: 200, partySize: 4 })).toBe('整桌 ¥200')
+    expect(visitSpendLabel({ totalPrice: 200, partySize: 4, pricePerPerson: 50 })).toBe('整桌 ¥200 · ¥50/人')
+    expect(visitSpendLabel({ totalPrice: 200, partySize: 4, paymentMode: 'aa' })).toBe('我的消费 ¥50 · 整桌 ¥200')
+  })
+
+  it.each([Number.NaN, Infinity, -1])('does not render invalid amount %s', (invalid) => {
+    expect(visitSpendLabel({ totalPrice: invalid, pricePerPerson: invalid })).toBe('未记价格')
+    expect(visitSpendLabel({ myActualSpend: 20, totalPrice: invalid })).toBe('我的消费 ¥20')
+    expect(visitSpendLabel({ totalPrice: 100, pricePerPerson: invalid, partySize: 2 })).toBe('整桌 ¥100')
+  })
   it('keeps an explicitly recorded personal amount authoritative', () => {
     expect(inferredActualSpend(600, 128.5, 'aa', 3)).toBe(128.5)
   })

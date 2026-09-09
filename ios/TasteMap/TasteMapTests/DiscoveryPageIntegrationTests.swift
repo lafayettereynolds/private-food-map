@@ -253,6 +253,30 @@ struct DiscoveryPageIntegrationTests {
         #expect(try ModelContext(container).fetch(FetchDescriptor<CachedDiscoveryRestaurant>()).isEmpty)
     }
 
+    @Test func transportObservationPreservesFailureAndDoesNotRetry() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DiscoveryPageURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); DiscoveryPageURLProtocol.handler = nil }
+        let api = URLSessionDiscoveryAPIClient(
+            configuration: .init(environment: .development, baseURL: URL(string: "https://discovery.example.test")!),
+            authorization: DiscoveryPageTestAuthorization(), session: session)
+        var count = 0
+        DiscoveryPageURLProtocol.handler = { request in
+            count += 1
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer scoped-test-only")
+            #expect(request.url?.path == "/api/v1/discovery/for-you")
+            throw URLError(.networkConnectionLost)
+        }
+        do {
+            _ = try await api.page(mode: .forYou, city: "杭州", trendWindowDays: 7, cursor: nil, limit: 20)
+            Issue.record("Expected original transport failure")
+        } catch {
+            #expect((error as? URLError)?.code == .networkConnectionLost)
+        }
+        #expect(count == 1)
+    }
+
     @Test func realAPIPathsKeepModesSevenOrThirtyDayWindowsAndStructuredCapacityError() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DiscoveryPageURLProtocol.self]

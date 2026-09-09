@@ -13,5 +13,6 @@ export function discoveryRefreshMessage(content: TasteMapHybridContentSnapshotDT
     const suffix = status.state === 'cached' ? '正在显示上次缓存。' : ''
     return [`${label}：${status.issue.message}${suffix}`]
   })
-  return messages.length ? messages.join(' ') : null
+  if (!messages.length) return null
+  return messages.length === 1 ? messages[0] : '部分发现内容暂未更新，已保留可用缓存，请稍后重试。'
 }

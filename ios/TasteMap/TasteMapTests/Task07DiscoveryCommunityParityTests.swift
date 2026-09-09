@@ -7,9 +7,9 @@ import Testing
 struct Task07DiscoveryCommunityParityTests {
     @Test func recommendationSortAndFiltersUseVisibleRealProjections() {
         let cards = [
-            card(key: "far-high", rank: 2, rating: 4.8, latitude: 30.30),
-            card(key: "near-low", rank: 1, rating: 3.8, latitude: 30.251),
-            card(key: "near-high", rank: 3, rating: 4.6, latitude: 30.252),
+            card(key: "far-high", rank: 2, rating: 1, latitude: 30.30, liking: 9.6, match: 60),
+            card(key: "near-low", rank: 1, rating: 5, latitude: 30.251, liking: 7.6, match: 98),
+            card(key: "near-high", rank: 3, rating: 2, latitude: 30.252, liking: 9.2, match: 90),
         ]
         let anchor = DiscoveryBrowseCoordinate(latitude: 30.25, longitude: 120.16)
 
@@ -19,10 +19,15 @@ struct Task07DiscoveryCommunityParityTests {
         #expect(recommended.cards.map(\.restaurant.globalKey) == ["near-low", "far-high", "near-high"])
 
         var highest = DiscoveryBrowseFilters()
-        highest.sort = .highestRated
-        highest.minimumRating = 4.5
+        highest.sort = .predictedLiking
+        highest.minimumPredictedLikingOutOfTen = 9
         let rated = DiscoveryBrowseResolver.resolve(cards: cards, filters: highest, anchor: nil)
         #expect(rated.cards.map(\.restaurant.globalKey) == ["far-high", "near-high"])
+        highest.minimumTasteMatchPercent = 80
+        #expect(DiscoveryBrowseResolver.resolve(cards: cards, filters: highest, anchor: nil).cards.map(\.restaurant.globalKey) == ["near-high"])
+        highest.minimumPredictedLikingOutOfTen = nil
+        highest.sort = .tasteMatch
+        #expect(DiscoveryBrowseResolver.resolve(cards: cards, filters: highest, anchor: nil).cards.map(\.restaurant.globalKey) == ["near-low", "near-high"])
 
         var nearest = DiscoveryBrowseFilters()
         nearest.sort = .nearest
@@ -41,6 +46,17 @@ struct Task07DiscoveryCommunityParityTests {
         )
         #expect(resolution.cards.isEmpty)
         #expect(resolution.emptyReason == .locationUnavailable)
+    }
+
+    @Test func missingPredictionCannotBorrowPublicRatingOrMatch() {
+        let missing = card(key: "missing", rank: 1, rating: 5, latitude: 30.25, match: 100)
+        var filters = DiscoveryBrowseFilters()
+        filters.minimumPredictedLikingOutOfTen = 0
+        #expect(DiscoveryBrowseResolver.resolve(cards: [missing], filters: filters, anchor: nil).cards.isEmpty)
+        filters.reset()
+        filters.minimumTasteMatchPercent = 0
+        let noMatch = card(key: "no-match", rank: 2, rating: 5, latitude: 30.25, liking: 10)
+        #expect(DiscoveryBrowseResolver.resolve(cards: [noMatch], filters: filters, anchor: nil).cards.isEmpty)
     }
 
     @Test func providerNeutralCandidatePreservesEveryIdentityButNoAuthorData() {
@@ -181,12 +197,14 @@ struct Task07DiscoveryCommunityParityTests {
         #expect(try context.fetch(FetchDescriptor<SyncMutation>()).count == 1)
     }
 
-    private func card(key: String, rank: Int, rating: Double, latitude: Double) -> DiscoveryCardV1 {
+    private func card(key: String, rank: Int, rating: Double, latitude: Double, liking: Double? = nil, match: Int? = nil) -> DiscoveryCardV1 {
         .init(
             id: key, mode: .forYou, restaurant: projection(key: key, latitude: latitude),
             viewerState: .none, ratings: ratings(rating),
             reasons: [.init(code: "REAL", text: "真实推荐依据")], sourceUser: nil,
-            similarity: nil, trend: nil, cacheScope: .public, rank: rank, score: Double(100 - rank)
+            similarity: nil, trend: nil, cacheScope: .public, rank: rank, score: Double(100 - rank),
+            personalTastePercent: match,
+            predictedLiking: liking.map { .init(scoreOutOfTen: $0, ratedRestaurantCount: 5, ratedVisitCount: 8, matchedRestaurantCount: 3, method: "owner_history_weighted_rating_v1") }
         )
     }
 

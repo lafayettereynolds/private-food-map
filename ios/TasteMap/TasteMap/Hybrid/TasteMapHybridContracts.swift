@@ -46,7 +46,8 @@ public struct TasteMapHybridAuthResultDTO: Codable, Sendable {
 
 public enum TasteMapHybridRuntimeMode: String, Codable, Sendable {
     case nativePrimary = "NATIVE_PRIMARY"
-#if DEBUG
+    case hybridPrimary = "HYBRID_PRIMARY"
+#if DEBUG || TASTEMAP_PRIVATE_PREVIEW
     case hybridDevelopment = "HYBRID_DEVELOPMENT"
 #endif
 }
@@ -469,6 +470,7 @@ public struct TasteMapHybridRestaurantDetailDTO: Codable, Sendable {
     public let viewerState: String
     public let editableVisitIDs: [String]
     public let capabilities: TasteMapHybridRestaurantCapabilitiesDTO
+    public var deletablePhotoIDs: [String]? = nil
 }
 
 public struct TasteMapHybridRestaurantSocialStatsDTO: Codable, Equatable, Sendable {
@@ -901,6 +903,14 @@ public struct TasteMapDiscoveryTasteEvidenceDTO: Codable, Equatable, Sendable {
     public let records: [Record]
 }
 
+public struct TasteMapPredictedLikingDTO: Codable, Equatable, Sendable {
+    public let scoreOutOfTen: Double?
+    public let ratedRestaurantCount: Int
+    public let ratedVisitCount: Int
+    public let matchedRestaurantCount: Int
+    public let method: String
+}
+
 public struct TasteMapHybridDiscoveryItemDTO: Codable, Sendable {
     public let id: String
     public let mode: String
@@ -916,6 +926,7 @@ public struct TasteMapHybridDiscoveryItemDTO: Codable, Sendable {
     public let commentCount: Int
     public let communityRating: TasteMapHybridRatingSummaryDTO
     public let personalTastePercent: Int?
+    public var predictedLiking: TasteMapPredictedLikingDTO? = nil
     public var calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO? = nil
     public let reasons: [TasteMapHybridDiscoveryReasonDTO]
     public let reason: String
@@ -1213,6 +1224,7 @@ public struct TasteMapHybridLocationDTO: Codable, Sendable {
     public let horizontalAccuracy: Double
     public let accuracyMode: String
     public let authorizationStatus: String
+    public var detectedCity: String? = nil
 }
 
 public struct TasteMapHybridAcquisitionSearchRequest: Codable, Sendable {

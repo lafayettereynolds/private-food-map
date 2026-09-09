@@ -25,8 +25,23 @@ actor AuthSessionManager: SyncAuthorizationProviding {
     }
 
     func headers() async throws -> [String: String] {
-        let credential = try await validCredential()
-        return ["Authorization": "Bearer \(credential.accessToken)"]
+        do {
+            let credential = try await validCredential()
+            return ["Authorization": "Bearer \(credential.accessToken)"]
+        } catch {
+            // Classifications only: never persist tokens, response bodies or messages.
+            let kind: String
+            switch error {
+            case AuthSessionError.notAuthenticated: kind = "not_authenticated"
+            case AuthSessionError.sessionExpired: kind = "session_expired"
+            case AuthClientError.server(let status, _, _): kind = "server_\(status)"
+            case is DecodingError: kind = "response_decode"
+            case let error as URLError: kind = "transport_\(error.errorCode)"
+            default: kind = "credential_unavailable"
+            }
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=auth event=headers_failed kind=\(kind)")
+            throw error
+        }
     }
 
     func recoverUnauthorized(failedAuthorization: String?) async throws -> Bool {
@@ -43,7 +58,9 @@ actor AuthSessionManager: SyncAuthorizationProviding {
         var newCredential = try AuthCredential(response: response)
         newCredential.appleUserIdentifier = appleUserIdentifier
         try credentialStore.save(newCredential)
+        advanceGeneration()
         credential = newCredential
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=auth event=session_accepted")
         return newCredential.user
     }
 
@@ -64,6 +81,7 @@ actor AuthSessionManager: SyncAuthorizationProviding {
         refreshTask = nil
         try credentialStore.delete()
         guard let previous else { return }
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=auth event=local_logout_complete")
         do {
             try await api.logout(accessToken: previous.accessToken, refreshToken: previous.refreshToken)
         } catch {
@@ -75,38 +93,15 @@ actor AuthSessionManager: SyncAuthorizationProviding {
 
     /// Used only after the server has completed authenticated account deletion.
     /// No second logout request is sent because every server session has already
-        advanceGeneration()
     /// been revoked by the deletion job.
     func clearLocalSessionAfterAccountDeletion() throws {
+        advanceGeneration()
         credential = nil
         refreshTask?.cancel()
         refreshTask = nil
         try credentialStore.delete()
     }
 
-    private func validCredential() async throws -> AuthCredential {
-        guard let credential else { throw AuthSessionError.notAuthenticated }
-        guard credential.refreshTokenExpiresAt > now() else {
-            try credentialStore.delete()
-            self.credential = nil
-            throw AuthSessionError.sessionExpired
-        }
-        if credential.accessTokenExpiresAt.timeIntervalSince(now()) > 30 { return credential }
-        return try await refreshCredential()
-    }
-
-        advanceGeneration()
-    private func refreshCredential() async throws -> AuthCredential {
-        if let refreshTask {
-            let origin = generation
-            let value = try await refreshTask.value
-            guard origin == generation else { throw AuthSessionError.notAuthenticated }
-            return value
-        }
-        guard let current = credential, current.refreshTokenExpiresAt > now() else {
-            try credentialStore.delete()
-            credential = nil
-            throw AuthSessionError.sessionExpired
     private func advanceGeneration() {
         generation = UUID()
         refreshTask?.cancel()
@@ -155,8 +150,31 @@ actor AuthSessionManager: SyncAuthorizationProviding {
         }
     }
 
+    private func validCredential() async throws -> AuthCredential {
+        guard let credential else { throw AuthSessionError.notAuthenticated }
+        guard credential.refreshTokenExpiresAt > now() else {
+            try credentialStore.delete()
+            self.credential = nil
+            throw AuthSessionError.sessionExpired
+        }
+        if credential.accessTokenExpiresAt.timeIntervalSince(now()) > 30 { return credential }
+        return try await refreshCredential()
+    }
+
+    private func refreshCredential() async throws -> AuthCredential {
+        if let refreshTask {
+            let origin = generation
+            let value = try await refreshTask.value
+            guard origin == generation else { throw AuthSessionError.notAuthenticated }
+            return value
+        }
+        guard let current = credential, current.refreshTokenExpiresAt > now() else {
+            try credentialStore.delete()
+            credential = nil
+            throw AuthSessionError.sessionExpired
         }
         let api = self.api
+        let originatingGeneration = generation
         authDebug("Access token refresh started")
         let task = Task<AuthCredential, Error> {
             var result = try AuthCredential(response: try await api.refresh(refreshToken: current.refreshToken))
@@ -167,17 +185,18 @@ actor AuthSessionManager: SyncAuthorizationProviding {
         refreshTask = task
         do {
             let refreshed = try await task.value
+            guard generation == originatingGeneration else { throw AuthSessionError.notAuthenticated }
             try credentialStore.save(refreshed)
             credential = refreshed
             refreshTask = nil
             authDebug("Access token refresh completed")
             return refreshed
         } catch {
+            guard generation == originatingGeneration else { throw AuthSessionError.notAuthenticated }
             refreshTask = nil
             authDebug("Access token refresh failed: \(String(describing: type(of: error)))")
             if case AuthClientError.server(let status, _, _) = error, status == 401 {
                 try credentialStore.delete()
-        let originatingGeneration = generation
                 credential = nil
             }
             throw error
@@ -185,14 +204,12 @@ actor AuthSessionManager: SyncAuthorizationProviding {
     }
 }
 
-            guard generation == originatingGeneration else { throw AuthSessionError.notAuthenticated }
 nonisolated private func authDebug(_ message: String) {
 #if DEBUG
     Logger(subsystem: "com.lafayette.tastemap", category: "AuthSession")
         .debug("\(message, privacy: .public)")
 #endif
 }
-            guard generation == originatingGeneration else { throw AuthSessionError.notAuthenticated }
 
 enum AuthSessionError: Error, Equatable {
     case notAuthenticated

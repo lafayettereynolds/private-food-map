@@ -9,6 +9,24 @@ import UniformTypeIdentifiers
 @Suite("P2-B Photo selection and transfer")
 @MainActor
 struct P2BPhotoFlowTests {
+    @Test("Shared legacy/development photo root is not orphan-cleaned from one store")
+    func sharedStoreCleanupPreservesFiles() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("TasteMap/Photos")
+        let files = try LocalPhotoFileStore(rootURL: root)
+        let path = try await files.save(Data([1, 2, 3]), photoID: UUID(), mimeType: "image/jpeg")
+        try Data().write(to: directory.appendingPathComponent("TasteMap.store"))
+        try Data().write(to: directory.appendingPathComponent("TasteMapDevelopment.store"))
+        try await files.cleanupOrphans(retaining: [])
+        #expect(await files.fileExists(relativePath: path))
+        try await files.delete(relativePath: path)
+        #expect(await files.fileExists(relativePath: path) == false)
+        let single = try await files.save(Data([4]), photoID: UUID(), mimeType: "image/jpeg")
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("TasteMapDevelopment.store"))
+        try await files.cleanupOrphans(retaining: [])
+        #expect(await files.fileExists(relativePath: single) == false)
+    }
     @Test("Large oriented input is normalized, compressed, and stored in three local variants")
     func processingAndOrientation() async throws {
         let directory = temporaryDirectory()
@@ -183,6 +201,15 @@ struct P2BPhotoFlowTests {
         #expect(try await coordinator.imageData(for: photo, variant: .thumbnail) == Data([1, 2, 3, 4]))
         #expect(await api.downloadCallCount() == 1)
         #expect(photo.thumbnailFileRelativePath != nil)
+        // A new coordinator (memory-cache loss) still reads the persisted file.
+        let reopened = PhotoTransferCoordinator(context: context, api: api, files: files, hasAuthenticatedSession: { true })
+        #expect(try await reopened.imageData(for: photo, variant: .thumbnail) == Data([1, 2, 3, 4]))
+        #expect(await api.downloadCallCount() == 1)
+        // A stale file path must fall back to the authenticated download again.
+        try await files.delete(relativePath: try #require(photo.thumbnailFileRelativePath))
+        let missing = PhotoTransferCoordinator(context: context, api: api, files: files, hasAuthenticatedSession: { true })
+        #expect(try await missing.imageData(for: photo, variant: .thumbnail) == Data([1, 2, 3, 4]))
+        #expect(await api.downloadCallCount() == 2)
     }
 
     @Test("A synced tombstone removes private binary content without removing the Visit")
@@ -222,6 +249,104 @@ struct P2BPhotoFlowTests {
         #expect(photo.binaryDeletedAt != nil)
         #expect(await api.deleteCallCount() == 1)
         #expect(try context.fetch(FetchDescriptor<Visit>()).contains { $0.id == parents.visit.id })
+    }
+
+    @Test("Owner deletion hides a cached image immediately and retains tombstone across cleanup retries")
+    func localFirstDeleteAndRetry() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let parents = insertParents(context)
+        let files = try LocalPhotoFileStore(rootURL: directory)
+        let api = MockPhotoBinaryAPI()
+        let coordinator = PhotoTransferCoordinator(context: context, api: api, files: files, hasAuthenticatedSession: { true })
+        let prepared = try await coordinator.preparePhoto(data: sampleJPEG())
+        let photo = try LocalDishPhotoStore(context: context, photoFiles: files).createLocalPhoto(
+            prepared: prepared, kind: .visit, restaurantId: parents.restaurant.id,
+            visitId: parents.visit.id, queueForUpload: false)
+        let paths = prepared.allRelativePaths
+        photo.serverVersion = 1
+        photo.syncStatus = .synced
+        _ = try await coordinator.imageData(for: photo, variant: .thumbnail)
+        await api.failDeletes(true)
+        try await coordinator.delete(photo)
+        #expect(photo.deletedAt != nil)
+        #expect(photo.uploadState == .deleted)
+        #expect(photo.binaryDeletedAt == nil)
+        #expect(try SwiftDataSyncQueue(context: context).allMutations().contains { $0.entityType == .photo && $0.operation == .delete })
+        do {
+            _ = try await coordinator.imageData(for: photo, variant: .thumbnail)
+            Issue.record("Deleted cached photo was returned")
+        } catch { }
+        photo.syncStatus = .synced
+        await coordinator.processNowForTesting()
+        #expect(photo.binaryDeletedAt == nil)
+        #expect(photo.uploadRetryCount > 0)
+        #expect(photo.uploadLastError != nil)
+        await api.failDeletes(false)
+        photo.uploadRetryAfter = nil
+        await coordinator.processNowForTesting()
+        #expect(photo.binaryDeletedAt != nil)
+        #expect(photo.deletedAt != nil)
+        for path in paths { #expect(await files.fileExists(relativePath: path) == false) }
+        #expect(try context.fetch(FetchDescriptor<Visit>()).contains { $0.id == parents.visit.id })
+    }
+
+    @Test("Photo deletion checks owner before tombstone or binary mutation")
+    func rejectsForeignPhotoDeletion() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let photo = PhotoAsset(ownerUserID: "another-owner", kind: .avatar, mimeType: "image/jpeg", byteSize: 1)
+        container.mainContext.insert(photo)
+        let api = MockPhotoBinaryAPI()
+        let coordinator = PhotoTransferCoordinator(context: container.mainContext, api: api,
+            files: try LocalPhotoFileStore(rootURL: directory), hasAuthenticatedSession: { true })
+        do { try await coordinator.delete(photo); Issue.record("Foreign deletion was accepted") } catch { }
+        #expect(photo.deletedAt == nil)
+        #expect(await api.deleteCallCount() == 0)
+    }
+
+    @Test("A display-only QA owner without a session cannot authorize photo deletion")
+    func rejectsMissingSessionDeletion() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let photo = PhotoAsset(kind: .avatar, mimeType: "image/jpeg", byteSize: 1)
+        container.mainContext.insert(photo)
+        let api = MockPhotoBinaryAPI()
+        let coordinator = PhotoTransferCoordinator(context: container.mainContext, api: api,
+            files: try LocalPhotoFileStore(rootURL: directory), hasAuthenticatedSession: { false })
+        do { try await coordinator.delete(photo); Issue.record("Missing session authorized deletion") }
+        catch { #expect(error as? PhotoBinaryAPIError == .server(status: 403, message: "只能删除自己上传的照片。")) }
+        #expect(photo.deletedAt == nil)
+        #expect(try SwiftDataSyncQueue(context: container.mainContext).allMutations().isEmpty)
+        #expect(await api.deleteCallCount() == 0)
+    }
+
+    @Test("Restaurant bridge exposes delete authority only for active current-owner photo IDs")
+    func bridgePhotoDeleteAuthority() throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let parents = insertParents(context)
+        parents.restaurant.ownerUserID = "tm_photo_owner"
+        parents.visit.ownerUserID = "tm_photo_owner"
+        let own = PhotoAsset(ownerUserID: "tm_photo_owner", restaurantId: parents.restaurant.id,
+            visitId: parents.visit.id, kind: .visit, mimeType: "image/jpeg", byteSize: 1)
+        let foreign = PhotoAsset(ownerUserID: "tm_someone_else", restaurantId: parents.restaurant.id,
+            visitId: parents.visit.id, kind: .visit, mimeType: "image/jpeg", byteSize: 1)
+        context.insert(own); context.insert(foreign)
+        try context.save()
+        let before = try TasteMapHybridBridgeService(container: container, ownerUserID: "tm_photo_owner")
+            .restaurantDetail(id: parents.restaurant.id.uuidString)
+        #expect(before.deletablePhotoIDs?.contains(own.id.uuidString.lowercased()) == true)
+        #expect(before.deletablePhotoIDs?.contains(foreign.id.uuidString.lowercased()) == false)
+        own.deletedAt = .now
+        try context.save()
+        let after = try TasteMapHybridBridgeService(container: container, ownerUserID: "tm_photo_owner")
+            .restaurantDetail(id: parents.restaurant.id.uuidString)
+        #expect(after.deletablePhotoIDs?.isEmpty == true)
     }
 
     private func insertParents(_ context: ModelContext) -> (restaurant: Restaurant, visit: Visit) {
@@ -316,6 +441,7 @@ private actor MockPhotoBinaryAPI: PhotoBinaryAPI {
     private var downloads = 0
     private var deletes = 0
     private var shouldLoseFirstResponse: Bool
+    private var deleteFailure = false
 
     init(failFirstUploadResponse: Bool = false) {
         shouldLoseFirstResponse = failFirstUploadResponse
@@ -357,8 +483,11 @@ private actor MockPhotoBinaryAPI: PhotoBinaryAPI {
 
     func delete(photoID: UUID) async throws {
         deletes += 1
+        if deleteFailure { throw URLError(.timedOut) }
         objects.removeAll()
     }
+
+    func failDeletes(_ value: Bool) { deleteFailure = value }
 
     func seedDownload(_ data: Data, variant: PhotoBinaryVariant) { objects[variant] = data }
     func uniqueObjectCount() -> Int { objects.count }

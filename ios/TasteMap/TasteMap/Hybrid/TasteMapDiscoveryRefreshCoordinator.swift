@@ -39,8 +39,17 @@ func tasteMapDiscoveryRefreshIssue(_ error: Error, stage: TasteMapDiscoveryRefre
         return .init(code: code, message: message, recoverable: error.status != 401 && error.status != 403,
                      details: ["status": .number(Double(error.status))])
     }
-    return .init(code: (error as? URLError)?.code == .notConnectedToInternet ? "discovery_offline" : "discovery_refresh_failed",
-                 message: "发现内容暂未更新，请检查网络后重试。", recoverable: true, details: nil)
+    if error is DecodingError {
+        return .init(code: "discovery_response_invalid", message: "发现数据格式异常，请稍后重试。", recoverable: true, details: nil)
+    }
+    if let error = error as? URLError {
+        let offline = error.code == .notConnectedToInternet
+        let timeout = error.code == .timedOut
+        return .init(code: offline ? "discovery_offline" : timeout ? "discovery_timeout" : "discovery_transport_failed",
+                     message: offline ? "当前未连接互联网，请连接后重试。" : timeout ? "发现请求超时，请重试。" : "暂时无法连接发现服务，请稍后重试。",
+                     recoverable: true, details: ["transportCode": .number(Double(error.errorCode))])
+    }
+    return .init(code: "discovery_refresh_failed", message: "发现内容暂未更新，请稍后重试。", recoverable: true, details: nil)
 }
 
 /// Coordinates only Discovery refreshes. Requests never own navigation or the
@@ -57,6 +66,8 @@ final class TasteMapDiscoveryRefreshCoordinator {
     private var statuses: [Scope: TasteMapHybridDiscoveryRefreshStatusDTO] = [:]
     private var evidence: [Scope: TasteMapDiscoveryEvidenceAvailabilityDTO] = [:]
     private var successfulAt: [Scope: Date] = [:]
+    private var failedAt: [Scope: Date] = [:]
+    private var failureCount: [Scope: Int] = [:]
     private var revisions: [Scope: UInt64] = [:]
     private var pending: [Scope: Task<TasteMapHybridDiscoveryRefreshStatusDTO?, Never>] = [:]
     private var epoch: UInt64 = 0
@@ -71,6 +82,7 @@ final class TasteMapDiscoveryRefreshCoordinator {
         statuses.removeAll()
         evidence.removeAll()
         successfulAt.removeAll()
+        failedAt.removeAll(); failureCount.removeAll()
         revisions.removeAll()
     }
 
@@ -95,6 +107,8 @@ final class TasteMapDiscoveryRefreshCoordinator {
         if !force, let running = pending[scope] { return await running.value }
         if !force, let lastSuccess = successfulAt[scope], now().timeIntervalSince(lastSuccess) < 30,
            let current = statuses[scope], current.issue == nil { return current }
+        if !force, let failed = failedAt[scope], let current = statuses[scope],
+           now().timeIntervalSince(failed) < min(900, 60 * pow(2, Double(min(4, (failureCount[scope] ?? 1) - 1)))) { return current }
         let revision = (revisions[scope] ?? 0) &+ 1
         revisions[scope] = revision
         let currentEpoch = epoch
@@ -113,10 +127,14 @@ final class TasteMapDiscoveryRefreshCoordinator {
                 statuses[scope] = result
                 evidence[scope] = evidenceAvailability?(page)
                 successfulAt[scope] = now()
+                failedAt[scope] = nil; failureCount[scope] = nil
                 return result
             } catch {
                 guard canPublish() else { return nil }
                 let issue = tasteMapDiscoveryRefreshIssue(error, stage: stage)
+#if !TASTEMAP_HYBRID_BRIDGE_CORE
+                DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=refresh_failed mode=\(scope.mode) code=\(issue.code)")
+#endif
                 let restricted = (error as? TasteMapDiscoveryHTTPError).map { $0.status == 403 || $0.status == 401 } ?? false
                 var cachedDate: String?
                 do { cachedDate = try cachedGeneratedAt() } catch { cachedDate = nil }
@@ -126,8 +144,9 @@ final class TasteMapDiscoveryRefreshCoordinator {
                     sourceGeneratedAt: restricted ? nil : cachedDate, attemptedAt: attemptedAt, issue: issue)
                 statuses[scope] = result
                 if restricted || cachedDate == nil { evidence[scope] = nil }
-                // A failure is never a successful refresh, including one that
-                // followed a recent success. Immediate retries must hit the API.
+                failedAt[scope] = now()
+                failureCount[scope] = (failureCount[scope] ?? 0) + 1
+                // Automatic retries back off; an explicit user retry remains available.
                 successfulAt[scope] = nil
                 return result
             }

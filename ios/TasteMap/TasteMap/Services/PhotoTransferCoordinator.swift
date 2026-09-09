@@ -22,10 +22,12 @@ final class PhotoTransferCoordinator {
     @ObservationIgnored private var authObserver: NSObjectProtocol?
     @ObservationIgnored private var manualRetryObserver: NSObjectProtocol?
     @ObservationIgnored private var imageLoads: [String: Task<Data, Error>] = [:]
+    @ObservationIgnored private var uploadingPhotoIDs: Set<UUID> = []
     /// NSCache is thread-safe and automatically responds to memory pressure.
     /// The coordinator is MainActor-isolated, so this is a bounded decoded-
     /// source-data cache rather than a second persistent photo store.
     @ObservationIgnored private let imageDataCache = NSCache<NSString, NSData>()
+    @ObservationIgnored private var imageCacheKeys: [UUID: Set<NSString>] = [:]
     @ObservationIgnored private var rerunAfterProcessing = false
 
     init(
@@ -117,6 +119,14 @@ final class PhotoTransferCoordinator {
     }
 
     func retry(_ photo: PhotoAsset) throws {
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=photo event=manual_retry")
+        if photo.deletedAt != nil {
+            photo.uploadLastError = nil
+            photo.uploadRetryAfter = nil
+            try context.save()
+            scheduleProcessing()
+            return
+        }
         try enqueue(photo)
     }
 
@@ -194,9 +204,26 @@ final class PhotoTransferCoordinator {
     }
 
     func delete(_ photo: PhotoAsset) async throws {
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=photo event=delete_requested")
+        guard await authenticatedUserIDProvider() == photo.ownerUserID else {
+            throw PhotoBinaryAPIError.server(status: 403, message: "只能删除自己上传的照片。")
+        }
+        let cacheKeys = [PhotoBinaryVariant.display, .thumbnail].map { imageCacheKey(for: photo, variant: $0) }
         try LocalDishPhotoStore(context: context, photoFiles: files).delete(photo)
-        await synchronizeMetadata()
-        await cleanupDeletedBinary(photo)
+        for key in cacheKeys { imageDataCache.removeObject(forKey: key) }
+        invalidatePhotoMemory(photo.id)
+        for variant in [PhotoBinaryVariant.display, .thumbnail] {
+            imageLoads["\(photo.id.uuidString):\(variant.rawValue)"]?.cancel()
+        }
+        NotificationCenter.default.post(name: .tasteMapLocalDataDidChange, object: nil)
+        // The persisted local tombstone is the UI acknowledgement, not cloud
+        // completion. A restart resumes the same durable queue/cleanup state.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await self.purgeDeletedLocalFiles(photo)
+            await self.synchronizeMetadata()
+            self.scheduleProcessing()
+        }
     }
 
     func discardLocalPhoto(_ photo: PhotoAsset) async throws {
@@ -208,6 +235,7 @@ final class PhotoTransferCoordinator {
     }
 
     func imageData(for photo: PhotoAsset, variant: PhotoBinaryVariant) async throws -> Data {
+        guard photo.deletedAt == nil else { throw PhotoBinaryAPIError.server(status: 404, message: "照片已删除。") }
         let cacheKey = imageCacheKey(for: photo, variant: variant)
         if let cached = imageDataCache.object(forKey: cacheKey) {
             return cached as Data
@@ -216,7 +244,9 @@ final class PhotoTransferCoordinator {
             ? (photo.thumbnailFileRelativePath ?? photo.displayFileRelativePath ?? photo.localFileRelativePath)
             : (photo.displayFileRelativePath ?? photo.localFileRelativePath)
         if let localPath, let data = try? await files.load(relativePath: localPath) {
+            guard photo.deletedAt == nil else { throw CancellationError() }
             imageDataCache.setObject(data as NSData, forKey: cacheKey, cost: data.count)
+            imageCacheKeys[photo.id, default: []].insert(cacheKey)
             return data
         }
 
@@ -224,19 +254,28 @@ final class PhotoTransferCoordinator {
             ? .display
             : variant
         let key = "\(photo.id.uuidString):\(remoteVariant.rawValue)"
-        if let task = imageLoads[key] { return try await task.value }
+        if let task = imageLoads[key] {
+            let data = try await task.value
+            guard photo.deletedAt == nil else { throw CancellationError() }
+            return data
+        }
         let api = self.api
         let photoID = photo.id
         let task = Task<Data, Error> { try await api.download(photoID: photoID, variant: remoteVariant) }
         imageLoads[key] = task
         defer { imageLoads[key] = nil }
         let data = try await task.value
+        guard photo.deletedAt == nil else { throw CancellationError() }
         let path = try await files.save(
             data,
             photoID: photo.id,
             mimeType: photo.mimeType,
             variant: variant == .thumbnail ? .thumbnail : .display
         )
+        guard photo.deletedAt == nil else {
+            try? await files.delete(relativePath: path)
+            throw CancellationError()
+        }
         if variant == .thumbnail {
             photo.thumbnailFileRelativePath = path
             photo.cachedThumbnailStorageKey = photo.thumbnailStorageKey ?? photo.storageKey
@@ -246,6 +285,7 @@ final class PhotoTransferCoordinator {
         }
         try context.save()
         imageDataCache.setObject(data as NSData, forKey: cacheKey, cost: data.count)
+        imageCacheKeys[photo.id, default: []].insert(cacheKey)
         return data
     }
 
@@ -255,6 +295,7 @@ final class PhotoTransferCoordinator {
 
     func purgeTransientImageDataCache() {
         imageDataCache.removeAllObjects()
+        imageCacheKeys.removeAll()
     }
 
     private func configureImageDataCache() {
@@ -305,9 +346,11 @@ final class PhotoTransferCoordinator {
             guard !Task.isCancelled, networkAvailable else { break }
             do {
                 try await upload(photo)
+                DeviceAcceptanceLog.record("TasteMapDiagnostic category=photo event=upload_complete")
                 uploadedAny = true
             } catch {
                 let disposition = SyncErrorClassifier.disposition(for: error)
+                DeviceAcceptanceLog.record("TasteMapDiagnostic category=photo event=upload_failed disposition=\(disposition.rawValue)")
                 if disposition == .cancelled { continue }
                 let retryAfter = disposition == .retryable
                     ? Date().addingTimeInterval(min(pow(2, Double(photo.uploadRetryCount)) * 5, 300))
@@ -328,6 +371,9 @@ final class PhotoTransferCoordinator {
     }
 
     private func upload(_ photo: PhotoAsset) async throws {
+        guard photo.deletedAt == nil else { return }
+        uploadingPhotoIDs.insert(photo.id)
+        defer { uploadingPhotoIDs.remove(photo.id) }
         guard let displayPath = photo.displayFileRelativePath ?? photo.localFileRelativePath,
               let thumbnailPath = photo.thumbnailFileRelativePath else {
             throw PhotoImportError.invalidImage
@@ -335,6 +381,7 @@ final class PhotoTransferCoordinator {
         try LocalDishPhotoStore(context: context, photoFiles: files).markUploading(photo)
         let displayData = try await files.load(relativePath: displayPath)
         let thumbnailData = try await files.load(relativePath: thumbnailPath)
+        guard photo.deletedAt == nil else { return }
         let displayHash = photo.displayContentHash ?? PhotoImportService.sha256(displayData)
         let thumbnailHash = photo.thumbnailContentHash ?? PhotoImportService.sha256(thumbnailData)
         let mutationID = photo.uploadMutationID ?? UUID()
@@ -348,6 +395,7 @@ final class PhotoTransferCoordinator {
             contentType: "image/jpeg",
             checksum: displayHash
         )
+        guard photo.deletedAt == nil else { return }
         let thumbnail = try await api.upload(
             photoID: photo.id,
             mutationID: mutationID,
@@ -376,17 +424,46 @@ final class PhotoTransferCoordinator {
     }
 
     private func cleanupDeletedBinary(_ photo: PhotoAsset) async {
-        guard photo.binaryDeletedAt == nil,
+        if photo.deletedAt != nil { invalidatePhotoMemory(photo.id) }
+        guard photo.deletedAt != nil, photo.binaryDeletedAt == nil,
+              !uploadingPhotoIDs.contains(photo.id),
+              automaticRetryAllowed(photo),
+              photo.uploadRetryAfter == nil || photo.uploadRetryAfter! <= Date(),
               photo.storageProvider == nil || photo.storageProvider == .r2,
               photo.serverVersion == 0 || photo.syncStatus == .synced else { return }
+        guard await authenticatedUserIDProvider() == photo.ownerUserID else { return }
         do {
             try await api.delete(photoID: photo.id)
+            try await purgeDeletedLocalFiles(photo)
             photo.binaryDeletedAt = .now
             photo.uploadLastError = nil
+            photo.uploadRetryAfter = nil
             try context.save()
         } catch {
-            photo.uploadLastError = friendlyMessage(error)
+            let disposition = SyncErrorClassifier.disposition(for: error)
+            photo.uploadRetryCount += 1
+            photo.uploadLastError = "\(disposition.rawValue):照片删除尚未同步成功，请重试。"
+            photo.uploadRetryAfter = disposition == .retryable
+                ? Date().addingTimeInterval(min(pow(2, Double(photo.uploadRetryCount)) * 5, 300)) : nil
             try? context.save()
+        }
+    }
+
+    private func purgeDeletedLocalFiles(_ photo: PhotoAsset) async throws {
+        guard photo.deletedAt != nil else { return }
+        // Only sandbox copies. Never call Photos/PHAsset deletion APIs.
+        for path in Set([photo.localFileRelativePath, photo.displayFileRelativePath, photo.thumbnailFileRelativePath].compactMap { $0 }) {
+            try await files.delete(relativePath: path)
+            if photo.localFileRelativePath == path { photo.localFileRelativePath = nil }
+            if photo.displayFileRelativePath == path { photo.displayFileRelativePath = nil }
+            if photo.thumbnailFileRelativePath == path { photo.thumbnailFileRelativePath = nil }
+            try context.save()
+        }
+    }
+
+    private func invalidatePhotoMemory(_ id: UUID) {
+        for key in imageCacheKeys.removeValue(forKey: id) ?? [] {
+            imageDataCache.removeObject(forKey: key)
         }
     }
 
@@ -420,8 +497,9 @@ final class PhotoTransferCoordinator {
         retryTask?.cancel()
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         guard let date = photos.compactMap({ photo in
-            photo.ownerUserID == ownerUserID && photo.deletedAt == nil &&
-                photo.uploadState == .failed && automaticRetryAllowed(photo)
+            photo.ownerUserID == ownerUserID &&
+                ((photo.deletedAt == nil && photo.uploadState == .failed)
+                 || (photo.deletedAt != nil && photo.binaryDeletedAt == nil)) && automaticRetryAllowed(photo)
                 ? photo.uploadRetryAfter
                 : nil
         }).min() else { return }
@@ -441,7 +519,7 @@ final class PhotoTransferCoordinator {
     }
 
     private func automaticRetryAllowed(_ photo: PhotoAsset) -> Bool {
-        guard photo.uploadState == .failed else { return true }
+        guard photo.uploadState == .failed || photo.deletedAt != nil else { return true }
         return photo.uploadLastError?.hasPrefix("permanent:") != true
             && photo.uploadLastError?.hasPrefix("authentication:") != true
     }
@@ -450,6 +528,12 @@ final class PhotoTransferCoordinator {
         guard let ownerUserID = await authenticatedUserIDProvider() else { return }
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         let store = LocalDishPhotoStore(context: context, photoFiles: files)
+        for photo in photos where photo.ownerUserID == ownerUserID && photo.deletedAt != nil
+            && photo.binaryDeletedAt == nil && photo.uploadLastError?.hasPrefix("authentication:") == true {
+            photo.uploadLastError = nil
+            photo.uploadRetryAfter = nil
+        }
+        try? context.save()
         for photo in photos where photo.ownerUserID == ownerUserID && photo.deletedAt == nil
             && photo.uploadState == .failed
             && photo.uploadLastError?.hasPrefix("authentication:") == true {
@@ -461,6 +545,11 @@ final class PhotoTransferCoordinator {
         guard let ownerUserID = await authenticatedUserIDProvider() else { return }
         let photos = (try? context.fetch(FetchDescriptor<PhotoAsset>())) ?? []
         let store = LocalDishPhotoStore(context: context, photoFiles: files)
+        for photo in photos where photo.ownerUserID == ownerUserID && photo.deletedAt != nil && photo.binaryDeletedAt == nil {
+            photo.uploadLastError = nil
+            photo.uploadRetryAfter = nil
+        }
+        try? context.save()
         for photo in photos where photo.ownerUserID == ownerUserID &&
             photo.deletedAt == nil && photo.uploadState == .failed {
             try? store.queueUpload(photo)

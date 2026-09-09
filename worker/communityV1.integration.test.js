@@ -24,6 +24,17 @@ describe('Public Profile content and Community Feed V1 integration', () => {
     await seedRestaurant(database, { user: 'tm_b', slug: 'wanted', status: 'wantToGo', minutesAgo: 5 })
   })
 
+  it('includes own public Visits in Latest while retaining private/profile and Following boundaries', async () => {
+    await seedVisit(database, { user: 'tm_a', slug: 'self-public', visibility: 'public' })
+    await seedVisit(database, { user: 'tm_a', slug: 'self-private', visibility: 'private' })
+    const latest = await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=latest')
+    expect(latest.items.map(item => item.restaurant.name)).toContain('self-public')
+    expect(latest.items.map(item => item.restaurant.name)).not.toContain('self-private')
+    expect((await jsonAPI(database, 'tm_a', '/api/v1/community/feed?scope=following')).items.map(item => item.restaurant.name)).not.toContain('self-public')
+    await database.prepare("UPDATE user_profiles SET visibility = 'private' WHERE user_id = 'tm_a'").run()
+    expect((await jsonAPI(database, 'tm_b', '/api/v1/community/feed?scope=latest')).items.map(item => item.restaurant.name)).not.toContain('self-public')
+  })
+
   it.each(['latest', 'following'])('finds matching %s activities beyond the first 50 nonmatches and paginates the filtered set', async (scope) => {
     await follow(database, 'tm_a', 'tm_b')
     for (let index = 0; index < 55; index++) await seedVisit(database, { user: 'tm_b', slug: `skip-${index}`, visibility: 'public', minutesAgo: 10 + index })

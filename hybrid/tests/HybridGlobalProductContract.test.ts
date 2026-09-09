@@ -73,13 +73,19 @@ describe('Hybrid global Product Contract', () => {
     expect(hybrid).toContain('<DiscoveryQueryPanel')
     expect(hybrid).toContain('onCancel={() => setFiltersOpen(false)}')
     expect(panel).toContain('<ModalShell')
-    expect(panel).toContain('onApply({ ...draft')
+    expect(panel).toContain('onApply(value)')
     expect(panel).toContain('>重置</button>')
     expect(panel).toContain('>取消</button>')
     expect(panel).toContain('>应用</button>')
     expect(panel).toContain('aria-label="筛选城市"')
     expect(panel).toContain('aria-label="筛选排序"')
-    expect(panel).toContain('aria-label="大家评分"')
+    expect(panel).toContain('aria-label="预计喜欢度"')
+    expect(panel).toContain('aria-label="口味匹配度"')
+    expect(panel).not.toContain('aria-label="大家评分"')
+    expect(panel).not.toContain('大家评分优先')
+    expect(hybrid).not.toContain('label="大家评分"')
+    expect(hybrid).toContain('minimumPredictedLikingOutOfTen')
+    expect(hybrid).toContain('minimumTasteMatchPercent')
     expect(browser).toContain('TasteMapFilterSheet')
     for (const implementation of [hybrid, browser]) {
       expect(implementation).toContain('aria-haspopup="dialog"')
@@ -122,7 +128,7 @@ describe('Hybrid global Product Contract', () => {
   })
 
   it('keeps route ownership independent from the exact three-item bottom navigation', () => {
-    expect(HYBRID_ROUTE_REGISTRY.add).toBe('HYBRID_INTEGRATED')
+    expect(HYBRID_ROUTE_REGISTRY.add).toBe('HYBRID_PRIMARY')
     expect(HYBRID_BOTTOM_NAVIGATION).toEqual([
       { surface: 'map', label: '地图' },
       { surface: 'discovery', label: '发现' },

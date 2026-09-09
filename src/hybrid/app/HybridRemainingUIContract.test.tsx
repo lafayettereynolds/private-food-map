@@ -131,6 +131,17 @@ describe('Hybrid remaining product UI contract', () => {
     expect(tasteEntry).not.toContain('西餐')
   })
 
+  it('renders omitted Native Visit money as unrecorded in the shared Restaurant history', () => {
+    const visit = { ...profile.visits[0], partySize: 1, paymentMode: null }
+    // JSONEncoder omits nil fields, unlike explicit-null Browser records.
+    const { totalPrice: _total, myActualSpend: _actual, pricePerPerson: _reference, ...omitted } = visit
+    const restaurant = { ...profile.restaurants[0], status: 'visited' as const, visits: [omitted as Visit] }
+    const html = renderToStaticMarkup(<RestaurantPreviewCard restaurant={restaurant} onClose={() => undefined} remoteStatsEnabled={false} />)
+    expect(html).toContain('未记价格')
+    expect(html).not.toMatch(/¥(?:undefined|null|NaN|Infinity)/)
+    expect(html).toContain('到访历史')
+  })
+
   it('places one owner-only avatar editor at the upper-left of Restaurant imagery', () => {
     const restaurant = profile.restaurants[0]
     const detail = {
@@ -267,12 +278,15 @@ describe('Hybrid remaining product UI contract', () => {
 
   it('keeps Discovery at one five-tab product level and labels uncalibrated matching honestly', () => {
     const page = renderToStaticMarkup(<HybridDiscoveryPage content={content} onOpenRestaurant={() => undefined} platform={platform} />)
-    expect(page).toContain('正在整理发现内容')
-    expect(page).not.toContain('data-product-contract="activity-card"')
+    expect(page).not.toContain('正在整理发现内容')
+    expect(page).toContain('data-product-contract="activity-card"')
     const html = page + renderRecommendation(content.discovery.forYou[0])
     for (const label of ['关注', '为你推荐', '同味之选', '最新', '趋势']) expect(html).toContain(label)
     expect(html).toContain('口味匹配度 88%')
-    expect(html).not.toContain('喜欢度')
+    expect(html).toContain('aria-label="预计喜欢度"')
+    expect(html).toContain('aria-label="口味匹配度"')
+    expect(html).not.toContain('喜欢度 88%')
+    expect(html).not.toContain('aria-label="大家评分"')
     expect(html).not.toContain('发现餐厅')
     expect(html).not.toContain('DISCOVER')
     expect(html).toContain('data-product-contract="discovery-page"')
@@ -282,6 +296,17 @@ describe('Hybrid remaining product UI contract', () => {
     for (const region of ['restaurant-image', 'restaurant-name-address-context', 'visit-rating', 'like-comment-more-share', 'restaurant-actions']) {
       expect(html).toContain(`data-activity-region="${region}"`)
     }
+  })
+
+  it('renders the source profile avatar instead of a nickname initial', () => {
+    const item = structuredClone(content.discovery.similarTaste[0])
+    item.sourceUser!.avatarPresetID = 'fox'
+    item.sourceUser!.avatarPhotoID = null
+    const html = renderRecommendation(item)
+    expect(html).toContain('avatar-preset-sprite')
+    expect(html).not.toContain('tm-hybrid-avatar-seed">林</span>')
+    item.sourceUser!.avatarPhotoID = 'avatar-test'
+    expect(renderRecommendation(item)).toContain('tastemap-resource://public-photo/avatar-test/display')
   })
 
   it('retains a neutral matching signal when the heuristic percentage increases', () => {
@@ -573,9 +598,9 @@ describe('Hybrid remaining product UI contract', () => {
   it.each(['member', 'free'] as const)('keeps %s membership benefits immediately after Account and separate from Storage', (membershipTier) => {
     const html = renderToStaticMarkup(<TasteMapSettingsPage platform={platform} profile={{ ...profile, user: { ...profile.user, membershipTier } }} />)
     const headings = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map((match) => match[1])
-    expect(headings).toEqual(['账户', '会员权益', '邀请奖励', '私人资料', '数据与备份', '同步', '隐私与权限', '存储', '帮助与关于'])
+    expect(headings).toEqual(['账户', '会员权益', '私人资料', '数据与备份', '同步', '隐私与权限', '存储', '帮助与关于'])
     expect(html.match(/<strong>饭搭子与推荐来源<\/strong>/g)).toHaveLength(1)
-    expect(html.match(/<strong>邀请好友<\/strong>/g)).toHaveLength(1)
+    expect(html).not.toContain('邀请好友')
     expect(html.match(/<strong>Premium<\/strong>/g)).toHaveLength(1)
     expect(html).not.toContain('存储与 Premium')
     expect(html).toContain(membershipTier === 'member' ? '查看当前权益与订阅管理' : '查看会员能力')

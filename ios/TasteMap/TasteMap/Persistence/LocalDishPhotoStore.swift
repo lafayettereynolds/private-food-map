@@ -219,6 +219,7 @@ struct LocalDishPhotoStore {
     }
 
     func markUploadFailed(_ photo: PhotoAsset, reason: String, retryAfter: Date? = nil) throws {
+        guard photo.deletedAt == nil else { return }
         photo.uploadState = .failed
         photo.uploadRetryCount += 1
         photo.uploadLastError = String(reason.prefix(300))
@@ -268,22 +269,32 @@ struct LocalDishPhotoStore {
     }
 
     func delete(_ photo: PhotoAsset) throws {
+        guard photo.deletedAt == nil else {
+            // A previous save may have failed after changing this context's
+            // in-memory state. Never acknowledge its retry before persistence.
+            try context.save()
+            return
+        }
         let remoteID = photo.remoteID ?? photo.id.uuidString.lowercased()
+        photo.remoteID = remoteID
         let queue = SwiftDataSyncQueue(context: context, ownerUserID: photo.ownerUserID)
         photo.deletedAt = .now
         photo.updatedAt = photo.deletedAt ?? .now
         photo.uploadState = .deleted
         photo.syncStatus = .pending
-        if photo.serverVersion == 0 {
-            try queue.removeMutations(entityType: .photo, entityID: remoteID)
-        } else {
-            try queue.enqueueDelete(
-                entityType: .photo,
-                entityID: remoteID,
-                baseVersion: photo.serverVersion,
-                timestamp: photo.updatedAt
-            )
+        let hasUnacknowledgedUpload = try queue.allMutations().contains {
+            $0.entityType == .photo && $0.entityID == remoteID
+                && $0.operation == .upsert && ($0.state == .uploading || $0.retryCount > 0)
         }
+        if photo.serverVersion == 0 && !hasUnacknowledgedUpload {
+            try queue.removeMutations(entityType: .photo, entityID: remoteID)
+        }
+        try queue.enqueueDelete(
+            entityType: .photo,
+            entityID: remoteID,
+            baseVersion: photo.serverVersion,
+            timestamp: photo.updatedAt
+        )
         try context.save()
         notifyPhotoTransferStateChanged()
     }

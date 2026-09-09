@@ -54,19 +54,76 @@ final class URLSessionDiscoveryAPIClient: DiscoveryAPI {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         for (name, value) in try await authorization.headers() { request.setValue(value, forHTTPHeaderField: name) }
-        var result = try await session.data(for: request)
+        var result = try await fetch(request)
         if let response = result.1 as? HTTPURLResponse, response.statusCode == 401,
            try await authorization.recoverUnauthorized(failedAuthorization: request.value(forHTTPHeaderField: "Authorization")) {
             for (name, value) in try await authorization.headers() { request.setValue(value, forHTTPHeaderField: name) }
-            result = try await session.data(for: request)
+            result = try await fetch(request)
         }
         guard let response = result.1 as? HTTPURLResponse else { throw SyncAPIError.invalidResponse }
         guard (200..<300).contains(response.statusCode) else {
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=http_failed status=\(response.statusCode) mode=\(mode.rawValue)")
             throw TasteMapDiscoveryHTTPError.decode(status: response.statusCode, data: result.0)
         }
-        let value = try JSONDecoder().decode(DiscoveryPageV1.self, from: result.0)
+        let value: DiscoveryPageV1
+        do {
+            value = try JSONDecoder().decode(DiscoveryPageV1.self, from: result.0)
+        } catch {
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=response_decode_failed status=\(response.statusCode) mode=\(mode.rawValue)")
+            throw error
+        }
         guard value.apiVersion == 1 else { throw SyncAPIError.invalidResponse }
-        try query.verify(value.appliedQuery, mode: mode.rawValue)
+        do { try query.verify(value.appliedQuery, mode: mode.rawValue) }
+        catch {
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=query_contract_failed mode=\(mode.rawValue)")
+            throw error
+        }
         return value
+    }
+    private func fetch(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        let attempt = UUID().uuidString
+        let started = ProcessInfo.processInfo.systemUptime
+        let observer = DiscoveryTransportObserver(attempt: attempt)
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=request_start attempt=\(attempt)")
+        do {
+            let result = try await session.data(for: request, delegate: observer)
+            let response = result.1 as? HTTPURLResponse
+            let elapsed = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=request_end attempt=\(attempt) status=\(response?.statusCode ?? 0) elapsedMs=\(elapsed) ray=\(DiscoveryTransportObserver.safeRay(response?.value(forHTTPHeaderField: "cf-ray")))")
+            return result
+        }
+        catch {
+            let code = (error as? URLError)?.errorCode ?? 0
+            let elapsed = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=transport_failed code=\(code) attempt=\(attempt) elapsedMs=\(elapsed)")
+            throw error
+        }
+    }
+
+}
+
+/// Per-task observer: retains the injected session, its authentication and transport
+/// defaults. Never logs URLs, query parameters, headers other than validated Ray ID,
+/// bodies, addresses, credentials or user identifiers. It does not retry requests.
+nonisolated final class DiscoveryTransportObserver: NSObject, URLSessionTaskDelegate, Sendable {
+    let attempt: String
+    init(attempt: String) { self.attempt = attempt }
+
+    static func safeRay(_ value: String?) -> String {
+        guard let value, value.count == 20,
+              value.range(of: "^[0-9a-fA-F]{16}-[A-Z]{3}$", options: .regularExpression) != nil else { return "unavailable" }
+        return value
+    }
+
+    static func safeProtocol(_ value: String?) -> String {
+        guard let value, ["h3", "h2", "http/1.1", "http/1.0"].contains(value) else { return "unknown" }
+        return value
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        for (index, transaction) in metrics.transactionMetrics.enumerated() {
+            let response = transaction.response as? HTTPURLResponse
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=discovery event=transport_metrics attempt=\(attempt) transaction=\(index) protocol=\(Self.safeProtocol(transaction.networkProtocolName)) reused=\(transaction.isReusedConnection) proxy=\(transaction.isProxyConnection) status=\(response?.statusCode ?? 0) ray=\(Self.safeRay(response?.value(forHTTPHeaderField: "cf-ray"))) durationMs=\(Int(metrics.taskInterval.duration * 1000))")
+        }
     }
 }

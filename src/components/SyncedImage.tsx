@@ -1,5 +1,6 @@
 import { useEffect, useState, type ImgHTMLAttributes, type ReactNode } from 'react'
 import { resolvePhotoSource } from '../services/photoAssets'
+import { PHOTO_DELETED_EVENT, photoWasDeleted } from '../services/photoDeletionEvents'
 
 interface SyncedImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> {
   source: string | null | undefined
@@ -11,17 +12,26 @@ interface SyncedImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'sr
 
 export function SyncedImage({ source, photoId, fallback = null, failureFallback, ...props }: SyncedImageProps) {
   const [resolvedSource, setResolvedSource] = useState<string | null>(() => (
-    source && !source.startsWith('drive-photo:') ? source : null
+    source && !photoWasDeleted(photoId) && !source.startsWith('drive-photo:') ? source : null
   ))
   const [failed, setFailed] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
+    const invalidate = () => {
+      if (photoWasDeleted(photoId)) { setResolvedSource(null); setFailed(true) }
+    }
+    window.addEventListener(PHOTO_DELETED_EVENT, invalidate)
+    return () => window.removeEventListener(PHOTO_DELETED_EVENT, invalidate)
+  }, [photoId])
+
+  useEffect(() => {
     let active = true
+    if (photoWasDeleted(photoId)) { setResolvedSource(null); setFailed(true); return }
     setFailed(false)
     void resolvePhotoSource(source, photoId)
       .then((resolved) => {
-        if (active) setResolvedSource(resolved)
+        if (active && !photoWasDeleted(photoId)) setResolvedSource(resolved)
       })
       .catch(() => {
         if (active) {

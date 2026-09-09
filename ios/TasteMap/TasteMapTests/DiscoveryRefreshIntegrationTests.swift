@@ -5,6 +5,17 @@ import Testing
 
 @MainActor
 struct DiscoveryRefreshIntegrationTests {
+    @Test func transportDiagnosticsOnlyAllowNonContentCorrelationFields() {
+        #expect(DiscoveryTransportObserver.safeRay("a38986f5fbb9fbdc-AMS") == "a38986f5fbb9fbdc-AMS")
+        for invalid in [nil, "", "Bearer private-token", "a38986f5fbb9fbdc-AMS\nowner=private", "https://private.example/path"] as [String?] {
+            #expect(DiscoveryTransportObserver.safeRay(invalid) == "unavailable")
+        }
+        #expect(DiscoveryTransportObserver.safeProtocol("h3") == "h3")
+        #expect(DiscoveryTransportObserver.safeProtocol("h2") == "h2")
+        #expect(DiscoveryTransportObserver.safeProtocol(nil) == "unknown")
+        #expect(DiscoveryTransportObserver.safeProtocol("private-content") == "unknown")
+    }
+
     @Test func recommendationReasonEvidenceDecodesWithoutInventingLegacyEvidence() throws {
         let decoder = JSONDecoder()
         let full = try decoder.decode(DiscoveryReasonV1.self, from: Data(#"{"code":"HIGH_CUISINE_MATCH","text":"真实历史依据","evidence":{"sampleCount":6,"referenceRestaurantID":"place:known","dimensions":["粤菜","清淡"],"meanOutOfTen":8.25,"windowDays":30}}"#.utf8))

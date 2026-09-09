@@ -8,20 +8,20 @@ export type HybridRouteStatus =
   | 'RETIRED_AFTER_MIGRATION'
 
 export const HYBRID_ROUTE_REGISTRY = {
-  map: 'HYBRID_INTEGRATED',
-  discovery: 'HYBRID_INTEGRATED',
-  add: 'HYBRID_INTEGRATED',
-  restaurant: 'HYBRID_INTEGRATED',
-  profile: 'HYBRID_INTEGRATED',
-  visit: 'HYBRID_INTEGRATED',
-  visitEdit: 'HYBRID_INTEGRATED',
-  lists: 'HYBRID_INTEGRATED',
-  roulette: 'HYBRID_INTEGRATED',
-  analytics: 'HYBRID_INTEGRATED',
-  premium: 'HYBRID_INTEGRATED',
-  settings: 'HYBRID_INTEGRATED',
-  publicList: 'HYBRID_INTEGRATED',
-  activity: 'HYBRID_INTEGRATED',
+  map: 'HYBRID_PRIMARY',
+  discovery: 'HYBRID_PRIMARY',
+  add: 'HYBRID_PRIMARY',
+  restaurant: 'HYBRID_PRIMARY',
+  profile: 'HYBRID_PRIMARY',
+  visit: 'HYBRID_PRIMARY',
+  visitEdit: 'HYBRID_PRIMARY',
+  lists: 'HYBRID_PRIMARY',
+  roulette: 'HYBRID_PRIMARY',
+  analytics: 'HYBRID_PRIMARY',
+  premium: 'HYBRID_PRIMARY',
+  settings: 'HYBRID_PRIMARY',
+  publicList: 'HYBRID_PRIMARY',
+  activity: 'HYBRID_PRIMARY',
 } as const satisfies Record<string, HybridRouteStatus>
 
 export type HybridSurface = keyof typeof HYBRID_ROUTE_REGISTRY

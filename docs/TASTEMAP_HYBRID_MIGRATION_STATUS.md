@@ -231,3 +231,57 @@ Private-directory addition (2026-09-08): Settings gains `settings/directory` usi
 - Release purity scan excludes referral QA fixtures along with existing Debug/Premium bypass markers. No release override was introduced.
 - Production activation remains pending: migration 0035, Worker/cron deployment, authoritative Apple notifications/configuration, confirmed production API/link domain, signed Associated Domains and real-device Universal Link/Apple registration acceptance. No remote migration/deployment or real reward grant was executed.
 - See `docs/REFERRAL_PREMIUM_REWARD.md` for the exact implementation/test inventory and limitations. This checkpoint does not promote any route to HYBRID_PRIMARY or claim production launch readiness.
+
+
+## 2026-09-08 — First TestFlight Referral visibility hold
+Lafayette defers the real two-account Referral E2E to internal beta follow-up. The first TestFlight hides Settings invitation entry and rejects direct invitation routes/registration preparation in Browser, Hybrid and Native rollback. Reuse the existing signed ProductionEnvironment.json product configuration, referralAvailable=false, without Debug/URL/local-storage overrides. Worker independently blocks invitation landing/dashboard and new-registration referral attribution; existing entitlements, qualification/settlement implementation, admin permissions, Offer mappings and inventory remain retained. No unverified invitation allocation or code consumption. This is release product visibility, not a new remote flag platform; reopening requires a reviewed config/build/deploy after real E2E PASS.
+Core UI Settings rows and existing unavailable state remain canonical; Food/Dining visuals and page templates are unchanged. Do Not Regress: all entry paths, native bridge, stale saved invite code and server attribution must remain closed together. Normal StoreKit evidence remains PASS. Referral E2E is non-blocking only while this closure is effective. Real core smoke and visual/map approval still precede any HYBRID_PRIMARY cutover.
+
+## 2026-09-08 — Private-device share handoff correction in progress
+
+0805 real-device evidence confirms extension execution and App Group persistence, but Hybrid did not display the pending share. Shell now handles the existing typed shareExtension.received destination; Add expands its existing share panel when the pending fingerprint is present, including mount after an earlier event. No automatic Restaurant save, queue consumption or new platform API. Native rollback and production route ownership remain unchanged. Discovery errors now distinguish transport timeout/offline, invalid response and generic failures, with bounded content-free native diagnostics. Source regression is not device E2E PASS; a fresh Private build and actual pending-share/discovery checks remain required.
+
+
+### 2026-09-08 Private device 0808 API configuration correction
+
+`ProductionEnvironment.json` contains the release-safe Boolean Referral flag. The native production API reader now decodes only its typed `apiBaseURL` field rather than requiring all JSON values to be strings. Old parser reproduces a missing API base URL; five shipping-branch configuration cases pass after correction. 0808 source/artifact/device identity is verified with `Taste Map Private` / `DebugPrivatePreview` / HYBRID_DEVELOPMENT. Real device reaches auth but its old refresh session is rejected with 401; same-account reauthentication and successful Discovery refresh remain pending. Lafayette confirmed pending-share panel delivery on 0806. No HYBRID_PRIMARY transition or overall smoke acceptance is implied. Evidence: `reports/HYBRID_DEVICE_SHARE_AND_API_0808.md`.
+
+
+### Private account recovery 0809
+Private Preview now selects Development API explicitly and the credential namespace follows API environment. Its existing local persistence namespace remains unchanged to preserve pre-cutover Lafayette rows. Ordinary Release retains signed Production configuration. This is authorized account-data recovery, not HYBRID_PRIMARY or Production migration. Build 0809 device entitlement verified, original 27 restaurants/24 visits retained with zero original UUIDs missing. See `reports/ACCOUNT_IDENTITY_ENVIRONMENT_AUDIT_0808.md` for evidence and remaining gates.
+
+### 0810 Discovery smoke correction (verification in progress)
+0809 physical-device Map pan/pinch/detail/back and hidden Referral entry were
+confirmed by Lafayette. Discovery default For You incorrectly bypassed the
+canonical Map snapshot; filter Apply rejected an empty Profile city. Shared React
+now restores canonical default recommendations, keeps explicit queries isolated,
+and exposes validation beside sticky actions. Optional Native detectedCity supplies
+the real current-city default across Discovery tabs without changing profile data.
+Latest keeps existing visibility rules; owner private history remains in 味觉足迹.
+Physical-device confirmation of this correction remains open; no primary cutover.
+
+### 2026-09-09 Final Integration / personal-filter checkpoint
+
+Latest source status: authorized Release HYBRID_PRIMARY cutover is implemented
+for the new 2026090907 Internal candidate, with Native rollback retained. The
+route registry marks the integrated shared routes HYBRID_PRIMARY; native capability
+handoffs remain native. Internal Release uses Development without DEBUG/QA or
+Sandbox-only purchasing UI. Source automation 1561/1561 and bridge Swift 42/42
+pass; staged Web parity is 26/26. Signed artifact, fresh runtime and real-device
+acceptance remain separate gates. Historical "no cutover" statements below are
+prior checkpoints, not current source selection. No Production deployment or
+TestFlight upload is implied.
+
+Development continuation: missing 0040 was safely rehearsed on a private export, applied once via an isolated migration runner and verified without changing any old ledger row or checked entity/audit count. 0041/0042 were not repeated. Development Worker `581b3f08-fc17-44f6-a089-c7d720d73769` is active with bindings/settings preserved and retention still disabled; health/protected-route probes pass. This supersedes the deployment blocker below, not the outstanding cutover/archive/physical-device gates. See `reports/FINAL_INTEGRATION_DEV_DEPLOYMENT_2026-09-09.md`.
+
+Sync-safe Photo Delete has been semantically integrated while preserving the frozen dirty baseline. Browser/Hybrid/Native For You filters now distinguish 预计喜欢度 (/10 historical owner prediction) and 口味匹配度 (%); public/community rating is no longer a filter substitute. Source tests 1558/1558, Native filter/query 16/16 and Capacitor Photo Delete/control 2/2 pass. Full Native baseline comparison has no new failures, not an all-green claim. Unsigned Release compilation, purity and 26/26 staged/built asset parity pass. No cutover, new signed RC, device install, deployment or TestFlight upload yet. Dev 0041/0042 are already applied; absent 0040 cleanup-lease columns must be reconciled before a full-source Worker deployment. See `reports/FINAL_INTEGRATION_PERSONAL_FILTER_CHECKPOINT_2026-09-09.md` for exact scope and evidence.
+
+### 0811 linked homepage/footprint scope (verification in progress)
+Lafayette authorized historical Visit and attached-photo scope to follow homepage
+settings. Native persistence reconciles owned records via the normal mutation queue;
+new Visit writes use current Profile scope. Browser persistence/settings use the
+same semantics. No schema, account or primary-renderer migration. Latest no longer
+excludes the authenticated author's otherwise-qualified public Visit. Private and
+friend gates remain enforced. Nil optional companion fields emitted by Swift are
+accepted as null in the server decoder, repairing a real prerequisite sync rejection.
+Physical-device/public-read verification remains pending.

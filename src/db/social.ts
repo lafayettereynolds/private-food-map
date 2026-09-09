@@ -13,6 +13,7 @@ export async function ensureCurrentUser() {
     if (IS_DEVELOPMENT && existing.membershipTier !== expectedTier) {
       const updated = { ...existing, membershipTier: expectedTier, updatedAt: new Date().toISOString() }
       await db.users.put(updated)
+    await synchronizeFootprintVisibility(updated)
       return updated
     }
     return existing
@@ -40,6 +41,25 @@ export async function ensureCurrentUser() {
   return user
 }
 
+export async function synchronizeFootprintVisibility(user: UserProfile) {
+  const visibility = user.mapSharingEnabled ? user.mapVisibility : 'private'
+  const visits = await db.visits.filter(visit => !visit.deletedAt && (visit.userId === user.id || visit.userId === 'owner')).toArray()
+  for (const visit of visits) {
+    if (visit.visibility === visibility) continue
+    const updatedAt = new Date().toISOString()
+    await db.visits.update(visit.id, { visibility, updatedAt })
+    await db.syncQueue.put({ id: syncQueueId('visit', visit.id), entityType: 'visit', entityId: visit.id, updatedAt })
+  }
+  const visitIDs = new Set(visits.map(visit => visit.id))
+  const photos = await db.photos.filter(photo => !photo.deletedAt && (photo.userId === user.id || photo.userId === 'owner') && photo.visitId != null && visitIDs.has(photo.visitId)).toArray()
+  for (const photo of photos) {
+    if (photo.visibility === visibility) continue
+    const updatedAt = new Date().toISOString()
+    await db.photos.update(photo.id, { visibility, updatedAt })
+  }
+
+}
+
 export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickname' | 'bio' | 'city' | 'avatarImageData' | 'avatarPhotoId' | 'avatarPresetId'> & Partial<Pick<UserProfile, 'mapSharingEnabled' | 'mapVisibility'>>) {
   const current = await ensureCurrentUser()
   const updated: UserProfile = {
@@ -54,8 +74,9 @@ export async function updateCurrentUserProfile(changes: Pick<UserProfile, 'nickn
     updatedAt: new Date().toISOString(),
     deletedAt: null,
   }
-  await db.transaction('rw', db.users, db.syncQueue, async () => {
+  await db.transaction('rw', db.users, db.visits, db.photos, db.syncQueue, async () => {
     await db.users.put(updated)
+    await synchronizeFootprintVisibility(updated)
     await db.syncQueue.put({ id: syncQueueId('user', updated.id), entityType: 'user', entityId: updated.id, updatedAt: updated.updatedAt })
   })
   requestCloudSync()
@@ -71,8 +92,9 @@ export async function updateCurrentUserMapPrivacy(changes: Pick<UserProfile, 'ma
     updatedAt: new Date().toISOString(),
     deletedAt: null,
   }
-  await db.transaction('rw', db.users, db.syncQueue, async () => {
+  await db.transaction('rw', db.users, db.visits, db.photos, db.syncQueue, async () => {
     await db.users.put(updated)
+    await synchronizeFootprintVisibility(updated)
     await db.syncQueue.put({ id: syncQueueId('user', updated.id), entityType: 'user', entityId: updated.id, updatedAt: updated.updatedAt })
   })
   requestCloudSync()

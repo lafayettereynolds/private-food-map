@@ -18,10 +18,11 @@ struct ReferralRewardTests {
         try cache.save(snapshot)
         #expect(try cache.load(userID: "B") == nil)
     }
-    @Test func invitationHintIsNotEntitlementAndCanBeCleared() throws {
+    @Test func firstTestFlightRejectsInvitationHintAndKeepsRegistrationUnattributed() throws {
         defer { ReferralInvitationStore.clear() }
-        try ReferralInvitationStore.prepare("ABCDEF0123456789ABCDEF01")
-        #expect(ReferralInvitationStore.code == "abcdef0123456789abcdef01")
+        #expect(!ReferralInvitationStore.isAvailable)
+        #expect(throws: (any Error).self) { try ReferralInvitationStore.prepare("ABCDEF0123456789ABCDEF01") }
+        #expect(ReferralInvitationStore.code == nil)
         #expect(throws: (any Error).self) { try ReferralInvitationStore.prepare("<script>") }
         #expect(!ReferralInvitationStore.receive(URL(string:"https://attacker.example/invite/abcdef0123456789abcdef01")!))
         ReferralInvitationStore.clear()

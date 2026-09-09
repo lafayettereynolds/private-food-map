@@ -1,3 +1,7 @@
+import { restaurantCategoryLabels } from '../utils/restaurantCategoryLabels'
+import { predictPersonalTasteScore, type PersonalTastePrediction } from '../services/personalTasteScore'
+import { TasteMapPredictedLiking } from './TasteMapPredictedLiking'
+import { CURRENT_USER_ID } from '../db/social'
 import { ArrowDownUp, ChevronDown, Globe2, Heart, LocateFixed, MapPin, MessageCircle, Send, SlidersHorizontal, Star, Store, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DISCOVERY_RATING_FILTER_THRESHOLDS, minimumRatingFilterLabel } from '../utils/ratingFilterOptions'
@@ -29,6 +33,7 @@ import {
 } from '../contracts/discoveryContract'
 
 interface FeedItem {
+  prediction?: PersonalTastePrediction
   personalTastePercent?: CommunityVisit['personalTastePercent']
   calibratedLikeProbability?: CommunityVisit['calibratedLikeProbability']
   user: UserProfile
@@ -68,7 +73,7 @@ const DISCOVERY_TABS: Array<{ value: DiscoveryMode; label: string }> = [
   { value: 'trending', label: '趋势' },
 ]
 
-type RecommendationSort = 'recommended' | 'nearest' | 'rating'
+type RecommendationSort = 'recommended' | 'nearest' | 'rating' | 'taste'
 type RecommendationDistance = 'all' | 1 | 3 | 5 | 10
 type RecommendationRating = 'all' | number
 
@@ -108,6 +113,7 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
   const [showRecommendationFilters, setShowRecommendationFilters] = useState(false)
   const [distanceFilter, setDistanceFilter] = useState<RecommendationDistance>('all')
   const [ratingFilter, setRatingFilter] = useState<RecommendationRating>('all')
+  const [tasteMatchFilter, setTasteMatchFilter] = useState<number | null>(null)
   const [recommendationSort, setRecommendationSort] = useState<RecommendationSort>('recommended')
   const [sourceFilter, setSourceFilter] = useState('')
   const [occasionFilter, setOccasionFilter] = useState('')
@@ -214,11 +220,13 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
     return () => { active = false }
   }, [anchorKey, city, coordinates, feed, mode, needsLocation])
 
+  const predictions = useMemo(() => new Map(feed.map(item => [item.visit.id,
+    predictPersonalTasteScore(item.restaurant, restaurants.filter(restaurant => restaurant.userId === CURRENT_USER_ID && !restaurant.deletedAt))])), [feed, restaurants])
   const recommendationCandidates = useMemo(() => feed.map((item) => ({
     ...item.restaurant,
-    scoreOutOfTen: item.publicRating?.value ?? item.restaurant.scoreOutOfTen ?? null,
+    scoreOutOfTen: mode === 'for_you' ? predictions.get(item.visit.id)?.score ?? null : item.publicRating?.value ?? item.restaurant.scoreOutOfTen ?? null,
     feedItem: item,
-  })), [feed])
+  })), [feed, mode, predictions])
   const recommendationFilterResolution = useMemo(() => resolveRecommendationFilters(
     recommendationCandidates,
     {
@@ -228,7 +236,7 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
     coordinates,
   ), [coordinates, distanceFilter, ratingFilter, recommendationCandidates])
 
-  const ratingFilterLabel = mode === 'for_you' || mode === 'trending' ? '公开评分' : '本次评分'
+  const ratingFilterLabel = mode === 'for_you' ? '预计喜欢度' : '本次评分'
   const primarySortLabel = mode === 'for_you' ? '综合推荐' : mode === 'similar' ? '同味匹配' : mode === 'trending' ? '趋势热度' : '最新动态'
   const hasAdvancedFilters = mode === 'for_you' && Boolean(feedAccess?.advancedFiltersEnabled)
   const companionOptions = [...new Set(feed.flatMap((item) => item.visit.companions ?? []).filter(Boolean))]
@@ -241,27 +249,31 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
       .filter((item) => !city.trim() || sameCity(item.restaurant.city, city))
     if (mode !== 'for_you') {
       const score = (item: FeedItem) => mode === 'trending' ? feedScore(item) : starToTenScore(item.visit.rating) ?? -1
-      const filtered = evidenceFeed.filter((item) => ratingFilter === 'all' || score(item) >= ratingFilter)
-      return recommendationSort === 'rating' ? [...filtered].sort((left, right) => score(right) - score(left)) : filtered
+      const filtered = evidenceFeed.filter((item) => mode === 'trending' || ratingFilter === 'all' || score(item) >= ratingFilter)
+      return mode !== 'trending' && recommendationSort === 'rating' ? [...filtered].sort((left, right) => score(right) - score(left)) : filtered
     }
     const allowedVisitIDs = new Set(evidenceFeed.map((item) => item.visit.id))
     const filtered = recommendationFilterResolution.results
       .map((item) => item.feedItem)
+      .map(item => ({ ...item, prediction: predictions.get(item.visit.id) }))
       .filter((item) => allowedVisitIDs.has(item.visit.id))
+      .filter(item => tasteMatchFilter == null || (item.personalTastePercent != null && item.personalTastePercent >= tasteMatchFilter))
       .filter((item) => !hasAdvancedFilters || (
         (!sourceFilter || item.visit.recommendationSourceType === sourceFilter)
         && (!occasionFilter || [...(item.visit.diningOccasions ?? []), item.visit.diningOccasion].includes(occasionFilter as Visit['diningOccasion']))
         && (!companionFilter || (item.visit.companions ?? []).includes(companionFilter))
       ))
-    if (recommendationSort === 'rating') return [...filtered].sort((left, right) => feedScore(right) - feedScore(left))
+    if (recommendationSort === 'rating') return [...filtered].sort((left, right) => (predictions.get(right.visit.id)?.score ?? -1) - (predictions.get(left.visit.id)?.score ?? -1))
+    if (recommendationSort === 'taste') return [...filtered].sort((left, right) => (right.personalTastePercent ?? -1) - (left.personalTastePercent ?? -1))
     if (recommendationSort === 'nearest' && coordinates) {
       return [...filtered].sort((left, right) => distanceKilometers(coordinates, left.restaurant) - distanceKilometers(coordinates, right.restaurant))
     }
     return filtered
-  }, [coordinates, feed, mode, city, recommendationFilterResolution.results, recommendationSort, ratingFilter, hasAdvancedFilters, sourceFilter, occasionFilter, companionFilter])
+  }, [coordinates, feed, mode, city, recommendationFilterResolution.results, recommendationSort, ratingFilter, hasAdvancedFilters, sourceFilter, occasionFilter, companionFilter, tasteMatchFilter, predictions])
 
-  const activeRecommendationFilterCount = Number(Boolean(city)) + Number(ratingFilter !== 'all')
-    + Number(recommendationSort === 'rating' || (mode === 'for_you' && recommendationSort === 'nearest'))
+  const activeRecommendationFilterCount = Number(Boolean(city)) + Number(mode !== 'trending' && ratingFilter !== 'all')
+    + Number(mode !== 'trending' && recommendationSort === 'rating' || (mode === 'for_you' && ['nearest', 'taste'].includes(recommendationSort)))
+    + Number(mode === 'for_you' && tasteMatchFilter != null)
     + Number(mode === 'for_you' && distanceFilter !== 'all')
     + (hasAdvancedFilters ? Number(Boolean(sourceFilter)) + Number(Boolean(occasionFilter)) + Number(Boolean(companionFilter)) : 0)
 
@@ -361,6 +373,7 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
   }
 
   function resetRecommendationFilters() {
+    setTasteMatchFilter(null)
     setCity('')
     setDistanceFilter('all')
     setRatingFilter('all')
@@ -394,8 +407,9 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
     filterBar={<TasteMapFilterBar>
       <button aria-haspopup="dialog" aria-expanded={showRecommendationFilters} className={activeRecommendationFilterCount ? 'is-active' : ''} onClick={() => setShowRecommendationFilters(true)} type="button"><SlidersHorizontal aria-hidden="true" size={15} />筛选{activeRecommendationFilterCount ? ` ${activeRecommendationFilterCount}` : ''}</button>
       <TasteMapCitySearch city={city} suggestions={cityOptions} onChange={setCity} />
-      <TasteMapFilterSelect icon={<ArrowDownUp aria-hidden="true" size={15} />} label="排序" active={recommendationSort === 'rating' || (mode === 'for_you' && recommendationSort === 'nearest')} value={mode !== 'for_you' && recommendationSort === 'nearest' ? 'recommended' : recommendationSort} onChange={(value) => setRecommendationSort(value as RecommendationSort)} options={[{ value: 'recommended', label: primarySortLabel }, ...(mode === 'for_you' ? [{ value: 'nearest', label: '距离最近' }] : []), { value: 'rating', label: `${ratingFilterLabel}从高到低` }]} />
-      <TasteMapFilterSelect icon={<Star aria-hidden="true" size={15} />} label={ratingFilterLabel} active={ratingFilter !== 'all'} value={String(ratingFilter)} onChange={(value) => setRatingFilter(value === 'all' ? 'all' : Number(value))} options={RATING_OPTIONS.map((option) => ({ ...option, value: String(option.value) }))} />
+      <TasteMapFilterSelect icon={<ArrowDownUp aria-hidden="true" size={15} />} label="排序" active={recommendationSort !== 'recommended'} value={mode === 'trending' || (mode !== 'for_you' && ['nearest','taste'].includes(recommendationSort)) ? 'recommended' : recommendationSort} onChange={(value) => setRecommendationSort(value as RecommendationSort)} options={[{ value: 'recommended', label: primarySortLabel }, ...(mode === 'for_you' ? [{ value: 'nearest', label: '距离最近' }, { value: 'taste', label: '口味匹配度优先' }] : []), ...(mode === 'trending' ? [] : [{ value: 'rating', label: `${ratingFilterLabel}从高到低` }])]} />
+      {mode !== 'trending' ? <TasteMapFilterSelect icon={<Star aria-hidden="true" size={15} />} label={ratingFilterLabel} active={ratingFilter !== 'all'} value={String(ratingFilter)} onChange={(value) => setRatingFilter(value === 'all' ? 'all' : Number(value))} options={RATING_OPTIONS.map((option) => ({ ...option, value: String(option.value) }))} /> : null}
+      {mode === 'for_you' ? <TasteMapFilterSelect icon={<Heart aria-hidden="true" size={15} />} label="口味匹配度" active={tasteMatchFilter != null} value={String(tasteMatchFilter ?? '')} onChange={value => setTasteMatchFilter(value ? Number(value) : null)} options={[{ value: '', label: '口味匹配度' }, ...[10,20,30,40,50,60,70,80,90,100].map(value => ({ value: String(value), label: `${value}% 以上` }))]} /> : null}
     </TasteMapFilterBar>}
     onTabChange={(nextMode) => { if (nextMode === 'similar' && feedAccess && !feedAccess.similarTasteEnabled) { openPremiumPaywall('similar_taste'); return } onModeChange(nextMode) }}
     tab={mode}
@@ -404,8 +418,9 @@ export function CommunityPage({ users, restaurants, candidateRestaurantIds, mode
     {mode === 'for_you' && feedAccess ? <button className={`recommendation-tier-note is-${feedAccess.entitlementTier}`} onClick={() => { if (feedAccess.entitlementTier !== 'premium') openPremiumPaywall('deep_recommendation') }} type="button"><strong>{feedAccess.entitlementTier === 'premium' ? feedAccess.experienceTier === 'deep' ? '深度推荐已开启' : 'Premium 已开启' : '免费基础推荐'}</strong><span>{feedAccess.entitlementTier === 'premium' ? feedAccess.message : '升级后可查看完整推荐依据与高级筛选'}</span></button> : null}
     {showRecommendationFilters ? <TasteMapFilterSheet activeCount={activeRecommendationFilterCount} onClose={() => setShowRecommendationFilters(false)} onReset={resetRecommendationFilters}>
       <label><span>搜索城市</span><input aria-label="筛选城市" list="discovery-city-options" placeholder="输入其他城市" value={city} onChange={(event) => setCity(event.target.value)} /><datalist id="discovery-city-options">{cityOptions.map((option) => <option key={option} value={option} />)}</datalist></label>
-      <label><span>排序</span><select aria-label="筛选排序" value={mode !== 'for_you' && recommendationSort === 'nearest' ? 'recommended' : recommendationSort} onChange={(event) => setRecommendationSort(event.target.value as RecommendationSort)}><option value="recommended">{primarySortLabel}</option>{mode === 'for_you' ? <option value="nearest">距离最近</option> : null}<option value="rating">{ratingFilterLabel}从高到低</option></select></label>
-      <label><span>{ratingFilterLabel}</span><select aria-label="筛选最低评分" value={ratingFilter} onChange={(event) => setRatingFilter(event.target.value === 'all' ? 'all' : Number(event.target.value))}>{RATING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      <label><span>排序</span><select aria-label="筛选排序" value={mode === 'trending' || (mode !== 'for_you' && ['nearest','taste'].includes(recommendationSort)) ? 'recommended' : recommendationSort} onChange={(event) => setRecommendationSort(event.target.value as RecommendationSort)}><option value="recommended">{primarySortLabel}</option>{mode === 'for_you' ? <><option value="nearest">距离最近</option><option value="taste">口味匹配度优先</option></> : null}{mode !== 'trending' ? <option value="rating">{ratingFilterLabel}从高到低</option> : null}</select></label>
+      {mode !== 'trending' ? <label><span>{ratingFilterLabel}</span><select aria-label="筛选最低评分" value={ratingFilter} onChange={(event) => setRatingFilter(event.target.value === 'all' ? 'all' : Number(event.target.value))}>{RATING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> : null}
+      {mode === 'for_you' ? <label><span>口味匹配度</span><select aria-label="筛选口味匹配度" value={tasteMatchFilter ?? ''} onChange={event => setTasteMatchFilter(event.target.value ? Number(event.target.value) : null)}><option value="">不限</option>{[10,20,30,40,50,60,70,80,90,100].map(value => <option key={value} value={value}>{value}% 以上</option>)}</select></label> : null}
       {mode === 'for_you' ? <>
         <fieldset><legend>距离</legend><div>{DISTANCE_OPTIONS.map((option) => <button aria-pressed={distanceFilter === option.value} className={distanceFilter === option.value ? 'is-active' : ''} key={option.value} onClick={() => setDistanceFilter(option.value)} type="button">{option.label}</button>)}</div></fieldset>
         <FilterChoiceGroup premiumOnly label="推荐来源" value={sourceFilter} options={RECOMMENDATION_SOURCE_OPTIONS.filter(option => option.value !== 'other').map(option => [option.value, option.label])} onSelect={value => hasAdvancedFilters ? setSourceFilter(value) : openPremiumPaywall('advanced_recommendation_filters')} />
@@ -464,7 +479,7 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
   const canShowFullAnalysis = mode === 'for_you' && isPremium && Boolean(feedAccess?.fullExplanationEnabled) && secondaryReasons.length > 0
   const evidenceTitle = item.recommendationFitLevel === 'EXPLORATION' ? '为什么推荐它' : '为什么适合你'
   const price = item.restaurant.averagePricePerPerson ?? item.restaurant.pricePerPerson
-  const cuisines = item.restaurant.tags.filter(Boolean).slice(0, 2)
+  const cuisines = restaurantCategoryLabels(item.restaurant.tags).slice(0, 2)
   const metadata = [cuisines.join(' · '), price ? `约 ¥${Math.round(price)}/人` : '', distance !== null ? formatDistance(distance) : ''].filter(Boolean)
 
   const stopAndRun = (event: React.MouseEvent, action: () => void) => {
@@ -475,6 +490,7 @@ function DiscoveryCard({ item, mode, distance, engagement, feedAccess, candidate
   return <TasteMapActivityCardFrame
     activityRating={mode === 'trending' ? undefined : mode === 'for_you' ? <TasteMapRecommendationSignal input={item} /> : <TasteMapActivityRatingBadge rating={activityRating} />}
     body={<>
+      {mode === 'for_you' ? <TasteMapPredictedLiking value={item.prediction ? { ...item.prediction, scoreOutOfTen: item.prediction.score, method: 'owner_history_weighted_rating_v1' } : null} /> : null}
       {mode !== 'for_you' && item.visit.note ? <p className="community-note"><strong>笔记</strong>{item.visit.note}</p> : null}
       {mode === 'for_you' && primaryReasons.length ? <section aria-label={evidenceTitle} className="recommendation-evidence"><TasteMapRecommendationReasons reasons={primaryReasons.map((reason) => reason.text)} />{cautionReason ? <div className="recommendation-evidence__caution"><strong>需要注意</strong><span>{cautionReason.text}</span></div> : null}<small>{recommendationEvidenceHint(item.recommendationConfidence)}</small>{canShowFullAnalysis ? <><button aria-expanded={showFullAnalysis} onClick={(event) => stopAndRun(event, () => setShowFullAnalysis((current) => !current))} type="button">查看完整分析 <ChevronDown className={showFullAnalysis ? 'is-open' : ''} size={15} /></button>{showFullAnalysis ? <TasteMapRecommendationReasons className="recommendation-evidence__more" reasons={secondaryReasons.map((reason) => reason.text)} /> : null}</> : null}</section> : <TasteMapRecommendationReasons reasons={primaryReasons.map((reason) => reason.text)} />}
     </>}

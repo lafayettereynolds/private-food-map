@@ -39,6 +39,10 @@ describe('complete minimum-rating filters', () => {
     }
     expect(mapSource).not.toContain("options={['6', '7', '8', '9']}")
     expect(nativeSource).toContain('TasteMapRatingFilterOptions.discoveryThresholdsOutOfTen')
-    expect(nativeSource).toContain('Double?.some(score / 2)')
+    expect(nativeSource).toContain('Double?.some(score)')
+    expect(nativeSource).toContain('$filters.minimumPredictedLikingOutOfTen')
+    expect(nativeSource).toContain('$filters.minimumTasteMatchPercent')
+    expect(nativeSource).not.toContain('Double?.some(score / 2)')
+    expect(nativeSource).not.toContain('Text("社区评分")')
   })
 })

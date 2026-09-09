@@ -5,6 +5,8 @@ nonisolated enum TasteMapAppEnvironment: String, Codable, Sendable {
     case production
 
     static var current: Self {
+// Internal upgrades retain the accepted Private Preview local store/cache/outbox.
+// Their Development API and auth namespace are selected independently below.
 #if DEBUG || TASTEMAP_SANDBOX_BUILD
         .development
 #else
@@ -20,6 +22,12 @@ nonisolated enum APIConfigurationError: Error, Equatable {
 }
 
 nonisolated struct APIConfiguration: Equatable, Sendable {
+    // Decode only the fields owned by the API client. Other signed product
+    // configuration fields may be booleans or objects (for example Referral).
+    private struct ProductionEndpoint: Decodable {
+        let apiBaseURL: String
+    }
+
     static let developmentKey = "TASTEMAP_API_DEV_BASE_URL"
     static let productionKey = "TASTEMAP_API_PROD_BASE_URL"
     static let fallbackKey = "TASTEMAP_API_BASE_URL"
@@ -31,7 +39,17 @@ nonisolated struct APIConfiguration: Equatable, Sendable {
         bundle: Bundle = .main,
         processInfo: ProcessInfo = .processInfo
     ) -> APIConfiguration {
-#if TASTEMAP_SANDBOX_BUILD
+#if TASTEMAP_PRIVATE_PREVIEW
+        // Private device QA resumes the existing Development account while
+        // retaining its current local store. Formal Release remains pinned below.
+        return (try? resolve(environment: .development, values: [developmentKey: "https://api-dev.tastemap.cn"]))
+            ?? APIConfiguration(environment: .development, baseURL: nil)
+#elseif TASTEMAP_INTERNAL_BUILD
+        // Signed Internal TestFlight configuration: normal product UI with the
+        // existing Development account/credential namespace. No runtime override.
+        return (try? resolve(environment: .development, values: [developmentKey: "https://api-dev.tastemap.cn"]))
+            ?? APIConfiguration(environment: .development, baseURL: nil)
+#elseif TASTEMAP_SANDBOX_BUILD
         // A separately named Release configuration for TestFlight Sandbox only.
         // Compiled only into the dedicated Sandbox artifact; no runtime override.
         let endpoint = "https://api-dev.tastemap.cn"
@@ -42,11 +60,10 @@ nonisolated struct APIConfiguration: Equatable, Sendable {
         // Production must never take its endpoint from process/.env overrides.
         guard let url = bundle.url(forResource: "ProductionEnvironment", withExtension: "json"),
               let data = try? Data(contentsOf: url),
-              let values = try? JSONDecoder().decode([String: String].self, from: data),
-              let endpoint = values["apiBaseURL"] else {
+              let values = try? JSONDecoder().decode(ProductionEndpoint.self, from: data) else {
             return APIConfiguration(environment: .production, baseURL: nil)
         }
-        return (try? resolve(environment: .production, values: [productionKey: endpoint]))
+        return (try? resolve(environment: .production, values: [productionKey: values.apiBaseURL]))
             ?? APIConfiguration(environment: .production, baseURL: nil)
 #else
         let keys = [developmentKey, productionKey, fallbackKey]

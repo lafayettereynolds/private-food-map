@@ -1,3 +1,4 @@
+import { predictLiking } from '../src/contracts/predictedLiking'
 import {
   DISCOVERY_API_VERSION,
   DISCOVERY_DEFAULT_LIMIT,
@@ -20,6 +21,7 @@ import type { RestaurantPlaceProvider } from '../src/types/restaurantIdentity'
 import { DISCOVERY_FILTER_TAXONOMY } from '../src/contracts/discoveryFilterTaxonomy'
 import { discoveryExplorationPages, discoverySessionPreferenceBonus } from '../src/contracts/discoverySessionPreferences'
 import { readDiscoveryRecommendationFeedback, applyDiscoveryRecommendationFeedback } from './discoveryRecommendationFeedback'
+import { discoveryRestaurantCandidates } from './discoveryCandidates'
 import { LEGACY_AMOUNT_CURRENCY, resolveRecordedMoney } from '../src/contracts/legacyMoney'
 import { discoveryPublicRatingRank } from '../src/contracts/discoveryRanking'
 import { readDiscoveryQuery, matchesDiscoveryHardFilters, discoveryDistanceMeters, DISCOVERY_FILTER_CAPABILITIES,
@@ -295,10 +297,16 @@ export function rankDiscovery(
     // Missing personal evidence is an honest empty result. Trends belong to
     // their own surface, not a filler for a paid or under-sampled For You feed.
   }
-  if (query) ranked = ranked.map(item => {
+  if (query) ranked = ranked.filter(({ card }) => {
+    const predicted = card.predictedLiking?.scoreOutOfTen
+    const match = card.personalTastePercent
+    return (query.filters.minimumPredictedLikingOutOfTen == null || (predicted != null && predicted >= query.filters.minimumPredictedLikingOutOfTen))
+      && (query.filters.minimumTasteMatchPercent == null || (match != null && match >= query.filters.minimumTasteMatchPercent))
+  }).map(item => {
     const projection = item.card
     let score = item.score
     if (query.sort === 'taste') score = projection.personalTastePercent ?? -1
+    else if (query.sort === 'predicted_liking') score = projection.predictedLiking?.scoreOutOfTen ?? -1
     else if (query.sort === 'public_rating') score = discoveryPublicRatingRank(projection.ratings.community.value, projection.ratings.community.sampleCount)
     else if (query.sort === 'similar_rating') score = projection.ratings.similarTaste.value ?? -1
     else if (query.sort === 'distance') score = -(discoveryDistanceMeters(projection.restaurant, query.filters.distance!.reference) ?? Number.MAX_SAFE_INTEGER)
@@ -352,6 +360,10 @@ async function readDiscoveryData(
     aggregate,
   })).sort((left, right) => right.visited_at.localeCompare(left.visited_at) || left.visit_id.localeCompare(right.visit_id))
   const snapshot = new Date(now).toISOString()
+  const identityCandidates = JSON.stringify(await discoveryRestaurantCandidates(database, viewerId, city, {
+    restaurantOwners: [viewerId, ...candidateUserIDs],
+  }))
+  const cityOwnerCandidates = JSON.stringify(await discoveryRestaurantCandidates(database, viewerId, city, { includeOwnWants: true }))
   const cityClause = "TRIM(r.city) IN (?, ?)"
   const cityBindings = [city, `${city}市`]
   const unblocked = (owner: string) => `NOT EXISTS (
@@ -362,10 +374,11 @@ async function readDiscoveryData(
   )`
   const statements = [
     database.prepare(`SELECT DISTINCT i.restaurant_id, i.provider, i.external_id, i.is_primary
-      FROM restaurant_place_identities i JOIN restaurants r ON r.id = i.restaurant_id
+      FROM json_each(?) candidates CROSS JOIN restaurants r ON r.id = candidates.value
+      CROSS JOIN restaurant_place_identities i ON i.restaurant_id = r.id
       WHERE r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
         AND (${cityClause} OR r.user_id = ? OR r.user_id IN (SELECT value FROM json_each(?)))`)
-      .bind(...cityBindings, viewerId, JSON.stringify(candidateUserIDs)),
+      .bind(identityCandidates, ...cityBindings, viewerId, JSON.stringify(candidateUserIDs)),
     database.prepare(`SELECT id, requester_id, addressee_id, status, deleted_at
       FROM friendships WHERE requester_id = ? OR addressee_id = ?`)
       .bind(viewerId, viewerId),
@@ -378,8 +391,8 @@ async function readDiscoveryData(
         r.name AS restaurant_name, r.address, r.city, r.latitude, r.longitude,
         r.tags_json, r.price_per_person, r.merchant_image_url, r.marker_emoji,
         up.visibility AS profile_visibility
-      FROM want_to_go w
-      JOIN restaurants r ON r.id = w.restaurant_id
+      FROM json_each(?) candidates CROSS JOIN restaurants r ON r.id = candidates.value
+      CROSS JOIN want_to_go w ON w.restaurant_id = r.id
       JOIN user_profiles up ON up.user_id = w.user_id AND up.deleted_at IS NULL
       WHERE w.deleted_at IS NULL AND COALESCE(w.is_test_data, 0) = 0 AND r.deleted_at IS NULL
         AND COALESCE(r.is_test_data, 0) = 0 AND (${cityClause} OR w.user_id = ?)
@@ -388,15 +401,16 @@ async function readDiscoveryData(
       UNION ALL
       SELECT r.user_id, r.id, r.created_at, r.name, r.address, r.city,
         r.latitude, r.longitude, r.tags_json, r.price_per_person,
-        r.merchant_image_url, r.marker_emoji, up.visibility AS profile_visibility FROM restaurants r
+        r.merchant_image_url, r.marker_emoji, up.visibility AS profile_visibility
+      FROM json_each(?) candidates CROSS JOIN restaurants r ON r.id = candidates.value
       JOIN user_profiles up ON up.user_id = r.user_id AND up.deleted_at IS NULL
       WHERE r.deleted_at IS NULL AND COALESCE(r.is_test_data, 0) = 0
         AND (${cityClause} OR r.user_id = ?) AND r.status = 'wantToGo'
         AND (up.visibility = 'public' OR r.user_id = ?)
         AND ${unblocked('r.user_id')} AND julianday(r.created_at) <= julianday(?)
       LIMIT 5001`)
-      .bind(...cityBindings, viewerId, viewerId, viewerId, viewerId, snapshot,
-        ...cityBindings, viewerId, viewerId, viewerId, viewerId, snapshot),
+      .bind(cityOwnerCandidates, ...cityBindings, viewerId, viewerId, viewerId, viewerId, snapshot,
+        cityOwnerCandidates, ...cityBindings, viewerId, viewerId, viewerId, viewerId, snapshot),
     database.prepare(`SELECT p.id, p.restaurant_id, p.visit_id, p.user_id, p.kind, p.visibility,
         p.storage_key, p.thumbnail_storage_key, p.sync_status,
         v.visibility AS visit_visibility, up.visibility AS profile_visibility,
@@ -473,6 +487,14 @@ function forYouCards(
   includeVisited = false,
 ) {
   const history = historyPlaces(ownGroups)
+  const likingHistory = [...ownGroups.values()].map(group => {
+    const own = group.visits.filter(visit => visit.user_id === data.viewerId)
+    const ratedVisitCount = own.reduce((sum, visit) => sum + visit.aggregate.ratingCount, 0)
+    return { id: group.globalKey, tags: group.restaurant.tags, city: group.restaurant.city,
+      price: groupPriceEvidence(group).pricePerPerson,
+      scoreOutOfTen: ratedVisitCount ? own.reduce((sum, visit) => sum + visit.aggregate.ratingSum, 0) * 2 / ratedVisitCount : null,
+      visitCount: own.reduce((sum, visit) => sum + visit.aggregate.visitCount, 0), ratedVisitCount }
+  })
   const wantGroups = new Map<string, PlaceGroup>()
   addWantOnlyGroups(wantGroups, (data.ownerWants ?? data.wants).filter(want => want.user_id === data.viewerId), data.identitiesByRestaurant)
   const wantHistory = [...wantGroups.values()].map(group => ({
@@ -514,11 +536,12 @@ function forYouCards(
       recencyScore(source.visited_at, data.now) * 3
     return [{
       score,
-      card: card(
+      card: { ...card(
         'for_you', group, states, friendIDs, relationships, data.following,
         similarities, ownRatings, reasons, source, score,
         personalTastePercent, null, imagePool, data.viewerId,
-      ),
+      ), predictedLiking: predictLiking({ id: group.globalKey, tags: group.restaurant.tags,
+        city: group.restaurant.city, price: groupPriceEvidence(group).pricePerPerson }, likingHistory) },
     }]
   })
 }

@@ -31,9 +31,10 @@ export function toCloudVisit(visit: Visit): CloudVisit {
 }
 
 export function toCloudPhoto(photo: Photo): CloudPhoto {
-  const { localState, lastError, ...cloudPhoto } = photo
+  const { localState, lastError, deletedStorageKeys, ...cloudPhoto } = photo
   void localState
   void lastError
+  void deletedStorageKeys
   return cloudPhoto
 }
 
@@ -160,6 +161,8 @@ function mergeVisit(local: Visit | undefined, cloud: CloudVisit): Visit {
 }
 
 function mergePhoto(local: Photo | undefined, cloud: CloudPhoto): Photo {
+  if (local?.deletedAt || local?.localState === 'delete-pending') return local
+  if (cloud.deletedAt) return { ...cloud, localState: 'synced', lastError: null }
   if (local && local.updatedAt >= cloud.updatedAt) return local
   return { ...cloud, localState: 'synced', lastError: null }
 }

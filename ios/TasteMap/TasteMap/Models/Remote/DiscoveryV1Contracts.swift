@@ -172,6 +172,7 @@ struct DiscoveryCardV1: Codable, Equatable, Identifiable, Sendable {
     let rank: Int
     let score: Double
     let personalTastePercent: Int?
+    var predictedLiking: TasteMapPredictedLikingDTO? = nil
     let calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO?
     let tasteEvidence: TasteMapDiscoveryTasteEvidenceDTO?
 
@@ -190,6 +191,7 @@ struct DiscoveryCardV1: Codable, Equatable, Identifiable, Sendable {
         rank: Int,
         score: Double,
         personalTastePercent: Int? = nil,
+        predictedLiking: TasteMapPredictedLikingDTO? = nil,
         calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO? = nil,
         tasteEvidence: TasteMapDiscoveryTasteEvidenceDTO? = nil
     ) {
@@ -207,6 +209,7 @@ struct DiscoveryCardV1: Codable, Equatable, Identifiable, Sendable {
         self.rank = rank
         self.score = score
         self.personalTastePercent = personalTastePercent
+        self.predictedLiking = predictedLiking
         self.calibratedLikeProbability = calibratedLikeProbability
         self.tasteEvidence = tasteEvidence
     }
@@ -256,6 +259,7 @@ struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
     let rank: Int
     let score: Double
     let personalTastePercent: Int?
+    var predictedLiking: TasteMapPredictedLikingDTO? = nil
     let calibratedLikeProbability: TasteMapCalibratedLikeProbabilityDTO?
     var tasteEvidence: TasteMapDiscoveryTasteEvidenceDTO? = nil
 
@@ -266,6 +270,7 @@ struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
         similarity = card.similarity; trend = card.trend; cacheScope = card.cacheScope
         rank = card.rank; score = card.score
         personalTastePercent = card.personalTastePercent
+        predictedLiking = card.predictedLiking
         calibratedLikeProbability = card.calibratedLikeProbability
         tasteEvidence = card.tasteEvidence
     }
@@ -275,6 +280,7 @@ struct DiscoveryCachedCardContext: Codable, Equatable, Sendable {
               ratings: ratings, reasons: reasons, sourceUser: sourceUser, activity: activity,
               similarity: similarity, trend: trend, cacheScope: cacheScope,
               rank: rank, score: score, personalTastePercent: personalTastePercent,
+              predictedLiking: predictedLiking,
               calibratedLikeProbability: calibratedLikeProbability, tasteEvidence: tasteEvidence)
     }
 }

@@ -95,7 +95,57 @@ struct LocalUserProfileStore {
         profile.updatedAt = .now
         profile.syncStatus = .pending
         try enqueueIfReady(profile)
+        try synchronizeFootprintVisibility(profile)
         try context.save()
+    }
+
+    /// Homepage scope is authoritative for the owner's Visits and attached photos.
+    /// Legacy per-record fields are synchronized through the ordinary mutation queue.
+    @discardableResult
+    func synchronizeFootprintVisibility(_ profile: UserProfile) throws -> Int {
+        guard profile.deletedAt == nil else { return 0 }
+        let owner = profile.tasteMapUserID
+        let visibility = VisitVisibility(rawValue: profile.visibility.rawValue) ?? .private
+        let restaurants = try context.fetch(FetchDescriptor<Restaurant>()).filter { $0.ownerUserID == owner && $0.deletedAt == nil }
+        let restaurantByID = Dictionary(uniqueKeysWithValues: restaurants.map { ($0.id, $0) })
+        let visits = try context.fetch(FetchDescriptor<Visit>()).filter { $0.ownerUserID == owner && $0.deletedAt == nil && restaurantByID[$0.restaurantId] != nil }
+        let visitByID = Dictionary(uniqueKeysWithValues: visits.map { ($0.id, $0) })
+        let dishes = try context.fetch(FetchDescriptor<Dish>()).filter { $0.ownerUserID == owner && $0.deletedAt == nil }
+        let dishByID = Dictionary(uniqueKeysWithValues: dishes.map { ($0.id, $0) })
+        let queue = SwiftDataSyncQueue(context: context, ownerUserID: owner)
+        var changed = 0
+        try context.transaction {
+            for visit in visits where visit.visibility != visibility {
+                guard let restaurant = restaurantByID[visit.restaurantId], let remote = restaurant.remoteID else { continue }
+                if restaurant.syncStatus != .synced {
+                    try queue.enqueueUpsert(entityType: .restaurant, entityID: remote, baseVersion: restaurant.serverVersion,
+                        payload: SyncRecordMapper.restaurantPayload(restaurant), timestamp: restaurant.updatedAt)
+                }
+                for companion in try context.fetch(FetchDescriptor<DiningCompanion>()) where companion.ownerUserId == owner && companion.deletedAt == nil && companion.syncStatus != .synced && visit.companionIDs.map { $0.lowercased() }.contains((companion.remoteID ?? companion.id.uuidString).lowercased()) {
+                    try queue.enqueueUpsert(entityType: .companion, entityID: companion.remoteID ?? companion.id.uuidString.lowercased(), baseVersion: companion.serverVersion,
+                        payload: SyncRecordMapper.companionPayload(companion), timestamp: companion.updatedAt)
+                }
+                visit.visibility = visibility; visit.updatedAt = .now; visit.syncStatus = .pending
+                try queue.enqueueUpsert(entityType: .visit, entityID: visit.remoteID ?? visit.id.uuidString,
+                    baseVersion: visit.serverVersion, payload: SyncRecordMapper.visitPayload(visit, restaurantRemoteID: remote), timestamp: visit.updatedAt)
+                changed += 1
+            }
+            for photo in try photos() where photo.ownerUserID == owner && photo.deletedAt == nil {
+                guard let visitID = photo.visitId, let visit = visitByID[visitID], photo.visibility.rawValue != visibility.rawValue else { continue }
+                photo.visibility = PhotoVisibility(rawValue: visibility.rawValue) ?? .private
+                photo.updatedAt = .now; photo.syncStatus = .pending
+                if photo.uploadState == .uploaded {
+                    let restaurant = restaurantByID[visit.restaurantId]
+                    try queue.enqueueUpsert(entityType: .photo, entityID: photo.remoteID ?? photo.id.uuidString.lowercased(),
+                        baseVersion: photo.serverVersion,
+                        payload: SyncRecordMapper.photoPayload(photo, restaurantRemoteID: restaurant?.remoteID,
+                            visitRemoteID: visit.remoteID, dishRemoteID: photo.dishId.flatMap { dishByID[$0]?.remoteID }), timestamp: photo.updatedAt)
+                }
+                changed += 1
+            }
+            if changed > 0 { try enqueueIfReady(profile) }
+        }
+        return changed
     }
 
     func enqueueIfReady(_ profile: UserProfile) throws {

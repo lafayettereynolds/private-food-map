@@ -26,14 +26,17 @@ export function createDiscoveryCityQuerySession<Q extends CityQuery, P extends C
 }) {
   let revision = 0
   let query: Q | null = null
+  let failureAt = 0
+  let failureKey: string | null = null
   let acceptedOwner: string | null = null
   let state: CityQueryState<P> = { key: null, page: null, loading: false, appending: false, error: null }
   const update = (next: CityQueryState<P>) => { state = next; publish(next) }
   async function request(append: boolean, forceRefresh = false) {
     if (!query || (append && (state.loading || state.appending || state.page?.pagination !== 'more' || !state.page.nextCursor || !state.page.snapshotID))) return
     const current = query
-    const token = ++revision
     const key = discoveryCityQueryKey(current)
+    if (!append && !forceRefresh && failureKey === key && Date.now() - failureAt < 60_000) return
+    const token = ++revision
     const priorPage = append ? state.page : null
     update({ key, page: priorPage, loading: !append, appending: append, error: null })
     try {
@@ -55,12 +58,14 @@ export function createDiscoveryCityQuerySession<Q extends CityQuery, P extends C
         throw new Error('城市查询结果与当前选择不一致，请重试。')
       }
       if (append && result.snapshotID !== priorPage!.snapshotID) throw new Error('这份城市结果已更新，请重新搜索。')
+      failureKey = null
       acceptedOwner = identity
       update({ key, page: result, loading: false, appending: false, error: null })
     } catch (error) {
       if (token !== revision) return
       const currentOwner = await owner().catch(() => null)
       if (token !== revision) return
+      failureAt = Date.now(); failureKey = key
       update({ key, page: currentOwner && currentOwner === acceptedOwner ? priorPage : null,
         loading: false, appending: false, error: error instanceof Error ? error.message : '城市内容暂时无法加载，请重试。' })
     }
@@ -70,14 +75,16 @@ export function createDiscoveryCityQuerySession<Q extends CityQuery, P extends C
     select(next: Q | null) {
       ++revision
       query = next
+      failureKey = null
       acceptedOwner = null
       update({ key: next ? discoveryCityQueryKey(next) : null, page: null, loading: false, appending: false, error: null })
       return next ? request(false) : Promise.resolve()
     },
     retry: () => request(false, true),
+    refreshAutomatically: () => request(false),
     more: () => request(true),
     invalidate() {
-      ++revision; acceptedOwner = null; query = null
+      ++revision; acceptedOwner = null; query = null; failureKey = null
       update({ key: null, page: null, loading: false, appending: false, error: null })
     },
   }

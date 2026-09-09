@@ -43,6 +43,8 @@ export interface DiscoveryDistanceFilter {
 }
 
 export interface NormalizedDiscoveryFilters {
+  minimumPredictedLikingOutOfTen?: number | null
+  minimumTasteMatchPercent?: number | null
   cuisines: string[]
   types: string[]
   priceRange: DiscoveryPriceRange | null
@@ -128,7 +130,7 @@ function distanceFilter(value: unknown): DiscoveryDistanceFilter | null {
  * Unknown fields fail closed, including administrative area/city/sort fields. */
 export function normalizeDiscoveryFilters(raw: unknown = {}, taxonomy: DiscoveryFilterTaxonomy = {}): NormalizedDiscoveryFilters {
   const input = record(raw, ['cuisines', 'types', 'priceRange', 'minimumPublicScoreOutOfTen',
-    'minimumPublicRatingUsers', 'viewerStates', 'requireActualPhoto', 'distance'], 'filters')
+    'minimumPublicRatingUsers', 'viewerStates', 'requireActualPhoto', 'distance', 'minimumPredictedLikingOutOfTen', 'minimumTasteMatchPercent'], 'filters')
   const minimumPublicScoreOutOfTen = absent(input.minimumPublicScoreOutOfTen) ? null
     : number(input.minimumPublicScoreOutOfTen, 'filters.minimumPublicScoreOutOfTen', 0, 10)
   const minimumPublicRatingUsers = absent(input.minimumPublicRatingUsers) ? null
@@ -136,6 +138,8 @@ export function normalizeDiscoveryFilters(raw: unknown = {}, taxonomy: Discovery
   if (minimumPublicRatingUsers !== null && !Number.isInteger(minimumPublicRatingUsers)) return fail('filters.minimumPublicRatingUsers')
   if (input.requireActualPhoto !== undefined && typeof input.requireActualPhoto !== 'boolean') return fail('filters.requireActualPhoto')
   return {
+    ...(absent(input.minimumPredictedLikingOutOfTen) ? {} : { minimumPredictedLikingOutOfTen: number(input.minimumPredictedLikingOutOfTen, 'filters.minimumPredictedLikingOutOfTen', 0, 10) }),
+    ...(absent(input.minimumTasteMatchPercent) ? {} : { minimumTasteMatchPercent: number(input.minimumTasteMatchPercent, 'filters.minimumTasteMatchPercent', 0, 100) }),
     cuisines: selection(input.cuisines, taxonomy.cuisines ?? [], 'filters.cuisines'),
     types: selection(input.types, taxonomy.types ?? [], 'filters.types'),
     priceRange: priceRange(input.priceRange),
@@ -157,6 +161,8 @@ export function discoveryFiltersFingerprint(raw: unknown = {}, taxonomy: Discove
 /** A producer must explicitly advertise implemented capability. No defaults
  * assert support for the existing Worker, Browser, Native or debug endpoints. */
 export interface DiscoveryFilterCapabilities {
+  predictedLiking?: boolean
+  tasteMatch?: boolean
   cuisines?: boolean
   types?: boolean
   publicScore?: boolean
@@ -180,6 +186,8 @@ export function discoveryFilterCapabilityIssues(
   const unsupported = (field: keyof NormalizedDiscoveryFilters, active: boolean, supported: boolean | undefined) => {
     if (active && supported !== true) issues.push({ field, code: 'unsupported_filter' })
   }
+  unsupported('minimumPredictedLikingOutOfTen', filters.minimumPredictedLikingOutOfTen != null, capabilities.predictedLiking)
+  unsupported('minimumTasteMatchPercent', filters.minimumTasteMatchPercent != null, capabilities.tasteMatch)
   unsupported('cuisines', filters.cuisines.length > 0, capabilities.cuisines)
   unsupported('types', filters.types.length > 0, capabilities.types)
   unsupported('minimumPublicScoreOutOfTen', filters.minimumPublicScoreOutOfTen !== null, capabilities.publicScore)

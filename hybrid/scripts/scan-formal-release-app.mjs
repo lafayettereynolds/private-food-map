@@ -4,13 +4,23 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const repositoryRoot = resolve(import.meta.dirname, '../..')
-const requestedPath = process.argv.slice(2).find((value) => value !== '--')
+const internal = process.argv.includes('--internal')
+const requestedPath = process.argv.slice(2).find((value) => !value.startsWith('--'))
 const appPath = resolve(requestedPath ?? resolve(
   repositoryRoot,
   'build/phase2a-derived-data/Build/Products/Release-iphoneos/TasteMap.app',
 ))
 const allFiles = await filesIn(appPath)
 const wholeAppText = await readableText(allFiles)
+const plist = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', resolve(appPath, 'Info.plist')], { encoding: 'utf8' }))
+if (internal) {
+  assert.equal(plist.TasteMapDistributionChannel, 'internal')
+  assert.equal(plist.TasteMapExpectedAPIBaseURL, 'https://api-dev.tastemap.cn')
+  assert.equal(plist.CFBundleIdentifier, 'com.lafayette.tastemap')
+  assert.equal(wholeAppText.includes('HYBRID_PRIMARY'), true)
+} else {
+  assert.notEqual(plist.TasteMapDistributionChannel, 'internal', 'Use the explicit Internal audit for an Internal artifact.')
+}
 const publicRoot = resolve(appPath, 'public')
 const webFiles = await filesIn(publicRoot)
 const webText = await readableText([
@@ -20,6 +30,18 @@ const webText = await readableText([
 ])
 
 for (const marker of [
+  'PhotoDeleteQASessionFixture',
+  'PhotoDeleteQASessionBootstrap',
+  'PhotoDeleteQATestService',
+  'TASTEMAP_PHOTO_DELETE_QA_SESSION',
+  'TASTEMAP_PHOTO_DELETE_QA_RUN',
+  'photo-delete.qa.invalid',
+  'photo-qa-access-',
+  'photo-qa-refresh-',
+  'qa-photo-owner',
+  'qa-photo-other-user',
+  'tm_qa_photo_other_user',
+  'photo-delete-qa-local-identity',
   '_hybrid_debug',
   'profile-restaurant-rich.json',
   'tm_hybrid_debug',
@@ -28,7 +50,7 @@ for (const marker of [
   'VITE_HYBRID_DEBUG_ROUTE',
   'X-Taste-Map-Test-User',
   '__TASTEMAP_UI_TEST_RUNTIME',
-  'api-dev.tastemap.cn',
+  ...(internal ? [] : ['api-dev.tastemap.cn']),
   'TasteMapSandboxAPIBaseURL',
   'premium-sandbox-catalog',
   'BEGIN PRIVATE KEY',
@@ -82,7 +104,7 @@ assert.equal(bundleManifest.source, 'vite-hybrid-release')
 
 console.log(
   `Formal Hybrid Release purity scan passed: ${allFiles.length} app files, ${webFiles.length} signed Web files; `
-  + 'no Debug switch/fixture/Development URL/local path/secret and no credential surface in React.',
+  + `no Debug switch/fixture/local path/secret and no credential surface in React; channel=${internal ? 'Internal (approved Development API)' : 'Production (no Development URL)'}.`,
 )
 
 async function readableText(paths) {

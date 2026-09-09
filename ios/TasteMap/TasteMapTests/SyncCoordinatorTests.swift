@@ -6,6 +6,68 @@ import Testing
 @Suite("P1-D sync coordination", .serialized)
 @MainActor
 struct SyncCoordinatorTests {
+    @Test("Review-only maintenance launch preserves uploading state and never runs startup or foreground sync")
+    func reviewOnlyLaunchPreservesQueue() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let api = ControlledSyncAPI()
+        let mutation = SyncMutation(entityType: .visitDish, entityID: "protected-startup",
+            operation: .upsert, retryCount: 35, payload: Data("unchanged".utf8), baseVersion: 0,
+            state: .uploading, nextRetryAt: .distantFuture, lastError: "retryable:http_500")
+        context.insert(mutation)
+        try context.save()
+        let coordinator = SyncCoordinator(context: context, api: api, hasAuthenticatedSession: { true },
+            networkRecoveryDelay: .zero, conflictReviewOnly: true)
+        coordinator.start()
+        await coordinator.sessionDidBecomeAvailable()
+        _ = try coordinator.beginConflictReview()
+        coordinator.endConflictReview()
+        coordinator.handleAppBecameActive()
+        coordinator.networkAvailabilityChanged(true)
+        await coordinator.retryNow()
+        await coordinator.synchronizeNow()
+        await Task.yield()
+        #expect(api.pushCount == 0 && api.pullCount == 0)
+        #expect(mutation.state == .uploading && mutation.retryCount == 35 && mutation.baseVersion == 0)
+        #expect(mutation.payload == Data("unchanged".utf8) && mutation.nextRetryAt == .distantFuture)
+        #expect(mutation.resolution == nil)
+        #expect(try context.fetchCount(FetchDescriptor<SyncMutation>()) == 1)
+    }
+
+    @Test("Conflict review does not retry, reset or upload the other four queued mutations")
+    func conflictReviewLeavesOtherWorkUntouched() async throws {
+        let container = try TasteMapPersistence.makeContainer(inMemory: true)
+        let context = container.mainContext
+        let api = ControlledSyncAPI()
+        let coordinator = coordinator(context: context, api: api)
+        await coordinator.sessionDidBecomeAvailable()
+        let pullCount = api.pullCount
+        let conflict = SyncMutation(entityType: .restaurantList, entityID: "fixture-list",
+            operation: .upsert, payload: Data(), baseVersion: 1, state: .conflicted)
+        context.insert(conflict)
+        var untouched: [SyncMutation] = []
+        for index in 0..<4 {
+            let mutation = SyncMutation(entityType: .visitDish, entityID: "protected-\(index)",
+                operation: .upsert, retryCount: 35, payload: Data("unchanged".utf8), baseVersion: 0,
+                state: index == 3 ? .uploading : .queued, nextRetryAt: .distantFuture, lastError: "retryable:http_500")
+            context.insert(mutation); untouched.append(mutation)
+        }
+        try context.save()
+        let review = try coordinator.beginConflictReview()
+        #expect(review.map(\.id) == [conflict.mutationID])
+        await coordinator.retryNow()
+        await coordinator.synchronizeNow()
+        coordinator.networkAvailabilityChanged(true)
+        await Task.yield()
+        #expect(api.pushCount == 0 && api.pullCount == pullCount)
+        #expect(untouched.enumerated().allSatisfy { index, mutation in
+            mutation.state == (index == 3 ? .uploading : .queued) && mutation.retryCount == 35 &&
+            mutation.nextRetryAt == .distantFuture && mutation.payload == Data("unchanged".utf8)
+        })
+        coordinator.endConflictReview()
+        #expect(api.pushCount == 0 && api.pullCount == pullCount)
+    }
+
     @Test("Transient, authentication, and permanent failures are classified safely")
     func errorClassification() {
         #expect(SyncErrorClassifier.disposition(for: URLError(.timedOut)) == .retryable)
@@ -280,8 +342,15 @@ struct SyncCoordinatorTests {
         #expect(api.pushCount == 1)
         #expect(coordinator.presentation.phase == .failed)
 
+        // An ordinary pass must not silently retry a permanently failed mutation.
+        await coordinator.synchronizeNow()
+        #expect(api.pushCount == 1)
+        #expect(failed.mutationID.uuidString.lowercased() == api.receivedMutationIDs[0])
+        #expect(failed.state == .failed)
+
         await coordinator.retryNow()
         #expect(api.pushCount == 2)
+        #expect(api.receivedMutationIDs[0] == api.receivedMutationIDs[1])
         #expect(try context.fetch(FetchDescriptor<SyncMutation>()).isEmpty)
         #expect(coordinator.presentation.phase == .synced)
     }

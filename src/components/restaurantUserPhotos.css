@@ -1,0 +1,8 @@
+.restaurant-user-photos > div > button {
+  aspect-ratio: 1; min-height: 44px; min-width: 44px; padding: 0;
+  border: 0; border-radius: 9px; overflow: hidden; background: var(--color-primary-light);
+}
+.restaurant-photo-preview > img { display: block; width: 100%; max-height: 55dvh; object-fit: contain; }
+.restaurant-photo-preview button { min-height: 44px; min-width: 44px; }
+.restaurant-photo-preview nav { display: flex; gap: 8px; overflow-x: auto; }
+.restaurant-photo-preview > section { margin-top: 12px; }

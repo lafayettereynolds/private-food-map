@@ -5,6 +5,43 @@ import Testing
 @Suite("Sync V1 JSON contract")
 @MainActor
 struct SyncV1ContractTests {
+    @Test("Legacy list payloads re-encode required nullable wire fields without changing identity")
+    func listRetryEncodesRequiredNulls() throws {
+        let timestamp = "2026-09-04T00:00:00Z"
+        let legacyList: [String: Any] = [
+            "schemaVersion": 1, "id": "list-retry", "userId": "owner-retry",
+            "title": "Test list", "description": "", "visibility": "private",
+            "isRanked": false, "coverMode": "automatic",
+            "createdAt": timestamp, "updatedAt": timestamp,
+        ]
+        let list = try JSONDecoder().decode(RestaurantListSyncContractV1.self,
+            from: JSONSerialization.data(withJSONObject: legacyList))
+        let listJSON = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(list)) as? [String: Any])
+        #expect(listJSON["deletedAt"] is NSNull)
+        #expect(listJSON["customCoverPhotoId"] is NSNull)
+        #expect(listJSON["id"] as? String == "list-retry")
+        #expect(listJSON["userId"] as? String == "owner-retry")
+        let place: [String: Any] = [
+            "globalKey": "manual:place-retry", "restaurantId": "place-retry",
+            "placeIdentities": [["provider": "manual", "externalId": "place-retry", "isPrimary": true]],
+            "name": "Test restaurant", "address": "", "city": "", "latitude": 0, "longitude": 0,
+            "markerEmoji": "",
+        ]
+        let legacyItem: [String: Any] = [
+            "schemaVersion": 1, "id": "item-retry", "userId": "owner-retry", "listId": "list-retry",
+            "restaurantId": "place-retry", "restaurantGlobalKey": "manual:place-retry",
+            "position": 0, "note": "", "restaurant": place, "createdAt": timestamp, "updatedAt": timestamp,
+        ]
+        let item = try JSONDecoder().decode(RestaurantListItemSyncContractV1.self,
+            from: JSONSerialization.data(withJSONObject: legacyItem))
+        let itemJSON = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(item)) as? [String: Any])
+        #expect(itemJSON["deletedAt"] is NSNull)
+        let placeJSON = try #require(itemJSON["restaurant"] as? [String: Any])
+        #expect(placeJSON["markerPhotoId"] is NSNull)
+        #expect(placeJSON["merchantImageUrl"] is NSNull)
+        #expect(try JSONDecoder().decode(RestaurantListItemSyncContractV1.self, from: JSONEncoder().encode(item)) == item)
+    }
+
     @Test("Visit encodes required nullable fields as explicit null")
     func visitEncodesRequiredNulls() throws {
         let visit = makeVisit()

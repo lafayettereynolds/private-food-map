@@ -69,12 +69,14 @@ struct TasteMapSettingsView: View {
                 .accessibilityIdentifier("settings-premium-entry")
             }
 
+            if ReferralInvitationStore.isAvailable {
             Section("邀请奖励") {
                 NavigationLink { ReferralPremiumView() } label: {
                     SettingsDestinationLabel(title: "邀请好友", subtitle: "每成功邀请 1 位新用户，获得 30 天 Premium", systemImage: "person.badge.plus")
                 }.accessibilityIdentifier("settings-referral-entry")
             }
 
+            }
             Section("私人资料") {
                 NavigationLink { PrivateDirectorySettingsView() } label: {
                     SettingsDestinationLabel(title:"饭搭子与推荐来源",subtitle:"关联好友、设置私人头像与来源用户",systemImage:"person.crop.circle.badge.checkmark")
@@ -542,6 +544,7 @@ struct DataBackupSettingsView: View {
 struct SyncSettingsView: View {
     @Environment(SyncCoordinator.self) private var syncCoordinator
     let presentationOverride: SyncPresentation?
+    @State private var showsConflictReview = false
 
     private var presentation: SyncPresentation {
         presentationOverride ?? syncCoordinator.presentation
@@ -581,6 +584,14 @@ struct SyncSettingsView: View {
             }
 
             if presentationOverride == nil {
+                if presentation.conflictCount > 0 || syncCoordinator.hasLegacyAssociationResolutions {
+                    Section {
+                        Button("处理同步冲突") { showsConflictReview = true }
+                            .accessibilityIdentifier("settings-sync-review-conflicts")
+                    } footer: {
+                        Text("逐条查看云端当前版本，再决定是否用于本机；不会修改云端数据。")
+                    }
+                }
                 Section {
                     Button(presentation.allowsRetry ? "重试同步" : "立即同步") {
                         Task {
@@ -591,7 +602,7 @@ struct SyncSettingsView: View {
                             }
                         }
                     }
-                    .disabled(presentation.phase == .syncing || presentation.phase == .signedOut)
+                    .disabled(presentation.phase == .syncing || presentation.phase == .signedOut || syncCoordinator.isReviewingConflicts)
                     .accessibilityIdentifier("settings-sync-action")
                 } footer: {
                     Text("记录会先保存在本机；联网后将由现有同步队列继续上传。")
@@ -603,6 +614,97 @@ struct SyncSettingsView: View {
         .navigationTitle("同步")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings-sync-page")
+        .sheet(isPresented: $showsConflictReview) {
+            NavigationStack { SyncConflictReviewView() }
+        }
+    }
+}
+
+private struct SyncConflictReviewView: View {
+    @Environment(SyncCoordinator.self) private var coordinator
+    @Environment(\.dismiss) private var dismiss
+    @State private var conflicts: [SyncCoordinator.Conflict] = []
+    @State private var selected: SyncCoordinator.Conflict?
+    @State private var snapshot: SyncConflictSnapshotV1?
+    @State private var busy = false
+    @State private var message: String?
+
+    var body: some View {
+        List {
+            Section {
+                Text("使用云端版本只处理当前记录、已确认的食单条目或同一菜品关联的重复本地表示，不会重试其它待同步记录。")
+            }
+            ForEach(conflicts) { conflict in
+                Section(conflict.entityType == .visitDish ? "菜品关联" : conflict.entityType == .visit ? "到访记录" : "食单") {
+                    LabeledContent("记录 ID", value: conflict.entityID)
+                    LabeledContent("本地基线版本", value: "\(conflict.baseVersion)")
+                    Button("查看云端当前版本") {
+                        busy = true; message = nil; snapshot = nil; selected = conflict
+                        Task { @MainActor in
+                            defer { busy = false }
+                            do { snapshot = try await coordinator.previewConflict(conflict) }
+                            catch { message = "无法读取云端当前版本。未更改本地记录，请稍后重新查看。" }
+                        }
+                    }
+                    .disabled(busy)
+                    .accessibilityIdentifier("sync-conflict-preview-\(conflict.id.uuidString.lowercased())")
+                    if selected?.id == conflict.id, let snapshot {
+                        LabeledContent("云端当前版本", value: "\(snapshot.serverVersion ?? 0)")
+                        if let association = snapshot.visitDish?.record {
+                            LabeledContent("云端关联 ID", value: association.id)
+                            LabeledContent("到访 ID", value: association.visitId)
+                            LabeledContent("菜品 ID", value: association.dishId)
+                            Text("仅在业务关联完全一致时复用云端记录，保留原本地 UUID，合并重复本地表示。")
+                        }
+                        if let visit = snapshot.visit?.record {
+                            LabeledContent("到访日期", value: String(visit.visitedAt.prefix(10)))
+                            LabeledContent("可见范围", value: visit.visibility == .public ? "公开" : visit.visibility == .private ? "仅自己" : "好友")
+                            if let count = visit.partySize { LabeledContent("人数", value: "\(count)") }
+                            if let price = visit.pricePerPerson { LabeledContent("人均", value: "\(price)") }
+                            if let spend = visit.myActualSpend { LabeledContent("实际花费", value: "\(spend)") }
+                        }
+                        if let list = snapshot.restaurantList?.record {
+                            LabeledContent("食单名称", value: list.title)
+                            LabeledContent("可见范围", value: list.visibility == .public ? "公开" : list.visibility == .private ? "仅自己" : "好友")
+                            LabeledContent("餐厅数", value: "\(snapshot.restaurantListItems.filter { $0.record.deletedAt == nil }.count)")
+                            ForEach(snapshot.restaurantListItems.filter { $0.record.deletedAt == nil }.sorted { $0.record.position < $1.record.position }, id: \.record.id) { item in
+                                LabeledContent("顺序 \(item.record.position + 1)", value: item.record.restaurant.name)
+                            }
+                        }
+                        Button("使用云端版本") {
+                            busy = true; message = nil
+                            Task { @MainActor in
+                                defer { busy = false }
+                                do {
+                                    try await coordinator.acceptServerVersion(conflict, approvedSnapshot: snapshot)
+                                    conflicts.removeAll { $0.id == conflict.id }
+                                    self.snapshot = nil; selected = nil
+                                    message = "已使用云端版本；其它待同步记录未重试。"
+                                } catch {
+                                    self.snapshot = nil
+                                    message = "版本或本地状态已变化，未接受本次决定。请重新查看云端当前版本。"
+                                }
+                            }
+                        }
+                        .disabled(busy)
+                        .accessibilityIdentifier("sync-conflict-accept-\(conflict.id.uuidString.lowercased())")
+                    }
+                }
+            }
+            if let message { Section { Text(message).accessibilityIdentifier("sync-conflict-result") } }
+            if busy { ProgressView("正在核对当前版本…") }
+        }
+        .scrollContentBackground(.hidden)
+        .background(TasteMapCoreTheme.page)
+        .navigationTitle("同步冲突")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() }.disabled(busy) } }
+        .interactiveDismissDisabled(busy)
+        .task {
+            do { conflicts = try coordinator.beginConflictReview() }
+            catch { message = "同步仍在进行或登录状态已变化。请关闭此页，稍后重试。" }
+        }
+        .onDisappear { coordinator.endConflictReview() }
     }
 }
 
@@ -628,7 +730,7 @@ struct PrivacySettingsView: View {
             } header: {
                 Text("个人主页")
             } footer: {
-                Text("决定谁可以查看你的个人主页。到访和食单的可见范围分别在对应记录中修改。")
+                Text("决定谁可以查看你的个人主页、味觉足迹和到访照片。食单仍单独设置。")
             }
 
             legalLinks

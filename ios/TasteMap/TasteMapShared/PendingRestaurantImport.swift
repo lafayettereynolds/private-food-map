@@ -11,6 +11,7 @@ nonisolated struct PendingRestaurantImport: Codable, Identifiable, Equatable, Se
     let sharedURL: URL?
     let createdAt: Date
     let expiresAt: Date
+    var presentedAt: Date? = nil
 
     var acquisitionText: String {
         [sharedText, sharedURL?.absoluteString]
@@ -79,7 +80,12 @@ nonisolated struct PendingRestaurantImportStore {
         let dedupeKey = normalizedURL?.absoluteString ?? normalizedText
         let id = Self.fingerprint(dedupeKey)
         let fileURL = self.fileURL(for: id)
-        if let existing = try? decode(fileURL), existing.expiresAt > now { return existing }
+        if var existing = try? decode(fileURL), existing.expiresAt > now {
+            // An explicit new share may reopen the retained draft once.
+            existing.presentedAt = nil
+            try Self.encoder().encode(existing).write(to: fileURL, options: .atomic)
+            return existing
+        }
         let pending = PendingRestaurantImport(
             schemaVersion: PendingRestaurantImport.schemaVersion,
             id: id,
@@ -104,6 +110,18 @@ nonisolated struct PendingRestaurantImportStore {
         .compactMap { try? decode($0) }
         .filter { $0.schemaVersion == PendingRestaurantImport.schemaVersion && $0.expiresAt > now }
         .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    func awaitingPresentation(now: Date = .now) throws -> [PendingRestaurantImport] {
+        try pending(now: now).filter { $0.presentedAt == nil }
+    }
+
+    func markPresented(id: String, now: Date = .now) throws {
+        guard Self.isFingerprint(id) else { throw PendingRestaurantImportStoreError.invalidIdentifier }
+        let url = fileURL(for: id)
+        var value = try decode(url)
+        value.presentedAt = now
+        try Self.encoder().encode(value).write(to: url, options: .atomic)
     }
 
     func consume(id: String) throws {

@@ -1,5 +1,11 @@
 # RC blocker closure — 2026-09-08
 
+LATEST: [Adopted Production baseline and two-path device plan](PRODUCTION_BASELINE_ADOPTION_2026-09-08.md). CURRENT PRODUCTION BASELINE dd0369b9-26c1-4fe7-a23b-9a56f5887661: PASS / ADOPTED; previous verified baseline/rollback reference87b45679. Core/regression/purity/API/D1/R2/Notifications/Offer mapping/isolation PASS. The user has approved formal candidate2026090801 for normal StoreKit/core and a separate Sandbox build/Worker/inventory only for invitee14/Reward1. Remaining gates: normal StoreKit, both real Sandbox Offers, critical smoke and final visual/Map feel. No pending DNS/mapping/Notifications/baseline approval. Cutover CLOSED, HYBRID_PRIMARY and Final RC NOT YET, TestFlight NOT READY. All contradictory notices below are historical, superseded evidence.
+
+## Subsequent candidate audit, 04:50 UTC
+
+See [Production candidate audit](PRODUCTION_BASELINE_AUDIT_2026-09-08.md) and `production-baseline-candidate.json`. Retain ede1474e and its verified code-identical secrets successor f8dd5e0f; do not restore the old reference. Candidate audit/purity/regression gates remain FAIL, so no formal baseline or cutover. Fresh public asset parity 28/28; health200; ready503 (admin missing); official API unreachable. Local Admin malformed-auth correction and a migration-fixture forward-compatibility correction pass the final current-workspace suite: 1,433/1,433 plus typecheck. Concurrent Sandbox tests account for the count increase. No Production deployment or reward issuance by this audit. Earlier snapshots below remain historical evidence, not the final current gate state.
+
 Baseline: `feature/hybrid-final-integration`, `f7da080`. Supersedes only remaining-blocker status in `RC_FOUNDATION_RESUMED_2026-09-08.md`; does not repeat its migrations, deploy, archive or Swift gate. No Production writes, real Gifts, TestFlight upload or primary-route changes in this task.
 
 ## Automated outcome

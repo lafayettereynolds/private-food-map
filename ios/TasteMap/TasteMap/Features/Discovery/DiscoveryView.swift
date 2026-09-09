@@ -510,6 +510,7 @@ private enum DiscoveryFilterFocus: String, Identifiable {
     case sort
     case distance
     case rating
+    case tasteMatch
 
     var id: String { rawValue }
     var title: String {
@@ -517,7 +518,8 @@ private enum DiscoveryFilterFocus: String, Identifiable {
         case .all: "筛选推荐"
         case .sort: "排序"
         case .distance: "距离"
-        case .rating: "社区评分"
+        case .rating: "预计喜欢度"
+        case .tasteMatch: "口味匹配度"
         }
     }
 }
@@ -605,8 +607,15 @@ struct DiscoveryContentView: View {
                                 focus: .rating,
                                 title: ratingChipTitle,
                                 semantic: .rating,
-                                isActive: filters.minimumRating != nil,
+                                isActive: filters.minimumPredictedLikingOutOfTen != nil,
                                 identifier: "discovery-rating-chip"
+                            )
+                            discoveryFilterChip(
+                                focus: .tasteMatch,
+                                title: filters.minimumTasteMatchPercent.map { "口味匹配度 \(Int($0))%+" } ?? "口味匹配度",
+                                semantic: .rating,
+                                isActive: filters.minimumTasteMatchPercent != nil,
+                                identifier: "discovery-taste-match-chip"
                             )
                         }
                         if mode == .trending {
@@ -758,7 +767,7 @@ struct DiscoveryContentView: View {
     }
 
     private var ratingChipTitle: String {
-        filters.minimumRating.map { String(format: "餐厅评分 %.1f+", $0 * 2) } ?? "餐厅评分"
+        filters.minimumPredictedLikingOutOfTen.map { String(format: "预计喜欢度 %.1f+", $0) } ?? "预计喜欢度"
     }
 
     private func discoveryFilterChip(
@@ -897,17 +906,26 @@ private struct DiscoveryFilterSheet: View {
                 }
                 if focus == .all || focus == .rating {
                     Section {
-                    Picker("最低评分", selection: $filters.minimumRating) {
-                        Text("不限评分").tag(Double?.none)
+                    Picker("预计喜欢度", selection: $filters.minimumPredictedLikingOutOfTen) {
+                        Text("不限").tag(Double?.none)
                         ForEach(TasteMapRatingFilterOptions.discoveryThresholdsOutOfTen, id: \.self) { score in
-                            Text(TasteMapRatingFilterOptions.label(for: score)).tag(Double?.some(score / 2))
+                            Text(TasteMapRatingFilterOptions.label(for: score)).tag(Double?.some(score))
                         }
                     }
                     .accessibilityIdentifier("discovery-rating")
                 } header: {
-                    Text("社区评分")
-                } footer: {
-                    Text("评分来自当前可见的真实社区样本；没有评分的餐厅不会通过最低评分筛选。")
+                    Text("预计喜欢度")
+                    }
+                }
+                if focus == .all || focus == .tasteMatch {
+                    Section("口味匹配度") {
+                        Picker("最低口味匹配度", selection: $filters.minimumTasteMatchPercent) {
+                            Text("不限").tag(Double?.none)
+                            ForEach([10.0, 20, 30, 40, 50, 60, 70, 80, 90, 100], id: \.self) { value in
+                                Text("\(Int(value))%+").tag(Double?.some(value))
+                            }
+                        }
+                        .accessibilityIdentifier("discovery-taste-match")
                     }
                 }
             }
@@ -932,7 +950,8 @@ private struct DiscoveryFilterSheet: View {
         case .all: filters.activeCount > 0
         case .sort: filters.sort != .recommended
         case .distance: filters.maximumDistanceKilometers != nil
-        case .rating: filters.minimumRating != nil
+        case .rating: filters.minimumPredictedLikingOutOfTen != nil
+        case .tasteMatch: filters.minimumTasteMatchPercent != nil
         }
     }
 
@@ -941,7 +960,8 @@ private struct DiscoveryFilterSheet: View {
         case .all: filters.reset()
         case .sort: filters.sort = .recommended
         case .distance: filters.maximumDistanceKilometers = nil
-        case .rating: filters.minimumRating = nil
+        case .rating: filters.minimumPredictedLikingOutOfTen = nil
+        case .tasteMatch: filters.minimumTasteMatchPercent = nil
         }
     }
 }

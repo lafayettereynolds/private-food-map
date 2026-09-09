@@ -12,6 +12,28 @@ const user = fixture.profile.user as unknown as UserProfile
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 describe('Settings action semantics', () => {
+  it('offers explicit legacy association review even when version-conflict count is zero', () => {
+    const view = source('../../ios/TasteMap/TasteMap/Features/Settings/TasteMapSettingsView.swift')
+    expect(view).toMatch(/if presentationOverride == nil \{\s*if presentation\.conflictCount > 0 \|\| syncCoordinator\.hasLegacyAssociationResolutions \{\s*Section \{\s*Button\("处理同步冲突"\)/)
+    const settings = source('../../src/components/TasteMapPremiumSettingsPages.tsx')
+    expect(settings).toContain('(sync?.pendingMutationCount ?? 0) > 0')
+    expect(settings).toContain("openNativeSettingsDetail('dataBackup', 'sync')")
+  })
+  it('conflict review opens the existing native sync detail instead of replaying the queue', () => {
+    const settings = source('../../src/components/TasteMapPremiumSettingsPages.tsx')
+    expect(settings).toContain("platform.kind === 'native' && (sync?.conflictCount ?? 0) > 0")
+    expect(settings).toContain("openNativeSettingsDetail('dataBackup', 'sync')")
+    expect(settings).toContain("'处理同步冲突'")
+    const native = source('../../ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRootView.swift')
+    expect(native).toContain('if route.identifier == "sync" {\n                SyncSettingsView(presentationOverride: nil)')
+    const view = source('../../ios/TasteMap/TasteMap/Features/Settings/TasteMapSettingsView.swift')
+    const review = view.slice(view.indexOf('private struct SyncConflictReviewView'), view.indexOf('struct PrivacySettingsView'))
+    expect(review).toContain('Button("使用云端版本")')
+    expect(review).toContain('coordinator.previewConflict(conflict)')
+    expect(review).toContain('coordinator.acceptServerVersion(conflict, approvedSnapshot: snapshot)')
+    expect(review).not.toContain('retryNow')
+    expect(review).not.toContain('synchronizeNow')
+  })
   it('native Settings also puts membership immediately after Account and before data tools', () => {
     const settings = source('../../ios/TasteMap/TasteMap/Features/Settings/TasteMapSettingsView.swift')
     const root = settings.slice(0, settings.indexOf('struct AccountSettingsView'))

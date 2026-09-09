@@ -114,6 +114,7 @@ final class PremiumEntitlementService {
         }
 #endif
         if isRefreshing { return }
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=entitlement event=refresh_start")
         let generation = sessionGeneration
         let requestID = UUID()
         refreshID = requestID
@@ -128,6 +129,7 @@ final class PremiumEntitlementService {
             }
             try cache.save(next)
             apply(next, offline: false)
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=entitlement event=refresh_verified")
             lastErrorMessage = nil
         } catch {
             guard activeUserID == userID, sessionGeneration == generation, refreshID == requestID else { return }
@@ -139,6 +141,7 @@ final class PremiumEntitlementService {
                 isUsingOfflineCache = false
             }
             lastErrorMessage = "会员状态暂时无法在线刷新。"
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=entitlement event=refresh_failed")
         }
     }
 

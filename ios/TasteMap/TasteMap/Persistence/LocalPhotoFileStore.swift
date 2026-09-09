@@ -85,6 +85,17 @@ actor LocalPhotoFileStore: LocalPhotoFileStoring {
 
     func cleanupOrphans(retaining relativePaths: Set<String>) throws {
         let fileManager = FileManager.default
+        // The legacy and Development stores share TasteMap/Photos. One store's
+        // reference set cannot prove another store's files are orphaned. Retain
+        // unreferenced files in this case; explicit tombstone deletion remains
+        // independent and still removes the authorized photo's sandbox copies.
+        let support = rootURL.deletingLastPathComponent().deletingLastPathComponent()
+        if rootURL.lastPathComponent == "Photos",
+           rootURL.deletingLastPathComponent().lastPathComponent == "TasteMap",
+           fileManager.fileExists(atPath: support.appendingPathComponent("TasteMap.store").path),
+           fileManager.fileExists(atPath: support.appendingPathComponent("TasteMapDevelopment.store").path) {
+            return
+        }
         for variant in [LocalPhotoFileVariant.original, .display, .thumbnail] {
             let directory = rootURL.appendingPathComponent(variant.rawValue, isDirectory: true)
             guard let files = try? fileManager.contentsOfDirectory(

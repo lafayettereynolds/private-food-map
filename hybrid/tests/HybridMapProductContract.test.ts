@@ -295,7 +295,7 @@ describe('Phase 2B Hybrid Map product contract', () => {
     expect(page).toContain('recommended: canonicalRecommendations.length')
     // Discovery's selected-city feed is a separate authorized query; it must
     // never replace the canonical content snapshot used by Map.
-    expect(discovery).toContain('const forYouSource = cityDiscovery')
+    expect(discovery).toContain('const forYouSource = canonicalScope ? content.discovery.forYou : cityDiscovery')
     expect(discovery).toContain('platform.discovery.cityPage(query)')
     expect(discovery).not.toContain('content.discovery.forYou =')
     expect(recommendationSnapshot).toContain('items.filter(isDiscoveryPlacementEligible)')

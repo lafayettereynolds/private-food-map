@@ -4,6 +4,15 @@ import XCTest
 
 @MainActor
 final class DiscoveryRefreshCoordinatorTests: XCTestCase {
+    func testTransportAndDecodeFailuresAreNotMisreportedAsOffline() {
+        let decoding = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "invalid response"))
+        XCTAssertEqual(tasteMapDiscoveryRefreshIssue(decoding).code, "discovery_response_invalid")
+        XCTAssertEqual(tasteMapDiscoveryRefreshIssue(URLError(.timedOut)).code, "discovery_timeout")
+        XCTAssertEqual(tasteMapDiscoveryRefreshIssue(URLError(.notConnectedToInternet)).code, "discovery_offline")
+        XCTAssertEqual(tasteMapDiscoveryRefreshIssue(URLError(.secureConnectionFailed)).code, "discovery_transport_failed")
+        XCTAssertFalse(tasteMapDiscoveryRefreshIssue(decoding).message.contains("网络"))
+    }
+
     private let scope = TasteMapDiscoveryRefreshCoordinator.Scope(ownerUserID: "tm_a", mode: "for_you", city: "杭州", windowDays: 7)
     private let date = Date(timeIntervalSince1970: 1_788_600_000)
     private var capacity: TasteMapDiscoveryHTTPError {
@@ -52,7 +61,9 @@ final class DiscoveryRefreshCoordinatorTests: XCTestCase {
         let failed = await refresh()
         XCTAssertEqual(failed?.state, .unavailable)
         fail = false
-        let retried = await refresh()
+        _ = await refresh()
+        XCTAssertEqual(attempts, 1) // Automatic retry observes the failure cooldown.
+        let retried = await refresh(force: true)
         XCTAssertEqual(retried?.state, .fresh)
         XCTAssertEqual(attempts, 2)
         _ = await refresh()

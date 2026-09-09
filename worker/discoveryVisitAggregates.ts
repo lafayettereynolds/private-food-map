@@ -1,6 +1,7 @@
 import { DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE } from '../src/contracts/discoveryContract'
 import type { TasteRatingSignal } from './tasteSimilarity'
 import type { ProfileAvatarPresetContract } from '../src/contracts/profileContract'
+import { discoveryRestaurantCandidates } from './discoveryCandidates'
 
 // Bound aggregate cohorts, never individual Visits. An over-capacity query
 // fails closed through the HTTP envelope instead of ranking a partial prefix.
@@ -98,7 +99,11 @@ export async function readDiscoveryVisitAggregates(
   const candidateScope = scope.candidateUserIDs
   const locationPredicate = candidateScope ? 'v.user_id IN (SELECT value FROM json_each(?))' : 'TRIM(r.city) IN (?, ?)'
   const locationBindings = candidateScope ? [JSON.stringify(candidateScope)] : [city, `${city}市`]
-  const rows = await database.prepare(`WITH eligible AS (
+  const restaurantIDs = await discoveryRestaurantCandidates(database, scope.viewerID, city, {
+    includeCity: !candidateScope, restaurantOwners: [],
+    visitOwners: [scope.viewerID, ...(candidateScope ?? [])],
+  })
+  const rows = await database.prepare(`WITH eligible AS MATERIALIZED (
     SELECT v.id AS visit_id, v.user_id, v.restaurant_id, v.visibility,
       v.visited_at, CASE WHEN v.rating > 0 AND v.rating <= 5 THEN v.rating ELSE NULL END AS rating, up.visibility AS profile_visibility,
       CASE WHEN v.total_price > 0 AND v.party_size_optional > 0
@@ -109,9 +114,10 @@ export async function readDiscoveryVisitAggregates(
       up.display_name AS profile_display_name, up.bio AS profile_bio,
       up.city AS profile_city, up.avatar_photo_id AS profile_avatar_photo_id,
       up.avatar_preset_id AS profile_avatar_preset_id
-    FROM visits v
-    JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+    FROM json_each(?) candidates
+    CROSS JOIN restaurants r ON r.id = candidates.value AND r.deleted_at IS NULL
       AND COALESCE(r.is_test_data, 0) = 0
+    CROSS JOIN visits v ON v.restaurant_id = r.id
     LEFT JOIN user_profiles up ON up.user_id = v.user_id AND up.deleted_at IS NULL
     WHERE v.deleted_at IS NULL AND COALESCE(v.is_test_data, 0) = 0
     AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.status = 'actioned' AND (
@@ -133,13 +139,10 @@ export async function readDiscoveryVisitAggregates(
         ))
       )
     )
-  ), ordered AS (
+  ), ordered AS MATERIALIZED (
     SELECT *,
       ROW_NUMBER() OVER (PARTITION BY user_id, restaurant_id, visibility
-        ORDER BY visited_at DESC, visit_id ASC) AS latest_position,
-      ROW_NUMBER() OVER (PARTITION BY user_id, restaurant_id, visibility
-        ORDER BY CASE WHEN rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE} THEN 0 ELSE 1 END,
-          visited_at DESC, visit_id ASC) AS qualified_position
+        ORDER BY visited_at DESC, visit_id ASC) AS latest_position
     FROM eligible
   ), aggregates AS (
     SELECT user_id, restaurant_id, visibility,
@@ -149,8 +152,9 @@ export async function readDiscoveryVisitAggregates(
       COALESCE(SUM(reliable_price), 0) AS reliable_price_sum,
       COALESCE(SUM(rating), 0) AS rating_sum,
       SUM(CASE WHEN rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE} THEN 1 ELSE 0 END) AS qualified_rating_count,
-      SUM(CASE WHEN rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE} THEN rating ELSE 0 END) AS qualified_rating_sum
-    FROM eligible GROUP BY user_id, restaurant_id, visibility
+      SUM(CASE WHEN rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE} THEN rating ELSE 0 END) AS qualified_rating_sum,
+      MIN(CASE WHEN rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE} THEN latest_position END) AS qualified_position
+    FROM ordered GROUP BY user_id, restaurant_id, visibility
   ) SELECT a.*, latest.profile_visibility, latest.visit_id, latest.visited_at, latest.rating,
       latest.restaurant_name, latest.address, latest.city, latest.latitude, latest.longitude,
       latest.tags_json, latest.price_per_person, latest.merchant_image_url, latest.marker_emoji,
@@ -162,10 +166,10 @@ export async function readDiscoveryVisitAggregates(
     JOIN ordered latest ON latest.user_id = a.user_id AND latest.restaurant_id = a.restaurant_id
       AND latest.visibility = a.visibility AND latest.latest_position = 1
     LEFT JOIN ordered qualified ON qualified.user_id = a.user_id AND qualified.restaurant_id = a.restaurant_id
-      AND qualified.visibility = a.visibility AND qualified.qualified_position = 1
+      AND qualified.visibility = a.visibility AND qualified.latest_position = a.qualified_position
       AND qualified.rating >= ${DISCOVERY_MINIMUM_QUALIFIED_RATING_OUT_OF_FIVE}
     ORDER BY a.user_id, a.restaurant_id, a.visibility LIMIT ?`)
-    .bind(snapshot, scope.viewerID, ...locationBindings, scope.viewerID, scope.viewerID,
+    .bind(JSON.stringify(restaurantIDs), snapshot, scope.viewerID, ...locationBindings, scope.viewerID, scope.viewerID,
       scope.viewerID, scope.viewerID, DISCOVERY_AGGREGATE_CAPACITY + 1).all<AggregateRow>()
   if (rows.results.length > DISCOVERY_AGGREGATE_CAPACITY) throw new DiscoveryAggregateCapacityError()
   return rows.results.map((row) => ({

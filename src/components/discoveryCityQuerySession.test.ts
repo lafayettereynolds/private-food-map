@@ -112,3 +112,13 @@ describe('session-only Discovery city query', () => {
     expect(session.snapshot().error).toContain('账户已变化')
   })
 })
+
+it('backs off automatic failed reads while allowing an explicit retry', async () => {
+  const load = vi.fn().mockRejectedValue(new Error('service unavailable'))
+  const session = createDiscoveryCityQuerySession({ load, owner: async () => 'owner', publish: () => undefined })
+  await session.select(query)
+  await session.refreshAutomatically()
+  expect(load).toHaveBeenCalledTimes(1)
+  await session.retry()
+  expect(load).toHaveBeenCalledTimes(2)
+})

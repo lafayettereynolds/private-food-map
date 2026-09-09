@@ -114,6 +114,11 @@ struct RootTabView: View {
                 if value == .active { loadPendingSharedImportIfNeeded() }
             }
             .onOpenURL { url in
+                DeviceAcceptanceLog.record("TasteMapDiagnostic category=link event=open_url")
+                if url.path.hasPrefix("/invite/") && !ReferralInvitationStore.isAvailable {
+                    DeviceAcceptanceLog.record("TasteMapDiagnostic category=referral event=link_blocked")
+                    return
+                }
                 if ReferralInvitationStore.receive(url) { referralReceived = true; return }
                 if let shareID = PublicShareRoute.shareID(from: url) {
                     publicShareRoute = PublicShareRouteSelection(shareID: shareID)
@@ -122,10 +127,15 @@ struct RootTabView: View {
                 if url.path.hasPrefix("/share/") { return }
                 if let pending = try? PendingRestaurantImportStore.live().enqueue(text: nil, url: url) {
                     pendingSharedImport = pending
+                    try? PendingRestaurantImportStore.live().markPresented(id: pending.id)
                 }
             }
             .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                DeviceAcceptanceLog.record("TasteMapDiagnostic category=link event=universal_link")
                 if let url = activity.webpageURL, ReferralInvitationStore.receive(url) { referralReceived = true }
+                else if let url = activity.webpageURL, let shareID = PublicShareRoute.shareID(from: url) {
+                    publicShareRoute = PublicShareRouteSelection(shareID: shareID)
+                }
             }
             .alert("已收到 Taste Map 邀请", isPresented: $referralReceived) { Button("知道了", role: .cancel) {} } message: {
                 Text("邀请码已暂存。请前往‘我的’，使用 Apple 登录创建新账号，并完成首次有效到访。已有账号不会重新绑定邀请人。")
@@ -150,6 +160,7 @@ struct RootTabView: View {
     }
 
     private func loadPendingSharedImportIfNeeded() {
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=share event=pending_import_check")
 #if DEBUG
         // The isolated Visual QA workspace must never read or consume the real
         // App Group import queue from a developer's installed application.
@@ -157,7 +168,8 @@ struct RootTabView: View {
 #endif
         guard pendingSharedImport == nil,
               let store = try? PendingRestaurantImportStore.live() else { return }
-        pendingSharedImport = try? store.pending().first
+        pendingSharedImport = try? store.awaitingPresentation().first
+        if let pendingSharedImport { try? store.markPresented(id: pendingSharedImport.id) }
     }
 
     private func presentRequestedVisitAfterAcquisitionDismissal() {

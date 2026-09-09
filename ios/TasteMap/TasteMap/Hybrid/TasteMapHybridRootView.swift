@@ -1,13 +1,13 @@
 import SwiftData
 import SwiftUI
 
-struct TasteMapHybridDevelopmentRootView: View {
+struct TasteMapHybridRootView: View {
     @State private var referralReceived = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(TasteMapHybridRuntime.self) private var runtime
 
     var body: some View {
-        TasteMapPersistentHybridController(runtime: runtime)
+        TasteMapPersistentHybridController(controller: runtime.bridgeController)
             .ignoresSafeArea()
             .sheet(item: nativeRouteBinding) { route in
                 TasteMapHybridNativeRouteHost(route: route)
@@ -43,6 +43,7 @@ struct TasteMapHybridDevelopmentRootView: View {
                 runtime.localDataDidChange(reason: "syncCompleted")
             }
             .onOpenURL { url in
+                if url.path.hasPrefix("/invite/") && !ReferralInvitationStore.isAvailable { return }
                 if ReferralInvitationStore.receive(url) { referralReceived = true; return }
                 if (try? TasteMapHybridDeepLinkParser.route(from: url)) != nil {
                     runtime.receive(url: url)
@@ -51,7 +52,10 @@ struct TasteMapHybridDevelopmentRootView: View {
                 }
             }
             .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-                if let url = activity.webpageURL, ReferralInvitationStore.receive(url) { referralReceived = true }
+                guard let url = activity.webpageURL else { return }
+                if url.path.hasPrefix("/invite/") && !ReferralInvitationStore.isAvailable { return }
+                if ReferralInvitationStore.receive(url) { referralReceived = true; return }
+                runtime.receive(url: url)
             }
             .alert("已收到 Taste Map 邀请", isPresented: $referralReceived) { Button("知道了", role: .cancel) {} } message: {
                 Text("邀请码已暂存。请前往‘我的’，使用 Apple 登录创建新账号，并完成首次有效到访。已有账号不会重新绑定邀请人。")
@@ -78,21 +82,20 @@ struct TasteMapHybridDevelopmentRootView: View {
 #if DEBUG
         guard !TasteMapUITestFixtures.usesVisualQA else { return }
 #endif
-        guard runtime.pendingSharedImport == nil,
-              let store = try? PendingRestaurantImportStore.live(),
-              let value = try? store.pending().first else { return }
+        guard let store = try? PendingRestaurantImportStore.live(),
+              let value = try? store.awaitingPresentation().first else { return }
         runtime.receive(sharedImport: value)
     }
 }
 
-private struct TasteMapPersistentHybridController: UIViewControllerRepresentable {
-    let runtime: TasteMapHybridRuntime
+struct TasteMapPersistentHybridController: UIViewControllerRepresentable {
+    let controller: UIViewController
 
-    func makeUIViewController(context: Context) -> TasteMapHybridBridgeViewController {
-        runtime.bridgeController
+    func makeUIViewController(context: Context) -> UIViewController {
+        controller
     }
 
-    func updateUIViewController(_ uiViewController: TasteMapHybridBridgeViewController, context: Context) { }
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) { }
 }
 
 private struct TasteMapHybridNativeRouteHost: View {
@@ -166,7 +169,11 @@ private struct TasteMapHybridNativeRouteHost: View {
         case .accountSettings:
             TasteMapHybridNativeAccountSettingsRoute()
         case .dataBackup:
-            TasteMapHybridNativeDataBackupRoute()
+            if route.identifier == "sync" {
+                SyncSettingsView(presentationOverride: nil)
+            } else {
+                TasteMapHybridNativeDataBackupRoute()
+            }
         case .dataClear:
             TasteMapHybridNativeDataClearRoute()
         case .privacySettings:

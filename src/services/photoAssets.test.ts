@@ -17,11 +17,21 @@ describe('Native and Browser photo namespaces', () => {
   })
   it('keeps ordinary Browser ID lookup and does not invent Native access', async () => {
     expect(await resolvePhotoSource(null, 'browser-photo')).toBeNull()
-    expect(stores.cache).toHaveBeenCalledWith('browser-photo')
+    expect(stores.cache).not.toHaveBeenCalled()
     expect(stores.photo).toHaveBeenCalledWith('browser-photo')
   })
   it('preserves a Browser inline image without a photo ID', async () => {
     expect(await resolvePhotoSource('data:image/png;base64,fixture')).toBe('data:image/png;base64,fixture')
     expect(stores.photo).not.toHaveBeenCalled()
+  })
+  it.each([
+    { deletedAt: '2026-09-09T00:00:00Z' },
+    { localState: 'delete-pending' },
+    { syncStatus: 'delete-pending' },
+  ])('rejects deleted/pending-delete photos before cached bytes are read: %j', async state => {
+    stores.photo.mockResolvedValue({ id: 'deleted-photo', ...state })
+    stores.cache.mockResolvedValue({ blob: new Blob(['private-image']) })
+    expect(await resolvePhotoSource(null, 'deleted-photo')).toBeNull()
+    expect(stores.cache).not.toHaveBeenCalled()
   })
 })

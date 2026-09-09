@@ -38,7 +38,7 @@ describe('iOS QA companion app isolation contract', () => {
     const fixtures = source('../../ios/TasteMap/TasteMap/App/TasteMapUITestFixtures.swift')
 
     expect(appRuntime).toMatch(/#if TASTEMAP_QA\s+TasteMapRuntimeConfiguration\(tier: \.visualQA\)/)
-    expect(hybridRuntime).toMatch(/#if TASTEMAP_PRIVATE_PREVIEW \|\| \(DEBUG && TASTEMAP_QA\)\s+return \.hybridDevelopment\s+#elseif DEBUG\s+if ProcessInfo\.processInfo\.arguments\.contains\("--tastemap-hybrid-development"\) \{\s+return \.hybridDevelopment\s+\}\s+return \.nativePrimary\s+#else\s+return \.nativePrimary\s+#endif/)
+    expect(hybridRuntime).toMatch(/#if TASTEMAP_PRIVATE_PREVIEW \|\| \(DEBUG && TASTEMAP_QA\)\s+return \.hybridDevelopment\s+#elseif DEBUG\s+if ProcessInfo\.processInfo\.arguments\.contains\("--tastemap-hybrid-development"\) \{\s+return \.hybridDevelopment\s+\}\s+return \.nativePrimary\s+#else\s+return \.hybridPrimary\s+#endif/)
     expect(fixtures).toMatch(/#if TASTEMAP_QA[\s\S]*?\?\? \.rich/)
   })
 
