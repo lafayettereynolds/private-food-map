@@ -2,6 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "private-food-map-development",
   "main": "./worker/index.ts",
+  "define": { "__TASTEMAP_DEVELOPMENT_TOOLS__": "true" },
   "alias": { "node-fetch": "./worker/appleNodeFetch.ts" },
   "compatibility_date": "2026-08-20",
   "compatibility_flags": ["nodejs_compat"],

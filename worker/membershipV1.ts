@@ -60,7 +60,7 @@ export function membershipSelfResponseV1(
   now = new Date(),
 ): MembershipSelfResponseV1 {
   const source: MembershipEntitlementSourceV1 | null = effective.isPremium
-    ? developmentTestIdentity ? 'development' : effective.source
+    ? ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && developmentTestIdentity) ? 'development' : effective.source
     : null
   const updatedAt = effective.entitlements
     .filter((item) => item.status === 'active')
@@ -87,7 +87,8 @@ function entitlementKind(
   source: MembershipEntitlementSourceV1 | null,
   isLifetime: boolean,
 ): MembershipEntitlementKindV1 {
-  if (isLifetime || source === 'app_store_lifetime' || source === 'gift_lifetime' || source === 'development') return 'lifetime'
+  if (isLifetime || source === 'app_store_lifetime' || source === 'gift_lifetime' ||
+      ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && source === 'development')) return 'lifetime'
   if (source === 'app_store_monthly') return 'monthly_subscription'
   if (source === 'app_store_yearly' || source === 'app_store_annual') return 'annual_subscription'
   if (source === 'signup_trial' || source === 'gift_annual' || source === 'referral_reward') return 'fixed_term'

@@ -45,6 +45,9 @@ import { calculateTasteSimilarities, tasteSimilarityForDisplay } from './tasteSi
 import { recommendationHistoryReasons } from '../src/services/recommendationHistoryReasons'
 import { rankFriendRecommendations } from './friendRecommendation'
 import { rankTasteTags } from '../src/services/tasteProfileCore'
+// The direct expression is intentional: esbuild must eliminate branches in
+// its first pass, before importing Development-only module dependencies.
+declare const __TASTEMAP_DEVELOPMENT_TOOLS__: boolean
 import {
   ExternalLinkResolveError,
   resolveExternalRestaurantEvidence,
@@ -101,10 +104,6 @@ import {
   PublicAPIRateLimitError,
 } from './publicAPIRateLimit'
 import { membershipSelfResponseV1 } from './membershipV1'
-import {
-  DevelopmentDemoAdminV1Error,
-  handleDevelopmentDemoAdminV1,
-} from './developmentDemoAdminV1'
 import {
   AppStoreCommerceV1Error,
   handleAppStoreCommerceV1,
@@ -738,9 +737,15 @@ const worker = {
       if (url.pathname === '/api/v1/storekit/notifications') {
         return json(await handleAppStoreServerNotificationV1(request, env.DB, env))
       }
-      if (url.pathname.startsWith('/api/v1/development/demo-data')) {
+      if ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && url.pathname.startsWith('/api/v1/development/demo-data')) {
+        const { handleDevelopmentDemoAdminV1, DevelopmentDemoAdminV1Error } = await import('./developmentDemoAdminV1')
         const viewer = await resolveSyncViewer(request, env)
-        return json(await handleDevelopmentDemoAdminV1(request, env.DB, viewer.id, env))
+        try {
+          return json(await handleDevelopmentDemoAdminV1(request, env.DB, viewer.id, env))
+        } catch (error) {
+          if (error instanceof DevelopmentDemoAdminV1Error) throw new RequestError(error.message, error.status)
+          throw error
+        }
       }
       if (url.pathname === '/api/v1/me/premium-trial-eligibility' || url.pathname === '/api/v1/me/premium-trial/claim') {
         const claim = url.pathname.endsWith('/claim')
@@ -985,7 +990,8 @@ const worker = {
         return json(await mutateFollow(env.DB, viewer.id, request))
       }
       if (url.pathname === '/api/friend-recommendations' && request.method === 'GET') {
-        return json(await readFriendRecommendations(env.DB, viewer.id, Boolean(request.headers.get('X-Taste-Map-Test-User'))))
+        return json(await readFriendRecommendations(env.DB, viewer.id,
+          (typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && Boolean(request.headers.get('X-Taste-Map-Test-User'))))
       }
       const restaurantStatsMatch = url.pathname.match(/^\/api\/restaurants\/([^/]+)\/stats$/)
       if (restaurantStatsMatch && request.method === 'GET') {
@@ -1025,7 +1031,7 @@ const worker = {
         status: error instanceof PublicAPIRateLimitError ? error.status : undefined,
       })
       const message = error instanceof Error ? error.message : 'D1 同步发生未知错误。'
-      const status = error instanceof RecommendationPreferencesV1Error || error instanceof DiscoveryQueryError || error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof DiscoveryAggregateCapacityError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof DevelopmentDemoAdminV1Error || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.status : 500
+      const status = error instanceof RecommendationPreferencesV1Error || error instanceof DiscoveryQueryError || error instanceof RequestError || error instanceof SyncV1RequestError || error instanceof AuthV1RequestError || error instanceof PhotoBinaryV1Error || error instanceof ProfileV1RequestError || error instanceof SocialV1RequestError || error instanceof SocialCollaborationV1Error || error instanceof DiscoveryV1RequestError || error instanceof DiscoveryAggregateCapacityError || error instanceof CommunityV1RequestError || error instanceof CommunityInteractionV1Error || error instanceof RestaurantListsV1RequestError || error instanceof PublicAPIRateLimitError || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.status : 500
       const code = error instanceof RecommendationPreferencesV1Error || error instanceof DiscoveryQueryError || error instanceof AuthV1RequestError || error instanceof DiscoveryV1RequestError || error instanceof DiscoveryAggregateCapacityError || error instanceof AppStoreCommerceV1Error || error instanceof PublicSharingV1Error || error instanceof AccountDeletionV1Error || error instanceof ModerationV1Error ? error.code : undefined
       return json({ error: message, ...(code ? { code } : {}) }, status)
     }
@@ -1749,8 +1755,8 @@ interface ViewerIdentity {
 
 async function resolveViewer(request: Request, database: D1Database): Promise<ViewerIdentity> {
   const hostname = new URL(request.url).hostname
-  const localTestUser = request.headers.get('X-Taste-Map-Test-User')
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+  if ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && (hostname === 'localhost' || hostname === '127.0.0.1')) {
+    const localTestUser = request.headers.get('X-Taste-Map-Test-User')
     if (localTestUser === 'free-tester') return { id: 'free-tester', email: null, authProvider: 'local', authSubject: null, testMembership: 'free' }
     return { id: 'owner', email: null, authProvider: 'local', authSubject: null, testMembership: 'premium' }
   }
@@ -1800,7 +1806,7 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
     throw new SyncV1RequestError('A verified Taste Map session is required.', 401)
   }
   const hostname = new URL(request.url).hostname
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+  if ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && (hostname === 'localhost' || hostname === '127.0.0.1')) {
     const requestedUser = request.headers.get('X-Taste-Map-Test-User')?.trim() || 'owner'
     if (!/^[a-zA-Z0-9:_-]{1,80}$/.test(requestedUser)) {
       throw new SyncV1RequestError('Development sync identity is invalid.', 400)
@@ -1814,7 +1820,7 @@ async function resolveSyncViewer(request: Request, env: Env): Promise<ViewerIden
       testMembership: requestedUser === 'free-tester' ? 'free' : 'premium',
     }
   }
-  if (env.SYNC_AUTH_MODE === 'development-test') {
+  if ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && env.SYNC_AUTH_MODE === 'development-test') {
     if (env.APP_ENVIRONMENT !== 'development') {
       throw new SyncV1RequestError('Development sync authentication is not allowed in this environment.', 503)
     }
@@ -1901,7 +1907,7 @@ export async function readEffectiveMembership(database: D1Database, userId: stri
 }
 
 async function readViewerMembership(database: D1Database, viewer: ViewerIdentity) {
-  if (viewer.testMembership === 'premium') {
+  if ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && viewer.testMembership === 'premium') {
     const startsAt = '2026-01-01T00:00:00.000Z'
     return {
       isPremium: true,
@@ -1916,7 +1922,7 @@ async function readViewerMembership(database: D1Database, viewer: ViewerIdentity
       }],
     }
   }
-  if (viewer.testMembership === 'free') {
+  if ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && viewer.testMembership === 'free') {
     return { isPremium: false, source: null, startsAt: null, expiresAt: null, isLifetime: false, entitlements: [] }
   }
   return readEffectiveMembership(database, viewer.id, viewer.storeEnvironment)
@@ -3153,6 +3159,7 @@ function isSameOriginRequest(request: Request, url: URL) {
   // Vite's local proxy rewrites the request host to the Worker port while
   // preserving the browser Origin. Treat loopback-to-loopback traffic as the
   // same local app, but keep the strict equality rule everywhere else.
+  if (typeof __TASTEMAP_DEVELOPMENT_TOOLS__ !== 'undefined' && !__TASTEMAP_DEVELOPMENT_TOOLS__) return false
   try {
     const originUrl = new URL(origin)
     const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])

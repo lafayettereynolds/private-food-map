@@ -299,7 +299,7 @@ async function jobFromToken(request: Request, database: D1Database) {
 }
 
 function requireFreshAuthentication(viewer: AccountDeletionViewerV1, now: Date) {
-  if (viewer.developmentIdentity) return
+  if ((typeof __TASTEMAP_DEVELOPMENT_TOOLS__ === 'undefined' || __TASTEMAP_DEVELOPMENT_TOOLS__) && viewer.developmentIdentity) return
   const authenticatedAt = viewer.authenticatedAt ? Date.parse(viewer.authenticatedAt) : NaN
   if (!Number.isFinite(authenticatedAt) || now.getTime() - authenticatedAt > FRESH_AUTH_WINDOW_MS) {
     throw requestError('删除账户前需要重新使用 Apple 登录验证。', 401, 'fresh_authentication_required')
