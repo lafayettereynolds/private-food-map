@@ -1047,3 +1047,21 @@ Ordinary cold launch defaults to Map. A newly received external share may open A
 ### 2026-09-08 — Discovery failure presentation and provider labels
 
 Provider enum identifiers such as MKPOICategoryRestaurant are not product copy. Translate known category metadata, retain actual cuisine tags and omit unknown provider enum identifiers. Discovery displays one current-scope failure; cached results are labelled as cached, query failures never become empty-results success. Avoid a repeated global/per-tab/pagination error stack. Automatic failed refreshes back off, while explicit retry remains available.
+
+### 2026-09-10 — Personal Restaurant aggregate precision
+
+Raw Visit ratings remain 0.5–5 stars in half-star steps; the visit input and stored
+history are unchanged. A personal Restaurant aggregate uses eligible same-owner,
+nondeleted rated Visits: retain the precise five-star mean, multiply by two, and
+round only the final ten-point output to one decimal (positive half-up). Natural
+8.7 / 8.8 / 9.1 / 9.3 values are valid. Browser summary, Restaurant Detail personal
+rating and Native Hybrid DTO must share these semantics. Keep exact mean inputs
+for existing precise sorting; do not change liked thresholds or recommendation
+meaning. Community/friend/similar-user aggregates retain their independent cohort,
+visibility, sample and weighting contracts. Activity badges describe the concrete
+Visit, never the Restaurant aggregate.
+
+Do Not Regress: no intermediate five-star rounding, arbitrary fractional raw
+Visit scores, aggregate overrides for screenshots, historical data rewrites or
+schema changes to achieve display precision. Shared Core rating components and
+canonical page composition remain unchanged; Food/Dining visuals are unaffected.

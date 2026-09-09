@@ -11,6 +11,7 @@ import {
   SyncV1RequestError,
 } from './syncV1'
 import { ensureUserProfile, readPublicProfile } from './profileV1'
+import { buildRestaurantSummaries } from '../src/services/restaurantSummaryProjection'
 import { applyAllMigrations } from './testSupport/migrations.js'
 
 describe('Worker Sync API V1 integration', () => {
@@ -146,6 +147,26 @@ describe('Worker Sync API V1 integration', () => {
     expect(database.get('SELECT total_changes() n').n).toBe(before)
     await expect(handleSyncConflictSnapshot(database,'user-b',request)).rejects.toMatchObject({status:404})
   })
+  it('preserves raw half-stars and personal 9.1 across push, pull and replay', async () => {
+    const database=makeDatabase()
+    const restaurant={...appleFixture,userId:'user-a',overallRating:null}
+    await push(database,'user-a',mutation('precision-r','restaurant',restaurant.id,0,restaurant))
+    const ratings=[4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,5]
+    const mutations=ratings.map((rating,i)=>{
+      const v={...visitPayload(`precision-${i}`,restaurant.id,'user-a'),rating}
+      return mutation(`precision-m${i}`,'visit',v.id,0,v)
+    })
+    await push(database,'user-a',...mutations)
+    await push(database,'user-a',...mutations)
+    for(let i=0;i<2;i++){
+      const result=JSON.parse(JSON.stringify(await pull(database,'user-a','0')))
+      expect(result.visits.map(v=>v.record.rating).sort()).toEqual([...ratings].sort())
+      expect(buildRestaurantSummaries(result.restaurants.map(x=>x.record),result.visits.map(x=>x.record))[0].scoreOutOfTen).toBe(9.1)
+    }
+    expect((await pull(database,'user-b','0')).visits).toEqual([])
+    expect(database.get('SELECT COUNT(*) AS n FROM visits').n).toBe(9)
+  })
+
   it('rejects new free dish photos even below quota and preserves Premium-era photos', async () => {
     const database=makeDatabase();await ensureUser(database,'user-a')
     await push(database,'user-a',mutation('dish-gate-r','restaurant',appleFixture.id,0,appleFixture))

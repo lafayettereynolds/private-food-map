@@ -38,6 +38,7 @@ let package = Package(
                 "Hybrid/TasteMapHybridDebugFixture.swift",
                 "Persistence/LocalAccountOwnership.swift",
                 "Services/RestaurantCityFilterIdentity.swift",
+                "Services/PersonalRestaurantRating.swift",
                 "Services/RestaurantVisitStatePolicy.swift",
             ],
             swiftSettings: [.define("TASTEMAP_HYBRID_BRIDGE_CORE")]

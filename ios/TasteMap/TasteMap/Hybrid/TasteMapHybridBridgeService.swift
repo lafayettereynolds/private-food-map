@@ -1822,7 +1822,7 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
         status: RestaurantStatus
     ) -> TasteMapHybridRestaurantDTO {
         let rated = visits.compactMap(\.rating)
-        let averageRating = rated.isEmpty ? nil : rounded(rated.reduce(0, +) / Double(rated.count), places: 1)
+        let personalRating = PersonalRestaurantRating.project(rated)
         let referencePrice = metadata.referencePrice ?? median(visits.compactMap(decimalDouble))
         let contentResolution = contentImageResolution(restaurant: restaurant, metadata: metadata, activeVisitIDs: Set(visits.map(\.id)))
         return TasteMapHybridRestaurantDTO(
@@ -1839,8 +1839,8 @@ public final class TasteMapHybridBridgeService: TasteMapHybridServiceProviding {
             openingHours: metadata.openingHours,
             referencePrice: referencePrice,
             visitCount: visits.count,
-            averageRating: averageRating,
-            scoreOutOfTen: averageRating.map { rounded($0 * 2, places: 1) },
+            averageRating: personalRating.averageRating,
+            scoreOutOfTen: personalRating.scoreOutOfTen,
             latestVisitDate: visits.first.map { Self.dateFormatter.string(from: $0.visitedAt) },
             createdAt: Self.dateFormatter.string(from: restaurant.createdAt),
             updatedAt: Self.dateFormatter.string(from: restaurant.updatedAt),

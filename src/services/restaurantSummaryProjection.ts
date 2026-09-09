@@ -1,5 +1,6 @@
 import type { Restaurant, RestaurantSummary, Visit } from '../types/domain'
 import { queueDurationApproximateMinutes } from '../types/domain'
+import { projectPersonalRestaurantRating } from './personalRestaurantRating'
 import { restaurantPriceInsight } from './priceIntelligence'
 
 /**
@@ -30,9 +31,7 @@ export function buildRestaurantSummaries(
     const queuedVisits = restaurantVisits
       .map((visit) => queueDurationApproximateMinutes(visit.queueDuration))
       .filter((minutes): minutes is number => minutes !== null)
-    const averageRating = ratedVisits.length
-      ? Math.round((ratedVisits.reduce((sum, visit) => sum + (visit.rating ?? 0), 0) / ratedVisits.length) * 10) / 10
-      : null
+    const { averageRating, scoreOutOfTen } = projectPersonalRestaurantRating(ratedVisits.map(visit => visit.rating!))
     const averageQueueMinutes = queuedVisits.length
       ? queuedVisits.reduce((sum, minutes) => sum + minutes, 0) / queuedVisits.length
       : null
@@ -47,7 +46,7 @@ export function buildRestaurantSummaries(
       pricePerPerson: restaurant.pricePerPerson ?? null,
       visitCount: restaurantVisits.length,
       averageRating,
-      scoreOutOfTen: restaurant.overallRating ?? (averageRating !== null ? Math.round(averageRating * 20) / 10 : null),
+      scoreOutOfTen: restaurant.overallRating ?? scoreOutOfTen,
       latestVisitDate: restaurantVisits[0]?.visitedAt ?? null,
       latestVisit: restaurantVisits[0] ?? null,
       visits: restaurantVisits,

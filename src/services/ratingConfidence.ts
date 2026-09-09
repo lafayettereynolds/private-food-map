@@ -1,4 +1,5 @@
-import { starToTenScore, type Visit } from '../types/domain'
+import type { Visit } from '../types/domain'
+import { projectPersonalRestaurantRating } from './personalRestaurantRating'
 
 export type RatingConfidence = 'NO_DATA' | 'INSUFFICIENT' | 'LOW' | 'NORMAL'
 
@@ -26,13 +27,13 @@ export function groupRatingDisplay(score: number | null, sampleCount: number): R
 }
 
 export function personalRestaurantRating(visits: Visit[], userId?: string) {
-  const scores = visits
+  const ratings = visits
     .filter((visit) => !visit.deletedAt && (!userId || visit.userId === userId) && visit.rating !== null)
-    .map((visit) => starToTenScore(visit.rating))
-    .filter((score): score is number => score !== null)
-  if (!scores.length) return { score: null, ratedVisitCount: 0 }
+    .map((visit) => visit.rating)
+    .filter((rating): rating is NonNullable<Visit['rating']> => rating !== null)
+  if (!ratings.length) return { score: null, ratedVisitCount: 0 }
   return {
-    score: Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 10) / 10,
-    ratedVisitCount: scores.length,
+    score: projectPersonalRestaurantRating(ratings).scoreOutOfTen,
+    ratedVisitCount: ratings.length,
   }
 }
