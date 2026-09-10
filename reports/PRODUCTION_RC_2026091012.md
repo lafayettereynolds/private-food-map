@@ -55,7 +55,9 @@ The local Capacitor origin's `hostname=localhost` is the existing signed local U
 - `TasteMap.store`: 29 Visits / 6 PhotoAsset records; 7 historical conflict rows have `accept_server` (3) or `canonicalized` (4) audit resolution, **active queue 0**.
 - Separate legacy `TasteMapDevelopment.store` retains 10 unresolved rows. It is not cleared, merged, or used to claim the current queue is nonzero. Formal Release selects `TasteMap.store`.
 - No app uninstall, local data clear, logout/account switch, genuine photo deletion or Production database write has been performed by this RC build task.
-- TestFlight installation, launch/auth/map/detail/new dedicated test Visit/Sync/test photo upload+delete/R2 original+thumbnail deletion/restart/queue0/Premium product load remain **NOT RUN** on build 1012 until actual device evidence exists.
+- TestFlight overwrite installation is **PASS**: device inventory confirms 1012; before first launch, both database inventories (IDs/owners/counts/mutations) and the complete copied Application Support file hashes are identical to before installation.
+- Launch reaches the real Hybrid authentication-required screen. Initiating its Apple sign-in action opens the genuine Apple sheet for the existing Apple account. The sheet requires user password/device authentication; no credential was entered and no alternate account was selected.
+- Production authenticated session, map/detail/new dedicated test Visit/Sync/test photo upload+delete/R2 original+thumbnail deletion/restart/queue0/Premium product load remain **USER ACTION REQUIRED / NOT RUN** on build 1012. The previous Development API session is not fabricated into a valid Production session. No smoke PASS is inferred from the login sheet.
 - **APP REVIEW CANDIDATE: NOT YET.** Same-build eligibility and successful upload do not substitute for Production smoke.
 
 ## Upload state
@@ -65,3 +67,7 @@ The local Capacitor origin's `hostname=localhost` is the existing signed local U
 - Existing Internal Testers group's build listing contains 1012; its all-builds access automatically included this build, so no new group or membership write was needed. `internalBuildState=IN_BETA_TESTING`, `externalBuildState=READY_FOR_BETA_SUBMISSION` (not external testing or a submitted review).
 - TestFlight on the real iPhone visibly offers version `1.0`, build `2026091012`, 63 MB. The authorized overwrite update was initiated only after the backup; no uninstall occurred.
 - Exported local IPA SHA-256: `c5b4a05b534a279a184d4ecf21d60923e0d716420f5a3a7d6af00bc19494442e`.
+
+## Handoff
+
+Complete Apple sign-in on the actual iPhone using the existing account, then resume Production smoke on this installed TestFlight build. Do not uninstall, clear data, switch accounts or recreate the build. Production smoke has not passed yet, so no App Store version selection, review submission or release follows this checkpoint.
