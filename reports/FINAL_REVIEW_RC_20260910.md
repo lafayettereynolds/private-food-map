@@ -1,4 +1,22 @@
-# Final Review RC integration — blocked before release
+# Final Review RC integration — backend prerequisite closed
+
+## 2026-09-10 16:51 Production UGC follow-up
+
+The separately authorized minimal backend deployment is PASS. Current Production is
+`2ec7bc75-7c89-4d8a-9a3a-4a3c85e6c858`; rollback reference is `eaed4e92-1881-444a-9729-1230b2882b8e`.
+The approved UGC backend increment was integrated onto the retention-enabled source
+as `a78d9b9`, not deployed from the older RC Worker tree. Worker 461/461, TypeScript,
+production build/purity and exact six-module semantic diff PASS. Fresh D1 backup
+restored successfully. Ledger 44, retention enabled, cron, bindings, routes,
+domains and assets preserved. Live safety endpoint returns 401 JSON unauthenticated;
+its implementation is present in the verified live bundle. Authenticated capability
+semantics passed isolated tests without real-user writes. Post-deploy retention
+30/90/365 candidates are all zero, FK PASS. No migrations or D1/R2 business writes.
+
+PRODUCTION UGC BACKEND: READY FOR FINAL REVIEW RC.
+The historical blocker below is resolved; remaining archive/distribution/processing/
+TestFlight-device gates are still NOT RUN, not automatically promoted to PASS.
+Detailed evidence: `private-food-map-production-ugc-20260910/reports/PRODUCTION_UGC_DEPLOYMENT_20260910.md`.
 
 ## Frozen baseline
 
