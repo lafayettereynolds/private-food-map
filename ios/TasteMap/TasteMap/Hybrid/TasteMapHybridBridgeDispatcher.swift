@@ -95,7 +95,7 @@ public final class TasteMapHybridBridgeDispatcher {
                 .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumTrialEligibility, .premiumClaimTrial, .premiumStatus, .premiumProducts, .premiumPurchase,
                 .premiumRestore, .premiumManage, .referralsDashboard, .referralsPrepareRegistration, .directoryDashboard, .directoryMutate, .directoryRespond, .directorySearchUsers, .permissionsStatus, .permissionsOpenSettings,
                 .backupOpenExport, .backupOpenImport, .accountOpenDelete,
-                .communitySetLike, .communityComments, .communityAddComment, .restaurantSetWantToGo, .restaurantSetAvatar,
+                .communitySetLike, .communityComments, .communityAddComment, .communitySafety, .communityReport, .communityBlock, .communityDeleteComment, .restaurantSetWantToGo, .restaurantSetAvatar,
                 .navigationOpenNative, .navigationOpenHybrid,
                 .navigationBack, .navigationCurrent:
             guard request.version == Self.bridgeVersion else {
@@ -179,7 +179,7 @@ public final class TasteMapHybridBridgeDispatcher {
                     .photoPick, .photoCapture, .photoDiscard, .photoRetry, .premiumTrialEligibility, .premiumClaimTrial, .premiumStatus, .premiumProducts, .premiumPurchase,
                     .premiumRestore, .premiumManage, .referralsDashboard, .referralsPrepareRegistration, .directoryDashboard, .directoryMutate, .directoryRespond, .directorySearchUsers, .permissionsStatus, .permissionsOpenSettings,
                     .backupOpenExport, .backupOpenImport, .accountOpenDelete,
-                    .communitySetLike, .communityComments, .communityAddComment, .restaurantSetWantToGo, .restaurantSetAvatar:
+                    .communitySetLike, .communityComments, .communityAddComment, .communitySafety, .communityReport, .communityBlock, .communityDeleteComment, .restaurantSetWantToGo, .restaurantSetAvatar:
                 throw TasteMapHybridBridgeErrorDTO(
                     code: "capability_unavailable",
                     message: "This capability is not available in Hybrid Migration Phase 1.",

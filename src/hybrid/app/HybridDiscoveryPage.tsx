@@ -45,6 +45,8 @@ import { HYBRID_DISCOVERY_PRIMARY_TABS } from './HybridProductContracts'
 import { ModalShell } from '../../components/ModalShell'
 import { RecommendationNotInterested, useRecommendationPreferences } from '../../components/RecommendationNotInterested'
 import { CommunityCommentList } from '../../components/CommunityCommentList'
+import { UGCSafetyMenu } from '../../components/UGCSafetyMenu'
+import { useUGCSafetyState } from '../../components/ugcSafetyState'
 import { starToTenScore } from '../../types/domain'
 import { TasteMapCitySearch } from '../../components/TasteMapCitySearch'
 import { usesCanonicalForYou } from '../../components/discoveryDefaultScope'
@@ -168,6 +170,10 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
     let cancelled = false
     const subscription = platform.events.subscribe((event) => {
       if (cancelled) return
+      if (event.name === 'data.changed' && (event.payload.reason === 'communityUserBlocked' || event.payload.reason === 'communityCommentDeleted')) {
+        if (canonicalScope) onRetry?.(); else void citySession.retry()
+        return
+      }
       // The optimistic refresh can precede the server acknowledgement. Requery
       // after sync as well, so the ranked page uses the persisted feedback.
       if (event.name === 'data.changed' && event.payload.reason === 'recommendationPreferenceSynced') {
@@ -327,8 +333,8 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
       setComments((current) => [...current, result.comment])
       setEngagement((current) => ({ ...current, [commentContext.target.visitID]: result }))
       setCommentText('')
-    } catch {
-      setMessage('评论没有发送，请重试。')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '评论没有发送，请重试。')
     } finally {
       setCommentSubmitting(false)
     }
@@ -469,7 +475,7 @@ export function HybridDiscoveryPage({ content, platform, profile, onOpenPremium,
     /> : null}
     {commentContext ? <ModalShell description={commentContext.restaurantName} onClose={closeComments} title="评论">
       <div className="community-comment-panel" data-comment-activity-id={commentContext.target.activityID ?? ''} data-comment-visit-id={commentContext.target.visitID}>
-        <CommunityCommentList items={comments} loading={commentsLoading} error={commentsError} onRetry={() => void loadComments(commentContext)} />
+        <CommunityCommentList platform={platform} items={comments} loading={commentsLoading} error={commentsError} onRetry={() => void loadComments(commentContext)} />
         <form onSubmit={(event) => void submitComment(event)}><input aria-label="写下评论" maxLength={280} onChange={(event) => setCommentText(event.target.value)} placeholder="写下评论" value={commentText} /><button aria-label="发送评论" disabled={!commentText.trim() || commentSubmitting} type="submit"><SendIcon size={17} /></button></form>
       </div>
     </ModalShell> : null}
@@ -523,7 +529,12 @@ export function RecommendationCard({ item, platform, onOpenRestaurant, engagemen
   const similarTasteSource = item.mode === 'similar_taste' ? item.sourceUser : null
   const target = item.mode === 'similar_taste' ? item.interaction : null
   const reasons = discoveryReasons(item)
+  const [photo, setPhoto] = useState<import('../../platform/TasteMapPlatform').TasteMapImageDescriptor | null>(null)
+  const safetyVisit = item.interaction?.visitID ?? (photo && 'visitID' in photo ? photo.visitID : null)
+  const safety = useUGCSafetyState(platform)
+  if ((item.sourceUser && safety.blocked.has(item.sourceUser.id)) || (photo && 'sourceOwnerID' in photo && safety.blocked.has(photo.sourceOwnerID))) return null
   return <TasteMapActivityCardFrame
+    safetyAction={safetyVisit ? <UGCSafetyMenu platform={platform} target={{ type: 'visit', id: safetyVisit }} /> : null}
     activityRating={similarTasteSource
       ? <span className="tm-activity-card__similar-rating"><TasteMapActivityRatingBadge prefix={`${similarTasteSource.name}本次到访`} rating={item.activityRating} /></span>
       : item.mode === 'for_you'
@@ -534,7 +545,7 @@ export function RecommendationCard({ item, platform, onOpenRestaurant, engagemen
     mediaCount={item.mode === 'similar_taste' ? item.activityImages?.length : 1}
     media={item.mode === 'similar_taste'
       ? <TasteMapActivityMedia name={item.restaurant.name} onOpen={() => onOpenRestaurant(item.restaurant.id)} images={(item.activityImages?.length ? item.activityImages : [undefined]).map((image, index) => <HybridRestaurantContentImage key={index} activityImage={image} restaurant={item.restaurant} />)} />
-      : <button aria-label={`${item.restaurant.name} 餐厅图片`} onClick={() => onOpenRestaurant(item.restaurant.id)} type="button"><HybridRestaurantContentImage restaurant={item.restaurant} /></button>}
+      : <button aria-label={`${item.restaurant.name} 餐厅图片`} onClick={() => onOpenRestaurant(item.restaurant.id)} type="button"><HybridRestaurantContentImage onResolved={setPhoto} restaurant={item.restaurant} /></button>}
     onOpen={() => onOpenRestaurant(item.restaurant.id)}
     restaurant={<RestaurantIdentity item={item} onOpenRestaurant={onOpenRestaurant} />}
     restaurantActions={<RestaurantQuickActions
@@ -569,7 +580,10 @@ function ActivityCard({ item, platform, onOpenRestaurant, engagement, viewerStat
   onOpenRestaurant: (id: string) => void
 } & CardInteractionProps) {
   const target = item.interaction
+  const safety = useUGCSafetyState(platform)
+  if (safety.blocked.has(item.user.id)) return null
   return <TasteMapActivityCardFrame
+    safetyAction={<UGCSafetyMenu platform={platform} target={target ? { type: 'visit', id: target.visitID } : { type: 'user', id: item.user.id }} />}
     activityRating={item.kind === 'visit' ? <TasteMapActivityRatingBadge rating={item.visitRating} /> : undefined}
     body={item.note ? <p>“{item.note}”</p> : undefined}
     header={<button className="tm-activity-card__user" onClick={() => void platform.navigation.openNative({ route: 'socialNative', identifier: item.user.id })} type="button"><ActivityAvatar user={item.user} /><span><strong>{item.user.name}</strong><small>{formatEventTime(item.eventAt)} · {item.kind === 'visit' ? '公开到访' : '加入想吃'}</small></span></button>}

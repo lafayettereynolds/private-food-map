@@ -61,3 +61,11 @@ export interface UserBlockMutationV1 {
   blocked: boolean
   duplicate: boolean
 }
+/** Resolved by the authenticated service, never inferred by a React renderer. */
+export interface UGCSafetyTarget { type: 'visit' | 'comment' | 'user'; id: string }
+export interface UGCSafetyCapabilities {
+  ownerID: string
+  canReport: boolean
+  canBlock: boolean
+  canDelete: boolean
+}

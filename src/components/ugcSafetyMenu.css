@@ -1,0 +1,9 @@
+.tm-ugc-safety { display: inline-flex; margin-left: auto; }
+.tm-ugc-safety > button { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; background: transparent; border: 0; color: inherit; }
+.tm-ugc-safety-actions { display: grid; gap: 12px; }
+.tm-ugc-safety-actions button, .tm-ugc-safety-actions select { min-height: 44px; }
+.tm-ugc-safety-actions label { display: grid; gap: 8px; }
+.tm-ugc-safety-actions textarea { min-height: 88px; }
+.community-comment-row { display: flex; align-items: start; gap: 8px; }
+.community-comment-row > p { flex: 1; }
+.restaurant-detail-gallery__merchant > [aria-label="用户实拍内容操作"] { position: absolute; z-index: 1; top: 4px; right: 4px; background: var(--surface, white); border-radius: 50%; }

@@ -6,6 +6,9 @@ import { RestaurantSummarySection } from './RestaurantRecordSummary'
 import type { RestaurantSocialStats } from '../types/restaurantStats'
 import { resolveVisitActualSpend, visitSpendLabel } from '../services/visitSpend'
 import type { TasteMapPlatform, TasteMapImageDescriptor, TasteMapImageResolutionDTO } from '../platform/TasteMapPlatform'
+import { UGCSafetyMenu } from './UGCSafetyMenu'
+import { useUGCSafetyState } from './ugcSafetyState'
+import { useState } from 'react'
 
 interface RestaurantPreviewCardProps {
   restaurant: RestaurantSummary
@@ -40,7 +43,19 @@ interface RestaurantPreviewCardProps {
   socialStats?: RestaurantSocialStats | null
 }
 
-export function RestaurantPreviewCard({
+export function RestaurantPreviewCard(props: RestaurantPreviewCardProps) {
+  return props.recommendationPlatform ? <ModeratedRestaurantPreview {...props} platform={props.recommendationPlatform} /> : <RestaurantPreviewContent {...props} />
+}
+
+function ModeratedRestaurantPreview({ platform, ...props }: RestaurantPreviewCardProps & { platform: TasteMapPlatform }) {
+  const safety = useUGCSafetyState(platform)
+  const eligible = (image: TasteMapImageDescriptor) => !('sourceOwnerID' in image) || !safety.blocked.has(image.sourceOwnerID)
+  return <RestaurantPreviewContent {...props}
+    contentImage={props.contentImage && eligible(props.contentImage) ? props.contentImage : undefined}
+    contentImageResolution={props.contentImageResolution ? { ...props.contentImageResolution, sources: props.contentImageResolution.sources.filter(eligible) } : undefined} />
+}
+
+function RestaurantPreviewContent({
   restaurant,
   historyRestaurants = [],
   additionalUserPhotos = [],
@@ -61,7 +76,10 @@ export function RestaurantPreviewCard({
   readOnly = false,
   remoteStatsEnabled = true,
   socialStats,
+  recommendationPlatform,
 }: RestaurantPreviewCardProps) {
+  const [visibleImage, setVisibleImage] = useState<TasteMapImageDescriptor | null>(null)
+  const reportablePhotos = visibleImage && 'visitID' in visibleImage && visibleImage.visitID ? [visibleImage.visitID] : []
   const recordedSpend = restaurant.visits.map(resolveVisitActualSpend).filter((value): value is number => value !== null)
   const averageActualSpend = recordedSpend.length ? Math.round(recordedSpend.reduce((sum, value) => sum + value, 0) / recordedSpend.length) : null
   const overviewFacets = buildOverviewFacets(restaurant.visits)
@@ -71,6 +89,8 @@ export function RestaurantPreviewCard({
     <article className="map-card">
       {showCloseButton ? <button className="map-card__close" aria-label="关闭餐厅卡片" onClick={onClose} type="button"><X size={16} /></button> : null}
       <RestaurantSummarySection
+        onContentImageResolved={setVisibleImage}
+        imageTrailingAction={recommendationPlatform && reportablePhotos.length ? <div aria-label="用户实拍内容操作">{[...new Set(reportablePhotos)].map(id => <UGCSafetyMenu key={id} platform={recommendationPlatform} target={{ type: 'visit', id }} />)}</div> : undefined}
         actions={onAddVisit || onAddToWant || onSaveRecommendation || onAddToRoulette ? {
           isInRoulette,
           onAddToWant: onAddToWant ?? onSaveRecommendation,

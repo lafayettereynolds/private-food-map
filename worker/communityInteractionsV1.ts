@@ -8,6 +8,7 @@ import type {
 } from '../src/contracts/communityContract'
 import type { ProfileAvatarPresetContract } from '../src/contracts/profileContract'
 import { consumePublicAPIQuota } from './publicAPIRateLimit'
+import { prohibitedUGCText } from './ugcTextPolicy'
 
 const API_VERSION = 1
 const DEFAULT_LIMIT = 20
@@ -98,6 +99,9 @@ export async function engagementForVisits(
       GROUP BY content_id`).bind(viewerId, viewerId, viewerId, ...uniqueIDs),
     database.prepare(`SELECT content_id, COUNT(*) AS count FROM content_comments
       WHERE content_type = 'visit' AND deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.status = 'actioned' AND
+          ((cr.content_type = 'comment' AND cr.content_id = content_comments.id) OR
+           (cr.content_type = 'user' AND cr.content_id = content_comments.user_id)))
         AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.deleted_at IS NULL AND (
           (ub.blocker_user_id = ? AND ub.blocked_user_id = content_comments.user_id) OR
           (ub.blocker_user_id = content_comments.user_id AND ub.blocked_user_id = ?)
@@ -163,6 +167,8 @@ async function readComments(
     FROM content_comments c
     JOIN user_profiles p ON p.user_id = c.user_id AND p.deleted_at IS NULL
     WHERE c.content_type = 'visit' AND c.content_id = ? AND c.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.status = 'actioned' AND
+        ((cr.content_type = 'comment' AND cr.content_id = c.id) OR (cr.content_type = 'user' AND cr.content_id = c.user_id)))
       AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.deleted_at IS NULL AND (
         (ub.blocker_user_id = ? AND ub.blocked_user_id = c.user_id) OR
         (ub.blocker_user_id = c.user_id AND ub.blocked_user_id = ?)
@@ -193,6 +199,7 @@ async function createComment(
   if (!text || [...text].length > MAX_COMMENT_LENGTH) {
     throw new CommunityInteractionV1Error('评论需为 1 到 280 个字符。', 400)
   }
+  if (prohibitedUGCText(text)) throw new CommunityInteractionV1Error('评论包含不允许发布的攻击、违法或垃圾内容，请修改后重试。', 422)
   const now = new Date().toISOString()
   const id = crypto.randomUUID()
   await database.prepare(`INSERT INTO content_comments (
@@ -233,7 +240,10 @@ async function requireReadableVisit(database: D1Database, viewerId: string, visi
       p.visibility AS profile_visibility
     FROM visits v JOIN user_profiles p ON p.user_id = v.user_id AND p.deleted_at IS NULL
     JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
-    WHERE v.id = ? AND v.deleted_at IS NULL LIMIT 1`).bind(visitID).first<VisitAccessRow>()
+    WHERE v.id = ? AND v.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.status = 'actioned' AND
+        ((cr.content_type = 'visit' AND cr.content_id = v.id) OR (cr.content_type = 'user' AND cr.content_id = v.user_id)))
+    LIMIT 1`).bind(visitID).first<VisitAccessRow>()
   if (!row || row.visibility === 'private') {
     throw new CommunityInteractionV1Error('没有找到可互动的公开内容。', 404)
   }

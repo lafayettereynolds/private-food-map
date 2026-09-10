@@ -7,6 +7,7 @@ import type {
 } from '../src/contracts/releaseSafetyV1'
 import { RELEASE_SAFETY_API_VERSION } from '../src/contracts/releaseSafetyV1'
 import { consumePublicAPIQuota } from './publicAPIRateLimit'
+import type { UGCSafetyCapabilities } from '../src/contracts/releaseSafetyV1'
 
 const contentTypes = new Set<ModerationContentTypeV1>(['visit', 'comment', 'user'])
 const reasons = new Set<ModerationReasonV1>([
@@ -24,8 +25,12 @@ export async function handleModerationV1(
   request: Request,
   database: D1Database,
   viewerID: string,
-): Promise<ContentReportResponseV1 | UserBlockMutationV1> {
+): Promise<ContentReportResponseV1 | UserBlockMutationV1 | UGCSafetyCapabilities> {
   const url = new URL(request.url)
+  if (url.pathname === '/api/v1/community/safety' && request.method === 'GET') {
+    await consumePublicAPIQuota(database, viewerID, 'community-safety-read', 180)
+    return safetyCapabilities(database, viewerID, url.searchParams.get('type') ?? '', url.searchParams.get('id') ?? '')
+  }
   if (url.pathname === '/api/v1/community/reports' && request.method === 'POST') {
     await consumePublicAPIQuota(database, viewerID, 'community-report-create', 20)
     return createReport(database, viewerID, request)
@@ -133,7 +138,17 @@ async function requireReportableContent(
   type: ModerationContentTypeV1,
   id: string,
 ) {
+  const capabilities = await safetyCapabilities(database, viewerID, type, id)
+  if (!capabilities.canReport) throw requestError('不能举报自己的内容。', 400, 'cannot_report_self')
+}
+
+/** The same visibility/ownership gate serves both the UI and report writes. */
+async function safetyCapabilities(database: D1Database, viewerID: string, type: string, id: string): Promise<UGCSafetyCapabilities> {
+  if (!contentTypes.has(type as ModerationContentTypeV1) || !id || id.length > 200) {
+    throw requestError('内容标识无效。', 400, 'invalid_content')
+  }
   let ownerID: string | null = null
+  let visitID: string | null = null
   if (type === 'user') {
     ownerID = (await database.prepare(`SELECT id FROM users WHERE id = ? AND deleted_at IS NULL`)
       .bind(id).first<{ id: string }>())?.id ?? null
@@ -142,12 +157,32 @@ async function requireReportableContent(
       JOIN user_profiles p ON p.user_id = v.user_id AND p.deleted_at IS NULL
       WHERE v.id = ? AND v.deleted_at IS NULL AND v.visibility <> 'private' LIMIT 1`)
       .bind(id).first<{ user_id: string }>())?.user_id ?? null
+    visitID = id
   } else {
-    ownerID = (await database.prepare(`SELECT user_id FROM content_comments
-      WHERE id = ? AND deleted_at IS NULL LIMIT 1`).bind(id).first<{ user_id: string }>())?.user_id ?? null
+    const comment = await database.prepare(`SELECT user_id, content_id FROM content_comments
+      WHERE id = ? AND content_type = 'visit' AND deleted_at IS NULL LIMIT 1`)
+      .bind(id).first<{ user_id: string; content_id: string }>()
+    ownerID = comment?.user_id ?? null
+    visitID = comment?.content_id ?? null
   }
   if (!ownerID) throw requestError('没有找到可举报的内容。', 404, 'content_not_found')
-  if (ownerID === viewerID) throw requestError('不能举报自己的内容。', 400, 'cannot_report_self')
+  if (await usersAreBlocked(database, viewerID, ownerID)) throw requestError('内容不可用。', 404, 'content_not_found')
+  if (visitID && !(type === 'comment' && ownerID === viewerID)) {
+    const visible = await database.prepare(`SELECT v.id FROM visits v
+      JOIN user_profiles p ON p.user_id = v.user_id AND p.deleted_at IS NULL
+      JOIN restaurants r ON r.id = v.restaurant_id AND r.deleted_at IS NULL
+      WHERE v.id = ? AND v.deleted_at IS NULL AND v.visibility <> 'private'
+      AND (v.user_id = ? OR (v.visibility = 'public' AND p.visibility = 'public') OR
+        (p.visibility <> 'private' AND EXISTS (SELECT 1 FROM friendships f WHERE f.status = 'accepted'
+          AND f.deleted_at IS NULL AND ((f.requester_id = ? AND f.addressee_id = v.user_id)
+            OR (f.addressee_id = ? AND f.requester_id = v.user_id)))))
+      AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE b.deleted_at IS NULL AND
+        ((b.blocker_user_id = ? AND b.blocked_user_id = v.user_id) OR
+         (b.blocked_user_id = ? AND b.blocker_user_id = v.user_id)))`)
+      .bind(visitID, viewerID, viewerID, viewerID, viewerID, viewerID).first()
+    if (!visible) throw requestError('内容不可用。', 404, 'content_not_found')
+  }
+  return { ownerID, canReport: ownerID !== viewerID, canBlock: ownerID !== viewerID, canDelete: type === 'comment' && ownerID === viewerID }
 }
 
 function decodedID(value: string) {

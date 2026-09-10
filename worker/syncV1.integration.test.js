@@ -15,6 +15,21 @@ import { buildRestaurantSummaries } from '../src/services/restaurantSummaryProje
 import { applyAllMigrations } from './testSupport/migrations.js'
 
 describe('Worker Sync API V1 integration', () => {
+  it('filters public Visit text without rewriting private notes, ownership, versions or mutation receipts', async () => {
+    const database = makeDatabase()
+    await ensureUser(database, 'user-a')
+    await push(database, 'user-a', mutation('ugc-r', 'restaurant', appleFixture.id, 0, appleFixture))
+    const visit = { ...visitPayload('ugc-v', appleFixture.id, 'user-a'), visibility: 'public', note: '我要杀了你' }
+    await expect(push(database, 'user-a', mutation('ugc-rejected', 'visit', visit.id, 0, visit))).rejects.toMatchObject({ status: 422 })
+    expect(database.get('SELECT COUNT(*) AS count FROM visits WHERE id = ?', visit.id).count).toBe(0)
+    const saved = await push(database, 'user-a', mutation('ugc-private', 'visit', visit.id, 0, { ...visit, visibility: 'private' }))
+    expect(saved.acknowledgements[0]).toMatchObject({ status: 'applied', serverVersion: 1 })
+    await expect(push(database, 'user-a', mutation('ugc-publish', 'visit', visit.id, 1, visit))).rejects.toMatchObject({ status: 422 })
+    expect(database.get('SELECT visibility, server_version, user_id FROM visits WHERE id = ?', visit.id)).toMatchObject({ visibility: 'private', server_version: 1, user_id: 'user-a' })
+    const corrected = await push(database, 'user-a', mutation('ugc-corrected', 'visit', visit.id, 1, { ...visit, note: '口味一般，不会再来了' }))
+    expect(corrected.acknowledgements[0]).toMatchObject({ status: 'applied', serverVersion: 2 })
+    expect((await pull(database, 'user-b', '0')).visits).toEqual([])
+  })
   it('never-uploaded photo delete has an idempotent receipt and a cross-device tombstone', async () => {
     const database = makeDatabase()
     await ensureUser(database, 'user-a')

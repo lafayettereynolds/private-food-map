@@ -285,3 +285,8 @@ excludes the authenticated author's otherwise-qualified public Visit. Private an
 friend gates remain enforced. Nil optional companion fields emitted by Swift are
 accepted as null in the server decoder, repairing a real prerequisite sync rejection.
 Physical-device/public-read verification remains pending.
+### 2026-09-10 — UGC compliance closure branch
+
+`fix/hybrid-ugc-compliance` starts from frozen 1012 source `dcbdc59`. Formal Discovery/Activity and Restaurant Detail image safety menus, owner-comment deletion, scoped Native transport, and real server text filtering are implemented. Native fallback-only buttons are not counted as the new Hybrid implementation.
+
+Validation and integration boundaries are recorded in `reports/HYBRID_UGC_COMPLIANCE_20260910.md`. This branch does not replace the installed 1012 binary, deploy Production, or create an App Store RC. Support webpage content remains owned by its separate task; the in-app support entry is retained.

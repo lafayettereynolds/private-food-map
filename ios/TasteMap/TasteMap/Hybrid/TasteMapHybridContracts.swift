@@ -967,6 +967,23 @@ public struct TasteMapHybridInteractionRequest: Codable, Sendable {
     public let target: TasteMapHybridActivityInteractionDTO
 }
 
+public struct TasteMapHybridUGCTarget: Codable, Sendable {
+    public let type: String
+    public let id: String
+}
+public struct TasteMapHybridUGCRequest: Codable, Sendable {
+    public let target: TasteMapHybridUGCTarget
+    public let reason: String?
+    public let details: String?
+    public let requestID: String?
+}
+public struct TasteMapHybridUGCSafetyCapabilities: Codable, Sendable {
+    public let ownerID: String
+    public let canReport: Bool
+    public let canBlock: Bool
+    public let canDelete: Bool
+}
+
 public struct TasteMapHybridLikeRequest: Codable, Sendable {
     public let target: TasteMapHybridActivityInteractionDTO
     public let liked: Bool
@@ -1344,6 +1361,10 @@ public enum TasteMapHybridBridgeMethod: String, Codable, Sendable {
     case communitySetLike = "community.setLike"
     case communityComments = "community.comments"
     case communityAddComment = "community.addComment"
+    case communitySafety = "community.safety"
+    case communityReport = "community.report"
+    case communityBlock = "community.block"
+    case communityDeleteComment = "community.deleteComment"
     case restaurantSetWantToGo = "restaurant.setWantToGo"
     case restaurantSetAvatar = "restaurant.setAvatar"
     case visitContract = "visit.contract"

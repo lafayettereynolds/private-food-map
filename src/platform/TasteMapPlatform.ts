@@ -28,6 +28,7 @@ export const TASTE_MAP_BRIDGE_METHODS = [
   'community.setLike',
   'community.comments',
   'community.addComment',
+  'community.safety', 'community.report', 'community.block', 'community.deleteComment',
   'restaurant.setWantToGo',
   'restaurant.setAvatar',
   'visit.contract',
@@ -949,7 +950,7 @@ export type TasteMapHybridEvent =
   | { version: 1; sequence: number; name: 'map.viewport.changed'; payload: TasteMapNativeMapViewport }
   | { version: 1; sequence: number; name: 'map.restaurant.selected'; payload: { restaurantID: string | null } }
   | { version: 1; sequence: number; name: 'map.restaurant.groupSelected'; payload: { restaurantIDs: string[] } }
-  | { version: 1; sequence: number; name: 'data.changed'; payload: { reason: 'localDataCleared' | 'restaurantDeleted' | 'backupImported' | 'nativePresentationDismissed' | 'premiumEntitlementChanged' | 'syncCompleted' | 'recommendationPreferenceSynced' | 'localDataChanged' } }
+  | { version: 1; sequence: number; name: 'data.changed'; payload: { reason: 'communityUserBlocked' | 'communityCommentDeleted' | 'localDataCleared' | 'restaurantDeleted' | 'backupImported' | 'nativePresentationDismissed' | 'premiumEntitlementChanged' | 'syncCompleted' | 'recommendationPreferenceSynced' | 'localDataChanged' } }
 
 export interface TasteMapEventSubscription { remove(): Promise<void> }
 
@@ -1023,6 +1024,11 @@ export interface TasteMapPlatform {
   }
   community: {
     setLike(target: TasteMapHybridActivityInteractionDTO, liked: boolean): Promise<TasteMapCommunityEngagementDTO>
+    /** Absent on older hosts: fail closed, never simulate moderation success. */
+    safety?(target: import('../contracts/releaseSafetyV1').UGCSafetyTarget): Promise<import('../contracts/releaseSafetyV1').UGCSafetyCapabilities>
+    report?(target: import('../contracts/releaseSafetyV1').UGCSafetyTarget, reason: import('../contracts/releaseSafetyV1').ModerationReasonV1, details: string, requestID: string): Promise<unknown>
+    block?(target: import('../contracts/releaseSafetyV1').UGCSafetyTarget): Promise<unknown>
+    deleteComment?(target: import('../contracts/releaseSafetyV1').UGCSafetyTarget): Promise<unknown>
     comments(target: TasteMapHybridActivityInteractionDTO): Promise<TasteMapCommunityCommentPageDTO>
     addComment(target: TasteMapHybridActivityInteractionDTO, body: string): Promise<TasteMapCommunityCommentMutationDTO>
   }

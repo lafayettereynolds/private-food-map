@@ -138,6 +138,10 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
       this.call<import('./TasteMapPlatform').TasteMapListShareLinkDTO>('lists.createShareLink', { id }),
   }
   community = {
+    safety: (target: import('../contracts/releaseSafetyV1').UGCSafetyTarget) => this.call<import('../contracts/releaseSafetyV1').UGCSafetyCapabilities>('community.safety', { target }),
+    report: (target: import('../contracts/releaseSafetyV1').UGCSafetyTarget, reason: import('../contracts/releaseSafetyV1').ModerationReasonV1, details: string, requestID: string) => this.call('community.report', { target, reason, details, requestID }),
+    block: (target: import('../contracts/releaseSafetyV1').UGCSafetyTarget) => this.call('community.block', { target }),
+    deleteComment: (target: import('../contracts/releaseSafetyV1').UGCSafetyTarget) => this.call('community.deleteComment', { target }),
     setLike: (target: TasteMapHybridActivityInteractionDTO, liked: boolean) => this.call<TasteMapCommunityEngagementDTO>('community.setLike', { target, liked }),
     comments: (target: TasteMapHybridActivityInteractionDTO) => this.call<TasteMapCommunityCommentPageDTO>('community.comments', { target }),
     addComment: (target: TasteMapHybridActivityInteractionDTO, body: string) => this.call<TasteMapCommunityCommentMutationDTO>('community.addComment', { target, body }),

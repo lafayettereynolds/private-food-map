@@ -61,6 +61,48 @@ describe('Release safety V1 integration', () => {
     expect(database.get("SELECT deleted_at FROM users WHERE id = 'tm_a'").deleted_at).toBeTruthy()
   })
 
+  it('projects owner-safe actions and never permits a forged comment deletion', async () => {
+    const path = '/api/v1/community/safety?type=comment&id=comment-b-on-a'
+    expect(await jsonAPI(database, bucket, 'tm_b', path)).toEqual({ ownerID: 'tm_b', canDelete: true, canReport: false, canBlock: false })
+    expect(await jsonAPI(database, bucket, 'tm_a', path)).toEqual({ ownerID: 'tm_b', canDelete: false, canReport: true, canBlock: true })
+    expect((await api(database, bucket, 'tm_a', '/api/v1/community/comments/comment-b-on-a', 'DELETE')).status).toBe(404)
+    const deleted = await jsonAPI(database, bucket, 'tm_b', '/api/v1/community/comments/comment-b-on-a', 'DELETE')
+    expect(deleted.comment.deletedAt).toBeTruthy()
+    const again = await jsonAPI(database, bucket, 'tm_b', '/api/v1/community/comments/comment-b-on-a', 'DELETE')
+    expect(again.comment.serverVersion).toBe(deleted.comment.serverVersion)
+    expect((await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/content/visit/visit-a/comments')).items).toEqual([])
+    expect((await api(database, bucket, 'tm_a', path)).status).toBe(404)
+    expect(database.get("SELECT deleted_at FROM visits WHERE id='visit-a'").deleted_at).toBeNull()
+  })
+
+  it('rejects private and deleted report targets, including a comment on a private Visit', async () => {
+    await database.prepare("UPDATE visits SET visibility='private' WHERE id='visit-a'").run()
+    expect((await api(database, bucket, 'tm_a', '/api/v1/community/safety?type=comment&id=comment-b-on-a')).status).toBe(404)
+    expect((await api(database, bucket, 'tm_b', '/api/v1/community/reports', 'POST', {
+      apiVersion: 1, requestId: crypto.randomUUID(), contentType: 'visit', contentId: 'visit-a', reason: 'spam',
+    })).status).toBe(404)
+    await database.prepare("UPDATE visits SET deleted_at='2026-01-01' WHERE id='visit-b'").run()
+    expect((await api(database, bucket, 'tm_a', '/api/v1/community/safety?type=visit&id=visit-b')).status).toBe(404)
+  })
+
+  it('filters abusive comment writes without persisting them or rejecting ordinary criticism', async () => {
+    const path = '/api/v1/community/content/visit/visit-b/comments'
+    expect((await api(database, bucket, 'tm_a', path, 'POST', { body: '我要杀了你' })).status).toBe(422)
+    expect(database.get("SELECT COUNT(*) AS count FROM content_comments WHERE body='我要杀了你'").count).toBe(0)
+    expect((await api(database, bucket, 'tm_a', path, 'POST', { body: '不好吃，服务也不好' })).status).toBe(200)
+  })
+
+  it('actioned moderation removes comments and their count without deleting the original row', async () => {
+    await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/reports', 'POST', {
+      apiVersion: 1, requestId: crypto.randomUUID(), contentType: 'comment', contentId: 'comment-b-on-a', reason: 'harassment',
+    })
+    await database.prepare("UPDATE content_reports SET status='actioned' WHERE content_id='comment-b-on-a'").run()
+    expect((await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/content/visit/visit-a/comments')).items).toEqual([])
+    expect(database.get("SELECT deleted_at FROM content_comments WHERE id='comment-b-on-a'").deleted_at).toBeNull()
+    const like = await jsonAPI(database, bucket, 'tm_a', '/api/v1/community/content/visit/visit-a/like', 'PUT')
+    expect(like.commentCount).toBe(0)
+  })
+
   it('reports idempotently and blocks content in feed, comments, search, and direct profile reads', async () => {
     // This test must start with an eligible public feed visit. Unrated visits
     // remain private-history content and are excluded by the feed contract.

@@ -1065,3 +1065,10 @@ Do Not Regress: no intermediate five-star rounding, arbitrary fractional raw
 Visit scores, aggregate overrides for screenshots, historical data rewrites or
 schema changes to achieve display precision. Shared Core rating components and
 canonical page composition remain unchanged; Food/Dining visuals are unaffected.
+### 2026-09-10 — Formal Hybrid UGC safety contract
+
+- Public Activity and Recommendation images expose a discoverable `…` safety action in the identity/header area, never a fourth Restaurant footer action. The established Social 3 + Restaurant 3 composition is unchanged.
+- The displayed photo's resolved descriptor determines its reportable Visit, including image fallback changes; do not report a different candidate photo or a restaurant's personal avatar.
+- Comment `…` exposes report/block for others, delete for the owner. Eligibility is a service projection, not a React owner-ID inference. Failure is visible; deletion hides immediately, restores on failure, and uses the existing server tombstone.
+- Block acts on Taste Map users, not device contacts. It filters the current viewer's content and derived caches without deleting anyone's original content. Auth changes clear local presentation state and fence late results.
+- The shared safety dialog uses the existing moderation categories and backend. Settings → Help retains the official support URL. This does not redesign social profiles or replace the existing Native social capability.

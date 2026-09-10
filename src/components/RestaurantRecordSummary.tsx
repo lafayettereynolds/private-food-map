@@ -38,6 +38,7 @@ export interface RestaurantSummarySectionProps {
   className?: string
   onEditAvatar?: () => void
   imageTrailingAction?: ReactNode
+  onContentImageResolved?: (image: TasteMapImageDescriptor) => void
 }
 
 /**
@@ -59,6 +60,7 @@ export function RestaurantSummarySection({
   className = '',
   onEditAvatar,
   imageTrailingAction,
+  onContentImageResolved,
 }: RestaurantSummarySectionProps) {
   const matchingHistoryRestaurants = historyRestaurants.filter((candidate) => sameRestaurant(candidate, restaurant))
   const detailRestaurant = matchingHistoryRestaurants
@@ -78,7 +80,7 @@ export function RestaurantSummarySection({
         <div className="restaurant-detail-gallery__merchant">
           {onEditAvatar ? <button aria-label="修改餐厅头像" className="restaurant-avatar-edit-button" onClick={onEditAvatar} type="button"><Pencil aria-hidden="true" size={17} /></button> : null}
           {imageTrailingAction}
-          <RestaurantContentImage name={detailRestaurant.name} tags={detailRestaurant.tags} image={contentImage} resolution={contentImageResolution} photos={allUserPhotos} />
+          <RestaurantContentImage onResolved={onContentImageResolved} name={detailRestaurant.name} tags={detailRestaurant.tags} image={contentImage} resolution={contentImageResolution} photos={allUserPhotos} />
         </div>
       </div>
 

@@ -31,7 +31,7 @@ export function PageBackIconButton({ onBack, disabled = false }: { onBack: () =>
   return <button aria-label="返回上一页" className="tm-hybrid-page-back" disabled={disabled} onClick={onBack} type="button"><ArrowLeft aria-hidden="true" size={21} /></button>
 }
 
-export function HybridRestaurantImage({ image, resolution, name, tags, appearance = 'avatar', className = '' }: { image?: TasteMapImageDescriptor; resolution?: TasteMapImageResolutionDTO; name: string; tags?: readonly string[]; appearance?: 'avatar' | 'content'; className?: string }) {
+export function HybridRestaurantImage({ image, resolution, name, tags, appearance = 'avatar', className = '', onResolved }: { image?: TasteMapImageDescriptor; resolution?: TasteMapImageResolutionDTO; name: string; tags?: readonly string[]; appearance?: 'avatar' | 'content'; className?: string; onResolved?: (image: TasteMapImageDescriptor) => void }) {
   const plan = useMemo(() => resolution ?? compatibilityResolution(image, name), [image, name, resolution])
   const identity = useMemo(() => JSON.stringify(plan), [plan])
   const [sourceIndex, setSourceIndex] = useState(0)
@@ -47,6 +47,8 @@ export function HybridRestaurantImage({ image, resolution, name, tags, appearanc
   }, [plan])
   useEffect(() => setSourceIndex(0), [identity])
   const selected = resolvedImageDescriptor({ ...plan, sources: plan.sources.filter(source => !('photoID' in source) || !photoWasDeleted(source.photoID)) }, sourceIndex)
+  const selectedIdentity = JSON.stringify(selected)
+  useEffect(() => { onResolved?.(JSON.parse(selectedIdentity) as TasteMapImageDescriptor) }, [selectedIdentity, onResolved])
   if (appearance === 'content' && (selected.kind === 'foodCategoryVisual' || selected.kind === 'foodDiningFallback')) {
     return <FoodLibraryArtwork categoryVisualID={selected.kind === 'foodCategoryVisual' ? selected.categoryVisualID : undefined} className={className} name={name} tags={tags} />
   }

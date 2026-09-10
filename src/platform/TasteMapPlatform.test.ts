@@ -374,6 +374,10 @@ describe('TasteMapNativeAdapter', () => {
         result = { restaurantID: fixture.restaurants[0].id, visitID: (request.payload as { visitID: string }).visitID, updatedAt: '2026-09-03T00:00:00.000Z' }
       } else if (request.method === 'community.setLike') {
         result = { likedByViewer: (request.payload as { liked: boolean }).liked, likeCount: 13, commentCount: 2 }
+      } else if (request.method === 'community.safety') {
+        result = { ownerID: 'other', canReport: true, canBlock: true, canDelete: false }
+      } else if (request.method === 'community.report' || request.method === 'community.block' || request.method === 'community.deleteComment') {
+        result = { acknowledged: true }
       } else if (request.method === 'community.comments') {
         result = { items: [], nextCursor: null }
       } else if (request.method === 'community.addComment') {
@@ -591,6 +595,11 @@ describe('TasteMapNativeAdapter', () => {
     expect(await adapter.community.setLike(interaction, true)).toEqual({ likedByViewer: true, likeCount: 13, commentCount: 2 })
     expect(await adapter.community.comments(interaction)).toEqual({ items: [], nextCursor: null })
     expect((await adapter.community.addComment(interaction, '真不错')).comment).toMatchObject({ visitID: 'visit-1', body: '真不错' })
+    const safetyTarget = { type: 'visit' as const, id: 'visit-1' }
+    expect(await adapter.community.safety(safetyTarget)).toEqual({ ownerID: 'other', canReport: true, canBlock: true, canDelete: false })
+    expect(await adapter.community.report(safetyTarget, 'spam', '', '00000000-0000-4000-8000-000000000001')).toEqual({ acknowledged: true })
+    expect(await adapter.community.block(safetyTarget)).toEqual({ acknowledged: true })
+    expect(await adapter.community.deleteComment({ type: 'comment', id: 'comment-1' })).toEqual({ acknowledged: true })
     expect((await adapter.restaurant.setWantToGo('restaurant-1', true)).viewerState).toBe('want_to_go')
     expect((await adapter.restaurant.setAvatar('restaurant-1', { kind: 'emoji', emoji: '🍣' })).markerEmoji).toBe('🍣')
     const requests = invoke.mock.calls.map((call) => call[0].request)
@@ -598,6 +607,10 @@ describe('TasteMapNativeAdapter', () => {
       expect.objectContaining({ method: 'community.setLike', payload: { target: interaction, liked: true } }),
       expect.objectContaining({ method: 'community.comments', payload: { target: interaction } }),
       expect.objectContaining({ method: 'community.addComment', payload: { target: interaction, body: '真不错' } }),
+      expect.objectContaining({ method: 'community.safety', payload: { target: safetyTarget } }),
+      expect.objectContaining({ method: 'community.report', payload: { target: safetyTarget, reason: 'spam', details: '', requestID: '00000000-0000-4000-8000-000000000001' } }),
+      expect.objectContaining({ method: 'community.block', payload: { target: safetyTarget } }),
+      expect.objectContaining({ method: 'community.deleteComment', payload: { target: { type: 'comment', id: 'comment-1' } } }),
       expect.objectContaining({ method: 'restaurant.setWantToGo', payload: { restaurantID: 'restaurant-1', wanted: true } }),
       expect.objectContaining({ method: 'restaurant.setAvatar', payload: { restaurantID: 'restaurant-1', kind: 'emoji', emoji: '🍣' } }),
     ]))

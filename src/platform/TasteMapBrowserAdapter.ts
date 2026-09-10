@@ -1,4 +1,5 @@
 import { db } from '../db/appDb'
+import { browserCommunitySafety } from '../services/communitySafetyApi'
 import { browserPrivateDirectory } from '../services/privateDirectoryBrowser'
 import { MembershipService } from '../services/membershipService'
 import { membershipStatusPresentation } from '../services/membershipPresentation'
@@ -495,6 +496,7 @@ export class TasteMapBrowserAdapter implements TasteMapPlatform {
   }
 
   community = {
+    ...browserCommunitySafety,
     setLike: async (target: TasteMapHybridActivityInteractionDTO, liked: boolean) => {
       const current = await this.engagementFor(target.visitID)
       const next = {

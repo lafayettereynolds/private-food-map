@@ -1,6 +1,15 @@
 import Foundation
 
+/// In-memory request identity. A late 401 must never retry a UGC action as a
+/// different signed-in account. Normal session refresh still happens before capture.
+struct UGCRequestAuthorization: SyncAuthorizationProviding {
+    let capturedHeaders: [String: String]
+    func headers() async throws -> [String: String] { capturedHeaders }
+    func recoverUnauthorized(failedAuthorization: String?) async throws -> Bool { false }
+}
+
 protocol ReleaseSafetyAPI: Sendable {
+    func safetyCapabilities(type: String, id: String) async throws -> TasteMapHybridUGCSafetyCapabilities
     func accountDeletionPreview() async throws -> AccountDeletionPreviewV1
     func confirmAccountDeletion(requestID: UUID, statusToken: String) async throws -> AccountDeletionJobV1
     func accountDeletionStatus(statusToken: String) async throws -> AccountDeletionJobV1
@@ -12,7 +21,21 @@ protocol ReleaseSafetyAPI: Sendable {
     func setBlocked(_ blocked: Bool, userID: String) async throws -> UserBlockMutationV1
 }
 
+extension ReleaseSafetyAPI {
+    func safetyCapabilities(type: String, id: String) async throws -> TasteMapHybridUGCSafetyCapabilities {
+        throw URLError(.unsupportedURL)
+    }
+}
+
 final class URLSessionReleaseSafetyAPIClient: ReleaseSafetyAPI, @unchecked Sendable {
+    func scoped(to authorization: UGCRequestAuthorization) -> URLSessionReleaseSafetyAPIClient {
+        .init(configuration: configuration, authorization: authorization, session: session)
+    }
+    func safetyCapabilities(type: String, id: String) async throws -> TasteMapHybridUGCSafetyCapabilities {
+        var query = URLComponents()
+        query.queryItems = [URLQueryItem(name: "type", value: type), URLQueryItem(name: "id", value: id)]
+        return try await authenticated(path: "/api/v1/community/safety?\(query.percentEncodedQuery ?? "")", method: "GET", body: Optional<Empty>.none)
+    }
     private let configuration: APIConfiguration
     private let authorization: any SyncAuthorizationProviding
     private let session: URLSession

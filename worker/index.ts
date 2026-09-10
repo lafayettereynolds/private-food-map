@@ -1,4 +1,5 @@
 import { resumeAccountDeletions } from './accountDeletionV1'
+import { prohibitedUGCText } from './ugcTextPolicy'
 import { runPrivacyRetention } from './privacyRetentionV1'
 import { referralAvailable } from '../src/config/referralAvailability'
 import { signupTrialEligibility, claimSignupTrial } from './signupTrialV1'
@@ -903,7 +904,7 @@ const worker = {
       if (url.pathname.startsWith('/api/v1/community/')) {
         const viewer = await resolveSyncViewer(request, env)
         await ensureUserProfile(env.DB, viewer.id)
-        if (url.pathname === '/api/v1/community/reports' ||
+        if (url.pathname === '/api/v1/community/reports' || url.pathname === '/api/v1/community/safety' ||
             url.pathname.startsWith('/api/v1/community/blocks/')) {
           return json(await handleModerationV1(request, env.DB, viewer.id))
         }
@@ -942,6 +943,10 @@ const worker = {
       if (url.pathname === '/api/sync' && request.method === 'GET') return json(await readSnapshot(env.DB, viewer.id, url.searchParams.get('since')))
       if (url.pathname === '/api/sync' && request.method === 'POST') {
         const payload = await readPayload(request)
+        if (payload.visits.some(visit => !visit.deletedAt && visit.visibility && visit.visibility !== 'private' && prohibitedUGCText([visit.note, visit.specialNotes, visit.diningOccasionText].join('\n'))) ||
+            payload.users.some(user => (user.id === 'owner' || user.id === viewer.id) && !user.deletedAt && user.mapVisibility && user.mapVisibility !== 'private' && prohibitedUGCText([user.nickname, user.bio].join('\n')))) {
+          throw new SyncV1RequestError('公开内容包含不允许发布的攻击、违法或垃圾内容，请修改后重试。', 422)
+        }
         const mapUserId = (id: string | null | undefined) => id === 'owner' ? viewer.id : id
         await upsertRestaurants(env.DB, payload.restaurants.map((item) => ({ ...item, userId: viewer.id })))
         await upsertVisits(env.DB, payload.visits.map((item) => ({

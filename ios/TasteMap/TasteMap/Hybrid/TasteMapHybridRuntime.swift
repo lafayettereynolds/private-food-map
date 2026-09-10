@@ -36,6 +36,7 @@ final class TasteMapHybridRuntime {
     private weak var mapSurfaceHost: TasteMapHybridMapSurfaceHost?
     private var pendingEvents: [TasteMapHybridEventEnvelope] = []
     private var sequence = 0
+    private var moderationAccountEpoch = 0
     private var lastLifecycleState: TasteMapHybridLifecycleState?
     private var bridgeControllerStorage: TasteMapHybridBridgeViewController?
     private var cachedBridgeService: TasteMapHybridBridgeService?
@@ -933,6 +934,8 @@ final class TasteMapHybridRuntime {
             return try encode(await listService!.createShareLink(id: request.id))
         case .communityComments:
             return try await communityComments(payload)
+        case .communitySafety, .communityReport, .communityBlock, .communityDeleteComment:
+            return try await moderateCommunity(method, payload: payload)
         case .communityAddComment:
             return try await addCommunityComment(payload)
         case .restaurantSetWantToGo:
@@ -1381,6 +1384,67 @@ final class TasteMapHybridRuntime {
 
     private static func normalizedRestaurantAvatarEmoji(_ input: String?) -> String? {
         RestaurantOwnerAvatarEmojiPolicy.normalized(input)
+    }
+
+    private func moderateCommunity(_ method: TasteMapHybridBridgeMethod, payload: TasteMapHybridJSONValue) async throws -> TasteMapHybridJSONValue {
+        let request: TasteMapHybridUGCRequest = try decode(payload)
+        guard case .authenticated(let owner) = authServices.localAccountScope,
+              let type = ModerationContentTypeV1(rawValue: request.target.type),
+              !request.target.id.isEmpty else { throw Self.bridgeError("auth_required") }
+        let epoch = moderationAccountEpoch
+        func requireCurrentAccount() throws {
+            guard epoch == moderationAccountEpoch, authServices.localAccountScope == .authenticated(owner) else {
+                throw Self.bridgeError("account_changed")
+            }
+        }
+        let authorization = UGCRequestAuthorization(capturedHeaders: try await authServices.sessionManager.headers())
+        try requireCurrentAccount()
+        let safetyAPI = authServices.releaseSafetyAPI.scoped(to: authorization)
+        let interactionAPI = authServices.socialCollaborationAPI.scoped(to: authorization)
+        // DELETE is already owner-authorized and idempotent on the server. A
+        // post-timeout retry must not depend on a now-deleted eligibility read.
+        if method == .communityDeleteComment {
+            guard type == .comment else { throw Self.bridgeError("comment_delete_not_allowed") }
+            let result = try await interactionAPI.deleteComment(id: request.target.id)
+            try requireCurrentAccount()
+            try cacheEngagement(visitID: result.comment.contentId,
+                likedByViewer: cachedEngagement(visitID: result.comment.contentId)?.likedByViewer ?? false,
+                likeCount: result.likeCount, commentCount: result.commentCount)
+            localDataDidChange(reason: "communityCommentDeleted")
+            return try encode(result)
+        }
+        let capabilities = try await safetyAPI.safetyCapabilities(type: type.rawValue, id: request.target.id)
+        try requireCurrentAccount()
+        switch method {
+        case .communitySafety:
+            return try encode(capabilities)
+        case .communityReport:
+            guard capabilities.canReport, let reason = ModerationReasonV1(rawValue: request.reason ?? ""),
+                  let requestID = UUID(uuidString: request.requestID ?? "") else { throw Self.bridgeError("report_not_allowed") }
+            let result = try await safetyAPI.report(type: type, id: request.target.id,
+                reason: reason, details: request.details ?? "", requestID: requestID)
+            try requireCurrentAccount()
+            return try encode(result)
+        case .communityBlock:
+            guard capabilities.canBlock else { throw Self.bridgeError("block_not_allowed") }
+            let result = try await safetyAPI.setBlocked(true, userID: capabilities.ownerID)
+            try requireCurrentAccount()
+            try LocalCommunityStore(context: container.mainContext).invalidateOwner(capabilities.ownerID, currentUserID: owner)
+            // Derived projections only. Never touch owned entities or the sync queue.
+            for row in try container.mainContext.fetch(FetchDescriptor<CachedDiscoveryPlacement>()) where row.currentUserID == owner {
+                container.mainContext.delete(row)
+            }
+            for row in try container.mainContext.fetch(FetchDescriptor<CachedDiscoveryRestaurant>()) where row.currentUserID == owner {
+                container.mainContext.delete(row)
+            }
+            try container.mainContext.save()
+            discoveryRefreshCoordinator.reset()
+            discoveryPageCoordinator.reset()
+            discoveryCitySession.reset()
+            localDataDidChange(reason: "communityUserBlocked")
+            return try encode(result)
+        default: throw Self.bridgeError("capability_unavailable")
+        }
     }
 
     private func validateInteractionTarget(_ target: TasteMapHybridActivityInteractionDTO) throws {
@@ -2609,6 +2673,7 @@ final class TasteMapHybridRuntime {
 
     private func emit<T: Encodable>(_ name: TasteMapHybridEventName, payload: T) {
         if name == .authChanged {
+            moderationAccountEpoch += 1
             discoveryLocationProofs.reset()
             discoveryRefreshCoordinator.reset()
             discoveryPageCoordinator.reset()

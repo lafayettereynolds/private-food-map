@@ -227,6 +227,7 @@ export function TasteMapActivityCardFrame({
   activityRating,
   body,
   header,
+  safetyAction,
   media,
   mediaCount = 1,
   onOpen,
@@ -238,6 +239,7 @@ export function TasteMapActivityCardFrame({
   activityRating?: ReactNode
   body?: ReactNode
   header?: ReactNode
+  safetyAction?: ReactNode
   media?: ReactNode
   mediaCount?: number
   onOpen?: () => void
@@ -257,12 +259,13 @@ export function TasteMapActivityCardFrame({
     data-media-layout="compact"
     onClick={open}
   >
-    {header ? <header data-activity-region="author-time-visibility">{header}</header> : null}
+    {header ? <header data-activity-region="author-time-visibility">{header}{safetyAction}</header> : null}
     {activityRating ? <div className="tm-activity-card__restaurant-row">
       <div className="tm-activity-card__restaurant" data-activity-region="restaurant-name-address-context">{restaurant}</div>
       <div className="tm-activity-card__rating" data-activity-region="visit-rating">{activityRating}</div>
+      {!header ? safetyAction : null}
     </div> :
-      <div className="tm-activity-card__restaurant" data-activity-region="restaurant-name-address-context">{restaurant}</div>
+      <div className="tm-activity-card__restaurant" data-activity-region="restaurant-name-address-context">{restaurant}{!header ? safetyAction : null}</div>
     }
     {media ? <div className={`tm-activity-card__media${mediaCount > 1 ? ' has-multiple' : ''}`} data-activity-region="restaurant-image">{media}</div> : null}
     {body ? <div className="tm-activity-card__body" data-activity-region={variant === 'recommendation' ? 'recommendation-reason' : 'activity-context'}>{body}</div> : null}

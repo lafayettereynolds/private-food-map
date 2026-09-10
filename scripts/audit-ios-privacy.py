@@ -14,12 +14,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 API_REASONS = {
+    "NSPrivacyAccessedAPICategorySystemBootTime": ["35F9.1"],
     "NSPrivacyAccessedAPICategoryFileTimestamp": ["C617.1"],
     "NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1"],
 }
 DATA_TYPES = {
     "Name", "EmailAddress", "UserID", "PurchaseHistory", "PhotosorVideos",
     "OtherUserContent", "PreciseLocation", "CoarseLocation", "Contacts", "ProductInteraction",
+    "SearchHistory", "PerformanceData", "OtherDiagnosticData",
 }
 TOP_KEYS = {
     "NSPrivacyTracking", "NSPrivacyTrackingDomains",
@@ -65,7 +67,10 @@ def validate_manifest(path, main=False):
         require(item["NSPrivacyCollectedDataTypeLinked"] is True, f"Incorrect linkage: {path}")
         require(item["NSPrivacyCollectedDataTypeTracking"] is False, f"Incorrect tracking: {path}")
         purposes = ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
-        if name not in {"NSPrivacyCollectedDataType" + t for t in ["Name", "EmailAddress", "PhotosorVideos"]}:
+        if name in {"NSPrivacyCollectedDataType" + t for t in [
+            "UserID", "OtherUserContent", "PreciseLocation", "CoarseLocation",
+            "Contacts", "ProductInteraction",
+        ]}:
             purposes.append("NSPrivacyCollectedDataTypePurposeProductPersonalization")
         require(item["NSPrivacyCollectedDataTypePurposes"] == purposes, f"Incorrect purpose: {path}: {name}")
     expected = {"NSPrivacyCollectedDataType" + t for t in DATA_TYPES} if main else set()

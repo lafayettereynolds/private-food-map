@@ -22,6 +22,9 @@ protocol CommunityInteractionAPI {
 
 @MainActor
 final class URLSessionSocialCollaborationAPIClient: SocialCollaborationAPI, CommunityInteractionAPI {
+    func scoped(to authorization: UGCRequestAuthorization) -> URLSessionSocialCollaborationAPIClient {
+        .init(configuration: configuration, authorization: authorization, session: session)
+    }
     private let configuration: APIConfiguration
     private let authorization: any SyncAuthorizationProviding
     private let session: URLSession

@@ -163,6 +163,7 @@ final class TasteMapHybridBridgeTests: XCTestCase {
             TasteMapHybridBridgeMethod.communitySetLike,
             .communityComments,
             .communityAddComment,
+            .communitySafety, .communityReport, .communityBlock, .communityDeleteComment,
             .restaurantSetWantToGo,
         ] {
             let result = await dispatcher.dispatchAsync(TasteMapHybridBridgeRequest(
@@ -179,7 +180,7 @@ final class TasteMapHybridBridgeTests: XCTestCase {
                 continue
             }
         }
-        XCTAssertEqual(forwarded, [.communitySetLike, .communityComments, .communityAddComment, .restaurantSetWantToGo])
+        XCTAssertEqual(forwarded, [.communitySetLike, .communityComments, .communityAddComment, .communitySafety, .communityReport, .communityBlock, .communityDeleteComment, .restaurantSetWantToGo])
     }
 
     func testImageDescriptorNeverExposesAnAbsoluteLocalPath() throws {

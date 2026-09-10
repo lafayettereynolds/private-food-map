@@ -468,3 +468,12 @@ prefetch or new shared cross-user TTL cache is introduced. Map still consumes th
 same canonical For You snapshot. Candidate-first Worker reads and a single
 Visit window ordering are local optimization candidates, not a deployment or
 physical-device acceptance. See reports/DISCOVERY_D1_COST_OPTIMIZATION_20260909.md.
+### 2026-09-10 — UGC safety capability boundary
+
+Formal Hybrid now calls typed `community.safety`, `community.report`, `community.block`, and `community.deleteComment`. The authenticated, read-only `/api/v1/community/safety` projection reuses moderation visibility/ownership checks. Report and block retain the existing routes; own-comment delete retains the existing owner-authorized, idempotent DELETE/tombstone route.
+
+UGC writes capture one in-memory authorization snapshot after normal session validation, then use scoped copies of the existing API clients. They never refresh a stale action under another account. Native checks owner and auth epoch after awaits; React ignores late results and clears hidden-content state on auth changes. No Sync mutation, ownership, or credential-storage contract changes.
+
+Block invalidates only current-viewer public projections plus in-memory query/read caches, then emits `data.changed`. The renderer immediately filters matching authors and photo sources while reloading. Comment deletion remains retryable after an uncertain ACK because DELETE does not depend on a subsequent eligibility read of the tombstoned comment.
+
+Integration prerequisite: deploy this commit's Worker changes under the separately authorized deployment workflow before shipping the updated client. No deployment or App Store RC is authorized by this module task.

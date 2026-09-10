@@ -29,6 +29,7 @@ import {
   type RestaurantListSyncContractV1,
 } from '../src/contracts/restaurantListContract'
 import { groupRestaurantPlaceIdentities, type RestaurantPlaceIdentityRow } from './restaurantIdentityMapping'
+import { prohibitedUGCText } from './ugcTextPolicy'
 
 const MAX_PULL_LIMIT = 200
 const PULL_ID_BATCH_SIZE = 50
@@ -1032,6 +1033,9 @@ function visitMutationStatements(
     `).bind(processedAt, processedAt, nextVersion, mutation.mutationId, mutation.entityId, viewerId, mutation.baseVersion))
   }
   const visit = mutation.payload as VisitSyncContractV1
+  if (visit.visibility !== 'private' && prohibitedUGCText([visit.note, visit.specialNotes, visit.diningOccasionText].filter(Boolean).join('\n'))) {
+    throw new SyncV1RequestError('公开记录包含不允许发布的攻击、违法或垃圾内容，请修改后重试。', 422)
+  }
   const entityStatement = database.prepare(`INSERT INTO visits (
     id, user_id, restaurant_id, visited_at, dining_mode, visibility,
     total_price, my_actual_spend, payment_mode, price_per_person,
@@ -1179,6 +1183,9 @@ function profileMutationStatements(
   processedAt: string,
 ) {
   const profile = mutation.payload as OwnProfileSyncContractV1
+  if (profile.visibility !== 'private' && prohibitedUGCText([profile.displayName, profile.bio].join('\n'))) {
+    throw new SyncV1RequestError('公开资料包含不允许发布的内容，请修改后重试。', 422)
+  }
   const statement = database.prepare(`INSERT INTO user_profiles (
     user_id, display_name, bio, city, avatar_photo_id, avatar_preset_id,
     visibility, created_at, updated_at, deleted_at, server_version,
@@ -1245,6 +1252,9 @@ function restaurantListMutationStatements(
     )
   }
   const list = mutation.payload as RestaurantListSyncContractV1
+  if (list.visibility !== 'private' && prohibitedUGCText([list.title, list.description].join('\n'))) {
+    throw new SyncV1RequestError('公开食单包含不允许发布的内容，请修改后重试。', 422)
+  }
   const statement = database.prepare(`INSERT INTO restaurant_lists (
     id, user_id, title, description, visibility, is_ranked, cover_mode,
     custom_cover_photo_id, created_at, updated_at, deleted_at,

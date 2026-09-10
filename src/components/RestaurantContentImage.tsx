@@ -18,23 +18,25 @@ export function restaurantContentResolution(restaurant: Pick<TasteMapRestaurantD
   return { sources: approvedContent ? [candidate] : [], fallback }
 }
 
-export function HybridRestaurantContentImage({ restaurant, activityImage, className }: {
+export function HybridRestaurantContentImage({ restaurant, activityImage, className, onResolved }: {
   restaurant: Pick<TasteMapRestaurantDTO, 'id' | 'name' | 'tags' | 'image' | 'contentImage' | 'contentImageResolution'>
   /** The adapter has authorized this exact Activity's album, not the Restaurant avatar. */
   activityImage?: TasteMapImageDescriptor
   className?: string
+  onResolved?: (image: TasteMapImageDescriptor) => void
 }) {
   const resolution = restaurantContentResolution(restaurant)
-  return <HybridRestaurantImage appearance="content" className={className} name={restaurant.name} tags={restaurant.tags}
+  return <HybridRestaurantImage onResolved={onResolved} appearance="content" className={className} name={restaurant.name} tags={restaurant.tags}
     resolution={activityImage ? { sources: [activityImage], fallback: resolution.fallback } : resolution} />
 }
 
 /** Browser real Visit/dish refs and bridge-authorized descriptors share one content renderer. */
-export function RestaurantContentImage({ name, tags, image, resolution, photos = [] }: {
+export function RestaurantContentImage({ name, tags, image, resolution, photos = [], onResolved }: {
   name: string; tags?: readonly string[]; image?: TasteMapImageDescriptor; resolution?: TasteMapImageResolutionDTO
   photos?: readonly { source: string; photoId?: string | null }[]
+  onResolved?: (image: TasteMapImageDescriptor) => void
 }) {
-  if (image || resolution) return <HybridRestaurantImage appearance="content" image={image} resolution={resolution} name={name} tags={tags} />
+  if (image || resolution) return <HybridRestaurantImage onResolved={onResolved} appearance="content" image={image} resolution={resolution} name={name} tags={tags} />
   const artwork = <FoodLibraryArtwork name={name} tags={tags} />
   return photos.reduceRight((fallback, photo, index) => <SyncedImage alt={`${name} 用户实拍`} key={photo.photoId || `${photo.source}-${index}`}
     source={photo.source} photoId={photo.photoId} loading="lazy" fallback={fallback} failureFallback={fallback} />, artwork)
