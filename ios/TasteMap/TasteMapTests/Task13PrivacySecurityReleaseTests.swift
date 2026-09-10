@@ -24,26 +24,31 @@ struct Task13PrivacySecurityReleaseTests {
             "NSPrivacyCollectedDataTypeCoarseLocation",
             "NSPrivacyCollectedDataTypeContacts",
             "NSPrivacyCollectedDataTypeProductInteraction",
+            "NSPrivacyCollectedDataTypeSearchHistory",
+            "NSPrivacyCollectedDataTypePerformanceData",
+            "NSPrivacyCollectedDataTypeOtherDiagnosticData",
         ])
         #expect(collected.allSatisfy { $0["NSPrivacyCollectedDataTypeLinked"] as? Bool == true })
         #expect(collected.allSatisfy { $0["NSPrivacyCollectedDataTypeTracking"] as? Bool == false })
 
         let accessed = try #require(manifest["NSPrivacyAccessedAPITypes"] as? [[String: Any]])
-        #expect(accessed.count == 2)
+        #expect(accessed.count == 3)
         let reasons = Dictionary(uniqueKeysWithValues: accessed.compactMap { item -> (String, [String])? in
             guard let type = item["NSPrivacyAccessedAPIType"] as? String,
                   let reasons = item["NSPrivacyAccessedAPITypeReasons"] as? [String] else { return nil }
             return (type, reasons)
         })
         #expect(reasons == [
+            "NSPrivacyAccessedAPICategorySystemBootTime": ["35F9.1"],
             "NSPrivacyAccessedAPICategoryFileTimestamp": ["C617.1"],
             "NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1"],
         ])
         for entry in collected {
             let type = try #require(entry["NSPrivacyCollectedDataType"] as? String)
             let purposes = try #require(entry["NSPrivacyCollectedDataTypePurposes"] as? [String])
-            let personalized = !["NSPrivacyCollectedDataTypeName", "NSPrivacyCollectedDataTypeEmailAddress",
-                                 "NSPrivacyCollectedDataTypePhotosorVideos"].contains(type)
+            let personalized = ["NSPrivacyCollectedDataTypeUserID", "NSPrivacyCollectedDataTypeContacts",
+                                "NSPrivacyCollectedDataTypePreciseLocation", "NSPrivacyCollectedDataTypeCoarseLocation",
+                                "NSPrivacyCollectedDataTypeOtherUserContent", "NSPrivacyCollectedDataTypeProductInteraction"].contains(type)
             #expect(Set(purposes) == Set(["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
                 + (personalized ? ["NSPrivacyCollectedDataTypePurposeProductPersonalization"] : [])))
         }
