@@ -60,4 +60,8 @@ The local Capacitor origin's `hostname=localhost` is the existing signed local U
 
 ## Upload state
 
-Upload started using the above normal App Store Connect options. Final transport, processing, build audience and internal group membership must be confirmed before reporting availability.
+- Xcode returned `Upload succeeded` / `Uploaded TasteMap` / `EXPORT SUCCEEDED` at 08:02:05 +0800.
+- ASC build ID `11049890-5fbe-4f99-8ee4-bb03091c22dc`: **VALID**, **APP_STORE_ELIGIBLE**.
+- Existing Internal Testers group's build listing contains 1012; its all-builds access automatically included this build, so no new group or membership write was needed. `internalBuildState=IN_BETA_TESTING`, `externalBuildState=READY_FOR_BETA_SUBMISSION` (not external testing or a submitted review).
+- TestFlight on the real iPhone visibly offers version `1.0`, build `2026091012`, 63 MB. The authorized overwrite update was initiated only after the backup; no uninstall occurred.
+- Exported local IPA SHA-256: `c5b4a05b534a279a184d4ecf21d60923e0d716420f5a3a7d6af00bc19494442e`.
