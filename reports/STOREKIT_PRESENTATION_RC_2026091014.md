@@ -83,3 +83,39 @@ new purchase. Record tap→Sheet seconds; cancel, kill/reopen, then recheck both
 inventing a comparison. Source cache tests do not prove Apple network latency.
 
 FINAL APP REVIEW CANDIDATE: NO — pending same-build device verification.
+
+## Signed release and ASC completion — 2026-09-11
+
+- Frozen source commit: `5f02a6ce6e017386787c1d6ae2a8e30b5bc5bd97` (pushed).
+- Source fingerprint: `17965332be278b7441daf670a4cd4d622fb5ccb48abf3f5d63597a99ea3ae035`, 2162 tracked files.
+- Archive: `.private/storekit-1014/TasteMap-2026091014.xcarchive`, Release compile/archive PASS.
+- Exported IPA: `.private/storekit-1014/distribution/TasteMap.ipa`.
+- Exported IPA SHA-256: `fb3b949798454c98e380d36fca698f4c84944879dcad4d3c460941435426a986`.
+- Archive and export identity/capability audits: PASS for main app and Share Extension.
+  Archive uses automatic development signing, then export re-signs for App Store
+  distribution. Both exported targets have get-task-allow=false and beta-reports-active=true.
+- Archive and export formal resource parity: 26/26 byte matches each.
+- Archive and export Production purity: PASS, 55 app files / 26 signed Web files;
+  Production API, no Development endpoint/fixture/bypass/secret/private path.
+- Exact exported source commit/fingerprint match frozen source; no source changes during archive/export/upload.
+- Normal ASC upload succeeded at 10:57:39 Asia/Shanghai, 2026-09-11.
+- ASC build ID: `1134b982-5126-4163-84dc-c3fb7f1ecc44`.
+- Fresh ASC read: version 2026091014, processingState=VALID,
+  buildAudienceType=APP_STORE_ELIGIBLE, internalBuildState=IN_BETA_TESTING.
+- Only related group: Internal Testers `6a12949a-c19a-413f-bd1b-9f305b1a05be`.
+  Existing group isInternalGroup=true, hasAccessToAllBuilds=true.
+- testFlightInternalTestingOnly=false. No External group, public link or review submission.
+  externalBuildState=READY_FOR_BETA_SUBMISSION denotes eligibility, not distribution.
+- Latest same-branch release selection: 205/205 Web/Worker PASS; Native 47/47 PASS;
+  bridge 43/43 PASS; TypeScript PASS. No skipped/relaxed affected assertions.
+- No Production service/data changes, no app-container operations, no device install,
+  no purchase confirmation and no account switch in this task.
+
+### Physical-device boundary
+
+After ASC became ready, iPhone Mirroring connection was attempted. Its actual
+state remains `iPhone使用中 / 锁定iPhone以连接`. Thus 1014 TestFlight installation,
+CHN storefront, real Monthly/Annual price, Sheet currency, tap→Sheet seconds and
+kill/reopen checks are NOT RUN. The user has been asked to lock the iPhone 17 Pro Max.
+Do not label these PASS or use fixture ¥8/¥80 as actual production prices.
+1013 remains preserved. APP REVIEW CANDIDATE remains NO until these gates close.
