@@ -24,21 +24,22 @@ export function TasteMapPremiumPage({ platform, onOpenStore, onBack }: { platfor
     const refresh = () => {
       const sequence = ++refreshSequence.current
       setLoadingProducts(true)
-      void Promise.all([
-        platform.premium.status().catch(() => ({ state: 'unavailable' as const, expiresAt: null })),
-        platform.premium.products().catch(() => []),
-        platform.premium.trialEligibility().catch(() => ({ eligible: false, trialDays: 7 })),
-      ]).then(([nextStatus, nextProducts, trial]) => {
+      void platform.premium.products().catch(() => []).then((nextProducts) => {
         if (!active || sequence !== refreshSequence.current) return
         setLoadingProducts(false)
-        setTrialEligible(trial.eligible && trial.trialDays === 7)
-        setStatus(nextStatus)
         setProducts(nextProducts.filter((product) => product.period === 'monthly' || product.period === 'annual'))
+      })
+      void platform.premium.status().catch(() => ({ state: 'unavailable' as const, expiresAt: null })).then((nextStatus) => {
+        if (active && sequence === refreshSequence.current) setStatus(nextStatus)
+      })
+      void platform.premium.trialEligibility().catch(() => ({ eligible: false, trialDays: 7 })).then((trial) => {
+        if (active && sequence === refreshSequence.current) setTrialEligible(trial.eligible && trial.trialDays === 7)
       })
     }
     refresh()
     const expiryRefresh = window.setInterval(refresh, 60_000)
     platform.events.subscribe((event) => {
+      if (event.name === 'premium.productsChanged') { setProducts([]); refresh(); return }
       if (event.name === 'auth.changed') { sessionRevision.current++; setTrialEligible(false); setTrialMessage(null); setBusy(false); setStatus(null); setProducts([]); setMessage(null); refreshSequence.current++; refresh(); return }
       if (event.name === 'data.changed'
         || (event.name === 'app.lifecycle' && (event.payload.state === 'foreground' || event.payload.state === 'resume'))) {
@@ -88,7 +89,8 @@ export function TasteMapPremiumPage({ platform, onOpenStore, onBack }: { platfor
       {trialEligible ? <><h3>免费体验 Premium 7 天</h3><p>无需订阅，不会自动续费</p><button disabled={busy} onClick={() => void claimTrial()} type="button">{busy ? '正在领取…' : '免费领取 7 天'}</button></> : null}
       {trialMessage ? <p role="status">{trialMessage}</p> : null}
     </section> : null}
-    {!status ? <HybridState kind="loading" message="正在读取正式会员权益。" title="确认会员状态" /> : status.state === 'premium' ? <section className="tm-hybrid-premium-active"><PremiumBurgerBadge /><small>Taste Map Premium</small><h2>已开通</h2><p>{status.statusText ?? (status.expiresAt ? `有效期至 ${new Date(status.expiresAt).toLocaleDateString('zh-CN')}` : '当前权益有效')}</p><div><Benefit title="完整口味档案与高级分析" /><Benefit title="最佳饭搭子与谁最会种草" /><Benefit title="本月 / 年度回顾与五类分享海报" /><Benefit title="高级筛选与完整历史洞察" /></div>{status.canManageSubscription === true ? <button disabled={busy} onClick={onOpenStore ?? (() => void premiumAction(() => platform.premium.manage(), '已打开 App Store 订阅管理。'))} type="button">管理订阅<ChevronRight size={17} /></button> : null}<button disabled={busy} onClick={() => void premiumAction(() => platform.premium.restore(), '购买记录已恢复，会员状态已刷新。')} type="button">恢复购买</button>{message ? <p role="status">{message}</p> : null}</section> : <>
+    {!status ? <HybridState kind="loading" message="正在读取正式会员权益。" title="确认会员状态" /> : null}
+    {status?.state === 'premium' ? <section className="tm-hybrid-premium-active"><PremiumBurgerBadge /><small>Taste Map Premium</small><h2>已开通</h2><p>{status.statusText ?? (status.expiresAt ? `有效期至 ${new Date(status.expiresAt).toLocaleDateString('zh-CN')}` : '当前权益有效')}</p><div><Benefit title="完整口味档案与高级分析" /><Benefit title="最佳饭搭子与谁最会种草" /><Benefit title="本月 / 年度回顾与五类分享海报" /><Benefit title="高级筛选与完整历史洞察" /></div>{status.canManageSubscription === true ? <button disabled={busy} onClick={onOpenStore ?? (() => void premiumAction(() => platform.premium.manage(), '已打开 App Store 订阅管理。'))} type="button">管理订阅<ChevronRight size={17} /></button> : null}<button disabled={busy} onClick={() => void premiumAction(() => platform.premium.restore(), '购买记录已恢复，会员状态已刷新。')} type="button">恢复购买</button>{message ? <p role="status">{message}</p> : null}</section> : <>
       <section className="tm-hybrid-premium-hero"><PremiumBurgerBadge /><div><small>让长期记录更有价值</small><h2>把每一次吃饭，变成真正懂你的口味档案。</h2><p>解锁完整分析、回顾与高质量分享海报。真实价格只在 App Store 商品加载成功后展示。</p></div></section>
       <section className="tm-hybrid-premium-purchase"><h3>开通 Premium</h3><p>{!products.length ? loadingProducts ? '正在获取 App Store 订阅方案…' : '暂时无法获取订阅方案，请检查网络后重试。' : '以下价格由 App Store 按你的地区和币种提供。'}</p>{!products.length && !loadingProducts ? <button disabled={busy} onClick={() => setReloadProducts((value) => value + 1)} type="button">重新加载订阅方案</button> : null}{products.map((product) => <button className="tm-hybrid-premium-plan" disabled={busy} key={product.id} onClick={() => void premiumAction(() => platform.premium.purchase(product.id), '购买已完成，会员状态已刷新。')} type="button"><Sparkles size={17} /><span>{product.period === 'annual' ? '开通年会员' : '开通月会员'}<small>{product.billingPeriodDescription}</small></span><strong>{product.displayPrice}</strong></button>)}<button disabled={busy} onClick={() => void premiumAction(() => platform.premium.restore(), '购买记录已恢复，会员状态已刷新。')} type="button">恢复购买</button>{message ? <p role="status">{message}</p> : null}</section>
       <section className="tm-hybrid-premium-benefits"><Benefit title="完整口味档案" detail="高频菜系、消费、城市、饭搭子、时间与代表餐厅。" /><Benefit title="关系与来源洞察" detail="最佳饭搭子、谁最会种草，以及真实结果证据。" /><Benefit title="月度 / 年度回顾" detail="从长期记录中看见口味变化和城市足迹。" /><Benefit title="五类分享海报" detail="统一 Analysis 视觉家族，9:16 高清导出。" /></section>

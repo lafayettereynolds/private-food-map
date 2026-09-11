@@ -169,7 +169,7 @@ export class TasteMapNativeAdapter implements TasteMapPlatform {
     trialEligibility: () => this.call<{ eligible: boolean; trialDays: number }>('premium.trialEligibility'),
     claimTrial: () => this.call<{ expiresAt: string; status: TasteMapPremiumStatusDTO }>('premium.claimTrial'),
     products: () => this.call<TasteMapPremiumProductDTO[]>('premium.products'),
-    purchase: (productID: string) => this.call<TasteMapPremiumActionResultDTO>('premium.purchase', { productID }),
+    purchase: (productID: string) => this.call<TasteMapPremiumActionResultDTO>('premium.purchase', { productID, tappedAtMilliseconds: Date.now() }),
     restore: () => this.call<TasteMapPremiumActionResultDTO>('premium.restore'),
     manage: () => this.call<TasteMapPremiumActionResultDTO>('premium.manage'),
   }

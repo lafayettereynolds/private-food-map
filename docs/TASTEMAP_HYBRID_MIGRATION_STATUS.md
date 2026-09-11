@@ -2,6 +2,12 @@
 
 Updated: 2026-09-06
 Bridge: `TasteMapNative.v1`
+
+2026-09-11 StoreKit 1014 correction: shared Premium product display no longer
+waits for trial/status requests; Native/rollback use the same Storefront-invalidated
+Product cache. No route ownership or membership-policy change. This source entry
+does not claim real-device currency or purchase-Sheet latency acceptance; see the
+1014 release report for build and runtime evidence.
 Production default: `NATIVE_PRIMARY` (current SwiftUI application)
 
 ## Status definitions

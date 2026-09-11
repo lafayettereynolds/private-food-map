@@ -106,6 +106,7 @@ struct PremiumPaywallView: View {
     @State private var actionInProgress = false
     @State private var message: String?
     @State private var productsLoaded = false
+    @State private var productLoadRevision = UUID()
 #if TASTEMAP_SANDBOX_BUILD
     @State private var sandboxCatalogRequested = false
 #endif
@@ -150,9 +151,17 @@ struct PremiumPaywallView: View {
                 }
             }
             .task {
+                await loadProductsIfNeeded()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .tasteMapStoreKitProductsChanged)) { _ in
+                productLoadRevision = UUID()
+                products = []
+                productsLoaded = false
+                Task { await loadProductsIfNeeded() }
+            }
+            .task {
                 await entitlementService.refresh()
                 await entitlementService.refreshTrialEligibility()
-                await loadProductsIfNeeded()
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .seconds(60)) } catch { return }
                     await entitlementService.refresh()
@@ -501,11 +510,15 @@ struct PremiumPaywallView: View {
         guard !productsLoaded, showsProductCatalog else { return }
         productsLoaded = true
         isLoadingProducts = true
-        defer { isLoadingProducts = false }
+        let revision = productLoadRevision
+        defer { if revision == productLoadRevision { isLoadingProducts = false } }
         do {
-            products = try await entitlementService.productsProvider.products().filter { $0.period == .monthly || $0.period == .annual }
+            let next = try await entitlementService.productsProvider.products().filter { $0.period == .monthly || $0.period == .annual }
+            guard revision == productLoadRevision else { return }
+            products = next
             selectedProductID = products.first(where: { $0.period == .annual })?.id ?? products.first?.id
         } catch {
+            guard revision == productLoadRevision else { return }
             products = []
             message = error.localizedDescription
         }

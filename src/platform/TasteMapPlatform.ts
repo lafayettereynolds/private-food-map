@@ -946,6 +946,7 @@ export type TasteMapHybridEvent =
   | { version: 1; sequence: number; name: 'deepLink.received'; payload: TasteMapNavigationStateDTO }
   | { version: 1; sequence: number; name: 'shareExtension.received'; payload: { fingerprint: string; target: TasteMapNavigationStateDTO } }
   | { version: 1; sequence: number; name: 'app.lifecycle'; payload: { state: TasteMapLifecycleState } }
+  | { version: 1; sequence: number; name: 'premium.productsChanged'; payload: Record<string, never> }
   | { version: 1; sequence: number; name: 'location.changed'; payload: TasteMapLocationDTO }
   | { version: 1; sequence: number; name: 'map.viewport.changed'; payload: TasteMapNativeMapViewport }
   | { version: 1; sequence: number; name: 'map.restaurant.selected'; payload: { restaurantID: string | null } }

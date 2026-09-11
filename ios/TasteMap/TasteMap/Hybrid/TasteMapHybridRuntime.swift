@@ -36,6 +36,7 @@ final class TasteMapHybridRuntime {
     private weak var mapSurfaceHost: TasteMapHybridMapSurfaceHost?
     private var pendingEvents: [TasteMapHybridEventEnvelope] = []
     private var sequence = 0
+    @ObservationIgnored private var storefrontUpdatesTask: Task<Void, Never>?
     private var moderationAccountEpoch = 0
     private var lastLifecycleState: TasteMapHybridLifecycleState?
     private var bridgeControllerStorage: TasteMapHybridBridgeViewController?
@@ -91,7 +92,15 @@ final class TasteMapHybridRuntime {
             self?.mapSurfaceHost?.setRouteAllowsMap(state.route.owner == .hybrid && state.route.surface == .map)
             self?.emit(.navigationRoute, payload: state)
         }
+        storefrontUpdatesTask = Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: .tasteMapStoreKitProductsChanged) {
+                guard !Task.isCancelled else { return }
+                self?.emit(.premiumProductsChanged, payload: [String: String]())
+            }
+        }
     }
+
+    deinit { storefrontUpdatesTask?.cancel() }
 
     var bridgeController: TasteMapHybridBridgeViewController {
         if let bridgeControllerStorage { return bridgeControllerStorage }
@@ -2359,7 +2368,9 @@ final class TasteMapHybridRuntime {
             throw Self.bridgeError("invalid_premium_product", method: .premiumPurchase)
         }
         do {
-            let result = try await premiumEntitlementService.productsProvider.purchase(productID: productID)
+            let result = try await StoreKitPurchaseTiming.$tappedAtMilliseconds.withValue(request.tappedAtMilliseconds) {
+                try await premiumEntitlementService.productsProvider.purchase(productID: productID)
+            }
             if result.requiresEntitlementRefresh { await premiumEntitlementService.refresh() }
             return try encode(TasteMapHybridPremiumActionResultDTO(
                 outcome: Self.premiumOutcome(result.outcome),
@@ -2725,6 +2736,7 @@ private struct HybridShareRequest: Decodable {
 
 private struct HybridPremiumPurchaseRequest: Decodable {
     let productID: String
+    let tappedAtMilliseconds: Double?
 }
 
 private struct HybridSyncStatusDTO: Encodable {

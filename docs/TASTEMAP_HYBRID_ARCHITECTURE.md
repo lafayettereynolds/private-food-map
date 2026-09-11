@@ -268,6 +268,14 @@ Safe-area CSS uses `env(safe-area-inset-*)`; the host disables remote UI loading
 
 ## 7. Event channel, lifecycle and share handoff
 
+2026-09-11: additive `premium.productsChanged` (empty payload) invalidates only
+Premium price presentation after Native Storefront changes. It does not emit a
+whole-app `data.changed` or alter entitlements. Native owns the in-memory Product
+cache; the existing product DTO continues to pass through `displayPrice`.
+Optional `premium.purchase.tappedAtMilliseconds` is bounded, diagnostic-only wall
+clock input for tap-to-StoreKit-invocation timing; it grants no permission and
+never affects purchase validation. No receipt/account token crosses the bridge.
+
 `TasteMapNative.v1` events use a versioned envelope, monotonic sequence, typed event name and JSON-safe payload. The integrated runtime emits:
 
 - `auth.changed` after sign-in/logout;

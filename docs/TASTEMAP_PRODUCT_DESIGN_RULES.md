@@ -851,6 +851,18 @@ names. Selection changes cannot reuse another person's or period's evidence.
 
 ## Premium
 
+**2026-09-11 StoreKit presentation correction:** Monthly/Annual display the exact
+StoreKit `Product.displayPrice`, independent of trial-eligibility completion.
+Native retains the loaded Product for purchase and invalidates/reloads it when
+Storefront changes; stale loads cannot restore old prices. Never infer currency
+from device Locale, hardcode a currency, or format `Product.price` for this UI.
+Retain live server purchase readiness, account-token/session checks, transaction
+verification and authoritative entitlement refresh. Existing Core purchase/loading
+controls, Premium hamburger and page composition are unchanged. Do Not Regress:
+test both products, delayed trial/status, cache reuse, storefront invalidation,
+late responses and account isolation; real currency/Sheet latency requires the
+installed TestFlight build, not fixture prices.
+
 **2026-09-07 Developer Gift:** Gift annual/lifetime unlock the exact existing Premium feature set through the authoritative entitlement service. Preserve the current Paywall template, Core controls and approved hamburger assets. The active-state text is `赠送会员 · 有效期至 YYYY年MM月DD日` or `永久会员 · 由 Taste Map 赠送`, beneath Taste Map Premium. Gift has no Apple management action; App Store subscriptions retain it. The sales state exposes only Monthly/Annual. Internal gifting stays on an independently authenticated server Admin page, never in the consumer App bundle or navigation. Do Not Regress: no React entitlement inference from profile tier, no device-bound gifts, no StoreKit overwrite, no Release debug override; test late A→B→A responses as well as ordinary logout.
 
 The compact Premium identity badge used in Profile keeps the previously approved historical hamburger asset. The Paywall hero hamburger is a separate visual-approval region and is currently pending a Lafayette-approved redesign; no candidate may replace the formal Paywall hero before approval. Never use fake prices or emoji food rows in the formal Premium hero.

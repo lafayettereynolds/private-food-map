@@ -141,6 +141,7 @@ public enum TasteMapHybridEventName: String, Codable, Sendable {
     case mapRestaurantSelected = "map.restaurant.selected"
     case mapRestaurantGroupSelected = "map.restaurant.groupSelected"
     case dataChanged = "data.changed"
+    case premiumProductsChanged = "premium.productsChanged"
 }
 
 public struct TasteMapHybridEventEnvelope: Codable, Sendable {

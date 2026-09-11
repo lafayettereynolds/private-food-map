@@ -1,0 +1,40 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
+describe('StoreKit presentation release contract', () => {
+  it('renders product prices independently of status and trial promises', () => {
+    const ui = read('src/components/TasteMapPremiumSettingsPages.tsx')
+    const refresh = ui.slice(ui.indexOf('const refresh ='), ui.indexOf('    refresh()'))
+    expect(refresh).not.toContain('Promise.all')
+    expect(refresh).toContain('platform.premium.products().catch(() => []).then')
+    expect(ui).toContain("{status?.state === 'premium'")
+    expect(ui).toContain("event.name === 'premium.productsChanged'")
+    expect(ui).toContain('<strong>{product.displayPrice}</strong>')
+    expect(ui).not.toMatch(/fallbackPrice|\$\d|USD|Intl.NumberFormat/)
+  })
+  it('purchases cached Products while retaining live server readiness and transaction verification', () => {
+    const provider = read('ios/TasteMap/TasteMap/Services/StoreKitMembershipPurchaseProvider.swift')
+    const purchase = provider.slice(provider.indexOf('func purchase('), provider.indexOf('func restore('))
+    expect(purchase).toContain('currentCatalog()')
+    expect(provider).toContain('return try await productCache.values()')
+    expect(provider).toContain('catch is CancellationError { try Task.checkCancellation() }')
+    expect(purchase).not.toContain('Product.products(for:')
+    expect(purchase).toContain('loadConfiguration(forceRefresh: true)')
+    expect(purchase).toContain('configuration.purchaseReady == true')
+    expect(purchase).toContain('sessionGeneration == generation')
+    expect(purchase).toContain('.appAccountToken(configuration.appAccountToken)')
+    expect(purchase).toContain('Self.verified(verification)')
+    expect(purchase).toContain('reconcileAndFinish(transaction, signedTransactionInfo: verification.jwsRepresentation)')
+    expect(purchase).toContain('requiresEntitlementRefresh: true')
+    expect(provider).toContain('displayPrice: product.displayPrice')
+    expect(provider).toContain('for await storefront in Storefront.updates')
+  })
+  it('invalidates Hybrid and rollback display DTOs without a whole-app data refresh', () => {
+    const runtime = read('ios/TasteMap/TasteMap/Hybrid/TasteMapHybridRuntime.swift')
+    expect(runtime).toContain('self?.emit(.premiumProductsChanged')
+    const rollback = read('ios/TasteMap/TasteMap/Features/Premium/PremiumViews.swift')
+    expect(rollback).toContain('.tasteMapStoreKitProductsChanged')
+    expect(rollback).toContain('guard revision == productLoadRevision else { return }')
+  })
+})

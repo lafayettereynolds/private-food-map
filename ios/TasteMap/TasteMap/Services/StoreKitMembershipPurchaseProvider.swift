@@ -2,6 +2,10 @@ import Foundation
 import StoreKit
 import UIKit
 
+nonisolated enum StoreKitPurchaseTiming {
+    @TaskLocal static var tappedAtMilliseconds: Double?
+}
+
 actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     nonisolated let capabilities: MembershipPurchaseCapabilities = [.purchase, .restore, .manageSubscription]
 
@@ -10,6 +14,14 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     private var activeUserID: String?
     private var sessionGeneration = UUID()
     private var updatesTask: Task<Void, Never>?
+    private var storefrontTask: Task<Void, Never>?
+    private let productCache = StoreKitProductCache<Product>(
+        load: { try await Product.products(for: [
+            "com.lafayette.tastemap.premium.monthly.v1",
+            "com.lafayette.tastemap.premium.annual.v1",
+        ]) },
+        storefront: { await Storefront.current?.id }
+    )
 
     init(commerceAPI: any PremiumCommerceAPI) {
         self.commerceAPI = commerceAPI
@@ -46,12 +58,19 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     }
 
     func products() async throws -> [MembershipProduct] {
+        beginStorefrontUpdatesIfNeeded()
+        let started = ContinuousClock.now
         // Product metadata is public; displaying prices must not depend on a Taste Map session.
         let references: [String: MembershipProductPeriod] = [
             "com.lafayette.tastemap.premium.monthly.v1": .monthly,
             "com.lafayette.tastemap.premium.annual.v1": .annual,
         ]
-        return try await Product.products(for: Array(references.keys))
+        let country = await Storefront.current?.countryCode ?? "unknown"
+        let result = try await currentCatalog()
+        for product in result.values {
+            DeviceAcceptanceLog.record("TasteMapDiagnostic category=storekit event=product_preload country=\(country) product=\(product.id) displayPrice=\(product.displayPrice) cache=\(result.cacheHit ? "HIT" : "MISS") duration_ms=\(Self.milliseconds(since: started))")
+        }
+        return result.values
             .compactMap { product in
                 guard let reference = references[product.id] else { return nil }
                 return MembershipProduct(
@@ -67,6 +86,8 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     }
 
     func purchase(productID: String) async throws -> MembershipPurchaseResult {
+        let started = ContinuousClock.now
+        beginStorefrontUpdatesIfNeeded()
         let generation = sessionGeneration
         let configuration = try await loadConfiguration(forceRefresh: true)
         guard configuration.purchaseReady == true else {
@@ -75,10 +96,22 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
         guard configuration.products.contains(where: { $0.id == productID }) else {
             throw MembershipPurchaseError.productUnavailable
         }
-        guard let product = try await Product.products(for: [productID]).first else {
+        var catalog = try await currentCatalog()
+        if !catalog.values.contains(where: { $0.id == productID }) {
+            await productCache.invalidate()
+            catalog = try await currentCatalog()
+        }
+        guard let product = catalog.values.first(where: { $0.id == productID }) else {
             throw MembershipPurchaseError.productUnavailable
         }
         guard activeUserID != nil, sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
+        if let tappedAt = StoreKitPurchaseTiming.tappedAtMilliseconds {
+            let elapsed = Date.now.timeIntervalSince1970 * 1_000 - tappedAt
+            if elapsed.isFinite, (0...120_000).contains(elapsed) {
+                DeviceAcceptanceLog.record("TasteMapDiagnostic category=storekit event=tap_to_purchase duration_ms=\(Int(elapsed))")
+            }
+        }
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=storekit event=purchase_invoke product=\(product.id) cache=\(catalog.cacheHit ? "HIT" : "MISS") provider_entry_to_purchase_ms=\(Self.milliseconds(since: started))")
         switch try await product.purchase(options: [.appAccountToken(configuration.appAccountToken)]) {
         case .success(let verification):
             guard activeUserID != nil, sessionGeneration == generation else { throw MembershipPurchaseError.notConfigured }
@@ -112,6 +145,7 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
     }
 
     private func beginTransactionUpdatesIfNeeded() {
+        beginStorefrontUpdatesIfNeeded()
         guard updatesTask == nil else { return }
         updatesTask = Task { [weak self] in
             for await verification in Transaction.updates {
@@ -120,6 +154,40 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
                 try? await self.reconcileAndFinish(transaction, signedTransactionInfo: verification.jwsRepresentation)
             }
         }
+    }
+
+    private func beginStorefrontUpdatesIfNeeded() {
+        guard storefrontTask == nil else { return }
+        storefrontTask = Task { [weak self] in
+            for await storefront in Storefront.updates {
+                guard !Task.isCancelled, let self else { return }
+                await self.storefrontDidChange(country: storefront.countryCode)
+            }
+        }
+    }
+
+    private func currentCatalog() async throws -> (values: [Product], cacheHit: Bool) {
+        // A storefront transition can cancel a shared preload without cancelling
+        // its caller. Retry the new storefront, never return that stale catalog.
+        for _ in 0..<3 {
+            try Task.checkCancellation()
+            do { return try await productCache.values() }
+            catch is CancellationError { try Task.checkCancellation() }
+        }
+        throw MembershipPurchaseError.productUnavailable
+    }
+
+    private func storefrontDidChange(country: String) async {
+        await productCache.invalidate()
+        DeviceAcceptanceLog.record("TasteMapDiagnostic category=storekit event=storefront_invalidated country=\(country)")
+        // Both Hybrid and rollback paywalls discard their display DTOs and reload.
+        NotificationCenter.default.post(name: .tasteMapStoreKitProductsChanged, object: nil)
+        _ = try? await products()
+    }
+
+    private nonisolated static func milliseconds(since start: ContinuousClock.Instant) -> Int64 {
+        let duration = start.duration(to: .now).components
+        return duration.seconds * 1_000 + duration.attoseconds / 1_000_000_000_000_000
     }
 
     private func loadConfiguration(forceRefresh: Bool = false) async throws -> PremiumCommerceConfigurationV1 {
@@ -184,6 +252,9 @@ actor StoreKitMembershipPurchaseProvider: MembershipPurchaseProviding {
 }
 
 extension Notification.Name {
+    nonisolated static let tasteMapStoreKitProductsChanged = Notification.Name(
+        "com.lafayette.tastemap.storekit-products-changed"
+    )
     nonisolated static let tasteMapPremiumEntitlementChanged = Notification.Name(
         "com.lafayette.tastemap.premium-entitlement-changed"
     )
